@@ -2084,6 +2084,125 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   .intro-config-row { grid-template-columns: 1fr; }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   v2.154.1: Primary Manifest — replaces the old 4-card primary-config layout
+   (primary-person-block + follow-up-block + auto-accept-block +
+   check-cadence-block spread across the 2-up .intro-config-row grid above)
+   with ONE panel: two identity fields, a plain-English readback of what will
+   happen, and a collapsible "Customize" drawer holding the same real
+   controls. Ported from public/sketches/2026-07-10-primary-config-overhaul-DE.html
+   (variant D, "The Manifest") — scoped here under #primary-manifest instead
+   of the sketch's disposable .ovD demo-variant class. Classnames are kept
+   identical to the sketch (ov-panel / ov-eyebrow / ov-idgrid / auto-box /
+   auto-head / auto-title / auto-edit / auto-nudge / auto-lines / al / tick /
+   tok / cust / pc-cloud) — none collide with existing rules elsewhere in
+   this file (the only near-misses, .off and .k, are always compound-scoped
+   there: .schedule-toggle.off, .header-stat .k / .scrape-stat .k — so a bare
+   .al.off / a selector scoped under #primary-manifest can't cross-match).
+   One real collision: the sketch's bare .fu-line duplicates the existing
+   unstyled .fu-line marker on the live-campaign monitor hero's queued-batch
+   banner (index.html "queued · sent together in one batch") — if a future
+   readback line needs that same dim-when-cloud treatment, use
+   .manifest-fu-line instead, not .fu-line.
+   The readback lines (#manifest-readback), the STANDARD/CUSTOMIZED word
+   (#manifest-state), the drawer's open/close (#manifest-drawer[hidden]),
+   and the cloud notice copy (#manifest-cloud-notice) are populated/toggled
+   by app.js — this is markup + CSS only, so the .open state below is dead
+   until that JS lands.
+   ───────────────────────────────────────────────────────────────────────── */
+#primary-manifest.ov-panel {
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  padding: 24px 28px;
+  /* .intro-config-row is still `grid-template-columns: 1fr 1fr` (shared with
+     #ic-extras elsewhere) — with only one child now, span both tracks so
+     the panel takes the full row width instead of collapsing to one cell. */
+  grid-column: 1 / -1;
+}
+#primary-manifest .ov-eyebrow {
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em;
+  text-transform: uppercase; font-weight: 600; color: var(--ink);
+  margin: 0 0 16px;
+}
+/* Identity zone (#primary-person-block) — name + URL side by side instead
+   of stacked, per sketch D's "identity grid". */
+#primary-manifest .ov-idgrid {
+  display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 8px 30px;
+}
+@media (max-width: 800px) {
+  #primary-manifest .ov-idgrid { grid-template-columns: 1fr; }
+}
+
+#primary-manifest .auto-box { margin-top: 22px; border-top: 1px solid var(--hairline); padding-top: 16px; }
+#primary-manifest .auto-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#primary-manifest .auto-title {
+  font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--gray);
+}
+#primary-manifest .auto-title b { color: var(--ink); }
+
+/* Customize — deliberately loud (solid ink pill + icon) so operators actually
+   discover the drawer; a ghost pill would get ignored. Flips to an outline
+   "Done" look when #primary-manifest carries .open (app.js toggles the class
+   + swaps the button label/icon on click). */
+#primary-manifest .auto-edit {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em;
+  text-transform: uppercase; font-weight: 700;
+  color: var(--bg); background: var(--ink); border: 1px solid var(--ink);
+  border-radius: 9999px; padding: 9px 18px; cursor: pointer;
+  transition: transform 0.12s, opacity 0.12s;
+}
+#primary-manifest .auto-edit:hover { transform: scale(1.04); }
+#primary-manifest.open .auto-edit { background: transparent; color: var(--ink); font-weight: 500; }
+#primary-manifest .auto-edit svg { flex: none; }
+
+#primary-manifest .auto-nudge { font-size: 11px; color: var(--gray); margin-top: 10px; }
+#primary-manifest .auto-nudge b { color: var(--ink); }
+
+/* Readback lines — app.js renders these into #manifest-readback (.auto-lines) */
+#primary-manifest .auto-lines { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+#primary-manifest .al { display: flex; gap: 10px; align-items: baseline; font-size: 13.5px; color: var(--ink); line-height: 1.5; }
+#primary-manifest .al .tick { font-family: var(--mono); color: var(--green); flex: none; width: 14px; }
+#primary-manifest .al.off { color: var(--gray); }
+#primary-manifest .al.off .tick { color: var(--gray-faint, #b8b8b6); }
+#primary-manifest .al b { font-weight: 600; }
+#primary-manifest .al .tok { border-bottom: 1px dashed var(--hairline); }
+
+/* Cloud-run notice — empty slot; app.js fills + reveals it from the real
+   #cloud-run-checkbox state (gold edge = the one design-system accent). */
+#primary-manifest .pc-cloud {
+  display: flex; gap: 9px; align-items: flex-start; margin-top: 14px; padding: 10px 13px;
+  border: 1px solid var(--hairline); border-left: 3px solid var(--gold); border-radius: 10px;
+  background: var(--hairline-soft); font-size: 12.5px; line-height: 1.5; color: var(--gray);
+}
+#primary-manifest .pc-cloud b { color: var(--ink); }
+/* author `display:flex` above beats the UA [hidden] rule — re-assert it. */
+#primary-manifest .pc-cloud[hidden] { display: none; }
+
+/* Customize drawer — holds the real controls, moved verbatim (same ids,
+   classes, and handlers as the old 4-card layout; only the parent changed). */
+#primary-manifest .cust {
+  margin-top: 16px; border: 1px solid var(--hairline); border-radius: 12px;
+  padding: 18px 20px; background: var(--hairline-soft);
+}
+/* Each moved control keeps its original classing (.intro-config-card for the
+   former standalone cards, .intro-config-field for the former inline
+   fields). Inside the drawer, strip the standalone-card chrome
+   (border/shadow/radius/bg) and replace it with a plain row separator so
+   five moved blocks read as one compact list instead of nested cards. */
+#primary-manifest .cust > .intro-config-card,
+#primary-manifest .cust > .intro-config-field {
+  border: none; box-shadow: none; border-radius: 0; background: transparent;
+  padding: 14px 0; margin: 0; border-bottom: 1px solid var(--hairline-soft);
+}
+#primary-manifest .cust > .intro-config-card:first-child,
+#primary-manifest .cust > .intro-config-field:first-child { padding-top: 0; }
+#primary-manifest .cust > .intro-config-card:last-child,
+#primary-manifest .cust > .intro-config-field:last-child { border-bottom: 0; padding-bottom: 0; }
+
 /* Sheet hero card — single card wrapping URL block, preview, and mapping */
 .sheet-hero {
   background: var(--card-bg);

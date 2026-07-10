@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.154.0" />
+  <link rel="stylesheet" href="/css/style.css?v=2.154.1" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
 </head>
 <body data-dashboard="v3">
@@ -797,11 +797,34 @@
            When neither mode shows them, the row collapses to display:none via
            JS toggling the inner blocks (existing logic, unchanged). -->
       <div class="intro-config-row" id="intro-config-row">
-        <div class="intro-config-col" id="intro-config-col-left">
+        <!-- v2.154.1: "The Manifest" — replaces the old 4-card layout (a 2-up
+             grid of primary-person-block / follow-up-block / auto-accept-block
+             / check-cadence-block) with ONE panel: identity fields on top, a
+             plain-English readback of what will happen automatically, and a
+             collapsible Customize drawer holding the SAME controls (moved,
+             not recreated — identical ids/classes/handlers, so save/load,
+             onModeChange visibility, and the launch payload code paths stay
+             intact). Ported from variant D of
+             public/sketches/2026-07-10-primary-config-overhaul-DE.html.
+             The six container ids below (primary-person-block,
+             primary-source-field, primary-timing-field, auto-accept-block,
+             check-cadence-block, follow-up-block) are UNCHANGED zone
+             wrappers — onModeChange keeps toggling each by id exactly as
+             before, just inside a new parent. #primary-manifest spans both
+             grid tracks of .intro-config-row (see CSS) since the two-column
+             layout is obsolete now that only one panel lives here — the
+             .intro-config-col-left/-right wrappers were dropped as no longer
+             needed (onModeChange's references to them are null-guarded).
+             The readback text, the STANDARD/CUSTOMIZED word, the drawer
+             open/close, and the cloud notice copy are wired in app.js
+             separately (Task 1.3) — this markup ships them as static/empty
+             placeholders. -->
+        <div id="primary-manifest" class="ov-panel">
+          <div class="ov-eyebrow">Primary person · who the lead gets introduced to</div>
+
           <!-- Connect + Introduce Back: primary person to introduce the lead to.
                Visible only when connect_and_introduce is selected. -->
-          <div id="primary-person-block" class="intro-config-card" style="display:none;">
-            <div class="intro-config-eyebrow">Primary Person · who the lead gets introduced to</div>
+          <div id="primary-person-block" class="ov-idgrid" style="display:none;">
             <div class="intro-config-field">
               <label for="primary-person-name" class="intro-config-label">Full name</label>
               <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock" oninput="savePrimaryPersonFields()">
@@ -816,147 +839,163 @@
               <div id="primary-person-url-error" class="intro-config-error" hidden></div>
               <div class="intro-config-hint">The primary person's profile. Used to check each account is connected to them, and for the <code>{primary url}</code> placeholder.</div>
             </div>
-            <!-- v2.94.x: the primary's ONE identity — used by both auto-accept and the follow-up -->
-            <div class="intro-config-field" id="primary-source-field">
-              <label class="intro-config-label">Logged in via</label>
-              <div class="aa-src-cards">
-                <div class="aa-src-card">
-                  <label class="aa-src-head">
-                    <input type="radio" name="primary-source" value="local-browser" checked
-                           onchange="togglePrimarySource(); savePrimaryPersonFields();">
-                    <span class="aa-src-title">My local browser</span>
-                  </label>
-                  <div class="aa-src-desc">The primary is logged into LinkedIn in your own Chrome.</div>
-                </div>
-                <div class="aa-src-card">
-                  <label class="aa-src-head">
-                    <input type="radio" name="primary-source" value="gologin"
-                           onchange="togglePrimarySource(); savePrimaryPersonFields();">
-                    <span class="aa-src-title">A GoLogin profile</span>
-                  </label>
-                  <div class="aa-src-desc">The primary is one of your GoLogin profiles — pick which one.</div>
-                  <div id="primary-source-picker" style="display:none;">
-                    <input type="text" id="primary-source-search" class="aa-acct-search"
-                           placeholder="Search by name or email…" oninput="filterPrimarySourcePicker()">
-                    <div class="aa-soo-toolbar">
-                      <button type="button" id="primary-source-soo-reload" class="aa-soo-reload" onclick="reloadPrimarySourceSoO()" title="Reload SoO" aria-label="Reload SoO">
-                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <polyline points="23 4 23 10 17 10"></polyline>
-                          <polyline points="1 20 1 14 7 14"></polyline>
-                          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                        </svg>
-                      </button>
-                      <span id="primary-source-soo-status" class="aa-soo-status"></span>
-                    </div>
-                    <div id="primary-source-grid" class="aa-acct-grid"></div>
+          </div>
+
+          <div class="auto-box">
+            <div class="auto-head">
+              <span class="auto-title">WHAT HAPPENS AUTOMATICALLY — <b id="manifest-state">STANDARD</b></span>
+              <button type="button" id="manifest-customize-btn" class="auto-edit">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                <span>Customize</span>
+              </button>
+            </div>
+            <div id="manifest-readback" class="auto-lines"></div>
+            <div class="auto-nudge">Every line above is a setting — hit <b>Customize</b> to change any of them.</div>
+            <div id="manifest-cloud-notice" class="pc-cloud" hidden></div>
+
+            <!-- Customize drawer — holds the REAL controls, moved verbatim
+                 (same ids/classes/handlers as before; only the parent changed). -->
+            <div id="manifest-drawer" class="cust" hidden>
+              <!-- v2.94.x: the primary's ONE identity — used by both auto-accept and the follow-up -->
+              <div class="intro-config-field" id="primary-source-field">
+                <label class="intro-config-label">Logged in via</label>
+                <div class="aa-src-cards">
+                  <div class="aa-src-card">
+                    <label class="aa-src-head">
+                      <input type="radio" name="primary-source" value="local-browser" checked
+                             onchange="togglePrimarySource(); savePrimaryPersonFields();">
+                      <span class="aa-src-title">My local browser</span>
+                    </label>
+                    <div class="aa-src-desc">The primary is logged into LinkedIn in your own Chrome.</div>
                   </div>
-                  <input type="hidden" id="primary-source-profile-id" value="">
+                  <div class="aa-src-card">
+                    <label class="aa-src-head">
+                      <input type="radio" name="primary-source" value="gologin"
+                             onchange="togglePrimarySource(); savePrimaryPersonFields();">
+                      <span class="aa-src-title">A GoLogin profile</span>
+                    </label>
+                    <div class="aa-src-desc">The primary is one of your GoLogin profiles — pick which one.</div>
+                    <div id="primary-source-picker" style="display:none;">
+                      <input type="text" id="primary-source-search" class="aa-acct-search"
+                             placeholder="Search by name or email…" oninput="filterPrimarySourcePicker()">
+                      <div class="aa-soo-toolbar">
+                        <button type="button" id="primary-source-soo-reload" class="aa-soo-reload" onclick="reloadPrimarySourceSoO()" title="Reload SoO" aria-label="Reload SoO">
+                          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                          </svg>
+                        </button>
+                        <span id="primary-source-soo-status" class="aa-soo-status"></span>
+                      </div>
+                      <div id="primary-source-grid" class="aa-acct-grid"></div>
+                    </div>
+                    <input type="hidden" id="primary-source-profile-id" value="">
+                  </div>
                 </div>
+                <div class="intro-config-hint">Used for <b>both</b> primary-side actions below. It must be logged into LinkedIn as the primary.</div>
               </div>
-              <div class="intro-config-hint">Used for <b>both</b> primary-side actions below. It must be logged into LinkedIn as the primary.</div>
-            </div>
-            <!-- #7: Primary check timing — CC+IC only. Moved inside primary-person-block (v2.112.8). -->
-            <div class="intro-config-field" id="primary-timing-field">
-              <label for="primary-timing-select" class="intro-config-label">Primary check timing</label>
-              <select id="primary-timing-select" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
-                <option value="immediately" selected>Immediately (at start)</option>
-                <option value="after_connections">After connections complete</option>
-              </select>
-              <div class="intro-config-hint">When the connect/check to the primary person runs. "After connections complete" starts sending right away and does the primary step once every account has finished its connection requests for the day.</div>
-            </div>
-          </div>
 
-          <!-- v2.91: Automated first follow-up -->
-          <div id="follow-up-block" class="intro-config-card" style="display:none;">
-            <div class="intro-config-eyebrow">Automated first follow-up <span class="intro-config-newtag">NEW</span></div>
-            <div class="intro-config-toggle-row">
-              <span class="intro-config-toggle-key">Send a first follow-up (batched after the last intro)</span>
-              <label class="notif-pref-toggle">
-                <input type="checkbox" id="follow-up-toggle" onchange="savePrimaryPersonFields(); toggleFollowUpFields();">
-                <span class="notif-pref-slider"></span>
-              </label>
-            </div>
-            <div id="follow-up-fields" style="display:none;">
-              <div class="intro-config-field" style="margin-bottom:14px;">
-                <label class="intro-config-label" for="follow-up-delay">Send after</label>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <select id="follow-up-delay" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
-                    <option value="10" selected>10 minutes</option>
-                    <option value="20">20 minutes</option>
-                    <option value="30">30 minutes</option>
-                    <option value="45">45 minutes</option>
-                    <option value="60">1 hour</option>
-                    <option value="120">2 hours</option>
-                  </select>
-                  <span class="intro-config-prefix">after the last intro</span>
-                </div>
-              </div>
-              <div class="uses-primary">
-                <span class="dot"></span><span>Sent from your primary — <span class="nm" id="follow-up-primary-label">your local browser</span></span>
-              </div>
-              <div class="intro-config-hint">Write the message in <b>Section 5 · Message Templates → First Follow-up Message</b> — it unlocks while this is on.</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="intro-config-col" id="intro-config-col-right">
-          <!-- v2.91: Auto-accept the primary connection — locked until a URL is set -->
-          <div id="auto-accept-block" class="intro-config-card" style="display:none;">
-            <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
-            <div class="intro-config-toggle-row">
-              <span id="auto-accept-label" class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
-              <label class="notif-pref-toggle" id="auto-accept-toggle-wrap">
-                <input type="checkbox" id="auto-accept-toggle" disabled onchange="savePrimaryPersonFields(); refreshAutoAcceptGate();">
-                <span class="notif-pref-slider"></span>
-              </label>
-            </div>
-            <div id="auto-accept-gate" class="intro-config-gate">
-              🔒 Add the primary person's LinkedIn URL above to switch this on — without the URL there's nothing to accept from.
-            </div>
-            <!-- v2.94.x: accepts as the shared primary identity (set in Primary Person) -->
-            <div id="auto-accept-primary-line" class="uses-primary" style="display:none;">
-              <span class="dot"></span><span>Accepts as your primary — <span class="nm" id="auto-accept-primary-label">your local browser</span></span>
-            </div>
-            <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and the chosen browser accepts that one invitation automatically — no manual step before the intro.</div>
-            <!-- v2.107: accept-all opt-in (default OFF). Only relevant while auto-accept is on; gated by refreshAutoAcceptGate. -->
-            <div class="intro-config-toggle-row" id="auto-accept-all-row" style="margin-top:12px;">
-              <span id="auto-accept-all-label" class="intro-config-toggle-key">Also accept <b>all other</b> pending invitations</span>
-              <label class="notif-pref-toggle" id="auto-accept-all-toggle-wrap">
-                <input type="checkbox" id="auto-accept-all-toggle" disabled>
-                <span class="notif-pref-slider"></span>
-              </label>
-            </div>
-            <div class="intro-config-hint" id="auto-accept-all-hint">⚠️ With this on, your primary also accepts <b>every</b> pending invite in its inbox during pre-flight — including strangers and real prospects, not just this campaign's sender accounts. Leave off to accept only your senders.</div>
-          </div>
-
-          <!-- Auto-check cadence (CC+IC + CC+DM). Honored during sending AND monitoring. Options must match MIN/MAX_CADENCE_MINUTES in campaign-modes.mjs. -->
-          <div id="check-cadence-block" class="intro-config-card" style="display:none;">
-            <div class="intro-config-eyebrow">Auto-check &amp; intro cadence</div>
-            <div class="intro-config-field">
-              <label for="check-cadence-select" class="intro-config-label">Cadence</label>
-              <div style="display:flex; align-items:center; gap:10px;">
-                <span class="intro-config-prefix">Every</span>
-                <select id="check-cadence-select" class="intro-config-select-wide" style="flex:1">
-                  <option value="60" selected>1 hour</option>
-                  <option value="120">2 hours</option>
-                  <option value="240">4 hours</option>
-                  <option value="360">6 hours</option>
-                  <option value="720">12 hours</option>
+              <!-- #7: Primary check timing — CC+IC only. -->
+              <div class="intro-config-field" id="primary-timing-field">
+                <label for="primary-timing-select" class="intro-config-label">Primary check timing</label>
+                <select id="primary-timing-select" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
+                  <option value="immediately" selected>Immediately (at start)</option>
+                  <option value="after_connections">After connections complete</option>
                 </select>
+                <div class="intro-config-hint">When the connect/check to the primary person runs. "After connections complete" starts sending right away and does the primary step once every account has finished its connection requests for the day.</div>
               </div>
-              <div class="intro-config-hint">How often we check each account for new acceptances and fire the follow-up — during sending and after. The first check is always ~1 hour in; after that it follows this interval. A little later if all browsers are busy sending.</div>
-            </div>
-            <!-- v2.112: pause the AFTER-sending automatic checks at launch (default on). -->
-            <div class="intro-config-toggle-row" style="margin-top:14px;">
-              <span class="intro-config-toggle-key">Run checks automatically</span>
-              <label class="notif-pref-toggle">
-                <input type="checkbox" id="auto-checks-toggle" checked>
-                <span class="notif-pref-slider"></span>
-              </label>
-            </div>
-            <div class="intro-config-hint">On (default): after sending ends we keep checking on the cadence above and auto-send any due intros/follow-ups. Off: that pauses — run a check yourself with ⚡ Check now on the live campaign card.</div>
-          </div>
 
+              <!-- v2.91: Auto-accept the primary connection — locked until a URL is set -->
+              <div id="auto-accept-block" class="intro-config-card" style="display:none;">
+                <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
+                <div class="intro-config-toggle-row">
+                  <span id="auto-accept-label" class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
+                  <label class="notif-pref-toggle" id="auto-accept-toggle-wrap">
+                    <input type="checkbox" id="auto-accept-toggle" disabled onchange="savePrimaryPersonFields(); refreshAutoAcceptGate();">
+                    <span class="notif-pref-slider"></span>
+                  </label>
+                </div>
+                <div id="auto-accept-gate" class="intro-config-gate">
+                  🔒 Add the primary person's LinkedIn URL above to switch this on — without the URL there's nothing to accept from.
+                </div>
+                <!-- v2.94.x: accepts as the shared primary identity (set in Primary Person) -->
+                <div id="auto-accept-primary-line" class="uses-primary" style="display:none;">
+                  <span class="dot"></span><span>Accepts as your primary — <span class="nm" id="auto-accept-primary-label">your local browser</span></span>
+                </div>
+                <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and the chosen browser accepts that one invitation automatically — no manual step before the intro.</div>
+                <!-- v2.107: accept-all opt-in (default OFF). Only relevant while auto-accept is on; gated by refreshAutoAcceptGate. -->
+                <div class="intro-config-toggle-row" id="auto-accept-all-row" style="margin-top:12px;">
+                  <span id="auto-accept-all-label" class="intro-config-toggle-key">Also accept <b>all other</b> pending invitations</span>
+                  <label class="notif-pref-toggle" id="auto-accept-all-toggle-wrap">
+                    <input type="checkbox" id="auto-accept-all-toggle" disabled>
+                    <span class="notif-pref-slider"></span>
+                  </label>
+                </div>
+                <div class="intro-config-hint" id="auto-accept-all-hint">⚠️ With this on, your primary also accepts <b>every</b> pending invite in its inbox during pre-flight — including strangers and real prospects, not just this campaign's sender accounts. Leave off to accept only your senders.</div>
+              </div>
+
+              <!-- Auto-check cadence (CC+IC + CC+DM). Honored during sending AND monitoring. Options must match MIN/MAX_CADENCE_MINUTES in campaign-modes.mjs. -->
+              <div id="check-cadence-block" class="intro-config-card" style="display:none;">
+                <div class="intro-config-eyebrow">Auto-check &amp; intro cadence</div>
+                <div class="intro-config-field">
+                  <label for="check-cadence-select" class="intro-config-label">Cadence</label>
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <span class="intro-config-prefix">Every</span>
+                    <select id="check-cadence-select" class="intro-config-select-wide" style="flex:1">
+                      <option value="60" selected>1 hour</option>
+                      <option value="120">2 hours</option>
+                      <option value="240">4 hours</option>
+                      <option value="360">6 hours</option>
+                      <option value="720">12 hours</option>
+                    </select>
+                  </div>
+                  <div class="intro-config-hint">How often we check each account for new acceptances and fire the follow-up — during sending and after. The first check is always ~1 hour in; after that it follows this interval. A little later if all browsers are busy sending.</div>
+                </div>
+                <!-- v2.112: pause the AFTER-sending automatic checks at launch (default on). -->
+                <div class="intro-config-toggle-row" style="margin-top:14px;">
+                  <span class="intro-config-toggle-key">Run checks automatically</span>
+                  <label class="notif-pref-toggle">
+                    <input type="checkbox" id="auto-checks-toggle" checked>
+                    <span class="notif-pref-slider"></span>
+                  </label>
+                </div>
+                <div class="intro-config-hint">On (default): after sending ends we keep checking on the cadence above and auto-send any due intros/follow-ups. Off: that pauses — run a check yourself with ⚡ Check now on the live campaign card.</div>
+              </div>
+
+              <!-- v2.91: Automated first follow-up -->
+              <div id="follow-up-block" class="intro-config-card" style="display:none;">
+                <div class="intro-config-eyebrow">Automated first follow-up <span class="intro-config-newtag">NEW</span></div>
+                <div class="intro-config-toggle-row">
+                  <span class="intro-config-toggle-key">Send a first follow-up (batched after the last intro)</span>
+                  <label class="notif-pref-toggle">
+                    <input type="checkbox" id="follow-up-toggle" onchange="savePrimaryPersonFields(); toggleFollowUpFields();">
+                    <span class="notif-pref-slider"></span>
+                  </label>
+                </div>
+                <div id="follow-up-fields" style="display:none;">
+                  <div class="intro-config-field" style="margin-bottom:14px;">
+                    <label class="intro-config-label" for="follow-up-delay">Send after</label>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <select id="follow-up-delay" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
+                        <option value="10" selected>10 minutes</option>
+                        <option value="20">20 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="45">45 minutes</option>
+                        <option value="60">1 hour</option>
+                        <option value="120">2 hours</option>
+                      </select>
+                      <span class="intro-config-prefix">after the last intro</span>
+                    </div>
+                  </div>
+                  <div class="uses-primary">
+                    <span class="dot"></span><span>Sent from your primary — <span class="nm" id="follow-up-primary-label">your local browser</span></span>
+                  </div>
+                  <div class="intro-config-hint">Write the message in <b>Section 5 · Message Templates → First Follow-up Message</b> — it unlocks while this is on.</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3263,7 +3302,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.154.0"></script>
+  <script type="module" src="/js/app.js?v=2.154.1"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
