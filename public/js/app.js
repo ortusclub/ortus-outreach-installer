@@ -31,7 +31,7 @@ import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
-import { toggleDecision, fmtEta, ADMIN_EMAIL } from '/js/scrape-board.mjs';
+import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail } from '/js/scrape-board.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -317,7 +317,7 @@ function renderStrip(c) {
 }
 
 function _snIsAdmin() {
-  return String(snCurrentEmail || '').trim().toLowerCase() === ADMIN_EMAIL;
+  return _isAdminEmail(snCurrentEmail);
 }
 // Can the viewer control this strip WITHOUT the "not yours" confirm? True when
 // it's their own scrape (server-computed `mine`) or they're the admin.
@@ -460,6 +460,9 @@ document.addEventListener('click', (e) => {
   if (!cid) return;
   if (_snExpanded.has(cid)) _snExpanded.delete(cid); else _snExpanded.add(cid);
   strip.classList.toggle('sn-collapsed', !_snExpanded.has(cid));
+  // Cloud strips fetch their per-lead log only when running/expanded — kick a
+  // board refresh on expand so the log fills now instead of on the next poll.
+  if (_snExpanded.has(cid) && typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
 });
 
 // Dismiss a done strip (local-only) and the "Clear done" bulk action.
@@ -2966,6 +2969,54 @@ function closeScrapeJobView() {
   if (img) img.src = ''; // aborts the MJPEG connection → engine stops the screencast
   const el = document.getElementById('scrape-job-viewer');
   if (el) el.remove();
+}
+
+// "Show campaign happening" — the cloud-campaign analogue of openScrapeJobView.
+// Opens a modal whose <img> streams the engine's MJPEG screencast of the
+// campaign's active browser session via /api/campaign/cloud/:id/view. Until the
+// engine ships that endpoint the proxy returns 501 JSON → the <img> errors and
+// we surface the proxy's message ("not available yet"). One viewer at a time.
+function openCloudCampaignView(id, label) {
+  closeCloudCampaignView();
+  const overlay = document.createElement('div');
+  overlay.id = 'cloud-cmp-viewer';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
+  const safeLabel = (label || id).replace(/</g, '&lt;');
+  overlay.innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1280px;margin-bottom:10px">' +
+      '<span style="color:#fff;font-size:14px">👁 Live · ' + safeLabel + '</span>' +
+      '<span id="cloud-cv-status" style="color:#9aa;font-size:12px">connecting…</span>' +
+      '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeCloudCampaignView()">✕ Close</button>' +
+    '</div>' +
+    '<div style="max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
+      '<img id="cloud-cv-img" alt="live campaign browser" style="max-width:100%;max-height:78vh;display:block" />' +
+    '</div>';
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeCloudCampaignView(); });
+  document.body.appendChild(overlay);
+
+  const img = document.getElementById('cloud-cv-img');
+  const status = document.getElementById('cloud-cv-status');
+  img.onload = () => { if (status) status.textContent = ''; };
+  img.onerror = async () => {
+    // The <img> can't render a JSON error / SPA HTML — read the proxy's message
+    // so the operator sees WHY (engine doesn't stream yet vs stream ended).
+    try {
+      const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/view`);
+      const j = await r.json().catch(() => ({}));
+      if (status) status.textContent = j.error || 'Stream ended — the campaign may have finished.';
+    } catch { if (status) status.textContent = 'Live view unavailable.'; }
+  };
+  img.src = `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
+}
+function closeCloudCampaignView() {
+  const img = document.getElementById('cloud-cv-img');
+  if (img) img.src = ''; // aborts the stream → engine stops the screencast
+  const el = document.getElementById('cloud-cmp-viewer');
+  if (el) el.remove();
+}
+if (typeof window !== 'undefined') {
+  window.openCloudCampaignView = openCloudCampaignView;
+  window.closeCloudCampaignView = closeCloudCampaignView;
 }
 
 async function startScrapeJob() {
@@ -5540,6 +5591,12 @@ async function startCampaign(opts = {}) {
   // Rerun context consumed — clear so a subsequent fresh launch isn't treated as a rerun.
   window._savedSheetGid = '';
 
+  // ⑤+①: instant launch feedback. Only for an immediate Start (not Queue), and
+  // only now that every validation early-return above is behind us. Shown BEFORE
+  // pre-flight so it covers the full dead-air (client pre-flight + start fetch),
+  // and it keeps the previous campaign's card hidden until the new run boots.
+  if (!opts.queueOnly) beginLaunching((document.getElementById('campaign-name-input')?.value || '').trim());
+
   // ── Pre-flight gate (spec 2026-07-07) ──────────────────────────────────────
   if (!opts._skipPreflight) {
     try {
@@ -5551,6 +5608,7 @@ async function startCampaign(opts = {}) {
       });
       _pfState = { findings: pf.findings, ack: pf.ack, payload: body, opts };
       if (pf.findings.blockers.length || pf.findings.warnings.length) {
+        endLaunching();        // ⑤: hide the launch popup — the pre-flight overlay takes over
         renderPreflight(pf);   // overlay takes over; its buttons re-enter with _skipPreflight
         return;
       }
@@ -5566,6 +5624,7 @@ async function startCampaign(opts = {}) {
         _pfPrevN ? 9000 : 5000,
       );
     } catch (err) {
+      endLaunching();          // ⑤: hide the launch popup on a pre-flight failure
       showCampaignToast(`Pre-flight failed: ${err.message}`, 7000);
       return;
     }
@@ -5592,7 +5651,16 @@ async function startCampaign(opts = {}) {
     }
   }
 
-  await submitStartCampaign(body, opts);
+  const _outcome = await submitStartCampaign(body, opts);
+  // ⑤+①: retire the launch popup. On an immediate LOCAL start the new run needs
+  // a beat to flip `running` true — leave the popup up and let pollStatus dismiss
+  // it the instant the new campaign boots, so the card never flashes the previous
+  // one. Every other outcome (cloud dispatched, queued, or failed) is terminal
+  // here: refresh the card once so it reflects reality, then hide.
+  if (!(_outcome && _outcome.started)) {
+    try { if (typeof pollStatus === 'function') await pollStatus(); } catch (_) { /* */ }
+    endLaunching();
+  }
 }
 
 // Show the "Run in cloud" toggle only for modes the engine supports; hide (and
@@ -5653,8 +5721,41 @@ function _cloudSaveDismissed() {
 // the source Google Sheet.
 const _cloudSheetUrls = new Map();
 
+// Reconstruct a per-lead log (parity with a local campaign's live log) from the
+// cloud engine's per-lead status rows (GET /api/campaign/:id/leads). Ordered
+// chronologically (oldest → newest) so the render's slice(-8) shows the most
+// recent lines — matching how a local log reads — with a summary line last.
+function _cloudLeadsToLog(leads, isFG = false) {
+  if (!Array.isArray(leads) || !leads.length) return [];
+  const hhmm = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+  const actioned = leads.filter((l) => l && (l.status === 'sent' || l.status === 'error'));
+  actioned.sort((a, b) => {
+    const ta = a.sentAt ? Date.parse(a.sentAt) : Infinity; // errors (no sentAt) last
+    const tb = b.sentAt ? Date.parse(b.sentAt) : Infinity;
+    return ta - tb;
+  });
+  const lines = actioned.map((l) => {
+    const name = String(l.fullName || l.leadUrl || 'Lead').trim();
+    if (l.status === 'sent') {
+      const verb = isFG ? 'invited' : (l.stage ? `${l.stage} sent` : 'sent');
+      const when = hhmm(l.sentAt);
+      return `✓ ${name} · ${verb}${when ? ` · ${when}` : ''}`;
+    }
+    return `✗ ${name} · ${l.error || 'error'}`;
+  });
+  const sent = leads.filter((l) => l && l.status === 'sent').length;
+  const err = leads.filter((l) => l && l.status === 'error').length;
+  const pending = Math.max(0, leads.length - sent - err);
+  lines.push(`— ${sent} ${isFG ? 'invited' : 'sent'} · ${err} error${err === 1 ? '' : 's'}${pending > 0 ? ` · ${pending} pending` : ''}`);
+  return lines;
+}
+
 // Adapt one cloud campaign ({campaign, leadCounts}) into an sn-strip.
-function renderCloudStrip(c, lc) {
+function renderCloudStrip(c, lc, logLines = null) {
   const status = c.status || '';
   const isQueued = status === 'pending' || status === 'queued';
   const isRunning = status === 'running';
@@ -5693,15 +5794,21 @@ function renderCloudStrip(c, lc) {
   const expandBtn = isQueued ? ''
     : `<button class="sn-collapse sn-expand" title="Expand / collapse"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>`;
   const countsHtml = Object.entries(lc).map(([k, v]) => `${escHtml(k)}: <b style="color:var(--ink)">${v}</b>`).join(' · ') || 'no leads';
+  // Real per-lead log when we have it (running/expanded); otherwise a live-status
+  // note. The endpoint is deployed now, so this is no longer a "coming soon".
+  const logBoxInner = (logLines && logLines.length)
+    ? logLines.slice(-8).map((l) => escHtml(l)).join('<br>')
+    : `${sent ? 'Live per-lead log — expand to watch it fill.' : 'Per-lead log appears here as the cloud engine sends.'} Status so far: <span class="ok">${sent}/${total} ${isFG ? 'invites' : 'sent'}</span>.`;
   const switchBlock = isQueued ? '' : `
     <div class="sn-switch">
       <div class="sn-switchtabs"><span class="sn-st on" data-t="log">Log</span><span class="sn-st" data-t="counts">Counts</span></div>
-      <div class="sn-pane on" data-p="log"><div class="sn-logbox">Per-lead live log lands here once the engine's per-lead endpoint is deployed.
-Status so far: <span class="ok">${sent}/${total} ${isFG ? 'invites' : 'sent'}</span>.</div></div>
+      <div class="sn-pane on" data-p="log"><div class="sn-logbox">${logBoxInner}</div></div>
       <div class="sn-pane" data-p="counts"><div style="font-size:12px;color:var(--gray);padding:4px 0">${countsHtml}</div></div>
     </div>`;
 
   const stopBtn = (isRunning || isQueued) ? `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(c.id)}')">Stop</button>` : '';
+  const _vLabel = String(c.name || c.id).replace(/['"\\<>]/g, '');
+  const showBtn = isRunning ? `<button class="mini" onclick="openCloudCampaignView('${escHtml(c.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">👁 Show</button>` : '';
   const openBtn = `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(c.id)}')">Open</button>`;
   const dismissBtn = isDone ? `<button class="mini sn-dismiss-cloud" onclick="dismissCloudDone('${escHtml(c.id)}', this)" title="Hide from your board">✕</button>` : '';
 
@@ -5714,7 +5821,7 @@ Status so far: <span class="ok">${sent}/${total} ${isFG ? 'invites' : 'sent'}</s
     <div class="sn-flow">${flow}</div>
     ${progLine}
     ${switchBlock}
-    <div class="sn-foot"><div class="right">${dismissBtn}${stopBtn}${openBtn}</div></div>
+    <div class="sn-foot"><div class="right">${dismissBtn}${showBtn}${stopBtn}${openBtn}</div></div>
   </div>`;
 }
 
@@ -5734,13 +5841,23 @@ async function renderCloudCampaigns() {
   const campaigns = data.campaigns || [];
   if (!campaigns.length) { list.innerHTML = `<div class="sn-empty">No cloud campaigns yet.</div>`; return; }
 
-  // Fetch per-campaign lead counts (best-effort, parallel).
+  // Fetch per-campaign lead counts (best-effort, parallel). Also pull the
+  // per-lead log for running/expanded strips so their Log pane shows real rows.
   const details = await Promise.all(campaigns.map(async (c) => {
-    try { const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`); return await r.json(); }
-    catch { return { campaign: c, leadCounts: {} }; }
+    let d;
+    try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+    catch { d = { campaign: c, leadCounts: {} }; }
+    const st = ((d && d.campaign) || c).status;
+    if (st === 'running' || _snExpanded.has(c.id)) {
+      try {
+        const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
+        if (lr && Array.isArray(lr.leads)) d._logLines = _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth');
+      } catch { /* best-effort — the status note stays */ }
+    }
+    return d;
   }));
 
-  const items = details.map((d) => ({ c: d.campaign || {}, lc: d.leadCounts || {} }));
+  const items = details.map((d) => ({ c: d.campaign || {}, lc: d.leadCounts || {}, log: d._logLines || null }));
   for (const it of items) { if (it.c.sheet_url) _cloudSheetUrls.set(it.c.id, it.c.sheet_url); }
 
   const running = items.filter((x) => x.c.status === 'running');
@@ -5751,7 +5868,7 @@ async function renderCloudCampaigns() {
   if (qmeta) qmeta.textContent = `${running.length} running · ${queued.length} queued`;
 
   const rail = (label, arr, extra = '') => arr.length
-    ? `<div class="sn-railhead">${label}${extra}</div>` + arr.map((x) => renderCloudStrip(x.c, x.lc)).join('') : '';
+    ? `<div class="sn-railhead">${label}${extra}</div>` + arr.map((x) => renderCloudStrip(x.c, x.lc, x.log)).join('') : '';
   let html = '';
   html += rail('▶ Now running', running);
   html += rail('• Up next in the queue', queued);
@@ -5839,6 +5956,38 @@ window.openLocalCampaignDetail = openLocalCampaignDetail;
 // Dismiss a local Done strip from the board (parity with dismissCloudDone).
 function dismissLocalDone(id) { _localDismissed.add(id); renderCampaignsBoard(); }
 window.dismissLocalDone = dismissLocalDone;
+
+// Copy a campaign strip's log to the clipboard (⧉ button on the black log box).
+// Reads the rendered log's plain text (not HTML) so it pastes clean into a
+// message / ticket. Brief ✓ feedback on the button; execCommand fallback for
+// any context where the async clipboard API is unavailable.
+function copyStripLog(btn) {
+  const pane = (btn.closest && btn.closest('.sn-pane')) || btn.parentElement;
+  const box = pane && pane.querySelector('.sn-logbox');
+  const text = box ? (box.innerText || box.textContent || '').replace(/\s+$/, '') : '';
+  if (!text) { if (typeof showCampaignToast === 'function') showCampaignToast('No log to copy yet.', 3000); return; }
+  const flash = () => {
+    btn.classList.add('copied');
+    const lbl = btn.querySelector('.sn-logcopy-lbl');
+    if (lbl) { lbl.dataset.orig = lbl.dataset.orig || lbl.textContent; lbl.textContent = 'Copied'; }
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      if (lbl && lbl.dataset.orig) lbl.textContent = lbl.dataset.orig;
+    }, 1300);
+  };
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta); flash();
+    } catch (_) { if (typeof showCampaignToast === 'function') showCampaignToast('Could not copy log.', 3000); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(flash).catch(fallback);
+  } else { fallback(); }
+}
+window.copyStripLog = copyStripLog;
 
 // ── Duplicate a campaign (Sam #1) → open + New campaign pre-filled ──────────
 const _boardItemsById = new Map();  // strip id → normalized item (for actions)
@@ -6261,8 +6410,12 @@ function renderUnifiedStrip(it) {
   const expandBtn = queued ? ''
     : `<button class="sn-collapse sn-expand" title="Expand / collapse"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>`;
   let logHtml;
-  if (cloud) {
-    logHtml = `<div class="sn-logbox">Per-lead live log lands here once the engine's per-lead endpoint is deployed. Status: <span class="ok">${it.sent || 0}/${it.total || 0} ${it.isFG ? 'invites' : 'sent'}</span>.</div>`;
+  if (cloud && it.logs && it.logs.length) {
+    // Real per-lead rows from the engine (GET /api/campaign/:id/leads).
+    logHtml = `<div class="sn-logbox">${it.logs.slice(-8).map((l) => escHtml(l)).join('<br>')}</div>`;
+  } else if (cloud) {
+    const note = it.sent ? 'Live per-lead log — expand to watch it fill.' : 'Per-lead log appears here as the cloud engine sends.';
+    logHtml = `<div class="sn-logbox">${note} Status: <span class="ok">${it.sent || 0}/${it.total || 0} ${it.isFG ? 'invites' : 'sent'}</span>.</div>`;
   } else if (it.logs && it.logs.length) {
     logHtml = `<div class="sn-logbox">${it.logs.slice(-8).map((l) => escHtml(l)).join('<br>')}</div>`;
   } else if (done && it.histIdx != null) {
@@ -6276,17 +6429,30 @@ function renderUnifiedStrip(it) {
   } else {
     logHtml = `<div class="sn-logbox">Live log appears here while this local campaign runs.</div>`;
   }
-  const switchBlock = queued ? '' : `<div class="sn-switch"><div class="sn-pane on">${logHtml}</div></div>`;
+  const _copyBtn = `<button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg><span class="sn-logcopy-lbl">Copy</span></button>`;
+  const switchBlock = queued ? '' : `<div class="sn-switch"><div class="sn-pane on">${_copyBtn}${logHtml}</div></div>`;
 
-  // Controls — local: Pause/Stop/Open(detail); cloud: Stop/Open(sheet). Done: ✕/Open.
+  // Controls — icon buttons (dock-btn: tooltip via data-tip, .danger = red).
+  // Running LOCAL: Pause/Resume + Stop (local supports resume). Running CLOUD:
+  // Stop only — the engine has no resume, so a cloud "pause" would strand the
+  // campaign. Open (②/③) stays a labeled primary pill → Campaign view. Done:
+  // Duplicate + Debrief + ✕ dismiss, all as icons.
+  const _dib = (svg, tip, onclick, cls = '') =>
+    `<button type="button" class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
+  const _openPill = `<button class="mini solid" onclick="viewRunningCampaign()">Open</button>`;
   let foot = '';
   if (running && it.where === 'local') {
-    foot = `<button class="mini" onclick="window.dashPauseActive && window.dashPauseActive()">${it.paused ? 'Resume' : 'Pause'}</button>`
-      + `<button class="mini" onclick="window.dashStopActive && window.dashStopActive()">Stop</button>`
-      + `<button class="mini solid" onclick="openLocalCampaignDetail()">Open</button>`;
+    foot = (it.paused
+        ? _dib(V3_SVG_PLAY, 'Resume', 'window.dashPauseActive && window.dashPauseActive()')
+        : _dib(V3_SVG_PAUSE, 'Pause', 'window.dashPauseActive && window.dashPauseActive()'))
+      + _dib(V3_SVG_STOP, 'Stop', 'window.dashStopActive && window.dashStopActive()', 'danger')
+      + _openPill;
   } else if (running && cloud) {
-    foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button>`
-      + `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`;
+    // "Show campaign happening" — watch the VM's browser live (parity with the
+    // Sales Nav per-job View). Streams once the engine ships a campaign screencast.
+    const _vLabel = String(it.name || it.id).replace(/['"\\<>]/g, '');
+    const _showBtn = `<button class="mini" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">👁 Show</button>`;
+    foot = _showBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openPill;
   } else if (queued) {
     if (cloud) {
       foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button><button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`;
@@ -6299,18 +6465,16 @@ function renderUnifiedStrip(it) {
       foot = `<button class="mini" onclick="window.cancelQueuedCampaign && window.cancelQueuedCampaign('${escHtml(it.rawId)}')">Cancel</button>`
         + `<button class="mini solid" onclick="window.editQueuedCampaign && window.editQueuedCampaign('${escHtml(it.rawId)}')">Open</button>`;
     }
-  } else { // done — ✕ dismiss on BOTH local and cloud (Sales Nav parity)
+  } else { // done — Duplicate + Debrief + ✕ dismiss (icons), Open pill.
     const dismiss = cloud
-      ? `<button class="mini" onclick="dismissCloudDone('${escHtml(it.id)}', this)" title="Hide">✕</button>`
-      : `<button class="mini" onclick="dismissLocalDone('${escHtml(it.id)}')" title="Hide">✕</button>`;
-    const open = cloud
-      ? `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`
-      : `<button class="mini solid" onclick="openLocalCampaignDetail()">Open</button>`;
+      ? _dib(V3_SVG_XMARK, 'Dismiss', `dismissCloudDone('${escHtml(it.id)}', this)`)
+      : _dib(V3_SVG_XMARK, 'Dismiss', `dismissLocalDone('${escHtml(it.id)}')`);
+    const dup = _dib(V3_SVG_COPY, 'Duplicate', `duplicateCampaign('${escHtml(it.id)}')`);
     // Debrief — local done strips only (the snapshot lives on the history entry).
     const debriefBtn = (!cloud && it.hist)
-      ? `<button class="mini debrief" onclick="window.openDebrief('${escHtml(it.id)}')">Debrief</button>`
+      ? _dib(V3_SVG_DOC, 'Debrief', `window.openDebrief('${escHtml(it.id)}')`)
       : '';
-    foot = dismiss + debriefBtn + open;
+    foot = dismiss + dup + debriefBtn + _openPill;
   }
 
   return `
@@ -6328,10 +6492,12 @@ function renderUnifiedStrip(it) {
 }
 
 // The ⋯ overflow menu on each strip (currently: Duplicate → pre-filled draft).
+// The ⋯ overflow menu used to hold a single "Duplicate" item; that action now
+// has its own visible icon in the strip footer, so the menu is redundant —
+// render nothing. (The delegated duplicate handler below stays inert with no
+// .ovf elements to match; harmless.)
 function _stripOverflow() {
-  return `<div class="ovf"><button type="button" class="ovf-btn" title="More">⋯</button>`
-    + `<div class="ovf-menu"><button type="button" class="ovf-item" data-act="duplicate">`
-    + `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button></div></div>`;
+  return '';
 }
 
 // ── Campaign debrief overlay ───────────────────────────────────────────────
@@ -6603,8 +6769,19 @@ async function renderCampaignsBoard() {
     const cl = await (await fetch('/api/campaign/cloud-list')).json();
     const cloudCamps = (cl && cl.campaigns) || [];
     const details = await Promise.all(cloudCamps.map(async (c) => {
-      try { return await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
-      catch { return { campaign: c, leadCounts: {} }; }
+      let d;
+      try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+      catch { d = { campaign: c, leadCounts: {} }; }
+      // Per-lead log: only for RUNNING (live) or currently EXPANDED strips, so
+      // the 4s board poll doesn't fetch leads for every done cloud campaign.
+      const st = ((d && d.campaign) || c).status;
+      if (st === 'running' || _snExpanded.has(c.id)) {
+        try {
+          const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
+          if (lr && Array.isArray(lr.leads)) d._logLines = _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth');
+        } catch { /* best-effort — the status note stays */ }
+      }
+      return d;
     }));
     for (const d of details) {
       const c = d.campaign || {}; const lc = d.leadCounts || {};
@@ -6623,6 +6800,7 @@ async function renderCampaignsBoard() {
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Cancelled' : 'Error',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
+        logs: d._logLines || null, // per-lead log rows (running/expanded only)
       });
     }
   } catch (_) { /* cloud best-effort */ }
@@ -7045,6 +7223,9 @@ async function submitStartCampaign(body, opts = {}) {
     // Operator can tick "Don't show again" to silence per-mode.
     try { maybeShowPostLaunchTipsModal(body); } catch (err) { console.warn('[tips] modal failed:', err.message); }
     startPolling();
+    // ⑤+①: signal an immediate LOCAL start so startCampaign keeps the launch
+    // popup up until pollStatus sees the new run flip `running` true.
+    return { started: true };
   } catch (e) {
     alert(`Network error starting campaign:\n\n${e.message}`);
   }
@@ -8539,6 +8720,47 @@ async function tryAgainProfile(profileId) {
 window.tryAgainProfile = tryAgainProfile;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Launch feedback popup (Issues ⑤ + ①)
+// Instant "Launching…" modal shown the moment Start is pressed. It covers the
+// multi-second pre-flight + start-fetch dead-air (⑤) and, by staying up until
+// the new run actually boots, stops the PREVIOUS finished campaign from
+// lingering in the Live Status card during that window (①). Dismissed by:
+//   • startCampaign() when the launch resolves cloud / queued / failed,
+//   • pollStatus() the instant the new local run flips `running` true,
+//   • a 30s watchdog so it can never get stuck.
+// ─────────────────────────────────────────────────────────────────────────────
+let _launchWatchdog = null;
+function beginLaunching(label) {
+  window.__launching = true;
+  let scrim = document.getElementById('launch-scrim');
+  if (!scrim) {
+    scrim = document.createElement('div');
+    scrim.id = 'launch-scrim';
+    scrim.className = 'modal-scrim';
+    scrim.innerHTML =
+      '<div class="modal-card solid" role="status" aria-live="polite">'
+      + '<div class="modal-eyebrow">Launching</div>'
+      + '<div class="launch-spinner"></div>'
+      + '<div class="modal-title" id="launch-scrim-title">Starting campaign…</div>'
+      + '<div class="launch-sub">Preparing your accounts and lead sheet — this can take a few seconds.</div>'
+      + '</div>';
+    document.body.appendChild(scrim);
+  }
+  const t = document.getElementById('launch-scrim-title');
+  if (t) t.textContent = label ? `Starting “${label}”…` : 'Starting campaign…';
+  scrim.classList.add('open');
+  if (_launchWatchdog) clearTimeout(_launchWatchdog);
+  _launchWatchdog = setTimeout(() => { endLaunching(); }, 30000);
+}
+function endLaunching() {
+  window.__launching = false;
+  if (_launchWatchdog) { clearTimeout(_launchWatchdog); _launchWatchdog = null; }
+  const scrim = document.getElementById('launch-scrim');
+  if (scrim) scrim.classList.remove('open');
+}
+if (typeof window !== 'undefined') { window.beginLaunching = beginLaunching; window.endLaunching = endLaunching; }
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Status polling
 // ─────────────────────────────────────────────────────────────────────────────
 function startPolling() {
@@ -8636,6 +8858,11 @@ async function pollStatus() {
     } else {
       window.__cloudHeroSummary = { running: 0, queued: 0 };
     }
+
+    // ⑤+①: the new local run has booted (running flipped true) — retire the
+    // launch popup now, in the same tick the card repaints below, so it reveals
+    // the NEW campaign with no flash of the previous one.
+    if (window.__launching && s.running) endLaunching();
 
     // Phase 2.8.12: feed the cockpit panel with the latest status snapshot
     // (renderCockpit + tick handle the smooth countdown without re-polling).
@@ -18908,6 +19135,10 @@ const V3_SVG_RESTART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 const V3_SVG_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>';
 const V3_SVG_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 const V3_SVG_ARCHIVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>';
+// Campaign-control glyphs for the dashboard strip footer (pause/stop/dismiss).
+const V3_SVG_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg>';
+const V3_SVG_STOP = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+const V3_SVG_XMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
 
 function v3Ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];

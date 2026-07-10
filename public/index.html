@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=2.154.0" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
 </head>
 <body data-dashboard="v3">
@@ -1408,7 +1408,7 @@
   .sn-foot .togwrap{display:flex;align-items:center;gap:9px;}
   .sn-foot .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
   .sn-foot .lock{font-size:11px;color:var(--gray-faint,#b8b8b6);}
-  .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;align-items:center;}
   .sn-foot .mini,.skipped-actions .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
   .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
   .sn-foot .mini.locked{opacity:.4;cursor:not-allowed;}
@@ -1444,7 +1444,17 @@
   .sn-st{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);cursor:pointer;padding-bottom:5px;}
   .sn-st.on{color:var(--ink);border-bottom:2px solid var(--gold);}
   .sn-pane{display:none;}
-  .sn-pane.on{display:block;}
+  .sn-pane.on{display:block;position:relative;}
+  /* Copy-log button — solid LIGHT pill in the top-right of the black log box,
+     so it reads clearly against the near-black terminal background. */
+  .sn-logcopy{position:absolute;top:9px;right:9px;z-index:2;display:inline-flex;align-items:center;gap:5px;
+    padding:5px 11px;line-height:1;cursor:pointer;font-family:var(--mono);font-size:10px;font-weight:700;
+    letter-spacing:.09em;text-transform:uppercase;border:0;border-radius:6px;
+    background:#f0f0f0;color:#141414;box-shadow:0 1px 5px rgba(0,0,0,0.45);
+    transition:background .15s,color .15s;}
+  .sn-logcopy:hover{background:#ffffff;}
+  .sn-logcopy svg{flex:none;display:block;}
+  .sn-logcopy.copied{background:#4ec36b;color:#06220f;}
   .sn-board .job{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hairline-soft);}
   .sn-board .job:last-child{border-bottom:0;}
   .sn-board .job .jt{font-size:12.5px;color:var(--ink);font-weight:600;}
@@ -3253,7 +3263,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.146.0"></script>
+  <script type="module" src="/js/app.js?v=2.154.0"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

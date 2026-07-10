@@ -163,7 +163,64 @@ export function getCloudCampaign(id) {
   return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}`);
 }
 
+/**
+ * Per-lead status rows for one cloud campaign — the engine's per-lead endpoint
+ * (deployed as of 2026-07). Each row: { id, leadUrl, fullName, account, status
+ * ('pending'|'sent'|'error'|...), stage, error, sentAt, connectionStatus,
+ * connectionAcceptedStatus, introductionStatus, dmStatus }. Idempotent GET, so
+ * it retries transient failures. Returns { leads:[…], total } or { error }.
+ */
+export function getCloudCampaignLeads(id) {
+  return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}/leads`);
+}
+
 /** Stop (cancel) a cloud campaign; pass { pause: true } to pause instead. */
 export function stopCloudCampaign(id, { pause = false } = {}) {
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${pause ? '?pause=1' : ''}`);
+}
+
+/**
+ * Open the live MJPEG screencast for a running cloud campaign's active browser
+ * session — the campaign analogue of openJobViewStream (scraper-client.js). The
+ * engine must expose `GET /api/campaign/:id/view` streaming
+ * multipart/x-mixed-replace (see docs/cloud-engine-campaign-view-spec.md).
+ *
+ * Resolves to { ok:true, contentType, body, abort } to pipe straight to the
+ * dashboard <img>, or { ok:false, status, error } — never throws. No timeout
+ * (long-lived stream); the caller aborts when the viewer closes.
+ *
+ * Until the engine ships that endpoint, the `/view` path falls through to the
+ * engine's SPA (text/html); we detect that and report a clean "not available
+ * yet" (501) instead of piping HTML into an <img>.
+ */
+export async function openCampaignViewStream(id) {
+  const base = engineUrl();
+  if (!base) return { ok: false, status: 503, error: 'Campaign engine not configured' };
+  const controller = new AbortController();
+  try {
+    const headers = {};
+    const token = engineToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${base}/api/campaign/${encodeURIComponent(id)}/view`, {
+      method: 'GET', headers, signal: controller.signal,
+    });
+    if (!res.ok) {
+      controller.abort();
+      return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (/text\/html/i.test(ct)) {
+      controller.abort();
+      return { ok: false, status: 501, error: "Live browser view isn't available yet — the cloud engine doesn't stream campaign browsers. (The per-lead log shows live activity.)" };
+    }
+    return {
+      ok: true,
+      contentType: ct || 'multipart/x-mixed-replace',
+      body: res.body,
+      abort: () => { try { controller.abort(); } catch { /* */ } },
+    };
+  } catch (err) {
+    controller.abort();
+    return { ok: false, status: 502, error: err.message };
+  }
 }

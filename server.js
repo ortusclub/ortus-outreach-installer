@@ -46,7 +46,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, stopCloudCampaign } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, openCampaignViewStream } from './src/campaigns-client.js';
 import { aggregateTeamStatus, bucketForCloudStatus } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
@@ -93,6 +93,8 @@ import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncSt
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
 import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse } from './src/soo-writer.js';
+import { reconcileCloudConnections } from './src/cloud-soo-reconcile.js';
+import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -251,15 +253,23 @@ app.use(async (req, res, next) => {
 // so an unset env still has one admin. Used by the client for the admin-vs-own
 // campaigns view + Conductor filter.
 const ADMIN_EMAIL_SET = new Set(
-  String(process.env.ADMIN_EMAILS || 'antonio@ortusclub.com')
+  String(process.env.ADMIN_EMAILS || 'antonio@ortusclub.com,antoniov@ortusclub.com,sam@ortusclub.com')
     .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
 );
 function isAdminEmail(email) {
   return ADMIN_EMAIL_SET.has(String(email || '').trim().toLowerCase());
 }
+// The admin decision MUST use the per-machine operator identity, not req.user:
+// every install logs in with the SAME shared dashboard credential, so req.user
+// can't tell operators apart. getOperatorEmail() is the authoritative "who's
+// actually here" (antonio@ / antoniov@ / …); fall back to the login only when
+// no operator email is set.
+function viewerIsAdmin(req) {
+  return isAdminEmail(getOperatorEmail() || (req && req.user) || '');
+}
 
 app.get('/api/me', (req, res) => {
-  res.json({ email: req.user, admin: isAdminEmail(req.user) });
+  res.json({ email: req.user, operatorEmail: getOperatorEmail() || '', admin: viewerIsAdmin(req) });
 });
 
 // The SPA entry document must NEVER be cached. index.html carries the
@@ -1295,8 +1305,13 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
       config.monthlyBudget = Number(body.monthlyBudget || t.monthlyBudget || 30);
     }
 
+    // Owner MUST be the per-machine operator identity, because that is exactly
+    // what the dashboard's cloud board filters "mine" against (snCurrentEmail =
+    // /api/operator-identity). Tagging with req.user (the shared login) made a
+    // running campaign show as "someone else's" → hidden → unstoppable from the
+    // UI. Fall back to the login only when no operator email is set.
     const result = await startCloudCampaign({
-      mode, name: name || '', owner: req.user || '',
+      mode, name: name || '', owner: getOperatorEmail() || req.user || '',
       profileIds: accounts, leads, config,
       dailyLimit: dailyLimit || 50, sheetUrl,
     });
@@ -1324,6 +1339,81 @@ app.get('/api/campaign/cloud/:id', async (req, res) => {
   if (r.error) return res.status(502).json(r);
   res.json(r);
 });
+// ── Cloud sheet reconcile (parity fix #1) ─────────────────────────────────
+// The engine writes SENT rows back to the source sheet, but leaves ERROR /
+// SKIPPED rows blank — unlike a local campaign, which stamps every skip reason
+// (buildSkipSheetData → updateSheetRow). We can't change the engine from here,
+// so the app reconciles: whenever it pulls a cloud campaign's per-lead rows
+// (running/expanded strips), it stamps the error/skip rows the engine left
+// blank, using the SAME primitives + wording local uses. Eventually-consistent:
+// it catches up whenever an operator's app is looking at the campaign.
+//
+// Idempotent + throttled: a per-campaign `written` set means each (lead,status)
+// is stamped once per app session; a 20s throttle keeps the 4s board poll from
+// re-reconciling. Best-effort — never blocks the /leads response.
+const _cloudReconcile = new Map(); // campaignId -> { at:number, writtenRows:Set<string> }
+const CLOUD_RECONCILE_THROTTLE_MS = 20 * 1000;
+async function reconcileCloud(id, leads) {
+  try {
+    if (!Array.isArray(leads) || !leads.length) return;
+    let state = _cloudReconcile.get(id);
+    if (state && Date.now() - state.at < CLOUD_RECONCILE_THROTTLE_MS) return; // throttle both writes
+    if (!state) { state = { at: 0, writtenRows: new Set() }; _cloudReconcile.set(id, state); }
+    state.at = Date.now();
+    // mode + sheetUrl + linkedinColumn + accountEmails come from the detail (one fetch).
+    const detail = await getCloudCampaign(id);
+    const c = (detail && detail.campaign) || {};
+    const mode = c.mode || 'connect_only';
+
+    // (A) SHEET — reproduce local's EXACT stamp for every terminal row so the
+    // cloud sheet is 1:1 with a local run. The engine writes some rows with its
+    // own wording (Stage 'CC', blank Sender) and leaves error/skip rows blank;
+    // cloudLeadToLocalSheetData maps each engine row to local's own builders.
+    // Dedup key includes stage so a lead advancing (CC → IC/DM) re-stamps.
+    const sheetUrl = c.sheet_url;
+    const terminal = leads.filter((l) => l && ['sent', 'error', 'skipped'].includes(l.status) && (l.leadUrl || '').trim());
+    const freshRows = terminal.filter((l) => !state.writtenRows.has(`${l.id}:${l.status}:${l.stage || ''}`));
+    if (sheetUrl && freshRows.length) {
+      const linkedinColumn = (c.config && c.config.linkedinColumn) || 'linkedin url';
+      const { updateSheetRow } = await import('./src/sheets-writer.js');
+      const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
+      const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
+      let stamped = 0;
+      for (const l of freshRows) {
+        try {
+          const sheetData = cloudLeadToLocalSheetData(mode, l, idToName.get(l.account) || '');
+          if (!sheetData) continue;
+          const ok = await updateSheetRow(sheetUrl, l.leadUrl, sheetData, linkedinColumn);
+          if (ok) { state.writtenRows.add(`${l.id}:${l.status}:${l.stage || ''}`); stamped++; }
+        } catch { /* per-row best-effort */ }
+      }
+      if (stamped) cloudLog(`[cloud] sheet reconcile: stamped ${stamped} row(s) 1:1 with local for ${id} (${mode}).`);
+    }
+
+    // (B) SoO — bump each account's weekly connection tally from the engine's
+    // CC-sent leads (parity #3). Durable dedup + current-week gating live in the
+    // module; here we just hand it the detail's accountEmails map.
+    try {
+      await reconcileCloudConnections({
+        id, mode,
+        accountEmails: (c.config && c.config.accountEmails) || {},
+        leads, log: cloudLog,
+      });
+    } catch (e) { cloudLog(`[cloud] SoO connections reconcile skipped for ${id}: ${e.message}`); }
+  } catch (e) { cloudLog(`[cloud] reconcile skipped for ${id}: ${e.message}`); }
+}
+
+// Per-lead status rows for one cloud campaign — powers the strip's live log
+// (parity with a local campaign's per-lead log). Proxied so the engine token
+// stays server-side. The dashboard fetches this only for running/expanded
+// cloud strips, so it's not on the hot path for the whole board. After
+// responding, best-effort reconciles error/skip rows into the source sheet.
+app.get('/api/campaign/cloud/:id/leads', async (req, res) => {
+  const r = await getCloudCampaignLeads(req.params.id);
+  if (r.error) return res.status(502).json(r);
+  res.json(r);
+  reconcileCloud(req.params.id, r.leads).catch(() => {}); // after response — never blocks
+});
 // ── Team status (feature ⑩ — ADMIN-ONLY) ─────────────────────────────────
 // Per-operator aggregate over the engine cloud list + this machine's local
 // campaign/queue. HARD-GATED: only viewers whose login email is in
@@ -1332,7 +1422,7 @@ app.get('/api/campaign/cloud/:id', async (req, res) => {
 let _teamStatusCache = { at: 0, payload: null };
 const TEAM_STATUS_CACHE_MS = 30 * 1000;
 app.get('/api/team-status', async (req, res) => {
-  if (!isAdminEmail(req.user)) return res.status(403).json({ error: 'Admin only' });
+  if (!viewerIsAdmin(req)) return res.status(403).json({ error: 'Admin only' });
   if (_teamStatusCache.payload && Date.now() - _teamStatusCache.at < TEAM_STATUS_CACHE_MS) {
     return res.json(_teamStatusCache.payload);
   }
@@ -1419,6 +1509,28 @@ app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
   const r = await stopCloudCampaign(req.params.id, { pause: !!req.query.pause });
   if (r.error) return res.status(502).json(r);
   res.json(r);
+});
+// Live "Show campaign happening" — proxies the engine's MJPEG screencast of the
+// campaign's active browser session straight to the dashboard <img> (mirrors
+// /api/scrape/view/:jobId). Long-lived stream; abort upstream on disconnect.
+// Returns a clean 501 JSON until the engine ships /api/campaign/:id/view (see
+// docs/cloud-engine-campaign-view-spec.md).
+app.get('/api/campaign/cloud/:id/view', async (req, res) => {
+  const stream = await openCampaignViewStream(req.params.id);
+  if (!stream.ok) return res.status(stream.status || 502).json({ error: stream.error });
+  res.writeHead(200, {
+    'Content-Type': stream.contentType,
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'X-Accel-Buffering': 'no',
+  });
+  const nodeStream = Readable.fromWeb(stream.body);
+  const cleanup = () => {
+    try { stream.abort(); } catch { /* */ }
+    try { nodeStream.destroy(); } catch { /* */ }
+  };
+  req.on('close', cleanup);
+  nodeStream.on('error', () => { try { res.end(); } catch { /* */ } });
+  nodeStream.pipe(res);
 });
 
 // ── Pre-flight lead-sheet linter (runs on Start click, before launch) ─────

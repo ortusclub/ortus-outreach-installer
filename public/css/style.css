@@ -2242,6 +2242,17 @@ table.mini td { padding: 5px 8px; color: var(--ink); border-bottom: 1px solid va
 .modal-note { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); margin-bottom: 18px; }
 .modal-acts { display: flex; gap: 10px; justify-content: flex-end; }
 
+/* ── Launch feedback popup (Issues ⑤ + ①) — instant "Launching…" modal shown
+   the moment Start is pressed. Reuses .modal-scrim/.modal-card; centered
+   content + a spinner. z-index above other modals so it always wins on click. */
+#launch-scrim { z-index: 120; }
+#launch-scrim .modal-card { text-align: center; width: 380px; }
+.launch-spinner { width: 34px; height: 34px; margin: 4px auto 16px; border-radius: 50%;
+  border: 3px solid var(--hairline); border-top-color: var(--gold);
+  animation: launch-spin 0.8s linear infinite; }
+@keyframes launch-spin { to { transform: rotate(360deg); } }
+.launch-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.55; margin-top: 2px; }
+
 .hidden { display: none; }
 
 .note-hint {

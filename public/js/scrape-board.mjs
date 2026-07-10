@@ -1,4 +1,9 @@
 // Pure helpers for the Sales Nav board — no DOM, no fetch, fully unit-tested.
+// Client-side admin set — mirrors the server's ADMIN_EMAILS default. Keyed off
+// the per-machine operator email (snCurrentEmail), NOT the shared login.
+export const ADMIN_EMAILS = new Set(['antonio@ortusclub.com', 'antoniov@ortusclub.com', 'sam@ortusclub.com']);
+export const isAdminEmail = (e) => ADMIN_EMAILS.has(String(e || '').trim().toLowerCase());
+// Back-compat single value for any legacy importer.
 export const ADMIN_EMAIL = 'antonio@ortusclub.com';
 
 export function campaignStatus(jobs) {
@@ -107,7 +112,7 @@ export function groupJobsIntoCampaigns(jobs, { currentEmail = '', currentOperato
 export function toggleDecision({ currentEmail, ownerEmail }) {
   const cur = String(currentEmail || '').trim().toLowerCase();
   const own = String(ownerEmail || '').trim().toLowerCase();
-  if (cur === ADMIN_EMAIL) return { needsConfirm: false, isAdmin: true };
+  if (isAdminEmail(cur)) return { needsConfirm: false, isAdmin: true };
   if (cur && cur === own) return { needsConfirm: false, isAdmin: false };
   return { needsConfirm: true, isAdmin: false };
 }
