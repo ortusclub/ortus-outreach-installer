@@ -8221,3 +8221,28 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .conf-strip .conf-act { margin-left: 12px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; background: transparent; cursor: pointer; }
 .conf-strip .conf-act:hover { border-color: var(--ink); }
+
+/* ── Handshake lock ── */
+/* Sketch: 2026-07-10-cloud-primary-handshake-lock.html, variant A. Honest
+   subset only — no .spin/.doing (no in-progress signal from the engine,
+   only accepted:true|false) and no .hs-sub (no accept-all; targeted accepts
+   only). Ported for the inline lock panel in renderUnifiedStrip (Task 3.4). */
+.hs-panel{border:1px solid var(--hairline);border-left:3px solid var(--gold);border-radius:12px;padding:15px 17px;margin:14px 0 0;background:var(--hairline-soft);}
+.hs-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#8a6d1f;display:flex;align-items:center;gap:8px;margin:0 0 10px;}
+.hs-eyebrow .lk{font-size:12px;line-height:1;}
+.hs-eyebrow .cnt{margin-left:auto;color:var(--ink);font-weight:600;letter-spacing:.06em;}
+.hs-head{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:500;line-height:1.4;}
+.hs-bar{height:5px;border-radius:9999px;background:#e7e3d4;margin:11px 0 0;overflow:hidden;}
+.hs-bar i{display:block;height:100%;width:40%;background:var(--gold);transition:width .5s;}
+.hs-expl{font-size:11.5px;color:var(--gray);line-height:1.6;margin:11px 0 0;}
+.hs-expl b{color:var(--ink);font-weight:600;}
+.hs-list{margin:12px 0 0;}
+.hs-row{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11.5px;padding:7px 0;border-top:1px solid rgba(0,0,0,.06);}
+.hs-row:first-child{border-top:0;}
+.hs-row .ic{width:15px;height:15px;flex:none;display:flex;align-items:center;justify-content:center;}
+.hs-row .ic .dotwait{width:7px;height:7px;border-radius:9999px;background:var(--gray-faint,#c3c3c0);}
+.hs-row .ic .chk{color:#2f7d47;font-size:13px;}
+.hs-row .who{color:var(--ink);}
+.hs-row .st{margin-left:auto;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+.hs-row.done .st{color:#2f7d47;}
+.hs-keep{font-family:var(--mono);font-size:10.5px;color:#8a6d1f;margin:9px 0 0;display:flex;align-items:center;gap:7px;}

@@ -6498,12 +6498,19 @@ function renderUnifiedStrip(it) {
   // existing queued dot — no new colour (mono design system).
   const warming = cloud && queued && it.createdAt
     && (Date.now() - new Date(it.createdAt).getTime()) < 3 * 60 * 1000;
-  const statusTxt = scheduled ? whenTxt
+  let statusTxt = scheduled ? whenTxt
     : warming ? '⏳ Warming up (~2 min)'
     : queued ? 'Queued'
     : running ? (it.paused ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
+  // Phase 0 primary-handshake lock (Task 3.4): the engine pauses a cloud
+  // campaign in 'awaiting_primary_accept' while this Mac accepts the
+  // primary's connection requests as the local primary. Dormant until the
+  // engine ships `state` + `senders` on the campaign detail — until then
+  // both stay undefined and this never fires (graceful degradation).
+  const hsAwaiting = cloud && it.state === 'awaiting_primary_accept' && Array.isArray(it.senders);
+  if (hsAwaiting) statusTxt = '🔒 Primary handshake';
 
   const flow = it.isFG
     ? `<b>${it.total || '—'} invites</b> → <b>${it.accounts || 1} account${(it.accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
@@ -6538,6 +6545,36 @@ function renderUnifiedStrip(it) {
   }
   const _copyBtn = `<button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg><span class="sn-logcopy-lbl">Copy</span></button>`;
   const switchBlock = queued ? '' : `<div class="sn-switch"><div class="sn-pane on">${_copyBtn}${logHtml}</div></div>`;
+
+  // Handshake lock panel — replaces the log switchBlock while
+  // state==='awaiting_primary_accept'. Two row states only (done/waiting):
+  // the engine's senders[] carry only accepted:true|false, no in-progress
+  // signal, so there is no "Accepting…" spinner state to render. Targeted
+  // accepts only — no accept-all line (would be false; see Task 3.3 reconciler).
+  let handshakeBlock = '';
+  if (hsAwaiting) {
+    const senders = it.senders;
+    const accepted = senders.filter((s) => s && s.accepted).length;
+    const total = senders.length;
+    const pct = total ? Math.round((accepted / total) * 100) : 0;
+    const pname = escHtml((it.primary && it.primary.name) || 'the primary');
+    const rows = senders.map((s) => {
+      const done = !!(s && s.accepted);
+      return `<div class="hs-row ${done ? 'done' : ''}">`
+        + `<span class="ic">${done ? '<span class="chk">✓</span>' : '<span class="dotwait"></span>'}</span>`
+        + `<span class="who">${escHtml((s && s.name) || 'account')}</span>`
+        + `<span class="st">${done ? 'Accepted' : 'Waiting'}</span></div>`;
+    }).join('');
+    handshakeBlock = `
+      <div class="hs-panel">
+        <div class="hs-eyebrow"><span class="lk">🔒</span> Phase 0 · Primary handshake — locked <span class="cnt"><span class="hs-count">${accepted}</span> / ${total}</span></div>
+        <div class="hs-head">Your Mac is accepting the primary's invitations</div>
+        <div class="hs-bar"><i style="width:${pct}%"></i></div>
+        <div class="hs-expl">Each account sent <b>${pname}</b> a connection request from the VM. Accepting them in <b>your local browser</b> is the only step that runs on this machine — then the campaign continues entirely on the VM.</div>
+        <div class="hs-list">${rows}</div>
+        <div class="hs-keep">◈ Keep this app open — it's the only local step this campaign needs.</div>
+      </div>`;
+  }
 
   // Controls — icon buttons (dock-btn: tooltip via data-tip, .danger = red).
   // Running LOCAL: Pause/Resume + Stop (local supports resume). Running CLOUD:
@@ -6592,7 +6629,7 @@ function renderUnifiedStrip(it) {
     <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
     <div class="sn-flow">${flow}</div>
     ${progLine}
-    ${switchBlock}
+    ${hsAwaiting ? handshakeBlock : switchBlock}
     ${_buildSkippedSection(it)}
     <div class="sn-foot"><div class="right">${foot}${_stripOverflow()}</div></div>
   </div>`;
@@ -6908,6 +6945,9 @@ async function renderCampaignsBoard() {
         badLabel: c.status === 'cancelled' ? 'Cancelled' : 'Error',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
         logs: d._logLines || null, // per-lead log rows (running/expanded only)
+        // Phase 0 handshake lock (Task 3.4) — undefined until the engine ships
+        // them, in which case the lock panel in renderUnifiedStrip stays dormant.
+        state: c.state, senders: c.senders, primary: c.primary,
       });
     }
   } catch (_) { /* cloud best-effort */ }
