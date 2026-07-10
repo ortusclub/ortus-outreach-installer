@@ -32,6 +32,7 @@ import { summarizeUpdateError } from '/js/update-error.mjs';
 import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
 import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail } from '/js/scrape-board.mjs';
+import { buildManifestReadback } from '/js/manifest-readback.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -2445,6 +2446,11 @@ function onModeChange() {
   // hidden by primaryBlock's own display:none.
   const introRow = document.getElementById('intro-config-row');
   if (introRow) introRow.style.display = (usesMonitoringCadence(mode) || _showPrimaryCol) ? '' : 'none';
+  // v2.154.1 (Manifest, Task 1.3): re-render the readback for the new mode —
+  // full lines for CC+IC, cadence-only for CC+DM, no lines (identity-only) for
+  // introduce_back/others. Guard matches the refreshAutoAcceptGate/
+  // toggleFollowUpFields calls just above (same defensive-typeof convention).
+  if (typeof renderManifest === 'function') renderManifest();
   const introTitleBlock = document.getElementById('intro-title-block');
   if (introTitleBlock) introTitleBlock.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   // v2.62: CC+DM post-acceptance body — its own template section.
@@ -10714,6 +10720,10 @@ function applyPresetConfig(config) {
   }
   if (typeof toggleFollowUpFields === 'function') toggleFollowUpFields();
   if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate();
+  // v2.154.1 (Manifest, Task 1.3): re-render after a preset/Re-run/duplicate
+  // restores the primary fields above, so the readback reflects the loaded
+  // config instead of whatever the wizard showed before the restore.
+  if (typeof renderManifest === 'function') renderManifest();
 
   // v2.62: CC+DM post-acceptance body — symmetric with the primary-intro-body
   // restore above. Without it, Re-run dropped the DM body and relaunched a
@@ -10735,6 +10745,15 @@ function applyPresetConfig(config) {
     const _ac = document.getElementById('auto-checks-toggle');
     if (_ac) _ac.checked = config.autoChecksEnabled !== false;
   }
+
+  // v2.154.1 (Manifest round-trip fix, Task 1.3): restore the primary check-timing
+  // select on Re-run/duplicate. Previously this was read at launch (templates
+  // payload, primaryCheckTiming) and persisted to history, but never written back
+  // into #primary-timing-select here — so a Re-run silently reset it to the HTML
+  // default ("immediately") regardless of what the original run used. Now that the
+  // Manifest surfaces this value in its first readback line, the gap is visible —
+  // fix it the same way checkIntervalMinutes/autoChecksEnabled are restored above.
+  setV('primary-timing-select', t.primaryCheckTiming || 'immediately');
 
   // v2.14.x: concurrency restore. concurrency=1 means single-worker
   // (toggle off); >1 means parallel mode (toggle on + count set).
@@ -11803,6 +11822,71 @@ function restoreIntroState() {
 }
 document.addEventListener('DOMContentLoaded', restoreIntroState);
 
+// ─────────────────────────────────────────────────────────────────────────
+// v2.154.1 — "The Manifest" (Task 1.3): live plain-English readback of the
+// CC+IC primary automation, replacing the old 4-card layout (Task 1.2 ported
+// the markup; #manifest-readback / #manifest-state / #manifest-cloud-notice
+// start empty/static). Reads the SAME live DOM controls (moved verbatim into
+// the Customize drawer, same ids/handlers) and renders via the pure
+// buildManifestReadback (Task 1.1). Idempotent — safe to call from anywhere,
+// any number of times.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Phase 2 replaces the body to read the run-target tabs. Until then, local.
+function getManifestRunTarget() {
+  return (document.getElementById('cloud-run-checkbox')?.checked) ? 'cloud' : 'local';
+}
+
+function renderManifest() {
+  const box = document.getElementById('manifest-readback');
+  if (!box) return;
+  const mode = document.getElementById('campaign-mode')?.value || '';
+  const r = buildManifestReadback({
+    mode,
+    primaryName: document.getElementById('primary-person-name')?.value || '',
+    primarySource: (typeof readPrimarySource === 'function') ? readPrimarySource() : 'local-browser',
+    autoAcceptPrimary: !!document.getElementById('auto-accept-toggle')?.checked,
+    autoAcceptAllPending: !!document.getElementById('auto-accept-all-toggle')?.checked,
+    primaryCheckTiming: document.getElementById('primary-timing-select')?.value || 'immediately',
+    checkCadenceMinutes: Number(document.getElementById('check-cadence-select')?.value) || 60,
+    autoChecksEnabled: document.getElementById('auto-checks-toggle')?.checked !== false,
+    followUpEnabled: !!document.getElementById('follow-up-toggle')?.checked,
+    followUpDelayMinutes: Number(document.getElementById('follow-up-delay')?.value) || 10,
+    runTarget: getManifestRunTarget(),
+  });
+  box.innerHTML = r.lines.map((l) =>
+    `<div class="al ${l.on ? '' : 'off'}"><span class="tick">${l.on ? '✓' : '—'}</span><span>${l.html}</span></div>`
+  ).join('');
+  const stateEl = document.getElementById('manifest-state');
+  if (stateEl) stateEl.textContent = r.state === 'standard' ? 'STANDARD' : 'CUSTOMIZED';
+  const notice = document.getElementById('manifest-cloud-notice');
+  if (notice) { notice.hidden = !r.cloudNotice; if (r.cloudNotice) notice.innerHTML = `☁︎ <span>${r.cloudNotice}</span>`; }
+}
+if (typeof window !== 'undefined') window.renderManifest = renderManifest;
+
+// Customize toggle — mirrors the sketch's dEditLabel (public/sketches/
+// 2026-07-10-primary-config-overhaul-DE.html): flips #manifest-drawer's
+// `hidden` and swaps the button's icon+label between "Customize" and
+// "✕ Done" (icon hides while open, same as the sketch). #manifest-customize-btn
+// ships inert (no onclick — Task 1.2 left it for this file to wire), so it's
+// bound via addEventListener, same pattern as snm-cancel/snm-ok above.
+{
+  const _manifestCustomizeBtn = document.getElementById('manifest-customize-btn');
+  const _manifestDrawer = document.getElementById('manifest-drawer');
+  if (_manifestCustomizeBtn && _manifestDrawer) {
+    _manifestCustomizeBtn.setAttribute('aria-expanded', 'false');
+    _manifestCustomizeBtn.addEventListener('click', () => {
+      _manifestDrawer.hidden = !_manifestDrawer.hidden;
+      const open = !_manifestDrawer.hidden;
+      _manifestCustomizeBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      const label = _manifestCustomizeBtn.querySelector('span');
+      if (label) label.textContent = open ? '✕ Done' : 'Customize';
+      const icon = _manifestCustomizeBtn.querySelector('svg');
+      if (icon) icon.style.display = open ? 'none' : '';
+    });
+  }
+}
+
 // Connect + Introduce Back fields (mode-specific to connect_and_introduce).
 // Persisted to localStorage so the wizard repopulates after navigation.
 function savePrimaryPersonFields() {
@@ -11815,6 +11899,8 @@ function savePrimaryPersonFields() {
   try { if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate(); } catch (_) {}
   // v2.104: live structural validation of the primary URL as the operator types.
   try { revalidatePrimaryUrlField(); } catch (_) {}
+  // v2.154.1 (Manifest): re-render the readback after every primary-field edit.
+  if (typeof renderManifest === 'function') renderManifest();
 }
 
 // v2.104: inline error UX for the Primary person URL field. The error banner
@@ -11856,6 +11942,8 @@ function toggleFollowUpFields() {
   const mode = document.getElementById('campaign-mode')?.value;
   const sec = document.getElementById('tpl-followup-section');
   if (sec) sec.style.display = (on && mode === 'connect_and_introduce') ? '' : 'none';
+  // v2.154.1 (Manifest): follow-up toggle flips the readback's follow-up line.
+  if (typeof renderManifest === 'function') renderManifest();
 }
 window.toggleFollowUpFields = toggleFollowUpFields;
 
@@ -11885,6 +11973,8 @@ function refreshAutoAcceptGate() {
   if (allRow) allRow.style.opacity = aaOn ? '' : '0.45';
   if (allHint) allHint.style.opacity = aaOn ? '' : '0.45';
   refreshPrimarySourceLabels();
+  // v2.154.1 (Manifest): the gate drives auto-accept + accept-all — re-render.
+  if (typeof renderManifest === 'function') renderManifest();
 }
 window.refreshAutoAcceptGate = refreshAutoAcceptGate;
 
@@ -11895,6 +11985,9 @@ function togglePrimarySource() {
   if (picker) picker.style.display = src === 'gologin' ? '' : 'none';
   if (src === 'gologin') renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
   refreshPrimarySourceLabels();
+  // v2.154.1 (Manifest): the readback's actor ("your local browser" vs a
+  // GoLogin profile) depends on the primary source — re-render.
+  if (typeof renderManifest === 'function') renderManifest();
 }
 window.togglePrimarySource = togglePrimarySource;
 
