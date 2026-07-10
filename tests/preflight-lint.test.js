@@ -100,6 +100,21 @@ test('blocklist company match is a blocker with the exact stamp, word-boundary s
   assert.equal(hits[0].stampText, 'Skipped: blocklist — IBM');
 });
 
+test('blocklist match survives header-case mismatch (VM leak regression 2026-07-10)', () => {
+  // Config column is "LinkedIn URL"; the actual sheet header is lowercase
+  // "linkedin url". The old exact-key read returned undefined → every row was
+  // treated as empty and skipped → the blocklist never ran → a blocklisted
+  // company (IBM) got a connection request on a cloud run. The linter must now
+  // resolve the URL column case-insensitively, like the sender does.
+  const out = lintLeads({ ...BASE, linkedinColumn: 'LinkedIn URL', blocklist: [IBM], rows: [
+    R(4, { 'First Name': 'Angelica', 'Last Name': 'Agor', Company: 'IBM', 'linkedin url': 'https://www.linkedin.com/in/angelica-nathanielle-agor-b816531b1/' }),
+  ]});
+  const hits = out.blockers.filter(f => f.check === 'blocklist_match');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].leadName, 'Angelica Agor');
+  assert.equal(hits[0].stampText, 'Skipped: blocklist — IBM');
+});
+
 test('blocklist domain match on email column, suffix-safe', () => {
   const out = lintLeads({ ...BASE, blocklist: [ORTUS], rows: [
     R(7, { 'First Name': 'Dion', 'Last Name': 'X', Email: 'dion@mail.ortusclub.com', 'LinkedIn URL': 'https://linkedin.com/in/dion-x' }),

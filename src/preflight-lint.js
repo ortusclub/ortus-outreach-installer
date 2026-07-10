@@ -15,6 +15,26 @@ function firstCell(row, aliases) {
   return '';
 }
 
+// Case/space-insensitive header lookup. The operator-configured column name may
+// not byte-match the sheet header (e.g. "LinkedIn URL" vs "linkedin url"). An
+// exact-key read then returns undefined and the linter treats every row as an
+// empty cell — skipping ALL checks, INCLUDING the blocklist. That silently sent
+// a blocklisted company on a VM run (2026-07-10). The real sender resolves the
+// URL tolerantly (extractLinkedInUrl scans every column), so the linter must
+// resolve the raw cell the same way — otherwise its "empty vs malformed"
+// gate short-circuits the blocklist match.
+function cellByHeader(row, header) {
+  if (!header) return '';
+  if (row[header] != null && String(row[header]).trim()) return String(row[header]).trim();
+  const want = String(header).trim().toLowerCase();
+  for (const k of Object.keys(row)) {
+    if (String(k).trim().toLowerCase() === want && row[k] != null && String(row[k]).trim()) {
+      return String(row[k]).trim();
+    }
+  }
+  return '';
+}
+
 function companyMatches(company, entryValue) {
   const re = new RegExp(`(^|[^a-z0-9])${entryValue.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i');
   return re.test(company);
@@ -108,7 +128,7 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
   const actionableTargets = []; // rows with a non-empty URL cell (for targetCount + template check)
   for (const { rowNumber, row } of targets) {
     const name = leadName(row);
-    const rawCell = linkedinColumn ? row[linkedinColumn] : '';
+    const rawCell = cellByHeader(row, linkedinColumn);
     let url = '';
     try { url = extractLinkedInUrl(row, linkedinColumn) || ''; } catch { url = ''; }
 
