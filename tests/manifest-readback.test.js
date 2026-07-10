@@ -59,3 +59,27 @@ test('connect_and_message → cadence line only, no accept/follow-up', () => {
   assert.equal(r.lines.length, 1);
   assert.equal(r.lines[0].key, 'cadence');
 });
+
+test('empty input () is consistent — standard AND renders default "on" lines', () => {
+  const r = buildManifestReadback();
+  assert.equal(r.state, 'standard');
+  const accept = r.lines.find((l) => l.key === 'accept');
+  assert.equal(accept.on, true);
+  const cad = r.lines.find((l) => l.key === 'cadence');
+  assert.match(cad.html, /every 1 hour/);        // no "every  min" glitch
+  const fu = r.lines.find((l) => l.key === 'followup');
+  assert.equal(fu.on, true);
+});
+
+test('string-typed cadence "60" is still STANDARD (DOM <select>.value is a string)', () => {
+  const r = buildManifestReadback({ mode: 'connect_and_introduce', checkCadenceMinutes: '60', followUpDelayMinutes: '10' });
+  assert.equal(r.state, 'standard');
+});
+
+test('cloud + local primary on a mode with no follow-up line → no cloudNotice', () => {
+  const ccdm = buildManifestReadback({ mode: 'connect_and_message', runTarget: 'cloud', primarySource: 'local-browser' });
+  assert.equal(ccdm.cloudNotice, null);
+  assert.equal(ccdm.lines.length, 1);
+  const icb = buildManifestReadback({ mode: 'introduce_back', runTarget: 'cloud', primarySource: 'local-browser' });
+  assert.equal(icb.cloudNotice, null);
+});

@@ -31,8 +31,24 @@ const STANDARD = {
   autoChecksEnabled: true, followUpEnabled: true, followUpDelayMinutes: 10,
 };
 
-export function buildManifestReadback(s = {}) {
-  const mode = s.mode || 'connect_and_introduce';
+export function buildManifestReadback(sIn = {}) {
+  // Normalize against defaults so partial/empty input and string-typed knob
+  // values (a DOM <select>.value is always a string) behave identically to the
+  // fully-specified default — STANDARD detection and rendering stay consistent.
+  const s = {
+    mode: sIn.mode || 'connect_and_introduce',
+    primaryName: sIn.primaryName,
+    primarySource: sIn.primarySource || 'local-browser',
+    autoAcceptPrimary: sIn.autoAcceptPrimary === undefined ? STANDARD.autoAcceptPrimary : !!sIn.autoAcceptPrimary,
+    autoAcceptAllPending: sIn.autoAcceptAllPending === undefined ? STANDARD.autoAcceptAllPending : !!sIn.autoAcceptAllPending,
+    primaryCheckTiming: sIn.primaryCheckTiming || STANDARD.primaryCheckTiming,
+    checkCadenceMinutes: Number(sIn.checkCadenceMinutes) || STANDARD.checkCadenceMinutes,
+    autoChecksEnabled: sIn.autoChecksEnabled === undefined ? STANDARD.autoChecksEnabled : (sIn.autoChecksEnabled !== false),
+    followUpEnabled: sIn.followUpEnabled === undefined ? STANDARD.followUpEnabled : !!sIn.followUpEnabled,
+    followUpDelayMinutes: Number(sIn.followUpDelayMinutes) || STANDARD.followUpDelayMinutes,
+    runTarget: sIn.runTarget || 'local',
+  };
+  const mode = s.mode;
   const isCCIC = mode === 'connect_and_introduce';
   const isCCDM = mode === 'connect_and_message';
   const localPrimary = !s.primarySource || s.primarySource === 'local-browser';
@@ -87,11 +103,11 @@ export function buildManifestReadback(s = {}) {
     state = 'customized';
   } else {
     for (const k of Object.keys(STANDARD)) {
-      if (s[k] !== undefined && s[k] !== STANDARD[k]) { state = 'customized'; break; }
+      if (s[k] !== STANDARD[k]) { state = 'customized'; break; }
     }
   }
 
-  const cloudNotice = cloudLocalPrimary
+  const cloudNotice = (isCCIC && cloudLocalPrimary)
     ? `Running in the cloud: your Mac accepts the senders' invites once (locked first step), then everything runs on the VM. Follow-up is off for this run.`
     : null;
 
