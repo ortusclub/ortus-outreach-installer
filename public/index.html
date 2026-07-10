@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.155.5" />
+  <link rel="stylesheet" href="/css/style.css?v=2.155.6" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
 </head>
 <body data-dashboard="v3">
@@ -1526,6 +1526,19 @@
   /* id-scoped so these survive the global `body[data-dashboard='v3'] button { font: inherit }` reset */
   #snm-scrim .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
   #snm-scrim .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+
+  /* one-time handshake modal (Task 3.5) — namespaced like snm, reuses snm-card/title/text/row */
+  #hs-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:none;align-items:center;justify-content:center;z-index:60;}
+  #hs-scrim.open{display:flex;}
+  #hs-scrim .hs-ring{width:64px;height:64px;border-radius:9999px;border:4px solid var(--hairline-soft);border-top-color:var(--gold);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:19px;color:var(--ink);margin:0 auto 6px;animation:sn-spin 2.4s linear infinite;}
+  #hs-scrim .hs-ring span{animation:sn-spin 2.4s linear infinite reverse;}
+  #hs-scrim .hs-modal-sub{text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray);margin:0 0 16px;}
+  #hs-scrim .snm-title{text-align:center;}
+  #hs-scrim .snm-text{text-align:center;}
+  #hs-scrim .snm-row{justify-content:center;}
+  #hs-scrim .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  #hs-scrim .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  #hs-scrim .snm-btn.danger{border-color:var(--red);color:var(--red);}
 </style>
 
 <!-- Sales Nav board markup moved to the top-level #salesnav-view route-view. -->
@@ -3318,7 +3331,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.155.5"></script>
+  <script type="module" src="/js/app.js?v=2.155.6"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
@@ -3418,6 +3431,22 @@
     <div class="snm-title">Are you sure?</div>
     <div class="snm-text" id="snm-body">This isn't your campaign.</div>
     <div class="snm-row"><button class="snm-btn" id="snm-cancel">Cancel</button><button class="snm-btn solid" id="snm-ok">Yes, toggle it</button></div>
+  </div>
+</div>
+
+<!-- One-time handshake modal (Task 3.5) — pops the first time a cloud campaign
+     enters state:'awaiting_primary_accept', so the operator keeps the app open
+     for the local accept. Dormant until the engine ships that state. -->
+<div id="hs-scrim">
+  <div class="snm-card">
+    <div class="hs-ring"><span class="hs-count" id="hs-modal-count">0</span></div>
+    <div class="hs-modal-sub" id="hs-modal-sub">0 of 0 accepted</div>
+    <div class="snm-title">Your Mac has one job right now</div>
+    <div class="snm-text" id="hs-modal-body"></div>
+    <div class="snm-row">
+      <button class="snm-btn danger" id="hs-modal-stop">Stop campaign</button>
+      <button class="snm-btn solid" id="hs-modal-keep">Keep it running</button>
+    </div>
   </div>
 </div>
 

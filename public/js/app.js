@@ -6867,6 +6867,43 @@ window.closeDebrief = function closeDebrief() {
 })();
 // ── End campaign debrief overlay ───────────────────────────────────────────
 
+// One-time handshake modal: pops the first time a cloud campaign enters the
+// primary-accept lock, so the operator keeps the app open for the local accept.
+// Shown once per campaign id per session (_hsModalShown); dismissable. Inert
+// until the engine ships state:'awaiting_primary_accept'.
+const _hsModalShown = new Set();
+let _hsModalCurrentId = null;
+function maybeOpenHandshakeModal(items) {
+  const scrim = document.getElementById('hs-scrim');
+  if (!scrim) return;
+  const it = (items || []).find((x) => x && x.where === 'cloud'
+    && x.state === 'awaiting_primary_accept' && Array.isArray(x.senders) && !_hsModalShown.has(x.id));
+  if (!it) return;
+  _hsModalShown.add(it.id);
+  _hsModalCurrentId = it.id;
+  const accepted = it.senders.filter((s) => s && s.accepted).length;
+  const total = it.senders.length;
+  const pname = escHtml((it.primary && it.primary.name) || 'the primary');
+  document.getElementById('hs-modal-count').textContent = String(accepted);
+  document.getElementById('hs-modal-sub').textContent = `${accepted} of ${total} accepted`;
+  document.getElementById('hs-modal-body').innerHTML =
+    `Accepting <b>${pname}</b>'s connection requests in <b>your local browser</b> is the only step that runs on this machine — then <b>${escHtml(it.name || 'the campaign')}</b> runs entirely in the cloud. Keep this app open.`;
+  scrim.classList.add('open');
+}
+function closeHandshakeModal() {
+  const scrim = document.getElementById('hs-scrim');
+  if (scrim) scrim.classList.remove('open');
+  _hsModalCurrentId = null;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const keep = document.getElementById('hs-modal-keep');
+  const stop = document.getElementById('hs-modal-stop');
+  const scrim = document.getElementById('hs-scrim');
+  if (keep) keep.addEventListener('click', closeHandshakeModal);
+  if (stop) stop.addEventListener('click', () => { const id = _hsModalCurrentId; closeHandshakeModal(); if (id && typeof stopCloudCampaignUI === 'function') stopCloudCampaignUI(id); });
+  if (scrim) scrim.addEventListener('click', (e) => { if (e.target === scrim) closeHandshakeModal(); });
+});
+
 let _campaignsBoardTimer = null;
 // Fetch local (status/queue/history) + cloud campaigns, normalize, render.
 async function renderCampaignsBoard() {
@@ -7017,6 +7054,7 @@ async function renderCampaignsBoard() {
   let html = rail('▶ Now running', running) + rail('• Up next', queued)
     + rail('✓ Done', done, doneExtra);
   board.innerHTML = html || _campaignsEmptyState();
+  maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
 }
 
