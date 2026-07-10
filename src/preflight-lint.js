@@ -5,8 +5,6 @@
 import { extractLinkedInUrl } from './campaign.js';
 import { findUnresolvedPlaceholders } from './linkedin/helpers.js';
 
-const COLD_MODES = new Set(['connect_only', 'connect_and_introduce', 'connect_and_message', 'inmail_only', 'open_profile_only']);
-
 const COMPANY_ALIASES = ['Company', 'company', 'Company Name', 'Organization'];
 const EMAIL_ALIASES = ['Email', 'email', 'E-mail', 'Email Address'];
 
@@ -171,8 +169,10 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
       });
     }
 
-    // Blocklist — cold modes only
-    if (COLD_MODES.has(mode)) {
+    // Blocklist — applies to ALL modes (operator decision 2026-07-10): a
+    // blocklisted company must never be contacted in ANY campaign type,
+    // warm modes (message_only / introduce_back) included.
+    {
       for (const entry of blocklist) {
         const hit = entry.kind === 'domain'
           ? domainMatches(firstCell(row, EMAIL_ALIASES), entry.value)
@@ -265,7 +265,8 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
 /**
  * Pure helper: given plain row objects (not already wrapped as {rowNumber,row}),
  * return the set of LinkedIn URLs that should be hard-excluded because they
- * match the blocklist. Only operates on cold modes where connection is sent.
+ * match the blocklist. Applies to every mode — a blocklisted company is never
+ * contacted in any campaign type (operator decision 2026-07-10).
  *
  * Wraps rows as { rowNumber: i+2, row } before calling lintLeads so the caller
  * does not need to know the internal shape.
@@ -275,7 +276,6 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
  * @returns {string[]}              - array of URLs to exclude
  */
 export function blocklistExcludedUrls(rows, { linkedinColumn, mode, blocklist }) {
-  if (!COLD_MODES.has(mode)) return [];
   const wrapped = (rows || []).map((row, i) => ({ rowNumber: i + 2, row }));
   const findings = lintLeads({ rows: wrapped, linkedinColumn, mode, blocklist });
   return findings.blockers

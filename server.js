@@ -1159,9 +1159,11 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     const cloudSheetUrl = withGid(sheetUrl, cloudGid);
     const rows = await fetchSheet(cloudSheetUrl);
 
-    // Hard-exclude blocklisted + client-pre-flight-excluded URLs (cold modes only;
-    // blocklistExcludedUrls is a no-op for warm modes). This mirrors the central
-    // guard in campaign.js (startCampaign) that covers the local path.
+    // Hard-exclude blocklisted + client-pre-flight-excluded URLs. Applies to
+    // ALL modes now (operator decision 2026-07-10) — blocklistExcludedUrls is no
+    // longer a no-op for warm modes. This is the REAL cloud guard: the engine
+    // only ever receives the leads built below, so an excluded lead never
+    // reaches the VM. Mirrors the central guard in campaign.js (local path).
     const blExcluded = new Set(blocklistExcludedUrls(rows, { linkedinColumn, mode, blocklist: readBlocklist() }).map((u) => normalizeProfileUrl(u)));
     const clientExcluded = new Set((req.body._preflightExcludedUrls || []).map((u) => normalizeProfileUrl(u)));
     const totalExcluded = blExcluded.size + clientExcluded.size;

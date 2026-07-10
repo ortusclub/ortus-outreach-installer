@@ -125,11 +125,11 @@ test('blocklist domain match on email column, suffix-safe', () => {
   assert.equal(hits[0].rowIndex, 7);
 });
 
-test('blocklist does NOT apply to non-cold modes', () => {
+test('blocklist applies to ALL modes incl. warm message_only (operator decision 2026-07-10)', () => {
   const out = lintLeads({ ...BASE, mode: 'message_only', blocklist: [IBM], rows: [
     R(44, { 'First Name': 'Ann', 'Last Name': 'Lee', Company: 'IBM', 'LinkedIn URL': 'https://linkedin.com/in/ann-lee-ibm' }),
   ]});
-  assert.equal(out.blockers.filter(f => f.check === 'blocklist_match').length, 0);
+  assert.equal(out.blockers.filter(f => f.check === 'blocklist_match').length, 1);
 });
 
 test('empty_template_var warning counts affected rows', () => {
@@ -183,13 +183,13 @@ test('blocklistExcludedUrls: cold mode excludes IBM row', () => {
   assert.ok(urls[0].includes('alicesmith'));
 });
 
-test('blocklistExcludedUrls: message_only excludes nothing (warm mode)', () => {
+test('blocklistExcludedUrls: warm message_only ALSO excludes the IBM row (operator decision 2026-07-10)', () => {
   const urls = blocklistExcludedUrls([IBM_ROW, OTHER_ROW], {
     linkedinColumn: 'LinkedIn URL',
     mode: 'message_only',
     blocklist: IBM_BLOCKLIST,
   });
-  assert.deepEqual(urls, []);
+  assert.deepEqual(urls, ['https://www.linkedin.com/in/alicesmith/']);
 });
 
 test('normalizeProfileUrl strips protocol, www, trailing slash, and query string', () => {
