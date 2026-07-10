@@ -6464,6 +6464,7 @@ function renderUnifiedStrip(it) {
   const running = it.bucket === 'running';
   const queued = it.bucket === 'queued';
   const done = it.bucket === 'done';
+  const monitoring = cloud && it.monitoring;   // Task 3 — post-send acceptance-watch (still ACTIVE)
   const scheduled = queued && !!it.scheduledAt;
   const whenTxt = scheduled && typeof v3FormatScheduledAt === 'function' ? v3FormatScheduledAt(it.scheduledAt) : '';
   const collapsed = queued ? true : !_snExpanded.has(it.id);
@@ -6487,6 +6488,7 @@ function renderUnifiedStrip(it) {
     : '<span class="sn-where local">💻 This machine</span>';
   const whenPill = scheduled ? '<span class="sn-when-pill">⏰ Scheduled</span>' : '';
   const dot = it.bad ? '<span class="dot red"></span>'
+    : monitoring ? '<span class="dot mon"></span>'
     : running ? (cloud ? '<span class="dot run"></span>' : '<span class="dot runlocal"></span>')
     : scheduled ? '<span class="dot gold"></span>'
     : queued ? '<span class="dot q"></span>'
@@ -6501,6 +6503,7 @@ function renderUnifiedStrip(it) {
   let statusTxt = scheduled ? whenTxt
     : warming ? '⏳ Warming up (~2 min)'
     : queued ? 'Queued'
+    : monitoring ? 'Monitoring'
     : running ? (it.paused ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
@@ -6545,6 +6548,30 @@ function renderUnifiedStrip(it) {
   }
   const _copyBtn = `<button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg><span class="sn-logcopy-lbl">Copy</span></button>`;
   const switchBlock = queued ? '' : `<div class="sn-switch"><div class="sn-pane on">${_copyBtn}${logHtml}</div></div>`;
+
+  // Task 3 — cloud monitoring card (parity with local renderMonitoringCard):
+  // ● MONITORING / ENDING SOON badge + live "Next check · ends in" countdown
+  // from the engine's next_check_at / monitoring_until. Stop monitoring works
+  // now (engine stop endpoint); Check-now + auto-toggle arrive with the engine
+  // endpoints (Part B), so no dead buttons here yet.
+  let monBlock = '';
+  if (monitoring) {
+    const now = Date.now();
+    const next = it.nextCheckAt ? new Date(it.nextCheckAt) : null;
+    const until = it.monitoringUntil ? new Date(it.monitoringUntil) : null;
+    const remMs = until ? until.getTime() - now : 0;
+    const endingSoon = remMs > 0 && remMs <= 24 * 60 * 60 * 1000;
+    const hhmm = (dd) => dd ? `${String(dd.getHours()).padStart(2, '0')}:${String(dd.getMinutes()).padStart(2, '0')}` : '—';
+    const fmtRem = (ms) => {
+      if (ms <= 0) return '0m';
+      const d1 = Math.floor(ms / 86400000), h1 = Math.floor((ms % 86400000) / 3600000), m1 = Math.floor((ms % 3600000) / 60000);
+      return d1 > 0 ? `${d1}d ${h1}h` : h1 > 0 ? `${h1}h ${m1}m` : `${m1}m`;
+    };
+    const line = endingSoon
+      ? `Window ends in <b>${fmtRem(remMs)}</b> — then still-pending leads stay <i>Connection Request Sent</i>`
+      : `Next check <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(fmtRem(remMs))}</b> · every <b>${it.checkIntervalMinutes || 60}m</b>`;
+    monBlock = `<div class="sn-mon${endingSoon ? ' ending' : ''}"><span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span><span class="sn-mon-line">${line}</span></div>`;
+  }
 
   // Handshake lock panel — replaces the log switchBlock while
   // state==='awaiting_primary_accept'. Two row states only (done/waiting):
@@ -6592,11 +6619,18 @@ function renderUnifiedStrip(it) {
       + _dib(V3_SVG_STOP, 'Stop', 'window.dashStopActive && window.dashStopActive()', 'danger')
       + _openPill;
   } else if (running && cloud) {
-    // "Show campaign happening" — watch the VM's browser live (parity with the
-    // Sales Nav per-job View). Streams once the engine ships a campaign screencast.
-    const _vLabel = String(it.name || it.id).replace(/['"\\<>]/g, '');
-    const _showBtn = `<button class="mini" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">👁 Show</button>`;
-    foot = _showBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openPill;
+    if (monitoring) {
+      // Monitoring: no live browser to "Show" — Stop monitoring (engine stop
+      // endpoint, works now) + Open. ⚡ Check now + auto-checks toggle land with
+      // the engine endpoints (Part B), so no dead buttons here yet.
+      foot = _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openPill;
+    } else {
+      // "Show campaign happening" — watch the VM's browser live (parity with the
+      // Sales Nav per-job View). Streams once the engine ships a campaign screencast.
+      const _vLabel = String(it.name || it.id).replace(/['"\\<>]/g, '');
+      const _showBtn = `<button class="mini" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">👁 Show</button>`;
+      foot = _showBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openPill;
+    }
   } else if (queued) {
     if (cloud) {
       foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button><button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`;
@@ -6629,6 +6663,7 @@ function renderUnifiedStrip(it) {
     <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
     <div class="sn-flow">${flow}</div>
     ${progLine}
+    ${monBlock}
     ${hsAwaiting ? handshakeBlock : switchBlock}
     ${_buildSkippedSection(it)}
     <div class="sn-foot"><div class="right">${foot}${_stripOverflow()}</div></div>
@@ -6973,7 +7008,9 @@ async function renderCampaignsBoard() {
       // Ownership gate: normal accounts see only their OWN cloud campaigns;
       // admins see everyone's. (Local campaigns are always the viewer's.)
       if (!_viewerIsAdmin && !mine) continue;
-      const bucket = c.status === 'running' ? 'running'
+      // 'monitoring' (post-send acceptance-watch — exactly like a local CC+IC /
+      // CC+DM run) is an ACTIVE state: keep it in NOW RUNNING, not DONE. Task 3.
+      const bucket = (c.status === 'running' || c.status === 'monitoring') ? 'running'
         : (c.status === 'pending' || c.status === 'queued') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
@@ -6986,6 +7023,13 @@ async function renderCampaignsBoard() {
         // Phase 0 handshake lock (Task 3.4) — undefined until the engine ships
         // them, in which case the lock panel in renderUnifiedStrip stays dormant.
         state: c.state, senders: c.senders, primary: c.primary,
+        // Task 3 — monitoring card (parity with local renderMonitoringCard). The
+        // engine carries these top-level; nextCheckAt/monitoringUntil drive the
+        // "Next check · ends in" countdown, exactly like the local mon-card.
+        monitoring: c.status === 'monitoring',
+        nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
+        autoChecksEnabled: c.auto_checks_enabled !== false,
+        checkIntervalMinutes: c.check_interval_minutes || 60,
       });
     }
   } catch (_) { /* cloud best-effort */ }
