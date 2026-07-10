@@ -194,6 +194,17 @@ export function stopCloudCampaign(id, { pause = false } = {}) {
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${pause ? '?pause=1' : ''}`);
 }
 
+// Monitoring controls (Task 3 Part B) — mirror the local ⚡ Check now / Automatic
+// checks toggle. Single-shot (requestOnce): user-initiated, fine to fail loudly.
+// Return { error, status } until the engine ships these routes, so the UI can
+// degrade gracefully ("engine update pending") instead of throwing.
+export function cloudCheckNow(id) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check-now`);
+}
+export function setCloudAutoChecks(id, enabled) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });
+}
+
 /**
  * Open the live MJPEG screencast for a running cloud campaign's active browser
  * session — the campaign analogue of openJobViewStream (scraper-client.js). The

@@ -6570,7 +6570,13 @@ function renderUnifiedStrip(it) {
     const line = endingSoon
       ? `Window ends in <b>${fmtRem(remMs)}</b> — then still-pending leads stay <i>Connection Request Sent</i>`
       : `Next check <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(fmtRem(remMs))}</b> · every <b>${it.checkIntervalMinutes || 60}m</b>`;
-    monBlock = `<div class="sn-mon${endingSoon ? ' ending' : ''}"><span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span><span class="sn-mon-line">${line}</span></div>`;
+    monBlock = `<div class="sn-mon${endingSoon ? ' ending' : ''}">`
+      + `<span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span>`
+      + `<span class="sn-mon-line">${line}</span>`
+      + `<span class="sn-mon-ctl">`
+      + `<button type="button" class="mini" onclick="event.stopPropagation();cloudCheckNow('${escHtml(it.id)}',this)" title="Run an acceptance check now">⚡ Check now</button>`
+      + `<label class="sn-mon-auto" title="When off, the VM won't run automatic checks — use ⚡ Check now."><input type="checkbox" ${it.autoChecksEnabled ? 'checked' : ''} onclick="event.stopPropagation()" onchange="setCloudAutoChecks('${escHtml(it.id)}',this.checked,this)"> Auto</label>`
+      + `</span></div>`;
   }
 
   // Handshake lock panel — replaces the log switchBlock while
@@ -6620,9 +6626,8 @@ function renderUnifiedStrip(it) {
       + _openPill;
   } else if (running && cloud) {
     if (monitoring) {
-      // Monitoring: no live browser to "Show" — Stop monitoring (engine stop
-      // endpoint, works now) + Open. ⚡ Check now + auto-checks toggle land with
-      // the engine endpoints (Part B), so no dead buttons here yet.
+      // Monitoring: no live browser to "Show" — Stop monitoring (engine stop) +
+      // Open. ⚡ Check now + the Auto toggle live in the monitoring card (monBlock).
       foot = _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openPill;
     } else {
       // "Show campaign happening" — watch the VM's browser live (parity with the
@@ -7221,6 +7226,37 @@ async function stopCloudCampaignUI(id) {
   renderCloudCampaigns();
 }
 window.stopCloudCampaignUI = stopCloudCampaignUI;
+
+// Task 3 Part B — cloud monitoring controls (parity with local ⚡ Check now /
+// Automatic checks). Degrade gracefully until the engine ships the routes: a
+// 404/HTTP error → a clear "engine update pending" toast, no throw.
+async function cloudCheckNow(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Check now isn’t live yet — engine update pending.', 6000);
+    else showCampaignToast('⚡ Check queued — the VM will sweep for acceptances shortly.', 5000);
+  } catch (e) { showCampaignToast('Could not reach the engine: ' + e.message, 6000); }
+  finally { if (btn) btn.disabled = false; if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns(); }
+}
+window.cloudCheckNow = cloudCheckNow;
+
+async function setCloudAutoChecks(id, enabled, el) {
+  try {
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/auto-checks`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!enabled }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) {
+      showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Auto-checks toggle isn’t live yet — engine update pending.', 6000);
+      if (el) el.checked = !enabled; // revert the switch — the change didn't stick
+    } else {
+      showCampaignToast(`Automatic checks ${enabled ? 'on' : 'off'}.`, 4000);
+    }
+  } catch (e) { showCampaignToast('Could not reach the engine: ' + e.message, 6000); if (el) el.checked = !enabled; }
+}
+window.setCloudAutoChecks = setCloudAutoChecks;
 
 // Start/stop polling when the Cloud Campaigns section is opened/closed.
 window.onCloudSectionToggle = function onCloudSectionToggle() {
