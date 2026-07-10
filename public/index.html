@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.155.0" />
+  <link rel="stylesheet" href="/css/style.css?v=2.155.1" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
 </head>
 <body data-dashboard="v3">
@@ -769,6 +769,19 @@
           </div>
         </div>
       </div>
+
+    <!-- Where it runs — the first decision; writes #cloud-run-checkbox (hidden source of truth) -->
+    <div id="run-target" class="run-target" data-target="local">
+      <div class="rt-tabs" role="tablist" aria-label="Where the campaign runs">
+        <button type="button" class="rt-tab on" data-rt="local" role="tab" onclick="setRunTarget('local')">
+          <span class="t">💻 This machine</span><span class="s">Runs while the app is open — pause &amp; resume anytime</span>
+        </button>
+        <button type="button" class="rt-tab" data-rt="cloud" role="tab" onclick="setRunTarget('cloud')">
+          <span class="t">☁︎ Cloud VM</span><span class="s">Keeps going after you close the laptop</span>
+        </button>
+      </div>
+      <div class="rt-facts" id="run-target-facts"></div>
+    </div>
 
     <!-- ── Settings (reordered to position 1) ── -->
     <div class="section" id="nav-settings">
@@ -2443,14 +2456,17 @@
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
             <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
           </div>
+          <div id="launch-run-note" class="launch-run-note"></div>
           <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
                the GKE engine instead of running locally — the campaign keeps
                running after the laptop closes. Hidden for modes the engine
                doesn't support yet (inmail / open-profile / check-status); see
                onModeChange → refreshCloudToggle() in app.js. Defaults OFF. -->
-          <label class="launch-cloud-toggle" id="cloud-run-toggle" style="display:none; margin-top:8px; font-size:12px; letter-spacing:.04em; cursor:pointer; user-select:none;">
-            <input type="checkbox" id="cloud-run-checkbox" onchange="refreshCloudToggle()" checked style="vertical-align:middle; margin-right:6px;">
-            <span data-edit="cloud-run-label">Running in cloud (beta) — keeps going after you close the laptop. Untick to run on this Mac.</span>
+          <!-- Run-target source of truth (hidden). Visible control is now the #run-target tabs
+               above Section 1. Kept present (not deleted): refreshCloudToggle() early-returns
+               without #cloud-run-toggle, which would disable the FG-extras + cloud-campaigns reveal. -->
+          <label id="cloud-run-toggle" hidden style="display:none">
+            <input type="checkbox" id="cloud-run-checkbox" onchange="refreshCloudToggle()" hidden>
           </label>
           <!-- Follower Growth (cloud) extras — shown only when the mode is
                follower_growth AND "Run in cloud" is on. Invite URL defaults to
@@ -3302,7 +3318,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.155.0"></script>
+  <script type="module" src="/js/app.js?v=2.155.1"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
