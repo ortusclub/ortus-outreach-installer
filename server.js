@@ -49,6 +49,7 @@ import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSal
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks } from './src/campaigns-client.js';
+import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
@@ -1616,6 +1617,19 @@ app.post('/api/campaign/cloud/:id/primary-accept-done', async (req, res) => {
   const r = await signalPrimaryAcceptDone(req.params.id, ids);
   if (r.error) return res.status(r.status || 502).json(r);
   res.json(r);
+});
+// Cloud primary-handshake — Path A (local pre-dispatch). Before a cloud CC+IC
+// campaign with a LOCAL-ONLY primary is dispatched, the client runs this to
+// connect the GoLogin senders to the primary and accept them in the local
+// primary browser (the engine can't — no operator Chrome on the VM). Single-
+// flight; the wizard polls /status for live per-sender progress. See
+// docs/superpowers/specs/2026-07-11-cloud-handshake-path-a-local-predispatch-design.md
+app.post('/api/campaign/cloud-preflight-handshake', (req, res) => {
+  const r = startHandshakeJob(req.body || {});
+  res.status(r.status || 200).json(r);
+});
+app.get('/api/campaign/cloud-preflight-handshake/status', (_req, res) => {
+  res.json(getHandshakeJob());
 });
 // Live "Show campaign happening" — proxies the engine's MJPEG screencast of the
 // campaign's active browser session straight to the dashboard <img> (mirrors
