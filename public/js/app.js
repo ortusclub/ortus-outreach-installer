@@ -6060,6 +6060,37 @@ function _startCloudCardPoll() {
 function stopViewingCloudCampaign() { _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); }
 window.stopViewingCloudCampaign = stopViewingCloudCampaign;
 
+// Adapt #active-card's controls when it's showing a cloud campaign: hide the
+// local-only Pause/Restart (cloud has no pause/restart), and give a monitoring
+// VM campaign a Check-now in the dock (wired to the engine endpoint; degrades to
+// "engine update pending" until PR #1 deploys). Stop is handled in
+// dashStopActive (it routes to the engine when _viewingCloudId is set). Only
+// forces state when cloud; releases the override otherwise so the local card is
+// untouched.
+function _adaptActiveCardControls(card, status) {
+  const cloud = !!_viewingCloudId;
+  card.classList.toggle('cloud-view', cloud);
+  const pauseBtn = document.getElementById('dock-active-pause');
+  if (pauseBtn) { if (cloud) pauseBtn.style.display = 'none'; else pauseBtn.style.removeProperty('display'); }
+  const dock = document.getElementById('dock-active');
+  const restartBtn = dock ? dock.querySelector('[data-tip="Restart"]') : null;
+  if (restartBtn) { if (cloud) restartBtn.style.display = 'none'; else restartBtn.style.removeProperty('display'); }
+  let cn = document.getElementById('dock-cloud-checknow');
+  const wantCheck = cloud && status && status.state === 'monitoring' && !!dock;
+  if (wantCheck) {
+    if (!cn) {
+      cn = document.createElement('button');
+      cn.id = 'dock-cloud-checknow';
+      cn.className = 'dock-btn';
+      cn.setAttribute('data-tip', 'Check now'); cn.setAttribute('aria-label', 'Check now');
+      cn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>';
+      dock.insertBefore(cn, dock.firstChild);
+    }
+    cn.onclick = () => { try { window.cloudCheckNow(_viewingCloudId, cn); } catch (_) { /* */ } };
+    cn.style.display = '';
+  } else if (cn) { cn.style.display = 'none'; }
+}
+
 // Cloud "Open" — go to the campaign tab and show THIS campaign's live status
 // campaign card (card #2), then scroll down to it. Same as a local Open.
 async function openCloudLive(id) {
@@ -7482,7 +7513,10 @@ async function _submitCloudCampaign(body) {
       if (draftId) await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
       clearActiveDraft();
     } catch { /* non-fatal */ }
-    alert(`☁︎ Cloud campaign started\n\n${data.leadsAdded} lead(s) dispatched to the engine (mode: ${data.mode}).\nIt keeps running in the cloud even if you close the app.`);
+    if (typeof showCampaignToast === 'function') showCampaignToast(`☁︎ Cloud campaign started — ${data.leadsAdded} lead(s) dispatched. It keeps running in the cloud even if you close the app.`, 6000);
+    // Parity with a local launch: drop straight onto the live status CAMPAIGN
+    // card (card #2) for the new VM campaign. See feedback_two_live_status_cards.
+    if (data.id) { try { await openCloudLive(data.id); } catch (_) { /* */ } }
   } catch (e) {
     alert('Could not reach the cloud engine:\n\n' + e.message);
   }
@@ -18409,6 +18443,7 @@ window.renderActiveCard = function(status) {
   if (_viewingCloudId && window.__cloudActiveStatus && !(status && (status.running || status.state === 'monitoring'))) {
     status = window.__cloudActiveStatus;
   }
+  try { _adaptActiveCardControls(card, status); } catch (_) { /* control adaptation is best-effort */ }
   // A campaign in the monitoring phase has running:false but is NOT idle —
   // it's watching for acceptances. The card must render it, not fall through
   // to "No campaign running" (the dashboard's half of the CC+IC/CC+DM
@@ -19172,6 +19207,9 @@ async function renderPauseAccountAdd() {
 window.renderPauseAccountAdd = renderPauseAccountAdd;
 
 window.dashPauseActive = async function() {
+  // Cloud campaigns can't pause (the engine has no resume) — don't drive the
+  // local pause endpoint while viewing a VM campaign's card.
+  if (_viewingCloudId) { if (typeof showCampaignToast === 'function') showCampaignToast('Cloud campaigns can’t pause — use ■ Stop.', 4000); return; }
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
@@ -19195,6 +19233,9 @@ window.dashPauseActive = async function() {
 };
 
 window.dashStopActive = async function() {
+  // Viewing a cloud campaign's card → Stop must hit the ENGINE, not the local
+  // campaign (there isn't one). See feedback_two_live_status_cards.
+  if (_viewingCloudId) { stopCloudCampaignUI(_viewingCloudId); return; }
   // If the campaign is already in the MONITORING phase, the dashboard Stop
   // button must END MONITORING (→ /api/monitoring/stop → stopMonitoring,
   // state → 'done'), not run the campaign-stop flow. The active card is what
@@ -19215,6 +19256,7 @@ window.dashStopActive = async function() {
 };
 
 window.dashRestartActive = async function() {
+  if (_viewingCloudId) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return; }
   if (!confirm('Restart this campaign from the beginning? Progress will reset.')) return;
   try {
     const sr = await fetch('/api/campaign/status');
