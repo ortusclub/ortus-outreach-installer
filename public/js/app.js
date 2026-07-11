@@ -7528,8 +7528,8 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
           </div>
           <div class="hs-wiz-error intro-config-error" hidden style="margin-top:12px"></div>
         </div>
-        <div class="modal-actions hs-wiz-actions" style="display:none; gap:10px; flex-wrap:wrap">
-          <button type="button" class="btn btn-primary hs-wiz-retry">Retry</button>
+        <div class="modal-actions hs-wiz-actions" style="display:flex; gap:10px; flex-wrap:wrap">
+          <button type="button" class="btn btn-primary hs-wiz-retry" style="display:none">Retry</button>
           <button type="button" class="btn hs-wiz-anyway">Dispatch anyway</button>
           <button type="button" class="btn modal-cancel-link hs-wiz-cancel">Cancel</button>
         </div>
@@ -7541,6 +7541,9 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
     let done = false;
     const cleanup = () => { if (poll) { clearInterval(poll); poll = null; } try { back.remove(); } catch (_) { /* */ } };
     const finish = (result) => { if (done) return; done = true; cleanup(); resolve(result); };
+    // Always dismissable: clicking the scrim cancels (aborts dispatch) so a hung
+    // handshake can never trap the operator on a button-less spinner.
+    back.addEventListener('click', (e) => { if (e.target === back) finish({ ok: false, proceedAnyway: false }); });
 
     const paint = (senders) => {
       let connected = 0;
@@ -7558,21 +7561,26 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
       const bar = $('.hs-wiz-bar'); if (bar) bar.style.width = total ? `${Math.round((connected / total) * 100)}%` : '0%';
     };
 
-    const showError = (msg) => {
+    // On error, reveal Retry. When another handshake is already running (409),
+    // hide "Dispatch anyway" — dispatching now would run the campaign with
+    // un-handshaked senders while the other campaign drives the local browsers.
+    const showError = (msg, { is409 = false } = {}) => {
       const err = $('.hs-wiz-error'); if (err) { err.hidden = false; err.textContent = msg; }
-      const acts = $('.hs-wiz-actions'); if (acts) acts.style.display = 'flex';
+      const retry = $('.hs-wiz-retry'); if (retry) retry.style.display = '';
+      const anyway = $('.hs-wiz-anyway'); if (anyway) anyway.style.display = is409 ? 'none' : '';
     };
 
     const start = async () => {
       const err = $('.hs-wiz-error'); if (err) { err.hidden = true; err.textContent = ''; }
-      const acts = $('.hs-wiz-actions'); if (acts) acts.style.display = 'none';
+      const retry = $('.hs-wiz-retry'); if (retry) retry.style.display = 'none';
+      const anyway = $('.hs-wiz-anyway'); if (anyway) anyway.style.display = '';
       try {
         const res = await fetch('/api/campaign/cloud-preflight-handshake', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ senderProfileIds, primaryUrl, primarySource, autoAcceptAllPending }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { showError(data.error || `Could not start the handshake (${res.status}).`); return; }
+        if (!res.ok) { showError(data.error || `Could not start the handshake (${res.status}).`, { is409: res.status === 409 }); return; }
       } catch (e) { showError('Could not reach the app to start the handshake: ' + e.message); return; }
 
       poll = setInterval(async () => {

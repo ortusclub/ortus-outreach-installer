@@ -9,16 +9,26 @@ import { runCloudPreflightHandshake } from './cloud-preflight-handshake.js';
 
 let _job = null; // { senders:Map<id,{profileId,state,name}>, done, summary, error }
 
-/** Current job snapshot for the status endpoint. */
+// Overall watchdog: even if a browser primitive hangs and run() never settles,
+// the job must eventually flip `done` — otherwise startHandshakeJob's single-
+// flight guard returns 409 forever and the feature is bricked until restart.
+const MAX_MS = 8 * 60 * 1000;
+
+/** Current job snapshot for the status endpoint. The final summary (if present)
+ *  is authoritative — overlay it so the last poll shows real per-sender states
+ *  even for senders that never streamed progress (already-connected path). */
 export function getHandshakeJob() {
   if (!_job) return { active: false };
-  return {
-    active: true,
-    done: _job.done,
-    error: _job.error,
-    summary: _job.summary,
-    senders: [..._job.senders.values()],
-  };
+  let senders = [..._job.senders.values()];
+  if (_job.summary && Array.isArray(_job.summary.senders)) {
+    const byId = new Map(senders.map((s) => [s.profileId, s]));
+    for (const fs of _job.summary.senders) {
+      const cur = byId.get(fs.profileId) || { profileId: fs.profileId, state: 'pending', name: '' };
+      byId.set(fs.profileId, { profileId: fs.profileId, state: fs.state || cur.state, name: fs.name || cur.name });
+    }
+    senders = [...byId.values()];
+  }
+  return { active: true, done: _job.done, error: _job.error, summary: _job.summary, senders };
 }
 
 /** Reset (tests / after the client consumes a finished job). */
@@ -49,16 +59,25 @@ export function startHandshakeJob(body = {}, { run = runCloudPreflightHandshake 
     });
   };
 
-  Promise.resolve()
-    .then(() => run({
-      senderProfileIds,
-      primaryUrl: body.primaryUrl,
-      primarySource: body.primarySource || 'local-browser',
-      autoAcceptAllPending: !!body.autoAcceptAllPending,
-      onProgress,
-    }))
-    .then((summary) => { if (_job) { _job.summary = summary || null; _job.done = true; } })
-    .catch((e) => { if (_job) { _job.error = String((e && e.message) || e); _job.done = true; } });
+  // Capture THIS job so a late-settling run() can't clobber a newer job that
+  // replaced it (e.g. after a watchdog timeout + a fresh start).
+  const job = _job;
+  const settle = (patch) => { if (_job === job && !job.done) Object.assign(job, patch); };
+
+  const runP = Promise.resolve().then(() => run({
+    senderProfileIds,
+    primaryUrl: body.primaryUrl,
+    primarySource: body.primarySource || 'local-browser',
+    autoAcceptAllPending: !!body.autoAcceptAllPending,
+    onProgress,
+  }));
+  const timeoutP = new Promise((_res, rej) => {
+    const h = setTimeout(() => rej(new Error('handshake timed out — the local browsers may be stuck; dispatch anyway or retry')), MAX_MS);
+    if (h && typeof h.unref === 'function') h.unref();
+  });
+  Promise.race([runP, timeoutP])
+    .then((summary) => settle({ summary: summary || null, done: true }))
+    .catch((e) => settle({ error: String((e && e.message) || e), done: true }));
 
   return { ok: true, status: 200, started: true, senderProfileIds };
 }

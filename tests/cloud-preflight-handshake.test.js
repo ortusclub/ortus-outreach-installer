@@ -110,6 +110,20 @@ test('no senders / no primaryUrl → ok:true, no work', async () => {
   assert.equal(calls.launchProfile.length, 0);
 });
 
+test('self-eliminate still streams progress so the wizard shows connected, not stuck Waiting', async () => {
+  const primaryUrl = 'https://linkedin.com/in/pat';
+  const { primaryKeyFromUrl, storeKey } = await import('../src/primary-status-store.js');
+  const key = primaryKeyFromUrl(primaryUrl);
+  const store = { [storeKey('a', key)]: { state: 'connected', primaryUrl }, [storeKey('b', key)]: { state: 'connected', primaryUrl } };
+  const seen = [];
+  const { deps } = makeDeps({ store });
+  await runCloudPreflightHandshake({
+    senderProfileIds: ['a', 'b'], primaryUrl, deps, onProgress: (e) => seen.push(e),
+  });
+  const connected = [...new Set(seen.filter((e) => e.state === 'connected').map((e) => e.profileId))];
+  assert.deepEqual(connected.sort(), ['a', 'b'], 'both already-connected senders emitted connected');
+});
+
 test('accept-all sweep runs when autoAcceptAllPending even if senders already connected', async () => {
   const primaryUrl = 'https://linkedin.com/in/pat';
   const { primaryKeyFromUrl, storeKey } = await import('../src/primary-status-store.js');

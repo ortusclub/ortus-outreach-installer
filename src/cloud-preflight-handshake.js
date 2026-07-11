@@ -115,6 +115,9 @@ export async function runCloudPreflightHandshake(opts = {}) {
       if (runSet.has(pid)) primaryConn.set(pid, 'connected');
     }
   }
+  // Surface already-connected senders to the wizard immediately (they never enter
+  // the connect loop, so without this they'd stay stuck on "Waiting").
+  for (const [pid, st] of primaryConn) emit(pid, st === 'connected' ? 'connected' : st);
 
   const need = planAccountsNeedingConnect(senderProfileIds, primaryConn);
 
@@ -123,6 +126,7 @@ export async function runCloudPreflightHandshake(opts = {}) {
   if (need.length === 0 && !autoAcceptAllPending) {
     summary.ok = true;
     summary.senders = buildSenders(primaryConn);
+    for (const s of summary.senders) emit(s.profileId, s.state);
     summary.connected = summary.senders.filter((s) => s.state === 'connected').length;
     return summary;
   }
