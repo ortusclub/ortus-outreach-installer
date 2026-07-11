@@ -6010,6 +6010,22 @@ function viewCloudCampaign(id) {
 }
 window.viewCloudCampaign = viewCloudCampaign;
 
+// Cloud "Open" — focus the campaign's live board strip (its live status card:
+// progress, monitoring countdown, per-lead log). Cloud campaigns have no local
+// cockpit, so we never route Open to viewRunningCampaign() (that opens the blank
+// New-Campaign wizard — the "no live status card" bug). Expand + scroll + a brief
+// ink flash so the operator's eye lands on it.
+function openCloudLive(id) {
+  _snExpanded.add(id);
+  const strip = document.querySelector(`.sn-strip[data-cid="${id}"]`);
+  if (!strip) { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); return; }
+  strip.classList.remove('sn-collapsed');
+  try { strip.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* older webview */ }
+  strip.classList.add('sn-flash');
+  setTimeout(() => strip.classList.remove('sn-flash'), 1300);
+}
+window.openCloudLive = openCloudLive;
+
 // Hide a done cloud strip from THIS operator's board (local-only, next poll keeps it hidden).
 function dismissCloudDone(id, btn) {
   _cloudDismissed.add(id); _cloudSaveDismissed();
@@ -6587,7 +6603,7 @@ function renderUnifiedStrip(it) {
       + `<span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span>`
       + `<span class="sn-mon-line">${line}</span>`
       + `<span class="sn-mon-ctl">`
-      + `<button type="button" class="mini" onclick="event.stopPropagation();cloudCheckNow('${escHtml(it.id)}',this)" title="Run an acceptance check now">⚡ Check now</button>`
+      + `<button type="button" class="mini sn-mon-btn" onclick="event.stopPropagation();cloudCheckNow('${escHtml(it.id)}',this)" title="Run an acceptance check now">Check now</button>`
       + `<label class="sn-mon-auto" title="When off, the VM won't run automatic checks — use ⚡ Check now."><input type="checkbox" ${it.autoChecksEnabled ? 'checked' : ''} onclick="event.stopPropagation()" onchange="setCloudAutoChecks('${escHtml(it.id)}',this.checked,this)"> Auto</label>`
       + `</span></div>`;
   }
@@ -6630,6 +6646,10 @@ function renderUnifiedStrip(it) {
   const _dib = (svg, tip, onclick, cls = '') =>
     `<button type="button" class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
   const _openPill = `<button class="mini solid" onclick="viewRunningCampaign()">Open</button>`;
+  // Cloud campaigns have no local cockpit to restore, so their Open must NOT
+  // call viewRunningCampaign() (which drops the operator in the blank New-
+  // Campaign wizard). openCloudLive() focuses the campaign's live strip instead.
+  const _cloudOpen = `<button class="mini solid" onclick="openCloudLive('${escHtml(it.id)}')">Open</button>`;
   let foot = '';
   if (running && it.where === 'local') {
     foot = (it.paused
@@ -6641,13 +6661,13 @@ function renderUnifiedStrip(it) {
     if (monitoring) {
       // Monitoring: no live browser to "Show" — Stop monitoring (engine stop) +
       // Open. ⚡ Check now + the Auto toggle live in the monitoring card (monBlock).
-      foot = _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openPill;
+      foot = _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _cloudOpen;
     } else {
       // "Show campaign happening" — watch the VM's browser live (parity with the
       // Sales Nav per-job View). Streams once the engine ships a campaign screencast.
       const _vLabel = String(it.name || it.id).replace(/['"\\<>]/g, '');
       const _showBtn = `<button class="mini" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">👁 Show</button>`;
-      foot = _showBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openPill;
+      foot = _showBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _cloudOpen;
     }
   } else if (queued) {
     if (cloud) {
