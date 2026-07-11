@@ -6010,19 +6010,71 @@ function viewCloudCampaign(id) {
 }
 window.viewCloudCampaign = viewCloudCampaign;
 
-// Cloud "Open" — focus the campaign's live board strip (its live status card:
-// progress, monitoring countdown, per-lead log). Cloud campaigns have no local
-// cockpit, so we never route Open to viewRunningCampaign() (that opens the blank
-// New-Campaign wizard — the "no live status card" bug). Expand + scroll + a brief
-// ink flash so the operator's eye lands on it.
-function openCloudLive(id) {
-  _snExpanded.add(id);
-  const strip = document.querySelector(`.sn-strip[data-cid="${id}"]`);
-  if (!strip) { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); return; }
-  strip.classList.remove('sn-collapsed');
-  try { strip.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* older webview */ }
-  strip.classList.add('sn-flash');
-  setTimeout(() => strip.classList.remove('sn-flash'), 1300);
+// ── Live status CAMPAIGN card for cloud campaigns (see feedback_two_live_status_cards).
+// This is CARD #2: the one INSIDE the campaign tab (#active-card relocated into
+// #wiz-live-slot) that you land on after launching / when you press Open. Local
+// campaigns get it for free (renderActiveCard is driven by the local cockpit);
+// cloud campaigns didn't — Open used to dump the operator in the blank wizard.
+// We give cloud the SAME card by feeding renderActiveCard a status object mapped
+// from engine data, gated behind _viewingCloudId so the local flow is untouched
+// when it's null (and it always yields to a genuinely-running LOCAL campaign).
+let _viewingCloudId = null;
+let _cloudCardTimer = null;
+
+function _buildCloudActiveStatus(c, leads, counts) {
+  c = c || {}; leads = Array.isArray(leads) ? leads : []; counts = counts || {};
+  const isMon = c.status === 'monitoring';
+  const total = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0) || leads.length;
+  const sent = Number(counts.sent || 0) || leads.filter((l) => l && l.sentAt).length;
+  const accepted = leads.filter((l) => l && /connected/i.test(String(l.connectionAcceptedStatus || ''))).length;
+  return {
+    _cloud: true, id: c.id, running: c.status === 'running', state: isMon ? 'monitoring' : undefined,
+    name: c.name || '(unnamed)', mode: c.mode,
+    totalTargets: total, totalProcessed: sent,
+    profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
+    acceptedCount: accepted, logs: _cloudLeadsToLog(leads, c.mode === 'follower_growth'),
+    nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
+    autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
+  };
+}
+
+async function _refreshCloudActiveStatus(id) {
+  try {
+    const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
+    let leads = [];
+    try { const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json(); if (lr && Array.isArray(lr.leads)) leads = lr.leads; } catch (_) { /* */ }
+    window.__cloudActiveStatus = _buildCloudActiveStatus((d && d.campaign) || {}, leads, (d && d.leadCounts) || {});
+  } catch (_) { if (!window.__cloudActiveStatus) window.__cloudActiveStatus = { _cloud: true, id, name: 'Cloud campaign', running: true, logs: [] }; }
+}
+
+function _stopCloudCardPoll() { if (_cloudCardTimer) { clearInterval(_cloudCardTimer); _cloudCardTimer = null; } }
+function _startCloudCardPoll() {
+  _stopCloudCardPoll();
+  _cloudCardTimer = setInterval(async () => {
+    if (!_viewingCloudId) { _stopCloudCardPoll(); return; }
+    await _refreshCloudActiveStatus(_viewingCloudId);
+    try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
+  }, 5000);
+}
+// Leaving the wizard / starting something else stops the cloud-view takeover.
+function stopViewingCloudCampaign() { _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); }
+window.stopViewingCloudCampaign = stopViewingCloudCampaign;
+
+// Cloud "Open" — go to the campaign tab and show THIS campaign's live status
+// campaign card (card #2), then scroll down to it. Same as a local Open.
+async function openCloudLive(id) {
+  _viewingCloudId = id;
+  liveStatusForcedOpen = true;
+  await _refreshCloudActiveStatus(id);   // seed the card before we reveal it
+  goCreateCampaign();                     // → the campaign tab (#/new)
+  setTimeout(() => {
+    try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
+    try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+    try { placeLiveCard(); } catch (_) { /* */ }
+    const sec = document.getElementById('nav-status');
+    if (sec) { try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ } }
+  }, 180);
+  _startCloudCardPoll();
 }
 window.openCloudLive = openCloudLive;
 
@@ -12919,6 +12971,7 @@ function applyRoute() {
     // v2.86.1 (port): leaving the wizard clears the "Open log" override so the
     // next idle visit starts hidden again (auto-show still applies when live).
     liveStatusForcedOpen = false;
+    stopViewingCloudCampaign();   // leaving the wizard ends any cloud-view takeover
     refreshDashboard();
     startDashboardPolling();
     // Feature ⑩: paint the admin team table on route entry (no-op for
@@ -18349,6 +18402,13 @@ function renderSheetWriteWarn(status) {
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
+  // Cloud-view takeover (card #2): when the operator opened a VM campaign, render
+  // THAT campaign's live status into this same card — unless a LOCAL campaign is
+  // genuinely running/monitoring (local always wins, never hijacked). See
+  // feedback_two_live_status_cards.
+  if (_viewingCloudId && window.__cloudActiveStatus && !(status && (status.running || status.state === 'monitoring'))) {
+    status = window.__cloudActiveStatus;
+  }
   // A campaign in the monitoring phase has running:false but is NOT idle —
   // it's watching for acceptances. The card must render it, not fall through
   // to "No campaign running" (the dashboard's half of the CC+IC/CC+DM
