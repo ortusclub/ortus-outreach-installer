@@ -26,6 +26,7 @@ import {
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity } from '/js/live-activity.mjs';
+import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
@@ -7490,10 +7491,130 @@ function _icPreflightScrollToColumnPicker() {
 
 // Cloud dispatch: run the campaign on the GKE engine instead of locally. Fully
 // self-contained + returns early, so the local path below is untouched. The
+// ── Cloud primary-handshake wizard (Path A) ─────────────────────────────────
+// Before a cloud CC+IC campaign with a LOCAL-ONLY primary is dispatched, the app
+// connects each GoLogin sender to the primary and accepts the invites in the
+// local primary browser (the engine can't — no operator Chrome on the VM). This
+// modal shows live per-sender progress by polling the status endpoint. Resolves
+// { ok:true } on success, { ok:false, proceedAnyway:true } if the operator
+// dispatches without the handshake, or { ok:false, proceedAnyway:false } on
+// Cancel (dispatch is aborted). See feedback_two_live_status_cards / the Path A
+// spec (docs/superpowers/specs/2026-07-11-cloud-handshake-path-a-...).
+function _hsRowIconHtml(view) {
+  if (view.icon === 'check') return '<span class="chk">✓</span>';
+  if (view.icon === 'x') return '<span class="chk" style="color:#b23b3b">✕</span>';
+  if (view.icon === 'spin') return '<span class="dotwait" style="background:var(--gold)"></span>';
+  if (view.icon === 'dot') return '<span class="dotwait" style="background:var(--ink)"></span>';
+  return '<span class="dotwait"></span>';
+}
+function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource = 'local-browser', autoAcceptAllPending = false }) {
+  return new Promise((resolve) => {
+    const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+    const total = senderProfileIds.length;
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Connecting senders to the primary">
+        <h3 class="modal-title">🤝 Connecting your senders to the primary</h3>
+        <div class="modal-body">
+          <div class="hs-panel">
+            <div class="hs-eyebrow"><span class="lk">🔒</span> Phase 0 · Primary handshake<span class="cnt"><span class="hs-wiz-count">0</span> / ${total}</span></div>
+            <div class="hs-head">Your Mac connects each sender to the primary, then accepts the invites in your local browser. The campaign moves to the cloud as soon as this finishes.</div>
+            <div class="hs-bar"><i class="hs-wiz-bar" style="width:0%"></i></div>
+            <div class="hs-list hs-wiz-list">
+              ${senderProfileIds.map((id) => `<div class="hs-row" data-hid="${escHtml(String(id))}"><span class="ic"><span class="dotwait"></span></span><span class="who">${escHtml(nameOf(id))}</span><span class="st">Waiting</span></div>`).join('')}
+            </div>
+            <div class="hs-keep">◈ Keep this app open — this is the only local step this campaign needs.</div>
+          </div>
+          <div class="hs-wiz-error intro-config-error" hidden style="margin-top:12px"></div>
+        </div>
+        <div class="modal-actions hs-wiz-actions" style="display:none; gap:10px; flex-wrap:wrap">
+          <button type="button" class="btn btn-primary hs-wiz-retry">Retry</button>
+          <button type="button" class="btn hs-wiz-anyway">Dispatch anyway</button>
+          <button type="button" class="btn modal-cancel-link hs-wiz-cancel">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+
+    const $ = (sel) => back.querySelector(sel);
+    let poll = null;
+    let done = false;
+    const cleanup = () => { if (poll) { clearInterval(poll); poll = null; } try { back.remove(); } catch (_) { /* */ } };
+    const finish = (result) => { if (done) return; done = true; cleanup(); resolve(result); };
+
+    const paint = (senders) => {
+      let connected = 0;
+      for (const s of (senders || [])) {
+        const view = handshakeRowView(s.state);
+        if (view.done) connected++;
+        const row = $(`.hs-row[data-hid="${CSS.escape(String(s.profileId))}"]`);
+        if (!row) continue;
+        row.classList.toggle('done', view.done);
+        const ic = row.querySelector('.ic'); if (ic) ic.innerHTML = _hsRowIconHtml(view);
+        const st = row.querySelector('.st'); if (st) st.textContent = view.label;
+        if (s.name) { const who = row.querySelector('.who'); if (who) who.textContent = s.name; }
+      }
+      const cnt = $('.hs-wiz-count'); if (cnt) cnt.textContent = String(connected);
+      const bar = $('.hs-wiz-bar'); if (bar) bar.style.width = total ? `${Math.round((connected / total) * 100)}%` : '0%';
+    };
+
+    const showError = (msg) => {
+      const err = $('.hs-wiz-error'); if (err) { err.hidden = false; err.textContent = msg; }
+      const acts = $('.hs-wiz-actions'); if (acts) acts.style.display = 'flex';
+    };
+
+    const start = async () => {
+      const err = $('.hs-wiz-error'); if (err) { err.hidden = true; err.textContent = ''; }
+      const acts = $('.hs-wiz-actions'); if (acts) acts.style.display = 'none';
+      try {
+        const res = await fetch('/api/campaign/cloud-preflight-handshake', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ senderProfileIds, primaryUrl, primarySource, autoAcceptAllPending }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showError(data.error || `Could not start the handshake (${res.status}).`); return; }
+      } catch (e) { showError('Could not reach the app to start the handshake: ' + e.message); return; }
+
+      poll = setInterval(async () => {
+        try {
+          const snap = await fetch('/api/campaign/cloud-preflight-handshake/status').then((r) => r.json());
+          if (snap && snap.active) paint(snap.senders);
+          if (snap && snap.done) {
+            clearInterval(poll); poll = null;
+            if (snap.error) { showError('Handshake error: ' + snap.error); return; }
+            // Success — brief beat so the operator sees the ✓s, then dispatch.
+            setTimeout(() => finish({ ok: true }), 700);
+          }
+        } catch (_) { /* transient poll error — keep polling */ }
+      }, 800);
+    };
+
+    $('.hs-wiz-retry').addEventListener('click', () => start());
+    $('.hs-wiz-anyway').addEventListener('click', () => finish({ ok: false, proceedAnyway: true }));
+    $('.hs-wiz-cancel').addEventListener('click', () => finish({ ok: false, proceedAnyway: false }));
+    start();
+  });
+}
+window.runHandshakeWizard = runHandshakeWizard;
+
 // server reads the sheet into leads and hands off to the engine; the campaign
 // then runs in the cloud and survives the laptop closing.
 async function _submitCloudCampaign(body) {
   try {
+    // Path A: run the primary handshake locally BEFORE dispatch when this is a
+    // cloud CC+IC campaign with auto-accept and a local-only primary. Otherwise
+    // the senders never connect to the primary (the engine's connect is lazy and
+    // only fires after a lead is accepted — 0 accepted = primary gets nothing).
+    if (needsHandshakeFromBody(body)) {
+      const t = body.templates || {};
+      const hs = await runHandshakeWizard({
+        senderProfileIds: body.profileIds || [],
+        primaryUrl: t.primaryUrl,
+        primarySource: t.primarySource || 'local-browser',
+        autoAcceptAllPending: !!t.autoAcceptAllPending,
+      });
+      if (!hs.ok && !hs.proceedAnyway) return; // operator cancelled → don't dispatch
+    }
     const res = await fetch('/api/campaign/start-cloud', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
