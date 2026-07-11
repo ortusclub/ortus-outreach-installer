@@ -27,6 +27,7 @@ import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity } from '/js/live-activity.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
+import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
@@ -6572,6 +6573,154 @@ function _buildSkippedSection(it) {
 // Render one normalized item as an sn-strip. Item shape:
 //   { where:'cloud'|'local', id, name, mode, isFG, bucket:'running'|'queued'|'done',
 //     sent, total, accounts, mine, owner, bad, paused, sheetUrl }
+// ── Expanded-strip card #2 parity ───────────────────────────────────────────
+// An expanded dashboard strip renders the SAME .vj-card as the campaign-tab
+// live-status card (card #2). vjCardSkeleton clones the real #active-card node
+// (id→data-f so ids don't collide) — zero markup drift. fillVjCard populates it
+// per-campaign, scoped by data-f. The collapsed strip is unchanged. See
+// docs/superpowers/specs/2026-07-11-expanded-strip-card2-parity-design.md
+let _snItemsById = new Map();
+let _vjTick = null;
+
+function vjCardSkeleton(cid) {
+  const src = document.getElementById('active-card');
+  if (!src) return '';
+  const clone = src.cloneNode(true);
+  clone.removeAttribute('id');
+  clone.classList.add('sn-vjcard', 'is-detailed');
+  clone.classList.remove('in-wizard', 'is-empty', 'is-preflight', 'is-monitor', 'is-local', 'is-mini');
+  clone.setAttribute('data-cid', cid);
+  clone.removeAttribute('aria-hidden');
+  // The singleton carries an inline `display:none` while idle (app.js sets
+  // card.style.display directly); the clone inherits it, so clear it — the base
+  // .vj-card grid rule then makes the expanded card visible.
+  clone.style.removeProperty('display');
+  // Convert every id → data-f so the clone can't duplicate ids in the document.
+  clone.querySelectorAll('[id]').forEach((el) => { el.setAttribute('data-f', el.id); el.removeAttribute('id'); });
+  return clone.outerHTML;
+}
+
+function _fillVjMonitorHero(root, status) {
+  const countEl = root.querySelector('[data-f="monCount"]');
+  if (countEl) countEl.textContent = status.nextCheckAt ? v3FmtCountdown(new Date(status.nextCheckAt).getTime() - Date.now()) : '—';
+  const lineEl = root.querySelector('[data-f="monLine"]');
+  if (lineEl) {
+    const sent = Number(status.totalProcessed) || 0;
+    const accepted = status.acceptedCount ?? '—';
+    const cadMin = Number(status.checkIntervalMinutes) || 60;
+    const cad = cadMin >= 60 ? (cadMin / 60) + 'h' : cadMin + ' min';
+    let ends = '—';
+    if (status.monitoringUntil) ends = new Date(status.monitoringUntil).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+    lineEl.innerHTML = `<b>${sent}</b> sent · <b>${accepted}</b> accepted · checks every <b>${cad}</b> · ends <b>${ends}</b>`;
+  }
+}
+
+function _vjControlsHtml(c, status) {
+  const dib = (svg, tip, onclick, cls = '') => `<button type="button" class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
+  let dock = '';
+  if (c.pause) dock += dib(status.paused ? V3_SVG_PLAY : V3_SVG_PAUSE, status.paused ? 'Resume' : 'Pause', c.pause.onclick);
+  let actions = '';
+  if (c.stop) actions += dib(V3_SVG_STOP, c.stop.tip || 'Stop', c.stop.onclick, 'danger');
+  if (c.restart) actions += dib(V3_SVG_RESTART, 'Restart', c.restart.onclick);
+  if (c.copy) actions += dib(V3_SVG_COPY, 'Copy to queue', c.copy.onclick);
+  for (const e of (c.extra || [])) {
+    if (e.kind === 'show') actions += `<button type="button" class="dock-btn" data-tip="Show" aria-label="Show" onclick="${e.onclick}">👁</button>`;
+    else {
+      const svg = e.kind === 'debrief' ? V3_SVG_DOC : e.kind === 'dup' ? V3_SVG_COPY : V3_SVG_XMARK;
+      actions += dib(svg, e.tip, e.onclick);
+    }
+  }
+  const openHtml = c.open ? `<button class="btn-pill" onclick="${c.open.onclick}">Open</button>` : '';
+  return `${openHtml}<div class="dock" role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`;
+}
+
+function fillVjCard(root, status) {
+  if (!root || !status) return;
+  const f = vjCardFields(status);
+  const set = (name, text) => { const el = root.querySelector(`[data-f="${name}"]`); if (el) el.textContent = text; };
+  root.classList.toggle('is-monitor', f.isMonitor);
+  root.classList.add('is-detailed');
+  root.classList.remove('is-empty', 'is-preflight');
+
+  set('activeName', f.name);
+  set('activeEyebrow', f.eyebrow);
+  set('activePct', String(f.pct));
+  set('activeSent', String(f.done));
+  set('activeTotal', String(f.total));
+  set('activeAccounts', String(f.accountsCount));
+  set('activeAccepted', f.accepted);
+  set('sendingLbl', f.sendingLbl);
+  const bar = root.querySelector('[data-f="activeBar"]'); if (bar) bar.style.width = `${f.pct}%`;
+  const glyph = root.querySelector('[data-f="activeGlyph"]'); if (glyph && typeof _cloudBadge === 'function') glyph.textContent = _cloudBadge(status.mode);
+
+  try {
+    const la = buildLiveActivity(status);
+    const live = root.querySelector('[data-f="active-live"]');
+    if (live) {
+      live.hidden = (la.state === 'idle');
+      live.classList.toggle('is-checking', la.state === 'checking');
+      live.classList.toggle('is-paused', la.state === 'paused');
+      set('activeLiveIco', la.icon); set('activeLiveL1', la.l1); set('activeLiveL2', la.l2);
+    }
+  } catch (_) { /* live line best-effort */ }
+
+  if (f.isMonitor) _fillVjMonitorHero(root, status);
+
+  const logEl = root.querySelector('[data-f="active-log"]');
+  if (logEl) {
+    const lines = Array.isArray(status.logs) ? status.logs.slice(-15) : [];
+    logEl.innerHTML = lines.map((l) => v3RenderLogLine(l)).join('');
+    const head = root.querySelector('.vj-log-head .vj-details-head');
+    if (head) head.textContent = `Live log · last ${lines.length} events`;
+  }
+
+  // Controls (rewired per-campaign; the cloned onclicks would hit the singleton).
+  const c = vjCardControlsFor(status);
+  const controls = root.querySelector('.vj-controls');
+  if (controls) controls.innerHTML = _vjControlsHtml(c, status);
+  const bulkWrap = root.querySelector('.vj-bulk');
+  if (bulkWrap) {
+    if (c.bulk) {
+      bulkWrap.style.display = '';
+      const bb = root.querySelector('[data-f="vj-bulk-btn"]'); if (bb) bb.setAttribute('onclick', c.bulk.onclick);
+      const lbl = root.querySelector('[data-f="vj-bulk-btn-label"]'); if (lbl) lbl.textContent = c.bulk.label || 'Run check now';
+    } else {
+      bulkWrap.style.display = 'none';
+    }
+  }
+}
+
+function _startVjTick() {
+  if (_vjTick) return;
+  _vjTick = setInterval(() => {
+    const cards = document.querySelectorAll('#sn-board .sn-strip:not(.sn-collapsed) .sn-vjcard.is-monitor');
+    if (!cards.length) { _stopVjTick(); return; }
+    cards.forEach((card) => {
+      const nc = card.dataset.nextcheck;
+      const el = card.querySelector('[data-f="monCount"]');
+      if (el) el.textContent = nc ? v3FmtCountdown(new Date(nc).getTime() - Date.now()) : '—';
+    });
+  }, 1000);
+}
+function _stopVjTick() { if (_vjTick) { clearInterval(_vjTick); _vjTick = null; } }
+
+// Fill every EXPANDED strip's cloned card from its board item. Called after each
+// board render; collapsed cards are display:none so we skip them.
+function _fillVjCards(board) {
+  const cards = board.querySelectorAll('.sn-strip:not(.sn-collapsed) .sn-vjcard');
+  let anyMonitor = false;
+  cards.forEach((card) => {
+    const cid = card.closest('.sn-strip')?.dataset.cid;
+    const it = cid ? _snItemsById.get(cid) : null;
+    if (!it) return;
+    const status = statusFromItem(it);
+    card.dataset.nextcheck = status.nextCheckAt || '';
+    try { fillVjCard(card, status); } catch (_) { /* per-card best-effort */ }
+    if (status.state === 'monitoring') anyMonitor = true;
+  });
+  if (anyMonitor) _startVjTick(); else _stopVjTick();
+}
+
 function renderUnifiedStrip(it) {
   const cloud = it.where === 'cloud';
   const running = it.bucket === 'running';
@@ -6777,9 +6926,14 @@ function renderUnifiedStrip(it) {
     foot = dismiss + dup + debriefBtn + _openPill;
   }
 
+  // Expanded (non-queued) strips render card #2 (.sn-vjcard) instead of the
+  // compact body. The compact body is wrapped in .sn-compact so CSS can swap the
+  // two by collapsed state; collapsed strips are byte-for-byte as before.
+  const richCard = queued ? '' : vjCardSkeleton(it.id);
   return `
   <div class="sn-strip ${stateCls}" data-cid="${escHtml(it.id)}">
     ${expandBtn}
+    <div class="sn-compact">
     <div class="sn-top"><span class="sn-type">Campaign · ${escHtml(badge)}</span>${it.mine ? '<span class="sn-you">You</span>' : (it.owner ? `<span class="sn-owner">· ${escHtml(it.owner)}</span>` : '')}${wherePill}${whenPill}
       <span class="sn-status">${dot} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
@@ -6789,6 +6943,8 @@ function renderUnifiedStrip(it) {
     ${hsAwaiting ? handshakeBlock : switchBlock}
     ${_buildSkippedSection(it)}
     <div class="sn-foot"><div class="right">${foot}${_stripOverflow()}</div></div>
+    </div>
+    ${richCard}
   </div>`;
 }
 
@@ -7220,9 +7376,11 @@ async function renderCampaignsBoard() {
     : '';
   let html = rail('▶ Now running', running) + rail('• Up next', queued)
     + rail('✓ Done', done, doneExtra);
+  _snItemsById = new Map(items.map((x) => [x.id, x]));
   board.innerHTML = html || _campaignsEmptyState();
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
+  _fillVjCards(board); // expanded strips → card #2 parity
 }
 
 // Lazy-fill done-strip log boxes from the persisted campaign log. Cached per
