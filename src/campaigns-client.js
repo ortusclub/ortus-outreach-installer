@@ -135,6 +135,10 @@ export function startCloudCampaign(c = {}) {
       fullName: l.fullName || l.full_name || l.name || '',
       // Auto-routed modes pin each lead to its sender account.
       routeAccount: l.routeAccount || l.route_account || '',
+      // The full source-sheet row → engine row_data, so intro templates can fill
+      // {company}/{title}/etc. Without this, those variables render blank in the
+      // 3-way intro (the engine's lead columns are never populated).
+      row: l.row || l.row_data || {},
     }))
     .filter((l) => l.leadUrl);
   if (!leads.length) return Promise.resolve({ error: 'No leads to send (source sheet empty or unreadable).' });
