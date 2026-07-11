@@ -336,6 +336,20 @@ var FIELD_MAP = {
   ReplyPreview:    'Reply Preview'
 };
 
+// Header aliases — a sheet may carry an older/variant header for the same
+// logical column (the v2.14 rename left some sheets on 'Connected Status' /
+// 'Intro Status'). When FIELD_MAP's canonical header isn't present on the sheet,
+// writeFields falls back to a known alias so the stamp still lands instead of
+// being silently dropped. Cloud CC+IC intros surfaced this: the sheet's
+// 'Connected Status' column never got the 'Connected' stamp because FIELD_MAP
+// targeted only 'Connection Accepted Status'.
+var COL_ALIASES = {
+  'Connection Accepted Status': ['Connected Status'],
+  'Connection Request Status':  ['Connection Status'],
+  'Introduction Status':        ['Intro Status'],
+  'Intro Status':               ['Introduction Status']
+};
+
 // ── URL column detection ──
 var URL_COLUMN_NAMES = [
   'LinkedIn URL', 'linkedin_url', 'linkedinUrl', 'LinkedIn',
@@ -1434,6 +1448,15 @@ function writeFields(sheet, headers, row, data, skipAudit) {
         if (altIdx !== -1) {
           colIndex = altIdx;
           colName  = 'Last Action';
+        }
+      }
+      // Header-alias fallback: the canonical FIELD_MAP header isn't on this
+      // sheet, but a known variant is (e.g. 'Connected Status' in place of
+      // 'Connection Accepted Status'). Write to the variant so the stamp lands.
+      if (colIndex === -1 && COL_ALIASES[colName]) {
+        for (var ai = 0; ai < COL_ALIASES[colName].length; ai++) {
+          var aliasIdx = headers.indexOf(COL_ALIASES[colName][ai]);
+          if (aliasIdx !== -1) { colIndex = aliasIdx; colName = COL_ALIASES[colName][ai]; break; }
         }
       }
       // Skip writes for columns that don't exist on this sheet — keeps the
