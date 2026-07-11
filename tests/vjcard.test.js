@@ -87,6 +87,16 @@ test('controls: done → duplicate + dismiss, no bulk/stop/pause', () => {
   const local = vjCardControlsFor(statusFromItem({ where: 'local', id: 'h1', bucket: 'done', hist: true }));
   assert.ok(local.extra.find((e) => e.kind === 'debrief'));
 });
+test('controls: a nasty local done id (quote / angle brackets) is escaped in onclicks', () => {
+  const c = vjCardControlsFor(statusFromItem({ where: 'local', id: "h-O'Brien <b>Q3</b>", bucket: 'done', hist: true }));
+  const dismiss = c.extra.find((e) => e.kind === 'dismiss');
+  // no raw apostrophe that would terminate the JS string, no raw angle brackets
+  assert.ok(!/dismissLocalDone\('h-O'Brien/.test(dismiss.onclick), 'apostrophe must be JS-escaped');
+  assert.match(dismiss.onclick, /O\\'Brien/);
+  assert.ok(!dismiss.onclick.includes('<b>'), 'angle brackets must be HTML-escaped');
+  assert.match(dismiss.onclick, /&lt;b&gt;/);
+});
+
 test('controls: queued → cancel + open routes to edit/viewCloud', () => {
   const local = vjCardControlsFor(statusFromItem({ where: 'local', id: 'q1', rawId: 'r1', bucket: 'queued' }));
   assert.match(local.open.onclick, /editQueuedCampaign.*r1/);

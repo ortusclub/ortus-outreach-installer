@@ -6674,6 +6674,19 @@ function fillVjCard(root, status) {
     if (head) head.textContent = `Live log · last ${lines.length} events`;
   }
 
+  // The cloned log-action buttons carry singleton-targeting onclicks
+  // (openRunningSheet / dashCopyLog read the local cockpit campaign). Rewire
+  // "Copy all" to copy THIS card's log; hide "Open sheet" + the wizard-only
+  // "Show more" so a strip can't act on the wrong campaign.
+  const logActs = root.querySelector('.vj-log-acts');
+  if (logActs) {
+    logActs.querySelectorAll('.vj-log-act').forEach((b) => {
+      const txt = (b.textContent || '').toLowerCase();
+      if (b.getAttribute('data-f') === 'wiz-log-more' || txt.includes('open sheet')) { b.style.display = 'none'; return; }
+      if (txt.includes('copy')) b.setAttribute('onclick', 'copyVjCardLog(this)');
+    });
+  }
+
   // Controls (rewired per-campaign; the cloned onclicks would hit the singleton).
   const c = vjCardControlsFor(status);
   const controls = root.querySelector('.vj-controls');
@@ -6689,6 +6702,15 @@ function fillVjCard(root, status) {
     }
   }
 }
+
+// Copy an expanded strip card's OWN log (not the singleton's __activeFullLogs).
+window.copyVjCardLog = function (btn) {
+  const card = btn && btn.closest('.sn-vjcard');
+  const log = card && card.querySelector('[data-f="active-log"]');
+  const text = log ? [...log.children].map((c) => c.textContent.trim()).join('\n') : '';
+  try { navigator.clipboard.writeText(text); } catch (_) { /* clipboard best-effort */ }
+  const orig = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = orig; }, 1200);
+};
 
 function _startVjTick() {
   if (_vjTick) return;

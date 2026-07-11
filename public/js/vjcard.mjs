@@ -75,11 +75,20 @@ export function vjCardFields(status = {}) {
 /** The control-button matrix for one strip's card, routed to THAT campaign by id
  *  (local vs cloud, per state). Pure — returns a spec; fillVjCard renders it.
  *  onclick strings reference the same global fns renderUnifiedStrip's footer uses. */
+// Escape a campaign id for safe embedding in `onclick="fn('<here>')"` — a
+// double-quoted HTML attribute holding a single-quoted JS string. A local done
+// strip's id is `h-<campaign name>`, so it can carry quotes / angle brackets.
+function _esc(v) {
+  return String(v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 export function vjCardControlsFor(status = {}) {
   const s = status || {};
   const cloud = !!s._cloud;
-  const id = String(s.id || '');
-  const rawId = String(s.rawId || id);
+  const id = _esc(String(s.id || ''));
+  const rawId = _esc(String(s.rawId || String(s.id || '')));
   const monitor = s.state === 'monitoring';
   const done = s.state === 'done';
   const queued = s.state === 'queued';
