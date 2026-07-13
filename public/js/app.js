@@ -3018,34 +3018,58 @@ function openCloudCampaignView(id, label) {
 
   const img = document.getElementById('cloud-cv-img');
   const status = document.getElementById('cloud-cv-status');
-  img.onload = () => { if (status) status.textContent = ''; };
-  img.onerror = async () => {
-    // No screencast (engine returns JSON / SPA-HTML, not an image) — a bare <img>
-    // renders an ugly broken-image glyph in the black box. Hide it and show a
-    // clean placeholder with the reason instead. The engine doesn't stream
-    // campaign browsers yet; this lights up automatically once it does.
-    let msg = 'Live browser view isn’t available yet — the cloud engine doesn’t stream campaign browsers. Watch progress in the per-lead log on the campaign card.';
-    try {
-      const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/view`);
-      const j = await r.json().catch(() => ({}));
-      if (j && j.error) msg = j.error;
-    } catch { /* keep the default reason */ }
+  const viewUrl = `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
+
+  // Cloud campaign browsers are SHORT-LIVED: the VM opens a browser only while
+  // it's actively sending a lead or running an acceptance check (often just a
+  // few seconds), then reaps it. So a one-shot <img> almost always misses the
+  // window and 404s. Instead we KEEP WATCHING: when there's no live browser,
+  // show a "waiting" state and re-probe every few seconds, auto-starting the
+  // stream the moment one opens. The operator opens this once and leaves it up.
+  let _tries = 0;
+  const showWaiting = (reason) => {
     img.style.display = 'none';
-    if (status) status.textContent = 'not streaming';
+    if (status) status.textContent = 'waiting for a browser…';
     const stage = document.getElementById('cloud-cv-stage');
     if (stage) {
       stage.innerHTML =
-        '<div style="padding:52px 34px;text-align:center;max-width:540px">' +
-          '<div style="font-size:34px;opacity:.45;margin-bottom:14px">👁</div>' +
-          '<div style="font-size:14px;line-height:1.55;color:#ccd">' + escHtml(msg) + '</div>' +
+        '<div style="padding:44px 34px;text-align:center;max-width:560px">' +
+          '<div style="font-size:30px;margin-bottom:14px">🟢</div>' +
+          '<div style="font-size:15px;line-height:1.55;color:#e8eaed;margin-bottom:8px">Waiting for the campaign to open a browser…</div>' +
+          '<div style="font-size:12.5px;line-height:1.55;color:#9aa">' +
+            'Cloud campaigns open a browser only for a few seconds while sending a connection or running a check. ' +
+            'Leave this open — it starts streaming automatically the moment one opens.' +
+            (reason ? '<br><span style="opacity:.6">(' + escHtml(reason) + ')</span>' : '') +
+          '</div>' +
         '</div>';
     }
   };
-  img.src = `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
+  const retry = () => {
+    if (!document.getElementById('cloud-cmp-viewer')) return; // closed
+    _tries++;
+    // Cache-bust so the browser actually re-requests (a failed <img> won't retry
+    // the same URL on its own).
+    img.style.display = 'block';
+    img.src = `${viewUrl}?t=${Date.now()}`;
+  };
+  img.onload = () => { if (status) status.textContent = '● live'; };
+  img.onerror = async () => {
+    let reason = '';
+    try {
+      const r = await fetch(viewUrl);
+      const j = await r.json().catch(() => ({}));
+      if (j && j.error && !/no active session/i.test(j.error)) reason = j.error;
+    } catch { /* ignore */ }
+    showWaiting(reason);
+    _cloudCvRetryTimer = setTimeout(retry, 4000); // keep probing until a browser opens
+  };
+  retry();
 }
+let _cloudCvRetryTimer = null;
 function closeCloudCampaignView() {
+  if (_cloudCvRetryTimer) { clearTimeout(_cloudCvRetryTimer); _cloudCvRetryTimer = null; }
   const img = document.getElementById('cloud-cv-img');
-  if (img) img.src = ''; // aborts the stream → engine stops the screencast
+  if (img) { img.onerror = null; img.onload = null; img.src = ''; } // abort stream + stop retrying
   const el = document.getElementById('cloud-cmp-viewer');
   if (el) el.remove();
 }
@@ -6937,17 +6961,16 @@ function renderUnifiedStrip(it) {
       + _dib(V3_SVG_STOP, 'Stop', 'window.dashStopActive && window.dashStopActive()', 'danger')
       + _openPill;
   } else if (running && cloud) {
+    // "Show campaign happening" — watch the VM's browser live. Shown in BOTH
+    // sending AND monitoring: cloud browsers are short-lived (a few seconds per
+    // send/check), so the viewer waits and auto-streams the moment one opens.
+    // The green LIVE dot lights when the engine reports an active browser this
+    // poll (it.live) — a hint there's something to watch right now.
+    const _vLabel = String(it.name || it.id).replace(/['"\\<>]/g, '');
+    const _showBtn = `<button class="mini${it.live ? ' live-on' : ''}" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">${it.live ? '<span class="live-dot"></span>' : ''}👁 Show</button>`;
     if (monitoring) {
-      // Monitoring: no live browser to "Show" — Stop monitoring (engine stop) +
-      // Open. ⚡ Check now + the Auto toggle live in the monitoring card (monBlock).
-      foot = _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _cloudOpen;
+      foot = _showBtn + _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _cloudOpen;
     } else {
-      // "Show campaign happening" — watch the VM's browser live (parity with the
-      // Sales Nav per-job View). Streams once the engine ships a campaign screencast.
-      const _vLabel = String(it.name || it.id).replace(/['"\\<>]/g, '');
-      // Green LIVE dot when the engine reports an active browser this poll — tells
-      // the operator there's something to watch before they click.
-      const _showBtn = `<button class="mini${it.live ? ' live-on' : ''}" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">${it.live ? '<span class="live-dot"></span>' : ''}👁 Show</button>`;
       foot = _showBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _cloudOpen;
     }
   } else if (queued) {

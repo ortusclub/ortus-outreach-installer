@@ -236,7 +236,10 @@ export async function openCampaignViewStream(id) {
     });
     if (!res.ok) {
       controller.abort();
-      return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+      // Pass the engine's real reason through (e.g. {error:"no active session"})
+      // so the viewer can distinguish an expected idle window from a real fault.
+      let body = null; try { body = await res.json(); } catch { /* not json */ }
+      return { ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` };
     }
     const ct = res.headers.get('content-type') || '';
     if (/text\/html/i.test(ct)) {
