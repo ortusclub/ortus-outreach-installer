@@ -6046,6 +6046,9 @@ async function _refreshCloudActiveStatus(id) {
     let leads = [];
     try { const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json(); if (lr && Array.isArray(lr.leads)) leads = lr.leads; } catch (_) { /* */ }
     window.__cloudActiveStatus = _buildCloudActiveStatus((d && d.campaign) || {}, leads, (d && d.leadCounts) || {});
+    // Live-browser flag from the engine (top-level of the /:id detail) — drives
+    // the LIVE dot on card #2's Show button (component 5 → component 7).
+    if (window.__cloudActiveStatus) { window.__cloudActiveStatus.live = !!(d && d.live); window.__cloudActiveStatus.liveAccount = (d && d.liveAccount) || ''; }
   } catch (_) { if (!window.__cloudActiveStatus) window.__cloudActiveStatus = { _cloud: true, id, name: 'Cloud campaign', running: true, logs: [] }; }
 }
 
@@ -6091,6 +6094,27 @@ function _adaptActiveCardControls(card, status) {
     cn.onclick = () => { try { window.cloudCheckNow(_viewingCloudId, cn); } catch (_) { /* */ } };
     cn.style.display = '';
   } else if (cn) { cn.style.display = 'none'; }
+
+  // 👁 Show live — watch THIS cloud campaign's browser (parity with card #1's
+  // strip button). Shown whenever card #2 is a cloud campaign (any state); the
+  // viewer itself handles the idle case. A green LIVE dot lights when the engine
+  // reports an active browser this poll (status.live, folded in via component 5).
+  let sh = document.getElementById('dock-cloud-show');
+  const wantShow = cloud && !!dock;
+  if (wantShow) {
+    if (!sh) {
+      sh = document.createElement('button');
+      sh.id = 'dock-cloud-show';
+      sh.className = 'dock-btn';
+      sh.setAttribute('data-tip', 'Show live'); sh.setAttribute('aria-label', 'Show live');
+      sh.innerHTML = '<span class="live-dot"></span>👁';
+      dock.insertBefore(sh, dock.firstChild);
+    }
+    const _lbl = String((status && (status.name || status.id)) || '').replace(/['"\\<>]/g, '');
+    sh.onclick = () => { try { openCloudCampaignView(String(_viewingCloudId), _lbl); } catch (_) { /* */ } };
+    sh.classList.toggle('live-on', !!(status && status.live));
+    sh.style.display = '';
+  } else if (sh) { sh.style.display = 'none'; }
 }
 
 // Cloud "Open" — go to the campaign tab and show THIS campaign's live status
@@ -6921,7 +6945,9 @@ function renderUnifiedStrip(it) {
       // "Show campaign happening" — watch the VM's browser live (parity with the
       // Sales Nav per-job View). Streams once the engine ships a campaign screencast.
       const _vLabel = String(it.name || it.id).replace(/['"\\<>]/g, '');
-      const _showBtn = `<button class="mini" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">👁 Show</button>`;
+      // Green LIVE dot when the engine reports an active browser this poll — tells
+      // the operator there's something to watch before they click.
+      const _showBtn = `<button class="mini${it.live ? ' live-on' : ''}" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">${it.live ? '<span class="live-dot"></span>' : ''}👁 Show</button>`;
       foot = _showBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _cloudOpen;
     }
   } else if (queued) {
@@ -7314,6 +7340,9 @@ async function renderCampaignsBoard() {
         : (c.status === 'pending' || c.status === 'queued') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
+        // Live-browser flag from the engine (top-level of the /:id detail, NOT
+        // inside d.campaign) — drives the green LIVE dot on the Show button.
+        live: !!(d && d.live), liveAccount: (d && d.liveAccount) || '',
         bucket, sent: Number(lc.sent || 0), total: Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0),
         accounts: (c.profile_ids || []).length, mine,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
