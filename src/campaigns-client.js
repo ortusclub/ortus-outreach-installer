@@ -235,10 +235,12 @@ export async function openCampaignViewStream(id) {
       method: 'GET', headers, signal: controller.signal,
     });
     if (!res.ok) {
-      controller.abort();
-      // Pass the engine's real reason through (e.g. {error:"no active session"})
-      // so the viewer can distinguish an expected idle window from a real fault.
+      // Read the body BEFORE aborting — aborting the controller tears down the
+      // response stream, so a read-after-abort loses the engine's JSON reason
+      // (e.g. {error:"no active session"}) and falls back to a bare "HTTP 404".
+      // The viewer's calm idle state keys on that "no active session" string.
       let body = null; try { body = await res.json(); } catch { /* not json */ }
+      controller.abort();
       return { ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` };
     }
     const ct = res.headers.get('content-type') || '';
