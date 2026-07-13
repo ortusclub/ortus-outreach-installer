@@ -7581,13 +7581,41 @@ window.stopCloudCampaignUI = stopCloudCampaignUI;
 // 404/HTTP error → a clear "engine update pending" toast, no throw.
 async function cloudCheckNow(id, btn) {
   if (btn) btn.disabled = true;
+  let queued = false;
   try {
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, { method: 'POST' });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok || d.error) showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Check now isn’t live yet — engine update pending.', 6000);
-    else showCampaignToast('⚡ Check queued — the VM will sweep for acceptances shortly.', 5000);
+    if (!res.ok || d.error) {
+      showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Check now isn’t live yet — engine update pending.', 6000);
+    } else {
+      queued = true;
+      showCampaignToast('⚡ Check queued — the VM is opening a browser to sweep… (takes ~10s)', 4500);
+    }
   } catch (e) { showCampaignToast('Could not reach the engine: ' + e.message, 6000); }
-  finally { if (btn) btn.disabled = false; if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns(); }
+  finally { if (btn) btn.disabled = false; }
+  if (!queued) return;
+
+  // Real feedback tied to the actual browser (fixes "no indication when it
+  // starts / no logs"): poll the live flag so the operator SEES the sweep begin
+  // ("VM checking now") and finish, instead of silence. The VM opens a browser
+  // for only a few seconds, so this narrates that short window.
+  (async () => {
+    let sawLive = false;
+    for (let i = 0; i < 40; i++) {                 // ~60s
+      await new Promise((r) => setTimeout(r, 1500));
+      let dd = {};
+      try { dd = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json(); } catch { /* */ }
+      if (dd.live && !sawLive) {
+        sawLive = true;
+        showCampaignToast('🟢 VM checking now — browser is open. Click 👁 Show to watch it live.', 6000);
+      } else if (!dd.live && sawLive) {
+        showCampaignToast('✓ VM check complete.', 4000);
+        if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
+        return;
+      }
+    }
+    if (!sawLive) showCampaignToast('VM check ran, but no browser opened — it may already be up to date, or a check was already in progress. Try again in a moment.', 7000);
+  })();
 }
 window.cloudCheckNow = cloudCheckNow;
 
@@ -14599,6 +14627,18 @@ function openSoloCheckModal(idx) {            // Past-row "Run a solo check"
   _showSoloCheckModal();
 }
 function openActiveBulkCheckModal() {          // active "Run check now"
+  // VM/cloud campaign: the LOCAL sheet bulk-check (below) doesn't apply — the
+  // campaign runs on the engine. Route this same button to the VM's acceptance
+  // check instead (operator's rule: same button, VM path when in a VM campaign).
+  // No scope modal — the VM sweeps its own accounts. Robust: fire on EITHER the
+  // cloud-view flag or the cloud status object so it can't silently miss.
+  const _cloudId = _viewingCloudId
+    || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id);
+  if (_cloudId) {
+    const btn = document.querySelector('#btn-bulk-check-live, #btn-bulk-check-now');
+    cloudCheckNow(_cloudId, btn || undefined);
+    return;
+  }
   _soloCheckHandler = (mode) => _runActiveBulkCheck(mode);
   _showSoloCheckModal();
 }
