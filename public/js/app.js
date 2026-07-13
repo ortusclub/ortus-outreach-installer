@@ -2995,9 +2995,9 @@ function closeScrapeJobView() {
 
 // "Show campaign happening" — the cloud-campaign analogue of openScrapeJobView.
 // Opens a modal whose <img> streams the engine's MJPEG screencast of the
-// campaign's active browser session via /api/campaign/cloud/:id/view. Until the
-// engine ships that endpoint the proxy returns 501 JSON → the <img> errors and
-// we surface the proxy's message ("not available yet"). One viewer at a time.
+// campaign's active browser session via /api/campaign/cloud/:id/view. Browsers
+// are intentionally ephemeral, so the idle state is expected and the viewer
+// reconnects when the campaign next opens its own browser. One viewer at a time.
 function openCloudCampaignView(id, label) {
   closeCloudCampaignView();
   const overlay = document.createElement('div');
@@ -3010,8 +3010,9 @@ function openCloudCampaignView(id, label) {
       '<span id="cloud-cv-status" style="color:#9aa;font-size:12px">connecting…</span>' +
       '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeCloudCampaignView()">✕ Close</button>' +
     '</div>' +
-    '<div id="cloud-cv-stage" style="max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
+    '<div id="cloud-cv-stage" style="position:relative;max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
       '<img id="cloud-cv-img" alt="" style="max-width:100%;max-height:78vh;display:block" />' +
+      '<div id="cloud-cv-empty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center"></div>' +
     '</div>';
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeCloudCampaignView(); });
   document.body.appendChild(overlay);
@@ -3019,6 +3020,7 @@ function openCloudCampaignView(id, label) {
   const img = document.getElementById('cloud-cv-img');
   const status = document.getElementById('cloud-cv-status');
   const viewUrl = `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
+  const detailUrl = `/api/campaign/cloud/${encodeURIComponent(id)}`;
 
   // Cloud campaign browsers are SHORT-LIVED: the VM opens a browser only while
   // it's actively sending a lead or running an acceptance check (often just a
@@ -3027,42 +3029,108 @@ function openCloudCampaignView(id, label) {
   // show a "waiting" state and re-probe every few seconds, auto-starting the
   // stream the moment one opens. The operator opens this once and leaves it up.
   let _tries = 0;
-  const showWaiting = (reason) => {
+  let fastRetryUntil = 0;
+  const nextCheckText = (value) => {
+    if (!value) return '';
+    const when = new Date(value);
+    if (Number.isNaN(when.getTime())) return '';
+    return when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+  const showWaiting = ({ nextCheckAt = '', reason = '', checking = false, canCheckNow = false } = {}) => {
     img.style.display = 'none';
-    if (status) status.textContent = 'waiting for a browser…';
-    const stage = document.getElementById('cloud-cv-stage');
-    if (stage) {
-      stage.innerHTML =
+    if (status) status.textContent = checking ? 'check queued…' : 'no browser open';
+    const empty = document.getElementById('cloud-cv-empty');
+    if (empty) {
+      const next = nextCheckText(nextCheckAt);
+      empty.style.display = 'flex';
+      empty.innerHTML =
         '<div style="padding:44px 34px;text-align:center;max-width:560px">' +
-          '<div style="font-size:30px;margin-bottom:14px">🟢</div>' +
-          '<div style="font-size:15px;line-height:1.55;color:#e8eaed;margin-bottom:8px">Waiting for the campaign to open a browser…</div>' +
-          '<div style="font-size:12.5px;line-height:1.55;color:#9aa">' +
-            'Cloud campaigns open a browser only for a few seconds while sending a connection or running a check. ' +
-            'Leave this open — it starts streaming automatically the moment one opens.' +
-            (reason ? '<br><span style="opacity:.6">(' + escHtml(reason) + ')</span>' : '') +
+          '<div style="font-size:15px;line-height:1.55;color:#e8eaed;margin-bottom:8px">' +
+            (checking ? 'Check queued. Waiting for the browser to open…' : 'No browser open right now.') +
           '</div>' +
+          '<div style="font-size:12.5px;line-height:1.55;color:#9aa">' +
+            (next
+              ? `This campaign next checks at ${escHtml(next)}. `
+              : 'Cloud campaigns open a browser only while working. ') +
+            (canCheckNow ? 'Run a check now, then leave this viewer open. ' : 'Leave this viewer open. ') +
+            'It connects automatically when frames arrive.' +
+            (reason ? '<br><span style="color:#f2b8b5">' + escHtml(reason) + '</span>' : '') +
+          '</div>' +
+          (canCheckNow ? '<button id="cloud-cv-check-now" class="btn btn-primary btn-sm" style="margin-top:18px">Run check now</button>' : '') +
         '</div>';
+      const checkBtn = document.getElementById('cloud-cv-check-now');
+      if (checkBtn) checkBtn.onclick = queueCheckNow;
     }
+  };
+  const readCampaign = async () => {
+    try {
+      const res = await fetch(detailUrl, { cache: 'no-store' });
+      return await res.json().catch(() => ({}));
+    } catch (_) { return {}; }
+  };
+  const scheduleRetry = (delay) => {
+    if (_cloudCvRetryTimer) clearTimeout(_cloudCvRetryTimer);
+    _cloudCvRetryTimer = setTimeout(retry, delay);
   };
   const retry = () => {
     if (!document.getElementById('cloud-cmp-viewer')) return; // closed
     _tries++;
     // Cache-bust so the browser actually re-requests (a failed <img> won't retry
     // the same URL on its own).
+    const empty = document.getElementById('cloud-cv-empty');
+    if (empty) empty.style.display = 'none';
     img.style.display = 'block';
     img.src = `${viewUrl}?t=${Date.now()}`;
   };
   img.onload = () => { if (status) status.textContent = '● live'; };
   img.onerror = async () => {
+    const detail = await readCampaign();
     let reason = '';
     try {
-      const r = await fetch(viewUrl);
+      const r = await fetch(viewUrl, { cache: 'no-store' });
       const j = await r.json().catch(() => ({}));
       if (j && j.error && !/no active session/i.test(j.error)) reason = j.error;
     } catch { /* ignore */ }
-    showWaiting(reason);
-    _cloudCvRetryTimer = setTimeout(retry, 4000); // keep probing until a browser opens
+    showWaiting({
+      nextCheckAt: detail && detail.campaign && detail.campaign.next_check_at,
+      reason,
+      checking: Date.now() < fastRetryUntil,
+      canCheckNow: !!(detail && detail.campaign && detail.campaign.status === 'monitoring'),
+    });
+    scheduleRetry(Date.now() < fastRetryUntil ? 1500 : 4000);
   };
+  async function queueCheckNow() {
+    const btn = document.getElementById('cloud-cv-check-now');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        const detail = await readCampaign();
+        showWaiting({
+          nextCheckAt: detail && detail.campaign && detail.campaign.next_check_at,
+          reason: data.error || 'Could not queue a check.',
+          canCheckNow: !!(detail && detail.campaign && detail.campaign.status === 'monitoring'),
+        });
+        return;
+      }
+      fastRetryUntil = Date.now() + 60 * 1000;
+      const detail = await readCampaign();
+      showWaiting({
+        nextCheckAt: detail && detail.campaign && detail.campaign.next_check_at,
+        checking: true,
+        canCheckNow: true,
+      });
+      scheduleRetry(0);
+    } catch (_) {
+      const detail = await readCampaign();
+      showWaiting({
+        nextCheckAt: detail && detail.campaign && detail.campaign.next_check_at,
+        reason: 'Could not reach the campaign service.',
+        canCheckNow: !!(detail && detail.campaign && detail.campaign.status === 'monitoring'),
+      });
+    }
+  }
   retry();
 }
 let _cloudCvRetryTimer = null;
@@ -5871,8 +5939,8 @@ const _cloudSheetUrls = new Map();
 // cloud engine's per-lead status rows (GET /api/campaign/:id/leads). Ordered
 // chronologically (oldest → newest) so the render's slice(-8) shows the most
 // recent lines — matching how a local log reads — with a summary line last.
-function _cloudLeadsToLog(leads, isFG = false) {
-  if (!Array.isArray(leads) || !leads.length) return [];
+function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
+  leads = Array.isArray(leads) ? leads : [];
   const hhmm = (iso) => {
     if (!iso) return '';
     const d = new Date(iso);
@@ -5897,6 +5965,18 @@ function _cloudLeadsToLog(leads, isFG = false) {
   const err = leads.filter((l) => l && l.status === 'error').length;
   const pending = Math.max(0, leads.length - sent - err);
   lines.push(`— ${sent} ${isFG ? 'invited' : 'sent'} · ${err} error${err === 1 ? '' : 's'}${pending > 0 ? ` · ${pending} pending` : ''}`);
+  const checkDone = monitor.monitor_check_completed_at;
+  const checkStarted = monitor.monitor_check_started_at;
+  const checkWhen = hhmm(checkDone || checkStarted);
+  if (checkDone) {
+    const accepted = Math.max(0, Number(monitor.monitor_check_newly_accepted) || 0);
+    const checkError = String(monitor.monitor_check_error || '').trim();
+    lines.push(checkError
+      ? `✗ Check finished with an error${checkWhen ? ` · ${checkWhen}` : ''} · ${checkError}`
+      : `✓ Check complete${checkWhen ? ` · ${checkWhen}` : ''} · ${accepted} newly accepted`);
+  } else if (checkStarted) {
+    lines.push(`◌ Check in progress${checkWhen ? ` · ${checkWhen}` : ''}`);
+  }
   return lines;
 }
 
@@ -5997,7 +6077,7 @@ async function renderCloudCampaigns() {
     if (st === 'running' || _snExpanded.has(c.id)) {
       try {
         const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
-        if (lr && Array.isArray(lr.leads)) d._logLines = _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth');
+        if (lr && Array.isArray(lr.leads)) d._logLines = _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c);
       } catch { /* best-effort — the status note stays */ }
     }
     return d;
@@ -6058,7 +6138,7 @@ function _buildCloudActiveStatus(c, leads, counts) {
     name: c.name || '(unnamed)', mode: c.mode,
     totalTargets: total, totalProcessed: sent,
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
-    acceptedCount: accepted, logs: _cloudLeadsToLog(leads, c.mode === 'follower_growth'),
+    acceptedCount: accepted, logs: _cloudLeadsToLog(leads, c.mode === 'follower_growth', c),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
   };
@@ -7344,7 +7424,7 @@ async function renderCampaignsBoard() {
       if (st === 'running' || _snExpanded.has(c.id)) {
         try {
           const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
-          if (lr && Array.isArray(lr.leads)) d._logLines = _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth');
+          if (lr && Array.isArray(lr.leads)) d._logLines = _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c);
         } catch { /* best-effort — the status note stays */ }
       }
       return d;
