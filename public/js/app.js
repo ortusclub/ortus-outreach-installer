@@ -8219,6 +8219,12 @@ async function initOperatorIdentity() {
   try {
     const r = await fetch('/api/operator-identity');
     const d = await r.json();
+    // Populate the SHARED operator identity app-wide, not just the sidebar chip.
+    // snCurrentEmail is what the campaigns board's `mine` and the Team panel's
+    // "You" badge key off — previously it was loaded ONLY on the Sales Nav route
+    // (loadOperatorEmail), so on the dashboard it was empty and "You" fell back
+    // to the LOGIN email (ortus@) instead of the operator (e.g. antonio@).
+    if (d && d.email) snCurrentEmail = d.email;
     _setOperatorChip(d && d.email);
     if (!d || !d.set) openOperatorEmailModal({ mandatory: true });
   } catch { /* offline — the server-side start gate still protects it */ }
@@ -8270,6 +8276,7 @@ async function saveOperatorEmail() {
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) { showErr((d && d.error) || 'Could not save — try again.'); return; }
+    if (d.email) snCurrentEmail = d.email;   // keep the shared operator identity in sync (board `mine` + Team "You")
     _setOperatorChip(d.email);
     _operatorEmailMandatory = false;
     const modal = document.getElementById('operator-email-modal');
@@ -13196,6 +13203,11 @@ async function renderTeamStatus(force = false) {
     const sub = document.getElementById('team-status-sub');
     const confEl = document.getElementById('team-conf-strip');
     if (!body) return;
+    // "You" is the OPERATOR (who you're operating as, e.g. antonio@) — the same
+    // identity the rows are owned by — NOT the shared login (ortus@). snCurrentEmail
+    // is loaded at startup (initOperatorIdentity); guard the first-render race by
+    // fetching it on demand if it hasn't landed, before falling back to the login.
+    if (!snCurrentEmail) { try { await loadOperatorEmail(); } catch { /* keep fallback */ } }
     const you = String(snCurrentEmail || _viewerEmail || '').toLowerCase();
 
     // Inline mirror of detectAccountConflicts() in src/team-status.js (the
