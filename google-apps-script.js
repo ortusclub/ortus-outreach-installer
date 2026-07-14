@@ -1397,7 +1397,15 @@ function writeFields(sheet, headers, row, data, skipAudit) {
   // back to the script's project timezone when no tz is sent, matching
   // the legacy behaviour for old bot versions.
   if (data.dateLastAction !== undefined && data.dateLastAction !== null && data.dateLastAction !== '') {
+    // Prefer the EXACT action moment the bot sends (a full ISO timestamp, e.g.
+    // the cloud engine's sent_at) so the stamp reflects when the action actually
+    // happened, not when this write lands. Local runs send a human-formatted
+    // string ("May 4th, 13:43") which is NOT a valid ISO date — those fall back
+    // to now() (write-time ≈ action-time for local, which writes per-action).
     var nowDt = new Date();
+    var isoParsed = /^\d{4}-\d{2}-\d{2}T/.test(String(data.dateLastAction))
+      ? new Date(data.dateLastAction) : null;
+    if (isoParsed && !isNaN(isoParsed.getTime())) nowDt = isoParsed;
     var tz = (data && data.tz) || Session.getScriptTimeZone();
     var dateStr = Utilities.formatDate(nowDt, tz, 'yyyy-MM-dd');
     var timeStr = Utilities.formatDate(nowDt, tz, 'HH:mm:ss');

@@ -1302,6 +1302,14 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
       sooSheetId: SOO_SHEET_ID,
       sooGid: SOO_SHEET_GID,
     };
+    // Operator timezone → engine → GAS stamps "Date/Time of Last Action" in the
+    // operator's local clock (parity with local runs, where sheets-writer attaches
+    // tz). Best-effort: a missing pref falls back to the Apps Script's script tz.
+    try {
+      const _ownerEmail = getOperatorEmail() || req.user || '';
+      const _prefs = _ownerEmail ? await getOperatorPrefs(_ownerEmail) : null;
+      if (_prefs && _prefs.tz) config.tz = _prefs.tz;
+    } catch { /* non-fatal — tz is optional */ }
     // Follower Growth needs the page invite URL + a monthly credit budget. The
     // operator can override the URL from the wizard; otherwise use the Ortus
     // Club page invite URL the local FG flow already uses.
