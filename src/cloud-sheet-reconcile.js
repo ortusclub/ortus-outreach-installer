@@ -131,10 +131,28 @@ export function cloudLeadToLocalSheetData(mode, lead, senderName = '') {
     if (err.toLowerCase().includes('already connected')) {
       return buildSheetDataForAction({ action: 'already_connected', mode, profileName: senderName });
     }
+    // Anti-dupe re-encounter — the engine marks a person it already actioned in
+    // this campaign as skipped/stage 'dup' with NO error. Local dedups before it
+    // ever writes, so there's no exact local string; surface a readable duplicate
+    // skip (matches the engine's own stageLabel) instead of the empty-error
+    // fallback's 'Skipped: Skipped'.
+    if (String(lead.stage) === 'dup') {
+      return buildSkipSheetData(mode, 'Skipped: Duplicate', senderName);
+    }
     const reason = normalizeSkipReason(engineErrorToLocalReason(err) || (status === 'skipped' ? 'Skipped' : 'Error'));
     return buildSkipSheetData(mode, reason, senderName);
   }
   if (status !== 'sent') return null; // pending / claimed → nothing to stamp yet
+
+  // already_processed — the connect/DM/InMail is already in flight (a real
+  // vendored-outreach outcome). Local has a dedicated MODE-AWARE stamp for it
+  // (Connect Pending for connect modes; DM/IC/InM/OP Sent for the send-only
+  // modes), so route straight to that action rather than letting sentStageToAction
+  // default the unrecognized code to a connection send (wrong Stage for send-only
+  // modes). Matches the engine's stageLabel(already_processed, mode) 1:1.
+  if (String(lead.stage) === 'already_processed') {
+    return buildSheetDataForAction({ action: 'already_processed', mode, profileName: senderName });
+  }
 
   // Non-connect single-step sends (message_only / introduce_back / open_profile /
   // inmail) map straight to their action.

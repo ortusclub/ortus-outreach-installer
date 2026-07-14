@@ -46,6 +46,39 @@ test('pending / claimed → nothing to stamp', () => {
   assert.equal(cloudLeadToLocalSheetData('connect_only', { status: 'claimed' }, 'a'), null);
 });
 
+// already_processed — the connect/DM/InMail is already in flight. Local stamps
+// the SAME Stage it would for a fresh send in that mode; the reconciler must too
+// (agrees with the engine's stageLabel(already_processed, mode)).
+test('already_processed (connect_and_introduce) → Connect Pending', () => {
+  const d = cloudLeadToLocalSheetData('connect_and_introduce', { status: 'sent', stage: 'already_processed' }, 'alex');
+  assert.equal(d.stage, 'Connect Pending');
+  assert.equal(d.connectionStatus, 'Connection Request Sent');
+});
+test('already_processed (message_only) → DM Sent, NOT a connection send', () => {
+  const d = cloudLeadToLocalSheetData('message_only', { status: 'sent', stage: 'already_processed' }, 'alex');
+  assert.equal(d.stage, 'DM Sent');
+  assert.equal(d.dmStatus, 'DM Sent');
+});
+test('already_processed (introduce_back) → IC Sent', () => {
+  const d = cloudLeadToLocalSheetData('introduce_back', { status: 'sent', stage: 'already_processed' }, 'alex');
+  assert.equal(d.stage, 'IC Sent');
+});
+test('already_processed (open_profile_only) → OP Sent', () => {
+  const d = cloudLeadToLocalSheetData('open_profile_only', { status: 'sent', stage: 'already_processed' }, 'alex');
+  assert.equal(d.stage, 'OP Sent');
+});
+
+// Anti-dupe re-encounter → readable duplicate skip, never the empty-error
+// fallback's 'Skipped: Skipped'. Agrees with the engine's stageLabel('dup').
+test('dup (skipped, no error) → Skipped: Duplicate', () => {
+  const d = cloudLeadToLocalSheetData('connect_and_introduce', { status: 'skipped', stage: 'dup' }, 'alex');
+  assert.equal(d.stage, 'Skipped: Duplicate');
+  assert.equal(d.status, 'Skipped: Duplicate');
+  // connect_only routes the reason into the Connection Request Status column too.
+  const c = cloudLeadToLocalSheetData('connect_only', { status: 'skipped', stage: 'dup' }, 'alex');
+  assert.equal(c.connectionStatus, 'Skipped: Duplicate');
+});
+
 // The engine phrases errors its own way. Each must translate to the SAME
 // canonical "Skipped: …" a local run produces. Table = [engine error, expected].
 const ENGINE_ERROR_CASES = [
