@@ -1,6 +1,39 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateTeamStatus, bucketForCloudStatus, detectAccountConflicts } from '../src/team-status.js';
+import { aggregateTeamStatus, bucketForCloudStatus, detectAccountConflicts, countLeadsSentToday } from '../src/team-status.js';
+
+test('countLeadsSentToday counts only leads whose sentAt is in the window', () => {
+  const start = Date.parse('2026-07-14T00:00:00');
+  const end = start + 24 * 60 * 60 * 1000;
+  const leads = [
+    { sentAt: '2026-07-14T09:15:00' },          // today ✓
+    { sentAt: '2026-07-14T23:59:59' },          // today ✓
+    { sent_at: '2026-07-14T00:00:00' },         // today (snake_case, inclusive start) ✓
+    { sentAt: '2026-07-13T23:59:59' },          // yesterday ✗
+    { sentAt: '2026-07-15T00:00:00' },          // tomorrow (exclusive end) ✗
+    { sentAt: '' },                             // never sent ✗
+    { status: 'pending' },                      // no sentAt ✗
+    null,                                        // guard ✗
+  ];
+  assert.equal(countLeadsSentToday(leads, start, end), 3);
+  assert.equal(countLeadsSentToday(null, start, end), 0);
+  assert.equal(countLeadsSentToday([], start, end), 0);
+});
+
+test('aggregateTeamStatus sums todaySent per owner, independent of cumulative sent', () => {
+  const rows = aggregateTeamStatus([
+    { owner: 'a@ortusclub.com', bucket: 'done', sent: 30, todaySent: 4 },
+    { owner: 'a@ortusclub.com', bucket: 'running', sent: 31, todaySent: 0 },
+    { owner: 'a@ortusclub.com', bucket: 'done', sent: 0, todaySent: 2 },  // local carrier row
+    { owner: 'b@ortusclub.com', bucket: 'done', sent: 61, todaySent: 0 },
+  ]);
+  const a = rows.find((r) => r.owner === 'a@ortusclub.com');
+  const b = rows.find((r) => r.owner === 'b@ortusclub.com');
+  assert.equal(a.sent, 61);        // cumulative unchanged (30+31+0)
+  assert.equal(a.todaySent, 6);    // today only (4+0+2)
+  assert.equal(b.sent, 61);
+  assert.equal(b.todaySent, 0);    // big cumulative, nothing sent today — the exact bug reported
+});
 
 test('bucketForCloudStatus maps engine statuses like the campaigns board', () => {
   assert.equal(bucketForCloudStatus('running'), 'running');
@@ -21,11 +54,11 @@ test('aggregateTeamStatus groups per owner and sums buckets + sent', () => {
   ]);
   assert.equal(rows.length, 2);
   assert.deepEqual(rows[0], {
-    owner: 'a@ortusclub.com', running: 1, queued: 0, done: 1, sent: 42,
+    owner: 'a@ortusclub.com', running: 1, queued: 0, done: 1, sent: 42, todaySent: 0,
     campaignName: '', mode: '', accounts: [], accountNames: {}, startedAt: null,
   });
   assert.deepEqual(rows[1], {
-    owner: 'b@ortusclub.com', running: 0, queued: 1, done: 0, sent: 0,
+    owner: 'b@ortusclub.com', running: 0, queued: 1, done: 0, sent: 0, todaySent: 0,
     campaignName: '', mode: '', accounts: [], accountNames: {}, startedAt: null,
   });
 });
@@ -88,7 +121,7 @@ test('aggregateTeamStatus handles missing owner, bad buckets, bad sent', () => {
   ]);
   assert.equal(rows.length, 1);
   assert.deepEqual(rows[0], {
-    owner: '(unknown)', running: 1, queued: 0, done: 2, sent: 5,
+    owner: '(unknown)', running: 1, queued: 0, done: 2, sent: 5, todaySent: 0,
     campaignName: '', mode: '', accounts: [], accountNames: {}, startedAt: null,
   });
 });

@@ -13245,9 +13245,10 @@ async function renderTeamStatus(force = false) {
         <td>${campaignCell}</td>
         <td>${acctCell}</td>
         <td class="time2">${startedCell}</td>
-        <td><span class="sends">${row.sent}</span></td>
+        <td><span class="sends">${row.todaySent ?? 0}</span></td>
+        <td><span class="sends total">${row.sent}</span></td>
       </tr>`;
-    }).join('') : '<tr><td colspan="6" style="color:var(--gray)">No campaigns found — cloud engine returned no activity.</td></tr>';
+    }).join('') : '<tr><td colspan="7" style="color:var(--gray)">No campaigns found — cloud engine returned no activity.</td></tr>';
     if (sub) {
       const active = rows.filter((x) => x.running > 0).length;
       const when = d?.generatedAt ? new Date(d.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';

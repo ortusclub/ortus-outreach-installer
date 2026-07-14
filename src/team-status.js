@@ -27,6 +27,28 @@ export function bucketForCloudStatus(status) {
 }
 
 /**
+ * Count how many of a campaign's per-lead rows were SENT today — a lead whose
+ * `sentAt` (the engine's send timestamp; snake_case `sent_at` also accepted)
+ * falls in [dayStartMs, dayEndMs). This is the real "today's sends", vs the
+ * cumulative leadCounts.sent which spans the campaign's whole life. Pure.
+ *
+ * @param {Array<{sentAt?: string, sent_at?: string}>} leads engine per-lead rows
+ * @param {number} dayStartMs local start-of-day epoch ms (inclusive)
+ * @param {number} dayEndMs   local end-of-day epoch ms (exclusive)
+ * @returns {number} count of leads sent within the window
+ */
+export function countLeadsSentToday(leads, dayStartMs, dayEndMs) {
+  if (!Array.isArray(leads)) return 0;
+  let n = 0;
+  for (const l of leads) {
+    if (!l) continue;
+    const t = Date.parse(l.sentAt || l.sent_at || '');
+    if (Number.isFinite(t) && t >= dayStartMs && t < dayEndMs) n++;
+  }
+  return n;
+}
+
+/**
  * Aggregate campaign entries into per-owner rows.
  *
  * @param {Array<{owner?: string, bucket?: string, sent?: number,
@@ -34,7 +56,9 @@ export function bucketForCloudStatus(status) {
  *   accountNames?: Record<string,string>, startedAt?: number|string|null}>} entries
  *   One entry per campaign. `bucket` must be 'running' | 'queued' | 'done'
  *   (use bucketForCloudStatus for cloud statuses). `sent` is the campaign's
- *   sent count (leadCounts.sent for cloud, totalProcessed for local).
+ *   CUMULATIVE sent count (leadCounts.sent for cloud, totalProcessed for local);
+ *   `todaySent` is how many of its leads went out TODAY (countLeadsSentToday for
+ *   cloud; local machine's own today for the local row). Both accumulate per owner.
  *   `campaignName`/`mode`/`accounts`/`accountNames`/`startedAt` describe the
  *   RUNNING campaign for that entry — used to enrich the owner's row when
  *   they have a running campaign. Non-running entries only contribute to the
@@ -60,7 +84,7 @@ export function aggregateTeamStatus(entries) {
     let row = byOwner.get(owner);
     if (!row) {
       row = {
-        owner, running: 0, queued: 0, done: 0, sent: 0,
+        owner, running: 0, queued: 0, done: 0, sent: 0, todaySent: 0,
         campaignName: '', mode: '', accounts: [], accountNames: {}, startedAt: null,
       };
       byOwner.set(owner, row);
@@ -68,7 +92,9 @@ export function aggregateTeamStatus(entries) {
     const bucket = e.bucket === 'running' || e.bucket === 'queued' ? e.bucket : 'done';
     row[bucket] += 1;
     const sent = Number(e.sent);
-    if (Number.isFinite(sent) && sent > 0) row.sent += sent;
+    if (Number.isFinite(sent) && sent > 0) row.sent += sent;             // cumulative (all-time)
+    const todaySent = Number(e.todaySent);
+    if (Number.isFinite(todaySent) && todaySent > 0) row.todaySent += todaySent; // sent TODAY only
 
     if (bucket === 'running') {
       const startedAt = e.startedAt ?? null;

@@ -50,7 +50,7 @@ import { runAmplification as runPostAmplification } from './src/linkedin/post-am
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, resumeCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
-import { aggregateTeamStatus, bucketForCloudStatus } from './src/team-status.js';
+import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile } from './src/gologin-launcher.js';
@@ -1532,6 +1532,12 @@ app.get('/api/team-status', async (req, res) => {
   }
   const entries = [];
   let cloudError = null;
+  // "Today" window in the OPERATOR's local day — this server runs on the
+  // operator's own machine (Electron), so local midnight IS their day boundary
+  // (no timezone gymnastics, and it matches the sheet stamps' operator tz).
+  const _todayStart = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+  const _todayEnd = _todayStart + 24 * 60 * 60 * 1000;
+  let _leadsChecked = 0, _leadsSkipped = 0;
   try {
     const r = await listCloudCampaigns(); // no owner filter — team-wide
     if (r && r.error) {
@@ -1546,6 +1552,25 @@ app.get('/api/team-status', async (req, res) => {
       }));
       for (const d of details) {
         const c = d.campaign || {};
+        // TODAY'S sends — count per-lead rows whose sentAt is today. Only fetch
+        // leads for campaigns that COULD have sent today (running/monitoring/
+        // paused, or created today); a campaign done days ago contributes 0
+        // without a fetch, so the extra round-trips stay bounded to today-active
+        // work. The engine exposes no last-activity timestamp, so this gate can
+        // miss a campaign that started >1 day ago, isn't running now, yet sent
+        // earlier today (e.g. paused mid-morning) — rare; logged below.
+        const _st = String(c.status || '').toLowerCase();
+        const _createdMs = c.created_at ? Date.parse(c.created_at) : NaN;
+        const _activeToday = _st === 'running' || _st === 'monitoring' || _st === 'paused'
+          || (Number.isFinite(_createdMs) && _createdMs >= _todayStart);
+        let todaySent = 0;
+        if (_activeToday) {
+          _leadsChecked++;
+          try {
+            const lr = await getCloudCampaignLeads(c.id);
+            if (lr && !lr.error && Array.isArray(lr.leads)) todaySent = countLeadsSentToday(lr.leads, _todayStart, _todayEnd);
+          } catch { /* per-campaign best-effort — leave todaySent 0 */ }
+        } else { _leadsSkipped++; }
         // Cloud campaign object (engine campaign-api.js) uses snake_case field
         // names (mirrors renderCampaignsBoard()'s usage of c.profile_ids /
         // c.created_at). It does NOT carry account display names — only raw
@@ -1554,7 +1579,8 @@ app.get('/api/team-status', async (req, res) => {
         entries.push({
           owner: c.owner || '',
           bucket: bucketForCloudStatus(c.status),
-          sent: Number((d.leadCounts || {}).sent || 0),
+          sent: Number((d.leadCounts || {}).sent || 0),   // cumulative
+          todaySent,                                       // sent today only
           campaignName: c.name || '',
           mode: c.mode || '',
           accounts: Array.isArray(c.profile_ids) ? c.profile_ids : [],
@@ -1569,9 +1595,23 @@ app.get('/api/team-status', async (req, res) => {
   // This machine's local activity (other operators' local campaigns are not
   // visible here — cloud is the only cross-machine source).
   const localOwner = getOperatorEmail() || req.user || '';
+  // Local machine's own TODAY (mirrors the header "Today (sent)" KPI): sum of
+  // successCount for campaigns that STARTED today (finished ones from history +
+  // the currently-running one, which isn't written to history until it ends).
+  let localTodaySent = 0;
+  try {
+    for (const h of await listHistory({ includeArchived: true })) {
+      const t = Date.parse(h.startedAt || h.date || '');
+      if (Number.isFinite(t) && t >= _todayStart && t < _todayEnd) {
+        localTodaySent += (h.successCount != null ? h.successCount : (h.totalProcessed || 0));
+      }
+    }
+  } catch { /* history best-effort */ }
   try {
     const s = getCampaignStatus();
     if (s && (s.running || s.state === 'monitoring')) {
+      const t = s.startedAt ? Date.parse(s.startedAt) : NaN;
+      if (Number.isFinite(t) && t >= _todayStart && t < _todayEnd) localTodaySent += (s.totalProcessed || 0);
       // Local campaign status DOES carry parallel profileIds/profileNames
       // arrays, so a real id→name map is available here (unlike cloud).
       const accountNames = {};
@@ -1582,17 +1622,25 @@ app.get('/api/team-status', async (req, res) => {
         owner: localOwner,
         bucket: 'running',
         sent: s.totalProcessed || 0,
+        todaySent: localTodaySent,     // carry the whole machine's today on the running row
         campaignName: s.name || '',
         mode: s.mode || '',
         accounts: ids,
         accountNames,
         startedAt: s.startedAt || null,
       });
+      localTodaySent = 0;              // consumed by the running entry — don't double-count below
     }
   } catch { /* local status best-effort */ }
+  // No local campaign running but the machine still sent locally today → carry
+  // the count on a minimal done entry so the operator's row reflects it.
+  if (localTodaySent > 0) entries.push({ owner: localOwner, bucket: 'done', sent: 0, todaySent: localTodaySent });
   try {
     for (const _q of await getQueue()) entries.push({ owner: localOwner, bucket: 'queued', sent: 0 });
   } catch { /* queue best-effort */ }
+  if (_leadsChecked || _leadsSkipped) {
+    cloudLog(`[team-status] today's-sends: fetched leads for ${_leadsChecked} today-active campaign(s), skipped ${_leadsSkipped} inactive (0 today).`);
+  }
   const payload = {
     ok: true,
     rows: aggregateTeamStatus(entries),

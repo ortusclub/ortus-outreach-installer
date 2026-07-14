@@ -8201,6 +8201,8 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .team-table .st-pill.idle { color: var(--gray); }
 .team-table .st-pill.idle .d { background: var(--gray); }
 .team-table .sends { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; line-height: 1; }
+/* Today's-sends is the headline number; the cumulative Total is secondary — smaller + muted. */
+.team-table .sends.total { font-size: 1.05rem; color: var(--gray); }
 .team-table .camp-name { font-weight: 500; }
 .team-table .camp-mode { color: var(--gray); font-size: 0.64rem; margin-top: 3px; }
 .team-table .dim { color: var(--gray); }
