@@ -1203,7 +1203,10 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     // step the local campaign flow does at start. Best-effort — never blocks.
     try {
       const { ensureTrackingColumns } = await import('./src/sheets-writer.js');
-      await ensureTrackingColumns(sheetUrl, mode);
+      // cloudSheetUrl (NOT the raw sheetUrl) — the operator's chosen tab. The raw
+      // URL field can carry a stale gid from a different tab; columns must be
+      // ensured on the SAME tab the engine reads + writes back to.
+      await ensureTrackingColumns(cloudSheetUrl, mode);
     } catch (e) { cloudLog(`[cloud] ensureColumns skipped: ${e.message}`); }
     // Accounts: picker for normal modes; distinct routed accounts otherwise.
     const accounts = autoRouted
@@ -1326,7 +1329,13 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     const result = await startCloudCampaign({
       mode, name: name || '', owner: getOperatorEmail() || req.user || '',
       profileIds: accounts, leads, config,
-      dailyLimit: dailyLimit || 50, sheetUrl,
+      // sheet_url handed to the engine for WRITE-BACK must be the operator's
+      // CHOSEN tab (cloudSheetUrl = withGid(sheetUrl, sheetGid)), NOT the raw
+      // sheetUrl. The read above already uses cloudSheetUrl; passing the raw
+      // sheetUrl here made the engine stamp a DIFFERENT tab whenever the URL
+      // field's gid differed from the picked tab (operator picked Sheet2 but a
+      // stale gid=Sheet5 in the URL field → all stamps landed on Sheet5).
+      dailyLimit: dailyLimit || 50, sheetUrl: cloudSheetUrl,
     });
     if (result.error) return res.status(502).json({ error: result.error, cloud: true });
     cloudLog(`[cloud] campaign ${result.id} (${mode}) dispatched to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);

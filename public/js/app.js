@@ -4490,6 +4490,22 @@ async function onSheetTabChange() {
   const gid = select.value;
   window._chosenSheetGid = gid;
 
+  // Keep the URL field's gid in lockstep with the picked tab so the field, the
+  // preview, and launch never diverge. The operator once picked Sheet2 while the
+  // URL field still carried Sheet5's gid — confusing, and a foot-gun for any path
+  // that reads the raw URL. Programmatic .value set fires no input/change event,
+  // so this won't re-trigger the tab picker. Mirrors server withGid().
+  if (gid) {
+    const _urlEl = document.getElementById('sheet-url');
+    const _g = String(gid).replace(/\D/g, '');
+    if (_urlEl && _urlEl.value && _g) {
+      let _u = _urlEl.value;
+      _u = _u.replace(/([?&])gid=\d+/g, '$1gid=' + _g).replace(/#gid=\d+/g, '#gid=' + _g);
+      if (!/[?&]gid=/.test(_u) && !/#gid=/.test(_u)) _u += (_u.includes('#') ? '' : '#') + 'gid=' + _g;
+      _urlEl.value = _u;
+    }
+  }
+
   const opt = select.options[select.selectedIndex];
   const isSys = opt?.dataset?.sys === 'true';
   const tabName = opt?.dataset?.name || gid;
