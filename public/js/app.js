@@ -7644,17 +7644,60 @@ if (document.readyState === 'loading') {
   _bootCampaignsBoard();
 }
 
-// Stop a cloud campaign from the panel.
+// Which campaign the shared stop-choice-modal is acting on. cloud:true means the
+// two pills route to the ENGINE (keepMonitoring vs cancel) instead of the local
+// campaign. Reset whenever the modal closes so a dismissed cloud stop can't leak
+// into a later local stop.
+let _stopChoiceTarget = { cloud: false, id: null };
+
+// Stop a cloud campaign from the panel. For CC+IC / CC+DM that are still sending,
+// show the SAME "stop everything vs. keep monitoring" choice as a local campaign
+// (1:1). Other modes — or a campaign already in monitoring/done — get the plain
+// confirm → cancel.
 async function stopCloudCampaignUI(id) {
-  if (!confirm('Stop this cloud campaign? Leads not yet actioned will not be sent.')) return;
+  let mode = '', status = '';
   try {
-    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop`, { method: 'POST' });
-    const d = await res.json();
-    if (d.error) { alert('Could not stop: ' + d.error); return; }
-  } catch (e) { alert('Could not stop: ' + e.message); return; }
-  renderCloudCampaigns();
+    const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`, { cache: 'no-store' })).json();
+    mode = (d && d.campaign && d.campaign.mode) || '';
+    status = (d && d.campaign && d.campaign.status) || '';
+  } catch { /* fall through to plain confirm */ }
+
+  const isMonitorMode = (mode === 'connect_and_introduce' || mode === 'connect_and_message');
+  const isSending = (status === 'running' || status === 'queued');
+  const modal = document.getElementById('stop-choice-modal');
+  if (isMonitorMode && isSending && modal) {
+    _stopChoiceTarget = { cloud: true, id };
+    const isDm = mode === 'connect_and_message';
+    const eyebrow = modal.querySelector('.stop-choice-eyebrow');
+    const monitorSub = modal.querySelector('.stop-choice-pill.is-monitor .stop-choice-pill-sub');
+    if (eyebrow) eyebrow.textContent = isDm ? 'Stop cloud campaign · Connect + DM' : 'Stop cloud campaign · Connect + Introduce Back';
+    if (monitorSub) monitorSub.textContent = isDm
+      ? 'Sending stops. The VM keeps checking for acceptances (every 60 min, 7 days) and auto-DMs still fire.'
+      : 'Sending stops. The VM keeps checking for acceptances (every 60 min, 7 days) and auto-intros still fire.';
+    modal.classList.remove('hidden');
+    return;
+  }
+  if (!confirm('Stop this cloud campaign? Leads not yet actioned will not be sent.')) return;
+  await _doStopCloud(id, { keepMonitoring: false });
 }
 window.stopCloudCampaignUI = stopCloudCampaignUI;
+
+// Fire the actual engine stop (shared by the plain confirm + both choice pills).
+async function _doStopCloud(id, { keepMonitoring = false } = {}) {
+  try {
+    const qs = keepMonitoring ? '?keepMonitoring=1' : '';
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop${qs}`, { method: 'POST' });
+    const d = await res.json();
+    if (d.error) { alert('Could not stop: ' + d.error); return; }
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(keepMonitoring
+        ? 'Sending stopped — the VM keeps monitoring for acceptances (7 days).'
+        : 'Cloud campaign stopped.', 5000);
+    }
+  } catch (e) { alert('Could not stop: ' + e.message); return; }
+  if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
+  if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+}
 
 // Task 3 Part B — cloud monitoring controls (parity with local ⚡ Check now /
 // Automatic checks). Degrade gracefully until the engine ships the routes: a
@@ -8379,6 +8422,7 @@ function closeStopModal() {
 function closeStopChoiceModal() {
   const modal = document.getElementById('stop-choice-modal');
   if (modal) modal.classList.add('hidden');
+  _stopChoiceTarget = { cloud: false, id: null }; // don't leak into a later stop
 }
 window.closeStopChoiceModal = closeStopChoiceModal;
 
@@ -8455,7 +8499,12 @@ async function confirmStopCampaignNow() {
 // through to end-of-list bulk-check + transitionToMonitoring as it would
 // at natural end-of-list).
 async function stopAndKeepMonitoring() {
+  const target = _stopChoiceTarget; // capture before close resets it
   closeStopChoiceModal();
+  if (target.cloud && target.id) {
+    await _doStopCloud(target.id, { keepMonitoring: true });
+    return;
+  }
   showCampaignToast('Stopping new sends — monitoring stays active for 7 days.', 5000);
   try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
   try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
@@ -8476,7 +8525,12 @@ window.onTourSkip                 = onTourSkip;
 // + post-campaign sweep registration. Pending invitations stay pending;
 // no auto-intros will fire.
 async function stopEverything() {
+  const target = _stopChoiceTarget; // capture before close resets it
   closeStopChoiceModal();
+  if (target.cloud && target.id) {
+    await _doStopCloud(target.id, { keepMonitoring: false });
+    return;
+  }
   showCampaignToast('Stopping campaign completely — no further checks or DMs.', 5000);
   try {
     await fetch('/api/campaign/stop', {

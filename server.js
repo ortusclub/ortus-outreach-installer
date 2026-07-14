@@ -1593,7 +1593,10 @@ app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   res.json({ name: rec.name || '', config: rec.config || {} });
 });
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
-  const r = await stopCloudCampaign(req.params.id, { pause: !!req.query.pause });
+  const r = await stopCloudCampaign(req.params.id, {
+    pause: !!req.query.pause,
+    keepMonitoring: !!req.query.keepMonitoring, // "Stop sending, keep monitoring"
+  });
   if (r.error) return res.status(502).json(r);
   res.json(r);
 });

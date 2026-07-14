@@ -193,9 +193,20 @@ export function signalPrimaryAcceptDone(id, acceptedIds) {
   });
 }
 
-/** Stop (cancel) a cloud campaign; pass { pause: true } to pause instead. */
-export function stopCloudCampaign(id, { pause = false } = {}) {
-  return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${pause ? '?pause=1' : ''}`);
+/**
+ * Stop a cloud campaign.
+ * - default: cancel (leads not yet actioned are abandoned).
+ * - { pause: true }: pause (resumable) instead of cancel.
+ * - { keepMonitoring: true }: the "Stop sending, keep monitoring" choice —
+ *   stop claiming new leads but transition into the monitoring window so
+ *   already-sent connects keep being swept for acceptance + auto-intro/DM
+ *   (connect_and_* only; other modes land on 'done'). Mirrors the local
+ *   stopAndKeepMonitoring path. pause + keepMonitoring are mutually exclusive;
+ *   keepMonitoring wins.
+ */
+export function stopCloudCampaign(id, { pause = false, keepMonitoring = false } = {}) {
+  const qs = keepMonitoring ? '?keepMonitoring=1' : (pause ? '?pause=1' : '');
+  return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${qs}`);
 }
 
 // Monitoring controls (Task 3 Part B) — mirror the local ⚡ Check now / Automatic
