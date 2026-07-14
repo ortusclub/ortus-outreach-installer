@@ -6732,6 +6732,18 @@ function vjCardSkeleton(cid) {
   clone.style.removeProperty('display');
   // Convert every id → data-f so the clone can't duplicate ids in the document.
   clone.querySelectorAll('[id]').forEach((el) => { el.setAttribute('data-f', el.id); el.removeAttribute('id'); });
+  // Strip the LOCAL singleton's live content out of the skeleton. #active-card is
+  // kept populated with the local campaign (or "No campaign running") by the 2s
+  // pollStatus loop; cloning it verbatim is why expanding a VM strip flashed the
+  // local template before fillVjCard ran. Blank every value field + the local
+  // controls/bulk panel so an unfilled clone is neutral, never local-looking.
+  ['activeName', 'activeEyebrow', 'activePct', 'activeSent', 'activeTotal', 'activeAccounts',
+   'activeAccepted', 'sendingLbl', 'activeLiveIco', 'activeLiveL1', 'activeLiveL2', 'monCount', 'monLine']
+    .forEach((fld) => { const el = clone.querySelector(`[data-f="${fld}"]`); if (el) el.textContent = ''; });
+  const _cbar = clone.querySelector('[data-f="activeBar"]'); if (_cbar) _cbar.style.width = '0%';
+  const _clog = clone.querySelector('[data-f="active-log"]'); if (_clog) _clog.innerHTML = '';
+  const _cctrl = clone.querySelector('.vj-controls'); if (_cctrl) _cctrl.innerHTML = '';
+  const _cbulk = clone.querySelector('.vj-bulk'); if (_cbulk) _cbulk.style.display = 'none';
   return clone.outerHTML;
 }
 
@@ -6861,10 +6873,13 @@ function _startVjTick() {
 }
 function _stopVjTick() { if (_vjTick) { clearInterval(_vjTick); _vjTick = null; } }
 
-// Fill every EXPANDED strip's cloned card from its board item. Called after each
-// board render; collapsed cards are display:none so we skip them.
+// Fill every strip's cloned card from its board item. Called after each board
+// render. We fill COLLAPSED cards too (cheap text sets on a display:none node):
+// that way a strip's clone already holds ITS OWN campaign data before it's ever
+// revealed, so expanding a VM strip shows the VM card instantly instead of
+// flashing the local #active-card template the skeleton was cloned from.
 function _fillVjCards(board) {
-  const cards = board.querySelectorAll('.sn-strip:not(.sn-collapsed) .sn-vjcard');
+  const cards = board.querySelectorAll('.sn-strip .sn-vjcard');
   let anyMonitor = false;
   cards.forEach((card) => {
     const cid = card.closest('.sn-strip')?.dataset.cid;
