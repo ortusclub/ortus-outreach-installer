@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campaign status colors — sketches</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/dashboard-v0.3.css">
+<style>
+  /* ── page chrome ── */
+  body{padding:0;margin:0;}
+  .wrap{max-width:920px;margin:0 auto;padding:34px 26px 90px;}
+  .sk-h1{font-family:var(--display);font-size:40px;letter-spacing:.02em;margin:0 0 6px;color:var(--ink);}
+  .sk-sub{font-family:var(--mono);font-size:12px;color:var(--gray);letter-spacing:.04em;margin:0 0 26px;line-height:1.6;}
+  .sk-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 22px;position:sticky;top:0;background:var(--bg);padding:14px 0;z-index:5;border-bottom:1px solid var(--hairline);}
+  .sk-tab{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 15px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sk-tab.on{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sk-spacer{flex:1;}
+  .sk-toggle{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 15px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--gray);cursor:pointer;}
+  .sk-note{font-family:var(--mono);font-size:11.5px;color:var(--gray);line-height:1.7;margin:0 0 20px;padding:14px 16px;border:1px solid var(--hairline);border-radius:12px;background:var(--card-bg);}
+  .sk-note b{color:var(--ink);}
+  .sk-legend{font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);display:flex;flex-wrap:wrap;gap:16px;margin:0 0 18px;}
+  .sk-legend span{display:inline-flex;align-items:center;gap:7px;}
+  .sk-legend i{width:10px;height:10px;border-radius:9999px;display:inline-block;}
+
+  /* ── the sn- board rules, copied 1:1 from index.html so cards match the app ── */
+  .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:var(--card-bg);margin-bottom:14px;padding:18px 22px;transition:opacity .25s, border-color .25s;}
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done.sn-collapsed .sn-name{font-size:19px;margin-top:6px;}
+  .sn-strip.done.sn-collapsed .sn-flow{display:none;}
+  .sn-strip.done.sn-collapsed .sn-foot{margin-top:10px;padding-top:0;border-top:0;}
+  .sn-top{display:flex;align-items:center;gap:12px;padding-right:40px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
+  .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
+  .sn-where.local{background:#fbe6f0;color:#b23372;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .sn-name{font-family:var(--display);font-size:28px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-collapse{position:absolute;right:16px;top:16px;width:26px;height:26px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--gray);cursor:pointer;display:flex;align-items:center;justify-content:center;}
+
+  /* ── per-state accent (the single knob every variant reads) ── */
+  .smpl.st-run   { --accent: var(--green); }
+  .smpl.st-mon   { --accent: var(--blue);  }
+  .smpl.st-done  { --accent: var(--ink);   }   /* black in light, white in dark */
+  .smpl.st-cancel{ --accent: var(--gray);  }
+  .smpl.st-error { --accent: var(--red);   }
+  .smpl.local.st-run { --accent: #f1a7c9; }    /* running on THIS machine */
+
+  .smpl::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent;}
+  .smpl .dot{background:var(--accent);}
+  /* small status tag chip (used by A & C) */
+  .st-tag{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;padding:2px 8px;border-radius:9999px;border:1px solid var(--accent);color:var(--accent);}
+
+  /* ══════════ BASELINE — the current look (wall of red) ══════════ */
+  .v-baseline .smpl.st-run::before   { background:var(--green); }
+  .v-baseline .smpl.local.st-run::before { background:#f1a7c9; }
+  .v-baseline .smpl.st-mon::before   { background:var(--blue); }
+  .v-baseline .smpl.st-cancel        { border-color:var(--red); }
+  .v-baseline .smpl.st-cancel::before{ background:var(--red); }
+  .v-baseline .smpl.st-cancel .sn-status{ color:var(--red); }
+  .v-baseline .smpl.st-cancel .dot   { background:var(--red); }
+  .v-baseline .smpl.st-error         { border-color:var(--red); }
+  .v-baseline .smpl.st-error::before { background:var(--red); }
+  .v-baseline .smpl.st-error .sn-status{ color:var(--red); }
+  .v-baseline .smpl.st-done .dot     { background:var(--blue); }
+  .v-baseline .st-tag{ display:none; }
+
+  /* ══════════ A · Muted archive (recommended) ══════════
+     Every state keeps a left rail = its accent. Terminal states go quiet:
+     done = ink rail (confident/complete), cancelled = gray + faded. Red is
+     reserved for real errors. A small tag rides beside the status text. */
+  .v-a .smpl::before{ background:var(--accent); }
+  .v-a .smpl.st-cancel{ opacity:.62; }
+  .v-a .smpl.st-cancel .sn-name{ color:var(--gray); }
+  .v-a .smpl.st-done .sn-status,
+  .v-a .smpl.st-cancel .sn-status{ color:var(--gray); }
+  .v-a .smpl.st-error .sn-status{ color:var(--red); }
+
+  /* ══════════ B · Status chip, no rails ══════════
+     Rails removed entirely — status reads as a bordered chip top-right
+     (dot + label in the accent). Flattest, most monochrome. */
+  .v-b .smpl::before{ background:transparent; }
+  .v-b .smpl{ /* chip carries all the color */ }
+  .v-b .sn-status{ padding:3px 10px;border:1px solid var(--accent);border-radius:9999px;color:var(--accent); }
+  .v-b .smpl.st-cancel{ opacity:.6; }
+  .v-b .st-tag{ display:none; }
+
+  /* ══════════ C · Rail for live only ══════════
+     Colored rail ONLY on running / monitoring / error. Done + cancelled are
+     completely flat (no rail) — told apart by their dot + tag alone. Maximum
+     calm: the board is silent except what's alive right now. */
+  .v-c .smpl.st-run::before,
+  .v-c .smpl.st-mon::before,
+  .v-c .smpl.st-error::before{ background:var(--accent); }
+  .v-c .smpl.st-done::before,
+  .v-c .smpl.st-cancel::before{ background:transparent; }
+  .v-c .smpl.st-cancel{ opacity:.55; }
+  .v-c .smpl.st-cancel .sn-name{ color:var(--gray); }
+  .v-c .smpl.st-done .sn-status,
+  .v-c .smpl.st-cancel .sn-status{ color:var(--gray); }
+</style>
+</head>
+<body class="sn-board theme-light">
+<div class="wrap">
+  <h1 class="sk-h1">Campaign status colors</h1>
+  <p class="sk-sub">Same board, four treatments · toggle light/dark · cards are 1:1 with the real app</p>
+
+  <div class="sk-controls">
+    <button class="sk-tab on" data-v="baseline">Baseline (now)</button>
+    <button class="sk-tab" data-v="a">A · Muted archive</button>
+    <button class="sk-tab" data-v="b">B · Status chip</button>
+    <button class="sk-tab" data-v="c">C · Live-only rail</button>
+    <span class="sk-spacer"></span>
+    <button class="sk-toggle" id="themeBtn">◐ Dark</button>
+  </div>
+
+  <p class="sk-note" id="note"></p>
+
+  <div class="sk-legend">
+    <span><i style="background:var(--green)"></i> Running</span>
+    <span><i style="background:var(--blue)"></i> Monitoring</span>
+    <span><i style="background:var(--ink)"></i> Done</span>
+    <span><i style="background:var(--gray)"></i> Cancelled</span>
+    <span><i style="background:var(--red)"></i> Error</span>
+    <span><i style="background:#f1a7c9"></i> Running · this machine</span>
+  </div>
+
+  <div id="board"></div>
+</div>
+
+<script>
+  const NOTES = {
+    baseline: "The current system. Cancelled = red, so a board full of stopped test campaigns reads as a <b>wall of alarm</b> — and a real error wouldn't stand out. Location (pink) and status share one rail.",
+    a: "<b>Recommended.</b> Every state keeps a rail, but terminal states go quiet: <b>Done = ink</b> (black in light / white in dark — confident, complete), <b>Cancelled = faded gray</b>, red reserved for real errors. Live campaigns are the only saturated color.",
+    b: "No rails at all — status is a bordered chip top-right. The flattest, most monochrome take. Cleanest, but the live campaigns pop a little less because there's no rail drawing the eye.",
+    c: "Rail <b>only</b> on what's alive (running / monitoring / error). Done + cancelled are totally flat — told apart by their dot + tag. Maximum calm: the board is silent except what's happening right now.",
+  };
+
+  // owner/mode/where/name per card mirror the real screenshot data
+  const CARDS = [
+    { st:'run',    tag:'Running',    mode:'C+I', where:'cloud', mine:true,  name:'TEST VM 13.07 COPY', you:true },
+    { st:'mon',    tag:'Monitoring', mode:'C+I', where:'cloud', mine:true,  name:'ICB · London Q3',    you:true },
+    { st:'run',    tag:'Running',    mode:'CC',  where:'local', local:true, name:'Local send batch',   you:true },
+    { st:'error',  tag:'Error',      mode:'OP',  where:'cloud', owner:'sam@ortusclub.com', name:'Message Campaign' },
+    { st:'done',   tag:'Done',       mode:'CC',  where:'cloud', owner:'ortus@ortusclub.com', name:'TEST VM 09/07' },
+    { st:'cancel', tag:'Cancelled',  mode:'C+I', where:'cloud', mine:true,  name:'TEST VM 13.07 COPY', you:true },
+    { st:'cancel', tag:'Cancelled',  mode:'C+I', where:'cloud', mine:true,  name:'TEST VM 13.07',      you:true },
+    { st:'cancel', tag:'Cancelled',  mode:'OP',  where:'cloud', owner:'sam@ortusclub.com', name:'Message Campaign' },
+  ];
+  const DOT = { run:'run', mon:'mon', done:'done', cancel:'cancel', error:'red' };
+
+  function card(c){
+    const cls = ['sn-strip','done','sn-collapsed','smpl','st-'+c.st, c.mine?'mine':'', c.local?'local':''].filter(Boolean).join(' ');
+    const who = c.you ? '<span class="sn-you">You</span>'
+              : (c.owner ? '<span class="sn-type" style="text-transform:none;letter-spacing:.02em">· '+c.owner+'</span>' : '');
+    const where = c.where==='cloud'
+      ? '<span class="sn-where cloud">☁︎ VM</span>'
+      : '<span class="sn-where local">💻 This machine</span>';
+    return `
+    <div class="${cls}">
+      <button class="sn-collapse" title="expand">˅</button>
+      <div class="sn-compact">
+        <div class="sn-top">
+          <span class="sn-type">Campaign · ${c.mode}</span>${who}${where}
+          <span class="sn-status"><span class="dot"></span> ${c.tag}</span>
+        </div>
+        <div class="sn-name">${c.name}</div>
+        <div class="sn-foot"><div class="right">
+          <button class="mini">Duplicate</button>
+          <button class="mini solid">Open</button>
+        </div></div>
+      </div>
+    </div>`;
+  }
+
+  const board = document.getElementById('board');
+  const note = document.getElementById('note');
+  let variant = 'baseline';
+
+  function render(){
+    board.className = 'v-'+variant;
+    board.innerHTML = CARDS.map(card).join('');
+    note.innerHTML = NOTES[variant];
+  }
+  document.querySelectorAll('.sk-tab').forEach(b=>{
+    b.onclick = () => {
+      document.querySelectorAll('.sk-tab').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      variant = b.dataset.v;
+      render();
+    };
+  });
+
+  const themeBtn = document.getElementById('themeBtn');
+  themeBtn.onclick = () => {
+    const dark = document.body.classList.toggle('theme-dark');
+    document.body.classList.toggle('theme-light', !dark);
+    themeBtn.textContent = dark ? '◑ Light' : '◐ Dark';
+  };
+
+  render();
+</script>
+</body>
+</html>
