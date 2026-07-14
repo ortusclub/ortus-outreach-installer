@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.4" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.4" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.5" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.5" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -652,7 +652,7 @@
           </div>
           <input type="text" id="cx-sheet-name" placeholder="Sheet name — e.g. ICB · London · Q3 event"
                  title="Name of the Google Sheet that will be created"
-                 style="flex:1;min-width:220px;max-width:360px;padding:8px 14px;border:1px solid var(--hairline);font:inherit;border-radius:9999px;background:#fff;">
+                 style="flex:1;min-width:220px;max-width:360px;padding:8px 14px;border:1px solid var(--hairline);font:inherit;border-radius:9999px;background:var(--card-bg);color:var(--ink);">
           <span class="cx-spacer"></span>
           <button type="button" class="btn" id="cx-to-campaign-btn" onclick="useConnectionsForCampaign()" hidden>Use as this campaign's leads →</button>
           <button type="button" class="btn" id="cx-make-sheet-btn" onclick="createSheetFromConnections()" hidden>Create a Google Sheet →</button>
@@ -1369,7 +1369,7 @@
   .sn-foot .mini.sn-dismiss{padding:6px 10px;color:var(--gray);}
   .sn-foot .mini.sn-dismiss:hover{color:var(--red);border-color:var(--red);}
 
-  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:var(--card-bg);margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
   .sn-qpos{display:none;}
   /* Left accent rail — same pattern as the dashboard campaign card (::before
      clipped by the strip's overflow:hidden, so it hugs the rounded corners).
@@ -1384,7 +1384,7 @@
   .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
   .sn-where.local{background:#fbe6f0;color:#b23372;}
   /* empty state (v2.130.2) — centered card when nothing is running */
-  .sn-emptyx{display:flex;flex-direction:column;align-items:center;text-align:center;gap:0;padding:52px 24px 46px;margin:6px 0 0;border:1px solid var(--hairline);border-radius:16px;background:#fff;}
+  .sn-emptyx{display:flex;flex-direction:column;align-items:center;text-align:center;gap:0;padding:52px 24px 46px;margin:6px 0 0;border:1px solid var(--hairline);border-radius:16px;background:var(--card-bg);}
   .sn-emptyx-mark{width:60px;height:60px;display:flex;align-items:center;justify-content:center;border-radius:9999px;border:1px solid var(--hairline);color:var(--gray);margin-bottom:16px;}
   .sn-emptyx-title{font-family:var(--display);font-size:26px;line-height:1;letter-spacing:.02em;color:var(--ink);}
   .sn-emptyx-sub{font-size:13px;color:var(--gray);margin-top:9px;max-width:360px;line-height:1.5;}
@@ -1398,22 +1398,22 @@
   .ovf{position:relative;display:inline-block;}
   .ovf-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);cursor:pointer;font-size:16px;line-height:1;padding:0;}
   .ovf-btn:hover{border-color:var(--ink);}
-  .ovf-menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:184px;background:#fff;border:1px solid var(--hairline);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:6px;z-index:35;display:none;}
+  .ovf-menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:184px;background:var(--card-bg);border:1px solid var(--hairline);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:6px;z-index:35;display:none;}
   .ovf.open .ovf-menu{display:block;}
-  .ovf-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#444;background:transparent;border:none;text-align:left;}
-  .ovf-item:hover{background:#f4f4f3;color:var(--ink);}
+  .ovf-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--gray);background:transparent;border:none;text-align:left;}
+  .ovf-item:hover{background:var(--card-bg-hover);color:var(--ink);}
   .ovf-item svg{opacity:.7;}
   /* type filter dropdown (v2.131) — compact control on the header row */
   .fdrop{position:relative;}
-  .fdrop-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:9px 15px;cursor:pointer;white-space:nowrap;}
+  .fdrop-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:var(--card-bg);border:1px solid var(--hairline);border-radius:9999px;padding:9px 15px;cursor:pointer;white-space:nowrap;}
   .fdrop-btn .cur{color:var(--gray);}
   .fdrop-btn .cur b{color:var(--ink);font-weight:600;}
   .fdrop-btn svg{opacity:.5;}
-  .fdrop-menu{position:absolute;left:0;top:calc(100% + 8px);min-width:210px;background:#fff;border:1px solid var(--hairline);border-radius:14px;box-shadow:0 12px 34px rgba(0,0,0,.10);padding:6px;z-index:40;display:none;}
+  .fdrop-menu{position:absolute;left:0;top:calc(100% + 8px);min-width:210px;background:var(--card-bg);border:1px solid var(--hairline);border-radius:14px;box-shadow:0 12px 34px rgba(0,0,0,.10);padding:6px;z-index:40;display:none;}
   .fdrop.open .fdrop-menu{display:block;}
-  .fdrop-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 12px;border-radius:9px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#555;}
-  .fdrop-item:hover{background:#f5f5f4;color:var(--ink);}
-  .fdrop-item.on{background:var(--ink);color:#fff;}
+  .fdrop-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 12px;border-radius:9px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--gray);}
+  .fdrop-item:hover{background:var(--card-bg-hover);color:var(--ink);}
+  .fdrop-item.on{background:var(--ink);color:var(--bg);}
   .fdrop-item .n{opacity:.5;}
   .fdrop-item .tick{width:14px;text-align:center;display:inline-block;}
   /* scheduled — gold rail + gold "Scheduled" pill (v2.130) */
@@ -1527,7 +1527,7 @@
   /* confirm modal (namespaced) */
   #snm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:50;}
   #snm-scrim.open{display:flex;}
-  .snm-card{box-sizing:border-box;background:#fff;border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
+  .snm-card{box-sizing:border-box;background:var(--card-bg);border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
   .snm-title{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 12px;letter-spacing:.02em;line-height:1;}
   .snm-text{font-size:13px;color:var(--gray);line-height:1.55;margin:0 0 22px;}
   .snm-text b{color:var(--ink);font-weight:600;}
@@ -3340,7 +3340,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.4"></script>
+  <script type="module" src="/js/app.js?v=2.160.5"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
