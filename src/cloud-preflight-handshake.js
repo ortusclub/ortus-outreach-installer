@@ -35,6 +35,13 @@ import { dataPath } from './paths.js';
 const PRIMARY_STATUS_FILE = dataPath('primary-status.json');
 const CAP_MS = 120_000;   // bound the accept-wait, same as runPreflightHandshake
 const POLL_MS = 30_000;
+// Settle window between Phase 1 (senders send their connect requests) and Phase 2
+// (the primary browser opens to accept them). LinkedIn does not surface a just-
+// sent invite in the recipient's pending-invitations inbox instantly; opening the
+// primary the moment the request was sent makes the first accept pass race ahead
+// of propagation and find nothing ("too fast — it didn't work"). Waiting here lets
+// the requests land; the Phase-2 retry loop still covers a slower invite.
+const SEND_SETTLE_MS = 20_000;
 
 /**
  * Pure trigger gate. Path A runs only for a cloud CC+IC campaign whose primary is
@@ -188,6 +195,15 @@ export async function runCloudPreflightHandshake(opts = {}) {
 
   // ── Phase 2: the local primary browser accepts the queued invitations ──
   if (queuedAccepts.length || autoAcceptAllPending) {
+    // Give the just-sent connect requests time to LAND in the primary's invites
+    // before opening it to accept — removes the guaranteed-miss first pass (see
+    // SEND_SETTLE_MS). The senders stay on "Request sent" in the wizard meanwhile.
+    // Only wait when we actually just sent something (a pure accept-all sweep of
+    // already-outstanding invites needs no settle).
+    if (queuedAccepts.length) {
+      log(`⏳ Letting ${queuedAccepts.length} connect request(s) reach the primary's invites (${Math.round(SEND_SETTLE_MS / 1000)}s) before accepting…`);
+      await deps.sleep(SEND_SETTLE_MS);
+    }
     const startedAt = deps.now();
     let primaryPage = null;
     try {

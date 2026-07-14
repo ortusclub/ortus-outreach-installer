@@ -137,3 +137,61 @@ test('accept-all sweep runs when autoAcceptAllPending even if senders already co
   assert.equal(r.ok, true);
   assert.equal(sweeps, 1, 'accept-all sweep ran even though the sender was already connected');
 });
+
+// ── Phase-1 → Phase-2 settle: give sent requests time to land before accepting ──
+test('waits a 20s settle AFTER sending requests, BEFORE opening the primary to accept (retries untouched)', async () => {
+  const primaryUrl = 'https://www.linkedin.com/in/pat-primary/';
+  const events = [];
+  const deps = {
+    async loadPrimaryStatus() { return {}; },
+    async savePrimaryStatus() {},
+    async launchProfile(id) { return { page: { __id: id } }; },
+    async closeProfile() {},
+    async launchLocalBrowser() { events.push('open-primary'); return { page: { __primary: true } }; },
+    async closeLocalBrowser() {},
+    async checkAndConnectPrimary(page) { events.push('connect:' + page.__id); return { connected: false, connectAttempted: true, connectResult: 'sent' }; },
+    async readSelfIdentity(page) { return { name: 'self-' + page.__id, profileUrl: 'https://linkedin.com/in/' + page.__id }; },
+    async acceptInvitationFrom() { events.push('accept'); return { accepted: true }; },
+    async acceptAllPendingInvitations() { return { accepted: 0 }; },
+    async enqueuePrimaryTask(t) { return t; },
+    sleep: async (ms) => { events.push('sleep:' + ms); },
+    now: () => 1000,
+  };
+  const r = await runCloudPreflightHandshake({ senderProfileIds: ['a', 'b'], primaryUrl, deps });
+  assert.equal(r.ok, true);
+  assert.equal(r.connected, 2);
+
+  const settleIdx = events.indexOf('sleep:20000');
+  assert.ok(settleIdx >= 0, 'a 20s settle happened between the two phases');
+  assert.ok(events.indexOf('connect:a') >= 0 && events.indexOf('connect:a') < settleIdx, 'sender a sent its request before the settle');
+  assert.ok(events.indexOf('connect:b') >= 0 && events.indexOf('connect:b') < settleIdx, 'sender b sent its request before the settle');
+  assert.ok(events.indexOf('open-primary') > settleIdx, 'the primary browser opens only AFTER the settle');
+  assert.ok(events.indexOf('accept') > settleIdx, 'no accept is attempted before the settle');
+});
+
+test('no settle when there is nothing newly sent (pure accept-all sweep of existing invites)', async () => {
+  const primaryUrl = 'https://www.linkedin.com/in/pat-primary/';
+  const { primaryKeyFromUrl, storeKey } = await import('../src/primary-status-store.js');
+  const key = primaryKeyFromUrl(primaryUrl);
+  const store = { [storeKey('a', key)]: { state: 'connected', primaryUrl } };
+  const slept = [];
+  const deps = {
+    async loadPrimaryStatus() { return store; },
+    async savePrimaryStatus() {},
+    async launchProfile(id) { return { page: { __id: id } }; },
+    async closeProfile() {},
+    async launchLocalBrowser() { return { page: { __primary: true } }; },
+    async closeLocalBrowser() {},
+    async checkAndConnectPrimary() { return { connected: true, connectAttempted: false }; },
+    async readSelfIdentity() { return {}; },
+    async acceptInvitationFrom() { return { accepted: true }; },
+    async acceptAllPendingInvitations() { return { accepted: 0 }; },
+    async enqueuePrimaryTask(t) { return t; },
+    sleep: async (ms) => { slept.push(ms); },
+    now: () => 1000,
+  };
+  // 'a' already connected → nothing queued; autoAcceptAllPending still sweeps.
+  const r = await runCloudPreflightHandshake({ senderProfileIds: ['a'], primaryUrl, autoAcceptAllPending: true, deps });
+  assert.equal(r.ok, true);
+  assert.ok(!slept.includes(20000), 'no 20s settle when no fresh request was sent');
+});
