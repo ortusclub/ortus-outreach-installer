@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Primary connection status — sketches</title>
+<style>
+  /* ── Real app tokens (light theme, copied 1:1 from public/css/style.css) ── */
+  :root{
+    --bg:#fafafa; --ink:#0a0a0a; --gray:#999; --gray-faint:#c3c3c0;
+    --hairline:rgba(0,0,0,.15); --hairline-soft:rgba(0,0,0,.06); --card-border:rgba(0,0,0,.18);
+    --green:#2f7d47; --amber:#d97706; --red:#c0392b; --gold:#F7BE68;
+    --display:'Bebas Neue','Arial Narrow',sans-serif;
+    --mono:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);padding:34px 30px 90px;}
+  h1{font-family:var(--display);font-weight:400;letter-spacing:.04em;font-size:34px;margin:0 0 4px;text-transform:uppercase}
+  .sub{color:var(--gray);font-size:13px;max-width:760px;line-height:1.5;margin:0 0 22px}
+  .sub b{color:var(--ink)}
+  .wrap{max-width:1180px;margin:0 auto}
+
+  /* ── Shared STATE vocabulary — the heart of the design ── */
+  .legend{display:flex;flex-wrap:wrap;gap:8px;border:1px solid var(--hairline);border-radius:12px;padding:13px 15px;margin:0 0 26px;background:#fff}
+  .legend .lg-title{width:100%;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);margin-bottom:4px}
+  .stt{display:inline-flex;align-items:center;gap:7px;font-size:11px;border:1px solid var(--hairline);border-radius:9999px;padding:5px 11px 5px 8px}
+  .stt .ic{width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none}
+  .stt .lbl{letter-spacing:.02em}
+  .stt .hint{color:var(--gray);font-size:10px}
+  .dotwait{width:7px;height:7px;border-radius:9999px;background:var(--gray-faint)}
+  .dot-ink{width:7px;height:7px;border-radius:9999px;background:var(--ink)}
+  .spin{width:12px;height:12px;border-radius:9999px;border:2px solid rgba(0,0,0,.14);border-top-color:var(--gold);animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .chk{color:var(--green);font-size:13px;font-weight:700}
+  .exx{color:var(--red);font-size:12px;font-weight:700}
+  .qq{color:var(--gray);font-size:12px;font-weight:700}
+  /* state color accents reused everywhere */
+  .c-already .lbl,.c-connected .lbl{color:var(--green)}
+  .c-error .lbl{color:var(--red)}
+  .c-unverified .lbl{color:var(--gray)}
+
+  /* ── Variant tabs ── */
+  .tabs{display:flex;gap:8px;margin:0 0 18px;flex-wrap:wrap;align-items:center}
+  .tab{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:9px 16px;border-radius:9999px;border:1px solid var(--hairline);background:#fff;color:var(--ink);cursor:pointer}
+  .tab.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .play{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:9px 18px;border-radius:9999px;border:1px solid var(--gold);background:var(--gold);color:#3a2c07;cursor:pointer;font-weight:600}
+  .play.reset{background:transparent;color:var(--ink);border-color:var(--hairline)}
+
+  .variant{display:none}
+  .variant.on{display:block}
+
+  .surfaces{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  @media(max-width:900px){.surfaces{grid-template-columns:1fr}}
+  .surface{min-width:0}
+  .s-eyebrow{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);margin:0 0 9px;display:flex;align-items:center;gap:7px}
+  .s-eyebrow .n{background:var(--ink);color:var(--bg);border-radius:9999px;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:9px}
+  .note{font-size:11px;color:var(--gray);line-height:1.5;margin:10px 2px 0}
+  .note b{color:var(--ink)}
+
+  /* ── hs-panel component (copied 1:1 from style.css) ── */
+  .hs-panel{border:1px solid var(--hairline);border-left:3px solid var(--gold);border-radius:12px;padding:15px 17px;background:#fff}
+  .hs-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#8a6d1f;display:flex;align-items:center;gap:8px;margin:0 0 10px}
+  .hs-eyebrow .lk{font-size:12px;line-height:1}
+  .hs-eyebrow .cnt{margin-left:auto;color:var(--ink);font-weight:600;letter-spacing:.06em}
+  .hs-head{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:500;line-height:1.4}
+  .hs-bar{height:5px;border-radius:9999px;background:#e7e3d4;margin:11px 0 0;overflow:hidden}
+  .hs-bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .5s}
+  .hs-list{margin:12px 0 0}
+  .hs-row{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11.5px;padding:7px 0;border-top:1px solid rgba(0,0,0,.06)}
+  .hs-row:first-child{border-top:0}
+  .hs-row .ic{width:15px;height:15px;flex:none;display:flex;align-items:center;justify-content:center}
+  .hs-row .who{color:var(--ink)}
+  .hs-row .sub2{color:var(--gray);font-size:10px;margin-left:4px}
+  .hs-row .st{margin-left:auto;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray)}
+  .hs-row.done .st{color:var(--green)}
+  .hs-row.err .st{color:var(--red)}
+  .hs-keep{font-family:var(--mono);font-size:10.5px;color:#8a6d1f;margin:11px 0 0;display:flex;align-items:center;gap:7px}
+
+  /* modal frame */
+  .modal{border:1px solid var(--card-border);border-radius:16px;background:#fff;padding:20px;box-shadow:0 24px 60px rgba(0,0,0,.14)}
+  .modal-title{font-family:var(--mono);font-size:15px;font-weight:600;margin:0 0 4px}
+  .modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+  .btn{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:0 18px;height:38px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+  .btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .btn.ghost{color:var(--gray)}
+  .btn .why{font-size:9px;color:var(--gray);text-transform:none;letter-spacing:0}
+  .summ{font-size:11px;color:var(--gray);margin:11px 0 0;padding-top:10px;border-top:1px solid var(--hairline-soft)}
+  .summ b{color:var(--ink)}
+
+  /* per-account pill row (mirrors the real accounts list) */
+  .acct{display:flex;align-items:center;gap:11px;border:1px solid var(--hairline);border-radius:11px;padding:11px 13px;background:#fff;margin-bottom:8px}
+  .acct .av{width:26px;height:26px;border-radius:9999px;background:linear-gradient(135deg,#e9e4d6,#cfc8b4);flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#6a5a2a}
+  .acct .nm{font-size:12.5px}
+  .acct .em{font-size:10px;color:var(--gray)}
+  .prof-primary-tag{margin-left:auto;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--hairline);border-radius:9999px;padding:4px 10px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .prof-primary-tag.is-yes{color:var(--green);border-color:rgba(47,125,71,.4);background:rgba(47,125,71,.07)}
+  .prof-primary-tag.is-wait{color:var(--amber);border-color:rgba(217,119,6,.4);background:rgba(217,119,6,.07)}
+  .prof-primary-tag.is-no{color:var(--amber);border-color:rgba(217,119,6,.4);background:rgba(217,119,6,.07)}
+  .prof-primary-tag.is-unknown{color:var(--gray);border-color:var(--hairline);background:transparent;opacity:.8}
+  .prof-primary-tag.is-err{color:var(--red);border-color:rgba(192,57,43,.4);background:rgba(192,57,43,.06)}
+
+  /* ── Variant B: connection map ── */
+  .map{border:1px solid var(--hairline);border-radius:14px;background:#fff;padding:20px;position:relative}
+  .hub{display:flex;flex-direction:column;align-items:center;gap:4px;margin:6px auto 2px;width:max-content}
+  .hub .node{width:74px;height:74px;border-radius:9999px;border:2px solid var(--gold);background:rgba(247,190,104,.1);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;text-align:center;line-height:1.1}
+  .hub .node b{font-size:12px}
+  .hub .cap{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:#8a6d1f}
+  .spokes{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-top:14px}
+  .spoke{display:flex;flex-direction:column;align-items:center;gap:6px;width:96px}
+  .spoke .link{width:2px;height:26px;background:repeating-linear-gradient(var(--gray-faint) 0 4px,transparent 4px 8px);transition:background .4s}
+  .spoke.done .link{background:var(--green)}
+  .spoke.live .link{background:repeating-linear-gradient(var(--gold) 0 4px,transparent 4px 8px)}
+  .spoke .snode{width:56px;height:56px;border-radius:9999px;border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;font-size:11px;background:#fff;position:relative}
+  .spoke.done .snode{border-color:rgba(47,125,71,.5);background:rgba(47,125,71,.06)}
+  .spoke .badge{position:absolute;bottom:-4px;right:-4px;width:18px;height:18px;border-radius:9999px;background:#fff;border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;font-size:10px}
+  .spoke .nm{font-size:10.5px}
+  .spoke .st{font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--gray);text-align:center;min-height:11px}
+  .spoke.done .st{color:var(--green)}
+
+  /* ── Variant C: inline ledger ── */
+  .acct.inline{flex-wrap:wrap}
+  .acct.inline .statusline{flex-basis:100%;margin-top:9px;padding-top:9px;border-top:1px solid var(--hairline-soft);display:flex;align-items:center;gap:9px;font-size:11px;color:var(--gray)}
+  .acct.inline .statusline.done{color:var(--green)}
+  .acct.inline .statusline .ic{width:14px;height:14px;display:flex;align-items:center;justify-content:center}
+  .banner{border:1px solid var(--hairline);border-left:3px solid var(--gold);border-radius:11px;background:rgba(247,190,104,.06);padding:11px 14px;font-size:11.5px;display:flex;align-items:center;gap:11px;margin-bottom:14px}
+  .banner .cnt{margin-left:auto;font-weight:600}
+  .miniprog{height:4px;width:120px;background:#e7e3d4;border-radius:9999px;overflow:hidden}
+  .miniprog i{display:block;height:100%;width:0;background:var(--gold);transition:width .5s}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Primary connection status</h1>
+  <p class="sub">One status system, shown the same way <b>everywhere</b> — the pre-launch handshake, the running campaign, and the per-account pills all read from the same states, labels and colours. The point: at any moment you can tell <b>who's already connected to your primary, who's mid-handshake, and what (if anything) needs you.</b></p>
+
+  <!-- Shared state vocabulary -->
+  <div class="legend">
+    <span class="lg-title">The states — used identically on all three surfaces</span>
+    <span class="stt c-already"><span class="ic"><span class="chk">✓</span></span><span class="lbl">Already connected</span><span class="hint">— no request needed</span></span>
+    <span class="stt"><span class="ic"><span class="spin"></span></span><span class="lbl">Connecting…</span><span class="hint">— sending the request</span></span>
+    <span class="stt"><span class="ic"><span class="dot-ink"></span></span><span class="lbl">Request sent · waiting</span><span class="hint">— primary hasn't accepted yet</span></span>
+    <span class="stt"><span class="ic"><span class="spin"></span></span><span class="lbl">Accepting…</span><span class="hint">— your browser is accepting</span></span>
+    <span class="stt c-connected"><span class="ic"><span class="chk">✓</span></span><span class="lbl">Connected</span><span class="hint">— ready to introduce</span></span>
+    <span class="stt c-unverified"><span class="ic"><span class="qq">?</span></span><span class="lbl">Couldn't verify</span><span class="hint">— re-checks next turn (was "Primary?")</span></span>
+    <span class="stt c-error"><span class="ic"><span class="exx">✕</span></span><span class="lbl">Error</span><span class="hint">— needs a retry</span></span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" data-v="A">A · Roster card</button>
+    <button class="tab" data-v="B">B · Connection map</button>
+    <button class="tab" data-v="C">C · Inline ledger</button>
+    <button class="play" id="play">▶ Play the handshake</button>
+    <button class="play reset" id="reset">Reset</button>
+  </div>
+
+  <!-- ══════════════ VARIANT A — Roster card ══════════════ -->
+  <div class="variant on" data-v="A">
+    <div class="surfaces">
+      <div class="surface">
+        <div class="s-eyebrow"><span class="n">1</span> Pre-launch — the wizard, reworked</div>
+        <div class="modal">
+          <div class="modal-title">🤝 Connecting your senders to <b>Antonio (you)</b></div>
+          <div class="hs-panel" style="border-left-color:var(--gold);margin-top:12px">
+            <div class="hs-eyebrow"><span class="lk">🔒</span> Phase 0 · Primary handshake <span class="cnt"><span class="A-count">1</span> / 4 connected</span></div>
+            <div class="hs-head">Your Mac connects each sender to your primary, then accepts each invite in your local browser. The campaign moves to the cloud the moment this finishes.</div>
+            <div class="hs-bar"><i class="A-bar"></i></div>
+            <div class="hs-list A-list"></div>
+            <div class="summ A-summ"></div>
+            <div class="hs-keep">◈ Keep this app open — this is the only local step this campaign needs.</div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" style="flex-direction:column;align-items:flex-start;height:auto;padding:8px 16px">
+              Send to cloud without connecting
+              <span class="why">intros will wait until each sender is connected</span>
+            </button>
+            <button class="btn">Cancel</button>
+          </div>
+        </div>
+        <p class="note"><b>Fixes:</b> the count is "connected", not a raw number; <b>Kyra shows "Already connected" from the first frame</b> so you see it's not stuck; the old "Dispatch anyway" now says what it costs.</p>
+      </div>
+
+      <div class="surface">
+        <div class="s-eyebrow"><span class="n">2</span> After launch — persistent on the campaign card</div>
+        <div class="hs-panel A2">
+          <div class="hs-eyebrow"><span class="lk">🔒</span> Primary connections <span class="cnt"><span class="A-count2">1</span> / 4</span></div>
+          <div class="hs-bar" style="margin-top:8px"><i class="A-bar2"></i></div>
+          <div class="hs-list A-list2" style="margin-top:9px"></div>
+        </div>
+        <p class="note"><b>Fixes the "close = no more indication" gap:</b> the same panel stays docked on the running campaign — collapse the modal and this is still here, always telling you where the handshake stands.</p>
+
+        <div class="s-eyebrow" style="margin-top:22px"><span class="n">3</span> During the run — per-account pills</div>
+        <div class="A-accts"></div>
+        <p class="note">The pills are just the <b>compact form of the exact same states</b> — no more bare "Primary?". Hover-free meaning.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ VARIANT B — Connection map ══════════════ -->
+  <div class="variant" data-v="B">
+    <div class="surfaces">
+      <div class="surface">
+        <div class="s-eyebrow"><span class="n">1</span> Pre-launch — spatial map</div>
+        <div class="map">
+          <div class="hub">
+            <div class="node"><b>Antonio</b><span>you · primary</span></div>
+            <span class="cap">accepts here</span>
+          </div>
+          <div class="spokes B-spokes"></div>
+          <div class="hs-bar" style="margin-top:16px"><i class="B-bar"></i></div>
+          <div class="summ B-summ" style="text-align:center"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" style="flex-direction:column;align-items:flex-start;height:auto;padding:8px 16px">Send to cloud without connecting<span class="why">intros will wait until each sender links up</span></button>
+          <button class="btn">Cancel</button>
+        </div>
+        <p class="note"><b>Idea:</b> you literally see the senders <b>link to your primary</b> — dashed line = requesting, solid green = connected. Fastest "is it working / already done?" read.</p>
+      </div>
+      <div class="surface">
+        <div class="s-eyebrow"><span class="n">2</span> After launch — mini map on the card</div>
+        <div class="map" style="padding:14px">
+          <div class="spokes B-spokes-mini" style="gap:12px"></div>
+        </div>
+        <p class="note">Shrinks to a persistent thumbnail on the running campaign.</p>
+        <div class="s-eyebrow" style="margin-top:22px"><span class="n">3</span> Per-account pills</div>
+        <div class="B-accts"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ VARIANT C — Inline ledger ══════════════ -->
+  <div class="variant" data-v="C">
+    <div class="surfaces">
+      <div class="surface">
+        <div class="s-eyebrow"><span class="n">1</span> Pre-launch — no big modal, status on the accounts</div>
+        <div class="banner">
+          <span>🔒</span><span>Connecting your senders to <b>Antonio</b> — keep the app open</span>
+          <span class="cnt"><span class="C-count">1</span>/4</span><span class="miniprog"><i class="C-bar"></i></span>
+        </div>
+        <div class="C-accts-inline"></div>
+        <div class="modal-actions">
+          <button class="btn ghost" style="flex-direction:column;align-items:flex-start;height:auto;padding:8px 16px">Send to cloud without connecting<span class="why">intros will wait until each sender is connected</span></button>
+          <button class="btn">Cancel</button>
+        </div>
+        <p class="note"><b>Idea:</b> the handshake happens <b>right where the accounts already live</b> (Section III) — each account grows a status line. No separate wizard to lose.</p>
+      </div>
+      <div class="surface">
+        <div class="s-eyebrow"><span class="n">2</span> After launch — the same lines persist</div>
+        <p class="note" style="margin-top:0">The status lines stay on each account in the campaign card; the banner collapses to a one-line "<b>Primary: 4/4 connected ✓</b>" chip. Nothing to close, nothing to lose.</p>
+        <div class="s-eyebrow" style="margin-top:14px"><span class="n">3</span> Per-account pills (identical states)</div>
+        <div class="C-accts"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Shared model: senders + a scripted timeline of states ──────────────────
+  const PRIMARY = "Antonio";
+  const SENDERS = [
+    { id:"kyra",  name:"Kyra De la Cruz",  email:"kyra@ortus.solutions" },
+    { id:"pinky", name:"Pinky Salaria",    email:"pinky@ortus.solutions" },
+    { id:"sam",   name:"Sam Adcock",       email:"sam@ortus.solutions" },
+    { id:"subh",  name:"Subhankar C.",     email:"subhankar@ortus.solutions" },
+  ];
+  // Per-frame state per sender. Kyra is already connected; subh ends unverified.
+  const TL = {
+    kyra: ["already","already","already","already","already","already"],
+    pinky:["pending","connecting","sent","accepting","connected","connected"],
+    sam:  ["pending","pending","connecting","sent","accepting","connected"],
+    subh: ["pending","pending","pending","connecting","sent","unverified"],
+  };
+  const STATE = {
+    already:    { icon:'<span class="chk">✓</span>',    label:"Already connected", done:true,  cls:"is-yes",     pill:"Connected",       sub:"was already 1st-degree" },
+    pending:    { icon:'<span class="dotwait"></span>', label:"Waiting",           done:false, cls:"is-unknown", pill:"Waiting",         sub:"" },
+    connecting: { icon:'<span class="spin"></span>',    label:"Connecting…",       done:false, cls:"is-wait",    pill:"Connecting…",     sub:"" },
+    sent:       { icon:'<span class="dot-ink"></span>', label:"Request sent",      done:false, cls:"is-wait",    pill:"Waiting accept",  sub:"waiting for you to accept" },
+    accepting:  { icon:'<span class="spin"></span>',    label:"Accepting…",        done:false, cls:"is-wait",    pill:"Accepting…",      sub:"" },
+    connected:  { icon:'<span class="chk">✓</span>',    label:"Connected",         done:true,  cls:"is-yes",     pill:"Connected",       sub:"" },
+    unverified: { icon:'<span class="qq">?</span>',     label:"Couldn't verify",   done:false, cls:"is-unknown", pill:"Primary?",        sub:"re-checks next turn" },
+    error:      { icon:'<span class="exx">✕</span>',    label:"Error",             done:false, cls:"is-err",     pill:"Error",           sub:"needs retry" },
+  };
+
+  let frame = 0;               // 0..5
+  const MAXF = 5;
+  const cur = (id) => STATE[ TL[id][frame] ];
+  const connectedCount = () => SENDERS.filter(s => cur(s.id).done).length;
+
+  // ── Renderers per surface ──────────────────────────────────────────────────
+  function rowHTML(s){ const st = cur(s.id);
+    return `<div class="hs-row ${st.done?'done':''} ${st.cls==='is-err'?'err':''}">
+      <span class="ic">${st.icon}</span><span class="who">${s.name}</span>
+      ${st.sub?`<span class="sub2">· ${st.sub}</span>`:''}
+      <span class="st">${st.label}</span></div>`; }
+
+  function pillHTML(s){ const st = cur(s.id);
+    return `<div class="acct"><span class="av">${s.name[0]}</span>
+      <span><div class="nm">${s.name}</div><div class="em">${s.email}</div></span>
+      <span class="prof-primary-tag ${st.cls}">${st.icon} ${st.pill}</span></div>`; }
+
+  function spokeHTML(s, mini){ const key = TL[s.id][frame]; const st = STATE[key];
+    const live = ['connecting','sent','accepting'].includes(key);
+    return `<div class="spoke ${st.done?'done':''} ${live?'live':''}">
+      <div class="st">${mini?'':st.label}</div>
+      <div class="link"></div>
+      <div class="snode">${s.name.split(' ')[0][0]}${s.name.split(' ')[1]?s.name.split(' ')[1][0]:''}<span class="badge">${st.icon}</span></div>
+      <div class="nm">${s.name.split(' ')[0]}</div></div>`; }
+
+  function inlineAcctHTML(s){ const st = cur(s.id);
+    return `<div class="acct inline"><span class="av">${s.name[0]}</span>
+      <span><div class="nm">${s.name}</div><div class="em">${s.email}</div></span>
+      <span class="prof-primary-tag ${st.cls}">${st.pill}</span>
+      <div class="statusline ${st.done?'done':''}"><span class="ic">${st.icon}</span>
+        ${st.done ? 'connected to your primary' : (st.label + (st.sub?' — '+st.sub:'') )}</div></div>`; }
+
+  function render(){
+    const done = connectedCount(), total = SENDERS.length, pct = Math.round(done/total*100);
+    const need = SENDERS.filter(s => TL[s.id][0] !== 'already').length;
+    const already = total - need;
+
+    // Variant A
+    document.querySelectorAll('.A-count').forEach(e=>e.textContent=done);
+    document.querySelectorAll('.A-count2').forEach(e=>e.textContent=done);
+    document.querySelectorAll('.A-bar,.A-bar2').forEach(e=>e.style.width=pct+'%');
+    document.querySelector('.A-list').innerHTML  = SENDERS.map(rowHTML).join('');
+    document.querySelector('.A-list2').innerHTML = SENDERS.map(rowHTML).join('');
+    document.querySelector('.A-summ').innerHTML  = `<b>${already}</b> already connected · <b>${need}</b> need a connection · <b>${done}/${total}</b> ready to introduce`;
+    document.querySelector('.A-accts').innerHTML = SENDERS.map(pillHTML).join('');
+
+    // Variant B
+    document.querySelector('.B-spokes').innerHTML = SENDERS.map(s=>spokeHTML(s,false)).join('');
+    document.querySelector('.B-spokes-mini').innerHTML = SENDERS.map(s=>spokeHTML(s,true)).join('');
+    document.querySelector('.B-bar').style.width = pct+'%';
+    document.querySelector('.B-summ').innerHTML = `<b>${done}/${total}</b> senders linked to ${PRIMARY}`;
+    document.querySelector('.B-accts').innerHTML = SENDERS.map(pillHTML).join('');
+
+    // Variant C
+    document.querySelector('.C-count').textContent = done;
+    document.querySelector('.C-bar').style.width = pct+'%';
+    document.querySelector('.C-accts-inline').innerHTML = SENDERS.map(inlineAcctHTML).join('');
+    document.querySelector('.C-accts').innerHTML = SENDERS.map(pillHTML).join('');
+  }
+
+  // ── Controls ───────────────────────────────────────────────────────────────
+  let timer = null;
+  function play(){ stop(); frame = 0; render();
+    timer = setInterval(()=>{ frame++; render(); if(frame>=MAXF){ stop(); } }, 1100); }
+  function stop(){ if(timer){ clearInterval(timer); timer=null; } }
+  document.getElementById('play').onclick = play;
+  document.getElementById('reset').onclick = ()=>{ stop(); frame=0; render(); };
+
+  document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on');
+    document.querySelectorAll('.variant').forEach(v=>v.classList.toggle('on', v.dataset.v===t.dataset.v));
+  });
+
+  render();
+</script>
+</body>
+</html>
