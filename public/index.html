@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.5" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.5" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.6" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.6" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1447,6 +1447,20 @@
   .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
   .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
   .sn-board .dot.run{background:var(--green);}.sn-board .dot.mon{background:var(--blue);}.sn-board .dot.q{background:var(--gray-faint,#b8b8b6);}.sn-board .dot.red{background:var(--red);}
+  /* v2.160.6 — status colour system (sketch A · muted archive): colour = live +
+     errors only; terminal states go quiet so the live/broken ones stand out.
+     Done = ink rail (black in light / white in dark — confident, complete),
+     Cancelled/Stopped = faded gray (NOT red — red is reserved for real errors),
+     Monitoring = blue rail. Location stays on the VM/LOCAL pill, off the rail. */
+  .sn-board .dot.done{background:var(--ink);}
+  .sn-board .dot.cancel{background:var(--gray);}
+  .sn-strip.done:not(.stopped):not(.cancelled)::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
+  .sn-strip.done:not(.stopped):not(.cancelled) .sn-status{color:var(--gray);}
+  .sn-strip.monitoring::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue);}
+  .sn-strip.cancelled{opacity:.62;}
+  .sn-strip.cancelled::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gray);}
+  .sn-strip.cancelled .sn-status{color:var(--gray);}
+  .sn-strip.cancelled .sn-name{color:var(--gray);}
   .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
   .sn-flow b{color:var(--ink);font-weight:600;}
   .sn-prog{height:5px;border-radius:9999px;background:var(--hairline-soft);margin:12px 0 0;overflow:hidden;}
@@ -3340,7 +3354,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.5"></script>
+  <script type="module" src="/js/app.js?v=2.160.6"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

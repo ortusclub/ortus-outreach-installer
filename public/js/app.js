@@ -6021,10 +6021,11 @@ function renderCloudStrip(c, lc, logLines = null) {
     : isRunning ? (isFG ? 'Inviting' : 'Running')
     : isBad ? (status === 'cancelled' ? 'Cancelled' : 'Error')
     : 'Done';
-  const dot = isBad ? '<span class="dot red"></span>'
+  const dot = status === 'error' ? '<span class="dot red"></span>'
+    : isBad ? '<span class="dot cancel"></span>'   // cancelled — gray, not red
     : isRunning ? '<span class="dot run"></span>'
     : isQueued ? '<span class="dot q"></span>'
-    : '<span class="dot mon"></span>';
+    : '<span class="dot done"></span>';            // done — ink
 
   const progLine = isRunning
     ? `<div class="sn-progtxt"><b>${sent}</b> of ${total} ${isFG ? 'invites' : 'sent'}`
@@ -6055,7 +6056,7 @@ function renderCloudStrip(c, lc, logLines = null) {
   const dismissBtn = isDone ? `<button class="mini sn-dismiss-cloud" onclick="dismissCloudDone('${escHtml(c.id)}', this)" title="Hide from your board">✕</button>` : '';
 
   return `
-  <div class="sn-strip ${mine ? 'mine' : ''} ${isRunning ? 'run' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}">
+  <div class="sn-strip ${mine ? 'mine' : ''} ${isRunning ? 'run' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${status === 'error' ? 'stopped' : ''} ${isBad && status !== 'error' ? 'cancelled' : ''}" data-cid="${escHtml(c.id)}">
     ${expandBtn}
     <div class="sn-top"><span class="sn-type">Cloud Campaign · ${escHtml(badge)}</span>${mine ? '<span class="sn-you">You</span>' : `<span class="sn-owner">· ${escHtml(owner)}</span>`}
       <span class="sn-status">${dot} ${escHtml(statusTxt)}</span></div>
@@ -6921,28 +6922,38 @@ function renderUnifiedStrip(it) {
   const badge = _cloudBadge(it.mode);
   const acctWord = it.accounts === 1 ? 'account' : 'accounts';
 
-  // Rail: running cloud → green (.run); running local → pink (.local.run);
-  // scheduled → gold (.sched).
+  // Rail (sketch A · muted archive): colour = live + errors only. running cloud →
+  // green (.run); running local → pink (.local.run); monitoring → blue
+  // (.monitoring, wins over .run); scheduled → gold (.sched); done → ink
+  // (.done rail); ERROR → red (.stopped); CANCELLED / operator-Stopped → faded
+  // gray (.cancelled, NOT red). Only a genuine LinkedIn/send error is red now.
+  // Terminal states keep .done too for the slim collapsed layout; the colour
+  // classes override its rail via :not(.stopped):not(.cancelled).
+  const errored = it.bad && it.badLabel === 'Error';
+  const cancelled = it.bad && !errored;            // 'Cancelled' / 'Stopped' — benign
   const stateCls = [
     it.where === 'local' ? 'local' : '',
-    running ? 'run' : '',
+    running && !monitoring ? 'run' : '',
+    monitoring ? 'monitoring' : '',
     queued ? 'queued' : '',
     scheduled ? 'sched' : '',
     done ? 'done' : '',
     collapsed ? 'sn-collapsed' : '',
-    it.bad ? 'stopped' : '',
+    errored ? 'stopped' : '',
+    cancelled ? 'cancelled' : '',
   ].filter(Boolean).join(' ');
 
   const wherePill = cloud
     ? '<span class="sn-where cloud">☁︎ VM</span>'
     : '<span class="sn-where local">💻 This machine</span>';
   const whenPill = scheduled ? '<span class="sn-when-pill">⏰ Scheduled</span>' : '';
-  const dot = it.bad ? '<span class="dot red"></span>'
+  const dot = errored ? '<span class="dot red"></span>'
+    : it.bad ? '<span class="dot cancel"></span>'   // cancelled / stopped — gray, not red
     : monitoring ? '<span class="dot mon"></span>'
     : running ? (cloud ? '<span class="dot run"></span>' : '<span class="dot runlocal"></span>')
     : scheduled ? '<span class="dot gold"></span>'
     : queued ? '<span class="dot q"></span>'
-    : '<span class="dot mon"></span>';
+    : '<span class="dot done"></span>';            // done — ink (black light / white dark)
   // #17: a cloud campaign sits `queued` from dispatch until a worker picks it up
   // (~2–3 min cold start). Show "warming up" for that window so operators aren't
   // staring at a dead-looking "Queued". After 3 min, fall back to plain "Queued"
