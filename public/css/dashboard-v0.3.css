@@ -391,6 +391,10 @@
   body[data-dashboard='v3'] .vj-eyebrow .vj-tag { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
   body[data-dashboard='v3'] .vj-eyebrow .vj-tag .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--green); display: inline-block; }
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-eyebrow .vj-tag .dot { background: var(--blue); }
+  /* Queued/launching cloud campaign — gold dot (pre-Start accent), pulsing so it
+     reads as "about to run", never as a green "done/ok". */
+  body[data-dashboard='v3'] .vj-card.is-queued .vj-eyebrow .vj-tag .dot { background: var(--gold); animation: vj-queued-pulse 1.4s ease-in-out infinite; }
+  @keyframes vj-queued-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   body[data-dashboard='v3'] .vj-when { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; color: var(--ink); font-weight: 500; }
 
   /* C+I badge pinned to the top-right corner of the card */

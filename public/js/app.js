@@ -6147,12 +6147,19 @@ let _cloudCardTimer = null;
 function _buildCloudActiveStatus(c, leads, counts) {
   c = c || {}; leads = Array.isArray(leads) ? leads : []; counts = counts || {};
   const isMon = c.status === 'monitoring';
+  // A freshly-created cloud campaign sits at pending/queued for a couple of
+  // minutes while the worker pod scales up and claims it. During that window
+  // running is false and there's no monitoring state — but the campaign has
+  // NOT finished. Flag it so renderActiveCard shows "Launching…" instead of
+  // falling through to the Finished branch (which reads as "done — press Start
+  // again"). Mirrors renderCloudStrip's isQueued exactly.
+  const isQueued = c.status === 'pending' || c.status === 'queued';
   const total = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0) || leads.length;
   const sent = Number(counts.sent || 0) || leads.filter((l) => l && l.sentAt).length;
   const accepted = leads.filter((l) => l && /connected/i.test(String(l.connectionAcceptedStatus || ''))).length;
   return {
     _cloud: true, id: c.id, running: c.status === 'running' || c.status === 'paused', paused: c.status === 'paused',
-    state: isMon ? 'monitoring' : undefined,
+    state: isMon ? 'monitoring' : undefined, queued: isQueued,
     name: c.name || '(unnamed)', mode: c.mode,
     totalTargets: total, totalProcessed: sent,
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
@@ -19077,12 +19084,56 @@ window.renderActiveCard = function(status) {
   // to "No campaign running" (the dashboard's half of the CC+IC/CC+DM
   // monitoring story; the cockpit ring already handled this state).
   const isMonitoring = !!(status && !status.running && status.state === 'monitoring');
+  // A cloud campaign that's still pending/queued on the VM (worker scaling up,
+  // hasn't claimed it yet). Not running, not monitoring, and NOT finished —
+  // render a "Launching…" state so the operator doesn't mistake it for done and
+  // spam Start. Must be checked BEFORE isFinished, which would otherwise catch
+  // it (queued campaigns already carry a summary log line → logs.length > 0).
+  const isLaunching = !!(status && status.queued && !status.running && !isMonitoring);
   // v2.72: a campaign that ran this session and has now ended (completed,
   // stopped, or errored) — keep the log + details visible so the operator can
   // review what happened, instead of wiping straight to "No campaign running".
   // Detected by: not running, not monitoring, but logs exist from this session.
-  const isFinished = !!(status && !status.running && !isMonitoring
+  const isFinished = !!(status && !status.running && !isMonitoring && !isLaunching
     && Array.isArray(status.logs) && status.logs.length > 0);
+  if (isLaunching) {
+    card.classList.remove('is-empty', 'is-monitor');
+    card.classList.add('is-queued');
+    const total = Number(status.totalTargets) || 0;
+    v3SetText('activeName', status.name || '(unnamed)');
+    v3SetText('activeEyebrow', 'Launching…');
+    v3SetText('activePct', '0');
+    v3SetText('activeSent', '0');
+    v3SetText('activeTotal', String(total));
+    v3SetText('activeAccounts', String((status.profileIds || []).length));
+    v3SetText('activeAccepted', '—');
+    v3SetText('sendingLbl', 'Starting shortly');
+    v3SetText('batchEta', 'starting…');
+    const glyph = document.getElementById('activeGlyph');
+    if (glyph) glyph.textContent = (typeof v3ModeBadge === 'function') ? v3ModeBadge(status.mode) : '';
+    const bar = card.querySelector('.vj-hbar > i');
+    if (bar) bar.style.width = '0%';
+    const liveEl = document.getElementById('active-live');
+    if (liveEl) liveEl.hidden = true;
+    const profEl = document.getElementById('active-profiles');
+    if (profEl) { profEl.hidden = true; profEl.innerHTML = ''; }
+    try { applyCheckSectionMode(status.mode); } catch (_) { /* section relabel best-effort */ }
+    // Keep the live log visible — it shows the pending leads queued up to send.
+    _setActiveDetails(true);
+    const logEl = document.getElementById('active-log');
+    if (logEl && Array.isArray(status.logs)) {
+      const lastN = status.logs.slice(-200);
+      logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
+      const head = card.querySelector('.vj-log-head .vj-details-head');
+      if (head) head.textContent = `Live log · ${lastN.length} events (launching)`;
+      const moreBtn = document.getElementById('wiz-log-more');
+      if (moreBtn) moreBtn.hidden = true;
+    }
+    window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
+    renderSheetWriteWarn(status);
+    return;
+  }
+  card.classList.remove('is-queued');
   if (isFinished) {
     card.classList.remove('is-empty', 'is-monitor');
     const total = Number(status.totalTargets) || 0;
@@ -19541,7 +19592,11 @@ function v3RenderLogLine(rawLine) {
     restStr = isoMatch[2];
   }
   let cls = '';
-  if (/✓|connection_sent|message_sent|status_accepted|accepted/i.test(restStr)) { cls = 'is-ok'; evtStr = 'ok'; }
+  // Roll-up summary line ("— N sent · N errors · N pending") is neutral, not an
+  // error — it starts with an em-dash. Classify it first so the word "errors" in
+  // "0 errors" can't trip the error regex below and paint it red (v2.160.9).
+  if (/^\s*—/.test(restStr)) { evtStr = 'sum'; }
+  else if (/✓|connection_sent|message_sent|status_accepted|accepted/i.test(restStr)) { cls = 'is-ok'; evtStr = 'ok'; }
   else if (/✗|error|fail|FAILED|429/i.test(restStr)) { cls = 'is-err'; evtStr = 'err'; }
   else if (/⚠|warn|retry|backoff|park|SKIPPED/i.test(restStr)) { cls = 'is-warn'; evtStr = 'warn'; }
   else if (/===|▶|■|start|finished/i.test(restStr)) { evtStr = 'info'; }
