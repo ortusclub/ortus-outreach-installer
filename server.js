@@ -48,7 +48,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, resumeCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1605,6 +1605,12 @@ app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
     pause: !!req.query.pause,
     keepMonitoring: !!req.query.keepMonitoring, // "Stop sending, keep monitoring"
   });
+  if (r.error) return res.status(502).json(r);
+  res.json(r);
+});
+// Resume a paused cloud campaign (mirror of local Resume).
+app.post('/api/campaign/cloud/:id/resume', async (req, res) => {
+  const r = await resumeCloudCampaign(req.params.id);
   if (r.error) return res.status(502).json(r);
   res.json(r);
 });

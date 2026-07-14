@@ -209,6 +209,16 @@ export function stopCloudCampaign(id, { pause = false, keepMonitoring = false } 
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${qs}`);
 }
 
+/**
+ * Resume a paused cloud campaign (mirror of the local Resume). Flips the engine
+ * status 'paused' → 'running' so the scheduler continues from where it left off.
+ * Idempotent (a non-paused campaign returns its current status). Retries like the
+ * other control calls.
+ */
+export function resumeCloudCampaign(id) {
+  return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/resume`);
+}
+
 // Monitoring controls (Task 3 Part B) — mirror the local ⚡ Check now / Automatic
 // checks toggle. Single-shot (requestOnce): user-initiated, fine to fail loudly.
 // Return { error, status } until the engine ships these routes, so the UI can
