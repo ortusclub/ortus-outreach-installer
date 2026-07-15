@@ -211,6 +211,16 @@ export async function selectPerson(page, person, { log = () => {} } = {}) {
   const hasSearch = await page.$(SEL.search).then(Boolean).catch(() => false);
   if (!hasSearch) { log(`skip "${person.name}" — search box not present`); return { selected: false, reason: 'no-match' }; }
   await page.click(SEL.search, { clickCount: 3 }).catch(() => {});
+  // Force-clear the box before typing. The triple-click select-all above is
+  // unreliable on the VM's headless browser — without this, each name is appended
+  // to the last, the box fills with every name concatenated, LinkedIn returns no
+  // results, and everyone is skipped. Set the value empty via the native input
+  // setter + input event so LinkedIn's controlled input registers the change.
+  await page.$eval(SEL.search, (el) => {
+    const desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    if (desc && desc.set) desc.set.call(el, ''); else el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }).catch(() => {});
   await page.type(SEL.search, person.name, { delay: 40 });
   await randomDelay(900, 1600);
   const results = await scrapeResults(page);
