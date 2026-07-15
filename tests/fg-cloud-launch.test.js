@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCloudLeads, invitedWritebackFromLeads, makeRunStore } from '../src/connections/fg-cloud-launch.js';
+import { buildCloudLeads, invitedWritebackFromLeads, makeRunStore, reconcileCloudRun } from '../src/connections/fg-cloud-launch.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -96,4 +96,59 @@ test('makeRunStore add/load/update round-trips atomically', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const recordForReconcile = {
+  cloudId: 'c1',
+  perAccount: [
+    { profileId: 'p1', account: 'a1@x.com', operator: 'o1@x.com', month: '2026-07',
+      rowsByUrl: { 'https://linkedin.com/in/jane': '111' } },
+  ],
+};
+
+test('reconcileCloudRun skips a non-terminal campaign without writing', async () => {
+  const calls = [];
+  const res = await reconcileCloudRun(recordForReconcile, {
+    getCampaign: async () => ({ status: 'running' }),
+    getLeads: async () => { calls.push('getLeads'); return { leads: [] }; },
+    markInvited: async () => calls.push('markInvited'),
+    log: () => {},
+  });
+  assert.deepEqual(res, { reconciled: false, status: 'running' });
+  assert.deepEqual(calls, []); // never fetched leads or wrote
+});
+
+test('reconcileCloudRun writes invited memberIds back on a terminal campaign', async () => {
+  const marks = [];
+  const res = await reconcileCloudRun(recordForReconcile, {
+    getCampaign: async () => ({ status: 'done' }),
+    getLeads: async () => ({ leads: [{ leadUrl: 'https://linkedin.com/in/jane', account: 'p1', stage: 'Invited', status: 'sent' }] }),
+    markInvited: async (args) => marks.push(args),
+    log: () => {},
+  });
+  assert.equal(res.reconciled, true);
+  assert.deepEqual(marks, [{ memberIds: ['111'], account: 'a1@x.com', operator: 'o1@x.com', month: '2026-07' }]);
+});
+
+test('reconcileCloudRun on markInvited failure logs STRANDED and does not throw', async () => {
+  const logs = [];
+  const res = await reconcileCloudRun(recordForReconcile, {
+    getCampaign: async () => ({ status: 'done' }),
+    getLeads: async () => ({ leads: [{ leadUrl: 'https://linkedin.com/in/jane', account: 'p1', stage: 'Invited', status: 'sent' }] }),
+    markInvited: async () => { throw new Error('sheet 503'); },
+    log: (m) => logs.push(m),
+  });
+  assert.equal(res.reconciled, false);
+  assert.equal(res.stranded, true);
+  assert.match(logs.join('\n'), /STRANDED/);
+});
+
+test('reconcileCloudRun is a no-op when already reconciled', async () => {
+  const res = await reconcileCloudRun({ ...recordForReconcile, status: 'reconciled' }, {
+    getCampaign: async () => { throw new Error('should not be called'); },
+    getLeads: async () => { throw new Error('should not be called'); },
+    markInvited: async () => { throw new Error('should not be called'); },
+    log: () => {},
+  });
+  assert.equal(res.reconciled, true);
 });

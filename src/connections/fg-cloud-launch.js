@@ -107,3 +107,25 @@ export function makeRunStore(filePath) {
     },
   };
 }
+
+const TERMINAL_STATUS = new Set(['done', 'error', 'stopped', 'cancelled']);
+
+export async function reconcileCloudRun(record, deps) {
+  if (record && record.status === 'reconciled') return { reconciled: true };
+  const camp = await deps.getCampaign(record.cloudId);
+  const status = camp && (camp.status || (camp.campaign && camp.campaign.status));
+  if (!status || !TERMINAL_STATUS.has(status)) return { reconciled: false, status: status || 'unknown' };
+
+  const res = await deps.getLeads(record.cloudId);
+  const leads = (res && res.leads) || [];
+  const groups = invitedWritebackFromLeads(leads, record);
+  for (const g of groups) {
+    try {
+      await deps.markInvited({ memberIds: g.memberIds, account: g.account, operator: g.operator, month: g.month });
+    } catch (e) {
+      deps.log(`⚠ STRANDED: ${g.memberIds.length} invite(s) WERE sent for ${g.account} but the FG-sheet write-back failed — they will be re-checked next reconcile (${e.message})`);
+      return { reconciled: false, stranded: true };
+    }
+  }
+  return { reconciled: true, groups: groups.length };
+}
