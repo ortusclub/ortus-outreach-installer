@@ -91,6 +91,7 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
 import { getFgState, queueFgInvites, markFgInvited, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
+import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -2366,6 +2367,43 @@ let _fgTeamAbort = false;
 // instead of waiting out a 2-min modal timeout).
 let _fgActiveHandle = null;
 
+// Durable cloud-FG reconcile records. NEVER git-add data/fg-cloud-runs.json.
+// Uses dataPath() (src/paths.js) — the same ORTUS_DATA_DIR-aware root every
+// other stateful file (state.json, history.json, campaign.log, …) resolves
+// through — NOT process.cwd(), which would diverge from that root whenever
+// ORTUS_DATA_DIR is set (e.g. the packaged Electron app / `npm run dev:app`).
+const _fgCloudRunStore = makeRunStore(dataPath('fg-cloud-runs.json'));
+
+// Reconcile every dispatched cloud-FG run: pull engine results and write invited
+// members back to the FG sheet. Runs on a timer while the app is open AND once at
+// startup (so a run that finished while the laptop was closed is written back).
+// Guarded against overlapping callers (startup + 30s timer + post-dispatch kick)
+// so concurrent invocations never double-process the same record.
+let _fgCloudReconciling = false;
+async function reconcileFgCloudRuns() {
+  if (_fgCloudReconciling) return;
+  _fgCloudReconciling = true;
+  try {
+    const deps = {
+      getCampaign: (id) => getCloudCampaign(id),
+      getLeads: (id) => getCloudCampaignLeads(id),
+      markInvited: (args) => markFgInvited(args),
+      log: (m) => { try { campaignLog(`[FG-cloud] ${m}`); } catch (_) {} },
+    };
+    for (const record of _fgCloudRunStore.load()) {
+      if (record.status === 'reconciled') continue;
+      try {
+        const out = await reconcileCloudRun(record, deps);
+        if (out.reconciled) _fgCloudRunStore.update(record.cloudId, { status: 'reconciled' });
+      } catch (e) {
+        try { campaignLog(`[FG-cloud] reconcile ${record.cloudId} failed: ${e.message}`); } catch (_) {}
+      }
+    }
+  } finally {
+    _fgCloudReconciling = false;
+  }
+}
+
 app.get('/api/fg/team-launch/status', (_req, res) => res.json(_fgTeam));
 app.post('/api/fg/team-launch/stop', async (_req, res) => {
   _fgTeamAbort = true;
@@ -2381,6 +2419,40 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
   const b = req.body || {};
   const pairs = Array.isArray(b.pairs) ? b.pairs.filter((p) => p && p.operator && p.account && p.profileId) : [];
   if (!pairs.length) return res.status(400).json({ error: 'At least one paired account is required.' });
+
+  if ((b.target || 'local') === 'cloud') {
+    const month = b.month || fgMonth();
+    const keywords = Array.isArray(b.keywords) ? b.keywords : [];
+    let snap;
+    try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
+    const buildTargets = (pair) => {
+      const alreadyInvited = (snap.invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+      const budget = fgRemaining(snap.budgets, pair.account, month);
+      const out = buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator: pair.operator, operatorName: pair.operatorName, account: pair.account, month, alreadyInvited, budget });
+      let reason = '';
+      if (!out.count) {
+        if (out.matched === 0) reason = 'no connections match these roles';
+        else if (out.eligible === 0) reason = 'all matching connections already invited';
+        else reason = 'monthly budget used up — no invites remaining this month';
+      }
+      return { rows: out.rows, count: out.count, reason };
+    };
+    const result = await startTeamLaunchCloud(pairs, {
+      buildTargets,
+      startCloud: (payload) => startCloudCampaign(payload),
+      queueInvites: (rows) => queueFgInvites(rows),
+      runStore: _fgCloudRunStore,
+      now: () => new Date().toISOString(),
+      log: (m) => { try { campaignLog(`[FG-cloud] ${m}`); } catch (_) {} },
+      month, owner: getOperatorEmail() || req.user || '',
+      name: `Team Follower Growth · ${month}`,
+      inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE,
+    });
+    if (result.error) return res.status(502).json({ error: result.error });
+    reconcileFgCloudRuns().catch(() => {}); // kick a first poll shortly (non-blocking)
+    return res.json({ started: true, cloudId: result.cloudId });
+  }
+
   const month = b.month || fgMonth();
   const keywords = Array.isArray(b.keywords) ? b.keywords : [];
   res.json({ started: true });
@@ -5503,6 +5575,10 @@ app.listen(PORT, async () => {
 
   // v2.14 — start the T+7d monitoring auto-end watcher
   startMonitoringWatcher();
+
+  // Cloud-FG write-back: reconcile on boot, then every 30s while the app is open.
+  reconcileFgCloudRuns().catch(() => {});
+  setInterval(() => { reconcileFgCloudRuns().catch(() => {}); }, 30_000);
 
   // v2.91 — drain primary-side automation tasks (auto-accept + first follow-up)
   // in idle gaps, one browser at a time, gated on the global browser semaphore.
