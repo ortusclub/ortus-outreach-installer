@@ -129,3 +129,45 @@ export async function reconcileCloudRun(record, deps) {
   }
   return { reconciled: true, groups: groups.length };
 }
+
+/**
+ * Dispatch a Follower Growth Team Launch to the cloud engine.
+ * Orchestrates target building, dispatch, proof-at-launch queuing, and record persistence.
+ * @param {Array} pairs [{ profileId, account, operator, operatorName }]
+ * @param {{buildTargets, startCloud, queueInvites, runStore, now, log, month, owner, name, inviteUrl, monthlyBudget}} deps
+ * @returns {Promise<{cloudId}|{error}>}
+ */
+export async function startTeamLaunchCloud(pairs, deps) {
+  const { perAccount, leads } = buildCloudLeads(pairs, { month: deps.month }, { buildTargets: deps.buildTargets });
+  if (!leads.length) {
+    const reason = (perAccount.find((a) => a.reason) || {}).reason || 'no eligible targets';
+    return { error: `No invites to send — ${reason}.` };
+  }
+  const resp = await deps.startCloud({
+    mode: 'follower_growth',
+    name: deps.name || `Team Follower Growth · ${deps.month}`,
+    owner: deps.owner || '',
+    profileIds: [...new Set(pairs.map((p) => p.profileId))],
+    leads,
+    config: { inviteUrl: deps.inviteUrl, monthlyBudget: deps.monthlyBudget },
+  });
+  if (!resp || resp.error || !resp.id) return { error: (resp && resp.error) || 'Cloud dispatch failed.' };
+  const cloudId = resp.id;
+
+  // Proof-at-launch — ONLY after a successful dispatch, so a failed dispatch
+  // never strands Queued rows. Best-effort: a sheet hiccup must not fail the run.
+  const allRows = perAccount.flatMap((a) => a.rows);
+  try { if (allRows.length) await deps.queueInvites(allRows); }
+  catch (e) { deps.log(`⚠ FG-sheet Queue write failed at launch (${e.message}) — invites still dispatched; reconcile will still flip Invited.`); }
+
+  deps.runStore.add({
+    cloudId,
+    month: deps.month,
+    dispatchedAt: deps.now(),
+    status: 'dispatched',
+    perAccount: perAccount.map((a) => ({
+      profileId: a.profileId, account: a.account, operator: a.operator, month: deps.month, rowsByUrl: a.rowsByUrl,
+    })),
+  });
+  return { cloudId };
+}

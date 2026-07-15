@@ -152,3 +152,61 @@ test('reconcileCloudRun is a no-op when already reconciled', async () => {
   });
   assert.equal(res.reconciled, true);
 });
+
+import { startTeamLaunchCloud } from '../src/connections/fg-cloud-launch.js';
+
+const onePair = [{ profileId: 'p1', account: 'a1@x.com', operator: 'o1@x.com', operatorName: 'Op1' }];
+const oneTarget = () => ({ rows: [['Jane Doe', 'https://linkedin.com/in/jane', '111', 'Acme', 'CMO', '', '', '', '', '', '', '', '']], count: 1, reason: '' });
+
+function fakeStore() {
+  const runs = [];
+  return { add: (r) => runs.push(r), load: () => runs, save: () => {}, update: () => true, _runs: runs };
+}
+
+test('startTeamLaunchCloud dispatches, queues proof, persists record', async () => {
+  const store = fakeStore();
+  const queued = [];
+  const res = await startTeamLaunchCloud(onePair, {
+    buildTargets: oneTarget,
+    startCloud: async (p) => { assert.equal(p.mode, 'follower_growth'); assert.deepEqual(p.config, { inviteUrl: 'https://linkedin.com/company/ortus/invite', monthlyBudget: 30 }); assert.equal(p.leads.length, 1); assert.deepEqual(p.profileIds, ['p1']); return { id: 'cloud-1' }; },
+    queueInvites: async (rows) => { queued.push(...rows); },
+    runStore: store, now: () => '2026-07-15T00:00:00Z', log: () => {},
+    month: '2026-07', owner: 'o1@x.com', name: 'Team FG', inviteUrl: 'https://linkedin.com/company/ortus/invite', monthlyBudget: 30,
+  });
+  assert.deepEqual(res, { cloudId: 'cloud-1' });
+  assert.equal(queued.length, 1);
+  assert.equal(store._runs.length, 1);
+  assert.equal(store._runs[0].cloudId, 'cloud-1');
+  assert.equal(store._runs[0].status, 'dispatched');
+  assert.deepEqual(store._runs[0].perAccount[0].rowsByUrl, { 'https://linkedin.com/in/jane': '111' });
+});
+
+test('startTeamLaunchCloud returns error and does NOT queue when there are no targets', async () => {
+  const store = fakeStore();
+  let queuedCalled = false;
+  const res = await startTeamLaunchCloud(onePair, {
+    buildTargets: () => ({ rows: [], count: 0, reason: 'all already invited' }),
+    startCloud: async () => { throw new Error('should not dispatch'); },
+    queueInvites: async () => { queuedCalled = true; },
+    runStore: store, now: () => 'now', log: () => {},
+    month: '2026-07', owner: 'o', inviteUrl: 'u', monthlyBudget: 30,
+  });
+  assert.ok(res.error);
+  assert.equal(queuedCalled, false);
+  assert.equal(store._runs.length, 0);
+});
+
+test('startTeamLaunchCloud returns error and does NOT queue when dispatch fails', async () => {
+  const store = fakeStore();
+  let queuedCalled = false;
+  const res = await startTeamLaunchCloud(onePair, {
+    buildTargets: oneTarget,
+    startCloud: async () => ({ error: 'engine unreachable' }),
+    queueInvites: async () => { queuedCalled = true; },
+    runStore: store, now: () => 'now', log: () => {},
+    month: '2026-07', owner: 'o', inviteUrl: 'u', monthlyBudget: 30,
+  });
+  assert.equal(res.error, 'engine unreachable');
+  assert.equal(queuedCalled, false);
+  assert.equal(store._runs.length, 0);
+});
