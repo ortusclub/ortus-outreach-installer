@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.15" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.15" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.16" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.16" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1921,6 +1921,10 @@
       #nav-follower-growth .fgtl-spin { display:inline-block; width:11px; height:11px; border:2px solid var(--hairline); border-top-color:var(--gold); border-radius:50%; vertical-align:-1px; margin-left:6px; animation:fgtlSpin .7s linear infinite; }
       @keyframes fgtlSpin { to { transform:rotate(360deg); } }
       #nav-follower-growth .fgtl-loading { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--gray); font-family:var(--mono); font-size:12px; padding:30px 10px; }
+      #nav-follower-growth .fgtl-watch-btn { margin-left:auto; display:inline-flex; align-items:center; gap:6px; background:transparent; color:var(--ink); border:1px solid var(--hairline); border-radius:9999px; padding:6px 14px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-watch-btn.live-on { border-color:var(--green); }
+      #nav-follower-growth .fgtl-watch-btn + .fgtl-card-stop { margin-left:8px; }
+      #nav-follower-growth .fgtl-live-dot { width:7px; height:7px; border-radius:50%; background:var(--green); animation:fgtl-lb-pulse 1.2s ease-in-out infinite; }
       #nav-follower-growth .fgtl-card-stop { margin-left:auto; background:var(--red); color:#fff; border:none; border-radius:9999px; padding:7px 15px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
       #nav-follower-growth .fgtl-card-stop:disabled { opacity:.6; cursor:default; }
       #nav-follower-growth .fgtl-board2 { display:grid; grid-template-columns:1fr 360px; gap:18px; align-items:start; }
@@ -2100,6 +2104,7 @@
         <div class="vj-eyebrow">
           <span class="vj-tag"><span class="dot"></span><span id="fgtl-eyebrow">Ready to launch</span></span>
           <span class="vj-when" id="fgtl-when"></span>
+          <button type="button" id="fgtl-watch" class="fgtl-watch-btn" style="display:none" title="Watch the campaign's browser live on the VM"><span id="fgtl-watch-dot" class="fgtl-live-dot" hidden></span>&#128065; Show live</button>
           <button type="button" id="fgtl-card-stop" class="fgtl-card-stop" style="display:none">Stop now</button>
         </div>
         <div class="vj-glyph-circle" aria-hidden="true">&#8961;</div>
@@ -3368,7 +3373,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.15"></script>
+  <script type="module" src="/js/app.js?v=2.160.16"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

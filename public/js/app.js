@@ -17760,16 +17760,20 @@ function fgtlCloudPoll() {
   const tick = async () => {
     const id = _fgtlCloudId;
     if (!id) return;
-    let campaign = null, leads = [];
+    let campaign = null, leads = [], detail = null;
     try {
-      const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
-      campaign = (d && (d.campaign || d)) || null;
+      detail = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
+      campaign = (detail && (detail.campaign || detail)) || null;
       const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json();
       if (lr && Array.isArray(lr.leads)) leads = lr.leads;
     } catch (_) { /* transient — retry */ }
     if (_fgtlCloudId !== id) return; // superseded (new launch / cleared)
     if (!campaign) { _fgtlCloudTimer = setTimeout(tick, 4000); return; }
     const status = _fgtlBuildCloudStatus(campaign, leads);
+    // Live-browser flag from the engine (top-level of the detail) → drives the
+    // green LIVE dot + Show-live button on the FG card.
+    status.live = !!(detail && detail.live);
+    status.liveAccount = (detail && detail.liveAccount) || '';
     _fgtlLastStatus = status;
     fgtlRenderCard(status);
     const terminal = ['done', 'cancelled', 'error', 'stopped'].includes(campaign.status || '');
@@ -17976,6 +17980,18 @@ function fgtlRenderCard(status) {
   if (banner) banner.style.display = launching ? '' : 'none';
   card.classList.toggle('is-queued', launching);
 
+  // Watch-live button — cloud runs only (the VM browser is streamable via the
+  // same MJPEG viewer CC/CC+DM use). The green LIVE dot lights when the engine
+  // reports an active browser this poll.
+  const watchBtn = document.getElementById('fgtl-watch');
+  if (watchBtn) {
+    const showWatch = !!_fgtlCloudId && !!status.running;
+    watchBtn.style.display = showWatch ? '' : 'none';
+    watchBtn.classList.toggle('live-on', !!status.live);
+    const dot = document.getElementById('fgtl-watch-dot');
+    if (dot) dot.hidden = !status.live;
+  }
+
   // Keep the on-card Stop button in sync (so it's there after navigate-away/back).
   const cardStop = document.getElementById('fgtl-card-stop');
   if (cardStop) cardStop.style.display = status.running ? '' : 'none';
@@ -18069,6 +18085,14 @@ function fgtlBindLaunch() {
   if (cardStop && !cardStop._b) {
     cardStop._b = true;
     cardStop.addEventListener('click', () => doStop(cardStop));
+  }
+  // Watch-live: opens the same MJPEG viewer CC/CC+DM use, for the active cloud run.
+  const watchBtn = document.getElementById('fgtl-watch');
+  if (watchBtn && !watchBtn._b) {
+    watchBtn._b = true;
+    watchBtn.addEventListener('click', () => {
+      if (_fgtlCloudId && typeof openCloudCampaignView === 'function') openCloudCampaignView(_fgtlCloudId, 'Team Follower Growth');
+    });
   }
 }
 
