@@ -2717,6 +2717,11 @@ body.theme-light .section.tpl-section .placeholder-tags .tag {
    One per passover window; state is encoded in the class. */
 .header-stat .v.passover-pills {
   display: inline-flex; gap: 6px; align-items: center;
+  /* Match the numeric stats' box height (font-size 1.5rem, line-height 1) and
+     center the pills in it, so their center sits on the same line as the big
+     numbers. Also drop the 4px padding-top inherited from .v.small, which was
+     nudging the pills down out of alignment. */
+  min-height: 1.5rem; padding-top: 0;
   font-size: 0.62rem; letter-spacing: 0.15em;
 }
 .passover-pill {
