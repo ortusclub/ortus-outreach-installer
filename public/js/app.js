@@ -2376,8 +2376,51 @@ async function refreshCheckDmsPreview() {
 // (band-aid for the wrong-person incident, now fixed by the pre-send identity
 // gate). The note is a plain always-visible field again for every connect mode.
 
+// Tracks the mode across onModeChange calls so Follower Growth can default the
+// run-target to the Cloud VM only on ENTRY (reset the local-pin then), not on
+// every re-render.
+let _prevModeForRunTarget = null;
+// Set true ONLY when the operator explicitly clicks "This machine" while in
+// Follower Growth mode, so the FG cloud-default never overrides a deliberate
+// local choice. Reset on each (re)entry into FG.
+let _fgRunTargetPinnedLocal = false;
+
+// Ensure Follower Growth lands on the Cloud VM unless the operator pinned local.
+// Idempotent + safe from any init path (onModeChange, workspace render, engine
+// re-check, DOMContentLoaded), which is what makes it resilient to init ordering
+// (e.g. DOMContentLoaded resetting the target to local after the first render).
+// setRunTarget coerces cloud→local when the engine is unconfigured, so this is a
+// no-op when the VM is unavailable.
+function applyFgRunTargetDefault() {
+  try {
+    const m = document.getElementById('campaign-mode');
+    if (!m || m.value !== 'follower_growth') return;
+    if (_fgRunTargetPinnedLocal) return;
+    if (typeof getRunTarget === 'function' && getRunTarget() === 'cloud') return;
+    if (typeof setRunTarget === 'function') setRunTarget('cloud');
+  } catch (_) { /* run-target is optional */ }
+}
+
+// Run-target tab click entry point. Records a deliberate "This machine" pin while
+// in FG mode (so the default logic won't fight it), then applies the choice.
+function pickRunTarget(t) {
+  try {
+    const m = document.getElementById('campaign-mode');
+    if (m && m.value === 'follower_growth') _fgRunTargetPinnedLocal = (t === 'local');
+  } catch (_) { /* */ }
+  if (typeof setRunTarget === 'function') setRunTarget(t);
+}
+if (typeof window !== 'undefined') window.pickRunTarget = pickRunTarget;
+
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
+  // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
+  // local FG run opens one GoLogin browser tab per account. Reset the local-pin on
+  // the transition INTO follower_growth, then apply the cloud default.
+  const _prevMode = _prevModeForRunTarget;
+  _prevModeForRunTarget = mode;
+  if (mode === 'follower_growth' && _prevMode !== 'follower_growth') _fgRunTargetPinnedLocal = false;
+  applyFgRunTargetDefault();
   try { refreshCloudToggle(); } catch { /* toggle is optional */ }
   if (typeof refreshRunTarget === 'function') refreshRunTarget();
   const connect = document.getElementById('tpl-connect-section');
@@ -5916,9 +5959,17 @@ async function refreshEngineConfigured() {
     _engineConfigured = !!h.scraperConfigured;
   } catch (_) { /* keep default (true) — don't disable on a transient fetch error */ }
   refreshVmTabAvailability();
+  // Engine reachability is now confirmed — re-assert the FG cloud default in case
+  // the earlier attempt was coerced/clobbered before the check resolved.
+  applyFgRunTargetDefault();
 }
 if (typeof window !== 'undefined') { window.setRunTarget = setRunTarget; window.getRunTarget = getRunTarget; }
-document.addEventListener('DOMContentLoaded', () => { if (typeof setRunTarget === 'function') setRunTarget(DEFAULT_RUN_TARGET); });
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof setRunTarget === 'function') setRunTarget(DEFAULT_RUN_TARGET);
+  // If the app loaded directly into Follower Growth (persisted mode), the line
+  // above just reset the target to local — re-apply the FG cloud default after it.
+  applyFgRunTargetDefault();
+});
 document.addEventListener('DOMContentLoaded', () => { refreshEngineConfigured(); });
 
 // ─── Cloud Campaigns panel ──────────────────────────────────────────────────
@@ -17543,6 +17594,10 @@ async function fgSendStop() {
 }
 
 async function initFollowerGrowth() {
+  // FG runs on the Cloud VM by default (unless the operator pinned This machine).
+  // Re-assert here so a load that lands directly in the FG workspace defaults to
+  // cloud even if an earlier init step reset the target to local.
+  applyFgRunTargetDefault();
   // 1. Load FG DB (once guard already in fgLoadDb)
   await fgLoadDb();
 

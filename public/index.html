@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.11" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.11" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.13" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.13" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -774,10 +774,10 @@
     <!-- Where it runs — the first decision; writes #cloud-run-checkbox (hidden source of truth) -->
     <div id="run-target" class="run-target" data-target="local">
       <div class="rt-tabs" role="tablist" aria-label="Where the campaign runs">
-        <button type="button" class="rt-tab on" data-rt="local" role="tab" onclick="setRunTarget('local')">
+        <button type="button" class="rt-tab on" data-rt="local" role="tab" onclick="pickRunTarget('local')">
           <span class="t">💻 This machine</span><span class="s">Runs while the app is open — pause &amp; resume anytime</span>
         </button>
-        <button type="button" class="rt-tab" data-rt="cloud" role="tab" onclick="setRunTarget('cloud')">
+        <button type="button" class="rt-tab" data-rt="cloud" role="tab" onclick="pickRunTarget('cloud')">
           <span class="t">☁︎ Cloud VM</span><span class="s">Keeps going after you close the laptop</span>
         </button>
       </div>
@@ -3355,7 +3355,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.11"></script>
+  <script type="module" src="/js/app.js?v=2.160.13"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
