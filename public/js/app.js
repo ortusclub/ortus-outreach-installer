@@ -17598,6 +17598,9 @@ async function initFollowerGrowth() {
   // Re-assert here so a load that lands directly in the FG workspace defaults to
   // cloud even if an earlier init step reset the target to local.
   applyFgRunTargetDefault();
+  // If a cloud FG run is already in flight (operator navigated away and back),
+  // resume driving its card from the cloud campaign instead of showing "Idle".
+  if (_fgtlCloudId) { try { fgtlCloudPoll(); } catch (_) { /* */ } }
   // 1. Load FG DB (once guard already in fgLoadDb)
   await fgLoadDb();
 
@@ -17692,6 +17695,98 @@ window.fgtlBindBoard = fgtlBindBoard;
 /** Snapshot of last polled status (used by #fgtl-copy). */
 let _fgtlLastStatus = null;
 
+// Cloud Follower Growth: when the batch runs on the VM we keep the operator in
+// the FG workspace and drive its live card from the cloud campaign (not the
+// local /api/fg/team-launch/status, which is empty for a cloud run).
+let _fgtlCloudId = null;         // active cloud FG campaign id (null = local/none)
+let _fgtlCloudPairs = {};        // profileId → { account, operator } for friendly labels
+let _fgtlCloudTimer = null;
+
+// Adapt a cloud FG campaign ({status,...}) + its leads into the status shape the
+// existing fgtlRenderCard/fgtlRenderAcctBoard already consume. Warmup (running but
+// nothing processed yet) is reported as phase 'launching' so the card reads
+// "Launching…" until the first invite/skip lands — the same treatment cloud
+// CC/CC+DM get during VM warmup.
+function _fgtlBuildCloudStatus(campaign, leads) {
+  const st = (campaign && campaign.status) || '';
+  const isDone = ['done', 'cancelled', 'error', 'stopped'].includes(st);
+  const isBad = st === 'error' || st === 'cancelled';
+  leads = Array.isArray(leads) ? leads : [];
+  const byAcct = {};
+  for (const l of leads) {
+    const pid = String(l.account || '');
+    if (!byAcct[pid]) byAcct[pid] = { sent: 0, skipped: 0, pending: 0 };
+    if (l.stage === 'Invited' || l.status === 'sent') byAcct[pid].sent++;
+    else if (l.status === 'skipped') byAcct[pid].skipped++;
+    else byAcct[pid].pending++;
+  }
+  const pids = Object.keys(_fgtlCloudPairs).length ? Object.keys(_fgtlCloudPairs) : Object.keys(byAcct);
+  let totalSent = 0, totalSkip = 0, doneAccounts = 0;
+  const perAccount = pids.map((pid) => {
+    const c = byAcct[pid] || { sent: 0, skipped: 0, pending: 0 };
+    totalSent += c.sent; totalSkip += c.skipped;
+    const processed = c.sent + c.skipped;
+    let status = 'waiting';
+    if (c.pending === 0 && processed > 0) { status = 'done'; doneAccounts++; }
+    else if (processed > 0) status = 'running';
+    const label = (_fgtlCloudPairs[pid] && _fgtlCloudPairs[pid].account) || pid;
+    return { account: label, status, invited: c.sent, targets: processed + c.pending, reason: '' };
+  });
+  const totalProcessed = totalSent + totalSkip;
+  let phase = 'launching';
+  if (isBad) phase = 'error';
+  else if (st === 'done') phase = 'done';
+  else if (totalProcessed > 0) phase = 'sending';
+  const logs = (typeof _cloudLeadsToLog === 'function') ? _cloudLeadsToLog(leads, true, {}) : [];
+  if (phase === 'launching' && !isDone) logs.push('⏳ — warming up the VM · invites start shortly (~2 min)');
+  return {
+    _cloud: true,
+    running: !isDone,
+    phase,
+    totalAccounts: pids.length,
+    doneAccounts,
+    invitesTotal: totalSent,
+    sent: totalSent,
+    skipped: totalSkip,
+    perAccount,
+    logs,
+  };
+}
+
+// Poll the cloud FG campaign (app-server proxy, same as _refreshCloudActiveStatus)
+// and paint the FG workspace card. Stops on a terminal status.
+function fgtlCloudPoll() {
+  if (_fgtlCloudTimer) { clearTimeout(_fgtlCloudTimer); _fgtlCloudTimer = null; }
+  const tick = async () => {
+    const id = _fgtlCloudId;
+    if (!id) return;
+    let campaign = null, leads = [];
+    try {
+      const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
+      campaign = (d && (d.campaign || d)) || null;
+      const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json();
+      if (lr && Array.isArray(lr.leads)) leads = lr.leads;
+    } catch (_) { /* transient — retry */ }
+    if (_fgtlCloudId !== id) return; // superseded (new launch / cleared)
+    if (!campaign) { _fgtlCloudTimer = setTimeout(tick, 4000); return; }
+    const status = _fgtlBuildCloudStatus(campaign, leads);
+    _fgtlLastStatus = status;
+    fgtlRenderCard(status);
+    const terminal = ['done', 'cancelled', 'error', 'stopped'].includes(campaign.status || '');
+    if (!terminal) {
+      _fgtlCloudTimer = setTimeout(tick, 4000);
+    } else {
+      const stopBtn = document.getElementById('fgtl-stop'); if (stopBtn) stopBtn.style.display = 'none';
+      const cardStop = document.getElementById('fgtl-card-stop'); if (cardStop) cardStop.style.display = 'none';
+      const goBtn = document.getElementById('fgtl-go'); if (goBtn) goBtn.style.display = '';
+      _fgtlCloudId = null;
+      // Reload budgets so the launch list reflects what the cloud run sent.
+      fgLoadDb().then(() => fgtlRenderAll()).catch(() => fgtlRenderCart());
+    }
+  };
+  tick();
+}
+
 /** POST to /api/fg/team-launch/start, then begin polling. */
 async function fgtlLaunch() {
   const pairs = fgtlPairs();
@@ -17723,14 +17818,30 @@ async function fgtlLaunch() {
     if (goBtn) goBtn.disabled = false;
     return;
   }
-  // Cloud launch: the batch runs on the VM — hand off to the live cloud card
-  // (card #2) instead of polling the local team-launch status.
+  // Cloud launch: the batch runs on the VM. Stay in the FG workspace and drive
+  // its live card from the cloud campaign (the local team-launch status is empty
+  // for a cloud run). Seed the card into the Launching state immediately so the
+  // operator sees it react the moment they press launch.
   if (isCloud) {
     let data = {};
     try { data = await res.json(); } catch (_) {}
-    if (typeof showCampaignToast === 'function') showCampaignToast('☁︎ Cloud Follower Growth dispatched — it keeps running on the VM even if you close the app.', 6000);
-    if (data.cloudId && typeof openCloudLive === 'function') { try { await openCloudLive(data.cloudId); } catch (_) {} }
-    if (goBtn) goBtn.disabled = false;
+    if (data.error || !data.cloudId) {
+      alert(data.error || 'Cloud launch failed.');
+      if (goBtn) goBtn.disabled = false;
+      return;
+    }
+    if (typeof showCampaignToast === 'function') showCampaignToast('☁︎ Cloud Follower Growth dispatched — running on the VM. It keeps going even if you close the app.', 6000);
+    _fgtlCloudId = data.cloudId;
+    _fgtlCloudPairs = {};
+    for (const p of pairs) { if (p && p.profileId) _fgtlCloudPairs[String(p.profileId)] = { account: p.account, operator: p.operator }; }
+    if (goBtn) { goBtn.style.display = 'none'; goBtn.disabled = false; }
+    const stopBtnC = document.getElementById('fgtl-stop');
+    if (stopBtnC) { stopBtnC.style.display = ''; stopBtnC.textContent = 'Stop'; stopBtnC.disabled = false; }
+    const cardStopC = document.getElementById('fgtl-card-stop');
+    if (cardStopC) { cardStopC.style.display = ''; cardStopC.textContent = 'Stop'; cardStopC.disabled = false; }
+    // Seed the card immediately in the Launching state (before the first poll).
+    try { fgtlRenderCard(_fgtlBuildCloudStatus({ status: 'queued' }, [])); } catch (_) { /* */ }
+    fgtlCloudPoll();
     return;
   }
   const stopBtn = document.getElementById('fgtl-stop');
@@ -17849,10 +17960,12 @@ function fgtlRenderCard(status) {
   // layout so the hero + streaming log both render.
   card.classList.remove('is-monitor');
 
-  // Eyebrow
+  // Eyebrow — phase-aware so warmup reads "Launching…" and active work reads
+  // "Sending" (cloud runs report phase 'launching' until the first invite/skip).
   let eyebrow = 'Ready to launch';
   if (status.phase === 'error') eyebrow = '✗ Error';
-  else if (status.running) eyebrow = '● Launching';
+  else if (status.phase === 'launching' && status.running) eyebrow = '● Launching…';
+  else if (status.running) eyebrow = '● Sending';
   else if (status.phase === 'done') eyebrow = '✓ Complete';
   setTxt('fgtl-eyebrow', eyebrow);
 
@@ -17926,6 +18039,14 @@ function fgtlBindLaunch() {
     copyBtn.addEventListener('click', fgtlCopyLog);
   }
   const doStop = async (btn) => {
+    // Cloud FG run → stop the VM campaign; the cloud poll then resets the card.
+    if (_fgtlCloudId) {
+      const id = _fgtlCloudId;
+      btn.textContent = 'Stopping…'; btn.disabled = true;
+      try { if (typeof stopCloudCampaignUI === 'function') await stopCloudCampaignUI(id); } catch (_) {}
+      btn.disabled = false; btn.textContent = 'Stop';
+      return;
+    }
     btn.textContent = 'Stopping…';
     btn.disabled = true;
     try { await fetch('/api/fg/team-launch/stop', { method: 'POST' }); } catch (_) {}
@@ -17944,9 +18065,23 @@ function fgtlBindLaunch() {
   }
 }
 
+// Attach the FG workspace card to an already-running cloud FG campaign (resume
+// after navigating away, or on a fresh session). Sets the id + label map, then
+// starts the cloud poll.
+function fgtlAttachCloud(id, pairs) {
+  if (!id) return;
+  _fgtlCloudId = id;
+  _fgtlCloudPairs = {};
+  const arr = Array.isArray(pairs) ? pairs : [];
+  for (const p of arr) { if (p && p.profileId) _fgtlCloudPairs[String(p.profileId)] = { account: p.account, operator: p.operator }; }
+  fgtlCloudPoll();
+}
 window.fgtlPairs = fgtlPairs;
 window.fgtlLaunch = fgtlLaunch;
 window.fgtlPoll = fgtlPoll;
+window.fgtlCloudPoll = fgtlCloudPoll;
+window.fgtlAttachCloud = fgtlAttachCloud;
+window.fgtlRenderCard = fgtlRenderCard;
 window.fgtlRenderCard = fgtlRenderCard;
 window.fgtlCopyLog = fgtlCopyLog;
 window.fgtlBindLaunch = fgtlBindLaunch;
