@@ -52,3 +52,31 @@ export function buildCloudLeads(pairs, ctx, deps) {
   }
   return { perAccount, leads };
 }
+
+function isInvited(lead) {
+  return lead && (lead.stage === 'Invited' || lead.status === 'sent');
+}
+
+/**
+ * Turn cloud per-lead rows into per-account markFgInvited arguments.
+ * @param {Array} cloudLeads [{ leadUrl, account(=profileId), stage, status }]
+ * @param {{perAccount:Array}} record
+ * @returns {Array} [{ account, operator, month, memberIds:[…] }]
+ */
+export function invitedWritebackFromLeads(cloudLeads, record) {
+  const byProfile = new Map((record && record.perAccount || []).map((a) => [String(a.profileId), a]));
+  const idsByProfile = new Map(); // profileId → Set(memberId)
+  for (const lead of cloudLeads || []) {
+    if (!isInvited(lead)) continue;
+    const meta = byProfile.get(String(lead.account));
+    if (!meta) continue;
+    const memberId = meta.rowsByUrl[String(lead.leadUrl || '').trim()];
+    if (!memberId) continue;
+    if (!idsByProfile.has(meta.profileId)) idsByProfile.set(meta.profileId, new Set());
+    idsByProfile.get(meta.profileId).add(String(memberId));
+  }
+  return [...idsByProfile.entries()].map(([profileId, ids]) => {
+    const meta = byProfile.get(String(profileId));
+    return { account: meta.account, operator: meta.operator, month: meta.month, memberIds: [...ids] };
+  });
+}
