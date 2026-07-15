@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.14" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.14" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.15" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.15" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1937,6 +1937,12 @@
       #nav-follower-growth .fgtl-emline { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
       #nav-follower-growth .fgtl-prow .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
       #nav-follower-growth .fgtl-sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); margin-top:4px; opacity:.85; }
+      #nav-follower-growth .fgtl-launch-banner { display:flex; gap:12px; align-items:center; margin:10px 0 2px; padding:12px 16px; border:1px solid var(--gold); border-radius:12px; background:rgba(247,190,104,.10); }
+      #nav-follower-growth .fgtl-lb-ic { font-size:20px; line-height:1; animation:fgtl-lb-pulse 1.4s ease-in-out infinite; }
+      #nav-follower-growth .fgtl-lb-txt { display:flex; flex-direction:column; gap:2px; }
+      #nav-follower-growth .fgtl-lb-txt b { font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; }
+      #nav-follower-growth .fgtl-lb-txt span { font-size:12px; color:var(--gray); }
+      @keyframes fgtl-lb-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
       #nav-follower-growth .fgtl-pillst { font-family:var(--mono); font-size:9px; letter-spacing:.04em; text-transform:uppercase; padding:2px 9px; border-radius:9999px; border:1px solid var(--hairline); color:var(--gray); white-space:nowrap; }
       #nav-follower-growth .fgtl-pillst.sent { color:var(--ink); border-color:var(--ink); }
       #nav-follower-growth .fgtl-pillst.out { color:#b00020; border-color:#b00020; }
@@ -2099,6 +2105,13 @@
         <div class="vj-glyph-circle" aria-hidden="true">&#8961;</div>
         <h2 class="vj-name" id="fgtl-card-name"><span>Team Follower Growth</span></h2>
         <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="100" aria-label="Launch progress"><i id="fgtl-bar" style="width:0%"></i></div>
+        <div id="fgtl-launch-banner" class="fgtl-launch-banner" style="display:none">
+          <span class="fgtl-lb-ic" aria-hidden="true">&#9203;</span>
+          <div class="fgtl-lb-txt">
+            <b>The campaign is launching&#8230;</b>
+            <span>Warming up the VM &#183; first invites go out in ~2 minutes. You can close the app &#8212; it keeps running.</span>
+          </div>
+        </div>
         <div class="vj-hero">
           <div class="vj-hero-row">
             <div class="num"><span id="fgtl-pct">0</span><span class="sub">%</span></div>
@@ -3355,7 +3368,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.14"></script>
+  <script type="module" src="/js/app.js?v=2.160.15"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

@@ -17962,12 +17962,19 @@ function fgtlRenderCard(status) {
 
   // Eyebrow — phase-aware so warmup reads "Launching…" and active work reads
   // "Sending" (cloud runs report phase 'launching' until the first invite/skip).
+  const launching = (status.phase === 'launching' && status.running);
   let eyebrow = 'Ready to launch';
   if (status.phase === 'error') eyebrow = '✗ Error';
-  else if (status.phase === 'launching' && status.running) eyebrow = '● Launching…';
+  else if (launching) eyebrow = '● Launching…';
   else if (status.running) eyebrow = '● Sending';
   else if (status.phase === 'done') eyebrow = '✓ Complete';
   setTxt('fgtl-eyebrow', eyebrow);
+
+  // Prominent "warming up ~2 min" banner + gold pulsing dot during launch, so the
+  // 0-counts hero never reads as "not working". Matches the cloud CC/CC+DM handshake.
+  const banner = document.getElementById('fgtl-launch-banner');
+  if (banner) banner.style.display = launching ? '' : 'none';
+  card.classList.toggle('is-queued', launching);
 
   // Keep the on-card Stop button in sync (so it's there after navigate-away/back).
   const cardStop = document.getElementById('fgtl-card-stop');
