@@ -23,6 +23,7 @@ data/post-campaign-bulk-check.json
 data/errors.log.json
 data/test-mode.json
 data/operator-id.json
+data/fg-cloud-runs.json
 
 # Build output
 dist/
