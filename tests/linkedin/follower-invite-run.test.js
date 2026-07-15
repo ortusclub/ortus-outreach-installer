@@ -34,6 +34,40 @@ test('runFollowerInvites: nothing selected → no Invite click, all reported ski
   assert.equal(res.sent, false);
 });
 
+test('runFollowerInvites fires onProgress once per person, in order, with index/total/ok', async () => {
+  const queued = [
+    { name: 'Mara Lee', memberId: '1' },  // selected
+    { name: 'Amb Ig', memberId: '2' },    // skipped
+    { name: 'Dan Roe', memberId: '3' },   // selected
+  ];
+  const ticks = [];
+  const deps = {
+    readCredits: async () => 5,
+    selectPerson: async (_page, person) => person.name !== 'Amb Ig',
+    clickInvite: async () => true,
+    sleep: async () => {},
+  };
+  await runFollowerInvites({
+    page: {}, queued, deps,
+    onProgress: (p) => ticks.push({ name: p.person.name, ok: p.ok, index: p.index, total: p.total, selectedSoFar: p.selectedSoFar }),
+  });
+  assert.deepEqual(ticks, [
+    { name: 'Mara Lee', ok: true, index: 1, total: 3, selectedSoFar: 1 },
+    { name: 'Amb Ig', ok: false, index: 2, total: 3, selectedSoFar: 1 },
+    { name: 'Dan Roe', ok: true, index: 3, total: 3, selectedSoFar: 2 },
+  ]);
+});
+
+test('runFollowerInvites: a throwing onProgress never breaks the run', async () => {
+  const deps = { readCredits: async () => 5, selectPerson: async () => true, clickInvite: async () => true, sleep: async () => {} };
+  const res = await runFollowerInvites({
+    page: {}, queued: [{ name: 'A', memberId: '1' }], deps,
+    onProgress: () => { throw new Error('progress boom'); },
+  });
+  assert.deepEqual(res.invited, ['1']);
+  assert.equal(res.sent, true);
+});
+
 test('runFollowerInvites collects already-follows IDs separately', async () => {
   const queued = [
     { name: 'Mara Lee', memberId: '1' },   // selected

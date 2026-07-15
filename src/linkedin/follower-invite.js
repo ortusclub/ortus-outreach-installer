@@ -261,7 +261,7 @@ export async function clickInvite(page, { log = () => {} } = {}) {
 // Orchestrator. `deps` is the unit-test seam (defaults to the real page fns above).
 // The modal is opened only when `inviteUrl` is passed (real runs); unit tests omit it.
 // `deps.sleep` replaces the inter-person pause (default: randomDelay 700–1400 ms).
-export async function runFollowerInvites({ page, inviteUrl, queued = [], log = () => {}, shouldAbort = () => false, deps } = {}) {
+export async function runFollowerInvites({ page, inviteUrl, queued = [], log = () => {}, shouldAbort = () => false, onProgress = () => {}, deps } = {}) {
   const d = {
     openModal: openInviteModal,
     readCredits,
@@ -279,6 +279,7 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   let allowance = null, refill = '';
   if (inviteUrl) { const meta = await d.readCreditsMeta(page); allowance = meta.allowance; refill = meta.refill; }
   const invited = [], skipped = [], alreadyFollowing = [];
+  let index = 0;
   for (const person of queued) {
     if (shouldAbort()) { log('aborted'); break; }
     if (invited.length >= creditsBefore) { log('credit cap reached'); break; }
@@ -291,6 +292,11 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
       skipped.push(person.memberId);
       if (reason === 'already-follows') alreadyFollowing.push(person.memberId);
     }
+    // Best-effort per-person progress tick (default no-op). Fires AFTER each
+    // selection so a live viewer sees "selecting N/total" climb during the batch;
+    // never affects the send (still one Invite click after the loop).
+    index++;
+    try { onProgress({ person, ok: selected, index, total: queued.length, selectedSoFar: invited.length }); } catch (_) { /* progress is cosmetic */ }
     await d.sleep();
   }
   let sent = false;
