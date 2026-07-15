@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 // Cloud dispatch + reconcile for the Follower Growth Team Launch flow.
 // Pure functions; all I/O is injected via `deps` so this is unit-testable
 // with no browser, no HTTP, no filesystem. Mirrors the local path's write-back
@@ -79,4 +81,29 @@ export function invitedWritebackFromLeads(cloudLeads, record) {
     const meta = byProfile.get(String(profileId));
     return { account: meta.account, operator: meta.operator, month: meta.month, memberIds: [...ids] };
   });
+}
+
+export function makeRunStore(filePath) {
+  const load = () => {
+    try { return JSON.parse(fs.readFileSync(filePath, 'utf8')) || []; }
+    catch { return []; }
+  };
+  const save = (runs) => {
+    const tmp = filePath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(runs, null, 2));
+    fs.renameSync(tmp, filePath);
+  };
+  return {
+    load,
+    save,
+    add(run) { const runs = load(); runs.push(run); save(runs); },
+    update(cloudId, patch) {
+      const runs = load();
+      const i = runs.findIndex((r) => r.cloudId === cloudId);
+      if (i < 0) return false;
+      runs[i] = { ...runs[i], ...patch };
+      save(runs);
+      return true;
+    },
+  };
 }

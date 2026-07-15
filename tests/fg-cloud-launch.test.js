@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCloudLeads, invitedWritebackFromLeads } from '../src/connections/fg-cloud-launch.js';
+import { buildCloudLeads, invitedWritebackFromLeads, makeRunStore } from '../src/connections/fg-cloud-launch.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // FG row: [Name, URL, MemberID, Company, Title, ...]
 const row = (name, url, member, company = 'Acme', title = 'CMO') =>
@@ -75,4 +78,22 @@ test('invitedWritebackFromLeads ignores non-invited leads and unknown urls', () 
     { leadUrl: 'https://linkedin.com/in/kim', account: 'pX', stage: 'Invited', status: 'sent' }, // account not in record
   ];
   assert.deepEqual(invitedWritebackFromLeads(cloudLeads, record), []);
+});
+
+test('makeRunStore add/load/update round-trips atomically', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fgrun-'));
+  const file = join(dir, 'fg-cloud-runs.json');
+  try {
+    const store = makeRunStore(file);
+    assert.deepEqual(store.load(), []); // missing file → []
+    store.add({ cloudId: 'c1', status: 'dispatched' });
+    store.add({ cloudId: 'c2', status: 'dispatched' });
+    assert.equal(store.load().length, 2);
+    assert.equal(store.update('c1', { status: 'reconciled' }), true);
+    assert.equal(store.update('nope', { status: 'x' }), false);
+    const c1 = store.load().find((r) => r.cloudId === 'c1');
+    assert.equal(c1.status, 'reconciled');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
