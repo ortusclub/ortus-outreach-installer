@@ -5882,6 +5882,10 @@ function refreshLaunchForRunTarget() {
   if (note) note.textContent = cloud
     ? 'Starts on the VM — close the laptop whenever. Watch it live with 👁 Show on the board.'
     : 'Runs on this Mac while the app is open — pause & resume anytime.';
+  // Follower Growth "Team Launch" button copy ("Launch N in cloud" vs
+  // "…sequentially") is composed in fgtlRenderCart — re-render it here so
+  // flipping the run-target tab updates the label immediately.
+  if (typeof fgtlRenderCart === 'function' && document.getElementById('fgtl-go')) fgtlRenderCart();
 }
 function refreshAccountPickerForRunTarget() {
   const cloud = getRunTarget() === 'cloud';
@@ -17309,7 +17313,11 @@ function fgtlRenderCart() {
   const foot = document.getElementById('fgtl-foot'); if (foot) foot.style.display = 'block';
   const gaps = emails.some((em) => { const p = fgtlPeople.find((x) => x.email === em); return !(fgtlPicked[em].profile || p.paired); });
   const go = document.getElementById('fgtl-go');
-  if (go) { go.disabled = gaps; go.textContent = gaps ? 'Pick a profile for everyone first' : `Launch ${emails.length} sequentially`; }
+  if (go) {
+    go.disabled = gaps;
+    const _fgCloud = (typeof getRunTarget === 'function' && getRunTarget() === 'cloud');
+    go.textContent = gaps ? 'Pick a profile for everyone first' : (_fgCloud ? `Launch ${emails.length} in cloud` : `Launch ${emails.length} sequentially`);
+  }
 }
 
 // "Ready to launch" = eligible (Ortus) + has a paired profile + has matches +
@@ -17633,6 +17641,7 @@ let _fgtlLastStatus = null;
 async function fgtlLaunch() {
   const pairs = fgtlPairs();
   if (!pairs.length) return;
+  const isCloud = (typeof getRunTarget === 'function' && getRunTarget() === 'cloud');
   const goBtn = document.getElementById('fgtl-go');
   if (goBtn) goBtn.disabled = true;
   let res;
@@ -17644,6 +17653,7 @@ async function fgtlLaunch() {
         keywords: fgtlChips,
         pairs,
         month: new Date().toISOString().slice(0, 7),
+        target: isCloud ? 'cloud' : 'local',
       }),
     });
   } catch (err) {
@@ -17655,6 +17665,16 @@ async function fgtlLaunch() {
     let errMsg = 'Launch failed';
     try { const body = await res.json(); errMsg = body.error || errMsg; } catch (_) {}
     alert(errMsg);
+    if (goBtn) goBtn.disabled = false;
+    return;
+  }
+  // Cloud launch: the batch runs on the VM — hand off to the live cloud card
+  // (card #2) instead of polling the local team-launch status.
+  if (isCloud) {
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (typeof showCampaignToast === 'function') showCampaignToast('☁︎ Cloud Follower Growth dispatched — it keeps running on the VM even if you close the app.', 6000);
+    if (data.cloudId && typeof openCloudLive === 'function') { try { await openCloudLive(data.cloudId); } catch (_) {} }
     if (goBtn) goBtn.disabled = false;
     return;
   }
