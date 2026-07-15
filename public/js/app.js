@@ -17703,14 +17703,24 @@ let _fgtlCloudPairs = {};        // profileId → { account, operator } for frie
 let _fgtlCloudTimer = null;
 
 // Adapt a cloud FG campaign ({status,...}) + its leads into the status shape the
-// existing fgtlRenderCard/fgtlRenderAcctBoard already consume. Warmup (running but
-// nothing processed yet) is reported as phase 'launching' so the card reads
-// "Launching…" until the first invite/skip lands — the same treatment cloud
-// CC/CC+DM get during VM warmup.
-function _fgtlBuildCloudStatus(campaign, leads) {
+// existing fgtlRenderCard/fgtlRenderAcctBoard already consume.
+//
+// `extra` carries the engine's live signals ({ live, liveAccount, liveProgress,
+// leadCounts }) so the card reflects the TRUE VM state, not just the sent-count:
+//   • phase 'launching' (→ "warming up ~2 min") is reserved for the GENUINE
+//     pre-browser window — running, no browser live yet, nothing processed.
+//   • the moment a browser is live (`extra.live`), phase is 'sending' even at 0
+//     sent, because FG is a batch mode: the first account can select its whole
+//     budget in one modal before a single lead flips to 'sent'. Without this the
+//     card read "warming up" for minutes while the VM was actively inviting.
+//   • headline counts prefer the engine's authoritative `leadCounts` when present
+//     (robust to the 500-lead endpoint cap and null-account rows); else recompute.
+function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
   const st = (campaign && campaign.status) || '';
   const isDone = ['done', 'cancelled', 'error', 'stopped'].includes(st);
   const isBad = st === 'error' || st === 'cancelled';
+  const live = !!(extra && extra.live);
+  const lc = (extra && extra.leadCounts) || null;
   leads = Array.isArray(leads) ? leads : [];
   const byAcct = {};
   for (const l of leads) {
@@ -17733,21 +17743,40 @@ function _fgtlBuildCloudStatus(campaign, leads) {
     return { account: label, status, invited: c.sent, targets: processed + c.pending, reason: '' };
   });
   const totalProcessed = totalSent + totalSkip;
+  // Authoritative headline counts (engine-computed) when available.
+  const sentHead = (lc && Number.isFinite(Number(lc.sent))) ? Number(lc.sent) : totalSent;
+  const skipHead = (lc && Number.isFinite(Number(lc.skipped))) ? Number(lc.skipped) : totalSkip;
   let phase = 'launching';
   if (isBad) phase = 'error';
   else if (st === 'done') phase = 'done';
-  else if (totalProcessed > 0) phase = 'sending';
+  else if (totalProcessed > 0 || sentHead > 0) phase = 'sending';
+  else if (live) phase = 'sending'; // VM browser actively inviting; first batch mid-selection
+  // Friendly label for the account the VM is currently driving.
+  const liveAcctLabel = live
+    ? ((_fgtlCloudPairs[String(extra.liveAccount || '')] && _fgtlCloudPairs[String(extra.liveAccount || '')].account) || extra.liveAccount || '')
+    : '';
   const logs = (typeof _cloudLeadsToLog === 'function') ? _cloudLeadsToLog(leads, true, {}) : [];
-  if (phase === 'launching' && !isDone) logs.push('⏳ — warming up the VM · invites start shortly (~2 min)');
+  if (phase === 'launching' && !isDone) {
+    logs.push('⏳ — warming up the VM · invites start shortly (~2 min)');
+  } else if (live) {
+    // Per-person selection tick from the engine's live registry (Part B). Falls
+    // back to a plain "inviting on the VM" line when no progress detail yet.
+    const lp = extra && extra.liveProgress;
+    if (lp && Number(lp.total) > 0) {
+      logs.push(`↗ selecting ${lp.selecting || ''} · ${Number(lp.done) || 0}/${Number(lp.total)}${liveAcctLabel ? ' on ' + liveAcctLabel : ''}`.replace(/\s+/g, ' ').trim());
+    } else if (totalProcessed === 0) {
+      logs.push(`● — inviting on the VM${liveAcctLabel ? ' · ' + liveAcctLabel : ''} · first batch selecting…`);
+    }
+  }
   return {
     _cloud: true,
     running: !isDone,
     phase,
     totalAccounts: pids.length,
     doneAccounts,
-    invitesTotal: totalSent,
-    sent: totalSent,
-    skipped: totalSkip,
+    invitesTotal: sentHead,
+    sent: sentHead,
+    skipped: skipHead,
     perAccount,
     logs,
   };
@@ -17769,11 +17798,22 @@ function fgtlCloudPoll() {
     } catch (_) { /* transient — retry */ }
     if (_fgtlCloudId !== id) return; // superseded (new launch / cleared)
     if (!campaign) { _fgtlCloudTimer = setTimeout(tick, 4000); return; }
-    const status = _fgtlBuildCloudStatus(campaign, leads);
+    // Live signals from the engine detail (top-level): the browser-live flag +
+    // which account it's driving + the per-person selection progress + the
+    // authoritative lead counts. These make the card reflect the true VM state
+    // (see _fgtlBuildCloudStatus) instead of sitting on "warming up" during an
+    // active first batch.
+    const extra = {
+      live: !!(detail && detail.live),
+      liveAccount: (detail && detail.liveAccount) || '',
+      liveProgress: (detail && detail.liveProgress) || null,
+      leadCounts: (detail && detail.leadCounts) || null,
+    };
+    const status = _fgtlBuildCloudStatus(campaign, leads, extra);
     // Live-browser flag from the engine (top-level of the detail) → drives the
     // green LIVE dot + Show-live button on the FG card.
-    status.live = !!(detail && detail.live);
-    status.liveAccount = (detail && detail.liveAccount) || '';
+    status.live = extra.live;
+    status.liveAccount = extra.liveAccount;
     _fgtlLastStatus = status;
     fgtlRenderCard(status);
     const terminal = ['done', 'cancelled', 'error', 'stopped'].includes(campaign.status || '');
