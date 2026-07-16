@@ -100,7 +100,7 @@ import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID }
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse } from './src/soo-writer.js';
 import { reconcileCloudConnections } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
-import { buildAutopilotConfig } from './src/fg-autopilot.js';
+import { buildAutopilotConfig, nextRun } from './src/fg-autopilot.js';
 import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
 import { pickUnreconciled } from './src/fg-autopilot-reconcile.js';
 import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
@@ -2607,6 +2607,25 @@ app.post('/api/fg/autopilot/publish', async (req, res) => {
   const r = await publishAutopilotConfig(config);
   if (r.error) return res.status(502).json(r);
   res.json({ ok: true, config });
+});
+
+// Read-through proxy for the panel's collapsed strip — keeps FG_ROSTER_TOKEN
+// server-side (browser only ever calls same-origin /api/fg/*).
+app.get('/api/fg/autopilot', async (_req, res) => {
+  try {
+    const r = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, { headers: { authorization: `Bearer ${FG_ROSTER_TOKEN}` } });
+    const j = await r.json();
+    const cfg = j.config || { enabled: true, days: [1, 15] };
+    res.json({ ...j, nextRunLabel: cfg.enabled ? nextRun(new Date(), cfg).toISOString() : null });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+app.post('/api/fg/autopilot/run', async (_req, res) => {
+  try {
+    const r = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${FG_ROSTER_TOKEN}` }, body: JSON.stringify({ force: true }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
 app.get('/api/reply-sweep/status', (_req, res) => res.json(_replySweep));

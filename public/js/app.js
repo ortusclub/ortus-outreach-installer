@@ -17342,7 +17342,7 @@ function fgtlRenderCart() {
   const emails = Object.keys(fgtlPicked);
   const card = document.getElementById('fgtl-card'); if (card) card.style.display = emails.length ? '' : 'none';
   const clr = document.getElementById('fgtl-clear');
-  if (!emails.length) { el.innerHTML = '<div class="empty">Add colleagues from the left.<br>You will see their paired account and how many invites they can send.</div>'; const foot = document.getElementById('fgtl-foot'); if (foot) foot.style.display = 'none'; if (clr) clr.style.display = 'none'; return; }
+  if (!emails.length) { el.innerHTML = '<div class="empty">Add colleagues from the left.<br>You will see their paired account and how many invites they can send.</div>'; const foot = document.getElementById('fgtl-foot'); if (foot) foot.style.display = 'none'; if (clr) clr.style.display = 'none'; fgapQueuePublish(); return; }
   if (clr) clr.style.display = '';
   el.innerHTML = emails.map((em) => {
     const p = fgtlPeople.find((x) => x.email === em); if (!p) return '';
@@ -17369,6 +17369,7 @@ function fgtlRenderCart() {
     const _fgCloud = (typeof getRunTarget === 'function' && getRunTarget() === 'cloud');
     go.textContent = gaps ? 'Pick a profile for everyone first' : (_fgCloud ? `Launch ${emails.length} in cloud` : `Launch ${emails.length} sequentially`);
   }
+  fgapQueuePublish();
 }
 
 // "Ready to launch" = eligible (Ortus) + has a paired profile + has matches +
@@ -17593,6 +17594,171 @@ async function fgSendStop() {
   catch (_) {}
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-Pilot panel (fgap*) — collapsed status strip + expand body on the FG
+// board. Config lives on the cloud roster service; the app is a thin client:
+// GET/POST through the /api/fg/autopilot* proxy routes (token stays server-side).
+// ─────────────────────────────────────────────────────────────────────────────
+let _fgapData = null;      // last GET /api/fg/autopilot response: { config, runs, nextRunLabel }
+let _fgapExpanded = false;
+let _fgapPubTimer = null;
+
+async function fgapLoad() {
+  try {
+    const j = await fetch('/api/fg/autopilot').then((x) => x.json());
+    if (j.error) return;
+    _fgapData = j;
+    fgapRender();
+  } catch (_) { /* offline / service down — strip keeps last-known state */ }
+}
+
+function fgapRender() {
+  const cfg = (_fgapData && _fgapData.config) || { enabled: true, days: [1, 15] };
+  const dot = document.getElementById('fgap-dot');
+  const title = document.getElementById('fgap-title');
+  const next = document.getElementById('fgap-next');
+  const toggle = document.getElementById('fgap-toggle');
+  if (dot) dot.classList.toggle('off', !cfg.enabled);
+  if (title) title.textContent = `AUTO-PILOT · ${cfg.enabled ? 'ON' : 'OFF'}`;
+  if (toggle) { toggle.classList.toggle('on', !!cfg.enabled); toggle.setAttribute('aria-checked', String(!!cfg.enabled)); }
+  if (next) {
+    const label = cfg.enabled && _fgapData && _fgapData.nextRunLabel
+      ? new Date(_fgapData.nextRunLabel).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+      : '';
+    next.innerHTML = label
+      ? `Next run <b>${escHtml(label)}</b> · repeats ${escHtml((cfg.days || [1, 15]).join(' & '))}`
+      : 'Auto-Pilot is off';
+  }
+  fgapRenderHist((_fgapData && _fgapData.runs) || []);
+  if (_fgapExpanded) fgapRenderElig();
+}
+
+// Recent-runs list — schema comes from the cloud roster service, so read
+// defensively (accept a few plausible field names rather than assume one).
+function fgapRenderHist(runs) {
+  const el = document.getElementById('fgap-hist'); if (!el) return;
+  if (!runs.length) { el.innerHTML = '<div class="fgap-hist-empty">No auto-runs yet.</div>'; return; }
+  el.innerHTML = runs.slice(0, 5).map((r) => {
+    const when = fgtlShortDate(r.startedAt || r.dispatchedAt || r.cycleKey || '') || '—';
+    const accts = Array.isArray(r.perAccount) ? r.perAccount.length : (r.accounts || 0);
+    const invited = Array.isArray(r.perAccount) ? r.perAccount.reduce((s, a) => s + (a.invited || 0), 0) : (r.invited || 0);
+    const skipped = r.skipped || (Array.isArray(r.perAccount) ? r.perAccount.filter((a) => a.status === 'skipped').length : 0);
+    return `<div class="fgap-hrow"><span class="hd">${escHtml(when)}</span><span class="hs"><b>${accts}</b> accounts fired · <b>${invited}</b> invites${skipped ? ` · ${skipped} skipped` : ''}</span><span class="hb">${escHtml(r.status || 'Done')}</span></div>`;
+  }).join('');
+}
+
+// Eligibility preview — same "will this account fire today" logic as the
+// existing "Ready to launch" bar (fgtlIsReady/fgtlEligibility), rendered into
+// the real .fgtl-prow row shape so it matches the board 1:1.
+function fgapEligRow(p) {
+  const elig = fgtlEligibility(p.email);
+  const ready = fgtlIsReady(p) || (!!fgtlPicked[p.email] && elig.eligible && !!p.paired);
+  let pill;
+  if (!elig.eligible) pill = `<span class="fgtl-pillst out">${escHtml(elig.company)} · can’t invite</span>`;
+  else if (!p.paired) pill = '<span class="fgtl-pillst missing">needs a profile</span>';
+  else if (ready) pill = '<span class="fgtl-pillst ready">will run</span>';
+  else pill = '<span class="fgtl-pillst sent">already run</span>';
+  return `<div class="fgtl-prow ${ready ? '' : 'in'}">
+    <div class="fgtl-rowmain">
+      <div class="fgtl-emline"><span class="em">${escHtml(p.email)}</span>${pill}</div>
+      <div class="fgtl-sub">${p.total.toLocaleString()} connections</div>
+    </div>
+    <div class="fgtl-mbox ${p.matched ? '' : 'zero'}"><b>${p.matched.toLocaleString()}</b><small>match</small></div>
+    <span class="fgtl-addbtn dis" style="cursor:default">${ready ? 'will run' : 'skip'}</span>
+  </div>`;
+}
+function fgapRenderElig() {
+  const el = document.getElementById('fgap-elig'); if (!el) return;
+  const nEl = document.getElementById('fgap-ready-n'); if (nEl) nEl.textContent = fgtlReadyPeople().length;
+  el.innerHTML = fgtlPeople.length
+    ? fgtlPeople.map(fgapEligRow).join('')
+    : '<div class="empty" style="color:var(--gray);padding:14px;text-align:center">No colleagues loaded yet.</div>';
+}
+
+// Push the current board config (pairs + keywords + on/off + days) to the cloud
+// so a scheduled fire uses what's actually configured right now.
+async function fgapPublish() {
+  const cfg = (_fgapData && _fgapData.config) || { enabled: true, days: [1, 15] };
+  try {
+    await fetch('/api/fg/autopilot/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pairs: fgtlPairs(), keywords: fgtlChips, enabled: !!cfg.enabled, days: cfg.days || [1, 15] }),
+    });
+  } catch (_) { /* best-effort — next open/change retries */ }
+  await fgapLoad(); // pick up the server-computed nextRunLabel for the new config
+}
+// Debounced republish for pairing/keyword changes (called from fgtlRenderCart,
+// which every add/remove/clear/profile-pick/chip-refresh path already flows
+// through). Gated on _fgapData so it never fires before the panel has loaded
+// the real enabled/days state.
+function fgapQueuePublish() {
+  if (!_fgapData) return;
+  clearTimeout(_fgapPubTimer);
+  _fgapPubTimer = setTimeout(fgapPublish, 500);
+}
+
+async function fgapToggle() {
+  if (!_fgapData) return;
+  _fgapData.config = _fgapData.config || {};
+  _fgapData.config.enabled = !_fgapData.config.enabled;
+  fgapRender();
+  await fgapPublish();
+}
+
+async function fgapEditSchedule() {
+  if (!_fgapData) return;
+  const cfg = _fgapData.config || (_fgapData.config = {});
+  const cur = (cfg.days || [1, 15]).join(', ');
+  const input = prompt('Run on which day(s) of the month? (comma-separated, e.g. 1, 15)', cur);
+  if (input == null) return;
+  const days = [...new Set(input.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isInteger(n) && n >= 1 && n <= 28))].sort((a, b) => a - b);
+  if (!days.length) { showCampaignToast('Enter at least one valid day (1–28).', 3000); return; }
+  cfg.days = days;
+  fgapRender();
+  await fgapPublish();
+}
+
+function fgapToggleExpand() {
+  const body = document.getElementById('fgap-body');
+  const chevron = document.getElementById('fgap-expand');
+  _fgapExpanded = !_fgapExpanded;
+  if (body) body.hidden = !_fgapExpanded;
+  if (chevron) { chevron.classList.toggle('open', _fgapExpanded); chevron.setAttribute('aria-expanded', String(_fgapExpanded)); }
+  if (_fgapExpanded) fgapRenderElig();
+}
+
+async function fgapRunNow() {
+  if (!confirm('Run Auto-Pilot now? This dispatches the full team batch to the cloud VM immediately, outside its normal schedule.')) return;
+  const btn = document.getElementById('fgap-runnow');
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  try {
+    const r = await fetch('/api/fg/autopilot/run', { method: 'POST' }).then((x) => x.json());
+    showCampaignToast(r.error ? `Run failed — ${r.error}` : 'Auto-Pilot run dispatched — check the live card above.', 4500);
+    await fgapLoad();
+  } catch (e) {
+    showCampaignToast('Run failed — ' + String(e?.message || e), 4000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run now'; }
+  }
+}
+
+/** Bind panel events (safe to call once). */
+function fgapBind() {
+  const root = document.getElementById('fgap'); if (!root || root._fgapBound) return; root._fgapBound = true;
+  document.getElementById('fgap-toggle')?.addEventListener('click', fgapToggle);
+  document.getElementById('fgap-edit')?.addEventListener('click', fgapEditSchedule);
+  document.getElementById('fgap-expand')?.addEventListener('click', fgapToggleExpand);
+  document.getElementById('fgap-runnow')?.addEventListener('click', fgapRunNow);
+}
+
+/** Called once the FG board is showing (from initFollowerGrowth). */
+async function fgapInit() {
+  fgapBind();
+  await fgapLoad();
+  await fgapPublish(); // publish current picks/keywords on every board open
+}
+
 async function initFollowerGrowth() {
   // FG runs on the Cloud VM by default (unless the operator pinned This machine).
   // Re-assert here so a load that lands directly in the FG workspace defaults to
@@ -17639,6 +17805,10 @@ async function initFollowerGrowth() {
       fgtlPoll();
     }
   } catch (_) {}
+
+  // 6. Auto-Pilot panel — collapsed strip + expand (safe to re-run on every
+  // board open; publishes the just-loaded picks so a stale config never fires).
+  try { await fgapInit(); } catch (e) { console.error('[FG] fgapInit failed:', e && e.message); }
 }
 
 // Robust picker fill. The first FG view can run before the operator fetch and
