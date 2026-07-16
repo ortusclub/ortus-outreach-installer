@@ -2632,10 +2632,18 @@ app.get('/api/fg/autopilot', async (_req, res) => {
 app.post('/api/fg/autopilot/run', async (_req, res) => {
   try {
     const r = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, {
-      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${FG_ROSTER_TOKEN}` }, body: JSON.stringify({ force: true }),
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${FG_ROSTER_TOKEN}` },
+      body: JSON.stringify({ force: true }), signal: AbortSignal.timeout(20000),
     });
-    res.status(r.status).json(await r.json());
-  } catch (e) { res.status(502).json({ error: e.message }); }
+    // The old (not-yet-updated) service answers this path with an HTML 404, which
+    // isn't JSON — surface a human message instead of a raw parse error.
+    const text = await r.text();
+    let body; try { body = JSON.parse(text); } catch { body = null; }
+    if (!r.ok || !body) return res.status(503).json({ error: 'the cloud Auto-Pilot service isn’t deployed yet — deploy it, then Run it now will work' });
+    res.status(r.status).json(body);
+  } catch (e) {
+    res.status(503).json({ error: `the cloud Auto-Pilot service isn’t reachable — ${e.message}` });
+  }
 });
 
 app.get('/api/reply-sweep/status', (_req, res) => res.json(_replySweep));
