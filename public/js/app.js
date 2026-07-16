@@ -17678,7 +17678,11 @@ function fgapRenderElig() {
 // Push the current board config (pairs + keywords + on/off + days) to the cloud
 // so a scheduled fire uses what's actually configured right now.
 async function fgapPublish() {
-  const cfg = (_fgapData && _fgapData.config) || { enabled: true, days: [1, 15] };
+  // Never publish fabricated state: if the last load didn't succeed, the real
+  // persisted enabled/days is unknown — publishing a guessed default risks
+  // silently re-enabling an OFF Auto-Pilot. Skip and let the next board-open retry.
+  if (!_fgapData) return;
+  const cfg = _fgapData.config || {};
   try {
     await fetch('/api/fg/autopilot/publish', {
       method: 'POST',
@@ -17756,7 +17760,7 @@ function fgapBind() {
 async function fgapInit() {
   fgapBind();
   await fgapLoad();
-  await fgapPublish(); // publish current picks/keywords on every board open
+  await fgapPublish(); // publish current picks/keywords on every board open — no-ops if the load above failed (state unknown, never clobber)
 }
 
 async function initFollowerGrowth() {

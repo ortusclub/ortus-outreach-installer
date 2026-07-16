@@ -2616,7 +2616,8 @@ app.get('/api/fg/autopilot', async (_req, res) => {
     const r = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, { headers: { authorization: `Bearer ${FG_ROSTER_TOKEN}` } });
     const j = await r.json();
     const cfg = j.config || { enabled: true, days: [1, 15] };
-    res.json({ ...j, nextRunLabel: cfg.enabled ? nextRun(new Date(), cfg).toISOString() : null });
+    const instant = cfg.enabled ? nextRun(new Date(), cfg) : null;
+    res.json({ ...j, nextRunLabel: instant ? instant.toISOString() : null });
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 app.post('/api/fg/autopilot/run', async (_req, res) => {
