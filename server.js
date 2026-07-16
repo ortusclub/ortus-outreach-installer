@@ -102,6 +102,8 @@ import { reconcileCloudConnections } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
 import { buildAutopilotConfig } from './src/fg-autopilot.js';
 import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
+import { pickUnreconciled } from './src/fg-autopilot-reconcile.js';
+import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -2403,6 +2405,20 @@ async function reconcileFgCloudRuns() {
         try { campaignLog(`[FG-cloud] reconcile ${record.cloudId} failed: ${e.message}`); } catch (_) {}
       }
     }
+
+    // Also reconcile Auto-Pilot runs dispatched cloud-side while the app was closed.
+    try {
+      const resp = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, {
+        headers: { authorization: `Bearer ${FG_ROSTER_TOKEN}` },
+      });
+      if (resp.ok) {
+        const { runs } = await resp.json();
+        const localIds = new Set((_fgCloudRunStore.load() || []).map((r) => r.cloudId));
+        for (const rec of pickUnreconciled(runs, localIds)) {
+          _fgCloudRunStore.add({ ...rec, status: rec.status || 'dispatched' }); // adopt into the local reconcile pipeline
+        }
+      }
+    } catch (_) { /* offline / service down — retried next tick */ }
   } finally {
     _fgCloudReconciling = false;
   }
