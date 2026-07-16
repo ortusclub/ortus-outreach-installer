@@ -37,12 +37,22 @@ function localRunInstant(year, month, day, tz = TZ) {
 
 export function nextRun(now, { days = [1, 15], enabled = true } = {}, tz = TZ) {
   if (!enabled) return null;
+  // Start from the London calendar day of now
+  let p = parts(now, tz);
+  let year = p.year;
+  let month = p.month;
+  let day = p.day;
   for (let i = 0; i < 400; i++) {
-    const probe = new Date(now.getTime() + i * 86400000);
-    const p = parts(probe, tz);
-    if (!days.includes(p.day)) continue;
-    const instant = localRunInstant(p.year, p.month, p.day, tz);
-    if (instant.getTime() > now.getTime()) return instant;
+    if (days.includes(day)) {
+      const instant = localRunInstant(year, month, day, tz);
+      if (instant.getTime() > now.getTime()) return instant;
+    }
+    // Increment to next local calendar day (handles DST correctly)
+    const nextDayUtc = new Date(Date.UTC(year, month - 1, day + 1));
+    const nextP = parts(nextDayUtc, tz);
+    year = nextP.year;
+    month = nextP.month;
+    day = nextP.day;
   }
   return null; // unreachable for sane inputs
 }

@@ -41,6 +41,14 @@ test('nextRun on a run day before 06:00 returns today; after 06:00 returns the n
   const after = nextRun(new Date('2026-08-01T09:00:00Z'), { days: [1, 15] }); // 10:00 London, after 06:00
   assert.equal(cycleKey(after), '2026-08-15');
 });
+test('nextRun steps by local calendar day, not UTC milliseconds (DST-correct)', () => {
+  // UK spring-forward: 2026-03-29T01:00:00 GMT → 2026-03-29T02:00:00 BST (skipped 01:00-02:00).
+  // If we step by fixed 86400000ms (24h UTC), we jump from 2026-03-28T23:30:00Z (Mar 28 London)
+  // directly to 2026-03-29T23:30:00Z (Mar 30 London), SKIPPING the 29th.
+  // This test confirms the fix: nextRun must sample the 29th if days includes it.
+  const result = nextRun(new Date('2026-03-28T23:30:00Z'), { days: [1, 15, 29] });
+  assert.equal(cycleKey(result), '2026-03-29', 'nextRun must not skip March 29 across DST spring-forward');
+});
 
 // --- shouldFire truth table ---
 const cfg = { enabled: true, days: [1, 15], pairs: [{ profileId: 'p1' }], keywords: ['x'] };
