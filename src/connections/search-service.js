@@ -16,6 +16,14 @@ const REPO = path.join(__dirname, '../..');
 const DEFAULT_DIR = path.join(REPO, 'data/connections');
 const DEFAULT_CACHE = path.join(REPO, 'data/connections-cache.json');
 const COLLEAGUES_PATH = path.join(__dirname, 'colleagues.json');
+
+// True iff the local connections cache exists. This is the exact remote-vs-local
+// signal: DMG builds exclude data/**, so remote operators have no cache file and
+// the app routes fall back to the central roster service (src/connections/db-client.js).
+export function hasLocalDb({ cachePath = DEFAULT_CACHE } = {}) {
+  try { return fs.existsSync(cachePath); } catch { return false; }
+}
+
 const OUT_DIR = path.join(REPO, 'out');
 
 const mtimeKey = (p) => { try { return `${p}:${fs.statSync(p).mtimeMs}`; } catch { return `${p}:none`; } };
