@@ -1,0 +1,10 @@
+# k8s/fg-roster/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: fg-roster
+  namespace: salesnav-scraper
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: fg-roster }
+  ports: [{ name: http, port: 80, targetPort: http }]

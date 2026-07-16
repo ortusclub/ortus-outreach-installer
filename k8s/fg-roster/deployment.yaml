@@ -1,0 +1,31 @@
+# k8s/fg-roster/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fg-roster
+  namespace: salesnav-scraper
+  labels: { app.kubernetes.io/name: fg-roster }
+spec:
+  replicas: 1                      # always-on; keeps the DB warm in RAM
+  selector: { matchLabels: { app.kubernetes.io/name: fg-roster } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: fg-roster }
+    spec:
+      serviceAccountName: fg-roster   # Workload-Identity-bound to a GSA with storage.objectViewer on the bucket
+      containers:
+        - name: fg-roster
+          image: asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v1
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            - { name: FG_ROSTER_BUCKET, value: ortus-fg-connections-db }
+            - { name: CONNECTIONS_DIR, value: /data/fg-connections }
+            - name: FG_ROSTER_TOKEN
+              valueFrom: { secretKeyRef: { name: fg-roster, key: token } }
+          volumeMounts: [{ name: db, mountPath: /data }]
+          resources:
+            requests: { cpu: "250m", memory: "1Gi" }   # tune from live: holds ~152MB cache + derived structures
+            limits: { memory: "2Gi" }
+          readinessProbe: { httpGet: { path: /fg-roster/health, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /fg-roster/health, port: http }, initialDelaySeconds: 10, periodSeconds: 20 }
+      volumes: [{ name: db, emptyDir: {} }]
