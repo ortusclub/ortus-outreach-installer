@@ -108,3 +108,43 @@ test('dispatch failure → failed record + one alert', async () => {
   assert.equal(alerts, 1);
   assert.equal(runStore._all().some((x) => x.status === 'failed' && x.cycleKey === '2026-08-01'), true);
 });
+
+test('force + empty pairs → skip, no dispatch', async () => {
+  let dispatched = 0;
+  const h = makeAutopilotHandler(base({
+    loadConfig: () => ({ ...cfg(), pairs: [] }),
+    startCloud: async () => { dispatched++; return { id: 'cloud-123' }; },
+  }));
+  const r = await h.run({ force: true, nowDate: RUN_DAY });
+  assert.equal(r.skipped, true);
+  assert.equal(r.reason, 'no-pairs');
+  assert.equal(dispatched, 0);
+});
+
+test('sendAlert throwing does not mask dispatch failure', async () => {
+  const runStore = memRunStore();
+  const h = makeAutopilotHandler(base({
+    runStore,
+    startCloud: async () => ({ error: 'engine down' }),
+    sendAlert: async () => { throw new Error('smtp down'); },
+  }));
+  const r = await h.run({ nowDate: RUN_DAY });
+  assert.equal(r.failed, true);
+  assert.match(r.error, /engine down/);
+  assert.equal(runStore._all().some((x) => x.status === 'failed' && x.cycleKey === '2026-08-01'), true);
+});
+
+test('startCloud exception → failed record + one alert', async () => {
+  const runStore = memRunStore();
+  let alerts = 0;
+  const h = makeAutopilotHandler(base({
+    runStore,
+    startCloud: async () => { throw new Error('boom'); },
+    sendAlert: async () => { alerts++; return { sent: true }; },
+  }));
+  const r = await h.run({ nowDate: RUN_DAY });
+  assert.equal(r.failed, true);
+  assert.match(r.error, /boom/);
+  assert.equal(alerts, 1);
+  assert.equal(runStore._all().some((x) => x.status === 'failed' && x.cycleKey === '2026-08-01'), true);
+});
