@@ -89,6 +89,7 @@ import {
   isEmailAllowed, deleteUser,
 } from './src/auth.js';
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
+import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
 import { getFgState, queueFgInvites, markFgInvited, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
@@ -2133,9 +2134,9 @@ function connectionsCriteria(b = {}) {
   };
 }
 
-app.get('/api/connections/stats', (_req, res) => {
+app.get('/api/connections/stats', async (_req, res) => {
   try {
-    res.json({ ...getConnectionsStats(), sync: getConnectionsSyncState() });
+    res.json({ ...(await dbCall('getConnectionsStats', [])), sync: getConnectionsSyncState() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2152,20 +2153,20 @@ app.post('/api/connections/sync', (_req, res) => {
   }
 });
 
-app.post('/api/connections/search', (req, res) => {
+app.post('/api/connections/search', async (req, res) => {
   try {
     const b = req.body || {};
-    res.json(searchConnections(connectionsCriteria(b), { limit: b.limit || 1000 }));
+    res.json(await dbCall('searchConnections', [connectionsCriteria(b), { limit: b.limit || 1000 }]));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.post('/api/connections/export', (req, res) => {
+app.post('/api/connections/export', async (req, res) => {
   try {
     const b = req.body || {};
     const urls = Array.isArray(b.urls) ? b.urls : undefined;
-    res.json(exportConnections(connectionsCriteria(b), { urls }));
+    res.json(await dbCall('exportConnections', [connectionsCriteria(b), { urls }]));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -2179,7 +2180,7 @@ app.post('/api/connections/to-workbook', async (req, res) => {
   try {
     const b = req.body || {};
     const urls = Array.isArray(b.urls) ? b.urls : undefined;
-    const { header, rows, count } = buildLeadRows(connectionsCriteria(b), { urls });
+    const { header, rows, count } = await dbCall('buildLeadRows', [connectionsCriteria(b), { urls }]);
     console.log(`[to-workbook] request: ${urls ? urls.length : 0} urls in, ${count} leads to write`);
     if (!count) return res.status(400).json({ error: 'No leads selected to write.' });
     const name = (b.name && String(b.name).trim()) || `Warm ICB list — ${new Date().toISOString().slice(0, 10)}`;
@@ -2188,7 +2189,7 @@ app.post('/api/connections/to-workbook', async (req, res) => {
     res.json({ ...result, count });
   } catch (err) {
     console.error(`[to-workbook] FAILED: ${err.message}`);
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2238,7 +2239,8 @@ app.get('/api/fg/colleagues', async (req, res) => {
       const { invites } = await getFgState();
       alreadyInvited = (invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
     } catch (_) { console.warn('[fg/colleagues] FG sheet unreachable — falling back to raw matched counts:', _.message); }
-    res.json({ colleagues: listFgColleaguesMatched(roles, { alreadyInvited }) });
+    const colleagues = await dbCall('listFgColleaguesMatched', [roles, { alreadyInvited }]);
+    res.json({ colleagues });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
