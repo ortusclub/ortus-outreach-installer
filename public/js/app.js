@@ -17727,9 +17727,28 @@ function fgapToggleExpand() {
   if (chevron) { chevron.classList.toggle('open', _fgapExpanded); chevron.setAttribute('aria-expanded', String(_fgapExpanded)); }
 }
 
+// "Run it now" — dispatch the whole team's Follower Growth batch to the cloud VM
+// immediately, outside the schedule (force). Needs the roster service deployed.
+async function fgapRunNow() {
+  if (!confirm("Run Follower Growth now? This dispatches the whole team's invites to the cloud VM immediately, outside the schedule.")) return;
+  const btn = document.getElementById('fgap-run');
+  if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
+  try {
+    const r = await fetch('/api/fg/autopilot/run', { method: 'POST' }).then((x) => x.json());
+    if (r.error) showCampaignToast(`Couldn’t run — ${r.error}`, 5000);
+    else if (r.skipped) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible accounts'}`, 4500);
+    else showCampaignToast('Follower Growth dispatched to the VM — it runs in the cloud.', 4500);
+  } catch (e) {
+    showCampaignToast('Couldn’t run — ' + String(e?.message || e), 4000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#9654; Run it now'; }
+  }
+}
+
 /** Bind panel events (safe to call once). */
 function fgapBind() {
   const root = document.getElementById('fgap'); if (!root || root._fgapBound) return; root._fgapBound = true;
+  document.getElementById('fgap-run')?.addEventListener('click', fgapRunNow);
   document.getElementById('fgap-toggle')?.addEventListener('click', fgapToggle);
   document.getElementById('fgap-edit')?.addEventListener('click', fgapEditSchedule);
   document.getElementById('fgap-expand')?.addEventListener('click', fgapToggleExpand);

@@ -2618,9 +2618,12 @@ app.get('/api/fg/autopilot', async (_req, res) => {
   // real persisted enabled/days is unknown — never clobber it with a guess).
   let j = null;
   try {
-    const r = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, { headers: { authorization: `Bearer ${FG_ROSTER_TOKEN}` } });
+    const r = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, {
+      headers: { authorization: `Bearer ${FG_ROSTER_TOKEN}` },
+      signal: AbortSignal.timeout(4000), // never hang the panel on a slow/undeployed service
+    });
     if (r.ok) j = await r.json();
-  } catch (_) { /* service down — fall through to degraded */ }
+  } catch (_) { /* service down/slow — fall through to degraded so the strip still renders */ }
   const degraded = !j;
   const cfg = (j && j.config) || { enabled: true, days: [1, 15] };
   const instant = cfg.enabled ? nextRun(new Date(), cfg) : null;

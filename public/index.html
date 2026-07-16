@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.20" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.20" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.21" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.21" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2070,6 +2070,9 @@
       #nav-follower-growth .fgap-expand { background:none; border:1px solid var(--hairline); color:var(--gray); border-radius:9999px; width:28px; height:28px; cursor:pointer; flex:none; font-size:13px; line-height:1; transition:transform .15s; }
       #nav-follower-growth .fgap-expand:hover { border-color:var(--ink); color:var(--ink); }
       #nav-follower-growth .fgap-expand.open { transform:rotate(180deg); }
+      #nav-follower-growth .fgap-run { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:7px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; white-space:nowrap; font-weight:600; }
+      #nav-follower-growth .fgap-run:hover { opacity:.82; }
+      #nav-follower-growth .fgap-run:disabled { opacity:.4; cursor:not-allowed; }
     </style>
     <div class="section" id="nav-follower-growth" style="display:none">
       <h2><span data-edit="h2-fg">Follower Growth</span></h2>
@@ -2082,6 +2085,7 @@
             <div class="fgap-title" id="fgap-title">AUTO-PILOT &#183; ON</div>
             <div class="fgap-next" id="fgap-next">Next run &#8212;</div>
           </div>
+          <button type="button" class="fgap-run" id="fgap-run" title="Dispatch the whole team's invites to the cloud VM right now, outside the schedule">&#9654; Run it now</button>
           <span class="rt-tag">&#9729;&#65038; Cloud VM</span>
           <button type="button" class="fgap-edit" id="fgap-edit">Edit schedule</button>
           <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot"></button>
@@ -3414,7 +3418,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.20"></script>
+  <script type="module" src="/js/app.js?v=2.160.21"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
