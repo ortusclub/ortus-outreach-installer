@@ -55,3 +55,18 @@ test('dbCall throws (fail-closed) on a non-2xx central response', async () => {
     fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ error: 'db not loaded' }) }),
   }), /roster getConnectionsStats failed: 503/);
 });
+
+test('dbCall passes an AbortSignal (timeout) and stays fail-closed when the service wedges', async () => {
+  // Signal is threaded through to fetch...
+  let sawSignal = false;
+  await dbCall('getConnectionsStats', [], {
+    hasLocal: () => false,
+    fetchImpl: async (_url, opts) => { sawSignal = opts.signal instanceof AbortSignal; return { ok: true, status: 200, json: async () => ({ result: {} }) }; },
+  });
+  assert.equal(sawSignal, true);
+  // ...and a wedged service (fetch rejects, as AbortSignal.timeout would) throws — never silent-empty.
+  await assert.rejects(() => dbCall('getConnectionsStats', [], {
+    hasLocal: () => false,
+    fetchImpl: async () => { throw new DOMException('timed out', 'TimeoutError'); },
+  }), /timed out/);
+});

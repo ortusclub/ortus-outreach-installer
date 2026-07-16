@@ -35,12 +35,17 @@ export async function dbCall(fn, args, {
   rosterUrl = FG_ROSTER_URL,
   rosterToken = FG_ROSTER_TOKEN,
   fetchImpl = fetch,
+  timeoutMs = 30000,
 } = {}) {
   if (hasLocal()) return local[fn](...(args || []));
+  // Fail-fast on a WEDGED service: without a timeout a hung roster pod would spin
+  // the operator's picker forever instead of surfacing "try again". 30s clears the
+  // first-request cold annotate over the 152MB DB. Abort → throw → fail-closed.
   const r = await fetchImpl(`${rosterUrl}/rpc`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${rosterToken}` },
     body: JSON.stringify({ fn, args: args || [] }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) throw new Error(`roster ${fn} failed: ${r.status}`);
   const j = await r.json();
