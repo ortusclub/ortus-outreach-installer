@@ -13,8 +13,9 @@ import { FG_HEADER, fgRow, inviteKey } from './fg-export.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(__dirname, '../..');
-const DEFAULT_DIR = path.join(REPO, 'data/connections');
-const DEFAULT_CACHE = path.join(REPO, 'data/connections-cache.json');
+const DB_DIR = process.env.CONNECTIONS_DB_DIR || path.join(REPO, 'data');
+const DEFAULT_DIR = path.join(DB_DIR, 'connections');
+const DEFAULT_CACHE = path.join(DB_DIR, 'connections-cache.json');
 const COLLEAGUES_PATH = path.join(__dirname, 'colleagues.json');
 
 // True iff the local connections cache exists. This is the exact remote-vs-local

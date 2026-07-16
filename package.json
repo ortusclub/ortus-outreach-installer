@@ -20,6 +20,7 @@
     "release:mac": "npm run electron:build:mac && node scripts/release-mac.js"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
     "bcryptjs": "^3.0.3",
     "call-bind-apply-helpers": "^1.0.2",
     "cookie-parser": "^1.4.7",
