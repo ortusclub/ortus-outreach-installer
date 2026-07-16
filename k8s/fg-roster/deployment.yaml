@@ -22,6 +22,8 @@ spec:
             - { name: CONNECTIONS_DIR, value: /data/fg-connections }
             - name: FG_ROSTER_TOKEN
               valueFrom: { secretKeyRef: { name: fg-roster, key: token } }
+          envFrom:
+            - secretRef: { name: fg-roster }
           volumeMounts: [{ name: db, mountPath: /data }]
           resources:
             requests: { cpu: "250m", memory: "1Gi" }   # tune from live: holds ~152MB cache + derived structures

@@ -122,3 +122,16 @@ curl https://scraper.ortusclub.com/fg-roster/health
 
 Expect a 200 with a health payload. If it 404s, check the Ingress path ordering
 (step 6) — the catch-all `/` rule must come after `/fg-roster`, not before.
+
+## FG Auto-Pilot add-on (2026-07-16)
+
+1. **IAM — grant the service GCS write** (was read-only):
+   ```bash
+   gcloud storage buckets add-iam-policy-binding gs://ortus-fg-connections-db \
+     --member="serviceAccount:fg-roster-reader@salesnav-scraper-prod.iam.gserviceaccount.com" \
+     --role="roles/storage.objectUser"
+   ```
+2. **Secret — add SMTP + recipients** to `k8s/fg-roster/secret.yaml` (gitignored) per `secret.example.yaml`, then `kubectl apply -f k8s/fg-roster/secret.yaml`.
+3. **Rebuild + roll the image** (now includes `services/fg-roster/{autopilot,mailer,config-store}.js` + `src/fg-autopilot.js`): rebuild via `services/fg-roster/cloudbuild.yaml`, bump the image tag, `kubectl set image`/`apply` the Deployment (with the new `envFrom`).
+4. **CronJob:** `kubectl apply -f k8s/fg-roster/cronjob.yaml`.
+5. **Verify:** `kubectl create job --from=cronjob/fg-autopilot fg-autopilot-manual -n salesnav-scraper` then `kubectl logs job/fg-autopilot-manual -n salesnav-scraper` — expect a JSON `{"skipped":true,"reason":"not-a-run-day"}` (unless run on the 1st/15th) or `no-pairs` before the app has published a config.

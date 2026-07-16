@@ -1,0 +1,36 @@
+# k8s/fg-roster/cronjob.yaml — daily 06:00 Europe/London heartbeat that pokes the
+# roster service to run FG Auto-Pilot. The service decides (via fg-autopilot.json)
+# whether today is actually a run day, so the schedule of substance is DATA, not
+# this cron expression. A daily no-op poke is negligible.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fg-autopilot
+  namespace: salesnav-scraper
+spec:
+  schedule: "0 6 * * *"
+  timeZone: "Europe/London"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: poke
+              image: curlimages/curl:8.10.1
+              env:
+                - name: FG_ROSTER_TOKEN
+                  valueFrom: { secretKeyRef: { name: fg-roster, key: token } }
+              command: ["sh", "-c"]
+              args:
+                - >-
+                  curl -fsS -X POST
+                  -H "Authorization: Bearer $FG_ROSTER_TOKEN"
+                  -H "content-type: application/json"
+                  -d '{}'
+                  http://fg-roster.salesnav-scraper.svc.cluster.local/fg-roster/admin/autopilot
