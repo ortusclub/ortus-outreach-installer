@@ -17772,6 +17772,17 @@ async function fgapRunNow() {
   const btn = document.getElementById('fgap-run');
   if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
   try {
+    // Run it now must be self-contained: publish the roster loaded on the board
+    // RIGHT NOW, then fire. The force-run on the service uses the STORED config —
+    // if the board-open publish never landed (e.g. it skipped on a stale
+    // `degraded` after a cold service), that config is empty and the run would
+    // return no-pairs. Refresh state first (clears a stale degraded), then push.
+    if (!fgtlAllPairedPairs().length) {
+      showCampaignToast('Open the FG board first so the team roster loads, then Run it now.', 4500);
+      return;
+    }
+    await fgapLoad();     // refresh cloud state so fgapPublish isn't gated by a stale degraded
+    await fgapPublish();  // publish the board's current roster before firing
     const r = await fetch('/api/fg/autopilot/run', { method: 'POST' }).then((x) => x.json());
     if (r.error) showCampaignToast(`Couldn’t run — ${r.error}`, 5000);
     else if (r.skipped) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible accounts'}`, 4500);
