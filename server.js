@@ -100,6 +100,8 @@ import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID }
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse } from './src/soo-writer.js';
 import { reconcileCloudConnections } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
+import { buildAutopilotConfig } from './src/fg-autopilot.js';
+import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -2573,6 +2575,23 @@ function replyEligibleRows(rows) {
     return String(row.Message || '').trim().toLowerCase() === 'sent';
   });
 }
+
+// Publish the current FG team config to the cloud so Auto-Pilot can fire it.
+app.post('/api/fg/autopilot/publish', async (req, res) => {
+  const b = req.body || {};
+  const config = buildAutopilotConfig({
+    pairs: Array.isArray(b.pairs) ? b.pairs : [],
+    keywords: Array.isArray(b.keywords) ? b.keywords : [],
+    enabled: b.enabled !== false,
+    days: Array.isArray(b.days) && b.days.length ? b.days : [1, 15],
+    marketerDefaults: FG_MARKETER_KEYWORDS,
+    publishedBy: getOperatorEmail() || req.user || '',
+    publishedAt: new Date().toISOString(),
+  });
+  const r = await publishAutopilotConfig(config);
+  if (r.error) return res.status(502).json(r);
+  res.json({ ok: true, config });
+});
 
 app.get('/api/reply-sweep/status', (_req, res) => res.json(_replySweep));
 
