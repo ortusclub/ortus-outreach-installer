@@ -23,7 +23,7 @@ const putObject = (name, buf) => storage.bucket(BUCKET).file(name).save(buf, { r
 
 const configStore = makeConfigStore({ path: path.join(DEST, 'fg-autopilot.json'), putObject });
 const runStore = makeRunStore(path.join(DEST, 'fg-autopilot-runs.json'));
-const saveRuns = () => { try { putObject('fg-autopilot-runs.json', JSON.stringify(runStore.load(), null, 2)); } catch (_) {} };
+const saveRuns = () => { Promise.resolve(putObject('fg-autopilot-runs.json', JSON.stringify(runStore.load(), null, 2))).catch(() => {}); };
 const mailer = makeMailer({});
 
 const autopilot = makeAutopilotHandler({
