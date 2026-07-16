@@ -74,7 +74,8 @@ Note: the CronJob guarantees the *time* (06:00 London), so `shouldFire` only rea
   }
   ```
   `pairs` is exactly the shape the manual launch already builds (`server.js:2422`), minus `local-browser` entries (cloud only). `keywords` = the current role chips.
-- **When it publishes:** whenever the FG board is opened, and whenever pairings/keywords/toggle/schedule change. Reuses the connections-DB publish transport (GCS via `gsutil cp`, per `scripts/publish-connections-db.sh`), plus a `POST /admin/refresh`-style nudge so the service reloads immediately.
+- **Transport — app `POST`s the config to the service, the service persists it.** The app sends the JSON to `POST /fg-roster/admin/autopilot-config` (Bearer `FG_ROSTER_TOKEN`, the token already baked into `fg-roster-url.js`). The service writes it to its local dir **and** uploads it to `gs://<bucket>/fg-autopilot.json` for durability across pod restarts (the boot `pullDb` already downloads every bucket object, so it's restored automatically). This means **any operator** can publish (Ton included) — they only need the token, not a local `gcloud`/`gsutil` install. Requires the `fg-roster` GSA to gain object **write** on the bucket (`roles/storage.objectUser`) — a one-line IAM grant at deploy; today it is read-only.
+- **When it publishes:** whenever the FG board is opened, and whenever pairings/keywords/toggle/schedule change.
 - **Freshness (known v1 limitation):** the cloud batch reflects the *last published* config. If a new employee is paired but the FG board is never re-opened, they miss the next cycle. Acceptable for v1 — documented, not silently ignored. `publishedAt` is shown in the expanded panel so staleness is visible.
 
 ### 4.3 Roster service — new endpoint + orchestration
@@ -83,8 +84,8 @@ Note: the CronJob guarantees the *time* (06:00 London), so `shouldFire` only rea
 - **Flow:**
   1. Load `fg-autopilot.json` (from the pulled config) and the run store.
   2. If not `force`: `shouldFire(now, config, ranCycleKeys)` → if not `fire`, return `{ skipped: true, reason }` (200). Logged; **not** an error alert (a normal off-day skip is not "trouble"). If `force`: skip this gate entirely and proceed.
-  3. Build leads from `config.pairs` + `config.keywords` using the existing roster code (`listFgColleaguesMatched` / `buildLeadRows` / `buildCloudLeads`).
-  4. Dispatch to the engine via the same path a manual cloud launch uses (`startTeamLaunchCloud` → `startCloudCampaign`), with `name: "Team Follower Growth · <month> · auto"`, `owner`, `month`, `inviteUrl`, `monthlyBudget`.
+  3. Build leads **from the connections DB alone — no Google Sheet cloud-side.** For each pair call `searchService.buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator, operatorName, account, month, alreadyInvited: [], budget: Infinity })` (the same function the app's manual cloud path uses — `server.js:2433` — with the two sheet-derived inputs neutralised). Passing `alreadyInvited: []` + `budget: Infinity` dispatches **all** matched connections; the **engine governs the real limits** — it caps sends to LinkedIn's live invite-credit count and fast-skips already-following / already-invited connections (its existing `follower-invite` behaviour). The FG-sheet "already-invited" exclusion is an app-only *optimisation* we trade away for not needing Sheets on the VM; correctness is unaffected because the engine self-skips. `fgCriteria` (a 4-line helper, `server.js:2202`) is replicated in the shared module.
+  4. Dispatch to the engine via the same path a manual cloud launch uses (`startTeamLaunchCloud` → `startCloudCampaign` from `src/campaigns-client.js`, which already targets `SCRAPER_ENGINE_URL`), with `name: "Team Follower Growth · <month> · auto"`, `owner`, `month`, `inviteUrl: ORTUS_PAGE_INVITE_URL`, `monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE`.
   5. Record the run in the run store (reuse `makeRunStore`): `{ cycleKey, cloudId, dispatchedAt, status, accounts, invitesPlanned }`. This record is **both** the idempotency guard and the history feed.
   6. On any dispatch failure or errored skip → **email alert** (§4.5) and record `status: "failed"`.
 - **Idempotency / guards:** a cycle that already has a run-store record is never re-dispatched (`already-ran`). The cloud engine tolerates concurrent campaigns (per-account Redis lock), so no global "is anything running" gate is needed — the cycle key is the guard.
@@ -96,9 +97,9 @@ Note: the CronJob guarantees the *time* (06:00 London), so `shouldFire` only rea
 
 ### 4.5 Failure alert — email (SES)
 
-- On a failed/errored run only (option 2 — silent on success). `sendAlert(subject, body)` via AWS SES to **antonio@ortusclub.com** and **antoniov@ortusclub.com**.
+- On a failed/errored run only (option 2 — silent on success). `sendAlert(subject, body)` via **`nodemailer`** (already a repo dependency, `^8.0.5`, used by `src/notifier.js`) over SMTP to **antonio@ortusclub.com** and **antoniov@ortusclub.com**.
 - Subject: `⚠️ FG Auto-Pilot run failed — <cycleKey>`. Body: cycle, what stage failed, error text, and a one-line "manual Run now from the FG board once fixed."
-- Deploy prerequisites: SES sending creds in a k8s secret + a verified sender identity. Flagged as the one new external dependency; no other component needs it.
+- **Auto-send OFF by default (Operator rule 4).** The alert is gated on an explicit `ALERT_EMAIL_TO` env (comma-separated recipients) plus SMTP creds (`ALERT_SMTP_*`), both supplied via the k8s secret at deploy. **Unset → no email is ever sent** (logged only). Antonio's deploy sets `ALERT_EMAIL_TO="antonio@ortusclub.com,antoniov@ortusclub.com"`. No new dependency; SMTP creds are the only new secret.
 
 ### 4.6 App UI — the FG board panel
 
@@ -109,6 +110,10 @@ Note: the CronJob guarantees the *time* (06:00 London), so `shouldFire` only rea
   3. **Run now** — `POST /admin/autopilot {force:true}`; lands on the existing `#fgtl-card` live card, tagged "Auto-Pilot launch."
 - **Toggle & EDIT SCHEDULE** mutate `{enabled, days}` locally and republish `fg-autopilot.json`. v1: edit **on/off + days**; time fixed at 06:00 (editing time would mean patching the k8s CronJob — out of scope for v1).
 - **On-by-default:** ships enabled with `days:[1,15]`. First live 1st/15th after rollout fires automatically. Documented so it is not a surprise.
+
+### 4.7 Write-back / reconcile for auto-pilot runs
+
+Auto-pilot run records live in the **service's** run store (not the app's `data/fg-cloud-runs.json`), because the app may be closed when a cycle fires. Each record carries the full `perAccount` / `rowsByUrl` map (as `startTeamLaunchCloud` already stores). When the app is online, its existing FG-cloud reconcile loop additionally **pulls the auto-pilot run records** (`GET /fg-roster/admin/autopilot` → `{ config, runs }`) and runs the already-built `reconcileCloudRun` over any it hasn't reconciled yet — writing "Invited" back to the FG sheet. This is **idempotent** (keyed by `cloudId`), **lag-tolerant** (it catches up whenever the app next opens), and **not required for correctness** — the engine self-skips already-done connections, so a delayed write-back never causes double-invites. It only keeps the FG sheet / UI counts current.
 
 ## 5. Data flow (one cycle)
 
@@ -125,7 +130,7 @@ Note: the CronJob guarantees the *time* (06:00 London), so `shouldFire` only rea
 
 - **`src/fg-autopilot.js` (pure) — the core, fully covered:** `cycleKey` across months/timezones; `isRunDay` for in/out days incl. a London DST boundary; `nextRun` from various "now"s (incl. on a run-day before/after 06:00) and when disabled; `shouldFire` truth table (disabled / off-day / already-ran / fire / force). `node --test`, `assert/strict`.
 - **Config builder** (app-side pairs/keywords → `fg-autopilot.json`, dropping `local-browser`) — unit-tested.
-- **Orchestration** — the dispatch itself reuses the already-tested `startTeamLaunchCloud`; the new service handler is tested with a stub engine + in-memory run store: fire → dispatch called once + record written; already-ran → no dispatch; disabled → no dispatch; dispatch throws → `failed` record + `sendAlert` called once (SES stubbed).
+- **Orchestration** — the dispatch itself reuses the already-tested `startTeamLaunchCloud`; the new service handler is tested with a stub engine + in-memory run store: fire → dispatch called once + record written; already-ran → no dispatch; disabled → no dispatch; dispatch throws → `failed` record + `sendAlert` called once (nodemailer transport stubbed, `ALERT_EMAIL_TO` set in the test) and **not** called when `ALERT_EMAIL_TO` is unset.
 - No new test for the engine (unchanged).
 
 ## 7. Non-goals / v1 simplifications
@@ -141,6 +146,6 @@ Note: the CronJob guarantees the *time* (06:00 London), so `shouldFire` only rea
 - **`src/linkedin/outreach.js` and `src/linkedin/actions.js` are off-limits** — not touched.
 - **Engine `campaign-lib/linkedin/*` stays byte-identical to the app** — this design touches none of it (engine unchanged).
 - **Never `git add` `data/monitoring-campaign.json`, `data/fg-cloud-runs.json`, or the local `fg-autopilot.json`.** Use targeted `git add`, never `git add -A`.
-- **Shared token** `FG_ROSTER_TOKEN` reused; no new public secret. SES creds live only in a k8s secret (gitignored, like `k8s/fg-roster/secret.yaml`).
+- **Shared token** `FG_ROSTER_TOKEN` reused; no new public secret. SMTP creds + `ALERT_EMAIL_TO` live only in a k8s secret (gitignored, like `k8s/fg-roster/secret.yaml`).
 - **No new DMG / no GitHub push** as part of this work unless separately requested — implementation lands on a branch only.
 - Version bump on relaunch per repo convention.
