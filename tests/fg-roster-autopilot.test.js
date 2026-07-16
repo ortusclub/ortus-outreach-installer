@@ -134,6 +134,25 @@ test('sendAlert throwing does not mask dispatch failure', async () => {
   assert.equal(runStore._all().some((x) => x.status === 'failed' && x.cycleKey === '2026-08-01'), true);
 });
 
+test('no eligible targets → benign skip, no alert, no failed record', async () => {
+  const runStore = memRunStore();
+  let alerts = 0;
+  let dispatched = 0;
+  const emptySearchService = { buildFgTargets: () => ({ rows: [], count: 0, matched: 0, eligible: 0 }) };
+  const h = makeAutopilotHandler(base({
+    runStore,
+    searchService: emptySearchService,
+    startCloud: async () => { dispatched++; return { id: 'cloud-123' }; },
+    sendAlert: async () => { alerts++; return { sent: true }; },
+  }));
+  const r = await h.run({ nowDate: RUN_DAY });
+  assert.equal(r.skipped, true);
+  assert.equal(r.reason, 'no-eligible-targets');
+  assert.equal(dispatched, 0);
+  assert.equal(alerts, 0);
+  assert.equal(runStore._all().some((x) => x.status === 'failed'), false);
+});
+
 test('startCloud exception → failed record + one alert', async () => {
   const runStore = memRunStore();
   let alerts = 0;

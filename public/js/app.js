@@ -17428,6 +17428,25 @@ function fgtlPairs() {
   }).filter(Boolean);
 }
 
+// Every colleague with an already-paired GoLogin profile — NOT just the ones in
+// the transient launch cart (fgtlPicked, which is {} on every fresh session).
+// This is what Auto-Pilot publishes: it enumerates the same full fgtlPeople list
+// the eligibility preview (fgapEligRow) draws from, gated the same way the board
+// gates "addable" (fgtlEligibility — Ortus-company accounts only), then resolves
+// each to the same {operator, operatorName, account, profileId} shape fgtlPairs()
+// uses for the actual launch. Local Browser is never a real account, so exclude it
+// (belt-and-braces — buildAutopilotConfig on the server already drops it too).
+function fgtlAllPairedPairs() {
+  return fgtlPeople
+    .filter((p) => p.paired && p.paired !== 'Local Browser' && fgtlEligibility(p.email).eligible)
+    .map((p) => {
+      const profileId = ((allProfilesData || []).find((x) => x.name === p.paired) || {}).id;
+      if (!profileId) return null;
+      return { operator: p.email, operatorName: p.name || p.email, account: p.paired, profileId };
+    })
+    .filter(Boolean);
+}
+
 /** Bind UI events for the board (safe to call once). */
 function fgtlBindBoard() {
   const root = document.getElementById('nav-follower-growth'); if (!root || root._fgtlBound) return; root._fgtlBound = true;
@@ -17683,11 +17702,27 @@ async function fgapPublish() {
   // silently re-enabling an OFF Auto-Pilot. Skip and let the next board-open retry.
   if (!_fgapData) return;
   const cfg = _fgapData.config || {};
+  // Publish EVERY paired account, not the transient launch cart (fgtlPicked is
+  // {} on every fresh session — publishing that would wipe the persisted cloud
+  // roster to [] on every board-open, and the service overwrites, it doesn't merge).
+  const pairs = fgtlAllPairedPairs();
+  // Guard: never let an empty computed set overwrite a real persisted roster.
+  // Skip the publish entirely rather than clobber — the next board-open/change
+  // retries once fgtlPeople/pairing has actually settled.
+  if (!pairs.length) return;
   try {
     await fetch('/api/fg/autopilot/publish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pairs: fgtlPairs(), keywords: fgtlChips, enabled: !!cfg.enabled, days: cfg.days || [1, 15] }),
+      body: JSON.stringify({
+        pairs,
+        keywords: fgtlChips,
+        // config === null means never-configured (first-ever open) — default ON.
+        // config present but enabled:false means someone explicitly turned it off —
+        // that must stick, not get defeated back to true.
+        enabled: _fgapData.config ? !!_fgapData.config.enabled : true,
+        days: cfg.days || [1, 15],
+      }),
     });
   } catch (_) { /* best-effort — next open/change retries */ }
   await fgapLoad(); // pick up the server-computed nextRunLabel for the new config
@@ -17714,7 +17749,9 @@ async function fgapEditSchedule() {
   if (!_fgapData) return;
   const cfg = _fgapData.config || (_fgapData.config = {});
   const cur = (cfg.days || [1, 15]).join(', ');
-  const input = prompt('Run on which day(s) of the month? (comma-separated, e.g. 1, 15)', cur);
+  // window.prompt() is a no-op in the packaged Electron DMG — use the
+  // Electron-safe modal (same one Save Template / Save Preset use).
+  const input = await promptModal({ label: 'Run on which day(s) of the month? (comma-separated, e.g. 1, 15)', defaultValue: cur });
   if (input == null) return;
   const days = [...new Set(input.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isInteger(n) && n >= 1 && n <= 28))].sort((a, b) => a - b);
   if (!days.length) { showCampaignToast('Enter at least one valid day (1–28).', 3000); return; }

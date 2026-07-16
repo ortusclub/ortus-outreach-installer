@@ -41,6 +41,7 @@ export function makeAutopilotHandler(deps) {
       };
 
       let result;
+      let threw = false;
       try {
         result = await startTeamLaunchCloud(config.pairs, {
           buildTargets,
@@ -57,9 +58,18 @@ export function makeAutopilotHandler(deps) {
         });
       } catch (e) {
         result = { error: e.message };
+        threw = true;
       }
 
       if (result.error) {
+        // No targets to send is a benign, expected outcome (nobody matched the
+        // criteria this cycle) — not a failure. Don't alert, don't record a
+        // `failed` run (that would write a cycleKey and block a later re-fire).
+        // Only startTeamLaunchCloud's own {error} return can be this benign case;
+        // a thrown exception is always a genuine dispatch/engine error.
+        if (!threw && /^No invites to send —/.test(result.error)) {
+          return { skipped: true, reason: 'no-eligible-targets' };
+        }
         runStore.add({ cycleKey: key, status: 'failed', error: result.error, dispatchedAt: now(), source: force ? 'manual' : 'auto' });
         saveRuns();
         try { await sendAlert(`⚠️ FG Auto-Pilot run failed — ${key}`, `Cycle ${key}\nStage: dispatch\nError: ${result.error}\n\nFix, then use "Run now" from the FG board.`); }
