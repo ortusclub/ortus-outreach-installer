@@ -7,6 +7,10 @@ URL="${FG_ROSTER_URL:-https://scraper.ortusclub.com/fg-roster}"
 TOKEN="${FG_ROSTER_TOKEN:-ortus2026scraper}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-gsutil -m rsync -r -d "$ROOT/data/connections" "gs://$BUCKET/connections"
+# NOTE: gsutil `-m` (parallel) AND `rsync` both HANG on this machine's Python 3.14
+# (workers spawn, 0 bytes transferred). Plain serial `cp` is the only reliable path.
+# Trade-off vs the old `rsync -d`: cp adds/overwrites but does NOT prune CSVs for
+# colleagues removed from the local folder — clear those by hand if it ever matters.
+gsutil cp "$ROOT/data/connections/"*.csv "gs://$BUCKET/connections/"
 gsutil cp "$ROOT/data/connections-cache.json" "gs://$BUCKET/connections-cache.json"
 curl -fsS -X POST -H "Authorization: Bearer $TOKEN" "$URL/admin/refresh" && echo " refreshed"

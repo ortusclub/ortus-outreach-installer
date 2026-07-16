@@ -1,0 +1,12 @@
+.git/
+node_modules/
+data/
+dist/
+.planning/
+docs/
+tests/
+public/sketches/
+.superpowers/
+.playwright-mcp/
+*.log
+.env

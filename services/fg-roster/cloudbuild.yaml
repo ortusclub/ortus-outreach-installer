@@ -1,0 +1,13 @@
+# Build the fg-roster image (Dockerfile is not at repo root, so --tag can't be used).
+# Submit with:  gcloud builds submit --config services/fg-roster/cloudbuild.yaml .
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - services/fg-roster/Dockerfile
+      - -t
+      - asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v1
+      - .
+images:
+  - asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v1
