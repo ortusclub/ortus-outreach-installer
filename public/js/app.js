@@ -17702,16 +17702,54 @@ async function fgapToggle() {
   await fgapPublish();
 }
 
+// Day-grid schedule picker (replaces the old comma-separated text prompt).
+// Returns Promise<number[]|null> — chosen days (1..28) or null on cancel.
+function fgSchedModal(currentDays = [1, 15]) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('fgsched-modal');
+    const grid = document.getElementById('fgsched-grid');
+    const selEl = document.getElementById('fgsched-selval');
+    const saveBtn = document.getElementById('fgsched-save');
+    const cancelBtn = document.getElementById('fgsched-cancel');
+    const backdrop = document.getElementById('fgsched-backdrop');
+    if (!modal || !grid || !saveBtn || !cancelBtn) { resolve(null); return; }
+    const sel = new Set((currentDays || []).filter((d) => d >= 1 && d <= 28));
+    const ord = (d) => { const s = ['th', 'st', 'nd', 'rd']; const v = d % 100; return d + (s[(v - 20) % 10] || s[v] || s[0]); };
+    const renderSel = () => {
+      selEl.textContent = sel.size ? [...sel].sort((a, b) => a - b).map(ord).join(' · ') : 'none';
+      saveBtn.disabled = sel.size === 0;
+    };
+    grid.innerHTML = '';
+    for (let d = 1; d <= 28; d++) {
+      const c = document.createElement('button');
+      c.type = 'button'; c.className = 'fgsched-cell' + (sel.has(d) ? ' on' : ''); c.textContent = String(d);
+      c.addEventListener('click', () => { if (sel.has(d)) sel.delete(d); else sel.add(d); c.classList.toggle('on'); renderSel(); });
+      grid.appendChild(c);
+    }
+    renderSel();
+    modal.hidden = false;
+    const cleanup = () => {
+      modal.hidden = true;
+      saveBtn.removeEventListener('click', onSave);
+      cancelBtn.removeEventListener('click', onCancel);
+      backdrop && backdrop.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKey);
+    };
+    const onSave = () => { const days = [...sel].sort((a, b) => a - b); cleanup(); resolve(days.length ? days : null); };
+    const onCancel = () => { cleanup(); resolve(null); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } };
+    saveBtn.addEventListener('click', onSave);
+    cancelBtn.addEventListener('click', onCancel);
+    backdrop && backdrop.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
 async function fgapEditSchedule() {
   if (!_fgapData) return;
   const cfg = _fgapData.config || (_fgapData.config = {});
-  const cur = (cfg.days || [1, 15]).join(', ');
-  // window.prompt() is a no-op in the packaged Electron DMG — use the
-  // Electron-safe modal (same one Save Template / Save Preset use).
-  const input = await promptModal({ label: 'Run on which day(s) of the month? (comma-separated, e.g. 1, 15)', defaultValue: cur });
-  if (input == null) return;
-  const days = [...new Set(input.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isInteger(n) && n >= 1 && n <= 28))].sort((a, b) => a - b);
-  if (!days.length) { showCampaignToast('Enter at least one valid day (1–28).', 3000); return; }
+  const days = await fgSchedModal(cfg.days || [1, 15]);
+  if (!days) return; // cancelled or nothing selected
   cfg.days = days;
   fgapRender();
   await fgapPublish();

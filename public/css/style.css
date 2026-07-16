@@ -3447,6 +3447,17 @@ body.theme-light .launch-actions.launch-actions--four #btn-start {
   gap: 12px; justify-content: flex-end;
 }
 
+/* FG Auto-Pilot schedule editor — day grid */
+.fgsched-card { width: min(440px, calc(100vw - 48px)); border-radius: 14px; }
+.fgsched-time { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--gray); margin: 0 0 16px; }
+.fgsched-time b { color: var(--ink); }
+.fgsched-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
+.fgsched-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border: 1px solid var(--hairline); border-radius: 9px; background: transparent; font-family: var(--mono); font-size: 12px; color: var(--ink); cursor: pointer; transition: border-color .1s, background .1s; }
+.fgsched-cell:hover { border-color: var(--ink); }
+.fgsched-cell.on { background: var(--green); border-color: var(--green); color: #04220b; font-weight: 600; }
+.fgsched-sel { margin-top: 16px; font-family: var(--mono); font-size: 11px; color: var(--gray); }
+.fgsched-sel b { color: var(--ink); }
+
 /* v2.61: Schedule modal — wider card to fit date/time/days form. */
 .schedule-modal__card {
   width: min(720px, calc(100vw - 48px));

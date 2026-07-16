@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.21" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.21" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.22" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.22" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -3339,6 +3339,21 @@
     </div>
   </div>
 
+  <!-- FG Auto-Pilot schedule editor — day grid (see fgSchedModal() in app.js) -->
+  <div id="fgsched-modal" class="prompt-modal" hidden>
+    <div class="prompt-modal__backdrop" id="fgsched-backdrop"></div>
+    <div class="prompt-modal__card fgsched-card" role="dialog" aria-modal="true" aria-labelledby="fgsched-title">
+      <div id="fgsched-title" class="prompt-modal__label">Run on these days</div>
+      <div class="fgsched-time">&#128274; Runs at <b>06:00 London</b> &#183; tap to toggle</div>
+      <div class="fgsched-grid" id="fgsched-grid"></div>
+      <div class="fgsched-sel">Selected: <b id="fgsched-selval">&#8212;</b></div>
+      <div class="prompt-modal__actions">
+        <button id="fgsched-cancel" class="btn btn-secondary" type="button">Cancel</button>
+        <button id="fgsched-save" class="btn" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v2.61: Schedule modal — replaces the ISO timestamp prompt with a
        proper date + time + optional weekly-repeat UI. Used by
        window.launchScheduleIt(). -->
@@ -3418,7 +3433,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.21"></script>
+  <script type="module" src="/js/app.js?v=2.160.22"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
