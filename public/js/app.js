@@ -17430,9 +17430,9 @@ function fgtlPairs() {
 
 // Every colleague with an already-paired GoLogin profile — NOT just the ones in
 // the transient launch cart (fgtlPicked, which is {} on every fresh session).
-// This is what Auto-Pilot publishes: it enumerates the same full fgtlPeople list
-// the eligibility preview (fgapEligRow) draws from, gated the same way the board
-// gates "addable" (fgtlEligibility — Ortus-company accounts only), then resolves
+// This is what Auto-Pilot publishes: it enumerates the full fgtlPeople list,
+// gated the same way the board gates "addable" (fgtlEligibility — Ortus-company
+// accounts only), then resolves
 // each to the same {operator, operatorName, account, profileId} shape fgtlPairs()
 // uses for the actual launch. Local Browser is never a real account, so exclude it
 // (belt-and-braces — buildAutopilotConfig on the server already drops it too).
@@ -17648,59 +17648,16 @@ function fgapRender() {
       ? `Next run <b>${escHtml(label)}</b> · repeats ${escHtml((cfg.days || [1, 15]).join(' & '))}`
       : 'Auto-Pilot is off';
   }
-  fgapRenderHist((_fgapData && _fgapData.runs) || []);
-  if (_fgapExpanded) fgapRenderElig();
-}
-
-// Recent-runs list — schema comes from the cloud roster service, so read
-// defensively (accept a few plausible field names rather than assume one).
-function fgapRenderHist(runs) {
-  const el = document.getElementById('fgap-hist'); if (!el) return;
-  if (!runs.length) { el.innerHTML = '<div class="fgap-hist-empty">No auto-runs yet.</div>'; return; }
-  el.innerHTML = runs.slice(0, 5).map((r) => {
-    const when = fgtlShortDate(r.startedAt || r.dispatchedAt || r.cycleKey || '') || '—';
-    const accts = Array.isArray(r.perAccount) ? r.perAccount.length : (r.accounts || 0);
-    const invited = Array.isArray(r.perAccount) ? r.perAccount.reduce((s, a) => s + (a.invited || 0), 0) : (r.invited || 0);
-    const skipped = r.skipped || (Array.isArray(r.perAccount) ? r.perAccount.filter((a) => a.status === 'skipped').length : 0);
-    return `<div class="fgap-hrow"><span class="hd">${escHtml(when)}</span><span class="hs"><b>${accts}</b> accounts fired · <b>${invited}</b> invites${skipped ? ` · ${skipped} skipped` : ''}</span><span class="hb">${escHtml(r.status || 'Done')}</span></div>`;
-  }).join('');
-}
-
-// Eligibility preview — same "will this account fire today" logic as the
-// existing "Ready to launch" bar (fgtlIsReady/fgtlEligibility), rendered into
-// the real .fgtl-prow row shape so it matches the board 1:1.
-function fgapEligRow(p) {
-  const elig = fgtlEligibility(p.email);
-  const ready = fgtlIsReady(p) || (!!fgtlPicked[p.email] && elig.eligible && !!p.paired);
-  let pill;
-  if (!elig.eligible) pill = `<span class="fgtl-pillst out">${escHtml(elig.company)} · can’t invite</span>`;
-  else if (!p.paired) pill = '<span class="fgtl-pillst missing">needs a profile</span>';
-  else if (ready) pill = '<span class="fgtl-pillst ready">will run</span>';
-  else pill = '<span class="fgtl-pillst sent">already run</span>';
-  return `<div class="fgtl-prow ${ready ? '' : 'in'}">
-    <div class="fgtl-rowmain">
-      <div class="fgtl-emline"><span class="em">${escHtml(p.email)}</span>${pill}</div>
-      <div class="fgtl-sub">${p.total.toLocaleString()} connections</div>
-    </div>
-    <div class="fgtl-mbox ${p.matched ? '' : 'zero'}"><b>${p.matched.toLocaleString()}</b><small>match</small></div>
-    <span class="fgtl-addbtn dis" style="cursor:default">${ready ? 'will run' : 'skip'}</span>
-  </div>`;
-}
-function fgapRenderElig() {
-  const el = document.getElementById('fgap-elig'); if (!el) return;
-  const nEl = document.getElementById('fgap-ready-n'); if (nEl) nEl.textContent = fgtlReadyPeople().length;
-  el.innerHTML = fgtlPeople.length
-    ? fgtlPeople.map(fgapEligRow).join('')
-    : '<div class="empty" style="color:var(--gray);padding:14px;text-align:center">No colleagues loaded yet.</div>';
 }
 
 // Push the current board config (pairs + keywords + on/off + days) to the cloud
 // so a scheduled fire uses what's actually configured right now.
 async function fgapPublish() {
-  // Never publish fabricated state: if the last load didn't succeed, the real
-  // persisted enabled/days is unknown — publishing a guessed default risks
-  // silently re-enabling an OFF Auto-Pilot. Skip and let the next board-open retry.
-  if (!_fgapData) return;
+  // Never publish fabricated state: if the last load didn't succeed OR the cloud
+  // service was unreachable (degraded), the real persisted enabled/days is unknown —
+  // publishing a guessed default risks silently re-enabling an OFF Auto-Pilot.
+  // Skip and let the next board-open retry once we can actually read the state.
+  if (!_fgapData || _fgapData.degraded) return;
   const cfg = _fgapData.config || {};
   // Publish EVERY paired account, not the transient launch cart (fgtlPicked is
   // {} on every fresh session — publishing that would wipe the persisted cloud
@@ -17760,28 +17717,14 @@ async function fgapEditSchedule() {
   await fgapPublish();
 }
 
+// Expand chevron reveals the full manual Team-Launch board (roles, search,
+// people, launch); collapsed shows only the strip.
 function fgapToggleExpand() {
-  const body = document.getElementById('fgap-body');
+  const manual = document.getElementById('fgap-manual');
   const chevron = document.getElementById('fgap-expand');
   _fgapExpanded = !_fgapExpanded;
-  if (body) body.hidden = !_fgapExpanded;
+  if (manual) manual.hidden = !_fgapExpanded;
   if (chevron) { chevron.classList.toggle('open', _fgapExpanded); chevron.setAttribute('aria-expanded', String(_fgapExpanded)); }
-  if (_fgapExpanded) fgapRenderElig();
-}
-
-async function fgapRunNow() {
-  if (!confirm('Run Auto-Pilot now? This dispatches the full team batch to the cloud VM immediately, outside its normal schedule.')) return;
-  const btn = document.getElementById('fgap-runnow');
-  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
-  try {
-    const r = await fetch('/api/fg/autopilot/run', { method: 'POST' }).then((x) => x.json());
-    showCampaignToast(r.error ? `Run failed — ${r.error}` : 'Auto-Pilot run dispatched — check the live card above.', 4500);
-    await fgapLoad();
-  } catch (e) {
-    showCampaignToast('Run failed — ' + String(e?.message || e), 4000);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Run now'; }
-  }
 }
 
 /** Bind panel events (safe to call once). */
@@ -17790,7 +17733,6 @@ function fgapBind() {
   document.getElementById('fgap-toggle')?.addEventListener('click', fgapToggle);
   document.getElementById('fgap-edit')?.addEventListener('click', fgapEditSchedule);
   document.getElementById('fgap-expand')?.addEventListener('click', fgapToggleExpand);
-  document.getElementById('fgap-runnow')?.addEventListener('click', fgapRunNow);
 }
 
 /** Called once the FG board is showing (from initFollowerGrowth). */

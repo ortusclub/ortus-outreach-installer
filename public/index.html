@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.19" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.19" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.20" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.20" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2070,16 +2070,6 @@
       #nav-follower-growth .fgap-expand { background:none; border:1px solid var(--hairline); color:var(--gray); border-radius:9999px; width:28px; height:28px; cursor:pointer; flex:none; font-size:13px; line-height:1; transition:transform .15s; }
       #nav-follower-growth .fgap-expand:hover { border-color:var(--ink); color:var(--ink); }
       #nav-follower-growth .fgap-expand.open { transform:rotate(180deg); }
-      #nav-follower-growth .fgap-body { margin-top:16px; padding-top:16px; border-top:1px solid var(--hairline-soft); }
-      #nav-follower-growth .fgap-hist-head { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:18px 0 10px; }
-      #nav-follower-growth .fgap-hist { display:grid; gap:0; }
-      #nav-follower-growth .fgap-hrow { display:grid; grid-template-columns:120px 1fr auto; gap:14px; align-items:center; padding:12px 0; border-top:1px solid var(--hairline-soft); }
-      #nav-follower-growth .fgap-hrow:first-child { border-top:none; }
-      #nav-follower-growth .fgap-hrow .hd { font-family:var(--mono); font-size:11px; color:var(--ink); }
-      #nav-follower-growth .fgap-hrow .hs { font-size:12px; color:var(--gray); }
-      #nav-follower-growth .fgap-hrow .hs b { color:var(--ink); font-weight:600; }
-      #nav-follower-growth .fgap-hrow .hb { font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--green); border:1px solid rgba(63,185,80,.35); border-radius:9999px; padding:3px 9px; white-space:nowrap; }
-      #nav-follower-growth .fgap-hist-empty { color:var(--gray); font-size:12px; padding:10px 2px; }
     </style>
     <div class="section" id="nav-follower-growth" style="display:none">
       <h2><span data-edit="h2-fg">Follower Growth</span></h2>
@@ -2097,20 +2087,11 @@
           <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot"></button>
           <button type="button" class="fgap-expand" id="fgap-expand" aria-expanded="false" title="Show details">&#8964;</button>
         </div>
-        <div class="fgap-body" id="fgap-body" hidden>
-          <div class="fgtl-ready" id="fgap-ready" style="margin:0 0 14px">
-            <div class="rl">
-              <span class="lab">Eligible right now</span> &#183; <b id="fgap-ready-n">0</b> <span class="lab">accounts</span>
-              <div class="sub">Rebuilt at each run &#8212; has a profile + credits left + not logged out.</div>
-            </div>
-          </div>
-          <div class="fgap-elig" id="fgap-elig"></div>
-          <div class="fgap-hist-head">Recent auto-runs</div>
-          <div class="fgap-hist" id="fgap-hist"></div>
-          <button type="button" class="fgtl-go-btn" id="fgap-runnow" style="max-width:220px">Run now</button>
-        </div>
       </div>
 
+      <!-- Manual controls = the full Team-Launch board. Collapsed by default;
+           the strip's expand chevron reveals it (run right now, pick roles/people). -->
+      <div id="fgap-manual" hidden>
       <!-- Step 1 · role chips -->
       <div class="fgtl-roles">
         <div class="fgtl-step-eyebrow">&#9312; Which roles to invite &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
@@ -2227,6 +2208,7 @@
           </div>
         </div>
       </div>
+      </div><!-- /#fgap-manual -->
     </div>
 
     <!-- ── Template Management (wraps the 4 tpl-* sections below) ── -->
@@ -3432,7 +3414,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.19"></script>
+  <script type="module" src="/js/app.js?v=2.160.20"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

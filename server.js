@@ -2612,13 +2612,19 @@ app.post('/api/fg/autopilot/publish', async (req, res) => {
 // Read-through proxy for the panel's collapsed strip — keeps FG_ROSTER_TOKEN
 // server-side (browser only ever calls same-origin /api/fg/*).
 app.get('/api/fg/autopilot', async (_req, res) => {
+  // Resilient: if the roster service is unreachable (e.g. not yet deployed), still
+  // return a computed next-run from the default schedule so the strip shows a date
+  // instead of a blank "—". `degraded:true` tells the client NOT to publish (the
+  // real persisted enabled/days is unknown — never clobber it with a guess).
+  let j = null;
   try {
     const r = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, { headers: { authorization: `Bearer ${FG_ROSTER_TOKEN}` } });
-    const j = await r.json();
-    const cfg = j.config || { enabled: true, days: [1, 15] };
-    const instant = cfg.enabled ? nextRun(new Date(), cfg) : null;
-    res.json({ ...j, nextRunLabel: instant ? instant.toISOString() : null });
-  } catch (e) { res.status(502).json({ error: e.message }); }
+    if (r.ok) j = await r.json();
+  } catch (_) { /* service down — fall through to degraded */ }
+  const degraded = !j;
+  const cfg = (j && j.config) || { enabled: true, days: [1, 15] };
+  const instant = cfg.enabled ? nextRun(new Date(), cfg) : null;
+  res.json({ config: (j && j.config) || null, runs: (j && j.runs) || [], degraded, nextRunLabel: instant ? instant.toISOString() : null });
 });
 app.post('/api/fg/autopilot/run', async (_req, res) => {
   try {
