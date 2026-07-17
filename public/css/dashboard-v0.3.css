@@ -1099,6 +1099,13 @@
 #active-sheetwrite-warn .sw-btn { background: none; border: none; padding: 0; font-size: .78rem; color: var(--gray); cursor: pointer; text-decoration: underline; text-decoration-color: var(--hairline); }
 #active-sheetwrite-warn .sw-btn:hover { color: var(--ink); }
 #active-sheetwrite-warn .sw-list { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+
+/* Primary needs-login (Task 9) — strips, card #2 banner, dashboard nudge all
+   share the .needs-login red-line class; the two host divs below get the
+   same spacing as the sheet-write-warn block above. */
+#active-primary-login-warn { border-top: 1px solid var(--hairline); padding: 7px 0 6px; font-size: .78rem; }
+#primary-nudge { padding: 0 2px 8px; font-size: .78rem; }
+.needs-login { color: var(--red); }
 #active-sheetwrite-warn .sw-item { font-size: .74rem; display: grid; grid-template-columns: 1fr auto; gap: 6px; }
 #active-sheetwrite-warn .sw-item-err { color: var(--gray); }
 /* ── Skipped-leads panel (active card) — Task 4 ─────────────────────── */

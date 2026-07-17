@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.28" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.28" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.29" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.29" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -241,6 +241,10 @@
            renderCampaignsBoard(). The legacy sections below are hidden by
            _hideLegacyDashboardSections() but kept in the DOM so a local strip's
            "Open" can reveal the rich detail card. -->
+      <!-- Task 9: light aggregate nudge — one line when any cloud campaign's
+           primary needs to log in. Filled by _renderPrimaryNudge() in app.js,
+           called from renderCampaignsBoard(). Non-clickable, informational only. -->
+      <div id="primary-nudge" hidden></div>
       <div class="sn-qmeta" id="campaigns-qmeta" style="text-align:right;margin:0 2px 4px">—</div>
       <div id="campaigns-board" class="sn-board"><div class="sn-empty">Loading campaigns…</div></div>
 
@@ -297,6 +301,9 @@
         </div>
         <div class="pf-list" id="active-preflight-list" hidden></div>
         <div id="active-sheetwrite-warn" hidden></div>
+        <!-- Task 9: primary needs-login banner — filled by renderPrimaryLoginWarn()
+             in app.js, called from renderActiveCard alongside renderSheetWriteWarn. -->
+        <div id="active-primary-login-warn" hidden></div>
         <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="0" aria-label="Active campaign progress"><i id="activeBar" style="width:0%"></i></div>
         <!-- Monitoring hero (Variant E) — shown only when .is-monitor. Big
              live countdown to the next acceptance check + a quiet stat line. -->
@@ -3433,7 +3440,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.28"></script>
+  <script type="module" src="/js/app.js?v=2.160.29"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

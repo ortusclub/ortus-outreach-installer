@@ -36,6 +36,7 @@ import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestri
 import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
+import { primarySessionBadge } from '/js/primary-session-render.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -6104,6 +6105,12 @@ function renderCloudStrip(c, lc, logLines = null) {
       <div class="sn-pane" data-p="counts"><div style="font-size:12px;color:var(--gray);padding:4px 0">${countsHtml}</div></div>
     </div>`;
 
+  // Primary needs-login (Task 9): only 'needs_login' surfaces anything — see
+  // /js/primary-session-render.mjs. Repeated on every affected strip BY
+  // DESIGN so a blocked campaign is visible when scanning many strips.
+  const psBadge = primarySessionBadge(c.primarySession);
+  const psBadgeHtml = psBadge.show ? `<div class="${psBadge.cls}">${escHtml(psBadge.text)}</div>` : '';
+
   const stopBtn = (isRunning || isQueued) ? `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(c.id)}')">Stop</button>` : '';
   const _vLabel = String(c.name || c.id).replace(/['"\\<>]/g, '');
   const showBtn = isRunning ? `<button class="mini" onclick="openCloudCampaignView('${escHtml(c.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">👁 Show</button>` : '';
@@ -6117,6 +6124,7 @@ function renderCloudStrip(c, lc, logLines = null) {
       <span class="sn-status">${dot} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(c.name || '')}</div>
     <div class="sn-flow">${flow}</div>
+    ${psBadgeHtml}
     ${progLine}
     ${switchBlock}
     <div class="sn-foot"><div class="right">${dismissBtn}${showBtn}${stopBtn}${openBtn}</div></div>
@@ -6221,6 +6229,8 @@ function _buildCloudActiveStatus(c, leads, counts) {
     acceptedCount: accepted, logs: _cloudLeadsToLog(leads, c.mode === 'follower_growth', c),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
+    // Task 9 — primary needs-login surfacing on card #2 (Task 5's c.primarySession).
+    primarySession: c.primarySession,
   };
 }
 
@@ -7038,6 +7048,12 @@ function renderUnifiedStrip(it) {
   const hsAwaiting = cloud && it.state === 'awaiting_primary_accept' && Array.isArray(it.senders);
   if (hsAwaiting) statusTxt = '🔒 Primary handshake';
 
+  // Primary needs-login (Task 9) — only fires when the engine's
+  // c.primarySession.state is 'needs_login' (see /js/primary-session-render.mjs).
+  // Repeated on every affected strip BY DESIGN.
+  const psBadge = primarySessionBadge(it.primarySession);
+  const psBadgeHtml = psBadge.show ? `<div class="${psBadge.cls}">${escHtml(psBadge.text)}</div>` : '';
+
   const flow = it.isFG
     ? `<b>${it.total || '—'} invites</b> → <b>${it.accounts || 1} account${(it.accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
     : `<b>${it.total || 0} leads</b> → <b>${it.accounts || 0} ${acctWord}</b> → feeds <b>${escHtml(it.name || '')}</b> · ${escHtml(_cloudModeLabel(it.mode))}`;
@@ -7205,6 +7221,7 @@ function renderUnifiedStrip(it) {
       <span class="sn-status">${dot} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
     <div class="sn-flow">${flow}</div>
+    ${psBadgeHtml}
     ${progLine}
     ${monBlock}
     ${hsAwaiting ? handshakeBlock : switchBlock}
@@ -7575,6 +7592,8 @@ async function renderCampaignsBoard() {
         // Phase 0 handshake lock (Task 3.4) — undefined until the engine ships
         // them, in which case the lock panel in renderUnifiedStrip stays dormant.
         state: c.state, senders: c.senders, primary: c.primary,
+        // Task 9 — primary needs-login surfacing (Task 5's c.primarySession).
+        primarySession: c.primarySession,
         // Task 3 — monitoring card (parity with local renderMonitoringCard). The
         // engine carries these top-level; nextCheckAt/monitoringUntil drive the
         // "Next check · ends in" countdown, exactly like the local mon-card.
@@ -7655,6 +7674,25 @@ async function renderCampaignsBoard() {
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
+  _renderPrimaryNudge(items);
+}
+
+// Task 9 — light aggregate nudge: ONE informational line at the top of the
+// board when any cloud campaign on THIS dashboard (already owner-filtered by
+// the loop above) has a primary needing to log in. Non-clickable — there is
+// no standalone re-login affordance in this app (the handshake only runs
+// during a campaign launch), so this deliberately does NOT link anywhere.
+// ponytail: informational aggregate only; a click-to-relogin flow needs a
+// standalone handshake entrypoint that doesn't exist yet — out of scope.
+function _renderPrimaryNudge(items) {
+  const el = document.getElementById('primary-nudge');
+  if (!el) return;
+  const blocked = items.filter((x) => x.where === 'cloud' && x.primarySession && x.primarySession.state === 'needs_login');
+  if (!blocked.length) { el.hidden = true; el.innerHTML = ''; return; }
+  const names = blocked.map((x) => escHtml(x.primarySession.name || 'the primary'));
+  const n = blocked.length;
+  el.hidden = false;
+  el.innerHTML = `<div class="needs-login">⚠ ${n} campaign${n === 1 ? '' : 's'} need a primary to log in — ${names.join(', ')}</div>`;
 }
 
 // Lazy-fill done-strip log boxes from the persisted campaign log. Cached per
@@ -19657,6 +19695,22 @@ function renderSheetWriteWarn(status) {
   // fetchAndRenderList() is only triggered by explicit expand click or post-retry.
 }
 
+// Primary needs-login banner (Task 9) — card #2's counterpart to the strip
+// badges (see /js/primary-session-render.mjs). Only status.primarySession's
+// 'needs_login' state shows anything. Same host-div pattern as
+// renderSheetWriteWarn above: a fixed #active-primary-login-warn div that
+// this function fills/hides on every renderActiveCard call.
+function renderPrimaryLoginWarn(status) {
+  const el = document.getElementById('active-primary-login-warn');
+  if (!el) return;
+  const badge = primarySessionBadge(status && status.primarySession);
+  if (!badge.show) { el.hidden = true; el.innerHTML = ''; return; }
+  const parked = Math.max(0, Number((status.primarySession || {}).parked) || 0);
+  const name = escHtml((status.primarySession || {}).name || 'the primary');
+  el.hidden = false;
+  el.innerHTML = `<div class="needs-login">⚠ ${parked} follow-up${parked === 1 ? '' : 's'} parked — waiting for ${name} to log in</div>`;
+}
+
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
@@ -19720,6 +19774,7 @@ window.renderActiveCard = function(status) {
     }
     window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
     renderSheetWriteWarn(status);
+    renderPrimaryLoginWarn(status);
     return;
   }
   card.classList.remove('is-queued');
@@ -19761,6 +19816,7 @@ window.renderActiveCard = function(status) {
     // Reset the auto-open latch so the NEXT launch re-opens the panel cleanly.
     window.__activeCardActive = false;
     renderSheetWriteWarn(status);
+    renderPrimaryLoginWarn(status);
     renderActiveSkips(status.skippedCount || 0);
     return;
   }
@@ -19769,6 +19825,7 @@ window.renderActiveCard = function(status) {
     card.classList.remove('is-monitor');
     // Sheet-write warn: hide when idle.
     renderSheetWriteWarn(null);
+    renderPrimaryLoginWarn(null);
     // Check DMs reply-check strip: hide + clear when the card goes idle.
     const _rs = document.getElementById('active-replystrip');
     if (_rs) { _rs.hidden = true; const l = document.getElementById('active-rs-list'); if (l) l.innerHTML = ''; }
@@ -19916,6 +19973,7 @@ window.renderActiveCard = function(status) {
   // copy everything the campaign has emitted (in-memory log, capped ~500).
   window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
   renderSheetWriteWarn(status);
+  renderPrimaryLoginWarn(status);
   // Batch ETA — best-effort from nextCheckAt or currentAction.endsAt
   const etaEl = document.getElementById('batchEta');
   if (etaEl) {
