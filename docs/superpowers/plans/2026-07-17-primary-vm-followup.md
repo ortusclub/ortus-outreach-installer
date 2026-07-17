@@ -203,7 +203,12 @@ async function launchPrimarySession(cookies) {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'primary_'));
   const browser = await puppeteer.launch({
     executablePath: chromeExecutable(),
-    headless: true, // ponytail: LinkedIn headless DOM behaviour is the one real unknown — see report
+    // HEADED, on the Xvfb display (DISPLAY=:99) the entrypoint already boots and
+    // that Orbita/GoLogin renders to — inherited from process env. Matches how
+    // every browser runs on this VM, so LinkedIn sees the same headed rendering
+    // it already tolerates. (Dockerfile HEADLESS=false; k8s: "MUST be false so
+    // Orbita renders to the Xvfb display".) Never headless here.
+    headless: false,
     userDataDir,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
@@ -229,7 +234,7 @@ module.exports = { slugFromUrl, identityMatches, launchPrimarySession, assertPri
 ```
 
 - [ ] **Step 3: Run** the pure-helper test → pass.
-- [ ] **Step 4: Report the browser-launch caveat explicitly** — `launchPrimarySession`/`assertPrimaryIdentity` are NOT unit-tested (need a live session + Chromium binary); only the pure helpers are. The headless LinkedIn behaviour is the calibration knob to smoke-test on the VM before rollout. State this in the report; do NOT fake a browser test.
+- [ ] **Step 4: Report the browser-launch caveat explicitly** — `launchPrimarySession`/`assertPrimaryIdentity` are NOT unit-tested (need a live session + Chromium binary); only the pure helpers are. Launch is HEADED on the VM's Xvfb `:99` (resolved — see Notes), so no headless behaviour to smoke-test; the residual live check is simply that an injected personal-primary session sends one real follow-up on the VM post-deploy. State this in the report; do NOT fake a browser test.
 - [ ] **Step 5: Commit** `feat(engine): primary session launch + cookie injection + identity gate`.
 
 ---
@@ -423,8 +428,8 @@ escalate — the double-send assumption was wrong.
 - **Order:** ENGINE first (Tasks 1→5, `cd` to the engine repo), then APP (Tasks 6, 8, 9 — **Task 7 is dropped**). App calls the new engine endpoints, so engine must land first.
 - **Engine has NO `scripts.test`** (`package.json` scripts = start/dev/install-browser/login). Run test files directly: `node --test test/<file>.js`. Store/endpoint tests need local pg + redis (memory: `reference_ortus_cloud_engine_repo`) — if unavailable in the sandbox, run the PURE-logic tests (Task 3 helpers, Task 4 with injected deps) which need neither, and for the pg/redis-bound ones state exactly what couldn't run. **Never fake a green run.**
 - App tests: `node --test tests/<file>.test.js`.
-- **The one real unknown = headless LinkedIn.** `launchPrimarySession` runs Chromium `headless:true` on the VM. LinkedIn's compose/DOM can behave differently headless. Before rollout, smoke-test one real personal-primary follow-up on the VM; if headless misbehaves, the knob is `headless:false` under xvfb (the GKE image already runs headed Orbita, so an X server path exists). This is a deploy-time calibration, not a code redesign.
-- **Chromium binary on the VM:** `launchPrimarySession` needs one. Confirm the engine image runs `npx playwright install chromium` (the `install-browser` script) so `require('playwright').chromium.executablePath()` resolves; else set `PRIMARY_CHROME_PATH`. A deploy/image note, not a task.
+- **Headless question — RESOLVED, no smoke-test needed.** The VM already runs Xvfb (`DISPLAY=:99`, booted by `k8s/entrypoint.sh`) and launches every browser HEADED (`Dockerfile` `HEADLESS=false`; `k8s/10-worker-deployment.yaml`/`21-campaign-worker.yaml`: "MUST be false so Orbita renders to the Xvfb display"). The primary browser launches `headless:false` and inherits `DISPLAY` from process env → renders on the same display Orbita uses. No image change, no xvfb add.
+- **Chromium binary — RESOLVED.** Base image is `mcr.microsoft.com/playwright:v1.42.0-jammy` (chromium pre-installed under `/ms-playwright`); `playwright ^1.42.0` AND `puppeteer-core ^25.2.0` are both **prod** dependencies, so `npm ci --omit=dev` keeps them and `require('playwright').chromium.executablePath()` resolves at runtime. `PRIMARY_CHROME_PATH` remains an override if the base image ever changes.
 - Do NOT deploy. Engine image bump + rollout and app version bump are human steps after review.
 - Bump app `package.json` + both `index.html` `?v=` in Task 9's commit per the relaunch rule.
 - **What this also fixes:** cloud CC+IC follow-ups currently post as the GoLogin *sender*, not the primary (Task 4). Call this out in the final review — it changes observable behaviour for existing GoLogin-primary campaigns too, not just personal ones.
