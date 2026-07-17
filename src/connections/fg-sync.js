@@ -65,6 +65,16 @@ export async function postFg(payload, { timeoutMs = 30000, attempts = 3, sleep =
   return { error: last.error };
 }
 
+// Skip-list keys (Member ID, else LinkedIn URL) for people ALREADY invited —
+// Status === 'Invited' only. A 'Failed' or in-flight 'Queued' row is NOT skipped,
+// so a failed person is retried next run.
+export function invitedKeysFromState(invites) {
+  return (invites || [])
+    .filter((r) => r && r.Status === 'Invited')
+    .map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''))
+    .filter(Boolean);
+}
+
 // { invites: [...row objects], budgets: [...], funnel: [...] }
 export async function getFgState() {
   const r = await postFg({ action: 'fgState' }, { timeoutMs: 60000 });

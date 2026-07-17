@@ -65,6 +65,33 @@ test('fires on a run day: dispatches once + records with cycleKey', async () => 
   assert.equal(rec.cycleKey, '2026-08-01');
 });
 
+test('mirrors manual FG: caps at monthly budget + skips already-invited + writes Queued', async () => {
+  // Regression: autopilot used to pass budget:Infinity + alreadyInvited:[] + a no-op
+  // queue — dispatching EVERY matched connection (~15k), re-inviting done people, and
+  // never writing the sheet. It must match /api/fg/team-launch/start exactly.
+  let seenBudget, seenInvited;
+  const spy = { buildFgTargets: (_c, opts) => { seenBudget = opts.budget; seenInvited = opts.alreadyInvited; return { rows: [['J', 'u', '1', '', '', '', '', '', '', '', '', '', '']], count: 1, matched: 1, eligible: 1 }; } };
+  let queuedRows = null;
+  const h = makeAutopilotHandler(base({
+    searchService: spy, monthlyBudget: 30,
+    getFgState: async () => ({ invites: [{ 'Member ID': '999', Status: 'Invited' }, { 'LinkedIn URL': 'https://x/y', Status: 'Invited' }] }),
+    queueInvites: async (rows) => { queuedRows = rows; },
+  }));
+  await h.run({ force: true, nowDate: RUN_DAY });
+  assert.equal(seenBudget, 30, `budget should be 30, got ${seenBudget}`);
+  assert.deepEqual(seenInvited, ['999', 'https://x/y'], `alreadyInvited should come from the FG sheet, got ${JSON.stringify(seenInvited)}`);
+  assert.ok(Array.isArray(queuedRows) && queuedRows.length === 1, 'queueInvites must receive the dispatched rows (Queued write-back)');
+});
+
+test('FG sheet unreachable → still runs, just does not skip already-invited', async () => {
+  let seenInvited = 'unset';
+  const spy = { buildFgTargets: (_c, opts) => { seenInvited = opts.alreadyInvited; return { rows: [['J', 'u', '1', '', '', '', '', '', '', '', '', '', '']], count: 1, matched: 1, eligible: 1 }; } };
+  const h = makeAutopilotHandler(base({ searchService: spy, getFgState: async () => { throw new Error('sheet down'); } }));
+  const r = await h.run({ force: true, nowDate: RUN_DAY });
+  assert.equal(r.dispatched, true, 'a sheet hiccup must not block the run');
+  assert.deepEqual(seenInvited, [], 'falls back to [] when the sheet is unreadable');
+});
+
 test('does not fire twice for the same cycle', async () => {
   const runStore = memRunStore([{ cloudId: 'old', cycleKey: '2026-08-01', status: 'dispatched' }]);
   let dispatched = 0;

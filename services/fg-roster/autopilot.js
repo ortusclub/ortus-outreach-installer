@@ -1,14 +1,20 @@
 // FG Auto-Pilot orchestration — decide + dispatch one run. All real I/O is
 // injected, so this is unit-testable with no engine, no filesystem, no HTTP.
-// Targets come from the connections DB alone (alreadyInvited:[], budget:Infinity);
-// the engine caps to live invite-credit count and skips already-following/invited.
+// Targets come from the connections DB, capped per account at the monthly FG
+// allowance (~30) so a run dispatches ~30 invites/account, not every match. The
+// engine still skips already-following/invited and caps to live invite credits.
 import { shouldFire, cycleKey, fgCriteria } from '../../src/fg-autopilot.js';
 import { startTeamLaunchCloud } from '../../src/connections/fg-cloud-launch.js';
+import { invitedKeysFromState } from '../../src/connections/fg-sync.js';
 
 export function makeAutopilotHandler(deps) {
   const {
     searchService, startCloud, queueInvites, runStore, loadConfig, saveRuns,
     sendAlert, now, log, inviteUrl, monthlyBudget, tz = 'Europe/London',
+    // Reads the FG sheet's already-invited list so a run skips people already done
+    // — mirrors the manual /api/fg/team-launch/start path. Optional/injected so the
+    // handler stays unit-testable; falls back to "invite nobody twice unknown" = [].
+    getFgState = async () => ({ invites: [] }),
   } = deps;
 
   return {
@@ -30,10 +36,19 @@ export function makeAutopilotHandler(deps) {
       }
 
       const month = cycleKey(nd, tz).slice(0, 7); // YYYY-MM
+      // Skip people already invited this month — same key format the manual path uses
+      // (Member ID, else LinkedIn URL). Best-effort: a sheet hiccup must not block the
+      // run, so an unreadable sheet falls back to [] (worst case: a re-invite the
+      // engine's own already-following/invited guard still catches).
+      let alreadyInvited = [];
+      try {
+        const snap = await getFgState();
+        alreadyInvited = invitedKeysFromState(snap.invites);
+      } catch (e) { (log || (() => {}))(`⚠ FG sheet unreachable, not skipping already-invited (${e.message})`); }
       const buildTargets = (pair) => {
         const out = searchService.buildFgTargets(fgCriteria(config.keywords || []), {
           operator: pair.operator, operatorName: pair.operatorName,
-          account: pair.account, month, alreadyInvited: [], budget: Infinity,
+          account: pair.account, month, alreadyInvited, budget: monthlyBudget,
         });
         let reason = '';
         if (!out.count) reason = out.matched === 0 ? 'no connections match these roles' : 'no eligible targets';

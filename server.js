@@ -91,7 +91,7 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState } from './src/connections/fg-sync.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
@@ -2447,7 +2447,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
     let snap;
     try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
     const buildTargets = (pair) => {
-      const alreadyInvited = (snap.invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+      const alreadyInvited = invitedKeysFromState(snap.invites);
       const budget = fgRemaining(snap.budgets, pair.account, month);
       const out = buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator: pair.operator, operatorName: pair.operatorName, account: pair.account, month, alreadyInvited, budget });
       let reason = '';
@@ -2495,7 +2495,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
         buildTargets: (pair) => {
           // NOTE: getFgState is async; we snapshot it once per account via the closure below.
           const snap = _fgTeamSnap;
-          const alreadyInvited = (snap.invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+          const alreadyInvited = invitedKeysFromState(snap.invites);
           const budget = fgRemaining(snap.budgets, pair.account, month);
           const out = buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator: pair.operator, operatorName: pair.operatorName, account: pair.account, month, alreadyInvited, budget });
           // Specific skip reason so the live log isn't a vague catch-all.
