@@ -8,6 +8,7 @@ export const FG_HEADER = [
   'Target Name', 'LinkedIn URL', 'Member ID', 'Company', 'Job Title',
   'Function Match', 'Geo', 'Invited By', 'Account', 'Status',
   'Invited At', 'FG Note', 'Month',
+  'Run ID', 'Run At', 'Reason',
 ];
 
 // Coerce any Month cell value to a plain "YYYY-MM" string for budget matching.

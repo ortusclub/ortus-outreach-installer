@@ -72,12 +72,25 @@ export async function getFgState() {
   return { invites: r.invites || [], budgets: r.budgets || [], funnel: r.funnel || [] };
 }
 
-// Append queued rows (FG_HEADER order). The Apps Script dedupes server-side by
-// Member-ID-or-URL, so concurrent operators can't double-queue the same person.
-export async function queueFgInvites(rows) {
-  const r = await postFg({ action: 'fgQueue', rows }, { timeoutMs: 90000 });
+// Pad each FG_HEADER-order row (13 cells) to 16 by appending the run's id + time
+// + an empty Reason. Single choke point so callers never hand-build the new cols.
+export function stampRunCells(rows, { runId = '', runAt = '' } = {}) {
+  return (rows || []).map((r) => [...r.slice(0, 13), String(runId), String(runAt), '']);
+}
+
+// Append queued rows (FG_HEADER order). Stamps the run id + time onto every row.
+export async function queueFgInvites(rows, { runId = '', runAt = '' } = {}) {
+  const stamped = stampRunCells(rows, { runId, runAt });
+  const r = await postFg({ action: 'fgQueue', rows: stamped }, { timeoutMs: 90000 });
   if (r?.error) throw new Error(r.error);
   return r; // { queued, skippedDuplicates }
+}
+
+// Sweep every still-'Queued' row for this run to 'Failed' + reason (post-reconcile).
+export async function markFgFailed({ runId, reason }) {
+  const r = await postFg({ action: 'fgMarkFailed', runId, reason }, { timeoutMs: 90000 });
+  if (r?.error) throw new Error(r.error);
+  return r; // { failed }
 }
 
 // Flip the given Member IDs from Queued → Invited (stamp Invited At) and bump
