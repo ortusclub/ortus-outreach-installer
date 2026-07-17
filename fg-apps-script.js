@@ -228,3 +228,69 @@ function fgFunnel_() {
   out.push({ operator: 'TOTAL', invited: total });
   return out;
 }
+
+// One-time migration: run once from the Apps Script editor. Backfills the
+// Run ID/Run At/Reason schema onto pre-existing rows, relabels stuck legacy
+// Queued rows as Failed, adds Sent/Stuck helper flag columns, and (re)builds
+// the Run Health tab (QUERY + Result/Credits left/Note formulas).
+function fgMigrateRunHealth_() {
+  var ss = SpreadsheetApp.getActive();
+  var sh = sheet_('FG Invites', FG_HEADER); // ensures the 3 new headers exist
+  var last = sh.getLastRow();
+  if (last > 1) {
+    var iWhen = FG_HEADER.indexOf('Invited At');   // 10
+    var iRun = FG_HEADER.indexOf('Run ID');        // 13
+    var iRunAt = FG_HEADER.indexOf('Run At');      // 14
+    var iStatus = FG_HEADER.indexOf('Status');     // 9
+    var rng = sh.getRange(2, 1, last - 1, FG_HEADER.length);
+    var vals = rng.getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (!vals[i][iRun]) vals[i][iRun] = 'legacy';
+      if (!vals[i][iRunAt] && vals[i][iWhen]) vals[i][iRunAt] = new Date(vals[i][iWhen]);
+      if (vals[i][iStatus] === 'Queued') { vals[i][iStatus] = 'Failed'; vals[i][FG_HEADER.indexOf('Reason')] = 'legacy — never confirmed'; }
+    }
+    rng.setValues(vals);
+    sh.getRange(2, iRunAt + 1, last - 1, 1).setNumberFormat('dd mmm yyyy, HH:mm');
+    sh.getRange(2, iWhen + 1, last - 1, 1).setNumberFormat('dd mmm yyyy, HH:mm');
+  }
+  // Sent/Stuck flag helper columns (Q, R) as whole-column array formulas.
+  sh.getRange('Q1').setValue('Sent1');
+  sh.getRange('R1').setValue('Stuck1');
+  sh.getRange('Q2').setFormula('=ARRAYFORMULA(IF(J2:J="Invited",1,0))');
+  sh.getRange('R2').setFormula('=ARRAYFORMULA(IF(J2:J="Failed",1,0))');
+
+  // Run Health tab.
+  var rh = ss.getSheetByName('Run Health') || ss.insertSheet('Run Health', 0);
+  rh.clear();
+  rh.getRange('A1').setValue('Run Health · one row per account × run · newest first').setFontWeight('bold');
+  // The QUERY: group by Run At, Account, Operator; count targeted; sum sent/stuck.
+  rh.getRange('A3').setFormula(
+    "=QUERY('FG Invites'!A2:R, \"select O, I, H, count(A), sum(Q), sum(R) " +
+    "where N is not null group by O, I, H order by O desc " +
+    "label O 'Run At', I 'Account', H 'Operator', count(A) 'Targeted', sum(Q) 'Sent', sum(R) 'Stuck'\", 0)"
+  );
+  // Derived Result / Credits left / Note next to the QUERY block.
+  rh.getRange('G3').setValue('Result');
+  rh.getRange('H3').setValue('Credits left');
+  rh.getRange('I3').setValue('Note');
+  rh.getRange('G4').setFormula(
+    '=ARRAYFORMULA(IF(LEN(A4:A)=0,,IF(E4:E>=D4:D,"✓ All sent",IF(E4:E=0,"✗ Nothing sent","◑ Partial"))))'
+  );
+  rh.getRange('H4').setFormula('=ARRAYFORMULA(IF(LEN(A4:A)=0,,MAX(0,30-E4:E)&" / 30"))');
+  rh.getRange('I4').setFormula(
+    "=ARRAYFORMULA(IF(LEN(A4:A)=0,,IF(F4:F=0,\"\",IFERROR(VLOOKUP(1,{'FG Invites'!R2:R,'FG Invites'!P2:P},2,FALSE),\"\"))))"
+  );
+  // Conditional formatting on Result (col G).
+  var rules = rh.getConditionalFormatRules();
+  var mk = function (text, bg, fg) {
+    return SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains(text).setBackground(bg).setFontColor(fg)
+      .setRanges([rh.getRange('G4:G1000')]).build();
+  };
+  rules.push(mk('✓', '#e6f4ea', '#137333'));
+  rules.push(mk('◑', '#fef7e0', '#b06000'));
+  rules.push(mk('✗', '#fce8e6', '#c5221f'));
+  rh.setConditionalFormatRules(rules);
+  rh.setFrozenRows(3);
+  return 'migrated';
+}
