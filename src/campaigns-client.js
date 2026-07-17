@@ -208,6 +208,36 @@ export function postPrimarySession(cap) {
   });
 }
 
+// Bare vanity slug (e.g. "jane-doe") from a /in/ profile URL, lowercased —
+// what the engine's GET /api/primaries/by-slug/:slug expects (it does
+// `WHERE lower(public_identifier)=lower($1)`). Do NOT reuse
+// primaryKeyFromUrl (primary-status-store.js) here — it returns a PREFIXED
+// key ('s:'+slug or 'm:'+token) for a different store. Encoded member tokens
+// (/in/ACwAA…, /in/ACoAA…) have no vanity slug, so — same detection as
+// primaryKeyFromUrl — they resolve to '' (no by-slug lookup possible; the
+// wizard just shows no hint for those primaries).
+export function extractPrimarySlug(primaryUrl) {
+  const m = String(primaryUrl || '').match(/\/in\/([^/?#]+)/i);
+  if (!m) return '';
+  const raw = m[1];
+  if (/^AC[ow]AA/i.test(raw)) return '';
+  return raw.toLowerCase();
+}
+
+/**
+ * The primary's captured-session state on the cloud engine, keyed by bare
+ * vanity slug — backs the wizard's "session live / needs login" hint next to
+ * the Primary Person URL field. Single attempt (mirrors getCloudCampaign's
+ * sibling calls that must never throw): returns the engine's
+ * { state, name, capturedAt } or { error }; the server route (server.js
+ * /api/primary-session) is the one that folds any error into { state:'none' }
+ * so a flaky engine never breaks the wizard.
+ * @param {string} slug bare lowercased vanity slug (see extractPrimarySlug)
+ */
+export function getPrimarySession(slug) {
+  return requestOnce('GET', '/api/primaries/by-slug/' + encodeURIComponent(slug));
+}
+
 /**
  * Stop a cloud campaign.
  * - default: cancel (leads not yet actioned are abandoned).

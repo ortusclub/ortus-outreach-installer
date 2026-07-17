@@ -48,7 +48,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, resumeCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, resumeCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -2052,6 +2052,23 @@ app.get('/api/primary-status', async (req, res) => {
     res.json({ key, statuses });
   } catch (e) {
     res.json({ key: '', statuses: {} });
+  }
+});
+
+// Task 8: wizard primary-session hint — is the primary's captured LinkedIn
+// session live on the VM (Task 6 capture → engine registry, Task 5's by-slug
+// lookup)? Advisory only, next to the Primary Person URL field. Never 500s/400s
+// the wizard: bad/missing/encoded URL → { state: 'none' } (mirrors
+// /api/primary-status above), same for an engine hiccup.
+app.get('/api/primary-session', async (req, res) => {
+  try {
+    const primaryUrl = String(req.query.primaryUrl || '');
+    const slug = extractPrimarySlug(primaryUrl);
+    if (!slug) return res.json({ state: 'none' });
+    const r = await getPrimarySession(slug);
+    res.json(r);
+  } catch (e) {
+    res.json({ state: 'none' });
   }
 });
 

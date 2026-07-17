@@ -12993,6 +12993,56 @@ window.showPrimaryUrlError = showPrimaryUrlError;
 window.clearPrimaryUrlError = clearPrimaryUrlError;
 window.revalidatePrimaryUrlField = revalidatePrimaryUrlField;
 
+// Task 8: primary VM-session hint — advisory line next to the Primary Person
+// URL field showing whether the primary's captured LinkedIn session is live
+// on the cloud VM (backed by GET /api/primary-session, server.js). CC+IC
+// only. Never blocks the launch — on any fetch failure or unrecognized state
+// it just hides. ponytail: advisory hint; encoded-URL primaries (no vanity
+// slug) resolve to state:'none' server-side and just show no hint.
+function getOrCreatePrimarySessionHintEl() {
+  const urlInput = document.getElementById('primary-person-url');
+  const field = urlInput ? urlInput.closest('.intro-config-field') : null;
+  if (!field) return null;
+  let el = document.getElementById('primary-session-hint');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'primary-session-hint';
+    el.className = 'intro-config-hint';
+    el.hidden = true;
+    field.appendChild(el);
+  }
+  return el;
+}
+
+function renderPrimarySessionHint(data) {
+  const el = getOrCreatePrimarySessionHintEl();
+  if (!el) return;
+  const state = data && data.state;
+  if (state === 'live') {
+    el.textContent = `Session live — synced ${typeof relativeTime === 'function' ? relativeTime(data.capturedAt) : data.capturedAt}`;
+    el.style.color = 'var(--green)';
+    el.hidden = false;
+  } else if (state === 'needs_login') {
+    el.textContent = `Needs login — follow-ups will park until ${data.name || 'the primary'} logs in locally`;
+    el.style.color = 'var(--red)';
+    el.hidden = false;
+  } else {
+    el.hidden = true;
+  }
+}
+
+async function loadPrimarySessionHint() {
+  const mode = document.getElementById('campaign-mode')?.value || '';
+  const url = (document.getElementById('primary-person-url')?.value || '').trim();
+  if (mode !== 'connect_and_introduce' || !url) { renderPrimarySessionHint({ state: 'none' }); return; }
+  try {
+    const r = await fetch('/api/primary-session?primaryUrl=' + encodeURIComponent(url));
+    renderPrimarySessionHint(await r.json());
+  } catch { renderPrimarySessionHint({ state: 'none' }); }
+}
+window.loadPrimarySessionHint = loadPrimarySessionHint;
+document.getElementById('primary-person-url')?.addEventListener('blur', loadPrimarySessionHint);
+
 // v2.91: Automated first follow-up — reveal the message/delay/sender fields
 // only when the toggle is on.
 function toggleFollowUpFields() {
