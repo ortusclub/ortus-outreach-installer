@@ -247,6 +247,9 @@ function fgMigrateRunHealth() { // no trailing "_" — Apps Script hides _-suffi
     for (var i = 0; i < vals.length; i++) {
       if (!vals[i][iRun]) vals[i][iRun] = 'legacy';
       if (!vals[i][iRunAt] && vals[i][iWhen]) vals[i][iRunAt] = new Date(vals[i][iWhen]);
+      // Old Invited At was written as an ISO *string*; a number-format on text is a
+      // no-op, so coerce each to a real Date value here — THEN the format renders it.
+      if (vals[i][iWhen] && !(vals[i][iWhen] instanceof Date)) vals[i][iWhen] = new Date(vals[i][iWhen]);
       if (vals[i][iStatus] === 'Queued') { vals[i][iStatus] = 'Failed'; vals[i][FG_HEADER.indexOf('Reason')] = 'legacy — never confirmed'; }
     }
     rng.setValues(vals);
@@ -258,6 +261,12 @@ function fgMigrateRunHealth() { // no trailing "_" — Apps Script hides _-suffi
   sh.getRange('R1').setValue('Stuck1');
   sh.getRange('Q2').setFormula('=ARRAYFORMULA(IF(J2:J="Invited",1,0))');
   sh.getRange('R2').setFormula('=ARRAYFORMULA(IF(J2:J="Failed",1,0))');
+
+  // Hide machine keys + helper flags from the human view — still written by the app
+  // and read by the Run Health QUERY, just off-screen. Leaves the calm visible set:
+  // Target Name · Company · Job Title · Invited By · Account · Status · Invited At · Reason · Month.
+  // B=LinkedIn URL, C=Member ID, F=Function Match, G=Geo, L=FG Note, N=Run ID, O=Run At, Q=Sent1, R=Stuck1.
+  [2, 3, 6, 7, 12, 14, 15, 17, 18].forEach(function (c) { sh.hideColumns(c); });
 
   // Run Health tab.
   var rh = ss.getSheetByName('Run Health') || ss.insertSheet('Run Health', 0);
