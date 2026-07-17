@@ -22,6 +22,8 @@
 import { planAccountsNeedingConnect, handshakeProgress, shouldProceed } from './preflight-handshake.js';
 import { checkAndConnectPrimary, primaryConnState } from './linkedin/primary-connection.js';
 import { readSelfIdentity, acceptInvitationFrom, acceptAllPendingInvitations } from './linkedin/accept-invitation.js';
+import { capturePrimaryCookies } from './primary-cookie-capture.js';
+import { postPrimarySession } from './campaigns-client.js';
 import { buildAcceptTask, enqueuePrimaryTask } from './primary-tasks.js';
 import { _shouldQueueAutoAccept } from './linkedin/auto-intro.js';
 import {
@@ -58,6 +60,7 @@ export function needsCloudHandshake({ mode, autoAcceptPrimary, primarySource } =
 const DEFAULT_DEPS = {
   launchProfile, closeProfile, launchLocalBrowser, closeLocalBrowser,
   checkAndConnectPrimary, readSelfIdentity, acceptInvitationFrom, acceptAllPendingInvitations,
+  capturePrimaryCookies, postPrimarySession,
   enqueuePrimaryTask, loadPrimaryStatus, savePrimaryStatus,
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
@@ -243,6 +246,14 @@ export async function runCloudPreflightHandshake(opts = {}) {
         try { await deps.acceptAllPendingInvitations(primaryPage, { log }); }
         catch (e) { log(`  ⚠ Accept-all sweep error: ${e.message}`); }
       }
+
+      // Best-effort: capture the primary's session so a follow-up can later run
+      // AS the primary on the VM. A capture/post failure must never fail the
+      // handshake — the whole thing is wrapped and swallowed here.
+      try {
+        const cap = await deps.capturePrimaryCookies(primaryPage);
+        if (cap) { await deps.postPrimarySession(cap); log(`  🔑 primary session captured for ${cap.publicIdentifier} — follow-ups can run on the VM`); }
+      } catch (e) { log(`  ⚠ primary session capture failed (${e.message}) — follow-ups will park until next handshake`); }
     } catch (e) {
       log(`  ⚠ primary accept session failed (${e.message}) — queuing for the idle runner`);
       for (const t of queuedAccepts) { try { await deps.enqueuePrimaryTask(t); } catch { /* */ } }

@@ -194,6 +194,21 @@ export function signalPrimaryAcceptDone(id, acceptedIds) {
 }
 
 /**
+ * Ship the primary's captured LinkedIn session to the engine so a follow-up can
+ * later run AS the primary on the VM. Single attempt (mirrors
+ * signalPrimaryAcceptDone) — best-effort, called from a try/catch that must
+ * never fail the handshake either way.
+ * @param {{memberId:string, publicIdentifier:string, displayName:string, cookies:Array}} cap
+ */
+export function postPrimarySession(cap) {
+  return requestOnce('POST', `/api/primaries/${encodeURIComponent(cap.memberId)}/session`, {
+    publicIdentifier: cap.publicIdentifier,
+    displayName: cap.displayName,
+    cookies: cap.cookies,
+  });
+}
+
+/**
  * Stop a cloud campaign.
  * - default: cancel (leads not yet actioned are abandoned).
  * - { pause: true }: pause (resumable) instead of cancel.
