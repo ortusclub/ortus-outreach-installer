@@ -133,18 +133,21 @@ function fgMarkInvited_(data) {
 // so whatever is still Queued for this Run ID was genuinely never sent.
 function fgMarkFailed_(data) {
   var runId = String(data.runId || '');
-  var reason = String(data.reason || 'not sent');
+  var fallback = String(data.reason || 'not sent');
+  var reasons = data.reasons || {}; // { memberId: text } — per-lead reason, optional
   if (!runId) return { error: 'fgMarkFailed: runId required' };
   var sh = sheet_('FG Invites', FG_HEADER);
   var r = rows_(sh);
   var iStatus = FG_HEADER.indexOf('Status');
   var iRun = FG_HEADER.indexOf('Run ID');
   var iReason = FG_HEADER.indexOf('Reason');
+  var iMember = FG_HEADER.indexOf('Member ID');
   var n = 0;
   for (var i = 0; i < r.data.length; i++) {
     if (String(r.data[i][iRun]) === runId && r.data[i][iStatus] === 'Queued') {
+      var why = reasons[String(r.data[i][iMember])] || fallback; // per-lead reason, else fallback
       sh.getRange(i + 2, iStatus + 1).setValue('Failed');
-      sh.getRange(i + 2, iReason + 1).setValue(reason);
+      sh.getRange(i + 2, iReason + 1).setValue(why);
       n++;
     }
   }

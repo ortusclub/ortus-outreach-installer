@@ -96,9 +96,10 @@ export async function queueFgInvites(rows, { runId = '', runAt = '' } = {}) {
   return r; // { queued, skippedDuplicates }
 }
 
-// Sweep every still-'Queued' row for this run to 'Failed' + reason (post-reconcile).
-export async function markFgFailed({ runId, reason }) {
-  const r = await postFg({ action: 'fgMarkFailed', runId, reason }, { timeoutMs: 90000 });
+// Sweep every still-'Queued' row for this run to 'Failed' (post-reconcile). `reasons`
+// is an optional { memberId: text } map for per-lead reasons; `reason` is the fallback.
+export async function markFgFailed({ runId, reason, reasons }) {
+  const r = await postFg({ action: 'fgMarkFailed', runId, reason, reasons }, { timeoutMs: 90000 });
   if (r?.error) throw new Error(r.error);
   return r; // { failed }
 }

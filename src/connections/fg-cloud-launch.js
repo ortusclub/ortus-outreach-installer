@@ -128,14 +128,38 @@ export async function reconcileCloudRun(record, deps) {
     }
   }
 
-  // Whatever is still 'Queued' for this run was never sent — flip it to Failed so
-  // the sheet shows a red line + reason instead of permanent limbo. Best-effort.
+  // Whatever is still 'Queued' for this run was never sent — flip it to Failed with
+  // a per-lead reason so the sheet shows a red line + WHY, not permanent limbo.
   if (deps.markFailed) {
-    try { await deps.markFailed({ runId: record.cloudId, reason: 'not sent — account may be logged out or out of credits' }); }
+    const reasons = fgFailureReasons(leads, record, status);
+    try { await deps.markFailed({ runId: record.cloudId, reason: 'Not sent', reasons }); }
     catch (e) { deps.log(`⚠ FG failure-sweep write failed (${e.message})`); }
   }
 
   return { reconciled: true, groups: groups.length };
+}
+
+// Per-lead failure reasons for a reconciled run, keyed by Member ID, from what the
+// engine actually exposes to reconcile: each lead's own `error` (the engine's own
+// words — "profile not found", a timeout/VM error, …), else "Campaign stopped" when
+// the run was killed, else an honest generic. We deliberately do NOT guess
+// logged-out-vs-out-of-credits: reconcile only sees leads, not per-account FG
+// results, so a specific claim there would be fabrication. ponytail: upgrade to
+// exact account reasons only if the engine persists its per-account FG result.
+export function fgFailureReasons(leads, record, status) {
+  const stopped = status === 'cancelled' || status === 'stopped';
+  const byUrl = {}; // leadUrl -> Member ID, from the run record's per-account maps
+  for (const a of (record && record.perAccount) || []) Object.assign(byUrl, a.rowsByUrl || {});
+  const out = {};
+  for (const l of leads || []) {
+    if (l.stage === 'Invited' || l.status === 'sent') continue; // sent → not a failure
+    const memberId = byUrl[String(l.leadUrl || '').trim()];
+    if (!memberId) continue;
+    out[String(memberId)] = l.error ? String(l.error)
+      : stopped ? 'Campaign stopped before it sent'
+      : 'Not sent — check the account (logged out / no credits / browser didn’t open)';
+  }
+  return out;
 }
 
 /**
