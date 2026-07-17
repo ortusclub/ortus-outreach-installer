@@ -49,18 +49,29 @@ cookies stay fresh without anyone thinking about it.
 
 ### 2. Primary registry (engine side)
 
-One record per primary, keyed by member ID:
+One Postgres row per primary, keyed by member ID. Postgres is already the
+engine's system of record and survives pod restarts — no PVC, no bucket. (The
+declared `salesnav-sessions` PVC is unmounted + ReadWriteOnce single-node;
+GKE pods are otherwise stateless with GoLogin sessions in GoLogin's cloud.
+A new durable store for primaries = a Postgres table, nothing else.)
 
 ```
-primaries/<memberId>/
-  cookies.json        (the shipped jar + capturedAt)
-  profile/            (persistent Chromium user-data-dir)
-  state               (live | needs_login)
+campaign_primaries
+  member_id          text PK      -- LinkedIn numeric member ID
+  public_identifier  text         -- vanity slug, for matching campaign.primaryUrl
+  display_name       text
+  cookies            jsonb        -- the shipped linkedin.com jar
+  captured_at        timestamptz
+  state              text         -- 'live' | 'needs_login'
 ```
 
-Storage must survive pod restarts (volume or bucket — GKE pods are
-ephemeral; this is a hard requirement, not an optimization). Campaign records
-store `primaryMemberId` only.
+**No persistent Chromium profile dir.** Each follow-up launches a FRESH
+ephemeral plain-Chromium context and injects the stored cookie jar, then
+discards the context. Re-inject-per-launch removes the whole
+persistent-user-data-dir + volume problem. Campaigns already store the
+primary's URL (`primaryUrl`); the slug in it matches
+`campaign_primaries.public_identifier` — that's the campaign→primary join
+(no new campaign column needed).
 
 ### 3. Follow-up execution (engine side)
 
@@ -127,8 +138,13 @@ registry lookup when a primary is picked.
 - **Checkpoint mid-send:** treated as dead session → park + `needs_login`.
 - **Identity-gate mismatch:** hard stop + loud log + park. Never "best
   effort".
-- **Pod death mid-follow-up:** job returns to queue (existing dueAt
-  semantics); per-primary lock released; profile persisted.
+- **Pod death mid-follow-up:** the engine currently has NO reaper for
+  `follow_up`/`accept` tasks stuck in `status='claimed'` (only `monitor`/
+  `reply` self-revive). A follow-up orphaned by a dead pod would hang
+  forever. This design adds a reaper that returns long-`claimed`
+  `follow_up`/`accept` rows to `pending` (mirrors the scraper queue's
+  `reapIfOrphaned`). Nothing to persist — cookies are re-injected fresh on
+  the retry.
 
 ## Explicitly out of scope
 
