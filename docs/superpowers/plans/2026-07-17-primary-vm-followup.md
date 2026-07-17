@@ -27,21 +27,48 @@
 
 ## File Structure
 
-**ENGINE — new files**
+**Repo facts pinned by exploration (do not re-derive):**
+- Engine is **CJS** by default (`require`/`module.exports`); modules under
+  `campaign-lib/**` are ESM and imported via dynamic `import()`. New engine
+  files are CJS and reach `readSelfIdentity` via `await import()`.
+- Engine automation lib = **puppeteer-core** (`campaign-browser.js`). The
+  primary browser MUST be puppeteer so `sendInThread` + `readSelfIdentity`
+  (both puppeteer-flavoured) work unchanged and `page.setCookie(...jar)`
+  takes the app's puppeteer-shaped jar with NO translation.
+- `readSelfIdentity(page,{log})` → `{name, profileUrl}` where `profileUrl =
+  https://www.linkedin.com/in/<slug>/` (`accept-invitation.js:117`).
+- `withAccountSession(profileId, fn)` (`campaign-runtime.js:384`) → `{retry:true}`
+  or `{result}`; wraps `store.acquireAccount`/`openSession`/`releaseAccount`.
+- `store.acquireAccount(key)` = Redis `SET sn:proflock:<key> pod NX EX 120`;
+  passing `'primary:'+memberId` yields a unique per-primary lock — reuse it.
+- follow_up payload (`campaign-autointro.js:322`): `{threadUrl, body, leadUrl,
+  leadName, primaryName, primaryUrl, sender, introTitle, profileId}`.
+- Scheduler registers `follow_up`→`handleFollowUp` (`campaign-runtime.js:483`).
+
+**ENGINE — new/modified files**
+- `db/campaigns-schema.sql` (modify) — `campaign_primaries` table + slug index.
 - `campaign-store.js` (modify) — primary-registry accessors + orphaned-task reaper.
-- `db/campaigns-schema.sql` (modify) — `campaign_primaries` table + reaper index.
-- `primary-session.js` (create) — launch fresh chromium, inject jar, `assertPrimaryIdentity`.
-- `campaign-api.js` (modify) — `POST /api/primaries/:memberId/session`; add `primarySession` to status payload.
-- `campaign-runtime.js` (modify) — follow-up handler runs as primary (per-primary lock + session + gate), parks on dead session.
+- `primary-session.js` (create, CJS) — puppeteer-core plain-Chromium launch +
+  `page.setCookie` inject + `assertPrimaryIdentity` + pure slug/match helpers.
+- `campaign-runtime.js` (modify) — `handleFollowUp` routes by `primarySource`:
+  GoLogin-primary via that profile; personal-primary via injected session + gate;
+  park on dead/mismatch.
+- `campaign-api.js` (modify) — `POST /api/primaries/:memberId/session` +
+  `GET /api/primaries/by-slug/:slug`; add `primarySession` to status payloads.
 - `campaign-scheduler.js` (modify) — call the reaper each tick.
 
 **APP — new/modified files**
-- `src/primary-cookie-capture.js` (create) — read jar via CDP, POST to engine.
-- `src/cloud-preflight-handshake.js` (modify) — capture after the primary handshake accepts.
-- `src/primary-task-runner.js` (modify) — stop running the local follow-up task for cloud campaigns (accept stays).
-- `src/campaigns-client.js` (modify) — `postPrimarySession`, `getPrimarySession` helpers.
-- `server.js` (modify) — `GET /api/primary-session?primaryUrl=` proxy for the wizard hint.
+- `src/primary-cookie-capture.js` (create) — read jar via `page.cookies()` +
+  identity, POST to engine. Fires ONLY for personal (`local-browser`) primaries.
+- `src/cloud-preflight-handshake.js` (modify) — capture after the primary
+  handshake accepts (the `primaryPage` is in scope there).
+- `src/campaigns-client.js` (modify) — `postPrimarySession`, `getPrimarySession`.
+- `server.js` (modify) — `GET /api/primary-session?primaryUrl=` proxy for the wizard.
 - `public/js/app.js` (modify) — strips badge, card #2 banner, wizard hint, personal nudge.
+
+**NOT needed (exploration):** no app-side change to disable a local cloud
+follow-up — the app never enqueues cloud follow-ups (`buildFollowUpTask` fires
+only in the LOCAL `src/linkedin/auto-intro.js:212`). The old "Task 7" is dropped.
 
 ---
 
@@ -115,64 +142,161 @@ RETURNING id;
 ## Task 3 (ENGINE): `primary-session.js` — launch + inject + identity gate
 
 **Files:**
-- Create: `primary-session.js`
-- Test: `test/primary-identity.test.js` (create — pure gate logic only)
+- Create: `primary-session.js` (CJS)
+- Test: `test/primary-identity.test.js` (create — pure helpers only)
 
-**Interfaces — Consumes:** `readSelfIdentity(page)` from `campaign-lib/linkedin/accept-invitation.js` (returns `{name, profileUrl}`; `profileUrl` contains the publicIdentifier slug). Chromium launch pattern from `login.js:26-30` (`chromium.launchPersistentContext`) — but use a throwaway temp dir per call.
-**Produces:**
-- `launchPrimarySession(cookies)` → `{context, page, close()}` — fresh chromium context, `context.addCookies(toPlaywrightCookies(cookies))`, open a page.
-- `identityMatches(selfProfileUrl, expectedSlug)` → bool (pure; slug extracted case-insensitively from a LinkedIn `/in/<slug>` URL).
-- `assertPrimaryIdentity(page, expectedSlug)` → `{ok:true}` | `{ok:false, reason}` — calls `readSelfIdentity`, returns not-ok when logged out (no identity) or slug mismatch.
+**Interfaces — Consumes:** `readSelfIdentity` (ESM, `campaign-lib/linkedin/accept-invitation.js`, via dynamic `import()`); puppeteer-core (already a dep); a Chromium binary on the VM.
+**Produces (all `module.exports`):**
+- `slugFromUrl(url)` → lower-cased slug from a LinkedIn `/in/<slug>` URL, else `''`.
+- `identityMatches(selfProfileUrl, expectedSlug)` → bool (pure).
+- `launchPrimarySession(cookies)` → `{browser, page, close()}` — throwaway puppeteer-core Chromium, cookies injected via `page.setCookie(...cookies)` (jar is ALREADY puppeteer-shaped — no translation). `close()` closes the browser AND removes the temp user-data-dir.
+- `assertPrimaryIdentity(page, expectedSlug, deps?)` → `{ok:true, name}` | `{ok:false, reason}` (`'not_logged_in'` | `'identity_mismatch'`).
 
-- [ ] **Step 1: Failing test** `test/primary-identity.test.js` for the PURE helpers:
+- [ ] **Step 1: Failing test** `test/primary-identity.test.js` (match the harness of an existing engine test — read one first; use `node:test` + `require` since the file is CJS):
 
 ```js
-import { identityMatches } from '../primary-session.js';
-import assert from 'node:assert/strict';
-import { test } from 'node:test';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { identityMatches, slugFromUrl } = require('../primary-session.js');
 
-test('slug match is case-insensitive and ignores trailing slash/query', () => {
+test('slug is case-insensitive, ignores trailing slash/query', () => {
+  assert.equal(slugFromUrl('https://www.linkedin.com/in/Antonio-Varlese/'), 'antonio-varlese');
+  assert.equal(slugFromUrl('https://www.linkedin.com/in/antonio-varlese?x=1'), 'antonio-varlese');
+  assert.equal(slugFromUrl('https://www.linkedin.com/feed/'), '');
   assert.equal(identityMatches('https://www.linkedin.com/in/Antonio-Varlese/', 'antonio-varlese'), true);
-  assert.equal(identityMatches('https://www.linkedin.com/in/antonio-varlese?x=1', 'antonio-varlese'), true);
   assert.equal(identityMatches('https://www.linkedin.com/in/someone-else', 'antonio-varlese'), false);
   assert.equal(identityMatches('', 'antonio-varlese'), false);
 });
 ```
 
-- [ ] **Step 2: Implement** `identityMatches` (regex `/\/in\/([^/?#]+)/i`, compare lower-cased) — run test → pass. Commit checkpoint optional.
+- [ ] **Step 2: Implement the module.** Full code:
 
-- [ ] **Step 3: Implement `launchPrimarySession` + `assertPrimaryIdentity`.** Read `login.js:1-40` and `accept-invitation.js:117-171` first. `toPlaywrightCookies` maps the puppeteer jar shape (name/value/domain/path/expires/httpOnly/secure/sameSite) the app ships to Playwright's `addCookies` shape. `close()` disposes the context AND removes the temp dir. `ponytail:` these three helpers stay in one file; split only if a second consumer appears.
+```js
+// primary-session.js — throwaway plain-Chromium running a PERSONAL primary's
+// injected LinkedIn session, so a CC+IC follow-up can be sent AS the primary on
+// the VM. Puppeteer-core (not Playwright) so the vendored sendInThread /
+// readSelfIdentity primitives work unchanged and the app's puppeteer cookie jar
+// injects with no shape translation.
+const puppeteer = require('puppeteer-core');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
-- [ ] **Step 4: Manual smoke note in report** — no unit test for the real browser launch (would need a live session); the pure gate is the tested unit. State this explicitly in the report.
-- [ ] **Step 5: Commit** `feat(engine): primary session launch + injection + identity gate`.
+// A Chromium binary must exist on the VM. Reuse the Playwright-installed chromium
+// (the image already runs `npx playwright install chromium`); override via env.
+// ponytail: single env knob — set PRIMARY_CHROME_PATH if the image ships another chrome.
+function chromeExecutable() {
+  if (process.env.PRIMARY_CHROME_PATH) return process.env.PRIMARY_CHROME_PATH;
+  return require('playwright').chromium.executablePath();
+}
+
+function slugFromUrl(url) {
+  const m = String(url || '').match(/\/in\/([^/?#]+)/i);
+  return m ? m[1].toLowerCase() : '';
+}
+function identityMatches(selfProfileUrl, expectedSlug) {
+  const got = slugFromUrl(selfProfileUrl);
+  return !!got && !!expectedSlug && got === String(expectedSlug).toLowerCase();
+}
+
+async function launchPrimarySession(cookies) {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'primary_'));
+  const browser = await puppeteer.launch({
+    executablePath: chromeExecutable(),
+    headless: true, // ponytail: LinkedIn headless DOM behaviour is the one real unknown — see report
+    userDataDir,
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  });
+  const page = (await browser.pages())[0] || (await browser.newPage());
+  if (Array.isArray(cookies) && cookies.length) await page.setCookie(...cookies);
+  const close = async () => {
+    try { await browser.close(); } catch {}
+    try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+  };
+  return { browser, page, close };
+}
+
+async function assertPrimaryIdentity(page, expectedSlug, deps = {}) {
+  const readSelf = deps.readSelfIdentity
+    || (await import('./campaign-lib/linkedin/accept-invitation.js')).readSelfIdentity;
+  const self = await readSelf(page).catch(() => ({}));
+  if (!self || !self.profileUrl) return { ok: false, reason: 'not_logged_in' };
+  if (!identityMatches(self.profileUrl, expectedSlug)) return { ok: false, reason: 'identity_mismatch', got: self.profileUrl };
+  return { ok: true, name: self.name };
+}
+
+module.exports = { slugFromUrl, identityMatches, launchPrimarySession, assertPrimaryIdentity, chromeExecutable };
+```
+
+- [ ] **Step 3: Run** the pure-helper test → pass.
+- [ ] **Step 4: Report the browser-launch caveat explicitly** — `launchPrimarySession`/`assertPrimaryIdentity` are NOT unit-tested (need a live session + Chromium binary); only the pure helpers are. The headless LinkedIn behaviour is the calibration knob to smoke-test on the VM before rollout. State this in the report; do NOT fake a browser test.
+- [ ] **Step 5: Commit** `feat(engine): primary session launch + cookie injection + identity gate`.
 
 ---
 
-## Task 4 (ENGINE): follow-up runs as primary
+## Task 4 (ENGINE): follow-up routes to the correct primary identity
 
 **Files:**
-- Modify: `campaign-runtime.js` (`handleFollowUp` ~line 394; deps `sendFollowUp` ~130)
-- Modify: `campaign-store.js` (per-primary Redis lock — reuse `acquireAccount`/`releaseAccount` with a `primary:<memberId>` key, or a thin `acquirePrimary(memberId)` wrapper over the same Lua)
+- Modify: `campaign-runtime.js` (`handleFollowUp` at line 394; it already closes over `store`, `d`, `withAccountSession`)
 - Test: `test/followup-as-primary.test.js` (create — inject deps, no real browser)
 
-**Interfaces — Consumes:** Task 1 accessors, Task 3 `launchPrimarySession`/`assertPrimaryIdentity`, existing `sendInThread(page, threadUrl, body, opts)` (`campaign-lib/linkedin/thread-message.js:21`), existing lock Lua in `campaign-store.js:32`.
+**Interfaces — Consumes:** Task 1 accessors (`getPrimaryBySlug`, `setPrimaryState`, `acquireAccount`/`releaseAccount`), Task 3 module (`slugFromUrl`, `launchPrimarySession`, `assertPrimaryIdentity`), existing `d.sendFollowUp({page,payload})` (already wraps `sendInThread`, `campaign-runtime.js:130`), existing `withAccountSession`.
 
-**Behaviour (the follow_up task handler):**
-1. Resolve the campaign's primary slug from `campaign.primary_url`; look up `getPrimaryBySlug`.
-2. No row, or `state='needs_login'` → **park**: reschedule the task ~30 min out, do NOT send. (Keeps it out of `claimed` limbo; resume happens when Task 6's endpoint flips state + re-queues.)
-3. Acquire per-primary lock (`primary:<memberId>`); held → `{retry:true}` (existing busy semantics, 5-min retry).
-4. `launchPrimarySession(row.cookies)` → `assertPrimaryIdentity(page, slug)`.
-   - not-ok → `setPrimaryState(memberId,'needs_login')`, park, close, log loud (mismatch = registry bug, log louder).
-   - ok → `sendInThread(...)`, mark task done, close, release lock.
+**The bug being fixed:** current `handleFollowUp` sends via `withAccountSession(payload.profileId, …)` where `payload.profileId` is the GoLogin **sender** — so the follow-up posts as the wrong person. Route by `payload.sender` (= the primary's source) instead.
 
-- [ ] **Step 1: Failing test** with injected deps covering: (a) no primary row → parked, send never called; (b) `needs_login` → parked; (c) identity mismatch → `setPrimaryState('needs_login')` + parked + send never called; (d) happy path → send called once + task done. Assert on the injected `sendInThread` spy + `rescheduleTask`/`markTask` spies.
+- [ ] **Step 1: Failing test** with injected deps (fake `store`, fake `primarySession` module, spy `sendFollowUp`). Cover:
+  - (a) `sender` = a GoLogin profileId → sends via `withAccountSession(sender)`; `sendFollowUp` called once, task done.
+  - (b) `sender='local-browser'`, no primary row → parked (`rescheduleInMs≈30min`), `sendFollowUp` NOT called.
+  - (c) `sender='local-browser'`, row `state='needs_login'` → parked, not sent.
+  - (d) `sender='local-browser'`, live row, identity mismatch → `setPrimaryState(member,'needs_login')` + parked + not sent.
+  - (e) `sender='local-browser'`, live row, gate ok → `sendFollowUp` called once, session closed, lock released, task done.
 
-- [ ] **Step 2: Refactor** `handleFollowUp` to a testable core that takes its I/O as deps (match how `campaign-runtime.js` already injects `sendFollowUp`/`acceptInvite`). Read `campaign-runtime.js:384-412` first — follow the `withAccountSession` shape.
+- [ ] **Step 2: Make the launcher/gate injectable.** At the top of the runtime factory (near the other `d.*` defaults) add `const _ps = d.primarySession || require('./primary-session.js');` so the test can inject a fake. Keep `d.sendFollowUp` as-is.
 
-- [ ] **Step 3: Implement** the branch. `ponytail:` reuse `withAccountSession`'s acquire/finally-release structure with the primary lock key rather than writing a new lock manager.
+- [ ] **Step 3: Replace `handleFollowUp`** (lines 394-400) with:
+
+```js
+async function handleFollowUp(task) {
+  const payload = task.payload || {};
+  const primarySource = payload.sender || 'local-browser';
+
+  // Primary is on GoLogin → send as the primary's OWN profile (not the sender).
+  if (primarySource !== 'local-browser') {
+    const out = await withAccountSession(primarySource, (session) =>
+      d.sendFollowUp({ page: session.page, payload }));
+    if (out.retry) return { rescheduleInMs: 5 * 60000 };
+    return { status: 'done' };
+  }
+
+  // Personal primary (not on GoLogin) → cookie-injected VM session + identity gate.
+  const slug = _ps.slugFromUrl(payload.primaryUrl);
+  const row = slug ? await store.getPrimaryBySlug(slug) : null;
+  if (!row || row.state === 'needs_login') {
+    d.log(`follow_up parked: primary ${slug || '(no slug)'} has no live session`);
+    return { rescheduleInMs: 30 * 60000 }; // park; resumes when fresh cookies arrive
+  }
+  // One browser per identity across ALL that primary's campaigns.
+  if (!(await store.acquireAccount('primary:' + row.member_id))) return { rescheduleInMs: 5 * 60000 };
+  let session = null;
+  try {
+    session = await _ps.launchPrimarySession(row.cookies);
+    const gate = await _ps.assertPrimaryIdentity(session.page, slug);
+    if (!gate.ok) {
+      d.log(`⚠ follow_up BLOCKED: primary ${slug} session ${gate.reason}${gate.got ? ' (got ' + gate.got + ')' : ''} — parking + needs_login`);
+      await store.setPrimaryState(row.member_id, 'needs_login');
+      return { rescheduleInMs: 30 * 60000 };
+    }
+    await d.sendFollowUp({ page: session.page, payload });
+    return { status: 'done' };
+  } finally {
+    if (session && session.close) { try { await session.close(); } catch {} }
+    await store.releaseAccount('primary:' + row.member_id);
+  }
+}
+```
 
 - [ ] **Step 4: Run test → pass.**
-- [ ] **Step 5: Commit** `feat(engine): send CC+IC follow-up as primary on the VM`.
+- [ ] **Step 5: Commit** `fix(engine): send CC+IC follow-up as the primary, not the sender`.
 
 ---
 
@@ -183,17 +307,31 @@ test('slug match is case-insensitive and ignores trailing slash/query', () => {
 - Test: `test/primary-session-endpoint.test.js` (create)
 
 **Interfaces — Produces:**
-- Status payload gains `primarySession: {state:'live'|'needs_login'|'none', name, parked:number}` — joined via campaign's primary slug → `getPrimaryBySlug`; `parked` = count of this campaign's `follow_up` tasks currently rescheduled/pending with no send yet. `'none'` when the campaign has no primary or none has been captured yet.
-- `POST /api/primaries/:memberId/session` body `{publicIdentifier, displayName, cookies}` → `upsertPrimarySession(...)` → then re-queue this member's parked follow-ups (set their `due_at=now()`), return `{ok:true, resumed:n}`.
+- Status payload gains `primarySession: {state:'live'|'needs_login'|'none', name, parked:number}` — joined via the campaign's primary slug (`slugFromUrl(campaign.primary_url)` → `getPrimaryBySlug`). `parked` = count of this campaign's `follow_up` rows still `pending` with `due_at > now()` (rescheduled, not yet sent). `'none'` when the campaign has no primary URL or nothing has been captured yet. Only meaningful for personal (`local-browser`) primaries; a GoLogin-primary campaign reads `'none'` (its follow-up never parks on a session).
+- `POST /api/primaries/:memberId/session` body `{publicIdentifier, displayName, cookies}` → `upsertPrimarySession(...)` → re-queue this member's parked follow-ups, return `{ok:true, resumed:n}`.
+- `GET /api/primaries/by-slug/:slug` → `{state, name, capturedAt}` | `{state:'none'}` — backs the app wizard hint (Task 8).
 
-- [ ] **Step 1: Failing test** — POST session then GET campaign status shows `primarySession.state='live'`; a `needs_login` row shows `needs_login`; POST resumes parked tasks (asserts their `due_at` moved to ≈ now).
+- [ ] **Step 1: Failing test** — POST session then GET campaign status shows `primarySession.state='live'`; a `needs_login` row shows `needs_login`; POST resumes parked tasks (asserts their `due_at` moved to ≈ now); `by-slug` returns the row's state.
 
-- [ ] **Step 2: Implement** the endpoint (Bearer-guarded like siblings — `if (need(res)) return`). Resume = `UPDATE campaign_tasks SET due_at=now(), status='pending' WHERE type='follow_up' AND ... primary member matches`. Read how a follow_up task's payload identifies its primary (set in Task 4 / `campaign-autointro.js:317`) so the WHERE clause targets the right rows.
+- [ ] **Step 2: Implement `POST .../session`** (Bearer-guarded like siblings — `if (need(res)) return`). Resume targets the parked rows by the primary's slug in the payload (personal follow-ups carry `sender='local-browser'` + `primaryUrl`):
 
-- [ ] **Step 3: Add `primarySession`** to both `GET /:id` and the explicit-column `list` payload. `list` builds objects by name — add the join there too.
+```sql
+UPDATE campaign_tasks
+   SET due_at = now(), status = 'pending'
+ WHERE type = 'follow_up'
+   AND status = 'pending'
+   AND payload->>'sender' = 'local-browser'
+   AND lower(payload->>'primaryUrl') LIKE '%/in/' || $1 || '%'   -- $1 = public_identifier (lower)
+RETURNING id;
+```
 
-- [ ] **Step 4: Run test → pass.**
-- [ ] **Step 5: Commit** `feat(engine): primarySession status field + session upload endpoint`.
+`ponytail:` slug LIKE-match on the payload — fine at this scale; add a `member_id` to the follow_up payload later only if it gets fussy.
+
+- [ ] **Step 3: Implement `GET .../by-slug/:slug`** → `getPrimaryBySlug` mapped to `{state, name, capturedAt}` (or `{state:'none'}`).
+
+- [ ] **Step 4: Add `primarySession`** to both `GET /:id` (`campaign-api.js:146`) and the explicit-column `list` (`:125`) payloads — `list` builds objects by name, so add the join there too.
+
+- [ ] **Step 5: Run test → pass. Commit** `feat(engine): primarySession status + session-upload + by-slug endpoints`.
 
 ---
 
@@ -214,7 +352,7 @@ test('slug match is case-insensitive and ignores trailing slash/query', () => {
 
 - [ ] **Step 2: Implement `capturePrimaryCookies`.** Do NOT write the jar to disk. `ponytail:` reuse the `/me` read that already backs the account display name (`server.js:245-273` reads `/voyager/api/me`) rather than inventing a new fetch — extract it if needed.
 
-- [ ] **Step 3: Wire into `cloud-preflight-handshake.js`** — after accept succeeds, `const cap = await capturePrimaryCookies(primaryPage); if (cap) await postPrimarySession(cap);` wrapped best-effort (a capture failure must not fail the handshake — log + continue).
+- [ ] **Step 3: Wire into `cloud-preflight-handshake.js`** — ONLY for a personal primary (`primarySource === 'local-browser'`; a GoLogin primary needs no cookie handoff). After accept succeeds, `if (sender === 'local-browser') { const cap = await capturePrimaryCookies(primaryPage); if (cap) await postPrimarySession(cap); }` wrapped best-effort (a capture failure must not fail the handshake — log + continue).
 
 - [ ] **Step 4: `postPrimarySession`** in `campaigns-client.js` using the existing `requestOnce('POST', '/api/primaries/'+memberId+'/session', body)`.
 
@@ -222,20 +360,18 @@ test('slug match is case-insensitive and ignores trailing slash/query', () => {
 
 ---
 
-## Task 7 (APP): stop running the local follow-up for cloud campaigns
+## Task 7 — DROPPED (exploration)
 
-**Files:**
-- Modify: `src/primary-task-runner.js` (`_processOne` ~59 / follow-up branch ~75)
-- Modify: `server.js` (`reconcilePrimaryHandshake` / where follow-up tasks get enqueued locally — DO NOT touch the accept path)
-- Test: `tests/primary-followup-local-disabled.test.js` (create)
+Originally "stop running the local follow-up for cloud campaigns." Not needed:
+the app never enqueues cloud follow-ups. `buildFollowUpTask` is called only in
+the LOCAL campaign path (`src/linkedin/auto-intro.js:212`); no cloud reconcile
+(`server.js:reconcileCloud`, `src/cloud-*`) enqueues a follow-up. The engine is
+the sole owner of cloud follow-ups, which Task 4 fixes. Nothing to disable.
 
-**Interfaces:** accept tasks (`type:'accept'`) still enqueue + run locally. Follow-up tasks for CLOUD campaigns must no longer be enqueued/run locally — the engine owns them now (Task 4).
-
-- [ ] **Step 1: Failing test** — given a cloud campaign, the local runner enqueues/executes `accept` but NOT `follow_up`; a purely-local (non-cloud) campaign is unaffected if any such path still exists.
-
-- [ ] **Step 2: Implement** the gate. Find where the local follow-up task is built/enqueued for cloud (grep `follow-up` in `server.js` + `src/primary-tasks.js`); skip enqueue when the campaign is cloud. Leave `buildAcceptTask` untouched.
-
-- [ ] **Step 3: Run tests → pass. Commit** `refactor(app): engine owns cloud follow-up; local runner keeps accept only`.
+**One verification step for the executor** (fold into Task 6's review, no code):
+grep the app for `type:'follow_up'` / `enqueueFollowUpForCampaign` / `buildFollowUpTask`
+callers and confirm none fire on a cloud campaign. If one is found, STOP and
+escalate — the double-send assumption was wrong.
 
 ---
 
@@ -252,7 +388,7 @@ test('slug match is case-insensitive and ignores trailing slash/query', () => {
 
 - [ ] **Step 1: Failing test** for the server proxy — valid `primaryUrl` → forwards to engine, returns its JSON; missing param → 400.
 
-- [ ] **Step 2: Implement** the proxy (parse slug, call engine `getPrimaryBySlug`-backed read — add a tiny engine `GET /api/primaries/by-slug/:slug` in Task 5's file if the status join isn't reusable; note this back to Task 5 if so).
+- [ ] **Step 2: Implement** the proxy — parse slug via `primaryKeyFromUrl`, call the engine `GET /api/primaries/by-slug/:slug` (built in Task 5) through `campaigns-client.getPrimarySession(slug)`, return its JSON.
 
 - [ ] **Step 3: Wire the hint** into the primary-person block: on URL blur/change, fetch and render green `Session live — synced <ago>` or red `Needs login — follow-ups will park until <name> logs in locally`. Non-blocking (never disables launch). Mirror `loadPrimaryStatusForPicker`.
 
@@ -284,8 +420,11 @@ test('slug match is case-insensitive and ignores trailing slash/query', () => {
 
 ## Notes for the executor
 
-- Tasks 1–5 are ENGINE (`cd ENGINE`), 6–9 are APP. Engine before app (app calls the new endpoints). Within engine, order 1→5. Task 8 may need a tiny engine addition (`by-slug` read) — if so, fold it into Task 5's file and note it; don't spawn a new engine task.
-- Every engine task: run the engine's own test runner (read `package.json` `scripts.test` first — memory says tests need local pg/redis; if unavailable in the sandbox, the implementer runs what it can and states what it couldn't, does NOT fake a green run).
-- App tests: `node --test`.
-- Do NOT deploy. Deployment (engine image bump + rollout, app version bump per the relaunch rule) is a human step after review.
+- **Order:** ENGINE first (Tasks 1→5, `cd` to the engine repo), then APP (Tasks 6, 8, 9 — **Task 7 is dropped**). App calls the new engine endpoints, so engine must land first.
+- **Engine has NO `scripts.test`** (`package.json` scripts = start/dev/install-browser/login). Run test files directly: `node --test test/<file>.js`. Store/endpoint tests need local pg + redis (memory: `reference_ortus_cloud_engine_repo`) — if unavailable in the sandbox, run the PURE-logic tests (Task 3 helpers, Task 4 with injected deps) which need neither, and for the pg/redis-bound ones state exactly what couldn't run. **Never fake a green run.**
+- App tests: `node --test tests/<file>.test.js`.
+- **The one real unknown = headless LinkedIn.** `launchPrimarySession` runs Chromium `headless:true` on the VM. LinkedIn's compose/DOM can behave differently headless. Before rollout, smoke-test one real personal-primary follow-up on the VM; if headless misbehaves, the knob is `headless:false` under xvfb (the GKE image already runs headed Orbita, so an X server path exists). This is a deploy-time calibration, not a code redesign.
+- **Chromium binary on the VM:** `launchPrimarySession` needs one. Confirm the engine image runs `npx playwright install chromium` (the `install-browser` script) so `require('playwright').chromium.executablePath()` resolves; else set `PRIMARY_CHROME_PATH`. A deploy/image note, not a task.
+- Do NOT deploy. Engine image bump + rollout and app version bump are human steps after review.
 - Bump app `package.json` + both `index.html` `?v=` in Task 9's commit per the relaunch rule.
+- **What this also fixes:** cloud CC+IC follow-ups currently post as the GoLogin *sender*, not the primary (Task 4). Call this out in the final review — it changes observable behaviour for existing GoLogin-primary campaigns too, not just personal ones.

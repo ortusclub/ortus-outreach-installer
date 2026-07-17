@@ -6,11 +6,25 @@
 
 ## Problem
 
-CC+IC campaigns run on the VM, but two primary-side actions still open the
-LOCAL browser as a workaround: auto-accept of the primary's incoming
-connection, and the auto follow-up sent AS the primary. Auto-accept locally is
-acceptable; the follow-up must move to the VM so the whole chain runs
-unattended.
+CC+IC campaigns run on the VM, but the primary-side follow-up isn't sent as the
+primary. Auto-accept of the primary's incoming connection runs locally (fine,
+stays). The auto follow-up is the problem:
+
+- **Current behaviour (a latent bug this fixes):** the engine is the sole
+  creator + runner of `follow_up` tasks (`campaign-autointro.js:320` →
+  `handleFollowUp`), but `handleFollowUp` opens `payload.profileId` — the
+  **GoLogin sender account** — so the follow-up posts AS THE SENDER, not the
+  primary. The follow_up payload already carries `sender` (= the primary's
+  source) and `primaryUrl`; the handler just reads the wrong key.
+- **Two kinds of primary:**
+  - **GoLogin primary** (`sender` = a GoLogin profileId): already runnable on
+    the VM — the fix is to send via that profile, not the sender. No cookies
+    needed.
+  - **Personal primary** (`sender = 'local-browser'`): our own accounts,
+    deliberately NOT on GoLogin. These need the cookie handoff below.
+
+So the follow-up must (1) route to the correct identity, and (2) for personal
+primaries, run on the VM via a shipped session.
 
 Primaries are the team's PERSONAL LinkedIn accounts. They must never be added
 to the shared GoLogin workspace (everyone would see and be able to open them).
