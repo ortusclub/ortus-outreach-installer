@@ -233,7 +233,7 @@ function fgFunnel_() {
 // Run ID/Run At/Reason schema onto pre-existing rows, relabels stuck legacy
 // Queued rows as Failed, adds Sent/Stuck helper flag columns, and (re)builds
 // the Run Health tab (QUERY + Result/Credits left/Note formulas).
-function fgMigrateRunHealth_() {
+function fgMigrateRunHealth() { // no trailing "_" — Apps Script hides _-suffixed fns from the Run picker
   var ss = SpreadsheetApp.getActive();
   var sh = sheet_('FG Invites', FG_HEADER); // ensures the 3 new headers exist
   var last = sh.getLastRow();
