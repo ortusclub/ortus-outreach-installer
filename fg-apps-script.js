@@ -278,19 +278,20 @@ function fgMigrateRunHealth_() {
   );
   rh.getRange('H4').setFormula('=ARRAYFORMULA(IF(LEN(A4:A)=0,,MAX(0,30-E4:E)&" / 30"))');
   rh.getRange('I4').setFormula(
-    "=ARRAYFORMULA(IF(LEN(A4:A)=0,,IF(F4:F=0,\"\",IFERROR(VLOOKUP(1,{'FG Invites'!R2:R,'FG Invites'!P2:P},2,FALSE),\"\"))))"
+    "=MAP(A4:A,B4:B,LAMBDA(ra,acc,IF(ra=\"\",\"\"," +
+    "IFERROR(INDEX(FILTER('FG Invites'!P:P,('FG Invites'!I:I=acc)*('FG Invites'!O:O=ra)*('FG Invites'!J:J=\"Failed\")),1),\"\"))))"
   );
   // Conditional formatting on Result (col G).
-  var rules = rh.getConditionalFormatRules();
   var mk = function (text, bg, fg) {
     return SpreadsheetApp.newConditionalFormatRule()
       .whenTextContains(text).setBackground(bg).setFontColor(fg)
       .setRanges([rh.getRange('G4:G1000')]).build();
   };
-  rules.push(mk('✓', '#e6f4ea', '#137333'));
-  rules.push(mk('◑', '#fef7e0', '#b06000'));
-  rules.push(mk('✗', '#fce8e6', '#c5221f'));
-  rh.setConditionalFormatRules(rules);
+  rh.setConditionalFormatRules([
+    mk('✓', '#e6f4ea', '#137333'),
+    mk('◑', '#fef7e0', '#b06000'),
+    mk('✗', '#fce8e6', '#c5221f'),
+  ]);
   rh.setFrozenRows(3);
   return 'migrated';
 }
