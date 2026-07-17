@@ -2636,7 +2636,9 @@ app.post('/api/fg/autopilot/run', async (_req, res) => {
   try {
     const r = await fetch(`${FG_ROSTER_URL}/admin/autopilot`, {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${FG_ROSTER_TOKEN}` },
-      body: JSON.stringify({ force: true }), signal: AbortSignal.timeout(20000),
+      // Building targets for the whole team (~24 accounts) + inserting thousands of
+      // leads is slow — give it real headroom so a working dispatch isn't aborted.
+      body: JSON.stringify({ force: true }), signal: AbortSignal.timeout(120000),
     });
     // The old (not-yet-updated) service answers this path with an HTML 404, which
     // isn't JSON — surface a human message instead of a raw parse error.
@@ -2645,6 +2647,11 @@ app.post('/api/fg/autopilot/run', async (_req, res) => {
     if (!r.ok || !body) return res.status(503).json({ error: 'the cloud Auto-Pilot service isn’t deployed yet — deploy it, then Run it now will work' });
     res.status(r.status).json(body);
   } catch (e) {
+    // A timeout does NOT mean "unreachable" — the dispatch may still be completing
+    // in the cloud. Never tell the operator it failed when it might not have.
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+      return res.status(202).json({ pending: true });
+    }
     res.status(503).json({ error: `the cloud Auto-Pilot service isn’t reachable — ${e.message}` });
   }
 });

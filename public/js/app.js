@@ -10122,7 +10122,10 @@ function syncLiveStatusVisibility() {
   // Follower Growth has its OWN self-contained log card (#fgtl-card); the generic
   // campaign Live Status (#nav-status) must never appear in FG view, else a prior
   // finished campaign's card lingers underneath the FG board (v2.119.2).
-  const inFollowerGrowth = (document.getElementById('campaign-mode')?.value === 'follower_growth');
+  // ...UNLESS we've deliberately opened a cloud campaign's live card (_viewingCloudId
+  // set). A cloud FG run's card #2 must show exactly like any other VM campaign; the
+  // FG-board suppression only applies when we're actually on the board (no cloud view).
+  const inFollowerGrowth = (document.getElementById('campaign-mode')?.value === 'follower_growth') && !_viewingCloudId;
   const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   const navBtn = document.querySelector('[data-nav="nav-status"]');
@@ -17783,15 +17786,49 @@ async function fgapRunNow() {
     }
     await fgapLoad();     // refresh cloud state so fgapPublish isn't gated by a stale degraded
     await fgapPublish();  // publish the board's current roster before firing
+    // Tell the operator it's under way — building the whole team's targets + dispatch
+    // can take up to a minute; without this the button just sits on "Dispatching…".
+    showCampaignToast('Dispatching Follower Growth to the cloud — this can take a minute…', 6000);
     const r = await fetch('/api/fg/autopilot/run', { method: 'POST' }).then((x) => x.json());
     if (r.error) showCampaignToast(`Couldn’t run — ${r.error}`, 5000);
     else if (r.skipped) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible accounts'}`, 4500);
-    else showCampaignToast('Follower Growth dispatched to the VM — it runs in the cloud.', 4500);
+    else if (r.pending) showCampaignToast('Still dispatching in the cloud — check the FG board / Open Log before running it again.', 7000);
+    else {
+      showCampaignToast('Follower Growth dispatched to the VM — it runs in the cloud.', 4500);
+      // Show the SAME live card + "Launching…" banner as the manual cloud launch.
+      if (r.cloudId) fgapShowCloudLaunchCard(r.cloudId);
+    }
   } catch (e) {
     showCampaignToast('Couldn’t run — ' + String(e?.message || e), 4000);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '&#9654; Run it now'; }
   }
+}
+
+// Auto-Pilot "Run it now" reuses the manual cloud Team Launch live card verbatim
+// (fgtlLaunch isCloud branch, app.js ~18103) so the operator sees the identical
+// "The campaign is launching… first invites go out in ~2 min" banner that PERSISTS
+// until the engine goes live — not a toast that vanishes. Copy-paste on purpose:
+// the working manual card path is left untouched. Two Auto-Pilot-only tweaks:
+//   • expand the FG board first (the card lives in the hidden #fgap-manual).
+//   • label from fgtlAllPairedPairs() — Auto-Pilot dispatches the FULL team, and
+//     fgtlPicked (the manual launch cart) is empty in the Auto-Pilot flow.
+function fgapShowCloudLaunchCard(cloudId) {
+  const manual = document.getElementById('fgap-manual');
+  if (manual && manual.hidden) {
+    _fgapExpanded = true; manual.hidden = false;
+    const chev = document.getElementById('fgap-expand');
+    if (chev) { chev.classList.add('open'); chev.setAttribute('aria-expanded', 'true'); }
+  }
+  _fgtlCloudId = cloudId;
+  _fgtlCloudPairs = {};
+  for (const p of fgtlAllPairedPairs()) { if (p && p.profileId) _fgtlCloudPairs[String(p.profileId)] = { account: p.account, operator: p.operator }; }
+  const goBtn = document.getElementById('fgtl-go'); if (goBtn) goBtn.style.display = 'none';
+  const stopBtnC = document.getElementById('fgtl-stop'); if (stopBtnC) { stopBtnC.style.display = ''; stopBtnC.textContent = 'Stop'; stopBtnC.disabled = false; }
+  const cardStopC = document.getElementById('fgtl-card-stop'); if (cardStopC) { cardStopC.style.display = ''; cardStopC.textContent = 'Stop'; cardStopC.disabled = false; }
+  try { fgtlRenderCard(_fgtlBuildCloudStatus({ status: 'queued' }, [])); } catch (_) { /* card is best-effort */ }
+  fgtlCloudPoll();
+  document.getElementById('fgtl-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 /** Bind panel events (safe to call once). */
