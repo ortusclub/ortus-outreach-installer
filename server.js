@@ -91,7 +91,7 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
@@ -2394,6 +2394,7 @@ async function reconcileFgCloudRuns() {
       getCampaign: (id) => getCloudCampaign(id),
       getLeads: (id) => getCloudCampaignLeads(id),
       markInvited: (args) => markFgInvited(args),
+      markFailed: (args) => markFgFailed(args),
       log: (m) => { try { campaignLog(`[FG-cloud] ${m}`); } catch (_) {} },
     };
     for (const record of _fgCloudRunStore.load()) {

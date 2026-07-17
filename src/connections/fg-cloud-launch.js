@@ -127,6 +127,14 @@ export async function reconcileCloudRun(record, deps) {
       return { reconciled: false, stranded: true };
     }
   }
+
+  // Whatever is still 'Queued' for this run was never sent — flip it to Failed so
+  // the sheet shows a red line + reason instead of permanent limbo. Best-effort.
+  if (deps.markFailed) {
+    try { await deps.markFailed({ runId: record.cloudId, reason: 'not sent — account may be logged out or out of credits' }); }
+    catch (e) { deps.log(`⚠ FG failure-sweep write failed (${e.message})`); }
+  }
+
   return { reconciled: true, groups: groups.length };
 }
 
@@ -156,8 +164,9 @@ export async function startTeamLaunchCloud(pairs, deps) {
 
   // Proof-at-launch — ONLY after a successful dispatch, so a failed dispatch
   // never strands Queued rows. Best-effort: a sheet hiccup must not fail the run.
+  const runAt = deps.now();
   const allRows = perAccount.flatMap((a) => a.rows);
-  try { if (allRows.length) await deps.queueInvites(allRows); }
+  try { if (allRows.length) await deps.queueInvites(allRows, { runId: cloudId, runAt }); }
   catch (e) { deps.log(`⚠ FG-sheet Queue write failed at launch (${e.message}) — invites still dispatched; reconcile will still flip Invited.`); }
 
   deps.runStore.add({
