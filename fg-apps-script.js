@@ -4,8 +4,12 @@
 // execute as me, access "Anyone with the link". Put the /exec URL in
 // src/sheets-webapp-url.js (FG_WEBAPP_URL).
 
-var FG_HEADER = ['Target Name','LinkedIn URL','Member ID','Company','Job Title',
-  'Function Match','Geo','Invited By','Account','Status','Invited At','FG Note','Month'];
+var FG_HEADER = [
+  'Target Name', 'LinkedIn URL', 'Member ID', 'Company', 'Job Title',
+  'Function Match', 'Geo', 'Invited By', 'Account', 'Status',
+  'Invited At', 'FG Note', 'Month',
+  'Run ID', 'Run At', 'Reason'
+];
 // Model: credits are a 30-slot pool that refills monthly AND early on accept/
 // withdraw, so a stable "remaining" can't be tracked between runs. We track the
 // FACTUAL "Sent" this month (monotonic, from app sends) and a "Credits Available"
@@ -25,6 +29,7 @@ function doPost(e) {
     if (data.action === 'fgState') out = fgState_();
     else if (data.action === 'fgQueue') out = fgQueue_(data.rows || []);
     else if (data.action === 'fgMarkInvited') out = fgMarkInvited_(data);
+    else if (data.action === 'fgMarkFailed') out = fgMarkFailed_(data);
     else if (data.action === 'fgObserveCredits') out = fgObserveCredits_(data);
     else out = { error: 'Unknown action: ' + data.action };
     return json_(out);
@@ -94,7 +99,12 @@ function fgQueue_(rows) {
   var existing = {};
   asObjects_(sh).forEach(function (o) { existing[keyOf_(o['Member ID'], o['LinkedIn URL'])] = true; });
   var fresh = rows.filter(function (r) { return !existing[keyOf_(r[2], r[1])]; }); // r[2]=Member ID, r[1]=URL
-  if (fresh.length) sh.getRange(sh.getLastRow() + 1, 1, fresh.length, FG_HEADER.length).setValues(fresh);
+  if (fresh.length) {
+    fresh.forEach(function (r) { if (r[14]) r[14] = new Date(r[14]); }); // Run At -> Date
+    var startRow = sh.getLastRow() + 1;
+    sh.getRange(startRow, 1, fresh.length, FG_HEADER.length).setValues(fresh);
+    sh.getRange(startRow, 15, fresh.length, 1).setNumberFormat('dd mmm yyyy, HH:mm'); // Run At col (15th)
+  }
   return { queued: fresh.length, skippedDuplicates: rows.length - fresh.length };
 }
 
@@ -106,18 +116,39 @@ function fgMarkInvited_(data) {
   var iMember = FG_HEADER.indexOf('Member ID');
   var iStatus = FG_HEADER.indexOf('Status');
   var iWhen = FG_HEADER.indexOf('Invited At');
-  var now = new Date().toISOString();
   var n = 0;
   for (var i = 0; i < r.data.length; i++) {
     var row = r.data[i];
     if (ids[String(row[iMember])] && row[iStatus] !== 'Invited') {
       sh.getRange(i + 2, iStatus + 1).setValue('Invited');
-      sh.getRange(i + 2, iWhen + 1).setValue(now);
+      sh.getRange(i + 2, iWhen + 1).setValue(new Date()).setNumberFormat('dd mmm yyyy, HH:mm');
       n++;
     }
   }
   var sent = bumpBudget_(data.account, data.operator, data.month, n);
   return { invited: n, sent: sent };
+}
+
+// Flip still-'Queued' rows for a run to 'Failed' + reason. Runs post-reconcile,
+// so whatever is still Queued for this Run ID was genuinely never sent.
+function fgMarkFailed_(data) {
+  var runId = String(data.runId || '');
+  var reason = String(data.reason || 'not sent');
+  if (!runId) return { error: 'fgMarkFailed: runId required' };
+  var sh = sheet_('FG Invites', FG_HEADER);
+  var r = rows_(sh);
+  var iStatus = FG_HEADER.indexOf('Status');
+  var iRun = FG_HEADER.indexOf('Run ID');
+  var iReason = FG_HEADER.indexOf('Reason');
+  var n = 0;
+  for (var i = 0; i < r.data.length; i++) {
+    if (String(r.data[i][iRun]) === runId && r.data[i][iStatus] === 'Queued') {
+      sh.getRange(i + 2, iStatus + 1).setValue('Failed');
+      sh.getRange(i + 2, iReason + 1).setValue(reason);
+      n++;
+    }
+  }
+  return { failed: n };
 }
 
 // Header-driven column index (1-based) for the FG Budgets tab; appends the column
