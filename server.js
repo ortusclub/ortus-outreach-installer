@@ -2461,7 +2461,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
     const result = await startTeamLaunchCloud(pairs, {
       buildTargets,
       startCloud: (payload) => startCloudCampaign(payload),
-      queueInvites: (rows) => queueFgInvites(rows),
+      queueInvites: (rows, opts) => queueFgInvites(rows, opts),
       runStore: _fgCloudRunStore,
       now: () => new Date().toISOString(),
       log: (m) => { try { campaignLog(`[FG-cloud] ${m}`); } catch (_) {} },

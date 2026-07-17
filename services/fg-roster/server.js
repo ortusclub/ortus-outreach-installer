@@ -10,6 +10,14 @@ import { startCloudCampaign } from '../../src/campaigns-client.js';
 import { makeConfigStore } from './config-store.js';
 import { makeMailer } from './mailer.js';
 import { makeAutopilotHandler } from './autopilot.js';
+// Same FG-sheet I/O the manual /api/fg/team-launch/start path uses (Apps Script
+// over FG_WEBAPP_URL — no service-account creds needed), so an auto run behaves
+// identically: skips already-invited + writes "Queued" proof back to the sheet.
+import { getFgState, queueFgInvites } from '../../src/connections/fg-sync.js';
+// The Ortus page "Invite to follow" URL — SAME constant the manual/local FG path
+// hardcodes (server.js:2469/2515). Without it the engine's FG primitive skips
+// openModal entirely (follower-invite.js `if (inviteUrl)` guard) and sends 0.
+import { ORTUS_PAGE_INVITE_URL } from '../../src/sheets-webapp-url.js';
 
 const DEST = process.env.CONNECTIONS_DIR || path.join(os.tmpdir(), 'fg-connections');
 process.env.CONNECTIONS_DB_DIR = DEST; // consumed by search-service path resolution (Step 7)
@@ -29,14 +37,15 @@ const mailer = makeMailer({});
 const autopilot = makeAutopilotHandler({
   searchService,
   startCloud: (payload) => startCloudCampaign(payload),
-  queueInvites: async () => {},
+  queueInvites: (rows, opts) => queueFgInvites(rows, opts), // write "Queued" proof to the FG sheet
+  getFgState,                                    // skip already-invited people
   runStore,
   loadConfig: () => configStore.load(),
   saveRuns,
   sendAlert: (s, b) => mailer.sendAlert(s, b),
   now: () => new Date().toISOString(),
   log: (m) => console.log(`[fg-autopilot] ${m}`),
-  inviteUrl: process.env.ORTUS_PAGE_INVITE_URL || '',
+  inviteUrl: process.env.ORTUS_PAGE_INVITE_URL || ORTUS_PAGE_INVITE_URL,
   monthlyBudget: Number(process.env.FG_DEFAULT_MONTHLY_ALLOWANCE || 30),
 });
 
