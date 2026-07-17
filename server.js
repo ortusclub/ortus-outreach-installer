@@ -2241,7 +2241,7 @@ app.get('/api/fg/colleagues', async (req, res) => {
     let alreadyInvited = [];
     try {
       const { invites } = await getFgState();
-      alreadyInvited = (invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+      alreadyInvited = invitedKeysFromState(invites);
     } catch (_) { console.warn('[fg/colleagues] FG sheet unreachable — falling back to raw matched counts:', _.message); }
     const colleagues = await dbCall('listFgColleaguesMatched', [roles, { alreadyInvited }]);
     res.json({ colleagues });
@@ -2265,7 +2265,7 @@ app.post('/api/fg/build', async (req, res) => {
     const account = b.account || b.operator;
     const month = b.month || fgMonth();
     const { invites, budgets } = await getFgState();
-    const alreadyInvited = (invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+    const alreadyInvited = invitedKeysFromState(invites);
     const budget = fgRemaining(budgets, account, month);
     const out = buildFgTargets(fgCriteria(b), { operator: b.operator, operatorName: b.operatorName, account, month, alreadyInvited, budget });
     res.json({ ...out, account, month, budget });
@@ -2489,6 +2489,8 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       preventSleep('fg-team-launch');
 
       let _fgTeamSnap = { invites: [], budgets: [] };
+      const localRunAt = new Date().toISOString();
+      const localRunId = 'local-' + localRunAt;
       const deps = {
         // Build this account's targets fresh (DNC-safe, keyword-filtered, deduped vs
         // already-invited, budget-capped) immediately before its send.
@@ -2530,7 +2532,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
             // Error and leave them mislabeled. Log a loud STRANDED warning instead;
             // the run still reports "N sent" and writes the real credit snapshot.
             try {
-              await queueFgInvites(persistRows);
+              await queueFgInvites(persistRows, { runId: localRunId, runAt: localRunAt });
               await markFgInvited({ memberIds: persistIds, account, operator, month });
             } catch (e) {
               const warn = `[${new Date().toISOString()}] ⚠ STRANDED: ${persistIds.length} invite(s)/follow(s) WERE sent for ${account} but the sheet write-back failed — they will be re-checked next run; flip them to Invited manually if needed (${e.message})`;

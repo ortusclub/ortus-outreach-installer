@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 test('queueFgInvites stamps runId/runAt and pads rows to 16', async () => {
-  const calls = [];
   const fg = await import('../src/connections/fg-sync.js');
   // Inject a fake poster by monkeypatching global fetch is heavy; instead test the
   // pure row-shaping helper the module exports.
