@@ -7677,22 +7677,20 @@ async function renderCampaignsBoard() {
   _renderPrimaryNudge(items);
 }
 
-// Task 9 — light aggregate nudge: ONE informational line at the top of the
-// board when any cloud campaign on THIS dashboard (already owner-filtered by
-// the loop above) has a primary needing to log in. Non-clickable — there is
-// no standalone re-login affordance in this app (the handshake only runs
-// during a campaign launch), so this deliberately does NOT link anywhere.
-// ponytail: informational aggregate only; a click-to-relogin flow needs a
-// standalone handshake entrypoint that doesn't exist yet — out of scope.
-function _renderPrimaryNudge(items) {
+// Aggregate nudge: ONE informational line at the top of the board when this
+// machine pulled down personal-primary follow-ups LATE (the app had been closed
+// past their due time — see cloud-followup-poller). Personal follow-ups can only
+// send from the person's own machine, so the honest ask is "keep the app open".
+// Non-clickable. `items` is unused now (the old needs_login VM framing is
+// retired); kept in the signature so the single caller needn't change.
+async function _renderPrimaryNudge(_items) {
   const el = document.getElementById('primary-nudge');
   if (!el) return;
-  const blocked = items.filter((x) => x.where === 'cloud' && x.primarySession && x.primarySession.state === 'needs_login');
-  if (!blocked.length) { el.hidden = true; el.innerHTML = ''; return; }
-  const names = blocked.map((x) => escHtml(x.primarySession.name || 'the primary'));
-  const n = blocked.length;
+  let late = 0;
+  try { const r = await fetch('/api/local-followups/pending').then((x) => x.json()); late = (r && r.late) || 0; } catch { /* best-effort nudge */ }
+  if (!late) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
-  el.innerHTML = `<div class="needs-login">⚠ ${n} campaign${n === 1 ? '' : 's'} need a primary to log in — ${names.join(', ')}</div>`;
+  el.innerHTML = `<div class="needs-login">⚠ ${late} follow-up${late === 1 ? '' : 's'} waiting to send from this machine — keep the app open.</div>`;
 }
 
 // Lazy-fill done-strip log boxes from the persisted campaign log. Cached per

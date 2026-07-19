@@ -37,6 +37,7 @@ import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/d
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
+import { startCloudFollowupPoller, lastLateCount } from './src/cloud-followup-poller.js';
 import { loadTasks as loadPrimaryTasks, summarizeFollowUps } from './src/primary-tasks.js';
 import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
@@ -2070,6 +2071,12 @@ app.get('/api/primary-session', async (req, res) => {
   } catch (e) {
     res.json({ state: 'none' });
   }
+});
+
+// How many personal-primary follow-ups the last poll pulled down late (the app
+// had been closed past their due time). Backs the board nudge. Never throws.
+app.get('/api/local-followups/pending', (_req, res) => {
+  try { res.json({ late: lastLateCount() }); } catch { res.json({ late: 0 }); }
 });
 
 // Get a single queued campaign's full config (used by the dashboard Edit
@@ -5684,6 +5691,11 @@ app.listen(PORT, async () => {
   // v2.91 — drain primary-side automation tasks (auto-accept + first follow-up)
   // in idle gaps, one browser at a time, gated on the global browser semaphore.
   startPrimaryTaskRunner();
+
+  // Pull a cloud campaign's PERSONAL-primary follow-ups down to this machine and
+  // enqueue them into the same local runner (the VM can't safely send as a
+  // personal account). GoLogin primaries send on the VM, untouched.
+  startCloudFollowupPoller();
 
   // Drain the campaign queue at startup. If the server crashed/restarted
   // while items were queued, this auto-promotes the next one to active so

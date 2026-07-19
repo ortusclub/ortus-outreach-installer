@@ -1,19 +1,16 @@
 /**
- * Pure helper for surfacing a cloud campaign's primary-session state
- * (c.primarySession = {state, name, parked}, Task 5) on the strips / card /
- * dashboard nudge. Only 'needs_login' shows anything — 'live' and 'none'
- * render nothing so there's no green noise on every strip.
+ * RETIRED. Personal-primary follow-ups now send from the owner's own machine
+ * (local drain — see src/cloud-followup-poller.js), so the engine's per-campaign
+ * primary-session 'needs_login' state no longer gates anything and must NOT be
+ * surfaced as a "Primary needs login" badge — there is no VM login for a personal
+ * account, and the follow-up sends locally regardless of that state. GoLogin
+ * primaries never had this state. Kept as a no-op so the existing strip/card call
+ * sites (app.js) render nothing without further edits. The honest signal is now
+ * the aggregate "follow-ups waiting to send from this machine" nudge
+ * (_renderPrimaryNudge + GET /api/local-followups/pending).
  *
- * Lives in public/js so both app.js (browser, imported as an ES module) and
- * node --test can import it, same pattern as primary-url-validation.mjs /
- * note-hint.mjs.
- *
- * The returned `text` embeds the engine-provided `name` verbatim (untrusted,
- * NOT escaped here) — callers MUST escHtml() it before inserting into
- * innerHTML.
+ * Still importable by app.js (browser ES module) and node --test.
  */
-export function primarySessionBadge(primarySession) {
-  if (!primarySession || primarySession.state !== 'needs_login') return { show: false };
-  const name = primarySession.name || 'the primary';
-  return { show: true, text: `⚠ Primary needs login — ${name}`, cls: 'needs-login' };
+export function primarySessionBadge(_primarySession) {
+  return { show: false };
 }

@@ -2,32 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { primarySessionBadge } from '../public/js/primary-session-render.mjs';
 
-test('needs_login → visible badge with name + red class', () => {
-  const r = primarySessionBadge({ state: 'needs_login', name: 'Antonio', parked: 3 });
-  assert.deepEqual(r, { show: true, text: '⚠ Primary needs login — Antonio', cls: 'needs-login' });
+// Retired: personal follow-ups drain locally now, so the "Primary needs login"
+// badge is never surfaced (no VM login for a personal account). The badge is a
+// no-op for every input; the honest signal is the local-followups nudge.
+
+test('needs_login no longer surfaces a badge (local-drain retirement)', () => {
+  assert.deepEqual(primarySessionBadge({ state: 'needs_login', name: 'Antonio', parked: 3 }), { show: false });
 });
 
-test('needs_login with no name falls back to a generic label', () => {
-  const r = primarySessionBadge({ state: 'needs_login', parked: 1 });
-  assert.equal(r.show, true);
-  assert.match(r.text, /^⚠ Primary needs login — /);
-});
-
-test('live state renders nothing (no green noise)', () => {
-  const r = primarySessionBadge({ state: 'live', name: 'Antonio' });
-  assert.equal(r.show, false);
-});
-
-test('none state renders nothing', () => {
-  const r = primarySessionBadge({ state: 'none' });
-  assert.equal(r.show, false);
-});
-
-test('null / undefined render nothing', () => {
+test('live / none / null / unknown all render nothing', () => {
+  assert.equal(primarySessionBadge({ state: 'live', name: 'Antonio' }).show, false);
+  assert.equal(primarySessionBadge({ state: 'none' }).show, false);
   assert.equal(primarySessionBadge(null).show, false);
   assert.equal(primarySessionBadge(undefined).show, false);
-});
-
-test('unknown state renders nothing (defensive default)', () => {
-  assert.equal(primarySessionBadge({ state: 'bogus', name: 'X' }).show, false);
+  assert.equal(primarySessionBadge({ state: 'bogus' }).show, false);
 });
