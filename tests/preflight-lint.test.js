@@ -145,6 +145,15 @@ test('empty_template_var warning counts affected rows', () => {
   assert.match(w.detail, /1 row/);
 });
 
+test('runtime tokens (senderName) never warn — resolved at send time, not from the sheet', () => {
+  const out = lintLeads({ ...BASE,
+    templates: { connectionNote: 'Hi {first name}, {senderName} here from {senderFirstName}!' },
+    rows: [
+      R(2, { 'First Name': 'A', 'Last Name': 'B', 'LinkedIn URL': 'https://linkedin.com/in/a-b1' }),
+    ]});
+  assert.equal(out.warnings.find(f => f.check === 'empty_template_var'), undefined);
+});
+
 test('column_invalid when the configured column is missing from headers', () => {
   const out = lintLeads({ ...BASE, linkedinColumn: 'LinkedIn Url' /* typo */, rows: [
     R(2, { 'First Name': 'A', 'Last Name': 'B', 'LinkedIn URL': 'https://linkedin.com/in/a-b1' }),

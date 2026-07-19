@@ -206,7 +206,7 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
     for (const { rowNumber, row } of actionableTargets) {
       for (const tpl of activeTemplates) {
         for (const token of findUnresolvedPlaceholders(tpl, row)) {
-          if (/primary|event|intro/i.test(token)) continue;
+          if (/primary|event|intro|sender/i.test(token)) continue;
           if (!missCount.has(token)) missCount.set(token, []);
           const arr = missCount.get(token);
           if (!arr.includes(rowNumber)) arr.push(rowNumber);
