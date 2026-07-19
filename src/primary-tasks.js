@@ -27,7 +27,10 @@ export function buildFollowUpTask({
   delayMinutes = 10, now,
 }) {
   const created = Number.isFinite(now) ? now : Date.now();
-  const delay = Number(delayMinutes) > 0 ? Number(delayMinutes) : 10;
+  // Honor an explicit 0 (send now — the cloud poller pulls already-due
+  // follow-ups); only a missing/NaN/negative delay falls back to 10 min.
+  const n = Number(delayMinutes);
+  const delay = Number.isFinite(n) && n >= 0 ? n : 10;
   return {
     id: `follow-up:${campaignProfileId}:${slug(leadUrl) || 'lead'}:${created}`,
     type: 'follow-up', status: 'pending', attempts: 0, lastError: null,

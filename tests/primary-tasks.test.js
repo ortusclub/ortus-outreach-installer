@@ -29,6 +29,12 @@ test('buildFollowUpTask sets type, dueAt, pending status', () => {
   assert.equal(t.body, 'Hi Jane');
 });
 
+test('buildFollowUpTask honors delayMinutes 0 (send now); missing/negative → 10min', () => {
+  assert.equal(buildFollowUpTask({ campaignProfileId: 'p1', leadUrl: 'L', now: 5_000, delayMinutes: 0 }).dueAt, 5_000);
+  assert.equal(buildFollowUpTask({ campaignProfileId: 'p1', leadUrl: 'L', now: 5_000 }).dueAt, 5_000 + 10 * 60_000);
+  assert.equal(buildFollowUpTask({ campaignProfileId: 'p1', leadUrl: 'L', now: 5_000, delayMinutes: -3 }).dueAt, 5_000 + 10 * 60_000);
+});
+
 test('buildAcceptTask is due immediately and carries the account identity', () => {
   const t = buildAcceptTask({
     campaignProfileId: 'p1', campaignProfileName: 'patrick.s', sheetId: 's1', sheetUrl: 'u',

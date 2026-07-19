@@ -13059,8 +13059,10 @@ function renderPrimarySessionHint(data) {
     el.style.color = 'var(--green)';
     el.hidden = false;
   } else if (state === 'needs_login') {
-    el.textContent = `Needs login — follow-ups will park until ${data.name || 'the primary'} logs in locally`;
-    el.style.color = 'var(--red)';
+    // Personal follow-ups now send from THIS machine (local drain) regardless of
+    // the cloud session — they never "park until login". Keep the note honest.
+    el.textContent = `The first follow-up sends from this machine when the app is open — no cloud login needed`;
+    el.style.color = 'var(--gray)';
     el.hidden = false;
   } else {
     el.hidden = true;

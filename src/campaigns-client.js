@@ -254,8 +254,8 @@ export function getLocalFollowups(owner) {
  * just re-offers next poll (local dedupe makes the re-enqueue a no-op).
  * @param {string[]} taskIds
  */
-export function ackLocalFollowups(taskIds) {
-  return requestOnce('POST', '/api/local-followups/ack', { taskIds: taskIds || [] });
+export function ackLocalFollowups(taskIds, owner) {
+  return requestOnce('POST', '/api/local-followups/ack', { taskIds: taskIds || [], owner: owner || '' });
 }
 
 /**

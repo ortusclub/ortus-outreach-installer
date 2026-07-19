@@ -29,14 +29,14 @@ test('ackLocalFollowups POSTs taskIds to /api/local-followups/ack', async () => 
     return { ok: true, status: 200, text: async () => JSON.stringify({ delegated: 2 }) };
   };
   try {
-    const r = await ackLocalFollowups(['t1', 't2']);
+    const r = await ackLocalFollowups(['t1', 't2'], 'o@test');
     assert.equal(sawMethod, 'POST');
     assert.match(sawUrl, /\/api\/local-followups\/ack$/);
-    assert.deepEqual(sawBody, { taskIds: ['t1', 't2'] });
+    assert.deepEqual(sawBody, { taskIds: ['t1', 't2'], owner: 'o@test' });
     assert.deepEqual(r, { delegated: 2 });
 
-    await ackLocalFollowups(undefined); // non-array → []
-    assert.deepEqual(sawBody, { taskIds: [] });
+    await ackLocalFollowups(undefined); // non-array → [], no owner → ''
+    assert.deepEqual(sawBody, { taskIds: [], owner: '' });
   } finally { globalThis.fetch = origFetch; }
 });
 

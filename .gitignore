@@ -10,6 +10,7 @@ data/schedules.json
 data/users.json
 data/history.json
 data/presets.json
+data/drained-followups.json
 data/.session-secret
 data/campaign.log
 data/fatal-errors.log
