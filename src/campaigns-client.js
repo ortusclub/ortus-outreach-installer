@@ -239,6 +239,26 @@ export function getPrimarySession(slug) {
 }
 
 /**
+ * Personal-primary follow-ups the owner's app must drain locally (the VM never
+ * sends a personal follow-up). Returns the engine's { followups:[...] } (due
+ * ones for this owner's campaigns) or { error }.
+ * @param {string} owner operator email
+ */
+export function getLocalFollowups(owner) {
+  return requestWithRetry('GET', '/api/local-followups?owner=' + encodeURIComponent(owner || ''));
+}
+
+/**
+ * Ack drained follow-ups so the engine marks them 'delegated' (never re-offers).
+ * Single attempt: called only AFTER the local enqueue succeeded, so a lost ack
+ * just re-offers next poll (local dedupe makes the re-enqueue a no-op).
+ * @param {string[]} taskIds
+ */
+export function ackLocalFollowups(taskIds) {
+  return requestOnce('POST', '/api/local-followups/ack', { taskIds: taskIds || [] });
+}
+
+/**
  * Stop a cloud campaign.
  * - default: cancel (leads not yet actioned are abandoned).
  * - { pause: true }: pause (resumable) instead of cancel.
