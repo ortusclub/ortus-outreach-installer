@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.34" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.34" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.36" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.36" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -308,16 +308,15 @@
         <!-- Monitoring hero (Variant E) — shown only when .is-monitor. Big
              live countdown to the next acceptance check + a quiet stat line. -->
         <div class="vj-monitor" id="active-monitor" aria-hidden="true">
-          <div class="vj-mon-hero">
+          <div class="vj-mon-hero is-dual">
             <span class="vj-mon-count" id="monCount">—</span>
             <span class="vj-mon-cap">until next check</span>
+            <!-- v2.160.35: follow-up dual hero — the follow-up ETA stands beside
+                 the check timer (Variant 2). Shown by v3RenderMonitorHero /
+                 _fillVjMonitorHero when status.followUp has a pending batch. -->
+            <span class="fu-dual" id="active-fu-hero" hidden><span class="fu-dc" id="fuCount">—</span><span class="fu-dcap">follow-ups send</span></span>
           </div>
           <div class="vj-mon-line" id="monLine">— sent</div>
-          <!-- v2.111: follow-up batch countdown — shown by v3RenderMonitorHero when a batch is pending -->
-          <div class="fu-hero" id="active-fu-hero" hidden>
-            <div class="fu-hero-row"><span class="fu-count" id="fuCount">—</span><span class="fu-cap">until follow-ups send</span></div>
-            <div class="fu-line">⏳ <b id="fuQueued">0</b> queued · sent together in one batch · from <b id="fuSender">you</b></div>
-          </div>
         </div>
         <div class="vj-hero">
           <div class="vj-hero-row">
@@ -1518,7 +1517,9 @@
     align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;
     background:transparent;color:var(--ink);cursor:pointer;transition:transform .15s, border-color .12s;z-index:2;}
   .sn-expand:hover{border-color:var(--ink);}
-  .sn-strip:not(.sn-collapsed) .sn-expand{transform:rotate(180deg);}
+  /* When expanded, the card clone shows its own 50px mode-glyph at top:18/right:22.
+     Shift the collapse chevron left of it (was overlapping the C+I glyph). */
+  .sn-strip:not(.sn-collapsed) .sn-expand{transform:rotate(180deg);right:84px;top:27px;}
   /* keep the top row's status clear of the pinned chevron */
   .sn-top{padding-right:40px;}
 
@@ -3440,7 +3441,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.34"></script>
+  <script type="module" src="/js/app.js?v=2.160.36"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

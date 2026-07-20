@@ -33,6 +33,7 @@ export function statusFromItem(it = {}) {
     logs: Array.isArray(it.logs) ? it.logs : [],
     nextCheckAt: it.nextCheckAt,
     monitoringUntil: it.monitoringUntil,
+    followUp: it.followUp,
     autoChecksEnabled: it.autoChecksEnabled,
     checkIntervalMinutes: Number(it.checkIntervalMinutes) || 60,
     bad: !!it.bad,
@@ -122,6 +123,12 @@ export function vjCardControlsFor(status = {}) {
     c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}')` };
     c.monAuto = { checked: s.autoChecksEnabled !== false, onclick: `setCloudAutoChecks('${id}',this.checked,this)` };
   } else if (done) {
+    // Restart controls — only for a STOPPED/CANCELLED/ERRORED campaign (never a
+    // cleanly-completed one). ▶ Continue where it left off · ⟲ from the beginning.
+    if (s.bad) {
+      c.extra.push({ tip: 'Continue where it left off', kind: 'play', onclick: cloud ? `restartCloudCampaignUI('${id}', false)` : `restartLocalFromItem('${id}', false)` });
+      c.extra.push({ tip: 'Restart from the beginning', kind: 'restart', onclick: cloud ? `restartCloudCampaignUI('${id}', true)` : `restartLocalFromItem('${id}', true)` });
+    }
     c.extra.push({ tip: 'Duplicate', kind: 'dup', onclick: `duplicateCampaign('${id}')` });
     if (!cloud && s.hist) c.extra.push({ tip: 'Debrief', kind: 'debrief', onclick: `window.openDebrief('${id}')` });
     c.extra.push({ tip: 'Dismiss', kind: 'dismiss', onclick: cloud ? `dismissCloudDone('${id}', this)` : `dismissLocalDone('${id}')` });

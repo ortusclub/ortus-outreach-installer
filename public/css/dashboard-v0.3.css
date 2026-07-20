@@ -475,20 +475,20 @@
   }
   body[data-dashboard='v3'] .vj-mon-line b { color: var(--ink); font-weight: 600; }
 
-  /* v2.111 — follow-up batch countdown (twin hero, under the check countdown) */
-  body[data-dashboard='v3'] .fu-hero { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline-soft); }
-  body[data-dashboard='v3'] .fu-hero[hidden] { display: none; }
-  body[data-dashboard='v3'] .fu-hero-row { display: flex; align-items: flex-end; gap: 12px; }
-  body[data-dashboard='v3'] .fu-count {
-    font-family: var(--display); font-weight: 500; font-size: 2.0rem; line-height: 0.85;
+  /* v2.160.35 — follow-up dual hero: the follow-up ETA stands beside the check
+     timer, equal weight (Variant 2). Goes gold when < 3 min out. */
+  body[data-dashboard='v3'] .vj-mon-hero.is-dual { gap: 34px; flex-wrap: wrap; }
+  body[data-dashboard='v3'] .fu-dual { display: flex; align-items: flex-end; gap: 10px; }
+  body[data-dashboard='v3'] .fu-dual[hidden] { display: none; }
+  body[data-dashboard='v3'] .fu-dual .fu-dc {
+    font-family: var(--display); font-weight: 500; font-size: 3.13rem; line-height: 0.85;
     letter-spacing: 0.01em; color: var(--ink); font-variant-numeric: tabular-nums;
   }
-  body[data-dashboard='v3'] .fu-cap {
-    font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase;
-    color: var(--gray); padding-bottom: 5px;
+  body[data-dashboard='v3'] .fu-dual .fu-dcap {
+    font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--gray); padding-bottom: 9px;
   }
-  body[data-dashboard='v3'] .fu-line { font-family: var(--mono); font-size: 0.78rem; color: var(--gray); margin-top: 9px; }
-  body[data-dashboard='v3'] .fu-line b { color: var(--ink); font-weight: 600; }
+  body[data-dashboard='v3'] .fu-dual .fu-dc.is-soon { color: var(--gold); }
 
   /* hero uses display:contents so .vj-hero-row + .vj-stats become direct grid
      children — letting stats sit on the same grid row as the controls cluster. */

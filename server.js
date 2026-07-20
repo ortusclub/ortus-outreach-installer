@@ -49,7 +49,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, resumeCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1676,6 +1676,14 @@ app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
 app.post('/api/campaign/cloud/:id/resume', async (req, res) => {
   const r = await resumeCloudCampaign(req.params.id);
   if (r.error) return res.status(502).json(r);
+  res.json(r);
+});
+// Restart a cancelled/stopped/errored cloud campaign — re-activate the same
+// record (engine flips terminal status → running; sent leads skipped). Surface
+// the engine's error (incl. 404 until it ships /restart) so the UI degrades.
+app.post('/api/campaign/cloud/:id/restart', async (req, res) => {
+  const r = await restartCloudCampaign(req.params.id, { fromStart: !!(req.body && req.body.fromStart) });
+  if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });
 // Monitoring controls (Task 3 Part B) — proxy ⚡ Check now / auto-checks toggle to

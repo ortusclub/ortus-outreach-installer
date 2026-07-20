@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sketch · Follow-up ETA in monitoring (CC+IC)</title>
+  <!-- 1:1 with the real app — links the actual stylesheets, reuses the real
+       monitoring-card classes. Open at
+       http://localhost:<port>/sketches/2026-07-20-followup-eta-running.html
+       IMPORTANT: the follow-up ONLY ever fires in the MONITORING state (accept →
+       intro → follow-up all happen there). So every variant below lives in the
+       monitoring card, next to the "until next check" hero. Each carries the
+       LOCAL vs VM wording ("from you, on your Mac" vs "from the primary, in the cloud"). -->
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Sketch scaffold only (not part of the design system) */
+    .sk-wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 90px; }
+    .sk-h1 { font-family: var(--display, serif); font-weight: 500; font-size: 1.5rem; color: var(--ink); margin: 0 0 6px; }
+    .sk-sub { font-family: var(--mono, monospace); font-size: 0.8rem; color: var(--gray); margin: 0 0 10px; line-height: 1.6; }
+    .sk-sub b { color: var(--ink); }
+    .sk-label { font-family: var(--mono, monospace); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin: 34px 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .sk-label b { color: var(--ink); font-weight: 700; }
+    .sk-label .sk-pick { border: 1px solid var(--hairline); border-radius: 9999px; padding: 2px 9px; font-size: 0.55rem; color: var(--gray); }
+    .sk-note { font-family: var(--mono, monospace); font-size: 0.72rem; color: var(--gray); margin: 8px 0 0; line-height: 1.6; }
+    .sk-note b { color: var(--ink); }
+    .sk-vm { font-family: var(--mono, monospace); font-size: 0.72rem; color: var(--gray); margin: 8px 0 0; padding-left: 12px; border-left: 2px solid var(--blue, #4a6cf7); line-height: 1.6; }
+    .sk-vm b { color: var(--ink); }
+
+    /* ══════ Variant 1 — inline in the monitor stat line ══════
+       Append " · follow-up in 8:42" to the existing "sent · accepted · checks …"
+       line. Zero new block, lives in the line operators already read. */
+    body[data-dashboard='v3'] .vj-mon-line .fu-inline { color: var(--gray); }
+    body[data-dashboard='v3'] .vj-mon-line .fu-inline b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    /* ══════ Variant 2 — dual hero ══════
+       Two big timers side by side in the hero row: "next check" AND "follow-up",
+       equal visual weight. The follow-up gets the same prominence as the check. */
+    body[data-dashboard='v3'] .vj-mon-hero.is-dual { gap: 34px; }
+    body[data-dashboard='v3'] .fu-dual { display: flex; align-items: flex-end; gap: 10px; }
+    body[data-dashboard='v3'] .fu-dual .fu-dc {
+      font-family: var(--display); font-weight: 500; font-size: 3.13rem; line-height: 0.85;
+      color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+    }
+    body[data-dashboard='v3'] .fu-dual .fu-dcap {
+      font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--gray); padding-bottom: 9px;
+    }
+    body[data-dashboard='v3'] .fu-dual .fu-dc.is-soon { color: var(--gold); }
+
+    /* ══════ Variant 3 — recipients panel ══════
+       Shared batch clock + each queued person. Most reassuring — you see who. */
+    body[data-dashboard='v3'] .fu-panel { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline-soft); }
+    body[data-dashboard='v3'] .fu-panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+    body[data-dashboard='v3'] .fu-panel-head .fu-pt-time {
+      font-family: var(--display); font-weight: 500; font-size: 2.0rem; line-height: 0.85;
+      color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+    }
+    body[data-dashboard='v3'] .fu-panel-head .fu-pt-cap {
+      font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray);
+    }
+    body[data-dashboard='v3'] .fu-panel-head .fu-pt-src { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); margin-left: auto; }
+    body[data-dashboard='v3'] .fu-panel-head .fu-pt-src b { color: var(--ink); font-weight: 600; }
+    body[data-dashboard='v3'] .fu-recip {
+      display: flex; align-items: center; gap: 10px; padding: 5px 0;
+      font-family: var(--mono); font-size: 0.76rem; color: var(--gray); border-top: 1px solid var(--hairline-soft);
+    }
+    body[data-dashboard='v3'] .fu-recip:first-of-type { border-top: 0; }
+    body[data-dashboard='v3'] .fu-recip .fu-rc-name { color: var(--ink); font-weight: 600; }
+    body[data-dashboard='v3'] .fu-recip .fu-rc-state { margin-left: auto; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3" style="background: var(--bg, #fafafa); color: var(--ink, #0a0a0a); min-height: 100vh;">
+  <div class="sk-wrap">
+    <h1 class="sk-h1">CC+IC follow-up ETA — in the monitoring card</h1>
+    <p class="sk-sub">
+      The follow-up only ever fires during <b>monitoring</b> (accept → intro → follow-up all live there). So the
+      countdown belongs beside the <b>"until next check"</b> hero — never in the running card. Three placements
+      below, same real card &amp; CSS. Each shows the <b>local</b> wording; the blue line is the <b>VM</b> wording.
+    </p>
+
+    <!-- ════════════════ VARIANT 1 — inline in the stat line ════════════════ -->
+    <div class="sk-label"><span class="sk-pick">1</span> <b>Inline</b> · appended to the "sent · accepted · checks…" line <span class="sk-pick">smallest</span></div>
+    <section class="vj-card is-monitor is-detailed">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span>Monitoring · CC + IC</span><span class="vj-when">TEST CC+IC +CN</span></div>
+      <h2 class="vj-name">TEST CC+IC +CN</h2>
+      <div class="vj-live"><span class="vj-live-ico">⏱</span><span class="vj-live-txt"><span class="vj-live-l1">Waiting for next check</span><span class="vj-live-l2">1 account · 3 follow-ups queued</span></span></div>
+      <div class="vj-hbar"><i style="width:14%"></i></div>
+      <div class="vj-monitor">
+        <div class="vj-mon-hero"><span class="vj-mon-count">1H 48M</span><span class="vj-mon-cap">until next check</span></div>
+        <div class="vj-mon-line"><b>1</b> sent · <b>—</b> accepted · checks every <b>2h</b> · ends <b>Wed, 24 Jun</b><span class="fu-inline"> · follow-up in <b data-countdown="522">08:42</b> (from <b>you</b>)</span></div>
+      </div>
+      <div class="vj-controls"><button class="btn-pill">Open</button></div>
+    </section>
+    <p class="sk-vm"><b>VM:</b> "… · follow-up in <b>08:42</b> (from <b>the primary</b>)"</p>
+    <p class="sk-note">Cheapest — the field already exists (<b>status.followUp</b>). One appended <b>&lt;span&gt;</b>. Downside: easy to miss in a dense line.</p>
+
+    <!-- ════════════════ VARIANT 2 — dual hero ════════════════ -->
+    <div class="sk-label"><span class="sk-pick">2</span> <b>Dual hero</b> · follow-up timer stands beside the check timer, equal weight <span class="sk-pick">most prominent</span></div>
+    <section class="vj-card is-monitor is-detailed">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span>Monitoring · CC + IC</span><span class="vj-when">TEST CC+IC +CN</span></div>
+      <h2 class="vj-name">TEST CC+IC +CN</h2>
+      <div class="vj-live"><span class="vj-live-ico">⏱</span><span class="vj-live-txt"><span class="vj-live-l1">Waiting for next check</span><span class="vj-live-l2">1 account · 3 follow-ups queued</span></span></div>
+      <div class="vj-hbar"><i style="width:14%"></i></div>
+      <div class="vj-monitor">
+        <div class="vj-mon-hero is-dual">
+          <span class="vj-mon-count">1H 48M</span><span class="vj-mon-cap">until next check</span>
+          <span class="fu-dual"><span class="fu-dc" data-countdown="522">08:42</span><span class="fu-dcap">follow-ups send</span></span>
+        </div>
+        <div class="vj-mon-line"><b>1</b> sent · <b>—</b> accepted · <b>3</b> follow-ups queued · one batch, from <b>you</b></div>
+      </div>
+      <div class="vj-controls"><button class="btn-pill">Open</button></div>
+    </section>
+    <div class="sk-label" style="margin-top:14px"><span class="sk-pick">2·b</span> the <b>VM</b> variant (from the primary, in the cloud)</div>
+    <section class="vj-card is-monitor is-detailed">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span>Monitoring · CC + IC · ☁︎</span><span class="vj-when">TEST CC+IC +CN</span></div>
+      <h2 class="vj-name">TEST CC+IC +CN</h2>
+      <div class="vj-hbar"><i style="width:40%"></i></div>
+      <div class="vj-monitor">
+        <div class="vj-mon-hero is-dual">
+          <span class="vj-mon-count">22M</span><span class="vj-mon-cap">until next check</span>
+          <span class="fu-dual"><span class="fu-dc is-soon" data-countdown="70">01:10</span><span class="fu-dcap">follow-ups send</span></span>
+        </div>
+        <div class="vj-mon-line"><b>4</b> sent · <b>2</b> accepted · <b>2</b> follow-ups queued · one batch, from <b>the primary</b> · in the cloud</div>
+      </div>
+      <div class="vj-controls"><button class="btn-pill">Open</button></div>
+    </section>
+    <p class="sk-note">Impossible to miss. Gold when &lt; a few min out (2·b). Trade-off: two big numbers compete for the eye.</p>
+
+    <!-- ════════════════ VARIANT 3 — recipients panel ════════════════ -->
+    <div class="sk-label"><span class="sk-pick">3</span> <b>Recipients panel</b> · shared clock + who's queued <span class="sk-pick">most reassuring</span></div>
+    <section class="vj-card is-monitor is-detailed">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span>Monitoring · CC + IC</span><span class="vj-when">TEST CC+IC +CN</span></div>
+      <h2 class="vj-name">TEST CC+IC +CN</h2>
+      <div class="vj-live"><span class="vj-live-ico">⏱</span><span class="vj-live-txt"><span class="vj-live-l1">Waiting for next check</span><span class="vj-live-l2">1 account · 3 follow-ups queued</span></span></div>
+      <div class="vj-hbar"><i style="width:14%"></i></div>
+      <div class="vj-monitor">
+        <div class="vj-mon-hero"><span class="vj-mon-count">1H 48M</span><span class="vj-mon-cap">until next check</span></div>
+        <div class="vj-mon-line"><b>1</b> sent · <b>—</b> accepted · checks every <b>2h</b> · ends <b>Wed, 24 Jun</b></div>
+        <!-- NEW -->
+        <div class="fu-panel">
+          <div class="fu-panel-head">
+            <span class="fu-pt-time" data-countdown="522">08:42</span>
+            <span class="fu-pt-cap">until follow-ups send</span>
+            <span class="fu-pt-src">one batch · from <b>you</b> · on your Mac</span>
+          </div>
+          <div class="fu-recip"><span class="fu-rc-name">Rilany Darang</span><span>accepted 11:19 · intro sent 11:21</span><span class="fu-rc-state">⏳ queued</span></div>
+          <div class="fu-recip"><span class="fu-rc-name">Aditi Sharma</span><span>accepted 11:22 · intro sent 11:24</span><span class="fu-rc-state">⏳ queued</span></div>
+          <div class="fu-recip"><span class="fu-rc-name">Marc Bennett</span><span>accepted 11:24 · intro sent 11:26</span><span class="fu-rc-state">⏳ queued</span></div>
+        </div>
+      </div>
+      <div class="vj-controls"><button class="btn-pill">Open</button></div>
+    </section>
+    <p class="sk-vm"><b>VM:</b> head reads "one batch · from <b>the primary</b> · in the cloud" — rows unchanged.</p>
+    <p class="sk-note">Most detail, biggest block. Worth it only if operators want to see <b>who</b> is queued, not just when.</p>
+
+    <p class="sk-note" style="margin-top:30px; border-top:1px solid var(--hairline); padding-top:16px;">
+      All three read the same <b>status.followUp</b> {count, dueAt, sender} the monitoring hero already carries — the
+      change is only <b>how</b> it's drawn and the <b>local/VM</b> wording. Pick one.
+    </p>
+  </div>
+
+  <script>
+    function fmt(s){ const m = Math.floor(s/60), ss = s%60; return m + ':' + String(ss).padStart(2,'0'); }
+    const nodes = [...document.querySelectorAll('[data-countdown]')].map(el => ({ el, s: parseInt(el.dataset.countdown, 10) }));
+    setInterval(() => {
+      nodes.forEach(n => { n.s = n.s > 0 ? n.s - 1 : 522; n.el.textContent = fmt(n.s); });
+    }, 1000);
+  </script>
+</body>
+</html>

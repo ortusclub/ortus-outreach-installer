@@ -6231,6 +6231,9 @@ function _buildCloudActiveStatus(c, leads, counts) {
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
     // Task 9 — primary needs-login surfacing on card #2 (Task 5's c.primarySession).
     primarySession: c.primarySession,
+    // v2.160.35: follow-up dual countdown on the cloud card-#2 takeover — lights
+    // up once the engine exposes follow_up {count,dueAt,sender} on the detail.
+    followUp: c.follow_up || null,
   };
 }
 
@@ -6847,7 +6850,14 @@ function _fillVjMonitorHero(root, status) {
     const cad = cadMin >= 60 ? (cadMin / 60) + 'h' : cadMin + ' min';
     let ends = '—';
     if (status.monitoringUntil) ends = new Date(status.monitoringUntil).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
-    lineEl.innerHTML = `<b>${sent}</b> sent · <b>${accepted}</b> accepted · checks every <b>${cad}</b> · ends <b>${ends}</b>`;
+    lineEl.innerHTML = _monLineHtml(sent, accepted, cad, ends, status.followUp);
+  }
+  // v2.160.35: follow-up dual hero on the strip clone (mirrors card #2).
+  const fu = status.followUp;
+  const fuHero = root.querySelector('[data-f="active-fu-hero"]');
+  if (fuHero) {
+    if (fu && fu.count > 0) { _setFuDual(root.querySelector('[data-f="fuCount"]'), fu.dueAt); fuHero.hidden = false; }
+    else fuHero.hidden = true;
   }
 }
 
@@ -6862,7 +6872,8 @@ function _vjControlsHtml(c, status) {
   for (const e of (c.extra || [])) {
     if (e.kind === 'show') actions += `<button type="button" class="dock-btn" data-tip="Show" aria-label="Show" onclick="${e.onclick}">👁</button>`;
     else {
-      const svg = e.kind === 'debrief' ? V3_SVG_DOC : e.kind === 'dup' ? V3_SVG_COPY : V3_SVG_XMARK;
+      const svg = e.kind === 'debrief' ? V3_SVG_DOC : e.kind === 'dup' ? V3_SVG_COPY
+        : e.kind === 'play' ? V3_SVG_PLAY : e.kind === 'restart' ? V3_SVG_RESTART : V3_SVG_XMARK;
       actions += dib(svg, e.tip, e.onclick);
     }
   }
@@ -6957,6 +6968,8 @@ function _startVjTick() {
       const nc = card.dataset.nextcheck;
       const el = card.querySelector('[data-f="monCount"]');
       if (el) el.textContent = nc ? v3FmtCountdown(new Date(nc).getTime() - Date.now()) : '—';
+      const fd = card.dataset.fudue;
+      if (fd) _setFuDual(card.querySelector('[data-f="fuCount"]'), Number(fd));
     });
   }, 1000);
 }
@@ -6976,6 +6989,7 @@ function _fillVjCards(board) {
     if (!it) return;
     const status = statusFromItem(it);
     card.dataset.nextcheck = status.nextCheckAt || '';
+    card.dataset.fudue = (status.followUp && status.followUp.dueAt) || '';
     try { fillVjCard(card, status); } catch (_) { /* per-card best-effort */ }
     if (status.state === 'monitoring') anyMonitor = true;
   });
@@ -7206,7 +7220,14 @@ function renderUnifiedStrip(it) {
     const debriefBtn = (!cloud && it.hist)
       ? _dib(V3_SVG_DOC, 'Debrief', `window.openDebrief('${escHtml(it.id)}')`)
       : '';
-    foot = dismiss + dup + debriefBtn + _openPill;
+    // Restart — only for a STOPPED/CANCELLED/ERRORED campaign (it.bad), never a
+    // cleanly-completed one. ▶ Continue where it left off · ⟲ Restart from the
+    // beginning. Both skip already-done rows/leads (no double-outreach).
+    const restartBtns = it.bad
+      ? _dib(V3_SVG_PLAY, 'Continue where it left off', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', false)` : `restartLocalFromItem('${escHtml(it.id)}', false)`)
+        + _dib(V3_SVG_RESTART, 'Restart from the beginning', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', true)` : `restartLocalFromItem('${escHtml(it.id)}', true)`)
+      : '';
+    foot = restartBtns + dismiss + dup + debriefBtn + _openPill;
   }
 
   // Expanded (non-queued) strips render card #2 (.sn-vjcard) instead of the
@@ -7529,6 +7550,9 @@ async function renderCampaignsBoard() {
         accounts: (s.profileIds || []).length, mine: true, paused: !!(s.paused || s._paused),
         logs: Array.isArray(s.logs) ? s.logs : [],
         skippedCount: s.skippedCount || 0,
+        // v2.160.35: carry the follow-up summary so the strip clone's monitor
+        // hero shows the same dual countdown as card #2.
+        followUp: s.followUp || null,
       });
     }
   } catch (_) { /* local status best-effort */ }
@@ -7601,6 +7625,9 @@ async function renderCampaignsBoard() {
         nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
         autoChecksEnabled: c.auto_checks_enabled !== false,
         checkIntervalMinutes: c.check_interval_minutes || 60,
+        // v2.160.35: follow-up dual countdown — lights up once the engine
+        // exposes c.follow_up {count,dueAt,sender} on the cloud detail.
+        followUp: c.follow_up || null,
       });
     }
   } catch (_) { /* cloud best-effort */ }
@@ -7876,6 +7903,79 @@ async function pauseCloudCampaignUI(id, isPaused) {
   if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
 }
 window.pauseCloudCampaignUI = pauseCloudCampaignUI;
+
+// Restart a STOPPED/CANCELLED local campaign from its saved settings snapshot.
+// fromStart=false → Continue (seed resumeContext so the counter picks up where it
+// left off; the sheet's already-sent rows are skipped). fromStart=true → Restart
+// from the beginning (counter resets to 0; the sheet STILL skips already-done
+// rows, so no double-outreach). Reuses the exact /api/campaign/start path the
+// resume flow uses — no new backend.
+async function restartLocalFromItem(id, fromStart) {
+  const it = _boardItemsById.get(id);
+  if (!it || !it.srcSettings) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('No saved settings for this campaign — use Duplicate instead.', 5000);
+    return;
+  }
+  const s = it.srcSettings;
+  const payload = {
+    profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+    sheetUrl: s.sheetUrl || '',
+    templates: s.templates || {},
+    dailyLimit: s.dailyLimit ?? 50,
+    mode: it.mode,
+    messageOpenProfiles: !!s.messageOpenProfiles,
+    delayMin: s.delayMin ?? 30,
+    delayMax: s.delayMax ?? 60,
+    linkedinColumn: s.linkedinColumn || '',
+    concurrency: s.concurrency ?? 1,
+    name: it.name || '',
+    checkIntervalMinutes: s.checkIntervalMinutes,
+    autoChecksEnabled: s.autoChecksEnabled,
+  };
+  if (!fromStart) {
+    payload.resumeContext = { totalProcessed: Number(it.hist && (it.hist.totalProcessed || it.hist.successCount)) || 0 };
+  }
+  try {
+    const r = await fetch('/api/campaign/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) {
+      const err = await r.text().catch(() => '');
+      if (typeof showCampaignToast === 'function') showCampaignToast(`Restart failed: ${err || r.statusText}`, 6000);
+      return;
+    }
+    if (typeof showCampaignToast === 'function') showCampaignToast(fromStart ? 'Restarted from the beginning — already-done rows are skipped.' : 'Continuing where it left off…', 4500);
+    if (typeof startPolling === 'function') startPolling();
+    if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Restart failed: ${e.message}`, 6000);
+  }
+}
+window.restartLocalFromItem = restartLocalFromItem;
+
+// Restart a STOPPED/CANCELLED/ERRORED cloud campaign — re-activates the SAME
+// record on the engine (status → running; leads already sent carry sentAt and
+// are skipped). Both buttons hit the same endpoint; fromStart is passed for
+// parity (the engine skips done leads either way). Degrades gracefully with a
+// clear toast until the engine ships /restart (404).
+async function restartCloudCampaignUI(id, fromStart) {
+  try {
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/restart`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromStart: !!fromStart }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) {
+      if (typeof showCampaignToast === 'function') showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Restart isn’t live yet — engine update pending.', 6000);
+      return;
+    }
+    if (typeof showCampaignToast === 'function') showCampaignToast(fromStart ? 'Restarting the cloud campaign from the beginning…' : 'Continuing the cloud campaign…', 4500);
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
+    return;
+  }
+  if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
+  if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+}
+window.restartCloudCampaignUI = restartCloudCampaignUI;
 
 // Task 3 Part B — cloud monitoring controls (parity with local ⚡ Check now /
 // Automatic checks). Degrade gracefully until the engine ships the routes: a
@@ -20177,27 +20277,42 @@ function v3RenderMonitorHero(status) {
       ends = new Date(status.monitoringUntil).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
     }
     // Bug 10: "replies" removed from the dashboard.
-    lineEl.innerHTML =
-      `<b>${sent}</b> sent · <b>${accepted}</b> accepted · checks every <b>${cad}</b> · ends <b>${ends}</b>`;
+    lineEl.innerHTML = _monLineHtml(sent, accepted, cad, ends, status.followUp);
   }
-  // v2.111: follow-up batch countdown.
+  // v2.160.35: follow-up dual hero — the ETA stands beside the check timer.
   const fu = status.followUp;
   const fuHero = document.getElementById('active-fu-hero');
   if (fuHero) {
     if (fu && fu.count > 0) {
       _fuHeroDueAt = fu.dueAt || null;
-      const q = document.getElementById('fuQueued');
-      const s = document.getElementById('fuSender');
-      const c = document.getElementById('fuCount');
-      if (q) q.textContent = String(fu.count);
-      if (s) s.textContent = (fu.sender && fu.sender !== 'local-browser') ? 'the primary' : 'you';
-      if (c) { const ms = (fu.dueAt || 0) - Date.now(); c.textContent = ms <= 0 ? 'Sending…' : v3FmtCountdown(ms); }
+      _setFuDual(document.getElementById('fuCount'), fu.dueAt);
       fuHero.hidden = false;
     } else {
       _fuHeroDueAt = null;
       fuHero.hidden = true;
     }
   }
+}
+
+// Shared by card #2 (v3RenderMonitorHero) and the dashboard strip clones
+// (_fillVjMonitorHero) so both draw the monitor stat line identically. Appends
+// the follow-up clause when a batch is pending.
+function _monLineHtml(sent, accepted, cad, ends, fu) {
+  let html = `<b>${sent}</b> sent · <b>${accepted}</b> accepted · checks every <b>${cad}</b> · ends <b>${ends}</b>`;
+  if (fu && fu.count > 0) {
+    const who = (fu.sender && fu.sender !== 'local-browser') ? 'the primary' : 'you';
+    html += ` · <b>${fu.count}</b> follow-up${fu.count === 1 ? '' : 's'} queued · from <b>${who}</b>`;
+  }
+  return html;
+}
+
+// Set the dual-hero follow-up timer text + gold "< 3 min" state on one element.
+// Shared by card #2, its 1s tick, and the strip clones.
+function _setFuDual(el, dueAt) {
+  if (!el) return;
+  const ms = (dueAt || 0) - Date.now();
+  el.textContent = ms <= 0 ? 'Sending…' : v3FmtCountdown(ms);
+  el.classList.toggle('is-soon', ms > 0 && ms <= 180000);
 }
 
 // v2.59.19: smooth 1s display tick for the monitoring countdown. Only touches
@@ -20214,10 +20329,7 @@ function _tickMonHeroCountdown() {
   if (countEl) {
     countEl.textContent = v3FmtCountdown(new Date(_monHeroNextCheckAt).getTime() - Date.now());
   }
-  if (_fuHeroDueAt) {
-    const fuEl = document.getElementById('fuCount');
-    if (fuEl) { const ms = _fuHeroDueAt - Date.now(); fuEl.textContent = ms <= 0 ? 'Sending…' : v3FmtCountdown(ms); }
-  }
+  if (_fuHeroDueAt) _setFuDual(document.getElementById('fuCount'), _fuHeroDueAt);
 }
 setInterval(_tickMonHeroCountdown, 1000);
 

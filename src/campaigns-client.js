@@ -284,6 +284,19 @@ export function resumeCloudCampaign(id) {
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/resume`);
 }
 
+/**
+ * Restart a cancelled/stopped/errored cloud campaign — re-activates the SAME
+ * campaign record (engine flips its terminal status back to 'running'; leads
+ * already sent carry sentAt and are skipped, so it continues where it left off).
+ * `fromStart` is passed for parity with the app's two buttons but does not clear
+ * lead state (operator chose "still skip done rows"). Retries like the other
+ * control calls; returns { error, status } until the engine ships the route so
+ * the UI can degrade gracefully.
+ */
+export function restartCloudCampaign(id, { fromStart = false } = {}) {
+  return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/restart`, { fromStart: !!fromStart });
+}
+
 // Monitoring controls (Task 3 Part B) — mirror the local ⚡ Check now / Automatic
 // checks toggle. Single-shot (requestOnce): user-initiated, fine to fail loudly.
 // Return { error, status } until the engine ships these routes, so the UI can
