@@ -6,6 +6,8 @@
  * isUsableThreadUrl is pure + tested; sendInThread is verified manually.
  */
 
+import { getConversationsPage } from './helpers.js';
+
 /** A captured page.url() is a usable thread target only if it's a real
  *  /messaging/thread/<id> URL — not a /compose, /feed, or empty fallback. */
 export function isUsableThreadUrl(url) {
@@ -83,17 +85,41 @@ export async function sendInThread(page, threadUrl, body, { introTitle = '', lea
 }
 
 async function _findThreadByLead(page, leadName, introTitle) {
+  const needle = (leadName || introTitle || '').trim();
+  if (!needle) return '';
+  const want = needle.toLowerCase();
   try {
     await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await new Promise(r => setTimeout(r, 2000));
-    const needle = (leadName || introTitle || '').trim();
-    if (!needle) return '';
-    return await page.evaluate((want) => {
+    // Let LinkedIn's own inbox XHR fire so getConversationsPage can reuse its URL.
+    await new Promise(r => setTimeout(r, 4000));
+
+    // Primary path — Voyager conversations. A CC+IC intro creates a GROUP thread;
+    // the DOM conversation-list row shows a group title (not the lead's name), so
+    // the old text scrape missed it. The API exposes each thread's participants,
+    // so we match the lead by full name and return the real /thread/<id>/ URL.
+    try {
+      const res = await getConversationsPage(page, { start: 0, count: 40 });
+      const convs = (res && (res.elements || res.conversations)) || (Array.isArray(res) ? res : []);
+      for (const c of (Array.isArray(convs) ? convs : [])) {
+        const names = c.names || c.participantNames || c.participants || [];
+        const matched = names.some((n) => {
+          const full = `${n.firstName || ''} ${n.lastName || ''}`.trim().toLowerCase();
+          return full && (full === want || full.includes(want) || want.includes(full));
+        });
+        if (matched) {
+          const url = c.conversationUrl || c.threadUrl || c.url
+            || (c.threadId ? `https://www.linkedin.com/messaging/thread/${c.threadId}/` : '');
+          if (url) return url;
+        }
+      }
+    } catch { /* fall through to the DOM scrape */ }
+
+    // Fallback — DOM scrape of the visible conversation list (works for 1:1s).
+    return await page.evaluate((w) => {
       const rows = Array.from(document.querySelectorAll('a.msg-conversation-listitem__link, a[href*="/messaging/thread/"]'));
-      const lc = want.toLowerCase();
-      const hit = rows.find(a => (a.textContent || '').toLowerCase().includes(lc));
+      const hit = rows.find(a => (a.textContent || '').toLowerCase().includes(w));
       return hit ? hit.href : '';
-    }, needle);
+    }, want);
   } catch {
     return '';
   }
