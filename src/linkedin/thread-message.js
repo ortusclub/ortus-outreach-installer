@@ -10,7 +10,12 @@
  *  /messaging/thread/<id> URL — not a /compose, /feed, or empty fallback. */
 export function isUsableThreadUrl(url) {
   if (!url) return false;
-  return /\/messaging\/thread\/[^/?#]+/.test(String(url));
+  // The segment after /thread/ must be a real thread id (2-<b64> or numeric).
+  // "new" is the compose route (/thread/new/?isTYAHFlow=…) — navigating to it
+  // hangs (45s nav timeout), so treat it as unusable and let the caller fall
+  // back to searching Messaging by lead name.
+  const m = String(url).match(/\/messaging\/thread\/([^/?#]+)/);
+  return !!m && m[1] !== 'new';
 }
 
 /**

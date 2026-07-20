@@ -8,6 +8,8 @@ test('isUsableThreadUrl accepts a real messaging thread URL', () => {
 
 test('isUsableThreadUrl rejects compose / feed / empty URLs', () => {
   assert.equal(isUsableThreadUrl('https://www.linkedin.com/messaging/compose/'), false);
+  assert.equal(isUsableThreadUrl('https://www.linkedin.com/messaging/thread/new/?isTYAHFlow=true'), false);
+  assert.equal(isUsableThreadUrl('https://www.linkedin.com/messaging/thread/new/?isTYAHFlow=true&recipient=ayush-goswami-65636a402'), false);
   assert.equal(isUsableThreadUrl('https://www.linkedin.com/feed/'), false);
   assert.equal(isUsableThreadUrl(''), false);
   assert.equal(isUsableThreadUrl(null), false);
