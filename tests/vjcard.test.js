@@ -55,9 +55,9 @@ test('controls: running local → pause/stop/restart/copy + bulk run-check, open
   assert.ok(c.pause && c.stop && c.restart && c.copy);
   assert.match(c.bulk.onclick, /dashRunCheck/);
 });
-test('controls: running cloud → stop + Show, no pause, no bulk, open=openCloudLive', () => {
+test('controls: running cloud → stop + Show, no pause, no bulk, open=openRunningCampaignEditor', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'c1', bucket: 'running' }));
-  assert.match(c.open.onclick, /openCloudLive\('c1'\)/);
+  assert.match(c.open.onclick, /openRunningCampaignEditor\('c1'\)/);
   assert.equal(c.pause, null);
   assert.equal(c.bulk, null);
   assert.match(c.stop.onclick, /stopCloudCampaignUI\('c1'\)/);

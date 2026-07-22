@@ -7904,6 +7904,151 @@ async function pauseCloudCampaignUI(id, isPaused) {
 }
 window.pauseCloudCampaignUI = pauseCloudCampaignUI;
 
+// ── Cloud campaign OPEN → edit ──────────────────────────────────────────────
+// OPEN on a RUNNING cloud campaign drops the operator into the wizard,
+// prefilled with the campaign's saved launch config, every field locked, and a
+// banner explaining edits need a pause. Pausing unlocks the form; "Save edits
+// & resume" re-enters the normal wizard launch path, and submitStartCampaign
+// diverts the body to /api/campaign/cloud/:id/edit-redispatch (stop the paused
+// original + redispatch its still-pending leads with the edited config).
+let _cloudEdit = null; // { cloudId, name, paused }
+
+function _cloudEditBannerEls() {
+  return {
+    banner: document.getElementById('wizard-cloud-edit-banner'),
+    title: document.getElementById('cloud-edit-banner-title'),
+    detail: document.getElementById('cloud-edit-banner-detail'),
+    pauseBtn: document.getElementById('btn-cloud-edit-pause'),
+    saveBtn: document.getElementById('btn-cloud-edit-save'),
+  };
+}
+
+function _renderCloudEditBanner() {
+  const { banner, title, detail, pauseBtn, saveBtn } = _cloudEditBannerEls();
+  if (!banner) return;
+  if (!_cloudEdit) { banner.style.display = 'none'; return; }
+  banner.style.display = '';
+  if (_cloudEdit.paused) {
+    if (title) title.textContent = `Editing "${_cloudEdit.name || 'cloud campaign'}" (paused).`;
+    if (detail) detail.textContent = 'Change the messaging or any other field below, then Save edits & resume — the remaining leads are redispatched with your changes.';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = '';
+  } else {
+    if (title) title.textContent = `"${_cloudEdit.name || 'This campaign'}" is running.`;
+    if (detail) detail.textContent = 'Fields are locked while it sends — pause it to make edits.';
+    if (pauseBtn) { pauseBtn.style.display = ''; pauseBtn.disabled = false; pauseBtn.textContent = 'Pause campaign'; }
+    if (saveBtn) saveBtn.style.display = 'none';
+  }
+}
+
+// Lock/unlock every control in the wizard EXCEPT the banner's own buttons and
+// the back link. Only elements THIS lock disabled get re-enabled (via the
+// data flag) so other disable-owners (setCampaignButtons, validation) are
+// never stomped.
+function _setCloudEditLock(locked) {
+  const root = document.getElementById('wizard-view');
+  if (!root) return;
+  root.classList.toggle('cloud-edit-locked', !!locked);
+  root.querySelectorAll('input, select, textarea, button').forEach((el) => {
+    if (el.closest('#wizard-cloud-edit-banner') || el.closest('.wizard-back-row')) return;
+    if (locked) {
+      if (!el.disabled) { el.disabled = true; el.dataset.cloudEditLocked = '1'; }
+    } else if (el.dataset.cloudEditLocked) {
+      el.disabled = false; delete el.dataset.cloudEditLocked;
+    }
+  });
+}
+
+async function openRunningCampaignEditor(id) {
+  let d = null;
+  try {
+    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
+    if (r.ok) d = await r.json();
+  } catch (_) { /* fall through to the live view below */ }
+  if (!d || !d.config) {
+    // Pre-2.133 campaigns have no snapshotted wizard config → old behavior.
+    try { await openCloudLive(id); } catch (_) {}
+    return;
+  }
+  // Already paused? Land straight in editable mode.
+  let paused = false;
+  try {
+    const s = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json());
+    paused = String(((s && s.campaign) || s || {}).status || '') === 'paused';
+  } catch (_) { /* treat as running — the lock is the safe default */ }
+  _cloudEdit = { cloudId: id, name: d.name || '', paused };
+  const nameInput = document.getElementById('campaign-name-input');
+  if (nameInput) nameInput.value = d.name || '';
+  try { clearActiveDraft(); } catch (_) { /* editing a live campaign, not a draft */ }
+  if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
+  goCreateCampaign();
+  _renderCloudEditBanner();
+  _setCloudEditLock(!paused);
+  // applyPresetConfig renders some sections async (account picker, tab list) —
+  // re-assert the lock once they've landed so late fields don't stay editable.
+  if (!paused) setTimeout(() => { if (_cloudEdit && !_cloudEdit.paused) _setCloudEditLock(true); }, 900);
+}
+window.openRunningCampaignEditor = openRunningCampaignEditor;
+
+async function cloudEditPauseNow() {
+  if (!_cloudEdit) return;
+  const { pauseBtn } = _cloudEditBannerEls();
+  if (pauseBtn) { pauseBtn.disabled = true; pauseBtn.textContent = 'Pausing…'; }
+  await pauseCloudCampaignUI(_cloudEdit.cloudId, false);
+  // Wait for the engine to actually pause (it finishes the current lead first).
+  for (let i = 0; i < 40 && _cloudEdit; i++) {
+    try {
+      const s = await fetch(`/api/campaign/cloud/${encodeURIComponent(_cloudEdit.cloudId)}`).then((r) => r.json());
+      const st = String(((s && s.campaign) || s || {}).status || '');
+      if (st && st !== 'running') break;
+    } catch (_) { /* transient — keep polling */ }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (!_cloudEdit) return; // operator navigated away mid-pause
+  _cloudEdit.paused = true;
+  _renderCloudEditBanner();
+  _setCloudEditLock(false);
+}
+window.cloudEditPauseNow = cloudEditPauseNow;
+
+function cloudEditSaveResume() {
+  // Same wizard entry as a real launch so every validation runs; the body is
+  // diverted to edit-redispatch inside submitStartCampaign.
+  if (typeof startCampaign === 'function') startCampaign({ cloud: true });
+}
+window.cloudEditSaveResume = cloudEditSaveResume;
+
+function clearCloudEditMode() {
+  if (!_cloudEdit) return;
+  _cloudEdit = null;
+  _setCloudEditLock(false);
+  _renderCloudEditBanner();
+}
+window.clearCloudEditMode = clearCloudEditMode;
+
+async function _submitCloudEditRedispatch(body) {
+  const id = _cloudEdit && _cloudEdit.cloudId;
+  if (!id) return;
+  try {
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/edit-redispatch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const txt = await res.text();
+    let data; try { data = JSON.parse(txt); } catch { data = { error: txt }; }
+    if (!res.ok || data.error) {
+      alert(`Could not save edits:\n\n${data.error || txt}`);
+      return;
+    }
+    clearCloudEditMode();
+    if (typeof showCampaignToast === 'function') showCampaignToast(`☁︎ Edits saved — ${data.leadsAdded} remaining lead(s) redispatched with the new settings.`, 6000);
+    if (data.id) { try { await openCloudLive(data.id); } catch (_) { /* board still shows it */ } }
+  } catch (e) {
+    alert('Could not save edits: ' + e.message);
+  }
+}
+
 // Restart a STOPPED/CANCELLED local campaign from its saved settings snapshot.
 // fromStart=false → Continue (seed resumeContext so the counter picks up where it
 // left off; the sheet's already-sent rows are skipped). fromStart=true → Restart
@@ -8313,6 +8458,9 @@ async function _submitCloudCampaign(body) {
 }
 
 async function submitStartCampaign(body, opts = {}) {
+  // Cloud edit mode: the wizard is re-launching an EDITED (paused) cloud
+  // campaign — divert the body to edit-redispatch instead of a fresh launch.
+  if (_cloudEdit && _cloudEdit.paused) return _submitCloudEditRedispatch(body);
   // "Run in cloud" toggle → hand off to the engine and return; local path below
   // stays exactly as-is for normal (local) launches.
   if (opts.cloud) return _submitCloudCampaign(body);
@@ -13823,6 +13971,9 @@ window.applyViewingActiveLock = applyViewingActiveLock;
 function applyRoute() {
   const hash = window.location.hash || '#/';
   const isWizard = hash.startsWith('#/new');
+  // Leaving the wizard abandons any cloud-edit session (unlock + banner reset)
+  // so a later fresh "+ New campaign" never inherits the lock.
+  if (!isWizard && typeof clearCloudEditMode === 'function') clearCloudEditMode();
   const isConnections = hash.startsWith('#/connections');
   const isSalesNav = hash.startsWith('#/salesnav');
   const isReplies = hash.startsWith('#/replies');

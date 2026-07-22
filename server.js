@@ -1126,7 +1126,9 @@ function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 // to the engine via campaigns-client. The engine runs it in the cloud (survives
 // the laptop closing). No local browser is launched. The regular local
 // /api/campaign/start path below is untouched.
-app.post('/api/campaign/start-cloud', async (req, res) => {
+// Named so /api/campaign/cloud/:id/edit-redispatch can re-enter the same
+// pipeline after stopping the original campaign (excludeLeadUrls set).
+async function handleStartCloud(req, res) {
   try {
     const body = req.body || {};
     const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
@@ -1197,6 +1199,18 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
       // `row` = the FULL sheet row, so the engine personalizes templates against
       // every column header exactly like a local campaign ({company}, {Event}, …).
       leads.push({ leadUrl, fullName, memberUrn: row['LinkedIn URN'] || row['Member ID'] || null, routeAccount, row });
+    }
+    // Edit-redispatch: drop leads the ORIGINAL run already processed, so a
+    // "Save edits & resume" only redispatches what was still pending when the
+    // operator paused. Normal launches never set excludeLeadUrls.
+    const editExcluded = new Set((Array.isArray(body.excludeLeadUrls) ? body.excludeLeadUrls : []).map((u) => normalizeProfileUrl(u)));
+    if (editExcluded.size) {
+      const before = leads.length;
+      for (let i = leads.length - 1; i >= 0; i--) {
+        if (editExcluded.has(normalizeProfileUrl(leads[i].leadUrl))) leads.splice(i, 1);
+      }
+      cloudLog(`[cloud] edit-redispatch: skipped ${before - leads.length} already-processed lead(s), ${leads.length} remaining`);
+      if (!leads.length) return res.status(400).json({ error: 'Nothing left to send — every lead in the sheet was already processed by the original run.' });
     }
     if (!leads.length) {
       const why = autoRouted && skippedNoAccount.length
@@ -1353,7 +1367,8 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
-});
+}
+app.post('/api/campaign/start-cloud', handleStartCloud);
 
 // Cloud-campaign observability — proxied through the local server so the
 // frontend never handles the engine token (it lives in campaigns-client). The
@@ -1685,6 +1700,35 @@ app.post('/api/campaign/cloud/:id/restart', async (req, res) => {
   const r = await restartCloudCampaign(req.params.id, { fromStart: !!(req.body && req.body.fromStart) });
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
+});
+// Edit a dispatched cloud campaign (OPEN → wizard → pause → Save edits &
+// resume). The engine has no in-place update, so "edit" = stop the paused
+// original and redispatch its still-pending leads as a NEW campaign with the
+// edited wizard config. Already-processed leads are excluded via
+// excludeLeadUrls so nobody is contacted twice.
+app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const cur = await getCloudCampaign(id);
+    if (cur && cur.error) return res.status(502).json(cur);
+    const status = String(((cur && cur.campaign) || cur || {}).status || '');
+    if (status === 'running') return res.status(409).json({ error: 'Pause the campaign first — edits redispatch its remaining leads.' });
+    const got = await getCloudCampaignLeads(id);
+    if (got && got.error) return res.status(502).json(got);
+    const processed = (got.leads || [])
+      .filter((l) => String(l.status || '') !== 'pending')
+      .map((l) => l.leadUrl)
+      .filter(Boolean);
+    // Stop the original for good BEFORE dispatching the replacement — two live
+    // campaigns sending to the same pending leads is the worst failure mode.
+    const stopped = await stopCloudCampaign(id);
+    if (stopped && stopped.error) return res.status(502).json({ error: `Could not stop the original campaign: ${stopped.error}` });
+    cloudLog(`[cloud] edit-redispatch: ${id} stopped (${processed.length} already-processed lead(s)) — redispatching remainder with edited config`);
+    req.body = { ...(req.body || {}), excludeLeadUrls: processed };
+    return handleStartCloud(req, res);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 // Monitoring controls (Task 3 Part B) — proxy ⚡ Check now / auto-checks toggle to
 // the engine. Surface the engine's error (incl. 404 until it ships these routes)

@@ -740,6 +740,17 @@
         <strong>Building a queued campaign.</strong>
         <span id="wizard-queue-banner-detail">A campaign is currently running — this one will be added to the queue and start automatically when there's a free slot.</span>
       </div>
+      <!-- Shown when the operator clicked OPEN on a RUNNING cloud campaign.
+           The wizard is prefilled read-only with that campaign's launch
+           config; pausing unlocks editing, and Save edits & resume stops the
+           paused original and redispatches its still-pending leads with the
+           edited config (the engine has no in-place update). -->
+      <div id="wizard-cloud-edit-banner" class="wizard-queue-banner" style="display:none">
+        <strong id="cloud-edit-banner-title">This campaign is running.</strong>
+        <span id="cloud-edit-banner-detail">Fields are locked while it sends — pause it to make edits.</span>
+        <button type="button" class="btn btn-primary" id="btn-cloud-edit-pause" onclick="cloudEditPauseNow()" style="margin-left:12px">Pause campaign</button>
+        <button type="button" class="btn btn-primary" id="btn-cloud-edit-save" onclick="cloudEditSaveResume()" style="margin-left:12px; display:none">Save edits &amp; resume</button>
+      </div>
 
       <!-- Campaign Name — first thing the operator names. Persisted to
            localStorage for now; backend wire-through (start → status → history)
