@@ -2604,7 +2604,7 @@
             <button type="button" id="btn-start" class="btn btn-start" onclick="window.launchStartNow()">Start a campaign</button>
             <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
-            <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
+            <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveButton()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
           </div>
           <div id="launch-run-note" class="launch-run-note"></div>
           <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
@@ -3483,7 +3483,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.42"></script>
+  <script type="module" src="/js/app.js?v=2.160.43"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

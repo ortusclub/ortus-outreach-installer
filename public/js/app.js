@@ -4236,6 +4236,9 @@ const MODE_LIST = [
 // queued edits and duplicates are always unlocked. Holds a MODE_LIST value, or
 // null when unlocked.
 let _lockedCampaignType = null;
+// v2.160.43: true while the wizard is editing an existing (stopped) campaign
+// opened via OPEN. Drives the "Save as draft" → "Save changes" button relabel.
+let _editingExistingCampaign = false;
 function lockCampaignType(mode) {
   _lockedCampaignType = MODE_LIST.some((m) => m.value === mode) ? mode : null;
   const select = document.getElementById('campaign-mode');
@@ -4246,9 +4249,20 @@ function lockCampaignType(mode) {
   renderModeSelector();
 }
 function unlockCampaignType() {
+  // Leaving the OPEN-to-edit flow — clear the edit flag and restore the button
+  // label regardless of whether a type lock was actually in force.
+  _editingExistingCampaign = false;
+  _updateSaveButtonLabel();
   if (_lockedCampaignType === null) return;
   _lockedCampaignType = null;
   renderModeSelector();
+}
+// v2.160.43: the 4th wizard action reads "Save changes" when editing an existing
+// campaign (saves the edits as a NEW draft, leaving the stopped campaign in
+// place), else "Save as draft" for a brand-new campaign.
+function _updateSaveButtonLabel() {
+  const btn = document.getElementById('btn-save-draft');
+  if (btn) btn.textContent = _editingExistingCampaign ? 'Save changes' : 'Save as draft';
 }
 window.lockCampaignType = lockCampaignType;
 window.unlockCampaignType = unlockCampaignType;
@@ -8319,6 +8333,10 @@ async function openCampaignForEdit(id) {
   // Lock the campaign type — an existing campaign's type is fixed; everything
   // else stays editable. Runs last so it survives any nav-triggered re-render.
   if (mode) lockCampaignType(mode);
+  // Editing an existing campaign → the save action becomes "Save changes"
+  // (saves a new draft; the stopped campaign stays in the Stopped section).
+  _editingExistingCampaign = true;
+  _updateSaveButtonLabel();
 }
 window.openCampaignForEdit = openCampaignForEdit;
 
@@ -19709,6 +19727,49 @@ window.launchSaveAsDraft = function() {
   // No backend call — autosave has the data. Just navigate back.
   window.location.hash = '#/';
   if (typeof showCampaignToast === 'function') showCampaignToast('Saved as draft');
+};
+
+// v2.160.43: "Save changes" — shown in place of "Save as draft" when editing an
+// existing (stopped) campaign opened via OPEN. Saves the edited config as a NEW
+// draft and returns to the dashboard. The stopped campaign is a separate cloud
+// record we never touch, so it stays in the Stopped section. Uses the active
+// draft if the wizard already spawned one (best-effort opens do), otherwise
+// spawns a fresh draft from the still-populated form (snapshot opens don't).
+window.launchSaveChanges = async function() {
+  _closeLaunchMenu();
+  try {
+    let id = (typeof getActiveDraftId === 'function') ? getActiveDraftId() : '';
+    if (!id) {
+      const nameInput = document.getElementById('campaign-name-input');
+      const name = (nameInput?.value || '').trim();
+      const r = await fetch('/api/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      id = data?.draft?.id || '';
+      if (id) setActiveDraftId(id);
+    }
+    // Persist the current form (name, sheet, templates, cadence, profiles) into
+    // the draft via the existing autosave path.
+    if (id && typeof flushAutosaveImmediate === 'function') await flushAutosaveImmediate();
+    if (typeof showCampaignToast === 'function') showCampaignToast('Saved as a new draft');
+  } catch (err) {
+    console.warn('[drafts] launchSaveChanges failed:', err);
+    if (typeof showCampaignToast === 'function') showCampaignToast('Could not save draft');
+    return;
+  }
+  window.location.hash = '#/';
+};
+
+// The 4th wizard action dispatches on context: editing an existing campaign →
+// "Save changes" (new draft, stopped campaign untouched); otherwise the normal
+// "Save as draft".
+window.launchSaveButton = function() {
+  if (_editingExistingCampaign) return window.launchSaveChanges();
+  return window.launchSaveAsDraft();
 };
 
 // Bug 15: "Save as draft" from the running-campaign control bar. The launch
