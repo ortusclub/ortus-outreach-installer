@@ -7566,13 +7566,25 @@ window.onOtherUserSearch = function (val) {
 //   subtitle    — small muted label after the title
 //   alwaysShow  — render the section header even when empty
 function _renderBoardSection(key, title, secItems, opts = {}) {
-  const running   = secItems.filter((x) => x.bucket === 'running');
+  const running   = secItems.filter((x) => x.bucket === 'running' && !x.paused);
+  const paused    = secItems.filter((x) => x.bucket === 'running' && x.paused);
   const idle      = secItems.filter((x) => x.bucket === 'queued');
   const done      = secItems.filter((x) => x.bucket === 'done' && !x.bad);
   const cancelled = secItems.filter((x) => x.bucket === 'done' && x.bad);
 
+  // One bad strip must never abort the whole board render — that would freeze
+  // every group (a collapsed sub-group would look un-expandable). Isolate each.
+  const _safeStrip = (it) => {
+    try { return renderUnifiedStrip(it); }
+    catch (e) {
+      try { console.error('[board] strip render failed for', it && it.id, e); } catch { /* */ }
+      return `<div class="sn-strip"><div class="sn-name">${escHtml((it && it.name) || 'Campaign')}</div>`
+        + `<div class="sn-progtxt">Could not render this campaign — see console.</div></div>`;
+    }
+  };
+
   const rail = (label, arr) => arr.length
-    ? `<div class="sn-railhead">${label}</div>` + arr.map(renderUnifiedStrip).join('') : '';
+    ? `<div class="sn-railhead">${label}</div>` + arr.map(_safeStrip).join('') : '';
   const subGroup = (bucketKey, label, arr, extra = '') => {
     if (!arr.length) return '';
     const gk = `sub:${key}:${bucketKey}`;
@@ -7580,14 +7592,17 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
     const caret = collapsed ? '▸' : '▾';
     const head = `<div class="sn-railhead cb-subhead" onclick="toggleBoardGroup('${gk}', true)">`
       + `<span class="cb-caret">${caret}</span> ${label} <span class="sn-railcount">${arr.length}</span>${extra}</div>`;
-    return head + (collapsed ? '' : arr.map(renderUnifiedStrip).join(''));
+    return head + (collapsed ? '' : arr.map(_safeStrip).join(''));
   };
 
   const doneClearBtn = ` <button type="button" class="sn-clear-done" onclick="event.stopPropagation();clearCampaignsDone()">Clear done</button>`;
-  const body = rail('▶ Running', running)
-    + rail('• Idle', idle)
-    + subGroup('done', '✓ Done', done, doneClearBtn)
-    + subGroup('cancelled', '⊘ Cancelled', cancelled);
+  // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
+  // groups (sections + Done/Cancelled) show a caret, so the affordance reads true.
+  const body = rail('Running', running)
+    + rail('Paused', paused)
+    + rail('Idle', idle)
+    + subGroup('done', 'Done', done, doneClearBtn)
+    + subGroup('cancelled', 'Cancelled', cancelled);
 
   // Non-admin flat board: no header, just the buckets.
   if (opts.flat) return body;
@@ -7603,8 +7618,9 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
     + `<span class="cb-sectitle">${title}</span>${subtitle}`
     + `<span class="cb-seccount">${secItems.length}</span>`
     + `<span class="cb-headextra">${opts.headExtra || ''}</span></div>`;
+  const emptyMsg = opts.emptyMsg || 'There are no campaigns to show at the moment.';
   const inner = collapsed ? ''
-    : `<div class="cb-secbody">${body || '<div class="cb-secempty">No campaigns.</div>'}</div>`;
+    : `<div class="cb-secbody">${body || `<div class="cb-secempty">${escHtml(emptyMsg)}</div>`}</div>`;
   return `<div class="cb-section${collapsed ? ' cb-collapsed' : ''}">${head}${inner}</div>`;
 }
 
@@ -7795,8 +7811,11 @@ async function renderCampaignsBoard() {
     const searchBox = `<input type="text" class="cb-usersearch" placeholder="Search user…"`
       + ` value="${escHtml(_otherUserSearch || '')}" oninput="onOtherUserSearch(this.value)"`
       + ` onclick="event.stopPropagation()">`;
-    html = _renderBoardSection('mine', 'Your campaigns', mineItems)
-      + _renderBoardSection('other', 'Other users’ campaigns', otherShown, { headExtra: searchBox, alwaysShow: !!q || otherItems.length > 0 })
+    html = _renderBoardSection('mine', 'Your campaigns', mineItems, { alwaysShow: true })
+      + _renderBoardSection('other', 'Other users’ campaigns', otherShown, {
+        headExtra: searchBox, alwaysShow: true,
+        emptyMsg: q ? 'No campaigns match that user.' : 'There are no campaigns to show at the moment.',
+      })
       + _renderBoardSection('admin', 'Admin campaigns', adminItems, { subtitle: 'Follower Growth' });
   } else {
     html = _renderBoardSection('mine', '', shown, { flat: true });
