@@ -1751,7 +1751,7 @@ app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
 // the engine. Surface the engine's error (incl. 404 until it ships these routes)
 // so the client degrades gracefully rather than throwing.
 app.post('/api/campaign/cloud/:id/check-now', async (req, res) => {
-  const r = await cloudCheckNow(req.params.id);
+  const r = await cloudCheckNow(req.params.id, (req.body && req.body.scope) === 'all' ? 'all' : 'campaign');
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });

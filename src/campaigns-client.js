@@ -301,8 +301,10 @@ export function restartCloudCampaign(id, { fromStart = false } = {}) {
 // checks toggle. Single-shot (requestOnce): user-initiated, fine to fail loudly.
 // Return { error, status } until the engine ships these routes, so the UI can
 // degrade gracefully ("engine update pending") instead of throwing.
-export function cloudCheckNow(id) {
-  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check-now`);
+// scope: 'campaign' (default) sweeps just this campaign's accounts; 'all' sweeps
+// every unique account in the sheet's "Account Used" column (engine derives it).
+export function cloudCheckNow(id, scope = 'campaign') {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check-now`, { scope: scope === 'all' ? 'all' : 'campaign' });
 }
 export function setCloudAutoChecks(id, enabled) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });

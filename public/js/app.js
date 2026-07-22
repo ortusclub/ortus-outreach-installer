@@ -3143,11 +3143,20 @@ function openCloudCampaignView(id, label) {
     });
     scheduleRetry(Date.now() < fastRetryUntil ? 1500 : 4000);
   };
-  async function queueCheckNow() {
+  async function queueCheckNow(scope) {
+    // Opened from a click (scope is the event object, not a valid scope) → ask the
+    // same scope question as the local check, then re-enter with the choice.
+    if (scope !== 'campaign' && scope !== 'all') {
+      _soloCheckHandler = (mode) => queueCheckNow(mode === 'sheet' ? 'all' : 'campaign');
+      _showSoloCheckModal();
+      return;
+    }
     const btn = document.getElementById('cloud-cv-check-now');
     if (btn) btn.disabled = true;
     try {
-      const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, { method: 'POST' });
+      const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) {
         const detail = await readCampaign();
@@ -6107,6 +6116,23 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
     }
     return `✗ ${name} · ${l.error || 'error'}`;
   });
+  // CC+IC / CC+DM lifecycle events straight from the lead rows — so the VM log
+  // shows acceptances + introductions (mirroring the local machine), not just the
+  // initial connection send. Skipped for Follower Growth (no accept/intro phase).
+  if (!isFG) {
+    leads
+      .filter((l) => l && /connected|accepted/i.test(String(l.connectionAcceptedStatus || '')))
+      .forEach((l) => lines.push(`✓ ${String(l.fullName || l.leadUrl || 'Lead').trim()} · connection accepted`));
+    leads
+      .filter((l) => l && String(l.introductionStatus || '').trim())
+      .forEach((l) => {
+        const name = String(l.fullName || l.leadUrl || 'Lead').trim();
+        const s = String(l.introductionStatus).trim();
+        lines.push(/fail|error|not in your connections|couldn'?t|unable/i.test(s)
+          ? `✗ ${name} · introduction failed · ${s}`
+          : `✓ ${name} · introduced`);
+      });
+  }
   const sent = leads.filter((l) => l && l.status === 'sent').length;
   const err = leads.filter((l) => l && l.status === 'error').length;
   const pending = Math.max(0, leads.length - sent - err);
@@ -6281,6 +6307,38 @@ window.viewCloudCampaign = viewCloudCampaign;
 let _viewingCloudId = null;
 let _cloudCardTimer = null;
 
+// VM operational event log (per campaign). The per-lead log lines are derived
+// fresh each poll from the engine's lead rows (sent / accepted / introduced);
+// these events — the VM opening an account's browser, and start/stop/pause the
+// operator triggers — aren't in the lead rows, so we accumulate them here and
+// merge them into the log so section 7 reads like the local machine's log.
+const _cloudEventLog = new Map();        // campaignId -> [{ t, line }]  (user actions)
+const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine per-account check events)
+function _pushCloudEvent(id, line) {
+  if (!id || !line) return;
+  let arr = _cloudEventLog.get(id);
+  if (!arr) { arr = []; _cloudEventLog.set(id, arr); }
+  if (arr.length && arr[arr.length - 1].line === line) return; // dedup consecutive
+  arr.push({ t: Date.now(), line });
+  if (arr.length > 60) arr.splice(0, arr.length - 60); // keep the tail bounded
+}
+window._pushCloudEvent = _pushCloudEvent;
+// Combine the two event streams — user actions (start/stop/pause/check-now, logged
+// immediately app-side) and the engine's per-account check-sweep events (from the
+// campaign detail's monitorLog) — into one time-ordered list.
+function _combineCloudEvents(id) {
+  const app = _cloudEventLog.get(id) || [];
+  const eng = (_cloudMonitorLog.get(id) || []).map((e) => ({ t: Number(e && e.t) || 0, line: String((e && e.line) || '') })).filter((e) => e.line);
+  return app.concat(eng).sort((a, b) => (a.t || 0) - (b.t || 0));
+}
+function _mergeCloudLog(leadLines, events) {
+  leadLines = Array.isArray(leadLines) ? leadLines : [];
+  if (!Array.isArray(events) || !events.length) return leadLines;
+  const stamp = (t) => { const d = new Date(t); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+  const evLines = events.map((e) => { const hh = stamp(e.t); return hh ? `${e.line} · ${hh}` : e.line; });
+  return leadLines.concat(evLines); // events are the most-recent live actions → shown last
+}
+
 function _buildCloudActiveStatus(c, leads, counts) {
   c = c || {}; leads = Array.isArray(leads) ? leads : []; counts = counts || {};
   const isMon = c.status === 'monitoring';
@@ -6300,7 +6358,7 @@ function _buildCloudActiveStatus(c, leads, counts) {
     name: c.name || '(unnamed)', mode: c.mode,
     totalTargets: total, totalProcessed: sent,
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
-    acceptedCount: accepted, logs: _cloudLeadsToLog(leads, c.mode === 'follower_growth', c),
+    acceptedCount: accepted, logs: _mergeCloudLog(_cloudLeadsToLog(leads, c.mode === 'follower_growth', c), _combineCloudEvents(c.id)),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
     // Task 9 — primary needs-login surfacing on card #2 (Task 5's c.primarySession).
@@ -6316,11 +6374,16 @@ async function _refreshCloudActiveStatus(id) {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
     let leads = [];
     try { const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json(); if (lr && Array.isArray(lr.leads)) leads = lr.leads; } catch (_) { /* */ }
+    // Engine's per-account check-sweep events (reliable — one line per account the
+    // VM opens, e.g. "🖥️ Checking liza.advocate@ortus.solutions…"). Captured here
+    // and merged into the log by _combineCloudEvents. Newest-first from Redis.
+    if (d && Array.isArray(d.monitorLog)) _cloudMonitorLog.set(id, d.monitorLog);
     window.__cloudActiveStatus = _buildCloudActiveStatus((d && d.campaign) || {}, leads, (d && d.leadCounts) || {});
     // Live-browser flag from the engine (top-level of the /:id detail) — drives
     // the LIVE dot on card #2's Show button (component 5 → component 7).
     if (window.__cloudActiveStatus) {
-      window.__cloudActiveStatus.live = !!(d && d.live); window.__cloudActiveStatus.liveAccount = (d && d.liveAccount) || '';
+      window.__cloudActiveStatus.live = !!(d && d.live);
+      window.__cloudActiveStatus.liveAccount = (d && d.liveAccount) || '';
       window.__cloudActiveStatus.paused = !!(d && d.campaign && d.campaign.status === 'paused');
     }
   } catch (_) { if (!window.__cloudActiveStatus) window.__cloudActiveStatus = { _cloud: true, id, name: 'Cloud campaign', running: true, logs: [] }; }
@@ -6333,6 +6396,7 @@ function _startCloudCardPoll() {
     if (!_viewingCloudId) { _stopCloudCardPoll(); return; }
     await _refreshCloudActiveStatus(_viewingCloudId);
     try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
+    try { if (typeof _enforceCloudReadOnlyView === 'function') _enforceCloudReadOnlyView(); } catch (_) { /* */ }
   }, 5000);
 }
 // Leaving the wizard / starting something else stops the cloud-view takeover.
@@ -6368,7 +6432,7 @@ function _adaptActiveCardControls(card, status) {
       cn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>';
       dock.insertBefore(cn, dock.firstChild);
     }
-    cn.onclick = () => { try { window.cloudCheckNow(_viewingCloudId, cn); } catch (_) { /* */ } };
+    cn.onclick = () => { try { window.promptCloudCheckScope(_viewingCloudId, cn); } catch (_) { /* */ } };
     cn.style.display = '';
   } else if (cn) { cn.style.display = 'none'; }
 
@@ -7235,7 +7299,7 @@ function renderUnifiedStrip(it) {
       + `<span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span>`
       + `<span class="sn-mon-line">${line}</span>`
       + `<span class="sn-mon-ctl">`
-      + `<button type="button" class="mini sn-mon-btn" onclick="event.stopPropagation();cloudCheckNow('${escHtml(it.id)}',this)" title="Run an acceptance check now">Check now</button>`
+      + `<button type="button" class="mini sn-mon-btn" onclick="event.stopPropagation();promptCloudCheckScope('${escHtml(it.id)}',this)" title="Run an acceptance check now">Check now</button>`
       + `<label class="sn-mon-auto" title="When off, the VM won't run automatic checks — use ⚡ Check now."><input type="checkbox" ${it.autoChecksEnabled ? 'checked' : ''} onclick="event.stopPropagation()" onchange="setCloudAutoChecks('${escHtml(it.id)}',this.checked,this)"> Auto</label>`
       + `</span></div>`;
   }
@@ -8141,6 +8205,7 @@ async function _doStopCloud(id, { keepMonitoring = false } = {}) {
         ? 'Sending stopped — the VM keeps monitoring for acceptances (7 days).'
         : 'Cloud campaign stopped.', 5000);
     }
+    _pushCloudEvent(id, keepMonitoring ? '⏹️ Sending stopped — VM keeps monitoring for acceptances' : '⏹️ Campaign stopped');
   } catch (e) { alert('Could not stop: ' + e.message); return; }
   if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
   if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
@@ -8160,6 +8225,7 @@ async function pauseCloudCampaignUI(id, isPaused) {
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(isPaused ? 'Resuming…' : 'Pausing — sending stops after the current lead.', 4000);
     }
+    _pushCloudEvent(id, isPaused ? '▶️ Resumed' : '⏸️ Paused — sending stops after the current lead');
   } catch (e) { alert(`Could not ${verb}: ` + e.message); return; }
   // Refresh the viewed card immediately, plus the board.
   if (typeof _refreshCloudActiveStatus === 'function' && _viewingCloudId === id) { try { await _refreshCloudActiveStatus(id); } catch {} }
@@ -8359,14 +8425,34 @@ async function openRunningCampaignReadOnly(id) {
   _renderCloudEditBanner();
   _setCloudEditLock(true);
   _bindLiveStatusToCampaign(id);
-  // applyPresetConfig mounts some sections async — re-assert the lock + run-target after.
-  setTimeout(() => {
-    if (!(_cloudEdit && _cloudEdit.readOnly)) return;
-    try { if (typeof setRunTarget === 'function') setRunTarget('cloud'); } catch (_) { /* */ }
-    _setCloudEditLock(true);
-  }, 900);
+  // The invariants above (Cloud VM run-target, Live Status section bound + open,
+  // fields locked) get clobbered by async events that fire AFTER this synchronous
+  // setup: goCreateCampaign() set location.hash='#/new', whose deferred hashchange
+  // handler (applyRoute) + the wizard/status pollers run next and re-render off the
+  // LOCAL status. Rather than chase each clobber, re-assert idempotently — now, and
+  // again after those deferred events have run. The 5s cloud-card poll + wizard
+  // route entry also re-assert (see _startCloudCardPoll, applyRoute).
+  _enforceCloudReadOnlyView();
+  [120, 600, 1500].forEach((ms) => setTimeout(() => { try { _enforceCloudReadOnlyView(); } catch (_) { /* */ } }, ms));
 }
 window.openRunningCampaignReadOnly = openRunningCampaignReadOnly;
+
+// Re-assert the cloud read-only view's invariants idempotently. No-op unless we're
+// actually viewing a cloud campaign read-only. Called on open, on wizard route
+// entry, and on every cloud-card poll tick so the view can't drift back to a
+// "This machine / no Live Status" state after an async re-render.
+function _enforceCloudReadOnlyView() {
+  if (!(_viewingCloudId && _cloudEdit && _cloudEdit.readOnly)) return;
+  // Only reset the run-target on actual drift so the 5s poll doesn't needlessly
+  // re-render the wizard (setRunTarget → refreshRunTarget cascade).
+  try {
+    if (typeof getRunTarget === 'function' && typeof setRunTarget === 'function' && getRunTarget() !== 'cloud') setRunTarget('cloud');
+  } catch (_) { /* */ }
+  liveStatusForcedOpen = true;
+  try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
+  try { _setCloudEditLock(true); } catch (_) { /* */ }
+}
+window._enforceCloudReadOnlyView = _enforceCloudReadOnlyView;
 
 // v2.160.46: while an active campaign is open read-only, any attempt to touch a
 // field tells the operator to stop it first. The fields are already disabled
@@ -8582,6 +8668,7 @@ async function restartCloudCampaignUI(id, fromStart) {
       return;
     }
     if (typeof showCampaignToast === 'function') showCampaignToast(fromStart ? 'Restarting the cloud campaign from the beginning…' : 'Continuing the cloud campaign…', 4500);
+    _pushCloudEvent(id, fromStart ? '▶️ Started (from the beginning)' : '▶️ Started (continuing where it left off)');
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
     return;
@@ -8594,17 +8681,23 @@ window.restartCloudCampaignUI = restartCloudCampaignUI;
 // Task 3 Part B — cloud monitoring controls (parity with local ⚡ Check now /
 // Automatic checks). Degrade gracefully until the engine ships the routes: a
 // 404/HTTP error → a clear "engine update pending" toast, no throw.
-async function cloudCheckNow(id, btn) {
+async function cloudCheckNow(id, btn, scope) {
+  scope = scope === 'all' ? 'all' : 'campaign';
   if (btn) btn.disabled = true;
   let queued = false;
   try {
-    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, { method: 'POST' });
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }),
+    });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
       showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Check now isn’t live yet — engine update pending.', 6000);
     } else {
       queued = true;
-      showCampaignToast('⚡ Check queued — the VM is opening a browser to sweep… (takes ~10s)', 4500);
+      _pushCloudEvent(id, scope === 'all' ? '⚡ Check now — every account in the Account Used column' : '⚡ Check now — this campaign’s accounts');
+      showCampaignToast(scope === 'all'
+        ? '⚡ Check queued — the VM will sweep every account in the sheet’s Account Used column…'
+        : '⚡ Check queued — the VM is opening a browser to sweep… (takes ~10s)', 4500);
     }
   } catch (e) { showCampaignToast('Could not reach the engine: ' + e.message, 6000); }
   finally { if (btn) btn.disabled = false; }
@@ -8633,6 +8726,17 @@ async function cloudCheckNow(id, btn) {
   })();
 }
 window.cloudCheckNow = cloudCheckNow;
+
+// Cloud "Run check now" → first ask the same scope question the local check asks:
+// this campaign's accounts, or every account in the sheet's "Account Used" column.
+// Reuses the shared solo-check scope modal; maps its 'sheet' choice to the engine's
+// 'all' scope (Account Used column) and 'campaign' to this campaign's accounts.
+function promptCloudCheckScope(id, btn) {
+  if (!id) return;
+  _soloCheckHandler = (mode) => cloudCheckNow(id, btn, mode === 'sheet' ? 'all' : 'campaign');
+  _showSoloCheckModal();
+}
+window.promptCloudCheckScope = promptCloudCheckScope;
 
 async function setCloudAutoChecks(id, enabled, el) {
   try {
@@ -10879,7 +10983,11 @@ function syncLiveStatusVisibility() {
   // set). A cloud FG run's card #2 must show exactly like any other VM campaign; the
   // FG-board suppression only applies when we're actually on the board (no cloud view).
   const inFollowerGrowth = (document.getElementById('campaign-mode')?.value === 'follower_growth') && !_viewingCloudId;
-  const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || ((running || monitoring) && !editingDraft) || finished);
+  // Viewing a cloud campaign in the wizard → its Live Status (section 7) must show
+  // regardless of the local __cockpit state (which is idle for a VM campaign) and
+  // even if liveStatusForcedOpen was reset by an unrelated re-render.
+  const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
+  const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || cloudView || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   const navBtn = document.querySelector('[data-nav="nav-status"]');
   if (navBtn) navBtn.style.display = show ? '' : 'none';
@@ -14585,6 +14693,10 @@ function applyRoute() {
   // v2.59.22: re-evaluate the Live Status card placement on every route change
   // (sync visibility first so placeLiveCard sees the right display state).
   try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
+  // Entering the wizard is the deferred hashchange that runs right after
+  // openRunningCampaignReadOnly's setup — re-assert the cloud read-only invariants
+  // here so this route handler can't leave the view on "This machine".
+  if (isWizard) { try { if (typeof _enforceCloudReadOnlyView === 'function') _enforceCloudReadOnlyView(); } catch (_) { /* */ } }
 }
 
 // Updates the wizard's banner + Start button label based on whether a
@@ -15792,11 +15904,12 @@ function openActiveBulkCheckModal() {          // active "Run check now"
     || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id);
   if (_cloudId) {
     // A cloud campaign's acceptance check runs on the VM (where the campaign
-    // sends), via the engine's own check-now. No scope modal — the VM sweeps its
-    // own accounts. cloudCheckNow degrades to an "engine update pending" toast if
-    // the engine hasn't shipped the route yet.
+    // sends), via the engine's own check-now. Ask the same scope question as the
+    // local check (this campaign's accounts vs every account in the sheet's
+    // "Account Used" column); the engine resolves the account set from that scope.
+    // Degrades to an "engine update pending" toast if the engine lacks the route.
     const btn = document.querySelector('#btn-bulk-check-live, #btn-bulk-check-now, #vj-bulk-btn');
-    cloudCheckNow(_cloudId, btn || undefined);
+    promptCloudCheckScope(_cloudId, btn || undefined);
     return;
   }
   _soloCheckHandler = (mode) => _runActiveBulkCheck(mode);
