@@ -4229,18 +4229,45 @@ const MODE_LIST = [
   },
 ];
 
+// ── Campaign-type lock (v2.160.42) ──────────────────────────────────────────
+// When OPEN edits an existing (stopped/done) campaign, its type is FIXED — the
+// operator can edit the message, accounts, sheet and delays, but not switch the
+// campaign type (that would be a different campaign). Fresh campaigns, drafts,
+// queued edits and duplicates are always unlocked. Holds a MODE_LIST value, or
+// null when unlocked.
+let _lockedCampaignType = null;
+function lockCampaignType(mode) {
+  _lockedCampaignType = MODE_LIST.some((m) => m.value === mode) ? mode : null;
+  const select = document.getElementById('campaign-mode');
+  if (_lockedCampaignType && select && select.value !== _lockedCampaignType) {
+    select.value = _lockedCampaignType;
+    if (typeof onModeChange === 'function') onModeChange();
+  }
+  renderModeSelector();
+}
+function unlockCampaignType() {
+  if (_lockedCampaignType === null) return;
+  _lockedCampaignType = null;
+  renderModeSelector();
+}
+window.lockCampaignType = lockCampaignType;
+window.unlockCampaignType = unlockCampaignType;
+
 function renderModeSelector() {
   const select = document.getElementById('campaign-mode');
   const grid = document.getElementById('mode-grid');
   if (!select || !grid) return;
 
-  const current = select.value;
+  // v2.160.42: a type lock (editing an existing campaign) is authoritative — it
+  // fixes the active selection to the locked mode.
+  const current = _lockedCampaignType || select.value;
   let activeIdx = MODE_LIST.findIndex((m) => m.value === current);
   if (activeIdx < 0) activeIdx = 0;
   // v2.100.2: never leave the active selection on a disabled/coming-soon mode
   // (connect_only is the select's default and is now under maintenance). Fall
-  // through to the first available mode and sync the hidden select.
-  if (MODE_LIST[activeIdx] && (MODE_LIST[activeIdx].disabled || MODE_LIST[activeIdx].comingSoon || modeIsLocked(MODE_LIST[activeIdx]))) {
+  // through to the first available mode and sync the hidden select. Skipped
+  // under a type lock — the locked type always shows, even if otherwise gated.
+  if (!_lockedCampaignType && MODE_LIST[activeIdx] && (MODE_LIST[activeIdx].disabled || MODE_LIST[activeIdx].comingSoon || modeIsLocked(MODE_LIST[activeIdx]))) {
     const firstOk = MODE_LIST.findIndex((m) => !m.disabled && !m.comingSoon && !modeIsLocked(m));
     if (firstOk >= 0) {
       activeIdx = firstOk;
@@ -4277,11 +4304,17 @@ function renderModeSelector() {
     const bullets = m.bullets
       .map((b) => `<li>${escHtml(b)}</li>`)
       .join('');
-    const isActive = i === activeIdx && !m.comingSoon && !m.disabled && !locked && !rtBlocked;
+    // v2.160.42: campaign-type lock — while editing an existing campaign, the
+    // NON-selected types grey out and the selected one shows a 🔒 Fixed badge.
+    const _fixedIn = _lockedCampaignType && m.value === _lockedCampaignType;
+    const _fixedOut = _lockedCampaignType && m.value !== _lockedCampaignType;
+    const isActive = _fixedIn || (!_lockedCampaignType && i === activeIdx && !m.comingSoon && !m.disabled && !locked && !rtBlocked);
     // Locked cards look like a normal available card (NOT greyed) — only the
     // 🔒 badge distinguishes them. They stay clickable to prompt for the password.
-    const stateClass = (m.comingSoon || m.disabled || rtBlocked) ? 'is-coming-soon' : (isActive ? 'active' : '');
-    const badge = m.comingSoon ? '<span class="mode-card-badge">Coming soon</span>'
+    const stateClass = _fixedOut ? 'is-coming-soon'
+      : ((m.comingSoon || m.disabled || rtBlocked) ? 'is-coming-soon' : (isActive ? 'active' : ''));
+    const badge = _fixedIn ? '<span class="mode-card-badge">🔒 Fixed</span>'
+      : m.comingSoon ? '<span class="mode-card-badge">Coming soon</span>'
       : (m.disabled ? `<span class="mode-card-badge">${m.maintenance ? 'Under maintenance' : 'Unavailable'}</span>`
       : (locked ? '<span class="mode-card-badge">🔒 Locked</span>'
       : (rtBlocked ? '<span class="mode-card-badge">💻 LOCAL ONLY</span>' : '')));
@@ -4300,6 +4333,11 @@ function renderModeSelector() {
 
 async function setModeByIndex(i) {
   const mode = MODE_LIST[(i + MODE_LIST.length) % MODE_LIST.length];
+  // v2.160.42: campaign type is fixed while editing an existing campaign.
+  if (_lockedCampaignType && mode.value !== _lockedCampaignType) {
+    showCampaignToast('Campaign type is fixed while editing an existing campaign — duplicate it to start a different type.', 3800);
+    return;
+  }
   if (mode.comingSoon) {
     showCampaignToast(`${mode.name} — coming soon.`, 3000);
     return;
@@ -6559,6 +6597,7 @@ window.duplicatePastCampaign = duplicatePastCampaign;
 // Stage the config as a fresh draft and open the wizard pre-filled with a
 // "… copy" name. Nothing runs until the operator picks Start/Queue/Schedule.
 async function _openDuplicateDraft(srcName, config) {
+  if (typeof unlockCampaignType === 'function') unlockCampaignType();  // v2.160.42: a duplicate is a new campaign — type editable
   const copyName = /\bcopy\b/i.test(srcName) ? srcName : `${srcName} copy`;
   let draftId = '';
   try {
@@ -8239,21 +8278,47 @@ async function openCampaignForEdit(id) {
     const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
     if (r.ok) d = await r.json();
   } catch (_) { /* fall through to live view */ }
-  if (!d || !d.config) { try { await openCloudLive(id); } catch (_) { /* */ } return; }
-  try { clearCloudEditMode(); } catch (_) { /* not in running-edit lock mode */ }
-  try { clearActiveDraft(); } catch (_) { /* editing a finished campaign, not a draft */ }
-  // Prefer the name shown on the board strip (the campaign's current name) so
-  // the wizard header matches exactly what the operator clicked; fall back to
-  // the launch-config's saved name.
+  // Prefer the name/type shown on the board strip (what the operator actually
+  // clicked); fall back to the saved launch-config snapshot.
   const _it = (_boardItemsById && _boardItemsById.get(id)) || (_snItemsById && _snItemsById.get(id));
-  const displayName = (_it && _it.name) || d.name || '';
-  const nameInput = document.getElementById('campaign-name-input');
-  if (nameInput) nameInput.value = displayName;
-  if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
-  goCreateCampaign();
-  // applyPresetConfig mounts some sections async and may reset the name field —
-  // re-assert the display name after mount.
-  setTimeout(() => { const ni = document.getElementById('campaign-name-input'); if (ni) ni.value = displayName; }, 80);
+  const displayName = (_it && _it.name) || (d && d.name) || '';
+  const mode = (d && d.config && d.config.mode) || (_it && _it.mode) || '';
+
+  // v2.160.42 bug fix: entering the wizard (#/new) fires syncCampaignNameInput(),
+  // whose async /api/draft-name + localStorage fallbacks resolve AFTER we set the
+  // name and would clobber it with the *previously* opened campaign's name (e.g.
+  // opening "OPiii" showed the earlier "ASII_Inmail"). A one-shot override makes
+  // syncCampaignNameInput honor the opened campaign's name and win that race;
+  // localStorage is seeded too so a Cmd+R on the wizard keeps this name.
+  const _seedName = () => {
+    window._openEditNameOverride = displayName;
+    try { localStorage.setItem('campaignName', displayName); } catch (_) { /* private mode */ }
+    const ni = document.getElementById('campaign-name-input');
+    if (ni) ni.value = displayName;
+  };
+
+  if (d && d.config) {
+    // Full snapshot → prefill the whole wizard from it.
+    try { clearCloudEditMode(); } catch (_) { /* not in running-edit lock mode */ }
+    try { clearActiveDraft(); } catch (_) { /* editing a finished campaign, not a draft */ }
+    _seedName();
+    if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
+    goCreateCampaign();
+  } else {
+    // No snapshot — an older campaign launched before configs were recorded.
+    // We can't recover its message/delays/sheet, but we DO know its name + type
+    // from the board, so best-effort: a clean wizard seeded with name + type,
+    // everything else blank. startNewCampaign() clears every stale field and
+    // spawns a fresh draft; then we re-assert this campaign's name + type.
+    try { clearCloudEditMode(); } catch (_) { /* */ }
+    await startNewCampaign();
+    _seedName();
+    const select = document.getElementById('campaign-mode');
+    if (select && mode) { select.value = mode; if (typeof onModeChange === 'function') onModeChange(); }
+  }
+  // Lock the campaign type — an existing campaign's type is fixed; everything
+  // else stays editable. Runs last so it survives any nav-triggered re-render.
+  if (mode) lockCampaignType(mode);
 }
 window.openCampaignForEdit = openCampaignForEdit;
 
@@ -14555,6 +14620,7 @@ window.viewRunningCampaign = viewRunningCampaign;
 
 async function editDraft(id) {
   window.__viewingActiveCampaign = false;
+  if (typeof unlockCampaignType === 'function') unlockCampaignType();  // v2.160.42: drafts stay type-editable
   if (!id) return;
   // 2026-05-27 (drafts-isolation, Task 6): flush any pending autosave for
   // the CURRENT active draft BEFORE switching the id. Otherwise the next
@@ -14807,6 +14873,7 @@ window.cancelQueuedCampaign = cancelQueuedCampaign;
 // opens the wizard hydrated. Re-queueing happens when the operator hits
 // Add to Queue at the bottom of the wizard.
 async function editQueuedCampaign(id) {
+  if (typeof unlockCampaignType === 'function') unlockCampaignType();  // v2.160.42: queued edits stay type-editable
   if (!id) return;
   let entry = null;
   try {
@@ -16342,6 +16409,9 @@ window.resumeWithEditFirst = resumeWithEditFirst;
 // campaigns in parallel without losing any.
 async function startNewCampaign() {
   window.__viewingActiveCampaign = false;
+  // v2.160.42: a fresh campaign is type-editable — clear any lock left over from
+  // an OPEN-to-edit of an existing campaign.
+  if (typeof unlockCampaignType === 'function') unlockCampaignType();
   // Fresh draft → re-arm the scrape baseline so the next scrape view hides any
   // prior run's jobs (the engine's job list is global, not per-draft).
   _scrapeBaselineDone = false;
@@ -19060,6 +19130,15 @@ window.fgtlBindLaunch = fgtlBindLaunch;
 async function syncCampaignNameInput() {
   const input = document.getElementById('campaign-name-input');
   if (!input) return;
+  // v2.160.42: one-shot override set by openCampaignForEdit. The opened
+  // campaign's name is authoritative and must NOT be overwritten by the
+  // draft-name / localStorage fallbacks below (which still hold the *previous*
+  // campaign's name until they're refetched). Consume it and stop.
+  if (window._openEditNameOverride != null) {
+    input.value = window._openEditNameOverride;
+    window._openEditNameOverride = null;
+    return;
+  }
   // 2026-05-27 (drafts-isolation): when an active draft id is set (whether
   // freshly created by startNewCampaign or loaded by editDraft), the draft
   // row IS the source of truth — fetch its name and use it verbatim (empty
