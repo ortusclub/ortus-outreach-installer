@@ -7523,6 +7523,91 @@ document.addEventListener('DOMContentLoaded', () => {
   if (scrim) scrim.addEventListener('click', (e) => { if (e.target === scrim) closeHandshakeModal(); });
 });
 
+// ── Campaigns board sections (admin split) ──────────────────────────────────
+// Per-group collapse state persisted to localStorage. Keys: 'sec:<name>' for
+// top-level sections (default expanded), 'sub:<section>:<bucket>' for the Done /
+// Cancelled sub-groups (default collapsed). The default lives at the call site
+// (defCollapsed arg) so a never-touched group follows its natural default.
+const _CB_COLLAPSE_KEY = 'campaignsBoardCollapse_v1';
+let _cbCollapse = null;
+function _cbState() {
+  if (_cbCollapse) return _cbCollapse;
+  try { _cbCollapse = JSON.parse(localStorage.getItem(_CB_COLLAPSE_KEY) || '{}') || {}; }
+  catch { _cbCollapse = {}; }
+  return _cbCollapse;
+}
+function _cbIsCollapsed(key, defCollapsed) {
+  const m = _cbState();
+  return key in m ? !!m[key] : defCollapsed;
+}
+window.toggleBoardGroup = function (key, defCollapsed) {
+  const m = _cbState();
+  const cur = key in m ? !!m[key] : defCollapsed;
+  m[key] = !cur;
+  try { localStorage.setItem(_CB_COLLAPSE_KEY, JSON.stringify(m)); } catch { /* non-fatal */ }
+  renderCampaignsBoard();
+};
+
+// Per-section user search (Other users' campaigns). Debounced re-render so the
+// input keeps focus while typing.
+let _otherUserSearch = '';
+let _otherSearchTimer = null;
+window.onOtherUserSearch = function (val) {
+  _otherUserSearch = val || '';
+  if (_otherSearchTimer) clearTimeout(_otherSearchTimer);
+  _otherSearchTimer = setTimeout(() => { renderCampaignsBoard(); }, 180);
+};
+
+// Render one top-level board section: header (caret + title + count) with the
+// four buckets inside. Running/Idle are always-visible rails; Done/Cancelled are
+// collapsible sub-groups (default collapsed). `opts`:
+//   flat        — no section header (non-admin single board)
+//   headExtra   — HTML appended into the header (e.g. the user-search input)
+//   subtitle    — small muted label after the title
+//   alwaysShow  — render the section header even when empty
+function _renderBoardSection(key, title, secItems, opts = {}) {
+  const running   = secItems.filter((x) => x.bucket === 'running');
+  const idle      = secItems.filter((x) => x.bucket === 'queued');
+  const done      = secItems.filter((x) => x.bucket === 'done' && !x.bad);
+  const cancelled = secItems.filter((x) => x.bucket === 'done' && x.bad);
+
+  const rail = (label, arr) => arr.length
+    ? `<div class="sn-railhead">${label}</div>` + arr.map(renderUnifiedStrip).join('') : '';
+  const subGroup = (bucketKey, label, arr, extra = '') => {
+    if (!arr.length) return '';
+    const gk = `sub:${key}:${bucketKey}`;
+    const collapsed = _cbIsCollapsed(gk, true); // Done/Cancelled default collapsed
+    const caret = collapsed ? '▸' : '▾';
+    const head = `<div class="sn-railhead cb-subhead" onclick="toggleBoardGroup('${gk}', true)">`
+      + `<span class="cb-caret">${caret}</span> ${label} <span class="sn-railcount">${arr.length}</span>${extra}</div>`;
+    return head + (collapsed ? '' : arr.map(renderUnifiedStrip).join(''));
+  };
+
+  const doneClearBtn = ` <button type="button" class="sn-clear-done" onclick="event.stopPropagation();clearCampaignsDone()">Clear done</button>`;
+  const body = rail('▶ Running', running)
+    + rail('• Idle', idle)
+    + subGroup('done', '✓ Done', done, doneClearBtn)
+    + subGroup('cancelled', '⊘ Cancelled', cancelled);
+
+  // Non-admin flat board: no header, just the buckets.
+  if (opts.flat) return body;
+
+  if (!secItems.length && !opts.alwaysShow) return '';
+
+  const secKey = `sec:${key}`;
+  const collapsed = _cbIsCollapsed(secKey, false);
+  const caret = collapsed ? '▸' : '▾';
+  const subtitle = opts.subtitle ? `<span class="cb-secsub">${escHtml(opts.subtitle)}</span>` : '';
+  const head = `<div class="cb-sectionhead" onclick="toggleBoardGroup('${secKey}', false)">`
+    + `<span class="cb-caret">${caret}</span>`
+    + `<span class="cb-sectitle">${title}</span>${subtitle}`
+    + `<span class="cb-seccount">${secItems.length}</span>`
+    + `<span class="cb-headextra">${opts.headExtra || ''}</span></div>`;
+  const inner = collapsed ? ''
+    : `<div class="cb-secbody">${body || '<div class="cb-secempty">No campaigns.</div>'}</div>`;
+  return `<div class="cb-section${collapsed ? ' cb-collapsed' : ''}">${head}${inner}</div>`;
+}
+
 let _campaignsBoardTimer = null;
 // Fetch local (status/queue/history) + cloud campaigns, normalize, render.
 async function renderCampaignsBoard() {
@@ -7689,15 +7774,44 @@ async function renderCampaignsBoard() {
   }
 
   _lastCampaignsDone = done;
-  const rail = (label, arr, extra = '') => arr.length
-    ? `<div class="sn-railhead">${label}${extra}</div>` + arr.map(renderUnifiedStrip).join('') : '';
-  const doneExtra = done.length
-    ? ` <span class="sn-railcount">${done.length}</span><button type="button" class="sn-clear-done" onclick="clearCampaignsDone()">Clear done</button>`
-    : '';
-  let html = rail('▶ Now running', running) + rail('• Up next', queued)
-    + rail('✓ Done', done, doneExtra);
+
+  // ── Board layout ──────────────────────────────────────────────────────────
+  // Admins get three minimisable sections (Your / Other users / Admin = Follower
+  // Growth); each orders Running → Idle → Done → Cancelled, with Done and
+  // Cancelled as collapsible sub-groups. Non-admins keep a single flat board
+  // with the same bucket ordering. Cancelled strips are NOT greyed (see CSS
+  // .sn-board.cb-nogrey .sn-strip.cancelled).
+  board.classList.add('cb-nogrey');
+  let html;
+  if (_viewerIsAdmin) {
+    const mineItems  = shown.filter((x) => !x.isFG && x.mine);
+    const otherItems = shown.filter((x) => !x.isFG && !x.mine);
+    const adminItems = shown.filter((x) => x.isFG); // Follower Growth (extensible)
+    // Other-users section: optional per-section user search.
+    const q = (_otherUserSearch || '').trim().toLowerCase();
+    const otherShown = q
+      ? otherItems.filter((x) => String(_ownerOf(x) || '').toLowerCase().includes(q))
+      : otherItems;
+    const searchBox = `<input type="text" class="cb-usersearch" placeholder="Search user…"`
+      + ` value="${escHtml(_otherUserSearch || '')}" oninput="onOtherUserSearch(this.value)"`
+      + ` onclick="event.stopPropagation()">`;
+    html = _renderBoardSection('mine', 'Your campaigns', mineItems)
+      + _renderBoardSection('other', 'Other users’ campaigns', otherShown, { headExtra: searchBox, alwaysShow: !!q || otherItems.length > 0 })
+      + _renderBoardSection('admin', 'Admin campaigns', adminItems, { subtitle: 'Follower Growth' });
+  } else {
+    html = _renderBoardSection('mine', '', shown, { flat: true });
+  }
   _snItemsById = new Map(items.map((x) => [x.id, x]));
+  // Keep the user-search caret alive across the 4s poll re-render: note whether
+  // it held focus BEFORE we blow away innerHTML, then restore after.
+  const _searchHadFocus = document.activeElement
+    && document.activeElement.classList
+    && document.activeElement.classList.contains('cb-usersearch');
   board.innerHTML = html || _campaignsEmptyState();
+  if (_searchHadFocus) {
+    const inp = board.querySelector('.cb-usersearch');
+    if (inp) { inp.focus(); const n = inp.value.length; try { inp.setSelectionRange(n, n); } catch { /* */ } }
+  }
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity

@@ -1382,6 +1382,26 @@
   .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;}
   .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
   .sn-railcount{color:#c4c4c4;}
+  /* ── Admin board sections (Your / Other users / Admin) ── */
+  .cb-section{border:1px solid var(--hairline);border-radius:14px;padding:4px 16px 14px;margin:14px 0;}
+  .cb-section.cb-collapsed{padding-bottom:4px;}
+  .cb-sectionhead{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;padding:12px 2px;margin:0;}
+  .cb-caret{font-size:11px;color:var(--gray);width:12px;display:inline-block;}
+  .cb-sectitle{font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--ink);text-transform:none;}
+  .cb-secsub{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .cb-seccount{font-family:var(--mono);font-size:11px;color:var(--gray);background:var(--hairline);border-radius:9999px;padding:1px 9px;}
+  .cb-headextra{margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .cb-usersearch{font-size:12px;color:var(--ink);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 12px;width:150px;transition:border-color .12s,width .14s;}
+  .cb-usersearch:focus{outline:none;border-color:var(--ink);width:190px;}
+  .cb-secbody{margin-top:2px;}
+  .cb-secbody .sn-railhead:first-child{margin-top:6px;}
+  .cb-secempty{font-size:12px;color:var(--gray);padding:8px 2px 4px;}
+  .cb-subhead{cursor:pointer;user-select:none;}
+  .cb-subhead .cb-caret{width:10px;}
+  /* Cancelled campaigns are NOT greyed on the admin board (Sam) — full-strength
+     ink/rail, only the gray rail + status distinguish them. */
+  .sn-board.cb-nogrey .sn-strip.cancelled{opacity:1;}
+  .sn-board.cb-nogrey .sn-strip.cancelled .sn-name{color:var(--ink);}
   .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;transition:color .12s,border-color .12s;}
   .sn-clear-done:hover{color:var(--ink);border-color:var(--ink);}
   .sn-foot .mini.sn-dismiss{padding:6px 10px;color:var(--gray);}
