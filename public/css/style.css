@@ -8226,6 +8226,9 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .team-table .acct-chip { font-size: 0.62rem; color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px;
   padding: 3px 10px; white-space: nowrap; }
 .team-table .acct-chip.warn { color: var(--gold); border-color: var(--gold); }
+.team-table .acct-more { font-size: 0.62rem; color: var(--gray); background: transparent; border: 1px dashed var(--hairline);
+  border-radius: 9999px; padding: 3px 10px; white-space: nowrap; cursor: pointer; transition: color .12s, border-color .12s; }
+.team-table .acct-more:hover { color: var(--ink); border-color: var(--ink); }
 .team-table .time2 { white-space: nowrap; }
 .team-table .time2 .local { display: block; font-size: 0.6rem; color: var(--gray); margin-top: 3px; }
 .team-foot { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.7; margin-top: 18px; }

@@ -6075,7 +6075,7 @@ function renderCloudStrip(c, lc, logLines = null) {
 
   const statusTxt = isQueued ? 'Queued'
     : isRunning ? (isFG ? 'Inviting' : 'Running')
-    : isBad ? (status === 'cancelled' ? 'Cancelled' : 'Error')
+    : isBad ? (status === 'cancelled' ? 'Stopped' : 'Error')
     : 'Done';
   const dot = status === 'error' ? '<span class="dot red"></span>'
     : isBad ? '<span class="dot cancel"></span>'   // cancelled — gray, not red
@@ -6404,6 +6404,38 @@ window.openLocalCampaignDetail = openLocalCampaignDetail;
 // Dismiss a local Done strip from the board (parity with dismissCloudDone).
 function dismissLocalDone(id) { _localDismissed.add(id); renderCampaignsBoard(); }
 window.dismissLocalDone = dismissLocalDone;
+
+// Delete a finished/stopped campaign from the board (replaces the old Dismiss).
+// Local campaigns are truly deleted from history.json; cloud campaigns have no
+// engine delete endpoint yet, so they're stopped (if somehow still active) and
+// removed from this dashboard durably. Always confirms first.
+async function deleteBoardCampaign(id, btn) {
+  const it = _boardItemsById.get(id) || (_snItemsById && _snItemsById.get(id));
+  const name = (it && it.name) || 'this campaign';
+  if (!confirm(`Delete "${name}"?\n\nThis removes it from your dashboard for good.`)) return;
+  try {
+    if (it && it.where === 'cloud') {
+      // No engine delete route — durably hide it from the board (persisted).
+      _cloudDismissed.add(id); _cloudSaveDismissed();
+    } else if (it && it.histIdx != null) {
+      const r = await fetch('/api/history/' + encodeURIComponent(it.histIdx), { method: 'DELETE' });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        alert('Could not delete: ' + (e.error || r.status));
+        return;
+      }
+    } else {
+      _localDismissed.add(id);
+    }
+  } catch (e) {
+    alert('Could not delete: ' + e.message);
+    return;
+  }
+  const strip = btn && btn.closest ? btn.closest('.sn-strip') : null;
+  if (strip) strip.remove(); // instant feedback; next poll already filters it
+  renderCampaignsBoard();
+}
+window.deleteBoardCampaign = deleteBoardCampaign;
 
 // Copy a campaign strip's log to the clipboard (⧉ button on the black log box).
 // Reads the rendered log's plain text (not HTML) so it pastes clean into a
@@ -6873,7 +6905,8 @@ function _vjControlsHtml(c, status) {
     if (e.kind === 'show') actions += `<button type="button" class="dock-btn" data-tip="Show" aria-label="Show" onclick="${e.onclick}">👁</button>`;
     else {
       const svg = e.kind === 'debrief' ? V3_SVG_DOC : e.kind === 'dup' ? V3_SVG_COPY
-        : e.kind === 'play' ? V3_SVG_PLAY : e.kind === 'restart' ? V3_SVG_RESTART : V3_SVG_XMARK;
+        : e.kind === 'play' ? V3_SVG_PLAY : e.kind === 'restart' ? V3_SVG_RESTART
+        : e.kind === 'delete' ? V3_SVG_TRASH : V3_SVG_XMARK;
       actions += dib(svg, e.tip, e.onclick);
     }
   }
@@ -7211,10 +7244,8 @@ function renderUnifiedStrip(it) {
       foot = `<button class="mini" onclick="window.cancelQueuedCampaign && window.cancelQueuedCampaign('${escHtml(it.rawId)}')">Cancel</button>`
         + `<button class="mini solid" onclick="window.editQueuedCampaign && window.editQueuedCampaign('${escHtml(it.rawId)}')">Open</button>`;
     }
-  } else { // done — Duplicate + Debrief + ✕ dismiss (icons), Open pill.
-    const dismiss = cloud
-      ? _dib(V3_SVG_XMARK, 'Dismiss', `dismissCloudDone('${escHtml(it.id)}', this)`)
-      : _dib(V3_SVG_XMARK, 'Dismiss', `dismissLocalDone('${escHtml(it.id)}')`);
+  } else { // done — Duplicate + Debrief + 🗑 Delete (icons), Open pill.
+    const dismiss = _dib(V3_SVG_TRASH || V3_SVG_XMARK, 'Delete', `deleteBoardCampaign('${escHtml(it.id)}', this)`, 'danger');
     const dup = _dib(V3_SVG_COPY, 'Duplicate', `duplicateCampaign('${escHtml(it.id)}')`);
     // Debrief — local done strips only (the snapshot lives on the history entry).
     const debriefBtn = (!cloud && it.hist)
@@ -7548,6 +7579,16 @@ window.toggleBoardGroup = function (key, defCollapsed) {
   renderCampaignsBoard();
 };
 
+// Collapse/expand chevron. A real SVG (not a ▸ glyph, which stays tiny at any
+// font-size) so the minimise affordance is unmistakable. Points down when open,
+// rotates to point right when collapsed (via CSS .cl).
+function _cbCaretSvg(collapsed, big) {
+  const sz = big ? 26 : 18;
+  return `<svg class="cb-caretsvg${collapsed ? ' cl' : ''}" width="${sz}" height="${sz}" viewBox="0 0 24 24"`
+    + ` fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"`
+    + ` aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
+}
+
 // Per-section user search (Other users' campaigns). Debounced re-render so the
 // input keeps focus while typing.
 let _otherUserSearch = '';
@@ -7589,20 +7630,19 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
     if (!arr.length) return '';
     const gk = `sub:${key}:${bucketKey}`;
     const collapsed = _cbIsCollapsed(gk, true); // Done/Cancelled default collapsed
-    const caret = collapsed ? '▸' : '▾';
     const head = `<div class="sn-railhead cb-subhead" onclick="toggleBoardGroup('${gk}', true)">`
-      + `<span class="cb-caret">${caret}</span> ${label} <span class="sn-railcount">${arr.length}</span>${extra}</div>`;
+      + `<span class="cb-caret">${_cbCaretSvg(collapsed, false)}</span> ${label} <span class="sn-railcount">${arr.length}</span>${extra}</div>`;
     return head + (collapsed ? '' : arr.map(_safeStrip).join(''));
   };
 
-  const doneClearBtn = ` <button type="button" class="sn-clear-done" onclick="event.stopPropagation();clearCampaignsDone()">Clear done</button>`;
   // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
   // groups (sections + Done/Cancelled) show a caret, so the affordance reads true.
+  // "Clear done" removed (Sam) — to remove a campaign, delete it, not hide it.
   const body = rail('Running', running)
     + rail('Paused', paused)
     + rail('Idle', idle)
-    + subGroup('done', 'Done', done, doneClearBtn)
-    + subGroup('cancelled', 'Cancelled', cancelled);
+    + subGroup('done', 'Done', done)
+    + subGroup('cancelled', 'Stopped', cancelled);
 
   // Non-admin flat board: no header, just the buckets.
   if (opts.flat) return body;
@@ -7611,10 +7651,9 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
 
   const secKey = `sec:${key}`;
   const collapsed = _cbIsCollapsed(secKey, false);
-  const caret = collapsed ? '▸' : '▾';
   const subtitle = opts.subtitle ? `<span class="cb-secsub">${escHtml(opts.subtitle)}</span>` : '';
   const head = `<div class="cb-sectionhead" onclick="toggleBoardGroup('${secKey}', false)">`
-    + `<span class="cb-caret">${caret}</span>`
+    + `<span class="cb-caret">${_cbCaretSvg(collapsed, true)}</span>`
     + `<span class="cb-sectitle">${title}</span>${subtitle}`
     + `<span class="cb-seccount">${secItems.length}</span>`
     + `<span class="cb-headextra">${opts.headExtra || ''}</span></div>`;
@@ -7711,7 +7750,7 @@ async function renderCampaignsBoard() {
         bucket, sent: Number(lc.sent || 0), total: Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0),
         accounts: (c.profile_ids || []).length, mine,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
-        badLabel: c.status === 'cancelled' ? 'Cancelled' : 'Error',
+        badLabel: c.status === 'cancelled' ? 'Stopped' : 'Error',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
         logs: d._logLines || null, // per-lead log rows (running/expanded only)
         // Phase 0 handshake lock (Task 3.4) — undefined until the engine ships
@@ -7808,9 +7847,11 @@ async function renderCampaignsBoard() {
     const otherShown = q
       ? otherItems.filter((x) => String(_ownerOf(x) || '').toLowerCase().includes(q))
       : otherItems;
-    const searchBox = `<input type="text" class="cb-usersearch" placeholder="Search user…"`
-      + ` value="${escHtml(_otherUserSearch || '')}" oninput="onOtherUserSearch(this.value)"`
-      + ` onclick="event.stopPropagation()">`;
+    const searchBox = `<span class="cb-searchwrap" onclick="event.stopPropagation()">`
+      + `<svg class="cb-searchic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>`
+      + `<input type="search" class="cb-usersearch" placeholder="Search by user…" spellcheck="false" autocomplete="off" autocapitalize="off"`
+      + ` value="${escHtml(_otherUserSearch || '')}" oninput="onOtherUserSearch(this.value)">`
+      + `</span>`;
     html = _renderBoardSection('mine', 'Your campaigns', mineItems, { alwaysShow: true })
       + _renderBoardSection('other', 'Other users’ campaigns', otherShown, {
         headExtra: searchBox, alwaysShow: true,
@@ -13719,6 +13760,20 @@ function _teamAccountLabel(row, id) {
   const p = (Array.isArray(allProfilesData) ? allProfilesData : []).find((x) => x.id === id);
   return (p && p.name) || id;
 }
+// Per-operator "accounts in use" expansion state for the Team Status table.
+const _teamAcctExpanded = new Set();
+if (typeof document !== 'undefined' && !window.__teamAcctMoreWired) {
+  window.__teamAcctMoreWired = true;
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('.acct-more');
+    if (!btn) return;
+    const owner = btn.dataset.owner || '';
+    if (_teamAcctExpanded.has(owner)) _teamAcctExpanded.delete(owner);
+    else _teamAcctExpanded.add(owner);
+    if (typeof renderTeamStatus === 'function') renderTeamStatus(true);
+  });
+}
+
 async function renderTeamStatus(force = false) {
   const sec = document.getElementById('team-status-section');
   if (!sec) return;
@@ -13732,7 +13787,13 @@ async function renderTeamStatus(force = false) {
     const r = await fetch('/api/team-status');
     if (r.status === 403) { sec.hidden = true; return; } // belt-and-braces
     const d = await r.json();
-    const rows = Array.isArray(d?.rows) ? d.rows : [];
+    // Drop diagnostic / test operators (e.g. diag@test) — never a real teammate.
+    // A "test" owner is one whose domain is literally 'test' or has no dot.
+    const _isTestOperator = (o) => {
+      const dom = String(o || '').toLowerCase().split('@')[1] || '';
+      return !dom || dom === 'test' || dom === 'example' || dom.endsWith('.test');
+    };
+    const rows = (Array.isArray(d?.rows) ? d.rows : []).filter((row) => !_isTestOperator(row.owner));
     const body = document.getElementById('team-status-body');
     const sub = document.getElementById('team-status-sub');
     const confEl = document.getElementById('team-conf-strip');
@@ -13772,11 +13833,20 @@ async function renderTeamStatus(force = false) {
         ? `<span class="camp-name">${escHtml(row.campaignName)}</span><div class="camp-mode">${escHtml(_cloudModeLabel(row.mode))}</div>`
         : '<span class="dim">—</span>';
       const accounts = Array.isArray(row.accounts) ? row.accounts : [];
+      // Accounts-in-use can be dozens long (a big Follower Growth run touches
+      // every team account). Show the first few + a "+N more" toggle so the row
+      // stays compact; expansion state is per-operator and survives the poll.
+      const TEAM_ACCT_MAX = 6;
+      const _acctExpanded = _teamAcctExpanded.has(row.owner);
+      const _chip = (id) => `<span class="acct-chip${conflictAccountIds.has(id) ? ' warn' : ''}">${escHtml(_teamAccountLabel(row, id))}</span>`;
+      const _shown = _acctExpanded ? accounts : accounts.slice(0, TEAM_ACCT_MAX);
+      const _hiddenN = accounts.length - _shown.length;
+      const _moreBtn = _hiddenN > 0
+        ? `<button type="button" class="acct-more" data-owner="${escHtml(row.owner)}">+${_hiddenN} more</button>`
+        : (_acctExpanded && accounts.length > TEAM_ACCT_MAX
+          ? `<button type="button" class="acct-more" data-owner="${escHtml(row.owner)}">Show less</button>` : '');
       const acctCell = accounts.length
-        ? `<div class="acct-chips">${accounts.map((id) => {
-            const warn = conflictAccountIds.has(id) ? ' warn' : '';
-            return `<span class="acct-chip${warn}">${escHtml(_teamAccountLabel(row, id))}</span>`;
-          }).join('')}</div>`
+        ? `<div class="acct-chips">${_shown.map(_chip).join('')}${_moreBtn}</div>`
         : '<span class="dim">—</span>';
       const startedCell = row.startedAt
         ? (() => {

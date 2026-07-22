@@ -136,7 +136,7 @@ export function vjCardControlsFor(status = {}) {
     }
     c.extra.push({ tip: 'Duplicate', kind: 'dup', onclick: `duplicateCampaign('${id}')` });
     if (!cloud && s.hist) c.extra.push({ tip: 'Debrief', kind: 'debrief', onclick: `window.openDebrief('${id}')` });
-    c.extra.push({ tip: 'Dismiss', kind: 'dismiss', onclick: cloud ? `dismissCloudDone('${id}', this)` : `dismissLocalDone('${id}')` });
+    c.extra.push({ tip: 'Delete', kind: 'delete', onclick: `deleteBoardCampaign('${id}', this)` });
   } else if (queued) {
     c.extra.push({ tip: 'Cancel', kind: 'cancel', onclick: cloud ? `stopCloudCampaignUI('${id}')` : `window.cancelQueuedCampaign && window.cancelQueuedCampaign('${rawId}')` });
   }

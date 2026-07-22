@@ -78,23 +78,23 @@ test('controls: monitoring local → dashRunCheck bulk + pause + stop', () => {
   assert.ok(c.stop);
   assert.equal(c.monAuto, null);
 });
-test('controls: done → duplicate + dismiss, no bulk/stop/pause', () => {
+test('controls: done → duplicate + delete, no bulk/stop/pause', () => {
   const cloud = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'cD', bucket: 'done' }));
   assert.equal(cloud.bulk, null);
   assert.equal(cloud.stop, null);
   assert.ok(cloud.extra.find((e) => e.kind === 'dup'));
-  assert.ok(cloud.extra.find((e) => e.kind === 'dismiss' && /dismissCloudDone/.test(e.onclick)));
+  assert.ok(cloud.extra.find((e) => e.kind === 'delete' && /deleteBoardCampaign/.test(e.onclick)));
   const local = vjCardControlsFor(statusFromItem({ where: 'local', id: 'h1', bucket: 'done', hist: true }));
   assert.ok(local.extra.find((e) => e.kind === 'debrief'));
 });
 test('controls: a nasty local done id (quote / angle brackets) is escaped in onclicks', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'local', id: "h-O'Brien <b>Q3</b>", bucket: 'done', hist: true }));
-  const dismiss = c.extra.find((e) => e.kind === 'dismiss');
+  const del = c.extra.find((e) => e.kind === 'delete');
   // no raw apostrophe that would terminate the JS string, no raw angle brackets
-  assert.ok(!/dismissLocalDone\('h-O'Brien/.test(dismiss.onclick), 'apostrophe must be JS-escaped');
-  assert.match(dismiss.onclick, /O\\'Brien/);
-  assert.ok(!dismiss.onclick.includes('<b>'), 'angle brackets must be HTML-escaped');
-  assert.match(dismiss.onclick, /&lt;b&gt;/);
+  assert.ok(!/deleteBoardCampaign\('h-O'Brien/.test(del.onclick), 'apostrophe must be JS-escaped');
+  assert.match(del.onclick, /O\\'Brien/);
+  assert.ok(!del.onclick.includes('<b>'), 'angle brackets must be HTML-escaped');
+  assert.match(del.onclick, /&lt;b&gt;/);
 });
 
 test('controls: queued → cancel + open routes to edit/viewCloud', () => {
