@@ -4239,6 +4239,9 @@ let _lockedCampaignType = null;
 // v2.160.43: true while the wizard is editing an existing (stopped) campaign
 // opened via OPEN. Drives the "Save as draft" → "Save changes" button relabel.
 let _editingExistingCampaign = false;
+// v2.160.44: the cloud campaign id being edited — "Save changes" writes the
+// current config back onto this campaign's launch-config snapshot.
+let _editingCampaignId = null;
 function lockCampaignType(mode) {
   _lockedCampaignType = MODE_LIST.some((m) => m.value === mode) ? mode : null;
   const select = document.getElementById('campaign-mode');
@@ -4252,6 +4255,7 @@ function unlockCampaignType() {
   // Leaving the OPEN-to-edit flow — clear the edit flag and restore the button
   // label regardless of whether a type lock was actually in force.
   _editingExistingCampaign = false;
+  _editingCampaignId = null;
   _updateSaveButtonLabel();
   if (_lockedCampaignType === null) return;
   _lockedCampaignType = null;
@@ -8334,8 +8338,9 @@ async function openCampaignForEdit(id) {
   // else stays editable. Runs last so it survives any nav-triggered re-render.
   if (mode) lockCampaignType(mode);
   // Editing an existing campaign → the save action becomes "Save changes"
-  // (saves a new draft; the stopped campaign stays in the Stopped section).
+  // (writes the edits back onto this campaign; it stays in the Stopped section).
   _editingExistingCampaign = true;
+  _editingCampaignId = id;
   _updateSaveButtonLabel();
 }
 window.openCampaignForEdit = openCampaignForEdit;
@@ -12283,6 +12288,12 @@ function collectCurrentConfig() {
     // v2.58.x — IC-only sheet-mapping overrides (saved & restored across runs).
     senderColumn: getV('ic-sender-col-select'),
     allLeadsConnected: !!document.getElementById('ic-all-connected-toggle')?.checked,
+    // v2.160.44: monitoring cadence / auto-checks / concurrency — applyPresetConfig
+    // restores these from the top level, so capture them for a faithful round-trip
+    // (previously dropped → Re-run/draft/save silently reset them to defaults).
+    checkIntervalMinutes: getN('check-cadence-select', 60),
+    autoChecksEnabled: document.getElementById('auto-checks-toggle')?.checked !== false,
+    concurrency: document.getElementById('concurrency-toggle')?.checked ? getN('concurrency-count', 2) : 1,
     templates: {
       connectionNote: getV('tpl-note'),
       followUp1: getV('tpl-followup'),
@@ -12290,6 +12301,25 @@ function collectCurrentConfig() {
       inmailBody: getV('tpl-inmail-body'),
       openProfileSubject: getV('tpl-op-subject'),
       openProfileBody: getV('tpl-op-body'),
+      // v2.160.44: intro-flow (CC+IC / ICB / CC+DM) fields. applyPresetConfig
+      // restores every one of these from templates, so a faithful save must
+      // capture them — previously omitted, which is why the Primary Person name,
+      // intro title/body, auto-accept + follow-up toggles and the CC+DM body were
+      // silently lost on Save / draft / preset. Raw field values (mirrors how
+      // applyPresetConfig writes them back unconditionally); fields hidden for the
+      // current mode are simply empty.
+      primaryName: getV('primary-person-name').trim(),
+      primaryUrl: getV('primary-person-url').trim(),
+      primaryIntroBody: getV('primary-intro-body'),
+      introTitle: getV('intro-title'),
+      autoAcceptPrimary: document.getElementById('auto-accept-toggle')?.checked === true,
+      autoAcceptAllPending: document.getElementById('auto-accept-all-toggle')?.checked === true,
+      followUpEnabled: document.getElementById('follow-up-toggle')?.checked === true,
+      followUpBody: getV('follow-up-body'),
+      followUpDelayMinutes: getN('follow-up-delay', 10),
+      primarySource: (typeof readPrimarySource === 'function') ? readPrimarySource() : 'local-browser',
+      primaryCheckTiming: getV('primary-timing-select') || 'immediately',
+      ccDmBody: getV('tpl-cc-dm-body'),
     },
   };
 }
@@ -19729,39 +19759,38 @@ window.launchSaveAsDraft = function() {
   if (typeof showCampaignToast === 'function') showCampaignToast('Saved as draft');
 };
 
-// v2.160.43: "Save changes" — shown in place of "Save as draft" when editing an
-// existing (stopped) campaign opened via OPEN. Saves the edited config as a NEW
-// draft and returns to the dashboard. The stopped campaign is a separate cloud
-// record we never touch, so it stays in the Stopped section. Uses the active
-// draft if the wizard already spawned one (best-effort opens do), otherwise
-// spawns a fresh draft from the still-populated form (snapshot opens don't).
+// v2.160.44: "Save changes" — shown in place of "Save as draft" when editing an
+// existing (stopped) campaign opened via OPEN. Writes the current wizard config
+// back onto THAT campaign's launch-config snapshot (creating one for older
+// campaigns that never had it), so re-opening the campaign shows the edits. The
+// campaign stays in the Stopped section — its engine status is untouched. Does
+// NOT navigate: it saves in place and toasts; the operator leaves via the
+// "← Back to dashboard" link when ready.
 window.launchSaveChanges = async function() {
   _closeLaunchMenu();
-  try {
-    let id = (typeof getActiveDraftId === 'function') ? getActiveDraftId() : '';
-    if (!id) {
-      const nameInput = document.getElementById('campaign-name-input');
-      const name = (nameInput?.value || '').trim();
-      const r = await fetch('/api/drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = await r.json();
-      id = data?.draft?.id || '';
-      if (id) setActiveDraftId(id);
-    }
-    // Persist the current form (name, sheet, templates, cadence, profiles) into
-    // the draft via the existing autosave path.
-    if (id && typeof flushAutosaveImmediate === 'function') await flushAutosaveImmediate();
-    if (typeof showCampaignToast === 'function') showCampaignToast('Saved as a new draft');
-  } catch (err) {
-    console.warn('[drafts] launchSaveChanges failed:', err);
-    if (typeof showCampaignToast === 'function') showCampaignToast('Could not save draft');
-    return;
+  if (!_editingCampaignId) {
+    // Shouldn't happen (button only shows in edit mode) — fall back to draft.
+    return window.launchSaveAsDraft();
   }
-  window.location.hash = '#/';
+  const btn = document.getElementById('btn-save-draft');
+  const prevLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const config = collectCurrentConfig();
+    const name = (document.getElementById('campaign-name-input')?.value || '').trim();
+    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(_editingCampaignId)}/launch-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, config }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (typeof showCampaignToast === 'function') showCampaignToast('Saved ✓ — changes stored on this campaign', 3500);
+  } catch (err) {
+    console.warn('[launch-config] launchSaveChanges failed:', err);
+    if (typeof showCampaignToast === 'function') showCampaignToast('Could not save changes', 4000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = prevLabel || 'Save changes'; }
+  }
 };
 
 // The 4th wizard action dispatches on context: editing an existing campaign →

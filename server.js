@@ -1679,6 +1679,23 @@ app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   if (!rec) return res.status(404).json({ error: 'No saved launch config for this campaign.' });
   res.json({ name: rec.name || '', config: rec.config || {} });
 });
+// v2.160.44: persist edits made in the OPEN-to-edit wizard back onto the
+// campaign's own launch-config snapshot (creating one for older campaigns that
+// never had it), so re-opening the stopped campaign shows the edits. The
+// campaign's engine status is untouched — it stays stopped.
+app.post('/api/campaign/cloud/:id/launch-config', async (req, res) => {
+  const body = req.body || {};
+  const config = body.config;
+  if (!config || typeof config !== 'object') {
+    return res.status(400).json({ error: 'Missing config.' });
+  }
+  try {
+    await saveCloudLaunchConfig(req.params.id, body.name || '', config);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Failed to save launch config.' });
+  }
+});
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
   const r = await stopCloudCampaign(req.params.id, {
     pause: !!req.query.pause,
