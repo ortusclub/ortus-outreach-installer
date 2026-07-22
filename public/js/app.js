@@ -7297,19 +7297,26 @@ function renderUnifiedStrip(it) {
     // poll (it.live) — a hint there's something to watch right now.
     const _vLabel = String(it.name || it.id).replace(/['"\\<>]/g, '');
     const _showBtn = `<button class="mini${it.live ? ' live-on' : ''}" onclick="openCloudCampaignView('${escHtml(it.id)}','${escHtml(_vLabel)}')" title="Watch the campaign's browser live">${it.live ? '<span class="live-dot"></span>' : ''}👁 Show</button>`;
+    // v2.160.46: OPEN on an active campaign → read-only wizard (its config,
+    // locked while it runs) instead of the live sheet. "👁 Show" remains the way
+    // to watch the VM browser live.
+    const _openRO = `<button class="mini solid" onclick="openRunningCampaignReadOnly('${escHtml(it.id)}')">Open</button>`;
     if (monitoring) {
-      foot = _showBtn + _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _cloudOpen;
+      foot = _showBtn + _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openRO;
     } else {
       // Pause/Resume — 1:1 with the local running cluster (engine resume flips
       // status paused→running; pause halts sending after the current lead).
       const _pauseBtn = it.paused
         ? _dib(V3_SVG_PLAY, 'Resume', `pauseCloudCampaignUI('${escHtml(it.id)}', true)`)
         : _dib(V3_SVG_PAUSE, 'Pause', `pauseCloudCampaignUI('${escHtml(it.id)}', false)`);
-      foot = _showBtn + _pauseBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _cloudOpen;
+      foot = _showBtn + _pauseBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openRO;
     }
   } else if (queued) {
     if (cloud) {
-      foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button><button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`;
+      // v2.160.46: a cloud "queued"/warming-up campaign has already been
+      // dispatched to the engine, so OPEN behaves like a running one — the
+      // read-only wizard (its config, locked), NOT the Google Sheet.
+      foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button><button class="mini solid" onclick="openRunningCampaignReadOnly('${escHtml(it.id)}')">Open</button>`;
     } else if (scheduled) {
       // Local scheduled — Reschedule (edit) / Cancel (remove) / Open (edit).
       foot = `<button class="mini" onclick="window.editQueuedCampaign && window.editQueuedCampaign('${escHtml(it.rawId)}')">Reschedule</button>`
@@ -8185,6 +8192,16 @@ function _renderCloudEditBanner() {
   if (!banner) return;
   if (!_cloudEdit) { banner.style.display = 'none'; return; }
   banner.style.display = '';
+  if (_cloudEdit.readOnly) {
+    // v2.160.46: OPEN on an ACTIVE campaign → read-only view. No pause/save
+    // path here — to edit, the operator stops it from the dashboard (→ Stopped,
+    // which OPEN then edits). The banner just explains why fields are locked.
+    if (title) title.textContent = `"${_cloudEdit.name || 'This campaign'}" is active.`;
+    if (detail) detail.textContent = 'Its configuration is read-only while it runs. Stop the campaign from the dashboard to edit it.';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = 'none';
+    return;
+  }
   if (_cloudEdit.paused) {
     if (title) title.textContent = `Editing "${_cloudEdit.name || 'cloud campaign'}" (paused).`;
     if (detail) detail.textContent = 'Change the messaging or any other field below, then Save edits & resume — the remaining leads are redispatched with your changes.';
@@ -8207,7 +8224,10 @@ function _setCloudEditLock(locked) {
   if (!root) return;
   root.classList.toggle('cloud-edit-locked', !!locked);
   root.querySelectorAll('input, select, textarea, button').forEach((el) => {
-    if (el.closest('#wizard-cloud-edit-banner') || el.closest('.wizard-back-row')) return;
+    // Never lock the banner's own buttons or any "back to dashboard" link
+    // (top .wizard-back-row OR the bottom .back-link) — the operator must always
+    // be able to leave.
+    if (el.closest('#wizard-cloud-edit-banner') || el.closest('.wizard-back-row') || el.closest('.back-link')) return;
     if (locked) {
       if (!el.disabled) { el.disabled = true; el.dataset.cloudEditLocked = '1'; }
     } else if (el.dataset.cloudEditLocked) {
@@ -8283,6 +8303,84 @@ function clearCloudEditMode() {
 }
 window.clearCloudEditMode = clearCloudEditMode;
 
+// v2.160.46: bind the wizard's LIVE STATUS panel to a specific campaign, so OPEN
+// (edit or read-only) shows THAT campaign's card — never a previously-viewed one
+// (bug: opening "…_b" still showed "…_a" at the bottom). Mirrors openCloudLive's
+// core without force-opening the section or scrolling to it.
+function _bindLiveStatusToCampaign(id) {
+  try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound yet */ }
+  _viewingCloudId = id;
+  Promise.resolve(_refreshCloudActiveStatus(id)).catch(() => {}).then(() => {
+    setTimeout(() => {
+      if (_viewingCloudId !== id) return; // superseded by another open
+      try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
+      try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+      try { placeLiveCard(); } catch (_) { /* */ }
+    }, 180);
+  });
+  _startCloudCardPoll();
+}
+
+// v2.160.46: OPEN on an ACTIVE (running/paused/monitoring) cloud campaign → the
+// setup wizard, prefilled but READ-ONLY. To edit, the operator stops it from the
+// dashboard (→ Stopped, which OPEN then edits). No pause/redispatch path here.
+async function openRunningCampaignReadOnly(id) {
+  let d = null;
+  try {
+    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
+    if (r.ok) d = await r.json();
+  } catch (_) { /* fall through to best-effort */ }
+  const _it = (_boardItemsById && _boardItemsById.get(id)) || (_snItemsById && _snItemsById.get(id));
+  const displayName = (_it && _it.name) || (d && d.name) || '';
+  const mode = (d && d.config && d.config.mode) || (_it && _it.mode) || '';
+  try { clearActiveDraft(); } catch (_) { /* viewing a live campaign, not a draft */ }
+  _cloudEdit = { cloudId: id, name: displayName, paused: false, readOnly: true };
+  _wireReadOnlyEditGuard();
+  // Win the name-restore race the same way openCampaignForEdit does.
+  window._openEditNameOverride = displayName;
+  const nameInput = document.getElementById('campaign-name-input');
+  if (nameInput) nameInput.value = displayName;
+  if (d && d.config && typeof applyPresetConfig === 'function') {
+    applyPresetConfig(d.config);
+  } else {
+    const select = document.getElementById('campaign-mode');
+    if (select && mode) { select.value = mode; if (typeof onModeChange === 'function') onModeChange(); }
+  }
+  goCreateCampaign();
+  // v2.160.47: this is a VM campaign — reflect Cloud VM, not This machine.
+  try { if (typeof setRunTarget === 'function') setRunTarget('cloud'); } catch (_) { /* */ }
+  _renderCloudEditBanner();
+  _setCloudEditLock(true);
+  _bindLiveStatusToCampaign(id);
+  // applyPresetConfig mounts some sections async — re-assert the lock + run-target after.
+  setTimeout(() => {
+    if (!(_cloudEdit && _cloudEdit.readOnly)) return;
+    try { if (typeof setRunTarget === 'function') setRunTarget('cloud'); } catch (_) { /* */ }
+    _setCloudEditLock(true);
+  }, 900);
+}
+window.openRunningCampaignReadOnly = openRunningCampaignReadOnly;
+
+// v2.160.46: while an active campaign is open read-only, any attempt to touch a
+// field tells the operator to stop it first. The fields are already disabled
+// (_setCloudEditLock), so this fires on the surrounding cards/labels/gaps; the
+// banner is the always-visible backstop. Throttled so it toasts once per burst.
+let _readOnlyToastAt = 0;
+function _wireReadOnlyEditGuard() {
+  const root = document.getElementById('wizard-view');
+  if (!root || root._readOnlyGuardWired) return;
+  root._readOnlyGuardWired = true;
+  root.addEventListener('mousedown', (e) => {
+    if (!(_cloudEdit && _cloudEdit.readOnly)) return;
+    if (e.target.closest('#wizard-cloud-edit-banner') || e.target.closest('.wizard-back-row') || e.target.closest('.back-link')) return;
+    if (!e.target.closest('.mode-card, input, select, textarea, button, label, #mode-grid, .launch-actions')) return;
+    const now = (window.performance && performance.now) ? performance.now() : 0;
+    if (now - _readOnlyToastAt < 1200) return;
+    _readOnlyToastAt = now;
+    if (typeof showCampaignToast === 'function') showCampaignToast('This campaign is active — stop it from the dashboard to edit its configuration.', 3800);
+  }, true);
+}
+
 // OPEN on a STOPPED / cancelled / done cloud campaign → the setup wizard,
 // prefilled with its saved launch config (same name at the top, campaign type,
 // message, accounts, sheet, delays…), FULLY editable. Launching starts a fresh
@@ -8342,6 +8440,14 @@ async function openCampaignForEdit(id) {
   _editingExistingCampaign = true;
   _editingCampaignId = id;
   _updateSaveButtonLabel();
+  // v2.160.47: a cloud campaign re-opened for edit should default back to the
+  // Cloud VM (else a re-launch would silently run on This machine).
+  if (_it && _it.where === 'cloud') {
+    try { if (typeof setRunTarget === 'function') setRunTarget('cloud'); } catch (_) { /* */ }
+  }
+  // v2.160.46: bind the LIVE STATUS panel to THIS campaign so it shows the one
+  // just opened (not a previously-viewed campaign leaking in from below).
+  _bindLiveStatusToCampaign(id);
 }
 window.openCampaignForEdit = openCampaignForEdit;
 
@@ -16460,6 +16566,9 @@ async function startNewCampaign() {
   // v2.160.42: a fresh campaign is type-editable — clear any lock left over from
   // an OPEN-to-edit of an existing campaign.
   if (typeof unlockCampaignType === 'function') unlockCampaignType();
+  // v2.160.46: also drop any read-only lock from viewing an active campaign, so
+  // a brand-new campaign's fields aren't stuck disabled.
+  if (typeof clearCloudEditMode === 'function') clearCloudEditMode();
   // Fresh draft → re-arm the scrape baseline so the next scrape view hides any
   // prior run's jobs (the engine's job list is global, not per-draft).
   _scrapeBaselineDone = false;
@@ -19559,7 +19668,44 @@ document.addEventListener('keydown', (e) => {
 
 // Start a campaign — flush autosave, then POST queue-only (auto-drains when
 // idle, queues behind a running campaign).
+// v2.160.48: while an active campaign is open READ-ONLY, the launch actions must
+// refuse — the campaign is already running, so Start/Queue/Schedule would spawn a
+// duplicate (e.g. "…_c" → "…_d"). The button-mutex re-enables #btn-start on state
+// polls, so a disabled attribute alone isn't enough — guard the handlers.
+function _readOnlyBlocksLaunch() {
+  if (_cloudEdit && _cloudEdit.readOnly) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('This campaign is already active — stop it from the dashboard before starting or editing it.', 4200);
+    return true;
+  }
+  return false;
+}
+
+// v2.160.49: Queue/Schedule dispatch a NEW campaign, which for an OPENED existing
+// campaign would clone it (…_c → …_d). Block them there — Start restarts it in
+// place, and Duplicate (from the dashboard) is how you make a genuinely new one.
+function _existingCampaignBlocksNewDispatch() {
+  if (_editingCampaignId) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('This is an existing campaign — use Start to restart it, or Duplicate it from the dashboard to make a new one.', 4800);
+    return true;
+  }
+  return false;
+}
+
 window.launchStartNow = async function() {
+  if (_readOnlyBlocksLaunch()) return;
+  // v2.160.49: when the operator opened an EXISTING (stopped) campaign, START
+  // restarts THAT campaign in place — it doesn't dispatch a brand-new one (which
+  // the unique-name rule would rename "…_c" → "…_d"). Restart re-runs the same
+  // campaign from the engine's stored config and skips already-done leads.
+  if (_editingCampaignId) {
+    const id = _editingCampaignId;
+    _closeLaunchMenu();
+    if (typeof restartCloudCampaignUI === 'function') {
+      await restartCloudCampaignUI(id, false); // continue where it left off
+    }
+    window.location.hash = '#/'; // back to the dashboard to watch it run
+    return;
+  }
   _closeLaunchMenu();
   try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before start:', err); }
   // Hit /api/campaign/start (NOT /queue-only) — that endpoint fires
@@ -19573,6 +19719,8 @@ window.launchStartNow = async function() {
 // Queue it — semantically distinct from Start: operator explicitly wants
 // to wait. Same backend call (queue-only handles both). Distinct toast.
 window.launchQueueIt = async function() {
+  if (_readOnlyBlocksLaunch()) return;
+  if (_existingCampaignBlocksNewDispatch()) return;
   _closeLaunchMenu();
   try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before queue:', err); }
   if (typeof addToQueueCampaign === 'function') await addToQueueCampaign();
@@ -19677,6 +19825,8 @@ if (typeof window !== 'undefined') window.openScheduleModal = openScheduleModal;
 // previous launchScheduleIt bug where the POST omitted required fields
 // (profileIds, sheetUrl) and server returned 400.
 window.launchScheduleIt = async function () {
+  if (_readOnlyBlocksLaunch()) return;
+  if (_existingCampaignBlocksNewDispatch()) return;
   _closeLaunchMenu();
   const nameInput = document.getElementById('campaign-name-input');
   const result = await openScheduleModal({ defaultName: (nameInput?.value || '').trim() });
@@ -19797,6 +19947,7 @@ window.launchSaveChanges = async function() {
 // "Save changes" (new draft, stopped campaign untouched); otherwise the normal
 // "Save as draft".
 window.launchSaveButton = function() {
+  if (_readOnlyBlocksLaunch()) return;
   if (_editingExistingCampaign) return window.launchSaveChanges();
   return window.launchSaveAsDraft();
 };
