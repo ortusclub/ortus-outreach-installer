@@ -2649,7 +2649,7 @@
 
     <!-- ── Live Status ── -->
     <div class="section collapsible collapsed" id="nav-status">
-      <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">Live Status</span></h2>
+      <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">7. Live Status</span></h2>
       <div class="collapsible-body">
       <!-- v2.59.22: when a campaign is running/monitoring the SAME dashboard
            card (#active-card) is relocated into this slot by placeLiveCard(),
@@ -3483,7 +3483,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.50"></script>
+  <script type="module" src="/js/app.js?v=2.160.55"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

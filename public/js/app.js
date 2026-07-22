@@ -8224,10 +8224,11 @@ function _setCloudEditLock(locked) {
   if (!root) return;
   root.classList.toggle('cloud-edit-locked', !!locked);
   root.querySelectorAll('input, select, textarea, button').forEach((el) => {
-    // Never lock the banner's own buttons or any "back to dashboard" link
-    // (top .wizard-back-row OR the bottom .back-link) — the operator must always
-    // be able to leave.
-    if (el.closest('#wizard-cloud-edit-banner') || el.closest('.wizard-back-row') || el.closest('.back-link')) return;
+    // Never lock the banner's own buttons, any "back to dashboard" link (top
+    // .wizard-back-row OR bottom .back-link), or the Live Status card's controls
+    // (#nav-status — Run check now / pause / show are campaign controls, not
+    // config-edit fields; they must stay usable while viewing an active campaign).
+    if (el.closest('#wizard-cloud-edit-banner') || el.closest('.wizard-back-row') || el.closest('.back-link') || el.closest('#nav-status')) return;
     if (locked) {
       if (!el.disabled) { el.disabled = true; el.dataset.cloudEditLocked = '1'; }
     } else if (el.dataset.cloudEditLocked) {
@@ -8305,17 +8306,23 @@ window.clearCloudEditMode = clearCloudEditMode;
 
 // v2.160.46: bind the wizard's LIVE STATUS panel to a specific campaign, so OPEN
 // (edit or read-only) shows THAT campaign's card — never a previously-viewed one
-// (bug: opening "…_b" still showed "…_a" at the bottom). Mirrors openCloudLive's
-// core without force-opening the section or scrolling to it.
+// (bug: opening "…_b" still showed "…_a" at the bottom).
+// v2.160.51: also KEEP that campaign's log on display — force the Live Status
+// section open (liveStatusForcedOpen) and expand it, so the opened campaign's log
+// is always visible at the bottom of the wizard, under section 6 (Launch).
 function _bindLiveStatusToCampaign(id) {
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound yet */ }
   _viewingCloudId = id;
+  liveStatusForcedOpen = true;
   Promise.resolve(_refreshCloudActiveStatus(id)).catch(() => {}).then(() => {
     setTimeout(() => {
       if (_viewingCloudId !== id) return; // superseded by another open
       try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
       try { syncLiveStatusVisibility(); } catch (_) { /* */ }
       try { placeLiveCard(); } catch (_) { /* */ }
+      // Expand the section on open so the log is on display, not tucked away.
+      const sec = document.getElementById('nav-status');
+      if (sec) sec.classList.remove('collapsed');
     }, 180);
   });
   _startCloudCardPoll();
@@ -8372,7 +8379,7 @@ function _wireReadOnlyEditGuard() {
   root._readOnlyGuardWired = true;
   root.addEventListener('mousedown', (e) => {
     if (!(_cloudEdit && _cloudEdit.readOnly)) return;
-    if (e.target.closest('#wizard-cloud-edit-banner') || e.target.closest('.wizard-back-row') || e.target.closest('.back-link')) return;
+    if (e.target.closest('#wizard-cloud-edit-banner') || e.target.closest('.wizard-back-row') || e.target.closest('.back-link') || e.target.closest('#nav-status')) return;
     if (!e.target.closest('.mode-card, input, select, textarea, button, label, #mode-grid, .launch-actions')) return;
     const now = (window.performance && performance.now) ? performance.now() : 0;
     if (now - _readOnlyToastAt < 1200) return;
@@ -15784,7 +15791,11 @@ function openActiveBulkCheckModal() {          // active "Run check now"
   const _cloudId = _viewingCloudId
     || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id);
   if (_cloudId) {
-    const btn = document.querySelector('#btn-bulk-check-live, #btn-bulk-check-now');
+    // A cloud campaign's acceptance check runs on the VM (where the campaign
+    // sends), via the engine's own check-now. No scope modal — the VM sweeps its
+    // own accounts. cloudCheckNow degrades to an "engine update pending" toast if
+    // the engine hasn't shipped the route yet.
+    const btn = document.querySelector('#btn-bulk-check-live, #btn-bulk-check-now, #vj-bulk-btn');
     cloudCheckNow(_cloudId, btn || undefined);
     return;
   }
@@ -16569,6 +16580,10 @@ async function startNewCampaign() {
   // v2.160.46: also drop any read-only lock from viewing an active campaign, so
   // a brand-new campaign's fields aren't stuck disabled.
   if (typeof clearCloudEditMode === 'function') clearCloudEditMode();
+  // v2.160.51: unbind any opened campaign's Live Status/log so a brand-new
+  // campaign doesn't show the previous campaign's log at the bottom.
+  liveStatusForcedOpen = false;
+  try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound */ }
   // Fresh draft → re-arm the scrape baseline so the next scrape view hides any
   // prior run's jobs (the engine's job list is global, not per-draft).
   _scrapeBaselineDone = false;
@@ -20586,8 +20601,16 @@ window.renderActiveCard = function(status) {
   // THAT campaign's live status into this same card — unless a LOCAL campaign is
   // genuinely running/monitoring (local always wins, never hijacked). See
   // feedback_two_live_status_cards.
-  if (_viewingCloudId && window.__cloudActiveStatus && !(status && (status.running || status.state === 'monitoring'))) {
-    status = window.__cloudActiveStatus;
+  if (_viewingCloudId && !(status && (status.running || status.state === 'monitoring'))) {
+    if (window.__cloudActiveStatus) {
+      status = window.__cloudActiveStatus;
+    } else {
+      // v2.160.53: viewing a SPECIFIC cloud campaign but its status hasn't loaded
+      // yet (the ~<1s window while _refreshCloudActiveStatus fetches). Don't paint
+      // the cloud AGGREGATE hero ("N campaigns running in the cloud") over it —
+      // leave the card as-is; the cloud poll fills in the specific campaign shortly.
+      return;
+    }
   }
   try { _adaptActiveCardControls(card, status); } catch (_) { /* control adaptation is best-effort */ }
   // A campaign in the monitoring phase has running:false but is NOT idle —
