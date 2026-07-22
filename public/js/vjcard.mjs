@@ -95,13 +95,15 @@ export function vjCardControlsFor(status = {}) {
   const queued = s.state === 'queued';
   const running = !monitor && !done && !queued;
 
-  // Running cloud → the edit view (wizard prefilled + pause-to-edit banner);
-  // monitoring/done cloud keep the live cockpit. Falls back to openCloudLive
-  // inside openRunningCampaignEditor when no launch config was snapshotted.
+  // Running cloud → pause-to-edit wizard; STOPPED/cancelled cloud → the setup
+  // wizard prefilled + fully editable (edit & re-launch); cleanly-done cloud →
+  // the live cockpit. Both editors fall back to openCloudLive when no launch
+  // config was snapshotted (pre-2.133 campaigns).
   const openOnclick = cloud
     ? (queued ? `viewCloudCampaign('${id}')`
       : running ? `openRunningCampaignEditor('${id}')`
-        : `openCloudLive('${id}')`)
+        : s.bad ? `openCampaignForEdit('${id}')`
+          : `openCloudLive('${id}')`)
     : (queued ? `window.editQueuedCampaign && window.editQueuedCampaign('${rawId}')` : 'viewRunningCampaign()');
 
   const c = {

@@ -5658,6 +5658,24 @@ async function startCampaign(opts = {}) {
     }
   }
 
+  // Unique campaign name within YOUR campaigns (non-FG). On a collision, auto
+  // append/increment a letter suffix (_a, _b … _d→_e) and update the input so
+  // the launched campaign — and its dashboard row — carry the unique name.
+  // Skipped in cloud-edit redispatch mode (that keeps the campaign's own name).
+  try {
+    if (mode !== 'follower_growth' && !(_cloudEdit && _cloudEdit.paused)) {
+      const ni = document.getElementById('campaign-name-input');
+      const desired = (ni?.value || '').trim();
+      if (desired) {
+        const unique = _uniqueCampaignName(desired, _existingMineCampaignNames());
+        if (ni && unique !== desired) {
+          ni.value = unique;
+          if (typeof showCampaignToast === 'function') showCampaignToast(`That name is taken — saved as "${unique}".`, 4500);
+        }
+      }
+    }
+  } catch (_) { /* naming is best-effort — never block a launch */ }
+
   // Show account queue
   renderAccountQueue(selectedProfileIds.map(id => selectedProfileNames[id] || id), null);
 
@@ -7258,7 +7276,15 @@ function renderUnifiedStrip(it) {
       ? _dib(V3_SVG_PLAY, 'Continue where it left off', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', false)` : `restartLocalFromItem('${escHtml(it.id)}', false)`)
         + _dib(V3_SVG_RESTART, 'Restart from the beginning', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', true)` : `restartLocalFromItem('${escHtml(it.id)}', true)`)
       : '';
-    foot = restartBtns + dismiss + dup + debriefBtn + _openPill;
+    // OPEN routing for a finished strip: STOPPED/cancelled cloud → prefilled
+    // editable setup wizard (edit & re-launch); cleanly-done cloud → live view;
+    // local → its cockpit. Mirrors vjcard.mjs's card-#2 routing.
+    const _doneOpen = cloud
+      ? (it.bad
+        ? `<button class="mini solid" onclick="openCampaignForEdit('${escHtml(it.id)}')">Open</button>`
+        : _cloudOpen)
+      : _openPill;
+    foot = restartBtns + dismiss + dup + debriefBtn + _doneOpen;
   }
 
   // Expanded (non-queued) strips render card #2 (.sn-vjcard) instead of the
@@ -8199,6 +8225,74 @@ function clearCloudEditMode() {
   _renderCloudEditBanner();
 }
 window.clearCloudEditMode = clearCloudEditMode;
+
+// OPEN on a STOPPED / cancelled / done cloud campaign → the setup wizard,
+// prefilled with its saved launch config (same name at the top, campaign type,
+// message, accounts, sheet, delays…), FULLY editable. Launching starts a fresh
+// campaign with the (possibly edited) config; the original is left as-is. The
+// unique-name rule runs at launch, so re-running the same name auto-suffixes.
+// Campaigns launched before the launch-config snapshot existed fall back to the
+// live view.
+async function openCampaignForEdit(id) {
+  let d = null;
+  try {
+    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
+    if (r.ok) d = await r.json();
+  } catch (_) { /* fall through to live view */ }
+  if (!d || !d.config) { try { await openCloudLive(id); } catch (_) { /* */ } return; }
+  try { clearCloudEditMode(); } catch (_) { /* not in running-edit lock mode */ }
+  try { clearActiveDraft(); } catch (_) { /* editing a finished campaign, not a draft */ }
+  // Prefer the name shown on the board strip (the campaign's current name) so
+  // the wizard header matches exactly what the operator clicked; fall back to
+  // the launch-config's saved name.
+  const _it = (_boardItemsById && _boardItemsById.get(id)) || (_snItemsById && _snItemsById.get(id));
+  const displayName = (_it && _it.name) || d.name || '';
+  const nameInput = document.getElementById('campaign-name-input');
+  if (nameInput) nameInput.value = displayName;
+  if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
+  goCreateCampaign();
+  // applyPresetConfig mounts some sections async and may reset the name field —
+  // re-assert the display name after mount.
+  setTimeout(() => { const ni = document.getElementById('campaign-name-input'); if (ni) ni.value = displayName; }, 80);
+}
+window.openCampaignForEdit = openCampaignForEdit;
+
+// ── Unique campaign names within "Your campaigns" ───────────────────────────
+// Names of the viewer's OWN non-FG campaigns from the last board render — the
+// set a new/edited campaign must be unique against.
+function _existingMineCampaignNames() {
+  const out = [];
+  try {
+    for (const it of (_snItemsById ? _snItemsById.values() : [])) {
+      if (it && it.mine && !it.isFG && it.name) out.push(String(it.name).trim());
+    }
+  } catch (_) { /* best-effort */ }
+  return out;
+}
+// Spreadsheet-style letter increment: a→b, z→aa, az→ba.
+function _incSeq(s) {
+  if (!s) return 'a';
+  const arr = s.split(''); let i = arr.length - 1;
+  while (i >= 0) {
+    if (arr[i] === 'z') { arr[i] = 'a'; i--; } else { arr[i] = String.fromCharCode(arr[i].charCodeAt(0) + 1); break; }
+  }
+  if (i < 0) arr.unshift('a');
+  return arr.join('');
+}
+// Return `desired` if free; else append/bump a `_<letters>` suffix until unique.
+// "MESSAGE" → "MESSAGE_a"; an existing "…_d" bumps to "…_e".
+function _uniqueCampaignName(desired, taken) {
+  const raw = String(desired || '').trim();
+  if (!raw) return raw; // empty name is allowed (row shows "Add name")
+  const set = new Set((taken || []).map((n) => String(n).trim().toLowerCase()));
+  if (!set.has(raw.toLowerCase())) return raw;
+  const m = raw.match(/^(.*)_([a-z]+)$/i);
+  const base = m ? m[1] : raw;
+  let seq = m ? _incSeq(m[2].toLowerCase()) : 'a';
+  let candidate = `${base}_${seq}`;
+  while (set.has(candidate.toLowerCase())) { seq = _incSeq(seq); candidate = `${base}_${seq}`; }
+  return candidate;
+}
 
 async function _submitCloudEditRedispatch(body) {
   const id = _cloudEdit && _cloudEdit.cloudId;
