@@ -3360,6 +3360,33 @@
     </div>
   </div>
 
+  <!-- v2.160.87 — Cloud check-now step 2: WHERE should the check run? Shown
+       after the scope question for CLOUD campaigns only. "Cloud VMs" keeps the
+       existing engine check; "This machine" runs the local GoLogin sweep
+       (same engine as the local campaigns' check) against the cloud campaign's
+       sheet, then mirrors results back to the engine. -->
+  <div id="check-where-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCheckWhereModal()">
+    <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="check-where-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCheckWhereModal()">&times;</button>
+      <div class="stop-choice-eyebrow">Run the check</div>
+      <h3 id="check-where-title" class="modal-title stop-choice-headline">Where should this check run?</h3>
+      <p class="stop-choice-sub">Same check either way — detect accepted connections and send the intro where Introduction Status is blank.</p>
+      <div class="stop-choice-row">
+        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('vm')">
+          <div class="stop-choice-pill-headline">Cloud VMs</div>
+          <div class="stop-choice-pill-sub">The cloud machines run it — you can close the app.</div>
+        </button>
+        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('local')">
+          <div class="stop-choice-pill-headline">This machine</div>
+          <div class="stop-choice-pill-sub">Opens the GoLogin browsers here, like a local campaign's check. Keep the app open.</div>
+        </button>
+      </div>
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="modal-cancel-link" onclick="closeCheckWhereModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v2.100 — Reconnect & retry failed intros. Replaces the native confirm()
        so the operator can flip auto-accept ON inline and, when the primary's
        GoLogin profile isn't known, pick which profile is the primary's. Driven
@@ -3512,7 +3539,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.86"></script>
+  <script type="module" src="/js/app.js?v=2.160.87"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

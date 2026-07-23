@@ -50,7 +50,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1545,6 +1545,36 @@ app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
   const r = await getCloudCampaignAccounts(req.params.id);
   if (r && r.error) return res.status(502).json(r);
   res.json(r);
+});
+// Local check of a CLOUD campaign — write-back step. After the operator runs
+// the local GoLogin sweep (POST /api/bulk-check-now) against a cloud campaign's
+// sheet, this re-reads that sheet and mirrors each lead's Connection Accepted
+// Status + Introduction Status into the engine (fill-only there), so the VM's
+// next sweep won't double-intro anyone the local check already introduced.
+app.post('/api/campaign/cloud/:id/sync-sheet-status', async (req, res) => {
+  try {
+    const d = await getCloudCampaign(req.params.id);
+    const camp = d && d.campaign;
+    if (!camp || !camp.sheet_url) return res.status(404).json({ error: 'Cloud campaign (or its sheet) not found.' });
+    const cfg = camp.config || {};
+    const linkedinColumn = ((req.body && req.body.linkedinColumn) || cfg.linkedinColumn || '').toString();
+    const rows = await fetchSheet(camp.sheet_url);
+    const urlOf = (row) => ((linkedinColumn && row[linkedinColumn]) || row['Linkedin URL'] || row['LinkedIn URL'] || row['linkedin url'] || '').toString().trim();
+    const leads = [];
+    for (const row of rows) {
+      const leadUrl = urlOf(row);
+      if (!leadUrl) continue;
+      const acc = (row['Connection Accepted Status'] || '').toString().trim();
+      const intro = (row['Introduction Status'] || '').toString().trim();
+      if (!acc && !intro) continue;
+      leads.push({ leadUrl, connectionAcceptedStatus: acc, introductionStatus: intro });
+    }
+    const r = await syncCloudLeadStatuses(req.params.id, leads);
+    if (r && r.error) return res.status(502).json(r);
+    res.json({ ok: true, sheetRows: rows.length, candidates: leads.length, matched: (r && r.matched) || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 // ── Team status (feature ⑩ — ADMIN-ONLY) ─────────────────────────────────
 // Per-operator aggregate over the engine cloud list + this machine's local
@@ -3932,7 +3962,11 @@ app.post('/api/bulk-check-now', async (req, res) => {
   try {
     let { sheetUrl, linkedinColumn, profileId, profileIds,
           primaryName, primaryIntroBody, primaryUrl, introTitle,
-          autoAcceptPrimary, primarySource, allSenders, reviveFailedIntros } = req.body || {};
+          autoAcceptPrimary, primarySource, allSenders, reviveFailedIntros,
+          // Cloud-campaign local check (v2.160.87): the request carries the CLOUD
+          // campaign's mode/templates, since the local `campaign` singleton may
+          // hold a stale/unrelated local config. Fall back to current behaviour.
+          mode: reqMode, ccDmBody: reqCcDmBody, senderFirstNames: reqSenderFirstNames } = req.body || {};
     // v2.78: "all senders in the sheet" — ignore any campaign/explicit accounts
     // and derive every account from the sheet's Sender column (below), even
     // while a campaign is running.
@@ -4183,10 +4217,10 @@ app.post('/api/bulk-check-now', async (req, res) => {
           const _seen = new Set(r.connectedUrls);
           for (const u of _revive) if (!_seen.has(u)) r.connectedUrls.push(u);
         }
-        const _phaseMode = campaign.mode || '';
+        const _phaseMode = reqMode || campaign.mode || '';
         if (!r.error && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
           if (_phaseMode === 'connect_and_message') {
-            const _ccDmBody = ((campaign.templates && campaign.templates.ccDmBody) || '').trim();
+            const _ccDmBody = ((reqCcDmBody !== undefined ? reqCcDmBody : (campaign.templates && campaign.templates.ccDmBody)) || '').trim();
             if (_ccDmBody) {
               try {
                 await runAutoDms({
@@ -4197,7 +4231,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
                   linkedinColumn: linkedinColumn || '',
                   connectedUrls: r.connectedUrls,
                   templates: campaign.templates || {},
-                  senderFirstNames: campaign.senderFirstNames || {},
+                  senderFirstNames: reqSenderFirstNames || campaign.senderFirstNames || {},
                   log: campaignLog,
                 });
               } catch (dmErr) {
@@ -4216,7 +4250,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
                 linkedinColumn: linkedinColumn || '',
                 connectedUrls: r.connectedUrls,
                 templates: _effectiveTemplates,
-                senderFirstNames: campaign.senderFirstNames || {},
+                senderFirstNames: reqSenderFirstNames || campaign.senderFirstNames || {},
                 log: campaignLog,
               });
             } catch (introErr) {

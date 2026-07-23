@@ -3417,7 +3417,15 @@ function openCloudCampaignView(id, label) {
     // Opened from a click (scope is the event object, not a valid scope) → ask the
     // same scope question as the local check, then re-enter with the choice.
     if (scope !== 'campaign' && scope !== 'all') {
-      _soloCheckHandler = (mode) => queueCheckNow(mode === 'sheet' ? 'all' : 'campaign');
+      // Two-step (v2.160.87): scope, then where (VM vs this machine) — matching
+      // the board strip's Check-now flow. 'vm' re-enters with a valid scope.
+      _soloCheckHandler = (mode) => {
+        const sc = mode === 'sheet' ? 'all' : 'campaign';
+        _checkWhereHandler = (where) => (where === 'local'
+          ? cloudCheckLocal(id, document.getElementById('cloud-cv-check-now'), sc)
+          : queueCheckNow(sc));
+        _showCheckWhereModal();
+      };
       _showSoloCheckModal();
       return;
     }
@@ -9231,13 +9239,101 @@ async function cloudCheckNow(id, btn, scope) {
 }
 window.cloudCheckNow = cloudCheckNow;
 
+// Local check of a CLOUD campaign (v2.160.87) — runs the app's OWN GoLogin
+// sweep (/api/bulk-check-now — the exact engine local campaigns use: opens each
+// account's browser here, stamps Connected, fires intros where Introduction
+// Status is blank) against the cloud campaign's sheet. Accounts whose GoLogin
+// profile can't open on this machine are skipped and reported, never fatal.
+// Afterwards, mirrors the sheet's statuses into the engine (fill-only) so the
+// VM's next sweep won't double-intro anyone this local check already handled.
+async function cloudCheckLocal(id, btn, scope) {
+  if (!id) return;
+  scope = scope === 'all' ? 'all' : 'campaign';
+  if (btn) btn.disabled = true;
+  showCampaignToast('🖥 Local check starting — opening GoLogin browsers on this machine. Keep the app open…', 7000);
+  _pushCloudEvent(id, scope === 'all'
+    ? '🖥 Local check — every account in the Account Used column (on this machine)'
+    : '🖥 Local check — this campaign’s accounts (on this machine)');
+  try {
+    const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
+    const camp = d && d.campaign;
+    if (!camp || !camp.sheet_url) {
+      showCampaignToast('Could not load this campaign (or its sheet) from the engine.', 7000);
+      return;
+    }
+    const cfg = camp.config || {};
+    const body = {
+      sheetUrl: camp.sheet_url,
+      linkedinColumn: cfg.linkedinColumn || '',
+      // The local `campaign` singleton may hold an unrelated config — pass the
+      // CLOUD campaign's mode + templates so the sweep behaves identically to a
+      // local campaign configured the same way.
+      mode: camp.mode,
+      primaryName: cfg.primaryName || '',
+      primaryIntroBody: cfg.primaryIntroBody || '',
+      primaryUrl: cfg.primaryUrl || '',
+      introTitle: cfg.introTitle || '',
+      autoAcceptPrimary: cfg.autoAcceptPrimary,
+      primarySource: cfg.primarySource,
+      ccDmBody: cfg.ccDmBody || '',
+      senderFirstNames: cfg.senderFirstNames || {},
+    };
+    if (scope === 'all') body.allSenders = true;
+    else body.profileIds = camp.profile_ids || camp.profileIds || [];
+    const res = await fetch('/api/bulk-check-now', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || j.error) {
+      showCampaignToast('Local check failed: ' + (j.error || `HTTP ${res.status}`), 9000);
+      return;
+    }
+    const per = Array.isArray(j.perProfile) ? j.perProfile : [];
+    const failed = per.filter((p) => p && p.error);
+    const okCount = per.length - failed.length;
+    const matched = (j.result && j.result.matched) || 0;
+    // Write-back: mirror the sheet's statuses into the engine (fill-only there)
+    // so a later VM check never re-introduces someone this check handled.
+    let synced = 0;
+    try {
+      const sr = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/sync-sheet-status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linkedinColumn: cfg.linkedinColumn || '' }),
+      });
+      const sj = await sr.json().catch(() => ({}));
+      if (sr.ok && !sj.error) synced = sj.matched || 0;
+    } catch { /* best-effort — the sheet already has the truth */ }
+    const bits = [`${okCount}/${per.length} account${per.length === 1 ? '' : 's'} checked`, `${matched} newly Connected`];
+    if (failed.length) bits.push(`${failed.length} couldn’t open on this machine (skipped)`);
+    if (synced) bits.push(`${synced} lead${synced === 1 ? '' : 's'} synced to the engine`);
+    showCampaignToast(`🖥 Local check done — ${bits.join(' · ')}.`, 12000);
+    _pushCloudEvent(id, `🖥 Local check done — ${bits.join(' · ')}`);
+    if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
+    if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  } catch (e) {
+    showCampaignToast('Local check failed: ' + e.message, 9000);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+window.cloudCheckLocal = cloudCheckLocal;
+
 // Cloud "Run check now" → first ask the same scope question the local check asks:
 // this campaign's accounts, or every account in the sheet's "Account Used" column.
 // Reuses the shared solo-check scope modal; maps its 'sheet' choice to the engine's
 // 'all' scope (Account Used column) and 'campaign' to this campaign's accounts.
 function promptCloudCheckScope(id, btn) {
   if (!id) return;
-  _soloCheckHandler = (mode) => cloudCheckNow(id, btn, mode === 'sheet' ? 'all' : 'campaign');
+  // Two-step prompt (v2.160.87): scope (this campaign / all senders), THEN
+  // where (cloud VMs / this machine). 'local' runs the app's own GoLogin sweep
+  // — the exact engine local campaigns use — against this cloud campaign.
+  _soloCheckHandler = (mode) => {
+    const scope = mode === 'sheet' ? 'all' : 'campaign';
+    _checkWhereHandler = (where) => (where === 'local'
+      ? cloudCheckLocal(id, btn, scope)
+      : cloudCheckNow(id, btn, scope));
+    _showCheckWhereModal();
+  };
   _showSoloCheckModal();
 }
 window.promptCloudCheckScope = promptCloudCheckScope;
@@ -16429,6 +16525,29 @@ function runSoloCheck(mode) {                   // modal buttons → dispatch
   _soloCheckHandler = null;
   if (typeof h === 'function') h(mode);
 }
+
+// ── Cloud check step 2: WHERE should the check run? (v2.160.87) ─────────────
+// Shown after the scope question for CLOUD campaigns. Same handler pattern as
+// the scope modal: a handler is stored on open, the pills dispatch 'vm'|'local'.
+let _checkWhereHandler = null;
+function _showCheckWhereModal() {
+  const m = document.getElementById('check-where-modal');
+  if (m) m.classList.remove('hidden');
+}
+function closeCheckWhereModal() {
+  const m = document.getElementById('check-where-modal');
+  if (m) m.classList.add('hidden');
+  _checkWhereHandler = null;
+}
+function runCheckWhere(where) {
+  const m = document.getElementById('check-where-modal');
+  if (m) m.classList.add('hidden');
+  const h = _checkWhereHandler;
+  _checkWhereHandler = null;
+  if (typeof h === 'function') h(where === 'local' ? 'local' : 'vm');
+}
+window.closeCheckWhereModal = closeCheckWhereModal;
+window.runCheckWhere = runCheckWhere;
 
 // Active running/monitoring campaign: bulk connection check, scoped to the
 // campaign's accounts or all senders in the sheet (allSenders → server derives

@@ -317,6 +317,12 @@ export function cloudCheckNow(id, scope = 'campaign') {
 export function setCloudAutoChecks(id, enabled) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });
 }
+// Local-check write-back: mirror the sheet's per-lead statuses into the engine
+// after the operator runs this cloud campaign's acceptance check on their OWN
+// machine (local GoLogin sweep). Engine applies fill-only — safe to re-post.
+export function syncCloudLeadStatuses(id, leads) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/lead-status-sync`, { leads: Array.isArray(leads) ? leads : [] });
+}
 
 /**
  * Open the live MJPEG screencast for a running cloud campaign's active browser
