@@ -7857,6 +7857,44 @@ function renderUnifiedStrip(it) {
   </div>`;
 }
 
+// Draft strip — a saved-but-not-launched wizard config, surfaced on the board
+// inside "Your campaigns" under the DRAFTS rail (railhead CSS uppercases the
+// label). Slim collapsed-style strip: Open → wizard (editDraft), 🗑 → delete.
+function renderDraftStrip(d) {
+  const name = d.name || '(unnamed draft)';
+  const created = (typeof dashboardFormatDate === 'function' && dashboardFormatDate(d.createdAt)) || '';
+  return `
+  <div class="sn-strip done sn-collapsed draft" data-cid="draft:${escHtml(d.id)}">
+    <div class="sn-compact">
+    <div class="sn-top"><span class="sn-type">Campaign · Draft</span><span class="sn-you">You</span>
+      <span class="sn-status"><span class="dot q"></span> Draft</span></div>
+    <div class="sn-name">${escHtml(name)}</div>
+    <div class="sn-flow">Saved as a draft${created ? ` · created <b>${escHtml(created)}</b>` : ''} · not launched yet</div>
+    <div class="sn-foot"><div class="right">`
+    + `<button type="button" class="dock-btn danger" data-tip="Delete draft" aria-label="Delete draft" onclick="deleteDraftStrip('${escHtml(d.id)}', this)">${V3_SVG_TRASH || V3_SVG_XMARK}</button>`
+    + `<button class="mini solid" onclick="editDraft('${escHtml(d.id)}')">Open</button>`
+    + `</div></div>
+    </div>
+  </div>`;
+}
+
+// Delete a draft from its board strip — optimistic strip removal (the 4s board
+// poll would otherwise show the stale row), then the same API + wizard-reference
+// cleanup as deleteDraft (Drafts & Stops tab), then re-render both surfaces.
+async function deleteDraftStrip(id, btn) {
+  if (!id) return;
+  if (!confirm('Delete this draft?')) return;
+  const strip = btn && btn.closest('.sn-strip');
+  if (strip) strip.remove();
+  try {
+    await fetch('/api/drafts/' + encodeURIComponent(id), { method: 'DELETE' });
+  } catch (err) { alert('Failed: ' + err.message); return; }
+  try { if (getActiveDraftId() === id) clearActiveDraft(); } catch { /* not the active draft */ }
+  try { if (typeof refreshDashboardDrafts === 'function') refreshDashboardDrafts(); } catch { /* */ }
+  try { renderCampaignsBoard(); } catch { /* next poll repaints */ }
+}
+window.deleteDraftStrip = deleteDraftStrip;
+
 // The ⋯ overflow menu on each strip (currently: Duplicate → pre-filled draft).
 // The ⋯ overflow menu used to hold a single "Duplicate" item; that action now
 // has its own visible icon in the strip footer, so the menu is redundant —
@@ -8208,12 +8246,20 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
     return head + (collapsed ? '' : arr.map(_safeStrip).join(''));
   };
 
+  // Saved drafts (Sam 2026-07-23): surface under a DRAFTS rail inside this
+  // section — pre-rendered strips arrive via opts.draftsHtml (renderDraftStrip),
+  // since drafts aren't board items (no bucket / no engine id).
+  const draftsRail = opts.draftsHtml
+    ? `<div class="sn-railhead">Drafts <span class="sn-railcount">${opts.draftsCount || ''}</span></div>` + opts.draftsHtml
+    : '';
+
   // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
   // groups (sections + Done/Cancelled) show a caret, so the affordance reads true.
   // "Clear done" removed (Sam) — to remove a campaign, delete it, not hide it.
   const body = rail('Running', running)
     + rail('Paused', paused)
     + rail('Idle', idle)
+    + draftsRail
     + subGroup('done', 'Done', done)
     + subGroup('cancelled', 'Stopped', cancelled);
 
@@ -8228,7 +8274,7 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
   const head = `<div class="cb-sectionhead" onclick="toggleBoardGroup('${secKey}', false)">`
     + `<span class="cb-caret">${_cbCaretSvg(collapsed, true)}</span>`
     + `<span class="cb-sectitle">${title}</span>${subtitle}`
-    + `<span class="cb-seccount">${secItems.length}</span>`
+    + `<span class="cb-seccount">${secItems.length + (opts.draftsCount || 0)}</span>`
     + `<span class="cb-headextra">${opts.headExtra || ''}</span></div>`;
   const emptyMsg = opts.emptyMsg || 'There are no campaigns to show at the moment.';
   const inner = collapsed ? ''
@@ -8403,6 +8449,25 @@ async function renderCampaignsBoard() {
 
   _lastCampaignsDone = done;
 
+  // Saved drafts (Sam 2026-07-23): fetched here so the board's "Your campaigns"
+  // section can show them under a DRAFTS rail. Drafts are this machine's own
+  // staging area, so they always land in "mine" (never other-users/admin) and
+  // hide when a type filter narrows the board (a draft has no committed type).
+  let _draftRows = [];
+  if (_campaignsTypeFilter === 'All') {
+    try {
+      const dj = await fetch('/api/drafts').then((r) => r.json());
+      if (Array.isArray(dj?.drafts)) _draftRows = dj.drafts;
+      _draftRows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    } catch { /* drafts rail is best-effort — board renders without it */ }
+  }
+  let _draftsHtml = '';
+  for (const d of _draftRows) {
+    try { _draftsHtml += renderDraftStrip(d); }
+    catch (e) { try { console.error('[board] draft strip render failed for', d && d.id, e); } catch { /* */ } }
+  }
+  const _draftOpts = _draftsHtml ? { draftsHtml: _draftsHtml, draftsCount: _draftRows.length } : {};
+
   // ── Board layout ──────────────────────────────────────────────────────────
   // Admins get three minimisable sections (Your / Other users / Admin = Follower
   // Growth); each orders Running → Idle → Done → Cancelled, with Done and
@@ -8425,14 +8490,14 @@ async function renderCampaignsBoard() {
       + `<input type="search" class="cb-usersearch" placeholder="Search by user…" spellcheck="false" autocomplete="off" autocapitalize="off"`
       + ` value="${escHtml(_otherUserSearch || '')}" oninput="onOtherUserSearch(this.value)">`
       + `</span>`;
-    html = _renderBoardSection('mine', 'Your campaigns', mineItems, { alwaysShow: true })
+    html = _renderBoardSection('mine', 'Your campaigns', mineItems, { alwaysShow: true, ..._draftOpts })
       + _renderBoardSection('other', 'Other users’ campaigns', otherShown, {
         headExtra: searchBox, alwaysShow: true,
         emptyMsg: q ? 'No campaigns match that user.' : 'There are no campaigns to show at the moment.',
       })
       + _renderBoardSection('admin', 'Admin campaigns', adminItems, { subtitle: 'Follower Growth' });
   } else {
-    html = _renderBoardSection('mine', '', shown, { flat: true });
+    html = _renderBoardSection('mine', '', shown, { flat: true, ..._draftOpts });
   }
   _snItemsById = new Map(items.map((x) => [x.id, x]));
   // Keep the user-search caret alive across the 4s poll re-render: note whether
