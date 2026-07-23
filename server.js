@@ -27,8 +27,9 @@ import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updat
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
-import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
+import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getAllJobsFast as getAllScrapeJobsFast, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
 import { addScrapeCampaign, listScrapeCampaigns, getScrapeCampaign, updateScrapeCampaign } from './src/scrape-campaigns.js';
+import { getScrapeOverride, saveScrapeOverride } from './src/scrape-config-overrides.js';
 import { appendAction, readScrapeLog } from './src/scrape-campaign-logs.js';
 import { mergeCampaignsWithJobs, groupJobsIntoCampaigns } from './public/js/scrape-board.mjs';
 import { getOperatorId } from './src/operator-id.js';
@@ -3441,16 +3442,45 @@ app.get('/api/scrape/campaigns', async (_req, res) => {
   try {
     // SHARED board: group EVERY operator's engine jobs into strips (not just
     // this install's). Each job is tagged with its own userId + owner email,
-    // so the board shows the whole team's scrapes.
-    const jobsRes = await getAllScrapeJobs();
+    // so the board shows the whole team's scrapes. Fast variant (single attempt,
+    // 10s) — this route is polled every 2.5s, so the next poll is the retry.
+    const jobsRes = await getAllScrapeJobsFast();
     if (jobsRes && jobsRes.error) return res.status(502).json({ error: jobsRes.error });
     const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes && jobsRes.jobs) || [];
     const me = getOperatorEmail() || '';
     const campaigns = groupJobsIntoCampaigns(jobs, { currentEmail: me, currentOperatorId: getOperatorId() });
+    // Apply any saved config overrides (operator edited + Saved a scrape's config)
+    // so the board strip AND openScrapeSetupFor reflect the saved edits on re-open.
+    for (const c of campaigns) {
+      const ov = await getScrapeOverride(c.id);
+      if (ov) {
+        if (ov.searchUrls && ov.searchUrls.length) c.searchUrls = ov.searchUrls;
+        if (ov.sheetUrl) c.sheetUrl = ov.sheetUrl;
+        if (ov.tabName) c.tabName = ov.tabName;
+        if (ov.name) c.name = ov.name;
+        if (ov.profileIds && ov.profileIds.length) c.profileIds = ov.profileIds;
+        c._edited = true;
+      }
+    }
     res.json({ campaigns, me });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+// Save an edited config for a scrape strip (keyed by its board id) so the edits
+// persist and win on re-open. Local-only; used by the wizard's Save button.
+app.post('/api/scrape/campaigns/:id/config', async (req, res) => {
+  try {
+    const { searchUrls, sheetUrl, tabName, name, profileIds } = req.body || {};
+    const saved = await saveScrapeOverride(req.params.id, { searchUrls, sheetUrl, tabName, name, profileIds });
+    res.json({ ok: true, config: saved });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.get('/api/scrape/campaigns/:id/config', async (req, res) => {
+  res.json({ config: await getScrapeOverride(req.params.id) });
 });
 
 app.post('/api/scrape/campaigns/:id/toggle', async (req, res) => {

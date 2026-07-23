@@ -208,7 +208,7 @@
       <div class="dashboard-header">
         <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
           <button type="button" class="route-seg-btn is-active" onclick="goDashboard()">Campaigns</button>
-          <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav</button>
+          <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav Scraper</button>
         </div>
         <!-- 2026-05-27 (drafts-isolation v2): resume-draft surfaces as a small
              gold count-badge on the New-campaign button. Click the button →
@@ -680,12 +680,12 @@
     <div id="salesnav-view" class="route-view">
       <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
         <button type="button" class="route-seg-btn" onclick="goDashboard()">Campaigns</button>
-        <button type="button" class="route-seg-btn is-active" onclick="goSalesNav()">Sales Nav</button>
+        <button type="button" class="route-seg-btn is-active" onclick="goSalesNav()">Sales Nav Scraper</button>
       </div>
       <div class="sn-boardhead">
         <div>
-          <div class="sn-kicker" id="sn-datekicker">Sales Nav</div>
-          <div class="sn-boardtitle">Sales Nav Queue</div>
+          <div class="sn-kicker" id="sn-datekicker">Sales Nav Scraper</div>
+          <div class="sn-boardtitle">Sales Nav Scraper</div>
         </div>
         <div class="sn-qmeta" id="sn-qmeta">—</div>
         <button type="button" id="sn-new-btn" class="btn btn-secondary" onclick="startNewScrapeSetup()">＋ New scrape</button>
@@ -696,7 +696,7 @@
       <div id="sn-setup" style="display:none">
         <div class="sn-setup-head">
           <div class="sn-setup-title">New scrape</div>
-          <button type="button" class="btn btn-secondary" onclick="closeScrapeSetup()">Close ✕</button>
+          <button type="button" class="btn btn-secondary" onclick="closeScrapeSetup()">← Sales Nav Scraper dashboard</button>
         </div>
         <div id="sn-setup-body"></div>
       </div>
@@ -1379,9 +1379,17 @@
 
   #sn-setup{margin:32px 0 28px;padding:32px 0 8px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
   .sn-setup-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 26px;}
-  .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;}
+  .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;display:flex;align-items:center;gap:12px;}
+  /* Small spinner shown beside "Loading scrape…" so it's clearly loading, not stalled. */
+  .sn-setup-spinner{width:16px;height:16px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
+  @keyframes sn-spin{to{transform:rotate(360deg);}}
   .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
   .sn-railcount{color:#c4c4c4;}
+  .sn-sectionhead{font-family:var(--display);font-size:20px;letter-spacing:.02em;color:var(--ink);margin:30px 0 4px;padding-bottom:8px;border-bottom:1px solid var(--hairline);}
+  .sn-sectionhead:first-child{margin-top:8px;}
+  /* Board loading state — the /api/jobs fetch can take several seconds. */
+  .sn-loading{display:flex;align-items:center;gap:12px;color:var(--gray);font-size:13px;padding:34px 2px;}
+  .sn-loading .sp{width:18px;height:18px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
   /* ── Admin board sections (Your / Other users / Admin) ── */
   .cb-section{border:1px solid var(--hairline);border-radius:14px;padding:4px 16px 14px;margin:14px 0;}
   .cb-section.cb-collapsed{padding-bottom:4px;}
@@ -1473,6 +1481,10 @@
   .sn-strip.stopped{border-color:var(--red);}
   .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
   .sn-strip.stopped .sn-status{color:var(--red);}
+  /* Paused — amber accent + amber status, distinct from running (green) / stopped (red). */
+  .sn-strip.paused::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold,#d4a24a);}
+  .sn-strip.paused .sn-status{color:var(--gold,#d4a24a);}
+  .sn-board .dot.paused{background:var(--gold,#d4a24a);}
   .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
   .sn-progtxt b{color:var(--ink);font-weight:600;}
   /* queued — tidy mini card (solid, smaller title) */
@@ -2515,8 +2527,9 @@
               <div class="ssc-foot-cap" id="scrape-foot-cap">leads scraped</div>
             </div>
             <div class="ssc-dock">
+              <button type="button" id="btn-scrape-view" class="btn btn-secondary" style="display:none" onclick="scrapeDockView()" title="Watch this scrape running on the VM">👁 View</button>
+              <button type="button" id="btn-scrape-save" class="btn btn-secondary" style="display:none" onclick="saveScrapeConfig(this)" title="Save config changes so they're kept next time you open this scrape">Save config</button>
               <button type="button" id="btn-scrape-start" class="btn btn-start" onclick="startScrapeJob()">Start Scrape</button>
-              <button type="button" id="btn-scrape-pause" class="btn btn-secondary" onclick="pauseScrapeJob()">Pause</button>
               <button type="button" id="btn-scrape-stop" class="btn btn-secondary" onclick="stopScrapeJob()">Stop</button>
             </div>
           </div>
@@ -3483,7 +3496,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.59"></script>
+  <script type="module" src="/js/app.js?v=2.160.78"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

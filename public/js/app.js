@@ -56,6 +56,9 @@ async function loadViewerIdentity() {
 }
 
 let _snPollTimer = null;
+let _snPollInFlight = false; // guard so slow polls don't stack (each poll every 2.5s)
+let _snEverLoaded = false;   // have we rendered the board successfully at least once?
+let _snConsecFail = 0;       // consecutive failed polls before the first success
 // Navigate to the Sales Nav board (its own top-level route #/salesnav). The
 // router (applyRoute) calls openSalesNavBoard() on entry to load + start polling.
 function goSalesNav() { window.location.hash = '#/salesnav'; }
@@ -77,12 +80,35 @@ async function pollSalesNavBoard() {
   if (!document.body.classList.contains('route-salesnav')) { clearInterval(_snPollTimer); _snPollTimer = null; return; }
   const host = document.getElementById('sn-board');
   if (!host || document.hidden) return;
+  if (_snPollInFlight) return; // a previous poll is still waiting on a slow engine — don't stack
+  _snPollInFlight = true;
+  // Before the FIRST successful load, show an animated "Loading scrapes…" while the
+  // /api/jobs fetch runs (it can take several seconds) so the board reads as loading,
+  // not empty/stalled. Only when the board isn't already showing strips.
+  if (!_snEverLoaded && !host.querySelector('.sn-strip')) {
+    host.innerHTML = '<div class="sn-loading"><span class="sp" aria-hidden="true"></span> Loading scrapes…</div>';
+  }
   try {
     const r = await fetch('/api/scrape/campaigns');
     const d = await r.json();
-    if (d && d.error) { host.innerHTML = `<div class="sn-empty">${escHtml(d.error)}</div>`; return; }
+    if (d && d.error) throw new Error(d.error);
+    _snEverLoaded = true; _snConsecFail = 0;
     renderSalesNavBoard(d.campaigns || []);
-  } catch (_) { /* keep last render */ }
+  } catch (err) {
+    _snConsecFail++;
+    // Never blank a board we've already rendered: keep the last render and let the
+    // next 2.5s poll recover silently (the engine is just briefly slow/busy). Only
+    // show a message BEFORE the first successful load — a friendly "connecting…"
+    // first, escalating to the real error after several failures so a genuine
+    // outage still surfaces instead of spinning forever.
+    if (!_snEverLoaded) {
+      host.innerHTML = _snConsecFail >= 4
+        ? `<div class="sn-loading"><span class="sp" aria-hidden="true"></span> Still loading — the engine is slow to respond (${escHtml((err && err.message) || 'timeout')}). Retrying…</div>`
+        : `<div class="sn-loading"><span class="sp" aria-hidden="true"></span> Loading scrapes…</div>`;
+    }
+  } finally {
+    _snPollInFlight = false;
+  }
 }
 
 function _snStatusDot(status) {
@@ -136,33 +162,62 @@ function _snShowHandover(campaigns, stopped, started) {
 // by ownership (strips are engine-derived; there's no local record to look up).
 const _snStrips = new Map();
 
+let _snLastCampaigns = null; // last rendered board data — for optimistic re-renders
 function renderSalesNavBoard(campaigns) {
   campaigns = (campaigns || []).map(_snEnrich); // backfill name/owner/profiles the engine dropped
+  _snLastCampaigns = campaigns;
   _snDetectHandover(campaigns);
   _snStrips.clear();
   for (const c of campaigns) _snStrips.set(c.id, { profileIds: c.profileIds || [], tabName: c.tabName || '', owner: c.owner || '', mine: !!c.mine });
   const host = document.getElementById('sn-board');
   const running = campaigns.filter((c) => c.status === 'running');
   const queued = campaigns.filter((c) => c.status === 'queued');
-  const done = campaigns
-    .filter((c) => c.status === 'done' || c.status === 'error')
-    .filter((c) => !_snDismissed.has(c.id)); // hide the ones this operator dismissed
   document.getElementById('sn-qmeta').textContent =
     `${running.length} running · ${queued.length} queued`;
-  let html = '';
   const rail = (label, list) => list.length
     ? `<div class="sn-railhead">${label}</div>` + list.map(renderStrip).join('') : '';
-  html += rail('▶ Now running', running);
-  html += rail('• Up next in the queue', queued);
-  if (done.length) {
-    html += `<div class="sn-railhead">✓ Done <span class="sn-railcount">${done.length}</span>`
-      + `<button type="button" class="sn-clear-done">Clear done</button></div>`
-      + done.map(renderStrip).join('');
+  // Running → queued → done rails for one subset of scrapes. showClear gates the
+  // "Clear done" button so it appears once (under Your scrapes / the flat board),
+  // not under someone else's done rail where clearing everyone's reads as wrong.
+  const railsFor = (list, { showClear = true } = {}) => {
+    const r = list.filter((c) => c.status === 'running');
+    const q = list.filter((c) => c.status === 'queued');
+    const d = list
+      .filter((c) => c.status === 'done' || c.status === 'error')
+      .filter((c) => !_snDismissed.has(c.id));
+    let h = rail('▶ Now running', r) + rail('• Up next in the queue', q);
+    if (d.length) {
+      h += `<div class="sn-railhead">✓ Done <span class="sn-railcount">${d.length}</span>`
+        + (showClear ? `<button type="button" class="sn-clear-done">Clear done</button>` : '')
+        + `</div>` + d.map(renderStrip).join('');
+    }
+    return h;
+  };
+  let html = '';
+  // Mirror the campaigns board: admins see "Your scrapes" vs "Other people's
+  // scrapes"; everyone else gets a single flat board. `mine` is computed by the
+  // engine grouping (owner email / operator id match).
+  if (typeof _snIsAdmin === 'function' && _snIsAdmin()) {
+    const mine = campaigns.filter((c) => c.mine);
+    const others = campaigns.filter((c) => !c.mine);
+    const mineHtml = railsFor(mine, { showClear: true }) || '<div class="sn-empty">You have no scrapes running right now.</div>';
+    const othersHtml = railsFor(others, { showClear: false }) || '<div class="sn-empty">No one else has scrapes right now.</div>';
+    html = `<div class="sn-sectionhead">Your scrapes</div>${mineHtml}`
+      + `<div class="sn-sectionhead">Other people’s scrapes</div>${othersHtml}`;
+  } else {
+    html = railsFor(campaigns, { showClear: true });
   }
   // Empty state when NO strips are visible — covers both "no scrapes at all"
   // and "all scrapes dismissed / in a non-shown status" (previously blank).
   if (!html) html = _scrapeEmptyState();
   host.innerHTML = html;
+  // The rebuild reset every logs pane to its "…" placeholder — refill the ones
+  // showing the Logs tab so an open live log survives the 2.5s re-render.
+  if (_snLogsTab.size) {
+    host.querySelectorAll('.sn-pane.on .sn-logbox').forEach((box) => {
+      if (box.dataset.logsfor && _snLogsTab.has(box.dataset.logsfor)) { try { _snLoadLogs(box); } catch (_) { /* */ } }
+    });
+  }
 }
 
 // Every strip is collapsed to a slim summary BY DEFAULT (queued always; running
@@ -170,6 +225,11 @@ function renderSalesNavBoard(campaigns) {
 // rows. This set holds the cids the operator explicitly expanded; it survives
 // re-renders (the board rebuilds its innerHTML on every 2.5s poll).
 const _snExpanded = new Set();
+// cids whose strip should show the LOGS tab active (vs the default Jobs tab).
+// Persisted like _snExpanded so the 2.5s board re-render doesn't snap the pane
+// back to Jobs — set when the operator opens a running scrape's log or clicks
+// the Logs tab, cleared when they click back to Jobs.
+const _snLogsTab = new Set();
 
 // Done strips the operator has hidden from THEIR board (local only — the board is
 // shared, so this never touches the engine or other operators). Persisted to
@@ -189,6 +249,16 @@ const _snStopped = new Set((() => {
 })());
 function _snSaveStopped() {
   try { localStorage.setItem('snStopped', JSON.stringify([..._snStopped])); } catch (_) { /* */ }
+}
+
+// Scrapes the operator PAUSED via the strip's On/Off toggle. The engine doesn't
+// report a paused state (pause just signals the pod; the job stays "running"), so
+// we track it locally to render the strip as "Paused" instead of "Running".
+const _snPaused = new Set((() => {
+  try { return JSON.parse(localStorage.getItem('snPaused') || '[]'); } catch (_) { return []; }
+})());
+function _snSavePaused() {
+  try { localStorage.setItem('snPaused', JSON.stringify([..._snPaused])); } catch (_) { /* */ }
 }
 
 // Local launch registry — the engine drops campaignName/ownerEmail/profileId from
@@ -262,10 +332,12 @@ function renderStrip(c) {
   const flow = `<b>${(c.searchUrls || []).length} searches</b> → <b>${nJobs} jobs</b> → feeds <b>${escHtml(c.name || c.tabName || '')}</b> · tab "${escHtml(c.tabName || 'Results')}"`;
   const doneAgo = isDone ? fmtAgo(_snDoneTs(c)) : '';
   const wasStopped = isDone && _snStopped.has(c.id);
+  // Paused = the operator toggled it off while it's still active (not terminal).
+  const isPaused = !isDone && _snPaused.has(c.id);
   const isBad = c.status === 'error' || wasStopped; // render red
   const doneLabel = c.status === 'error' ? 'Error' : wasStopped ? 'Stopped' : 'Done';
-  const statusTxt = isQueued
-    ? `Queued${c.minPosition ? ` · #${c.minPosition}` : ''}${c.etaMs ? ` · ${fmtEta(c.etaMs)}` : ''}`
+  const statusTxt = isPaused ? 'Paused'
+    : isQueued ? `Queued${c.minPosition ? ` · #${c.minPosition}` : ''}${c.etaMs ? ` · ${fmtEta(c.etaMs)}` : ''}`
     : c.status === 'running' ? 'Running'
     : `${doneLabel}${doneAgo ? ` · ${doneAgo}` : ''}`;
   // Running cards show live throughput (rows-so-far only — the engine reports no
@@ -282,9 +354,34 @@ function renderStrip(c) {
     return `<div class="job"><div><div class="jt">${escHtml(label)}</div></div><div class="jstat">${st}</div></div>`;
   }).join('') || '<div class="sn-empty">No jobs.</div>';
   const canOpen = !isQueued || _snCanControl(c);
+  // Open → the scrape's setup WIZARD (config populated) with its live Activity log
+  // at the bottom — the analogue of a campaign's Open → wizard-with-log. Available
+  // for every status (running/queued/done) so you can always inspect config + log.
+  const openCls = isDone ? 'mini' : 'mini solid'; // on done strips Re-run is primary
   const openBtn = canOpen
-    ? `<button class="mini solid" onclick="openScrapeSetupFor('${escHtml(c.id)}')">Open</button>`
+    ? `<button class="${openCls}" title="Open this scrape's wizard (config + log)" onclick="openScrapeSetupFor('${escHtml(c.id)}')">Open</button>`
     : `<button class="mini locked" title="Only ${escHtml(owner)} can open this">Open 🔒</button>`;
+  // Re-run → DIRECTLY start the scrape again with the same config (no wizard),
+  // for a FINISHED or STOPPED scrape you own (or admin). The engine has no
+  // page-offset resume; a re-run restarts from page 1 and the sheet-level dedup
+  // skips rows already captured, so it mainly fills in what a stopped run missed.
+  // A STOPPED scrape reads "Continue" (re-runs with the same config; sheet dedup
+  // skips already-captured rows, so it effectively picks up where it left off).
+  // A naturally-FINISHED scrape reads "Re-run" (start it over).
+  const rerunLabel = wasStopped ? 'Continue' : 'Re-run';
+  const rerunTitle = wasStopped
+    ? 'Continue this scrape — re-runs with the same config; already-captured rows are skipped'
+    : 'Start this scrape again with the same config';
+  const rerunBtn = (isDone && _snCanControl(c))
+    ? `<button class="mini solid" title="${rerunTitle}" onclick="rerunScrape('${escHtml(c.id)}',this)">${rerunLabel}</button>`
+    : '';
+  // 👁 View — live MJPEG of a running job's browser on the VM, exactly like the
+  // campaign board's 👁 Show. Views the first running job of this scrape (a scrape
+  // can run several browsers; this opens one — the per-job Jobs pane lists the rest).
+  const runningJob = (c.jobs || []).find((j) => j.state === 'running' && j.id);
+  const viewBtn = runningJob
+    ? `<button class="mini" onclick="openScrapeJobView('${escHtml(runningJob.id)}','${escHtml(c.name || c.tabName || 'scrape')}')" title="Watch this scrape running on the VM">👁 View</button>`
+    : '';
   // Stop shows while running OR still queued. Anyone can press it, but a
   // "not yours" confirm gates non-owners (handled in stopScrapeCampaign).
   const canStop = c.status === 'running' || isQueued;
@@ -298,25 +395,30 @@ function renderStrip(c) {
   // put when the pane opens instead of riding the footer down the page.
   const expandBtn = isQueued ? ''
     : `<button class="sn-collapse sn-expand" title="Expand / collapse"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>`;
-  const toggleOn = c.enabled !== false;
+  // The toggle reads Running/Paused. It's OFF (Paused) when the operator paused it
+  // — the engine keeps reporting the job "running", so factor in the local paused
+  // mark, else the switch would snap back to Running on the next poll.
+  const toggleOn = (c.enabled !== false) && !isPaused;
+  // Which tab is active survives re-renders via _snLogsTab (default: Jobs).
+  const logsActive = _snLogsTab.has(c.id);
   const switchBlock = isQueued ? '' : `
     <div class="sn-switch">
-      <div class="sn-switchtabs"><span class="sn-st on" data-t="jobs">Jobs</span><span class="sn-st" data-t="logs">Logs</span></div>
-      <div class="sn-pane on" data-p="jobs">${jobsPane}</div>
-      <div class="sn-pane" data-p="logs"><div class="sn-logbox" data-logsfor="${escHtml(c.id)}" data-tab="${escHtml(c.tabName || '')}">…</div></div>
+      <div class="sn-switchtabs"><span class="sn-st ${logsActive ? '' : 'on'}" data-t="jobs">Jobs</span><span class="sn-st ${logsActive ? 'on' : ''}" data-t="logs">Logs</span></div>
+      <div class="sn-pane ${logsActive ? '' : 'on'}" data-p="jobs">${jobsPane}</div>
+      <div class="sn-pane ${logsActive ? 'on' : ''}" data-p="logs"><div class="sn-logbox" data-logsfor="${escHtml(c.id)}" data-tab="${escHtml(c.tabName || '')}">…</div></div>
     </div>`;
   return `
-  <div class="sn-strip ${c.mine ? 'mine' : ''} ${c.status === 'running' ? 'run' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}">
+  <div class="sn-strip ${c.mine ? 'mine' : ''} ${c.status === 'running' && !isPaused ? 'run' : ''} ${isPaused ? 'paused' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}">
     ${expandBtn}
     <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span>${c.mine ? '<span class="sn-you">You</span>' : `<span class="sn-owner">· ${escHtml(owner)}</span>`}
-      <span class="sn-status">${isBad ? '<span class="dot red"></span>' : _snStatusDot(c.status)} ${escHtml(statusTxt)}</span></div>
+      <span class="sn-status">${isPaused ? '<span class="dot paused"></span>' : isBad ? '<span class="dot red"></span>' : _snStatusDot(c.status)} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(c.name || '')}</div>
     <div class="sn-flow">${flow}</div>
     ${progLine}
     ${switchBlock}
     <div class="sn-foot">
-      <div class="togwrap"><div class="toggle ${toggleOn ? '' : 'off'}" data-owner="${escHtml(owner)}" data-cid="${escHtml(c.id)}"><i></i></div><span class="lbl">${toggleOn ? 'On' : 'Off'}</span></div>
-      <div class="right">${dismissBtn}${stopBtn}${openBtn}</div>
+      <div class="togwrap"><div class="toggle ${toggleOn ? '' : 'off'}" data-owner="${escHtml(owner)}" data-cid="${escHtml(c.id)}" title="${toggleOn ? 'Running — flip to pause' : 'Paused — flip to resume'}"><i></i></div><span class="lbl">${toggleOn ? 'Running' : 'Paused'}</span></div>
+      <div class="right">${dismissBtn}${viewBtn}${stopBtn}${openBtn}${rerunBtn}</div>
     </div>
   </div>`;
 }
@@ -389,6 +491,7 @@ function _snRestoreSetup() {
 async function openScrapeSetupFor(cid) {
   const host = document.getElementById('sn-setup');
   if (!host) return;
+  _scrapePausedLocal = false; // fresh open — don't inherit a prior scrape's paused state
   const sel = document.getElementById('campaign-mode');
   if (sel) sel.value = 'sales_nav_scrape';
   _snMoveSetupIn();
@@ -401,28 +504,161 @@ async function openScrapeSetupFor(cid) {
   if (board) board.style.display = 'none'; // focus this scrape — hide the queue list below
   _snSetupOpen = true;
   if (cid) {
+    // BLANK the fields immediately (before the fetch that populates them). The
+    // /api/scrape/campaigns round-trip can be slow when the engine is busy; showing
+    // the PREVIOUS scrape's config while we wait is worse than showing nothing.
+    const urls = document.getElementById('scrape-urls'); if (urls) urls.value = '';
+    const sheet = document.getElementById('scrape-sheet'); if (sheet) sheet.value = '';
+    const tab = document.getElementById('scrape-tab'); if (tab) tab.value = '';
+    const nm = document.getElementById('scrape-name'); if (nm) nm.value = '';
+    _setScrapeSetupTitle('Loading scrape…', true);
+    _setScrapeSaveVisible(true); // editing an existing scrape → offer Save config
+    // Track the opened scrape so pollScrapeLogs shows ITS log (scrape-specific,
+    // cross-session) instead of this session's global feed. Clear the console now.
+    _snOpenedScrape = { cid, tabName: '' };
+    try { scrapeLogLines = []; scrapeLogSince = 0; if (typeof renderScrapeLogPanel === 'function') renderScrapeLogPanel(); } catch (_) { /* */ }
     try {
       const r = await fetch('/api/scrape/campaigns');
       const d = await r.json();
       const rec = (d.campaigns || []).find((c) => c.id === cid);
       if (rec) {
-        const urls = document.getElementById('scrape-urls');
         if (urls) urls.value = (rec.searchUrls || []).join('\n');
-        const sheet = document.getElementById('scrape-sheet');
         if (sheet) sheet.value = rec.sheetUrl || '';
-        const tab = document.getElementById('scrape-tab');
         if (tab) tab.value = rec.tabName || 'Results';
-        const nm = document.getElementById('scrape-name');
         if (nm) nm.value = rec.name || '';
+        _snOpenedScrape.tabName = rec.tabName || '';
+        _setScrapeSetupTitle(rec.name || rec.tabName || 'Scrape');
+        // Pre-select the SAME GoLogin accounts this scrape used (section 3), so a
+        // wizard re-run reuses them unless the operator changes them — matching the
+        // direct Re-run button. rec.profileIds are the scrape's job profileIds,
+        // which are GoLogin profile ids (== p.id in the picker).
+        if (Array.isArray(rec.profileIds) && rec.profileIds.length) {
+          selectedProfileIds = rec.profileIds.filter(Boolean);
+          for (const id of selectedProfileIds) {
+            const p = (allProfilesData || []).find((x) => x.id === id);
+            if (p) selectedProfileNames[id] = p.name;
+          }
+          try { if (typeof renderProfiles === 'function' && (allProfilesData || []).length) renderProfiles(allProfilesData); } catch (_) { /* */ }
+          try { if (typeof renderSelectedPanel === 'function') renderSelectedPanel(); } catch (_) { /* */ }
+        }
+      } else {
+        _setScrapeSetupTitle('Scrape');
       }
-    } catch (_) { /* new/empty setup — leave fields blank */ }
+    } catch (_) { _setScrapeSetupTitle('Scrape'); }
+    try { if (typeof pollScrapeLogs === 'function') pollScrapeLogs(); } catch (_) { /* */ }
+  } else {
+    _snOpenedScrape = null; // a genuinely new scrape — global session log applies
+    _setScrapeSetupTitle('New scrape');
+    _setScrapeSaveVisible(false); // nothing to save-onto yet for a brand-new scrape
   }
   if (typeof updateScrapePairing === 'function') updateScrapePairing();
   try { host.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ }
 }
+// The composer's hero title — "New scrape" for a fresh one, the scrape's name when
+// opening an existing running/done scrape (so it never mislabels a live scrape as new).
+function _setScrapeSetupTitle(text, loading = false) {
+  const el = document.querySelector('#sn-setup .sn-setup-title');
+  if (!el) return;
+  el.innerHTML = (loading ? '<span class="sn-setup-spinner" aria-hidden="true"></span>' : '') + `<span>${escHtml(text)}</span>`;
+}
+// Which existing scrape the composer is showing (null = a new scrape). Drives
+// pollScrapeLogs to fetch THIS scrape's log instead of the session's global feed.
+let _snOpenedScrape = null;
 window.openScrapeSetupFor = openScrapeSetupFor;
 
+// Re-run a finished/stopped scrape DIRECTLY (no wizard): re-dispatch the exact same
+// config (searchUrls × accounts → sheet/tab) to the engine, mirroring startScrapeJob's
+// per-URL /api/scrape/start dispatch. The engine restarts the search from page 1;
+// sheet-level dedup skips already-captured rows.
+async function rerunScrape(cid, btn) {
+  if (btn) btn.disabled = true;
+  const toast = (m) => { try { showCampaignToast(m, 4500); } catch (_) { try { alert(m); } catch (_) {} } };
+  try {
+    const r = await fetch('/api/scrape/campaigns');
+    const d = await r.json();
+    const rec = (d.campaigns || []).find((c) => c.id === cid);
+    if (!rec) { toast('Re-run: couldn’t find this scrape’s config — try Open instead.'); return; }
+    const urls = (rec.searchUrls || []).filter(Boolean);
+    const sheetUrl = rec.sheetUrl || '';
+    const baseTab = (rec.tabName || 'Results').trim();
+    const campaignName = (rec.name || baseTab).trim();
+    const accts = (rec.profileIds || []).filter(Boolean);
+    if (!urls.length || !sheetUrl || !accts.length) {
+      toast('Re-run: this scrape is missing its URLs, sheet, or accounts — Open it and start manually.');
+      return;
+    }
+    toast(`Re-running “${campaignName}” — ${urls.length} job${urls.length === 1 ? '' : 's'} on ${accts.length} account${accts.length === 1 ? '' : 's'}…`);
+    let started = 0; const errors = [];
+    for (let i = 0; i < urls.length; i++) {
+      const profileId = accts[i % accts.length];              // round-robin URL→account, like startScrapeJob
+      const tabName = urls.length > 1 ? `${baseTab} ${i + 1}` : baseTab;
+      try {
+        const rr = await fetch('/api/scrape/start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode: false, campaignName }),
+        });
+        const res = await rr.json();
+        if (res && res.error) errors.push(res.error); else started++;
+      } catch (e) { errors.push(e && e.message ? e.message : String(e)); }
+    }
+    toast(started
+      ? `Re-run started — ${started} job${started === 1 ? '' : 's'} dispatched${errors.length ? `, ${errors.length} failed` : ''}. Watch it under “Now running”.`
+      : `Re-run failed: ${errors[0] || 'unknown error'}`);
+    if (started) {
+      // Optimistic move to "Now running" so the strip jumps immediately instead of
+      // waiting for the slow /api/jobs poll (~10s). Clear the stopped mark and flip
+      // the cached campaign's status; the poll burst below reconciles with the
+      // engine as the new jobs register.
+      _snStopped.delete(cid); try { _snSaveStopped(); } catch (_) {}
+      if (Array.isArray(_snLastCampaigns)) {
+        const c = _snLastCampaigns.find((x) => x.id === cid);
+        if (c) { c.status = 'running'; c.running = Math.max(1, c.running || 0); c.done = 0; }
+        try { renderSalesNavBoard(_snLastCampaigns); } catch (_) { /* */ }
+      }
+      // Catch-up polls: the board fetch has an in-flight guard, so fire a few over
+      // ~12s to reflect the real engine state as soon as the new jobs appear.
+      [1500, 4000, 8000, 12000].forEach((ms) => setTimeout(() => { try { pollSalesNavBoard(); } catch (_) { /* */ } }, ms));
+    }
+  } catch (e) { toast('Re-run failed: ' + (e && e.message ? e.message : e)); }
+  finally { if (btn) btn.disabled = false; }
+}
+window.rerunScrape = rerunScrape;
+
+// Save the current wizard config for the OPENED scrape (keyed by its board id) so
+// the edits persist and win on re-open — the server merges saved overrides into
+// /api/scrape/campaigns. Only meaningful while viewing an existing scrape.
+async function saveScrapeConfig(btn) {
+  if (!_snOpenedScrape || !_snOpenedScrape.cid) {
+    try { showCampaignToast('Open a scrape first, then Save.', 3500); } catch (_) {}
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const body = {
+      searchUrls: (typeof getScrapeInputUrls === 'function' ? getScrapeInputUrls() : []),
+      sheetUrl: (document.getElementById('scrape-sheet')?.value || '').trim(),
+      tabName: (document.getElementById('scrape-tab')?.value || 'Results').trim(),
+      name: (document.getElementById('scrape-name')?.value || '').trim(),
+      profileIds: (typeof scrapeSelectedAccounts === 'function' ? scrapeSelectedAccounts() : []),
+    };
+    const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(_snOpenedScrape.cid)}/config`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d && d.ok) { _snOpenedScrape.tabName = body.tabName; try { showCampaignToast('✓ Config saved — it’ll be here next time you open this scrape.', 4000); } catch (_) {} }
+    else { try { showCampaignToast('Save failed: ' + ((d && d.error) || 'unknown'), 5000); } catch (_) {} }
+  } catch (e) { try { showCampaignToast('Save failed: ' + (e && e.message ? e.message : e), 5000); } catch (_) {} }
+  finally { if (btn) btn.disabled = false; }
+}
+window.saveScrapeConfig = saveScrapeConfig;
+// Show the Save-config button only while an existing scrape is open (editing it).
+function _setScrapeSaveVisible(show) {
+  const b = document.getElementById('btn-scrape-save');
+  if (b) b.style.display = show ? '' : 'none';
+}
+
 function startNewScrapeSetup() {
+  _snOpenedScrape = null; // fresh scrape — not viewing an existing one's log
   const urls = document.getElementById('scrape-urls'); if (urls) urls.value = '';
   const nm = document.getElementById('scrape-name'); if (nm) nm.value = '';
   openScrapeSetupFor('');
@@ -441,6 +677,8 @@ function closeScrapeSetup() {
   _snRestoreHeroName();
   _snRestoreSetup();
   _snSetupOpen = false;
+  _snOpenedScrape = null; // back to the board — stop showing an opened scrape's log
+  _setScrapeSaveVisible(false);
 }
 window.closeScrapeSetup = closeScrapeSetup;
 
@@ -450,6 +688,9 @@ document.addEventListener('click', (e) => {
     const sw = tab.closest('.sn-switch');
     sw.querySelectorAll('.sn-st').forEach((x) => x.classList.toggle('on', x === tab));
     sw.querySelectorAll('.sn-pane').forEach((p) => p.classList.toggle('on', p.dataset.p === tab.dataset.t));
+    // Remember the choice so the 2.5s re-render keeps this tab active.
+    const cid = tab.closest('.sn-strip')?.dataset.cid;
+    if (cid) { if (tab.dataset.t === 'logs') _snLogsTab.add(cid); else _snLogsTab.delete(cid); }
     if (tab.dataset.t === 'logs') {
       const box = sw.querySelector('.sn-logbox');
       if (box && box.dataset.logsfor) _snLoadLogs(box);
@@ -499,12 +740,16 @@ function _snApplyToggle(el, cid) {
   // operator sees the state change without waiting for the next poll.
   el.classList.toggle('off', !goingOn);
   const lbl = el.parentNode?.querySelector('.lbl');
-  if (lbl) lbl.textContent = goingOn ? 'On' : 'Off';
+  if (lbl) lbl.textContent = goingOn ? 'Running' : 'Paused';
   const strip = el.closest('.sn-strip');
   if (strip) {
     strip.classList.remove('starting', 'stopping');
     strip.classList.add(goingOn ? 'starting' : 'stopping');
   }
+  // Track the paused state locally so the strip reads "Paused" (the engine keeps
+  // reporting the job as running). ON → resume (clear); OFF → pause (mark).
+  if (goingOn) _snPaused.delete(cid); else _snPaused.add(cid);
+  try { _snSavePaused(); } catch (_) { /* */ }
   const meta = _snStrips.get(cid) || {};
   fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -539,6 +784,7 @@ document.getElementById('snm-ok')?.addEventListener('click', () => {
 function _snDoStop(cid) {
   const meta = _snStrips.get(cid) || {};
   _snStopped.add(cid); _snSaveStopped(); // remember so it renders red as "Stopped"
+  _snPaused.delete(cid); try { _snSavePaused(); } catch (_) { /* */ } // stopping clears any paused mark
   // Immediate visual feedback: pulse the strip red and show the button working.
   const strip = document.querySelector(`.sn-strip[data-cid="${cid}"]`);
   if (strip) {
@@ -547,10 +793,19 @@ function _snDoStop(cid) {
     const btn = strip.querySelector('.sn-foot .right .mini');
     if (btn) { btn.textContent = 'Stopping…'; btn.disabled = true; }
   }
-  fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ on: false, profileIds: meta.profileIds || [] }),
-  }).then(() => pollSalesNavBoard()).catch(() => {});
+  // Hard STOP each account's job — /api/scrape/stop broadcasts stop to the owning
+  // pod AND cancels that profile's queued jobs. (The /toggle endpoint only PAUSES,
+  // which left the strip stuck on "RUNNING" — that was the bug.) Once stopped, the
+  // jobs go terminal, so the strip's status flips to Done/Stopped and it moves to
+  // the Done section on the next board poll.
+  const profileIds = (meta.profileIds || []).filter(Boolean);
+  const stops = profileIds.length
+    ? profileIds.map((pid) => fetch('/api/scrape/stop', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: pid }),
+      }).catch(() => {}))
+    : [];
+  Promise.all(stops).then(() => { try { pollSalesNavBoard(); } catch (_) {} }).catch(() => {});
 }
 
 function stopScrapeCampaign(cid) {
@@ -3284,10 +3539,34 @@ async function startScrapeJob() {
   startScrapePolling();
 }
 
-async function pauseScrapeJob() { await _scrapeControlAll('/api/scrape/pause'); }
+// Scrapes have no engine-reported "paused" state (pause/resume just broadcast a
+// control signal to the owning pod; the job stays 'running' in /api/jobs). So we
+// track pause locally and toggle the dock button Pause ⇄ Continue.
+let _scrapePausedLocal = false;
+async function pauseScrapeJob() {
+  await _scrapeControlAll('/api/scrape/pause');
+  _scrapePausedLocal = true;
+  _applyScrapePauseButton();
+}
+async function resumeScrapeJob() {
+  await _scrapeControlAll('/api/scrape/resume');   // targets the same running/queued jobs
+  _scrapePausedLocal = false;
+  _applyScrapePauseButton();
+}
+window.resumeScrapeJob = resumeScrapeJob;
+// Reflect the local pause state on the dock button: "Continue" (→ resume) when
+// paused, "Pause" (→ pause) otherwise. Overrides the inline onclick.
+function _applyScrapePauseButton() {
+  const b = document.getElementById('btn-scrape-pause');
+  if (!b) return;
+  if (_scrapePausedLocal) { b.textContent = 'Continue'; b.onclick = () => resumeScrapeJob(); }
+  else { b.textContent = 'Pause'; b.onclick = () => pauseScrapeJob(); }
+}
 
 async function stopScrapeJob() {
   await _scrapeControlAll('/api/scrape/stop');
+  _scrapePausedLocal = false;
+  _applyScrapePauseButton();
   stopScrapePolling();
 }
 
@@ -3431,6 +3710,20 @@ function renderScrapeLogPanel() {
 }
 
 async function pollScrapeLogs() {
+  // Viewing an EXISTING opened scrape → show ITS log via the scrape-specific
+  // endpoint (works across sessions), replacing the console each poll. The global
+  // session feed below only carries scrapes STARTED in this app session.
+  if (_snOpenedScrape && _snOpenedScrape.cid) {
+    try {
+      const tab = _snOpenedScrape.tabName ? `?tabName=${encodeURIComponent(_snOpenedScrape.tabName)}` : '';
+      const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(_snOpenedScrape.cid)}/logs${tab}`);
+      const d = await r.json();
+      const lines = Array.isArray(d.lines) ? d.lines : [];
+      scrapeLogLines = lines.slice(-800);
+      renderScrapeLogPanel();
+    } catch (_) { /* keep last render */ }
+    return;
+  }
   try {
     const r = await fetch(`/api/scrape/logs${scrapeLogSince ? `?since=${scrapeLogSince}` : ''}`);
     const res = await r.json();
@@ -3547,7 +3840,14 @@ function renderScrapeQueueTab(jobs) {
 let _dashScrapeOpen = false;
 async function renderDashScrapeStrip() {
   const host = document.getElementById('dash-scrape-strip');
-  if (!host || document.hidden) return;
+  if (!host) return;
+  // Scrapes have their own home now — the Sales Nav Scraper board. Don't surface
+  // scrape jobs on the campaigns dashboard (they cluttered it with queued "SCRAPE"
+  // rows). Keep the strip permanently hidden; the board is the single place for
+  // scrape status. (Logic below retained in case we ever want it back.)
+  host.hidden = true; host.innerHTML = '';
+  return;
+  // eslint-disable-next-line no-unreachable
   let jobs = [];
   try {
     const r = await fetch('/api/scrape/jobs');
@@ -3635,8 +3935,34 @@ async function pollScrapeJobs() {
     const doneCount = jobs.filter((j) => j.state === 'done').length;
     _setScrapeFoot(totalLeads, doneCount, jobs.length);
     renderScrapeQueueTab(jobs);
+    _syncScrapeDock(jobs);
   } catch (_) { /* keep last render */ }
 }
+
+// Adapt the launch-console dock to the live state: when a job is already
+// running/queued, HIDE "Start Scrape" (starting again would launch a duplicate)
+// and SHOW a 👁 View button wired to the running job's live browser — the
+// analogue of a campaign's 👁 Show. Restores Start when nothing is live.
+let _scrapeDockRunningJobId = null;
+function _syncScrapeDock(jobs) {
+  const runningJob = (jobs || []).find((j) => j.state === 'running' && j.id);
+  const anyLive = (jobs || []).some((j) => j.state === 'running' || j.state === 'queued');
+  _scrapeDockRunningJobId = runningJob ? runningJob.id : null;
+  if (!anyLive) _scrapePausedLocal = false; // scrape ended → drop the paused flag
+  const startBtn = document.getElementById('btn-scrape-start');
+  if (startBtn) startBtn.style.display = anyLive ? 'none' : '';
+  const viewBtn = document.getElementById('btn-scrape-view');
+  if (viewBtn) viewBtn.style.display = runningJob ? '' : 'none';
+  // Pause/Continue is no longer in the dock — pause/resume lives on the board strip's
+  // Running/Paused toggle. The dock keeps Start / View / Save / Stop.
+}
+// Dock 👁 View → open the currently-running job's live browser stream.
+function scrapeDockView() {
+  if (!_scrapeDockRunningJobId) return;
+  const label = (_snOpenedScrape && _snOpenedScrape.tabName) || document.getElementById('scrape-name')?.value || 'scrape';
+  openScrapeJobView(_scrapeDockRunningJobId, label);
+}
+window.scrapeDockView = scrapeDockView;
 
 // Footer summary on the scrape live-status card: total leads + done / total.
 function _setScrapeFoot(leads, done, total) {
@@ -6101,6 +6427,16 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
     const d = new Date(iso);
     return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+  // profileId → sender email (from the campaign config the engine ships on the
+  // single-campaign detail). Lets each CC-sent line name the account that sent it.
+  const emails = (monitor && monitor.config && monitor.config.accountEmails) || {};
+  // Compact the lead's LinkedIn URL to its /in/<slug> so the line stays readable.
+  const shortUrl = (u) => {
+    const s = String(u || '');
+    const m = s.match(/linkedin\.com\/(?:in|sales\/(?:people|lead))\/([^/?#]+)/i);
+    if (m) return `linkedin.com/in/${m[1]}`;
+    return s ? s.replace(/^https?:\/\/(www\.)?/, '').slice(0, 48) : '';
+  };
   const actioned = leads.filter((l) => l && (l.status === 'sent' || l.status === 'error'));
   actioned.sort((a, b) => {
     const ta = a.sentAt ? Date.parse(a.sentAt) : Infinity; // errors (no sentAt) last
@@ -6112,7 +6448,11 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
     if (l.status === 'sent') {
       const verb = isFG ? 'invited' : (l.stage ? `${l.stage} sent` : 'sent');
       const when = hhmm(l.sentAt);
-      return `✓ ${name} · ${verb}${when ? ` · ${when}` : ''}`;
+      // CC/CC+IC: name the sending account's email + the lead's LinkedIn URL.
+      const email = !isFG ? (emails[l.account] || l.account || '') : '';
+      const url = !isFG ? shortUrl(l.leadUrl) : '';
+      const extra = `${email ? ` · via ${email}` : ''}${url ? ` · ${url}` : ''}`;
+      return `✓ ${name} · ${verb}${when ? ` · ${when}` : ''}${extra}`;
     }
     return `✗ ${name} · ${l.error || 'error'}`;
   });
@@ -6133,10 +6473,8 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
           : `✓ ${name} · introduced`);
       });
   }
-  const sent = leads.filter((l) => l && l.status === 'sent').length;
-  const err = leads.filter((l) => l && l.status === 'error').length;
-  const pending = Math.max(0, leads.length - sent - err);
-  lines.push(`— ${sent} ${isFG ? 'invited' : 'sent'} · ${err} error${err === 1 ? '' : 's'}${pending > 0 ? ` · ${pending} pending` : ''}`);
+  // Check status is a real timestamped event → keep it in the chronological block,
+  // above the summary footer.
   const checkDone = monitor.monitor_check_completed_at;
   const checkStarted = monitor.monitor_check_started_at;
   const checkWhen = hhmm(checkDone || checkStarted);
@@ -6149,6 +6487,14 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
   } else if (checkStarted) {
     lines.push(`◌ Check in progress${checkWhen ? ` · ${checkWhen}` : ''}`);
   }
+  // SUMMARY — always the very last line(s), visually separated so it's clearly a
+  // running total (NOT a chronological entry). Moved below the per-lead log + check
+  // status per operator feedback.
+  const sent = leads.filter((l) => l && l.status === 'sent').length;
+  const err = leads.filter((l) => l && l.status === 'error').length;
+  const pending = Math.max(0, leads.length - sent - err);
+  lines.push('──────────');
+  lines.push(`Σ Total · ${sent} ${isFG ? 'invited' : 'sent'} · ${err} error${err === 1 ? '' : 's'}${pending > 0 ? ` · ${pending} pending` : ''}`);
   return lines;
 }
 
@@ -6333,10 +6679,19 @@ function _combineCloudEvents(id) {
 }
 function _mergeCloudLog(leadLines, events) {
   leadLines = Array.isArray(leadLines) ? leadLines : [];
-  if (!Array.isArray(events) || !events.length) return leadLines;
-  const stamp = (t) => { const d = new Date(t); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
-  const evLines = events.map((e) => { const hh = stamp(e.t); return hh ? `${e.line} · ${hh}` : e.line; });
-  return leadLines.concat(evLines); // events are the most-recent live actions → shown last
+  // Peel off the summary footer (separator + "Σ Total …") so it always stays at the
+  // very bottom, below both the per-lead log AND the event lines — it's a running
+  // total, not a chronological entry.
+  let footer = [];
+  const sepIdx = leadLines.indexOf('──────────');
+  if (sepIdx >= 0) { footer = leadLines.slice(sepIdx); leadLines = leadLines.slice(0, sepIdx); }
+  let body = leadLines;
+  if (Array.isArray(events) && events.length) {
+    const stamp = (t) => { const d = new Date(t); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+    const evLines = events.map((e) => { const hh = stamp(e.t); return hh ? `${e.line} · ${hh}` : e.line; });
+    body = leadLines.concat(evLines); // events are recent live actions → after the per-lead log
+  }
+  return body.concat(footer); // summary footer always last
 }
 
 function _buildCloudActiveStatus(c, leads, counts) {
