@@ -6452,7 +6452,12 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
     if (m) return `linkedin.com/in/${m[1]}`;
     return s ? s.replace(/^https?:\/\/(www\.)?/, '').slice(0, 48) : '';
   };
-  const actioned = leads.filter((l) => l && (l.status === 'sent' || l.status === 'error'));
+  // Pre-actioned leads (sheet already had a Connection Request Status on import
+  // — the engine parks them, never re-opens the profile). Not events of THIS
+  // run: exclude from the per-lead lines, surface as one summary line instead.
+  const _isPre = (l) => String((l && l.stage) || '') === 'pre-actioned';
+  const preCount = leads.filter(_isPre).length;
+  const actioned = leads.filter((l) => l && (l.status === 'sent' || l.status === 'error') && !_isPre(l));
   actioned.sort((a, b) => {
     const ta = a.sentAt ? Date.parse(a.sentAt) : Infinity; // errors (no sentAt) last
     const tb = b.sentAt ? Date.parse(b.sentAt) : Infinity;
@@ -6477,15 +6482,18 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
     }
     return `✗ ${name} · ${l.error || 'error'}`;
   });
+  if (preCount) {
+    lines.unshift(`⏭ ${preCount} lead${preCount === 1 ? '' : 's'} already had a Connection Request Status in the sheet — excluded from this run (not re-sent)`);
+  }
   // CC+IC / CC+DM lifecycle events straight from the lead rows — so the VM log
   // shows acceptances + introductions (mirroring the local machine), not just the
   // initial connection send. Skipped for Follower Growth (no accept/intro phase).
   if (!isFG) {
     leads
-      .filter((l) => l && /connected|accepted/i.test(String(l.connectionAcceptedStatus || '')))
+      .filter((l) => l && !_isPre(l) && /connected|accepted/i.test(String(l.connectionAcceptedStatus || '')))
       .forEach((l) => lines.push(`✓ ${String(l.fullName || l.leadUrl || 'Lead').trim()} · connection accepted`));
     leads
-      .filter((l) => l && String(l.introductionStatus || '').trim())
+      .filter((l) => l && !_isPre(l) && String(l.introductionStatus || '').trim())
       .forEach((l) => {
         const name = String(l.fullName || l.leadUrl || 'Lead').trim();
         const s = String(l.introductionStatus).trim();
@@ -6529,8 +6537,11 @@ function renderCloudStrip(c, lc, logLines = null) {
   const isFG = c.mode === 'follower_growth';
   const mine = !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase());
   const owner = c.owner || 'unknown';
-  const total = Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0);
-  const sent = Number(lc.sent || 0);
+  // Exclude _preActioned (sheet rows that already had a Connection Request
+  // Status on import — never re-opened) from both sides of "X of Y sent".
+  const _pre = Number(lc._preActioned || 0);
+  const total = Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - _pre;
+  const sent = Math.max(0, Number(lc.sent || 0) - _pre);
   const accounts = (c.profile_ids || c.profileIds || []).length;
   const collapsed = isQueued ? true : !_snExpanded.has(c.id);
   const badge = _cloudBadge(c.mode);
@@ -8366,7 +8377,12 @@ async function renderCampaignsBoard() {
         // Live-browser flag from the engine (top-level of the /:id detail, NOT
         // inside d.campaign) — drives the green LIVE dot on the Show button.
         live: !!(d && d.live), liveAccount: (d && d.liveAccount) || '',
-        bucket, sent: Number(lc.sent || 0), total: Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0),
+        // _preActioned (Sam 2026-07-23): leads whose sheet row already carried a
+        // Connection Request Status on import — the engine parks them in
+        // status='sent' so they're never re-opened, but they aren't part of this
+        // run. Exclude them from BOTH sides of "X of Y sent".
+        bucket, sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)),
+        total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - Number(lc._preActioned || 0),
         accounts: (c.profile_ids || []).length, mine,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Stopped' : 'Error',
@@ -19461,6 +19477,7 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
   leads = Array.isArray(leads) ? leads : [];
   const byAcct = {};
   for (const l of leads) {
+    if (String(l.stage || '') === 'pre-actioned') continue; // sheet-skipped on import — not this run's workload
     const pid = String(l.account || '');
     if (!byAcct[pid]) byAcct[pid] = { sent: 0, skipped: 0, pending: 0 };
     if (l.stage === 'Invited' || l.status === 'sent') byAcct[pid].sent++;
@@ -19481,7 +19498,9 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
   });
   const totalProcessed = totalSent + totalSkip;
   // Authoritative headline counts (engine-computed) when available.
-  const sentHead = (lc && Number.isFinite(Number(lc.sent))) ? Number(lc.sent) : totalSent;
+  const sentHead = (lc && Number.isFinite(Number(lc.sent)))
+    ? Math.max(0, Number(lc.sent) - Number(lc._preActioned || 0))
+    : totalSent;
   const skipHead = (lc && Number.isFinite(Number(lc.skipped))) ? Number(lc.skipped) : totalSkip;
   let phase = 'launching';
   if (isBad) phase = 'error';
