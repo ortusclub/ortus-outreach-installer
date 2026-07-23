@@ -1390,6 +1390,18 @@
   /* Board loading state — the /api/jobs fetch can take several seconds. */
   .sn-loading{display:flex;align-items:center;gap:12px;color:var(--gray);font-size:13px;padding:34px 2px;}
   .sn-loading .sp{width:18px;height:18px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
+  /* ── Per-account status panel (cloud CC+IC), below the Live Status card ── */
+  .cloud-accounts-panel{margin:14px 0 4px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;}
+  .cloud-accounts-panel .cap-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hairline-soft);font-family:var(--display);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .cloud-accounts-panel .cap-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 16px;border-bottom:1px solid var(--hairline-soft);font-size:13px;}
+  .cloud-accounts-panel .cap-row:last-child{border-bottom:0;}
+  .cloud-accounts-panel .cap-acct{font-weight:600;color:var(--ink);word-break:break-all;}
+  .cloud-accounts-panel .cap-status{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;text-align:right;color:var(--gray);}
+  .cloud-accounts-panel .cap-badge{display:inline-block;padding:2px 9px;border-radius:9999px;font-size:11px;letter-spacing:.02em;border:1px solid var(--hairline);white-space:nowrap;}
+  .cloud-accounts-panel .cap-badge.ok{color:var(--green);border-color:var(--green);}
+  .cloud-accounts-panel .cap-badge.warn{color:var(--gold,#d4a24a);border-color:var(--gold,#d4a24a);}
+  .cloud-accounts-panel .cap-badge.bad{color:var(--red);border-color:var(--red);}
+  .cloud-accounts-panel .cap-badge.muted{color:var(--gray);}
   /* ── Admin board sections (Your / Other users / Admin) ── */
   .cb-section{border:1px solid var(--hairline);border-radius:14px;padding:4px 16px 14px;margin:14px 0;}
   .cb-section.cb-collapsed{padding-bottom:4px;}
@@ -2670,6 +2682,10 @@
            the same element renderActiveCard already drives) with a bigger log.
            The legacy cockpit/runbar below are hidden via #nav-status.is-card-live. -->
       <div id="wiz-live-slot"></div>
+      <!-- Per-account status for a cloud CC+IC campaign (Account | Status), rendered
+           by renderCloudAccountsPanel() from the engine's /accounts endpoint. Hidden
+           until there's data. -->
+      <div id="cloud-accounts-panel" class="cloud-accounts-panel" hidden></div>
       <!-- Post-launch tips — 2-col grid: cockpit + queue + log on the left,
            tips card on the right (320 px fixed). Tips card is hidden by
            default and shown by renderPostLaunchSidebar() during running /
@@ -3496,7 +3512,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.78"></script>
+  <script type="module" src="/js/app.js?v=2.160.84"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

@@ -178,6 +178,12 @@ export function getCloudCampaignLeads(id) {
   return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}/leads`);
 }
 
+/** Per-account status for the campaign's accounts (daily used vs limit, parked/
+ *  throttled/weekly-cap, needs-login). Feeds the Live Status "Accounts" panel. */
+export function getCloudCampaignAccounts(id) {
+  return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}/accounts`);
+}
+
 /**
  * Signal the engine that the local primary browser has accepted the campaign's
  * pending sender invitations (cloud primary-handshake, local-only primary).
@@ -293,8 +299,10 @@ export function resumeCloudCampaign(id) {
  * control calls; returns { error, status } until the engine ships the route so
  * the UI can degrade gracefully.
  */
-export function restartCloudCampaign(id, { fromStart = false } = {}) {
-  return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/restart`, { fromStart: !!fromStart });
+export function restartCloudCampaign(id, { fromStart = false, dailyLimit } = {}) {
+  const body = { fromStart: !!fromStart };
+  if (dailyLimit != null && Number(dailyLimit) > 0) body.dailyLimit = Math.floor(Number(dailyLimit));
+  return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/restart`, body);
 }
 
 // Monitoring controls (Task 3 Part B) — mirror the local ⚡ Check now / Automatic

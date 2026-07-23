@@ -50,7 +50,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1541,6 +1541,11 @@ app.get('/api/campaign/cloud/:id/leads', async (req, res) => {
   res.json(r);
   reconcileCloud(req.params.id, r.leads).catch(() => {}); // after response — never blocks
 });
+app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
+  const r = await getCloudCampaignAccounts(req.params.id);
+  if (r && r.error) return res.status(502).json(r);
+  res.json(r);
+});
 // ── Team status (feature ⑩ — ADMIN-ONLY) ─────────────────────────────────
 // Per-operator aggregate over the engine cloud list + this machine's local
 // campaign/queue. HARD-GATED: only viewers whose login email is in
@@ -1715,7 +1720,10 @@ app.post('/api/campaign/cloud/:id/resume', async (req, res) => {
 // record (engine flips terminal status → running; sent leads skipped). Surface
 // the engine's error (incl. 404 until it ships /restart) so the UI degrades.
 app.post('/api/campaign/cloud/:id/restart', async (req, res) => {
-  const r = await restartCloudCampaign(req.params.id, { fromStart: !!(req.body && req.body.fromStart) });
+  const r = await restartCloudCampaign(req.params.id, {
+    fromStart: !!(req.body && req.body.fromStart),
+    dailyLimit: req.body && req.body.dailyLimit,
+  });
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });

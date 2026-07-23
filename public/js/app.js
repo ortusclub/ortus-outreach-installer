@@ -331,7 +331,14 @@ function renderStrip(c) {
   const nJobs = (c.jobs || []).length || (c.searchUrls || []).length;
   const flow = `<b>${(c.searchUrls || []).length} searches</b> → <b>${nJobs} jobs</b> → feeds <b>${escHtml(c.name || c.tabName || '')}</b> · tab "${escHtml(c.tabName || 'Results')}"`;
   const doneAgo = isDone ? fmtAgo(_snDoneTs(c)) : '';
-  const wasStopped = isDone && _snStopped.has(c.id);
+  // "Stopped" (red) only if the operator's stop actually cut short running work.
+  // If EVERY job finished ('done'), the scrape completed on its own → show neutral
+  // "Done" even though Stop was pressed (it landed after completion). Clean the
+  // stale stopped-mark so it doesn't linger red.
+  const _jobStates = (c.jobs || []).map((j) => String((j && j.state) || ''));
+  const _allJobsDone = _jobStates.length > 0 && _jobStates.every((s) => s === 'done');
+  if (isDone && _allJobsDone && _snStopped.has(c.id)) { _snStopped.delete(c.id); try { _snSaveStopped(); } catch (_) {} }
+  const wasStopped = isDone && _snStopped.has(c.id) && !_allJobsDone;
   // Paused = the operator toggled it off while it's still active (not terminal).
   const isPaused = !isDone && _snPaused.has(c.id);
   const isBad = c.status === 'error' || wasStopped; // render red
@@ -715,7 +722,15 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   const x = e.target.closest('.sn-dismiss');
   if (x && x.dataset.cid) {
-    _snDismissed.add(x.dataset.cid); _snSaveDismissed();
+    // Deleting a scrape must kill any lingering activity on the VM, not just hide
+    // it — stop each of its accounts' jobs first (best-effort; a no-op for a scrape
+    // that already finished). Then hide it from the board.
+    const cid = x.dataset.cid;
+    const meta = _snStrips.get(cid) || {};
+    (meta.profileIds || []).filter(Boolean).forEach((pid) => {
+      fetch('/api/scrape/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId: pid }) }).catch(() => {});
+    });
+    _snDismissed.add(cid); _snSaveDismissed();
     const strip = x.closest('.sn-strip');
     if (strip) strip.remove(); // instant — the next poll already filters it out
     return;
@@ -6446,7 +6461,13 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
   const lines = actioned.map((l) => {
     const name = String(l.fullName || l.leadUrl || 'Lead').trim();
     if (l.status === 'sent') {
-      const verb = isFG ? 'invited' : (l.stage ? `${l.stage} sent` : 'sent');
+      // "already_processed" means the lead was already actioned in a prior run
+      // (e.g. invite already pending) — the engine skipped it, it was NOT a fresh
+      // send. Word it clearly so the log doesn't read as a new connection request.
+      const _stg = String(l.stage || '');
+      const verb = isFG ? 'invited'
+        : /already_processed|already[_ ]?processed/i.test(_stg) ? 'already invited (skipped — not re-sent)'
+        : (_stg ? `${_stg} sent` : 'sent');
       const when = hhmm(l.sentAt);
       // CC/CC+IC: name the sending account's email + the lead's LinkedIn URL.
       const email = !isFG ? (emails[l.account] || l.account || '') : '';
@@ -6660,6 +6681,7 @@ let _cloudCardTimer = null;
 // merge them into the log so section 7 reads like the local machine's log.
 const _cloudEventLog = new Map();        // campaignId -> [{ t, line }]  (user actions)
 const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine per-account check events)
+const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
 function _pushCloudEvent(id, line) {
   if (!id || !line) return;
   let arr = _cloudEventLog.get(id);
@@ -6733,6 +6755,13 @@ async function _refreshCloudActiveStatus(id) {
     // VM opens, e.g. "🖥️ Checking liza.advocate@ortus.solutions…"). Captured here
     // and merged into the log by _combineCloudEvents. Newest-first from Redis.
     if (d && Array.isArray(d.monitorLog)) _cloudMonitorLog.set(id, d.monitorLog);
+    // Per-account status (daily used vs limit, throttled/weekly-cap, needs-login)
+    // for the Live Status "Accounts" panel — best-effort, degrades to no panel.
+    try {
+      const ar = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/accounts`)).json();
+      if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(id, ar.accounts);
+    } catch (_) { /* engine may not expose it yet — panel just won't show */ }
+    try { if (_viewingCloudId === id) renderCloudAccountsPanel(id); } catch (_) { /* */ }
     window.__cloudActiveStatus = _buildCloudActiveStatus((d && d.campaign) || {}, leads, (d && d.leadCounts) || {});
     // Live-browser flag from the engine (top-level of the /:id detail) — drives
     // the LIVE dot on card #2's Show button (component 5 → component 7).
@@ -6743,6 +6772,36 @@ async function _refreshCloudActiveStatus(id) {
     }
   } catch (_) { if (!window.__cloudActiveStatus) window.__cloudActiveStatus = { _cloud: true, id, name: 'Cloud campaign', running: true, logs: [] }; }
 }
+
+// Render the per-account status panel below the Live Status card (Account | Status)
+// for a cloud CC+IC campaign. Hidden when there's no account data or not viewing a
+// cloud campaign. Data comes from _cloudAccountsById (engine /accounts endpoint).
+function renderCloudAccountsPanel(id) {
+  const panel = document.getElementById('cloud-accounts-panel');
+  if (!panel) return;
+  const accounts = (id && _cloudAccountsById.get(id)) || [];
+  if (!accounts.length) { panel.hidden = true; panel.innerHTML = ''; return; }
+  const badge = (cls, text) => `<span class="cap-badge ${cls}">${escHtml(text)}</span>`;
+  const rows = accounts.map((a) => {
+    const who = escHtml(a.email || a.profileId || 'account');
+    const badges = [];
+    // Blocking status first (most important), then daily usage, then primary link.
+    if (a.needsLogin) badges.push(badge('bad', '⚠ Not logged in'));
+    else if (a.weeklyCap || a.parkReason === 'weekly') badges.push(badge('bad', '🚫 Weekly cap reached'));
+    else if (a.parked || a.parkReason === 'throttle') badges.push(badge('warn', '⏸ Throttled'));
+    else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
+    else badges.push(badge('ok', '✓ Active'));
+    // Daily usage always shown.
+    badges.push(badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
+    // Primary-connection (CC+IC only; null when N/A).
+    if (a.primaryConnected === true) badges.push(badge('ok', '🔗 Connected to primary'));
+    else if (a.primaryConnected === false) badges.push(badge('muted', 'Primary not yet connected'));
+    return `<div class="cap-row"><span class="cap-acct">${who}</span><span class="cap-status">${badges.join('')}</span></div>`;
+  }).join('');
+  panel.innerHTML = `<div class="cap-head"><span>Accounts</span><span>${accounts.length} account${accounts.length === 1 ? '' : 's'}</span></div>${rows}`;
+  panel.hidden = false;
+}
+window.renderCloudAccountsPanel = renderCloudAccountsPanel;
 
 function _stopCloudCardPoll() { if (_cloudCardTimer) { clearInterval(_cloudCardTimer); _cloudCardTimer = null; } }
 function _startCloudCardPoll() {
@@ -6755,7 +6814,7 @@ function _startCloudCardPoll() {
   }, 5000);
 }
 // Leaving the wizard / starting something else stops the cloud-view takeover.
-function stopViewingCloudCampaign() { _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); }
+function stopViewingCloudCampaign() { _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); const _ap = document.getElementById('cloud-accounts-panel'); if (_ap) { _ap.hidden = true; _ap.innerHTML = ''; } }
 window.stopViewingCloudCampaign = stopViewingCloudCampaign;
 
 // Adapt #active-card's controls when it's showing a cloud campaign: hide the
@@ -6908,7 +6967,12 @@ async function deleteBoardCampaign(id, btn) {
   if (!confirm(`Delete "${name}"?\n\nThis removes it from your dashboard for good.`)) return;
   try {
     if (it && it.where === 'cloud') {
-      // No engine delete route — durably hide it from the board (persisted).
+      // Kill any live engine activity for this campaign FIRST — stop halts sending
+      // + monitoring and releases its account locks — THEN durably hide it from the
+      // board. Previously delete only hid it, so a running campaign kept sending on
+      // the VM (and held its accounts) after being "deleted". Best-effort: hide it
+      // even if the stop call fails.
+      try { await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop`, { method: 'POST' }); } catch (_) { /* still hide it below */ }
       _cloudDismissed.add(id); _cloudSaveDismissed();
     } else if (it && it.histIdx != null) {
       const r = await fetch('/api/history/' + encodeURIComponent(it.histIdx), { method: 'DELETE' });
@@ -9013,9 +9077,13 @@ window.restartLocalFromItem = restartLocalFromItem;
 // clear toast until the engine ships /restart (404).
 async function restartCloudCampaignUI(id, fromStart) {
   try {
+    // Carry the wizard's (possibly edited) daily limit so a change made while the
+    // campaign was stopped actually takes effect on the engine when it restarts.
+    const dlRaw = parseInt(document.getElementById('daily-limit')?.value, 10);
+    const dailyLimit = Number.isFinite(dlRaw) && dlRaw > 0 ? dlRaw : undefined;
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/restart`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromStart: !!fromStart }),
+      body: JSON.stringify({ fromStart: !!fromStart, ...(dailyLimit ? { dailyLimit } : {}) }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
