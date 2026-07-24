@@ -19517,11 +19517,22 @@ async function fgapRunNow() {
   // Resolve accounts from the launch cart AND the full paired team (deduped by
   // profileId): a bring-your-own tab sets the account per row, so every Account
   // Email in the sheet must map to a profileId even if the cart is empty.
-  const byId = {};
-  for (const p of [...fgtlAllPairedPairs(), ...fgtlPairs()]) { if (p && p.profileId) byId[p.profileId] = p; }
-  const pairs = Object.values(byId);
+  const collectPairs = () => {
+    const byId = {};
+    for (const p of [...fgtlAllPairedPairs(), ...fgtlPairs()]) { if (p && p.profileId) byId[p.profileId] = p; }
+    return Object.values(byId);
+  };
+  let pairs = collectPairs();
   if (!pairs.length) {
-    showCampaignToast('Open the FG board first so the team roster loads, then Run it now.', 4500);
+    // Roster not loaded yet — load it automatically so the operator doesn't have to
+    // open the accounts picker first, then retry.
+    showCampaignToast('Loading the team roster…', 2500);
+    try { if (typeof fgLoadDb === 'function') await fgLoadDb(); } catch (_) {}
+    try { if (typeof fgtlRefreshMatched === 'function') await fgtlRefreshMatched(); } catch (_) {}
+    pairs = collectPairs();
+  }
+  if (!pairs.length) {
+    showCampaignToast('Couldn’t load the team roster — open Step 1’s accounts picker, then Run it now.', 5000);
     return;
   }
   if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
