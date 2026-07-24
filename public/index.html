@@ -2215,7 +2215,7 @@
             <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
             <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
             <div class="filter-foot"><span class="hint">Defaults toward marketers.</span><span class="match" id="fgtl-match"></span></div>
-            <button type="button" id="fgtl-generate" class="fgw-btn" title="Build the list from the roles above and write it to a tab in the FG sheet">Generate list &#8594; writes a tab to the sheet</button>
+            <p class="fgw-path-desc" style="margin-top:10px">Then pick the accounts below &#8595; and hit <b>Generate list</b>.</p>
           </div>
 
           <!-- B · bring your own -->
@@ -2270,6 +2270,11 @@
             <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
           </div>
         </div>
+      </div>
+
+      <div style="margin:8px 0 4px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button type="button" id="fgtl-generate" class="fgw-btn" style="padding:11px 22px;font-size:11px" title="Build the list from the roles + accounts above and write it to a tab in the FG sheet">Generate list &#8594; writes a tab to the sheet</button>
+        <span style="font-size:12.5px;opacity:.72;max-width:420px">Writes the invite list to a tab in the FG Sheet. You then launch it from <b>Live status</b> &#8595; (Run it now).</span>
       </div>
 
       <!-- ── STEP 2 · SCHEDULE ─────────────────────────────────────────── -->
