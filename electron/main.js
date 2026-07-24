@@ -11,6 +11,10 @@
 // boot. Dashboard is a child surface opened on tray click. Close (X) hides to
 // tray; only Cmd+Q or tray Quit actually terminates the process.
 
+// MUST be the first import: populates process.env from .env BEFORE any module
+// that captures env at load time (src/sheets-webapp-url.js, pulled in via
+// log-writer.js below) is evaluated. See electron/load-env.js for why.
+import './load-env.js';
 import { app, BrowserWindow, Tray, Menu, shell, dialog, powerMonitor } from 'electron';
 import { existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
