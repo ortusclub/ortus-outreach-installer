@@ -3,18 +3,20 @@
 // Targets come from the connections DB, capped per account at the monthly FG
 // allowance (~30) so a run dispatches ~30 invites/account, not every match. The
 // engine still skips already-following/invited and caps to live invite credits.
-import { shouldFire, cycleKey, fgCriteria } from '../../src/fg-autopilot.js';
-import { startTeamLaunchCloud } from '../../src/connections/fg-cloud-launch.js';
-import { invitedKeysFromState } from '../../src/connections/fg-sync.js';
+import { shouldFire, cycleKey, nextRun } from '../../src/fg-autopilot.js';
+import { readFgList } from '../../src/connections/fg-sync.js';
+import { fgListTabName } from '../../src/connections/fg-list.js';
+import { dispatchFromRows } from '../../src/connections/fg-list-launch.js';
 
 export function makeAutopilotHandler(deps) {
   const {
-    searchService, startCloud, queueInvites, runStore, loadConfig, saveRuns,
+    startCloud, runStore, loadConfig, saveRuns,
     sendAlert, now, log, inviteUrl, monthlyBudget, tz = 'Europe/London',
-    // Reads the FG sheet's already-invited list so a run skips people already done
-    // — mirrors the manual /api/fg/team-launch/start path. Optional/injected so the
-    // handler stays unit-testable; falls back to "invite nobody twice unknown" = [].
-    getFgState = async () => ({ invites: [] }),
+    // Reads the pre-generated per-run invite-list tab. Injected for testability;
+    // defaults to the real FG Apps Script reader. (already-invited de-dupe now
+    // happens at Generate time, and the engine's own already-following guard is
+    // the backstop — so the fire no longer needs getFgState here.)
+    readList = (tab) => readFgList(tab),
   } = deps;
 
   return {
@@ -36,66 +38,62 @@ export function makeAutopilotHandler(deps) {
       }
 
       const month = cycleKey(nd, tz).slice(0, 7); // YYYY-MM
-      // Skip people already invited this month — same key format the manual path uses
-      // (Member ID, else LinkedIn URL). Best-effort: a sheet hiccup must not block the
-      // run, so an unreadable sheet falls back to [] (worst case: a re-invite the
-      // engine's own already-following/invited guard still catches).
-      let alreadyInvited = [];
-      try {
-        const snap = await getFgState();
-        alreadyInvited = invitedKeysFromState(snap.invites);
-      } catch (e) { (log || (() => {}))(`⚠ FG sheet unreachable, not skipping already-invited (${e.message})`); }
-      const buildTargets = (pair) => {
-        const out = searchService.buildFgTargets(fgCriteria(config.keywords || []), {
-          operator: pair.operator, operatorName: pair.operatorName,
-          account: pair.account, month, alreadyInvited, budget: monthlyBudget,
-        });
-        let reason = '';
-        if (!out.count) reason = out.matched === 0 ? 'no connections match these roles' : 'no eligible targets';
-        return { rows: out.rows, count: out.count, reason };
-      };
+      // The invite list is now a pre-generated, editable Google Sheet tab (FG board
+      // → "Generate list"). The fire READS that tab and works down it — it no longer
+      // builds the list itself. The tab is named for the run day, so a list made
+      // ahead of time is picked up on the 1st/15th. A "Run now" (force) reads the
+      // upcoming run's tab (same one Generate wrote). Missing tab → skip + alert.
+      const runCycleKey = force
+        ? cycleKey(nextRun(nd, { days: config.days || [1, 15], enabled: true }) || nd, tz)
+        : key;
+      const tab = fgListTabName(runCycleKey);
 
-      let result;
-      let threw = false;
+      let rows;
       try {
-        result = await startTeamLaunchCloud(config.pairs, {
-          buildTargets,
-          startCloud,
-          queueInvites: queueInvites || (async () => {}),
-          runStore,
-          now,
-          log: log || (() => {}),
-          month,
-          owner: config.publishedBy || '',
-          name: `Team Follower Growth · ${month} · auto`,
-          inviteUrl,
-          monthlyBudget,
-        });
+        rows = await readList(tab);
       } catch (e) {
-        result = { error: e.message };
-        threw = true;
+        runStore.add({ cycleKey: key, status: 'failed', error: e.message, dispatchedAt: now(), source: force ? 'manual' : 'auto' });
+        saveRuns();
+        try { await sendAlert(`⚠️ FG Auto-Pilot could not read the list — ${key}`, `Tab: ${tab}\nError: ${e.message}`); } catch (_) {}
+        return { failed: true, error: e.message, cycleKey: key, tab };
       }
+      if (!rows || rows.length < 2) {
+        // No list generated for this run — the operator hasn't pressed Generate.
+        // Alert (not a failure, so it doesn't block a later re-fire once generated).
+        try { await sendAlert(`FG Auto-Pilot — no invite list for ${tab}`, `Nothing fired for ${key}.\n\nGenerate the list first: FG board → "Generate list from roles". The scheduled run reads whatever tab exists.`); } catch (_) {}
+        return { skipped: true, reason: 'no-list', cycleKey: key, tab };
+      }
+
+      const accountEmails = Object.fromEntries((config.pairs || []).map((p) => [p.profileId, p.account]));
+      const result = await dispatchFromRows(rows, {
+        accountEmails,
+        campaign: {
+          name: `Team Follower Growth · ${month} · auto`,
+          owner: config.publishedBy || '',
+          config: { inviteUrl, monthlyBudget },
+        },
+      }, { startCloud });
 
       if (result.error) {
-        // No targets to send is a benign, expected outcome (nobody matched the
-        // criteria this cycle) — not a failure. Don't alert, don't record a
-        // `failed` run (that would write a cycleKey and block a later re-fire).
-        // Only startTeamLaunchCloud's own {error} return can be this benign case;
-        // a thrown exception is always a genuine dispatch/engine error.
-        if (!threw && /^No invites to send —/.test(result.error)) {
-          return { skipped: true, reason: 'no-eligible-targets' };
+        // A list with no usable rows (all bad accounts) is benign — don't record a
+        // `failed` run (that would block a re-fire once the tab is fixed).
+        if (/^No invites to send/.test(result.error)) {
+          return { skipped: true, reason: 'no-usable-rows', cycleKey: key, tab, listSkipped: result.skipped || [] };
         }
-        runStore.add({ cycleKey: key, status: 'failed', error: result.error, dispatchedAt: now(), source: force ? 'manual' : 'auto' });
+        runStore.add({ cycleKey: key, status: 'failed', error: result.error, dispatchedAt: now(), source: force ? 'manual' : 'auto', tab });
         saveRuns();
-        try { await sendAlert(`⚠️ FG Auto-Pilot run failed — ${key}`, `Cycle ${key}\nStage: dispatch\nError: ${result.error}\n\nFix, then use "Run now" from the FG board.`); }
+        try { await sendAlert(`⚠️ FG Auto-Pilot run failed — ${key}`, `Cycle ${key}\nTab: ${tab}\nError: ${result.error}`); }
         catch (_) { /* alerting must never mask the original failure */ }
-        return { failed: true, error: result.error, cycleKey: key };
+        return { failed: true, error: result.error, cycleKey: key, tab };
       }
 
-      // startTeamLaunchCloud already added a {cloudId,...} record; tag it with the cycle key + source.
-      runStore.update(result.cloudId, { cycleKey: key, source: force ? 'manual' : 'auto' });
+      runStore.add({
+        cloudId: result.cloudId, cycleKey: key, source: force ? 'manual' : 'auto',
+        month, tab, listDriven: true, perAccount: result.perAccount || [],
+        dispatchedAt: now(),
+      });
       saveRuns();
-      return { dispatched: true, cloudId: result.cloudId, cycleKey: key };
+      return { dispatched: true, cloudId: result.cloudId, cycleKey: key, tab, listSkipped: result.skipped || [] };
     },
   };
 }

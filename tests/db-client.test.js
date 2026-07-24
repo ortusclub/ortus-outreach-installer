@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROSTER_FNS, rpcDispatch, dbCall } from '../src/connections/db-client.js';
 
-test('ROSTER_FNS is exactly the five whitelisted reads', () => {
+test('ROSTER_FNS is exactly the whitelisted reads', () => {
   assert.deepEqual([...ROSTER_FNS].sort(), [
-    'buildLeadRows', 'exportConnections', 'getConnectionsStats',
+    'buildFgTargets', 'buildLeadRows', 'exportConnections', 'getConnectionsStats',
     'listFgColleaguesMatched', 'searchConnections',
   ]);
 });

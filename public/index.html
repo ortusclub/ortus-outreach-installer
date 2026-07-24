@@ -2154,6 +2154,43 @@
       #nav-follower-growth .fgap-run { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:7px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; white-space:nowrap; font-weight:600; }
       #nav-follower-growth .fgap-run:hover { opacity:.82; }
       #nav-follower-growth .fgap-run:disabled { opacity:.4; cursor:not-allowed; }
+      /* ── Follower Growth wizard ─────────────────────────────────────── */
+      #nav-follower-growth .fgw-step { border:1px solid var(--border,#e2e2e2); border-radius:14px; padding:20px 22px; margin:16px 0; background:var(--bg,#fff); }
+      #nav-follower-growth .fgw-step-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+      #nav-follower-growth .fgw-num { width:26px; height:26px; border-radius:50%; background:var(--ink); color:var(--bg); font-family:var(--mono); font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; flex:none; }
+      #nav-follower-growth .fgw-title { font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; font-weight:600; }
+      #nav-follower-growth .fgw-lead { font-size:13.5px; line-height:1.5; opacity:.85; margin:0 0 16px; }
+      #nav-follower-growth .fgw-sheet-link { background:none; border:none; color:var(--ink); font:inherit; font-weight:700; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px; }
+      #nav-follower-growth .fgw-sheet-link:hover { opacity:.7; }
+      /* Stacked: auto-generate box (tall — roles + accounts + Generate) on top,
+         bring-your-own below it. */
+      #nav-follower-growth .fgw-two-up { display:grid; grid-template-columns:1fr; gap:16px; align-items:start; }
+      #nav-follower-growth .fgw-path { border:1px solid var(--border,#e2e2e2); border-radius:10px; padding:14px 16px; }
+      #nav-follower-growth .fgw-path-auto { border-color:var(--ink,#111); }
+      #nav-follower-growth .fgw-gen-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px solid var(--border,#e2e2e2); }
+      #nav-follower-growth .fgw-gen-note { font-size:12.5px; opacity:.72; max-width:460px; line-height:1.45; }
+      #nav-follower-growth .fgw-btn-primary { padding:11px 22px; font-size:11px; }
+      #nav-follower-growth .fgw-path-head { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; margin-bottom:10px; opacity:.9; }
+      #nav-follower-growth .fgw-path-desc { font-size:13px; opacity:.75; margin:0 0 12px; }
+      #nav-follower-growth .fgw-format { background:rgba(0,0,0,.035); border-radius:8px; padding:10px 12px; margin:0 0 12px; }
+      #nav-follower-growth .fgw-format-h { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; margin-bottom:6px; }
+      #nav-follower-growth .fgw-format-cols { display:block; font-size:12.5px; line-height:1.55; word-break:break-word; }
+      #nav-follower-growth .fgw-format-note { font-size:12px; opacity:.72; margin-top:8px; line-height:1.45; }
+      #nav-follower-growth .fgw-byo-row { display:flex; gap:8px; align-items:center; }
+      #nav-follower-growth .fgw-byo-row input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
+      #nav-follower-growth .fgw-btn { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:9px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; font-weight:600; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgw-btn:hover { opacity:.85; }
+      #nav-follower-growth .fgw-btn:disabled { opacity:.4; cursor:not-allowed; }
+      #nav-follower-growth .fgw-list-status { margin-top:14px; font-size:13px; line-height:1.5; }
+      #nav-follower-growth .fgw-select { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
+      #nav-follower-growth .fgw-icon-btn { border:1px solid var(--border,#ccc); background:var(--bg,#fff); color:var(--ink); border-radius:8px; width:34px; height:34px; cursor:pointer; font-size:15px; flex:none; }
+      #nav-follower-growth .fgw-icon-btn:hover { border-color:var(--ink); }
+      #nav-follower-growth .fgw-live-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+      #nav-follower-growth .fgw-live-controls { display:flex; align-items:center; gap:12px; }
+      #nav-follower-growth .fgw-toggle-lab { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; opacity:.7; }
+      #nav-follower-growth .fgw-list-tab { font-size:12px; opacity:.8; padding:4px 10px; border:1px solid var(--border,#ddd); border-radius:9999px; white-space:nowrap; }
+      #nav-follower-growth .fgw-accounts-note { font-size:13px; opacity:.85; margin:4px 0 10px; line-height:1.5; }
+      #nav-follower-growth .fgw-log { margin:12px 0 0; background:#0d100d; color:#bdf5bd; font-family:var(--mono,monospace); font-size:11.5px; line-height:1.5; padding:12px 14px; border-radius:10px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
     </style>
     <div class="section" id="nav-follower-growth" style="display:none">
       <h2><span data-edit="h2-fg">Follower Growth</span></h2>
@@ -2166,56 +2203,110 @@
             <div class="fgap-title" id="fgap-title">AUTO-PILOT &#183; ON</div>
             <div class="fgap-next" id="fgap-next">Next run &#8212;</div>
           </div>
-          <button type="button" class="fgap-run" id="fgap-run" title="Dispatch the whole team's invites to the cloud VM right now, outside the schedule">&#9654; Run it now</button>
-          <span class="rt-tag">&#9729;&#65038; Cloud VM</span>
-          <button type="button" class="fgap-edit" id="fgap-edit">Edit schedule</button>
-          <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot"></button>
-          <button type="button" class="fgap-expand" id="fgap-expand" aria-expanded="false" title="Show details">&#8964;</button>
         </div>
       </div>
 
-      <!-- Manual controls = the full Team-Launch board. Collapsed by default;
-           the strip's expand chevron reveals it (run right now, pick roles/people). -->
-      <div id="fgap-manual" hidden>
-      <!-- Step 1 · role chips -->
-      <div class="fgtl-roles">
-        <div class="fgtl-step-eyebrow">&#9312; Which roles to invite &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
-        <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
-        <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
-        <div class="filter-foot"><span class="hint">Defaults toward marketers. Applies to everyone below.</span><span class="match" id="fgtl-match"></span></div>
-      </div>
+      <!-- Wizard: always visible. Numbered steps take you from list → accounts →
+           launch, with the live status streaming at the bottom. -->
+      <div id="fgap-manual">
 
-      <!-- Step 2 · browse + cart -->
-      <div class="fgtl-board2">
-        <div>
-          <div class="fgtl-search">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-            <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
-            <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
-          </div>
-          <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
-          <div class="fgtl-ready" id="fgtl-ready" style="margin-top:14px">
-            <div class="rl">
-              <span class="lab">Ready to launch</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
-              <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
+      <!-- ── STEP 1 · BUILD YOUR INVITE LIST ───────────────────────────── -->
+      <div class="fgw-step" id="fgw-step-1">
+        <div class="fgw-step-head"><span class="fgw-num">1</span><span class="fgw-title">Build your invite list</span></div>
+        <p class="fgw-lead">Your invites come from a tab in the central FG Google Sheet — one you can open, review and edit before it fires. <button type="button" id="fgtl-open-sheet" class="fgw-sheet-link">Open the FG Sheet &#8599;</button></p>
+
+        <div class="fgw-two-up">
+          <!-- A · auto-generate: roles → accounts → Generate, all in one box -->
+          <div class="fgw-path fgw-path-auto">
+            <div class="fgw-path-head">A &#183; Auto-generate</div>
+            <div class="fgtl-step-eyebrow">Which roles to invite &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
+            <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
+            <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
+            <div class="filter-foot"><span class="hint">Defaults toward marketers.</span><span class="match" id="fgtl-match"></span></div>
+
+            <!-- accounts picker — nested: whose networks to search -->
+            <div class="fgw-accounts-note">Now pick <b>whose networks</b> to search for people matching the roles above &#8212; each person is invited by the account that found them.</div>
+            <div class="fgtl-board2">
+              <div>
+                <div class="fgtl-search">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                  <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
+                  <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
+                </div>
+                <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
+                <div class="fgtl-ready" id="fgtl-ready" style="margin-top:14px">
+                  <div class="rl">
+                    <span class="lab">Ready</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
+                    <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
+                  </div>
+                  <button type="button" class="fgtl-ready-btn dis" id="fgtl-ready-btn" disabled>+ Add all ready</button>
+                </div>
+                <div class="fgtl-people" id="fgtl-people"></div>
+              </div>
+              <div class="fgtl-cart">
+                <div class="fgtl-cart-head">
+                  <h3>Accounts to search</h3>
+                  <button type="button" id="fgtl-clear" class="fgtl-clear" style="display:none">Clear all</button>
+                </div>
+                <div id="fgtl-cart" class="fgtl-cart-list"></div>
+                <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
+                  <div class="tot"><span>Accounts</span><b id="fgtl-t-people">0</b></div>
+                  <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv" title="Upper bound — already-invited connections are skipped when sending">0</b></div>
+                  <!-- old in-cart Launch button — hidden; launching now happens
+                       from Live status ↓ (Run it now) on the generated tab. -->
+                  <button class="fgtl-go-btn" id="fgtl-go" style="display:none" disabled>Launch</button>
+                  <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
+                </div>
+              </div>
             </div>
-            <button type="button" class="fgtl-ready-btn dis" id="fgtl-ready-btn" disabled>+ Add all ready</button>
+
+            <!-- Generate CTA — bottom of the auto-generate box -->
+            <div class="fgw-gen-row">
+              <button type="button" id="fgtl-generate" class="fgw-btn fgw-btn-primary" title="Build the list from the roles + accounts above and write it to a tab in the FG sheet">Generate list &#8594; writes a tab to the sheet</button>
+              <span class="fgw-gen-note">Writes the invite list to a new tab in the FG Sheet. You then launch it from <b>Live status</b> &#8595; (Run it now).</span>
+            </div>
           </div>
-          <div class="fgtl-people" id="fgtl-people"></div>
+
+          <!-- B · bring your own -->
+          <div class="fgw-path">
+            <div class="fgw-path-head">B &#183; Bring your own</div>
+            <p class="fgw-path-desc">Fill a tab in the FG Sheet yourself, then tell us its name.</p>
+            <div class="fgw-format">
+              <div class="fgw-format-h">Tab format &#8212; put these in row&nbsp;1:</div>
+              <code class="fgw-format-cols">First Name &#183; Last Name &#183; LinkedIn URL &#183; Job Title &#183; Company &#183; Account Email</code>
+              <div class="fgw-format-note"><b>LinkedIn URL</b> and <b>Account Email</b> are required. <b>Account Email</b> = the GoLogin account's login email (that's who sends each invite).</div>
+            </div>
+            <div class="fgw-byo-row">
+              <select id="fgtl-byo-tab" class="fgw-select"><option value="">Loading tabs&#8230;</option></select>
+              <button type="button" id="fgtl-byo-refresh" class="fgw-icon-btn" title="Reload tab list">&#8635;</button>
+              <button type="button" id="fgtl-byo-use" class="fgw-btn" title="Fire from this tab in the FG sheet">Use this tab</button>
+            </div>
+          </div>
         </div>
-        <div class="fgtl-cart">
-          <div class="fgtl-cart-head">
-            <h3>Your launch list</h3>
-            <button type="button" id="fgtl-clear" class="fgtl-clear" style="display:none">Clear all</button>
-          </div>
-          <div id="fgtl-cart" class="fgtl-cart-list"></div>
-          <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
-            <div class="tot"><span>People</span><b id="fgtl-t-people">0</b></div>
-            <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv" title="Upper bound — already-invited connections are skipped when sending">0</b></div>
-            <button class="fgtl-go-btn" id="fgtl-go" disabled>Launch all sequentially</button>
-            <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
+        <div id="fgtl-list-status" class="fgw-list-status"></div>
+      </div>
+
+      <!-- ── STEP 2 · SCHEDULE ─────────────────────────────────────────── -->
+      <div class="fgw-step" id="fgw-step-2">
+        <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Schedule</span></div>
+        <p class="fgw-lead">Runs automatically on the <b id="fgw-sched-days">1st &amp; 15th</b> at 6am London time, in the <b>&#9729;&#65038; cloud VM</b> — so it keeps going after you close your laptop. <span id="fgw-sched-next"></span></p>
+        <button type="button" id="fgw-edit-schedule" class="fgw-btn">Edit schedule</button>
+      </div>
+
+      <!-- ── LIVE STATUS ───────────────────────────────────────────────
+           Bottom of the wizard: Auto-Pilot on/off + Run it now, then the
+           streaming campaign log / per-account board / live card. -->
+      <div class="fgw-step" id="fgw-step-live">
+        <div class="fgw-live-head">
+          <div class="fgw-step-head" style="margin:0"><span class="fgw-num">3</span><span class="fgw-title">Live status</span></div>
+          <div class="fgw-live-controls">
+            <span id="fgw-list-tab" class="fgw-list-tab" style="display:none"></span>
+            <button type="button" class="fgap-run" id="fgap-run" title="Fire the invite-list tab you built in step 1 to the cloud VM now, outside the schedule">&#9654; Run it now</button>
+            <span class="fgw-toggle-lab">Auto-Pilot</span>
+            <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot on/off"></button>
           </div>
         </div>
+        <pre id="fgw-log" class="fgw-log">The campaign log streams here while a run is active.</pre>
       </div>
 
       <!-- Per-account progress board — sits ABOVE the live card during a run -->

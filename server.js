@@ -93,8 +93,10 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg } from './src/connections/fg-sync.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
+import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
+import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -102,7 +104,7 @@ import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID }
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse } from './src/soo-writer.js';
 import { reconcileCloudConnections } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
-import { buildAutopilotConfig, nextRun } from './src/fg-autopilot.js';
+import { buildAutopilotConfig, nextRun, cycleKey } from './src/fg-autopilot.js';
 import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
 import { pickUnreconciled } from './src/fg-autopilot-reconcile.js';
 import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
@@ -2519,6 +2521,26 @@ let _fgActiveHandle = null;
 // ORTUS_DATA_DIR is set (e.g. the packaged Electron app / `npm run dev:app`).
 const _fgCloudRunStore = makeRunStore(dataPath('fg-cloud-runs.json'));
 
+// Sheet-driven (list) run reconcile: stamp Status / Invited At / Note / Member ID
+// back into the run's OWN list tab from the engine's per-lead results, so the tab
+// you built doubles as the live ledger. Idempotent (re-stamping the same value is
+// a no-op) and delta-only (pending leads produce no update). Returns
+// { reconciled } true once the campaign is terminal so the record is retired.
+async function reconcileListRun(record) {
+  const camp = await getCloudCampaign(record.cloudId);
+  const status = String((camp && (camp.campaign?.status ?? camp.status)) || '');
+  let leads = [];
+  try { const res = await getCloudCampaignLeads(record.cloudId); leads = (res && res.leads) || []; }
+  catch (e) { throw new Error(`could not read cloud leads: ${e.message}`); }
+  const updates = ledgerUpdatesFromLeads(leads);
+  if (updates.length) {
+    const r = await updateFgListLedger(record.tab, updates);
+    try { campaignLog(`[FG-cloud] list ledger "${record.tab}": stamped ${r.updated} row(s)`); } catch (_) {}
+  }
+  const terminal = ['done', 'cancelled', 'error', 'stopped'].includes(status);
+  return { reconciled: terminal, updated: updates.length };
+}
+
 // Reconcile every dispatched cloud-FG run: pull engine results and write invited
 // members back to the FG sheet. Runs on a timer while the app is open AND once at
 // startup (so a run that finished while the laptop was closed is written back).
@@ -2539,7 +2561,11 @@ async function reconcileFgCloudRuns() {
     for (const record of _fgCloudRunStore.load()) {
       if (record.status === 'reconciled') continue;
       try {
-        const out = await reconcileCloudRun(record, deps);
+        // Sheet-driven (list) runs write the ledger back into their OWN tab; the
+        // legacy per-account runs write the shared FG-Invites tab. Branch on kind.
+        const out = record.kind === 'list'
+          ? await reconcileListRun(record)
+          : await reconcileCloudRun(record, deps);
         if (out.reconciled) _fgCloudRunStore.update(record.cloudId, { status: 'reconciled' });
       } catch (e) {
         try { campaignLog(`[FG-cloud] reconcile ${record.cloudId} failed: ${e.message}`); } catch (_) {}
@@ -2574,6 +2600,110 @@ app.post('/api/fg/team-launch/stop', async (_req, res) => {
   res.json({ ok: true });
 });
 
+// The tab an FG run reads/writes: "FG <next run day>" so a list generated ahead
+// of time is picked up by the scheduled fire on that day. Same key for generate
+// and a shortly-after manual launch (nextRun is deterministic within a day).
+function fgNextRunCycleKey(days = [1, 15]) {
+  const d = nextRun(new Date(), { days, enabled: true });
+  return cycleKey(d || new Date());
+}
+
+// The FG Google Sheet's own URL — so the wizard can deep-link "Open the FG Sheet".
+// Asks the Apps Script (getSheetUrl); falls back to a local FG_SHEET_URL env var
+// when the deployed script predates that action.
+app.get('/api/fg/sheet-url', async (_req, res) => {
+  try {
+    // Retry (postFg default 3× w/ backoff): the Apps Script 302→echo dance
+    // intermittently 404s on a cold call, especially right after launch while the
+    // app is busy loading profiles. A single attempt would spuriously fail.
+    const r = await postFg({ action: 'getSheetUrl' }, { timeoutMs: 30000 });
+    if (r && r.url) return res.json({ url: r.url });
+  } catch (_) { /* fall through to env */ }
+  if (process.env.FG_SHEET_URL) return res.json({ url: process.env.FG_SHEET_URL });
+  return res.status(404).json({ error: 'FG sheet URL not available — redeploy the FG Apps Script (getSheetUrl) or set FG_SHEET_URL.' });
+});
+
+// All tab names in the FG sheet — populates the "bring your own" dropdown.
+app.get('/api/fg/tabs', async (_req, res) => {
+  try {
+    // Retry (postFg default 3× w/ backoff) — the listTabs call can transiently
+    // fail on a cold Apps Script; one attempt left the dropdown silently empty.
+    const r = await postFg({ action: 'listTabs' }, { timeoutMs: 30000 });
+    if (r && Array.isArray(r.tabs)) return res.json({ tabs: r.tabs });
+    return res.status(502).json({ error: (r && r.error) || 'Could not list tabs', tabs: [] });
+  } catch (e) { return res.status(502).json({ error: e.message, tabs: [] }); }
+});
+
+// Manually stamp the ledger (Status / Invited At / Note / Member ID) back into a
+// list tab from a cloud run's current results. The 30s reconcile does this
+// automatically; this endpoint is for firing it on demand (e.g. an in-flight run
+// registered before auto-reconcile, or a one-off catch-up).
+app.post('/api/fg/list/writeback', async (req, res) => {
+  const b = req.body || {};
+  const cloudId = String(b.cloudId || '').trim();
+  const tab = String(b.tab || '').trim();
+  if (!cloudId || !tab) return res.status(400).json({ error: 'cloudId and tab are required.' });
+  try {
+    const out = await reconcileListRun({ cloudId, tab, kind: 'list' });
+    return res.json({ ok: true, updated: out.updated, reconciled: out.reconciled });
+  } catch (e) { return res.status(502).json({ error: e.message }); }
+});
+
+// GENERATE (auto option): build the invite list from the role keywords and write
+// it to the per-run tab. No hard monthly cap — list all eligible; LinkedIn's own
+// invite credits are the ceiling. The tab is then reviewable/editable before the
+// fire reads it.
+app.post('/api/fg/list/generate', async (req, res) => {
+  const b = req.body || {};
+  const pairs = Array.isArray(b.pairs) ? b.pairs.filter((p) => p && p.operator && p.account && p.profileId) : [];
+  if (!pairs.length) return res.status(400).json({ error: 'At least one paired account is required.' });
+  const month = b.month || fgMonth();
+  const keywords = Array.isArray(b.keywords) ? b.keywords : [];
+  let snap;
+  try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
+  const alreadyInvited = invitedKeysFromState(snap.invites);
+  const criteria = fgCriteria({ jobTitles: keywords });
+
+  // Pre-compute each account's FG targets through the roster bridge (dbCall). The
+  // connections DB (~152MB) is NOT on operator machines, so a direct
+  // buildFgTargets() ENOENTs — dbCall runs the read locally when the DB is present
+  // and otherwise delegates to the central fg-roster /rpc (same match code).
+  // buildListRows() is synchronous, so we resolve every pair's targets up front and
+  // hand it a plain sync lookup. NOTE: budget is intentionally omitted — Infinity
+  // serialises to null over JSON/RPC, which would zero out the list; the roster's
+  // buildFgTargets defaults budget to Infinity when the arg is absent.
+  const targetsByProfile = new Map();
+  try {
+    for (const pair of pairs) {
+      const out = await dbCall('buildFgTargets', [criteria, {
+        operator: pair.operator, operatorName: pair.operatorName, account: pair.account,
+        month, alreadyInvited,
+      }]);
+      let reason = '';
+      if (!out || !out.count) reason = (out && out.matched === 0) ? 'no connections match these roles' : 'all matching connections already invited';
+      targetsByProfile.set(pair.profileId, { rows: (out && out.rows) || [], count: (out && out.count) || 0, reason });
+    }
+  } catch (e) {
+    // Never let a build failure (e.g. roster service not deployed) become an
+    // unhandled rejection — that would take the whole app down.
+    return res.status(502).json({ error: `Could not build the list: ${e.message}` });
+  }
+
+  const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+  const buildTargets = (pair) => targetsByProfile.get(pair.profileId) || { rows: [], count: 0, reason: 'no targets for this account' };
+  let built;
+  try {
+    built = buildListRows(pairs, { accountEmails }, { buildTargets });
+  } catch (e) {
+    return res.status(502).json({ error: `Could not build the list: ${e.message}` });
+  }
+  const { header, rows, perAccount, skipped } = built;
+  const tab = fgListTabName(b.cycleKey || fgNextRunCycleKey(b.days));
+  try { await writeFgList(tab, rows, { header }); }
+  catch (e) { return res.status(502).json({ error: `Could not write the list tab "${tab}": ${e.message}` }); }
+  return res.json({ tab, count: rows.length, perAccount, skipped });
+});
+
 app.post('/api/fg/team-launch/start', async (req, res) => {
   if (_fgTeam.running) return res.status(409).json({ error: 'A team launch is already running.' });
   const b = req.body || {};
@@ -2582,6 +2712,35 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
 
   if ((b.target || 'local') === 'cloud') {
     const month = b.month || fgMonth();
+
+    // Sheet-driven flow (new two-option FG): read the pre-generated invite-list
+    // tab and work down it. Each lead is pinned to its account (Account Email →
+    // profileId). No tab yet → tell the operator to generate it first.
+    if (b.source === 'list') {
+      const owner = getOperatorEmail() || req.user || '';
+      const tab = String(b.tab || '').trim() || fgListTabName(b.cycleKey || fgNextRunCycleKey(b.days));
+      let rows;
+      try { rows = await readFgList(tab); }
+      catch (e) { return res.status(502).json({ error: `Could not read the list tab "${tab}": ${e.message}` }); }
+      if (!rows || rows.length < 2) return res.status(400).json({ error: `No invite list in tab "${tab}" — generate the list first.` });
+      const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+      const out = await dispatchFromRows(rows, {
+        accountEmails,
+        campaign: { name: `Team Follower Growth · ${month}`, owner, config: { inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
+      }, { startCloud: (payload) => startCloudCampaign(payload) });
+      if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
+      // Register this run so the reconcile loop stamps the ledger (Status /
+      // Invited At / Note / Member ID) back into ITS tab as invites go out.
+      try { _fgCloudRunStore.add({ cloudId: out.cloudId, kind: 'list', tab, owner, status: 'dispatched', dispatchedAt: Date.now() }); } catch (_) {}
+      reconcileFgCloudRuns().catch(() => {}); // kick a first poll shortly (non-blocking)
+      // Slim per-account plan (profileId → queued count) so the Live-status board
+      // can show how many invites each account has lined up. The engine's /leads
+      // reports pending leads as unrouted (account:null), so this fire-time plan is
+      // the only source of the per-account queued totals.
+      const plan = (out.perAccount || []).map((a) => ({ profileId: a.profileId, account: a.account, count: a.count }));
+      return res.json({ started: true, cloudId: out.cloudId, leadCount: out.leadCount, skipped: out.skipped, tab, perAccount: plan });
+    }
+
     const keywords = Array.isArray(b.keywords) ? b.keywords : [];
     let snap;
     try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
