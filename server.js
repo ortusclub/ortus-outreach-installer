@@ -2607,7 +2607,15 @@ app.post('/api/fg/list/generate', async (req, res) => {
     return { rows: out.rows, count: out.count, reason };
   };
   const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
-  const { header, rows, perAccount, skipped } = buildListRows(pairs, { accountEmails }, { buildTargets });
+  let built;
+  try {
+    built = buildListRows(pairs, { accountEmails }, { buildTargets });
+  } catch (e) {
+    // Never let a build failure (e.g. no local connections DB) become an
+    // unhandled rejection — that would take the whole app down.
+    return res.status(502).json({ error: `Could not build the list: ${e.message}` });
+  }
+  const { header, rows, perAccount, skipped } = built;
   const tab = fgListTabName(b.cycleKey || fgNextRunCycleKey(b.days));
   try { await writeFgList(tab, rows, { header }); }
   catch (e) { return res.status(502).json({ error: `Could not write the list tab "${tab}": ${e.message}` }); }
