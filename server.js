@@ -93,9 +93,9 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, postFg } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg } from './src/connections/fg-sync.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
-import { fgListTabName } from './src/connections/fg-list.js';
+import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
@@ -2521,6 +2521,26 @@ let _fgActiveHandle = null;
 // ORTUS_DATA_DIR is set (e.g. the packaged Electron app / `npm run dev:app`).
 const _fgCloudRunStore = makeRunStore(dataPath('fg-cloud-runs.json'));
 
+// Sheet-driven (list) run reconcile: stamp Status / Invited At / Note / Member ID
+// back into the run's OWN list tab from the engine's per-lead results, so the tab
+// you built doubles as the live ledger. Idempotent (re-stamping the same value is
+// a no-op) and delta-only (pending leads produce no update). Returns
+// { reconciled } true once the campaign is terminal so the record is retired.
+async function reconcileListRun(record) {
+  const camp = await getCloudCampaign(record.cloudId);
+  const status = String((camp && (camp.campaign?.status ?? camp.status)) || '');
+  let leads = [];
+  try { const res = await getCloudCampaignLeads(record.cloudId); leads = (res && res.leads) || []; }
+  catch (e) { throw new Error(`could not read cloud leads: ${e.message}`); }
+  const updates = ledgerUpdatesFromLeads(leads);
+  if (updates.length) {
+    const r = await updateFgListLedger(record.tab, updates);
+    try { campaignLog(`[FG-cloud] list ledger "${record.tab}": stamped ${r.updated} row(s)`); } catch (_) {}
+  }
+  const terminal = ['done', 'cancelled', 'error', 'stopped'].includes(status);
+  return { reconciled: terminal, updated: updates.length };
+}
+
 // Reconcile every dispatched cloud-FG run: pull engine results and write invited
 // members back to the FG sheet. Runs on a timer while the app is open AND once at
 // startup (so a run that finished while the laptop was closed is written back).
@@ -2541,7 +2561,11 @@ async function reconcileFgCloudRuns() {
     for (const record of _fgCloudRunStore.load()) {
       if (record.status === 'reconciled') continue;
       try {
-        const out = await reconcileCloudRun(record, deps);
+        // Sheet-driven (list) runs write the ledger back into their OWN tab; the
+        // legacy per-account runs write the shared FG-Invites tab. Branch on kind.
+        const out = record.kind === 'list'
+          ? await reconcileListRun(record)
+          : await reconcileCloudRun(record, deps);
         if (out.reconciled) _fgCloudRunStore.update(record.cloudId, { status: 'reconciled' });
       } catch (e) {
         try { campaignLog(`[FG-cloud] reconcile ${record.cloudId} failed: ${e.message}`); } catch (_) {}
@@ -2608,6 +2632,21 @@ app.get('/api/fg/tabs', async (_req, res) => {
     if (r && Array.isArray(r.tabs)) return res.json({ tabs: r.tabs });
     return res.status(502).json({ error: (r && r.error) || 'Could not list tabs', tabs: [] });
   } catch (e) { return res.status(502).json({ error: e.message, tabs: [] }); }
+});
+
+// Manually stamp the ledger (Status / Invited At / Note / Member ID) back into a
+// list tab from a cloud run's current results. The 30s reconcile does this
+// automatically; this endpoint is for firing it on demand (e.g. an in-flight run
+// registered before auto-reconcile, or a one-off catch-up).
+app.post('/api/fg/list/writeback', async (req, res) => {
+  const b = req.body || {};
+  const cloudId = String(b.cloudId || '').trim();
+  const tab = String(b.tab || '').trim();
+  if (!cloudId || !tab) return res.status(400).json({ error: 'cloudId and tab are required.' });
+  try {
+    const out = await reconcileListRun({ cloudId, tab, kind: 'list' });
+    return res.json({ ok: true, updated: out.updated, reconciled: out.reconciled });
+  } catch (e) { return res.status(502).json({ error: e.message }); }
 });
 
 // GENERATE (auto option): build the invite list from the role keywords and write
@@ -2690,6 +2729,9 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
         campaign: { name: `Team Follower Growth · ${month}`, owner, config: { inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
       }, { startCloud: (payload) => startCloudCampaign(payload) });
       if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
+      // Register this run so the reconcile loop stamps the ledger (Status /
+      // Invited At / Note / Member ID) back into ITS tab as invites go out.
+      try { _fgCloudRunStore.add({ cloudId: out.cloudId, kind: 'list', tab, owner, status: 'dispatched', dispatchedAt: Date.now() }); } catch (_) {}
       reconcileFgCloudRuns().catch(() => {}); // kick a first poll shortly (non-blocking)
       // Slim per-account plan (profileId → queued count) so the Live-status board
       // can show how many invites each account has lined up. The engine's /leads

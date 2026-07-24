@@ -65,6 +65,47 @@ export function inviteIdentity({ memberId = '', url = '' } = {}) {
   return norm(memberId) || normUrl(url);
 }
 
+// LinkedIn URLs come in two shapes: an encoded member URN (/in/ACwAAB…) and a
+// vanity slug (/in/chathura). Only the encoded form carries the Member ID, so
+// pull it out when present; a vanity slug yields '' (leave the sheet's own value).
+export function extractMemberIdFromUrl(url = '') {
+  const m = String(url).match(/\/in\/([^/?#]+)/i);
+  if (!m) return '';
+  let seg = m[1];
+  try { seg = decodeURIComponent(seg); } catch { /* keep raw */ }
+  return /^AC[a-z]?A[A-Za-z0-9_-]{12,}$/i.test(seg) ? seg : '';
+}
+
+// ISO → 'YYYY-MM-DD HH:mm UTC' — stable and sortable in the sheet, no locale
+// surprises. Blank/invalid input yields ''.
+export function fmtInvitedAt(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
+}
+
+// Turn the engine's per-lead status rows into ledger updates for the list tab:
+// [{ url, status, invitedAt, note, memberId }]. Only actioned leads produce an
+// update — pending leads are left untouched so the sheet reflects reality.
+//   sent/Invited → Status 'Invited' + Invited At + Member ID (from URL if encoded)
+//   skipped      → Status 'Skipped' + Note (engine reason)
+//   error/failed → Status 'Failed'  + Note (engine error)
+export function ledgerUpdatesFromLeads(leads = []) {
+  const out = [];
+  for (const l of leads) {
+    const url = String((l && l.leadUrl) || '').trim();
+    if (!url) continue;
+    const status = String((l && l.status) || '');
+    const sent = (l && l.stage === 'Invited') || status === 'sent';
+    if (sent) out.push({ url, status: 'Invited', invitedAt: fmtInvitedAt(l.sentAt), note: '', memberId: extractMemberIdFromUrl(url) });
+    else if (status === 'skipped') out.push({ url, status: 'Skipped', note: String((l && l.error) || 'skipped') });
+    else if (status === 'error' || status === 'failed') out.push({ url, status: 'Failed', note: String((l && l.error) || 'error') });
+    // pending / other → no update
+  }
+  return out;
+}
+
 // Invert the app's accountEmails map (profileId → email, built by the SoO fuzzy
 // resolver in server.js) into the email → profileId map parseListRows needs.
 // Emails are lower-cased. Blanks on either side are skipped. If two profiles

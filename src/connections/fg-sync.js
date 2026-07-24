@@ -131,6 +131,17 @@ export async function readFgList(tab) {
   return r.rows || [];
 }
 
+// Stamp the ledger columns (Status / Invited At / Note / Member ID) back into a
+// per-run list tab, matching rows by LinkedIn URL. Called by the cloud reconcile
+// as invites go out so the SAME tab you built doubles as the run ledger. updates:
+// [{ url, status, invitedAt, note, memberId }] — only these rows are touched.
+export async function updateFgListLedger(tab, updates) {
+  if (!Array.isArray(updates) || !updates.length) return { tab, updated: 0 };
+  const r = await postFg({ action: 'fgUpdateListLedger', tab, updates }, { timeoutMs: 90000 });
+  if (r?.error) throw new Error(r.error);
+  return r; // { tab, updated }
+}
+
 // Write the modal's observed available-credit count straight to the account's FG
 // Budgets row (Remaining := available, Sent := allowance − available) plus the
 // refill date + an "Observed At" stamp. Authoritative over the 30−Sent estimate
