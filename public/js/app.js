@@ -19763,11 +19763,17 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
     : (Object.keys(_fgtlCloudPairs).length ? Object.keys(_fgtlCloudPairs) : Object.keys(byAcct));
   const livePid = String((extra && extra.liveAccount) || '');
   // Per-account invite credits from the engine's /accounts endpoint (profileId →
-  // { available, allowance, refill }). Lets the board show "N credits left" and
-  // bench 0-credit accounts, same data the standalone accounts panel uses.
+  // { available, allowance, refill, campaignId }). Lets the board show "N credits
+  // left" and bench 0-credit accounts. IMPORTANT: only trust a reading taken during
+  // THIS campaign — a 0-credit reading from a PRIOR run is stale, so on a fresh
+  // Run-it-now the account shows "waiting" (re-checking) instead of carrying over an
+  // old benched state. (The engine re-checks it too — bench is per-campaignId.)
+  const thisCampId = String((campaign && campaign.id) || '');
   const creditByPid = {};
   for (const acc of ((extra && extra.accounts) || [])) {
-    if (acc && acc.profileId && acc.credits) creditByPid[String(acc.profileId)] = acc.credits;
+    if (acc && acc.profileId && acc.credits && String(acc.credits.campaignId || '') === thisCampId) {
+      creditByPid[String(acc.profileId)] = acc.credits;
+    }
   }
   let totalSent = 0, totalSkip = 0, doneAccounts = 0;
   const perAccount = pids.map((pid) => {
@@ -19887,8 +19893,16 @@ function fgtlCloudPoll() {
       // now. Keep it hidden even after a run ends.
       const goBtn = document.getElementById('fgtl-go'); if (goBtn) goBtn.style.display = 'none';
       _fgtlCloudId = null;
-      // Reload budgets so the launch list reflects what the cloud run sent.
-      fgLoadDb().then(() => fgtlRenderAll()).catch(() => fgtlRenderCart());
+      // Reload budgets so the launch list reflects what the cloud run sent, THEN
+      // re-paint the account board from the final status so the run's outcome
+      // (who sent, who was benched + why) stays visible after it ends — instead of
+      // the board resetting to empty (which hid benched accounts the instant a
+      // credit-exhausted run stopped).
+      const finalStatus = _fgtlLastStatus;
+      fgLoadDb().then(() => {
+        fgtlRenderAll();
+        if (finalStatus) { try { fgtlRenderAcctBoard(finalStatus); } catch (_) { /* */ } }
+      }).catch(() => fgtlRenderCart());
     }
   };
   tick();
