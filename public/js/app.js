@@ -19809,6 +19809,7 @@ function fgtlCloudPoll() {
       liveAccount: (detail && detail.liveAccount) || '',
       liveProgress: (detail && detail.liveProgress) || null,
       leadCounts: (detail && detail.leadCounts) || null,
+      monitorLog: (detail && detail.monitorLog) || [],
     };
     const status = _fgtlBuildCloudStatus(campaign, leads, extra);
     // Live-browser flag from the engine (top-level of the detail) → drives the
@@ -19817,6 +19818,9 @@ function fgtlCloudPoll() {
     status.liveAccount = extra.liveAccount;
     _fgtlLastStatus = status;
     fgtlRenderCard(status);
+    // Feed the Live-status log from the engine's own timestamped activity log
+    // (+ per-invite events from the leads), merged and persisted so it accumulates.
+    fgwUpdateActivityLog(id, extra.monitorLog, leads);
     const terminal = ['done', 'cancelled', 'error', 'stopped'].includes(campaign.status || '');
     if (!terminal) {
       _fgtlCloudTimer = setTimeout(tick, 4000);
@@ -20097,44 +20101,65 @@ function fgtlRenderAcctBoard(status) {
   if (counts.waiting) roll.push(`${counts.waiting} waiting`);
   const rollEl = document.getElementById('fgtl-acct-roll');
   if (rollEl) rollEl.textContent = roll.join(' · ');
-
-  fgwRenderCloudLog(accts, counts);
 }
 
-// Drive the Live-status log box (#fgw-log) for a CLOUD run. The team-launch log
-// poller (fgwStartLog) only has data for LOCAL runs, so it never writes here for
-// cloud — this fills the gap with a live snapshot: who's sending right now, who
-// just finished, and how big the queue still is. Snapshot (not append) each tick
-// so it stays correct without tracking transitions.
-function fgwRenderCloudLog(accts, counts) {
+// ── Live-status activity log (#fgw-log) ──────────────────────────────────────
+// An ACCUMULATING, timestamped feed you can scroll back through — not a snapshot.
+// Two sources, merged and de-duped:
+//   • the engine's own monitorLog ({t, line}) — the authoritative VM events
+//     (worker pick-up, per-account selection, warnings, done).
+//   • per-invite events derived from the leads (the engine doesn't log each
+//     individual invite), stamped with the lead's sentAt.
+// Persisted by cloudId so history survives a reload / board reattach.
+let _fgwLog = [];
+let _fgwLogSeen = new Set();
+let _fgwLogCloudId = null;
+
+function fgwRestoreLog(cloudId) {
+  try {
+    const raw = localStorage.getItem(`fg-mlog-${cloudId}`);
+    if (!raw) return;
+    for (const e of (JSON.parse(raw) || [])) {
+      const k = `${e.t}|${e.line}`;
+      if (!_fgwLogSeen.has(k)) { _fgwLogSeen.add(k); _fgwLog.push(e); }
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function fgwUpdateActivityLog(cloudId, monitorLog, leads) {
   const box = document.getElementById('fgw-log');
   if (!box) return;
-  const esc = (s) => String(s == null ? '' : s);
-  const running = accts.filter((a) => a.status === 'running');
-  const done = accts.filter((a) => a.status === 'done');
-  const lines = [];
-  const head = [];
-  if (counts.done) head.push(`${counts.done} done`);
-  if (counts.running) head.push(`${counts.running} running`);
-  if (counts.waiting) head.push(`${counts.waiting} waiting`);
-  lines.push(`Follower Growth · ${head.join(' · ') || 'starting…'}`);
-  lines.push('');
-  if (running.length) {
-    for (const a of running) {
-      const q = Number.isFinite(a.planned) ? a.planned : null;
-      lines.push(`▶ NOW: ${esc(a.account)} — sending invites (${a.invited || 0}${q ? ' / ' + q.toLocaleString() : ''})`);
-    }
-  } else if (counts.waiting) {
-    lines.push('… warming up the next account (browsers open one at a time)');
+  // Reset + restore when the run changes (fresh fire or reattach after reload).
+  if (_fgwLogCloudId !== cloudId) {
+    _fgwLogCloudId = cloudId; _fgwLog = []; _fgwLogSeen = new Set();
+    fgwRestoreLog(cloudId);
   }
-  // A short tail of the most-recently-finished accounts, for context.
-  const recent = done.slice(-6);
-  if (recent.length) {
-    lines.push('');
-    for (const a of recent) lines.push(`✓ ${esc(a.account)} — ${a.invited || 0} sent`);
+  const add = (t, line, key) => {
+    const k = key || `${t}|${line}`;
+    if (_fgwLogSeen.has(k)) return;
+    _fgwLogSeen.add(k); _fgwLog.push({ t, line });
+  };
+  for (const e of (monitorLog || [])) {
+    if (e && e.line) add(Number(e.t) || Date.now(), String(e.line), `${e.t}|${e.line}`);
   }
-  if (counts.waiting) { lines.push(''); lines.push(`… ${counts.waiting} account${counts.waiting === 1 ? '' : 's'} waiting their turn`); }
-  box.textContent = lines.join('\n');
+  for (const l of (leads || [])) {
+    if (!l || !(l.stage === 'Invited' || l.status === 'sent')) continue;
+    const acct = (_fgtlCloudPairs[String(l.account || '')] && _fgtlCloudPairs[String(l.account || '')].account) || '';
+    add(Date.parse(l.sentAt || '') || Date.now(), `✓ invited ${l.fullName || l.leadUrl}${acct ? ' · ' + acct : ''}`, `inv|${l.id || l.leadUrl}`);
+  }
+  _fgwLog.sort((a, b) => a.t - b.t);
+  if (_fgwLog.length > 1000) _fgwLog = _fgwLog.slice(-1000);
+  try { localStorage.setItem(`fg-mlog-${cloudId}`, JSON.stringify(_fgwLog)); } catch (_) { /* quota */ }
+
+  const p = (n) => String(n).padStart(2, '0');
+  const hhmmss = (t) => { const d = new Date(t); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+  // Keep the operator's scroll position if they've scrolled UP to read history;
+  // only auto-stick to the bottom when they're already there.
+  const atBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 40;
+  box.textContent = _fgwLog.length
+    ? _fgwLog.map((e) => `[${hhmmss(e.t)}] ${e.line}`).join('\n')
+    : 'Waiting for the campaign to start…';
+  if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
 /** Map status object onto #fgtl-* card elements. */
