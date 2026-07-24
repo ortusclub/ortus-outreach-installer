@@ -2181,6 +2181,7 @@
       #nav-follower-growth .fgw-live-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
       #nav-follower-growth .fgw-live-controls { display:flex; align-items:center; gap:12px; }
       #nav-follower-growth .fgw-toggle-lab { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; opacity:.7; }
+      #nav-follower-growth .fgw-accounts-note { font-size:13px; opacity:.85; margin:4px 0 10px; line-height:1.5; }
     </style>
     <div class="section" id="nav-follower-growth" style="display:none">
       <h2><span data-edit="h2-fg">Follower Growth</span></h2>
@@ -2235,14 +2236,9 @@
         <div id="fgtl-list-status" class="fgw-list-status"></div>
       </div>
 
-      <!-- ── STEP 2 · SCHEDULE ─────────────────────────────────────────── -->
-      <div class="fgw-step" id="fgw-step-2">
-        <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Schedule</span></div>
-        <p class="fgw-lead">Runs automatically on the <b id="fgw-sched-days">1st &amp; 15th</b> at 6am London time, in the <b>&#9729;&#65038; cloud VM</b> — so it keeps going after you close your laptop. <span id="fgw-sched-next"></span></p>
-        <button type="button" id="fgw-edit-schedule" class="fgw-btn">Edit schedule</button>
-      </div>
-
-      <!-- STEP 3 · Accounts (the sheet's Account column decides who sends) -->
+      <!-- Accounts — ONLY for auto-generate (whose networks to search). A
+           bring-your-own list sets the account per row in the sheet instead. -->
+      <div class="fgw-accounts-note">Only for <b>auto-generate</b> &#8595; &mdash; pick whose networks to search for people matching the roles above. <span style="opacity:.7">(Bring-your-own lists set the account per row in the sheet, so you can skip this.)</span></div>
       <div class="fgtl-board2">
         <div>
           <div class="fgtl-search">
@@ -2273,6 +2269,13 @@
             <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
           </div>
         </div>
+      </div>
+
+      <!-- ── STEP 2 · SCHEDULE ─────────────────────────────────────────── -->
+      <div class="fgw-step" id="fgw-step-2">
+        <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Schedule</span></div>
+        <p class="fgw-lead">Runs automatically on the <b id="fgw-sched-days">1st &amp; 15th</b> at 6am London time, in the <b>&#9729;&#65038; cloud VM</b> — so it keeps going after you close your laptop. <span id="fgw-sched-next"></span></p>
+        <button type="button" id="fgw-edit-schedule" class="fgw-btn">Edit schedule</button>
       </div>
 
       <!-- ── LIVE STATUS ───────────────────────────────────────────────
