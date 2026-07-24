@@ -19795,6 +19795,45 @@ function fgtlCloudPoll() {
   tick();
 }
 
+// The invite-list tab this launch should fire from — set by "Generate list from
+// roles" or "Use this tab". Empty → legacy build-and-dispatch flow.
+let _fgtlListTab = '';
+
+/** Generate the invite list from the current roles + cart and write it to a tab. */
+async function fgtlGenerateList() {
+  const pairs = fgtlPairs();
+  const status = document.getElementById('fgtl-list-status');
+  const btn = document.getElementById('fgtl-generate');
+  if (!pairs.length) { if (status) status.textContent = 'Add at least one account to the launch list first.'; return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  if (status) status.textContent = 'Building the list from roles + connections…';
+  try {
+    const r = await fetch('/api/fg/list/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: fgtlChips, pairs, month: new Date().toISOString().slice(0, 7) }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) { if (status) status.textContent = 'Could not generate: ' + (d.error || r.statusText); return; }
+    _fgtlListTab = d.tab || '';
+    const skips = (d.skipped && d.skipped.length) ? ` · ${d.skipped.length} account(s) skipped` : '';
+    if (status) status.innerHTML = `✓ Wrote <b>${escHtml(d.tab)}</b> — ${d.count} people${skips}. Review/edit that tab in the FG sheet, then Launch.`;
+  } catch (err) {
+    if (status) status.textContent = 'Could not generate: ' + (err && err.message ? err.message : String(err));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate list from roles'; }
+  }
+}
+
+/** Point the launch at an existing FG tab (bring-your-own list). */
+function fgtlUseByoTab() {
+  const input = document.getElementById('fgtl-byo-tab');
+  const status = document.getElementById('fgtl-list-status');
+  const tab = (input && input.value || '').trim();
+  if (!tab) { if (status) status.textContent = 'Type the name of an existing tab in the FG sheet.'; return; }
+  _fgtlListTab = tab;
+  if (status) status.innerHTML = `✓ Will fire from your tab <b>${escHtml(tab)}</b> when you Launch.`;
+}
+
 /** POST to /api/fg/team-launch/start, then begin polling. */
 async function fgtlLaunch() {
   const pairs = fgtlPairs();
@@ -19802,6 +19841,8 @@ async function fgtlLaunch() {
   const isCloud = (typeof getRunTarget === 'function' && getRunTarget() === 'cloud');
   const goBtn = document.getElementById('fgtl-go');
   if (goBtn) goBtn.disabled = true;
+  // Sheet-driven flow when a list tab has been generated/chosen; else legacy.
+  const listPayload = _fgtlListTab ? { source: 'list', tab: _fgtlListTab } : {};
   let res;
   try {
     res = await fetch('/api/fg/team-launch/start', {
@@ -19812,6 +19853,7 @@ async function fgtlLaunch() {
         pairs,
         month: new Date().toISOString().slice(0, 7),
         target: isCloud ? 'cloud' : 'local',
+        ...listPayload,
       }),
     });
   } catch (err) {
@@ -20065,6 +20107,10 @@ function fgtlBindLaunch() {
     copyBtn._fgtlCopyBound = true;
     copyBtn.addEventListener('click', fgtlCopyLog);
   }
+  const genBtn = document.getElementById('fgtl-generate');
+  if (genBtn && !genBtn._b) { genBtn._b = true; genBtn.addEventListener('click', fgtlGenerateList); }
+  const byoBtn = document.getElementById('fgtl-byo-use');
+  if (byoBtn && !byoBtn._b) { byoBtn._b = true; byoBtn.addEventListener('click', fgtlUseByoTab); }
   const doStop = async (btn) => {
     // Cloud FG run → stop the VM campaign; the cloud poll then resets the card.
     if (_fgtlCloudId) {

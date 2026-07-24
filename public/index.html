@@ -2181,6 +2181,16 @@
         <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
         <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
         <div class="filter-foot"><span class="hint">Defaults toward marketers. Applies to everyone below.</span><span class="match" id="fgtl-match"></span></div>
+        <div class="fgtl-listgen" id="fgtl-listgen" style="margin:12px 0;padding:12px;border:1px solid var(--border,#e2e2e2);border-radius:10px">
+          <div class="fgtl-step-eyebrow">&#9313; Invite list &#8212; a Google Sheet tab you can review &amp; edit before firing</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
+            <button type="button" id="fgtl-generate" class="fgtl-refresh-btn" title="Build the list from the roles above and write it to a per-run tab in the FG sheet">Generate list from roles</button>
+            <span style="opacity:.55">or bring your own:</span>
+            <input id="fgtl-byo-tab" placeholder="existing FG tab name (e.g. FG 2026-08-01)&#8230;" autocomplete="off" style="flex:1;min-width:180px">
+            <button type="button" id="fgtl-byo-use" class="fgtl-refresh-btn" title="Fire from an existing tab in the FG sheet instead of generating">Use this tab</button>
+          </div>
+          <div id="fgtl-list-status" style="margin-top:8px;font-size:13px;opacity:.85"></div>
+        </div>
       </div>
 
       <!-- Step 2 · browse + cart -->

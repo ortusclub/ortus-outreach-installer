@@ -93,8 +93,10 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList } from './src/connections/fg-sync.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
+import { fgListTabName } from './src/connections/fg-list.js';
+import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -102,7 +104,7 @@ import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID }
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse } from './src/soo-writer.js';
 import { reconcileCloudConnections } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
-import { buildAutopilotConfig, nextRun } from './src/fg-autopilot.js';
+import { buildAutopilotConfig, nextRun, cycleKey } from './src/fg-autopilot.js';
 import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
 import { pickUnreconciled } from './src/fg-autopilot-reconcile.js';
 import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
@@ -2574,6 +2576,44 @@ app.post('/api/fg/team-launch/stop', async (_req, res) => {
   res.json({ ok: true });
 });
 
+// The tab an FG run reads/writes: "FG <next run day>" so a list generated ahead
+// of time is picked up by the scheduled fire on that day. Same key for generate
+// and a shortly-after manual launch (nextRun is deterministic within a day).
+function fgNextRunCycleKey(days = [1, 15]) {
+  const d = nextRun(new Date(), { days, enabled: true });
+  return cycleKey(d || new Date());
+}
+
+// GENERATE (auto option): build the invite list from the role keywords and write
+// it to the per-run tab. No hard monthly cap — list all eligible; LinkedIn's own
+// invite credits are the ceiling. The tab is then reviewable/editable before the
+// fire reads it.
+app.post('/api/fg/list/generate', async (req, res) => {
+  const b = req.body || {};
+  const pairs = Array.isArray(b.pairs) ? b.pairs.filter((p) => p && p.operator && p.account && p.profileId) : [];
+  if (!pairs.length) return res.status(400).json({ error: 'At least one paired account is required.' });
+  const month = b.month || fgMonth();
+  const keywords = Array.isArray(b.keywords) ? b.keywords : [];
+  let snap;
+  try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
+  const alreadyInvited = invitedKeysFromState(snap.invites);
+  const buildTargets = (pair) => {
+    const out = buildFgTargets(fgCriteria({ jobTitles: keywords }), {
+      operator: pair.operator, operatorName: pair.operatorName, account: pair.account,
+      month, alreadyInvited, budget: Infinity,
+    });
+    let reason = '';
+    if (!out.count) reason = out.matched === 0 ? 'no connections match these roles' : 'all matching connections already invited';
+    return { rows: out.rows, count: out.count, reason };
+  };
+  const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+  const { header, rows, perAccount, skipped } = buildListRows(pairs, { accountEmails }, { buildTargets });
+  const tab = fgListTabName(b.cycleKey || fgNextRunCycleKey(b.days));
+  try { await writeFgList(tab, rows, { header }); }
+  catch (e) { return res.status(502).json({ error: `Could not write the list tab "${tab}": ${e.message}` }); }
+  return res.json({ tab, count: rows.length, perAccount, skipped });
+});
+
 app.post('/api/fg/team-launch/start', async (req, res) => {
   if (_fgTeam.running) return res.status(409).json({ error: 'A team launch is already running.' });
   const b = req.body || {};
@@ -2582,6 +2622,27 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
 
   if ((b.target || 'local') === 'cloud') {
     const month = b.month || fgMonth();
+
+    // Sheet-driven flow (new two-option FG): read the pre-generated invite-list
+    // tab and work down it. Each lead is pinned to its account (Account Email →
+    // profileId). No tab yet → tell the operator to generate it first.
+    if (b.source === 'list') {
+      const owner = getOperatorEmail() || req.user || '';
+      const tab = String(b.tab || '').trim() || fgListTabName(b.cycleKey || fgNextRunCycleKey(b.days));
+      let rows;
+      try { rows = await readFgList(tab); }
+      catch (e) { return res.status(502).json({ error: `Could not read the list tab "${tab}": ${e.message}` }); }
+      if (!rows || rows.length < 2) return res.status(400).json({ error: `No invite list in tab "${tab}" — generate the list first.` });
+      const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+      const out = await dispatchFromRows(rows, {
+        accountEmails,
+        campaign: { name: `Team Follower Growth · ${month}`, owner, config: { inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
+      }, { startCloud: (payload) => startCloudCampaign(payload) });
+      if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
+      reconcileFgCloudRuns().catch(() => {}); // kick a first poll shortly (non-blocking)
+      return res.json({ started: true, cloudId: out.cloudId, leadCount: out.leadCount, skipped: out.skipped, tab });
+    }
+
     const keywords = Array.isArray(b.keywords) ? b.keywords : [];
     let snap;
     try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
