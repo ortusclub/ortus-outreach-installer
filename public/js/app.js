@@ -20075,6 +20075,11 @@ async function fgtlLaunch() {
 /** Poll /api/fg/team-launch/status every 2 s; stop when running===false. */
 function fgtlPoll() {
   const tick = async () => {
+    // A CLOUD run owns the card + account board (via fgtlCloudPoll). This LOCAL
+    // team-launch poll must NOT render during a cloud run — its status is empty/
+    // stale for cloud, so it was clobbering the board (dropping the benched/skipped
+    // accounts the cloud poll had just painted). Defer until the cloud run clears.
+    if (_fgtlCloudId) { setTimeout(tick, 2000); return; }
     let status = null;
     try {
       const r = await fetch('/api/fg/team-launch/status');
