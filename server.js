@@ -50,7 +50,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1545,6 +1545,13 @@ app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
   const r = await getCloudCampaignAccounts(req.params.id);
   if (r && r.error) return res.status(502).json(r);
   res.json(r);
+});
+// Operator Retry on a benched (weekly-cap) account — proxied so the engine
+// token stays server-side.
+app.post('/api/campaign/cloud/:id/accounts/:pid/unbench', async (req, res) => {
+  const r = await unbenchCloudAccount(req.params.id, req.params.pid);
+  if (r && r.error) return res.status(502).json(r);
+  res.json(r || { ok: true });
 });
 // Local check of a CLOUD campaign — write-back step. After the operator runs
 // the local GoLogin sweep (POST /api/bulk-check-now) against a cloud campaign's

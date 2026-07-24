@@ -6822,8 +6822,9 @@ function renderCloudAccountsPanel(id) {
     const who = escHtml(a.email || a.profileId || 'account');
     const badges = [];
     // Blocking status first (most important), then daily usage, then primary link.
+    const benched = !!(a.weeklyCap || a.parkReason === 'weekly');
     if (a.needsLogin) badges.push(badge('bad', '⚠ Not logged in'));
-    else if (a.weeklyCap || a.parkReason === 'weekly') badges.push(badge('bad', '🚫 Weekly cap reached'));
+    else if (benched) badges.push(badge('bad', '🚫 Benched — weekly invitation limit · rest of the week'));
     else if (a.parked || a.parkReason === 'throttle') badges.push(badge('warn', '⏸ Throttled'));
     else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
     else badges.push(badge('ok', '✓ Active'));
@@ -6832,12 +6833,40 @@ function renderCloudAccountsPanel(id) {
     // Primary-connection (CC+IC only; null when N/A).
     if (a.primaryConnected === true) badges.push(badge('ok', '🔗 Connected to primary'));
     else if (a.primaryConnected === false) badges.push(badge('muted', 'Primary not yet connected'));
+    // Benched → operator override: Retry clears the bench engine-side, and the
+    // account is eligible again from the next turn (three fresh 429 strikes
+    // re-bench it automatically if LinkedIn is still capping).
+    if (benched && !a.needsLogin) {
+      badges.push(`<button type="button" class="mini cap-retry" onclick="unbenchCloudAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)" title="Clear the bench and let this account try again">Retry</button>`);
+    }
     return `<div class="cap-row"><span class="cap-acct">${who}</span><span class="cap-status">${badges.join('')}</span></div>`;
   }).join('');
   panel.innerHTML = `<div class="cap-head"><span>Accounts</span><span>${accounts.length} account${accounts.length === 1 ? '' : 's'}</span></div>${rows}`;
   panel.hidden = false;
 }
 window.renderCloudAccountsPanel = renderCloudAccountsPanel;
+
+// Operator "Retry" on a benched (weekly-cap) account — clears the bench on the
+// engine; the account is eligible again from the next turn.
+async function unbenchCloudAccount(campaignId, profileId, btn) {
+  if (!campaignId || !profileId) return;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(campaignId)}/accounts/${encodeURIComponent(profileId)}/unbench`, { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) {
+      showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Retry isn’t live yet — engine update pending.', 6000);
+      if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+      return;
+    }
+    showCampaignToast('▶ Account un-benched — it will try again on its next turn. Three fresh rate-limits re-bench it automatically.', 7000);
+    if (_viewingCloudId) { try { await _refreshCloudActiveStatus(_viewingCloudId); } catch (_) { /* */ } }
+  } catch (e) {
+    showCampaignToast('Could not reach the engine: ' + e.message, 6000);
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+  }
+}
+window.unbenchCloudAccount = unbenchCloudAccount;
 
 function _stopCloudCardPoll() { if (_cloudCardTimer) { clearInterval(_cloudCardTimer); _cloudCardTimer = null; } }
 function _startCloudCardPoll() {

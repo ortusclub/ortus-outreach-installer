@@ -317,6 +317,10 @@ export function cloudCheckNow(id, scope = 'campaign') {
 export function setCloudAutoChecks(id, enabled) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });
 }
+// Un-bench a weekly-capped account (operator Retry in the Accounts panel).
+export function unbenchCloudAccount(id, profileId) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/unbench`, {});
+}
 // Local-check write-back: mirror the sheet's per-lead statuses into the engine
 // after the operator runs this cloud campaign's acceptance check on their OWN
 // machine (local GoLogin sweep). Engine applies fill-only — safe to re-post.
