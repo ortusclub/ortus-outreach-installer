@@ -208,7 +208,7 @@
       <div class="dashboard-header">
         <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
           <button type="button" class="route-seg-btn is-active" onclick="goDashboard()">Campaigns</button>
-          <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav</button>
+          <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav Scraper</button>
         </div>
         <!-- 2026-05-27 (drafts-isolation v2): resume-draft surfaces as a small
              gold count-badge on the New-campaign button. Click the button →
@@ -680,12 +680,12 @@
     <div id="salesnav-view" class="route-view">
       <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
         <button type="button" class="route-seg-btn" onclick="goDashboard()">Campaigns</button>
-        <button type="button" class="route-seg-btn is-active" onclick="goSalesNav()">Sales Nav</button>
+        <button type="button" class="route-seg-btn is-active" onclick="goSalesNav()">Sales Nav Scraper</button>
       </div>
       <div class="sn-boardhead">
         <div>
-          <div class="sn-kicker" id="sn-datekicker">Sales Nav</div>
-          <div class="sn-boardtitle">Sales Nav Queue</div>
+          <div class="sn-kicker" id="sn-datekicker">Sales Nav Scraper</div>
+          <div class="sn-boardtitle">Sales Nav Scraper</div>
         </div>
         <div class="sn-qmeta" id="sn-qmeta">—</div>
         <button type="button" id="sn-new-btn" class="btn btn-secondary" onclick="startNewScrapeSetup()">＋ New scrape</button>
@@ -696,7 +696,7 @@
       <div id="sn-setup" style="display:none">
         <div class="sn-setup-head">
           <div class="sn-setup-title">New scrape</div>
-          <button type="button" class="btn btn-secondary" onclick="closeScrapeSetup()">Close ✕</button>
+          <button type="button" class="btn btn-secondary" onclick="closeScrapeSetup()">← Sales Nav Scraper dashboard</button>
         </div>
         <div id="sn-setup-body"></div>
       </div>
@@ -739,6 +739,17 @@
       <div id="wizard-queue-banner" class="wizard-queue-banner" style="display:none">
         <strong>Building a queued campaign.</strong>
         <span id="wizard-queue-banner-detail">A campaign is currently running — this one will be added to the queue and start automatically when there's a free slot.</span>
+      </div>
+      <!-- Shown when the operator clicked OPEN on a RUNNING cloud campaign.
+           The wizard is prefilled read-only with that campaign's launch
+           config; pausing unlocks editing, and Save edits & resume stops the
+           paused original and redispatches its still-pending leads with the
+           edited config (the engine has no in-place update). -->
+      <div id="wizard-cloud-edit-banner" class="wizard-queue-banner" style="display:none">
+        <strong id="cloud-edit-banner-title">This campaign is running.</strong>
+        <span id="cloud-edit-banner-detail">Fields are locked while it sends — pause it to make edits.</span>
+        <button type="button" class="btn btn-primary" id="btn-cloud-edit-pause" onclick="cloudEditPauseNow()" style="margin-left:12px">Pause campaign</button>
+        <button type="button" class="btn btn-primary" id="btn-cloud-edit-save" onclick="cloudEditSaveResume()" style="margin-left:12px; display:none">Save edits &amp; resume</button>
       </div>
 
       <!-- Campaign Name — first thing the operator names. Persisted to
@@ -1368,9 +1379,65 @@
 
   #sn-setup{margin:32px 0 28px;padding:32px 0 8px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
   .sn-setup-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 26px;}
-  .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;}
+  .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;display:flex;align-items:center;gap:12px;}
+  /* Small spinner shown beside "Loading scrape…" so it's clearly loading, not stalled. */
+  .sn-setup-spinner{width:16px;height:16px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
+  @keyframes sn-spin{to{transform:rotate(360deg);}}
   .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
   .sn-railcount{color:#c4c4c4;}
+  .sn-sectionhead{font-family:var(--display);font-size:20px;letter-spacing:.02em;color:var(--ink);margin:30px 0 4px;padding-bottom:8px;border-bottom:1px solid var(--hairline);}
+  .sn-sectionhead:first-child{margin-top:8px;}
+  /* Board loading state — the /api/jobs fetch can take several seconds. */
+  .sn-loading{display:flex;align-items:center;gap:12px;color:var(--gray);font-size:13px;padding:34px 2px;}
+  .sn-loading .sp{width:18px;height:18px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
+  /* ── Per-account status panel (cloud CC+IC), below the Live Status card ── */
+  .cloud-accounts-panel{margin:14px 0 4px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;}
+  .cloud-accounts-panel .cap-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hairline-soft);font-family:var(--display);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .cloud-accounts-panel .cap-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 16px;border-bottom:1px solid var(--hairline-soft);font-size:13px;}
+  .cloud-accounts-panel .cap-row:last-child{border-bottom:0;}
+  .cloud-accounts-panel .cap-acct{font-weight:600;color:var(--ink);word-break:break-all;}
+  .cloud-accounts-panel .cap-status{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;text-align:right;color:var(--gray);}
+  .cloud-accounts-panel .cap-badge{display:inline-block;padding:2px 9px;border-radius:9999px;font-size:11px;letter-spacing:.02em;border:1px solid var(--hairline);white-space:nowrap;}
+  .cloud-accounts-panel .cap-badge.ok{color:var(--green);border-color:var(--green);}
+  .cloud-accounts-panel .cap-badge.warn{color:var(--gold,#d4a24a);border-color:var(--gold,#d4a24a);}
+  .cloud-accounts-panel .cap-badge.bad{color:var(--red);border-color:var(--red);}
+  .cloud-accounts-panel .cap-badge.muted{color:var(--gray);}
+  /* Retry (un-bench) — styled as a clickable pill matching the cap-badges, ink
+     outline so it reads as the actionable one in the row. */
+  .cloud-accounts-panel .cap-retry{display:inline-block;padding:2px 12px;border-radius:9999px;font-size:11px;letter-spacing:.02em;white-space:nowrap;border:1px solid var(--ink,#111);color:var(--ink,#111);background:transparent;cursor:pointer;font-family:inherit;line-height:inherit;transition:background .12s,color .12s;}
+  .cloud-accounts-panel .cap-retry:hover{background:var(--ink,#111);color:var(--paper,#fff);}
+  .cloud-accounts-panel .cap-retry:disabled{opacity:.5;cursor:default;background:transparent;color:var(--ink,#111);}
+  /* ── Admin board sections (Your / Other users / Admin) ── */
+  .cb-section{border:1px solid var(--hairline);border-radius:14px;padding:4px 16px 14px;margin:14px 0;}
+  .cb-section.cb-collapsed{padding-bottom:4px;}
+  .cb-sectionhead{display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;padding:12px 2px;margin:0;border-radius:8px;transition:background .12s;}
+  .cb-sectionhead:hover{background:color-mix(in srgb, var(--ink) 4%, transparent);}
+  .cb-caret{display:inline-flex;align-items:center;justify-content:center;color:var(--ink);}
+  .cb-caretsvg{transition:transform .14s ease;}
+  .cb-caretsvg.cl{transform:rotate(-90deg);}      /* collapsed → points right */
+  .cb-sectionhead:hover .cb-caret,.cb-subhead:hover .cb-caret{color:var(--accent, var(--ink));}
+  .cb-sectionhead:hover .cb-caretsvg,.cb-subhead:hover .cb-caretsvg{transform:scale(1.12);}
+  .cb-sectionhead:hover .cb-caretsvg.cl,.cb-subhead:hover .cb-caretsvg.cl{transform:rotate(-90deg) scale(1.12);}
+  .cb-sectitle{font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--ink);text-transform:none;}
+  .cb-secsub{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .cb-seccount{font-family:var(--mono);font-size:11px;color:var(--gray);background:var(--hairline);border-radius:9999px;padding:1px 9px;}
+  .cb-headextra{margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .cb-searchwrap{display:inline-flex;align-items:center;gap:7px;background:var(--surface,#fff);border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;transition:border-color .12s,box-shadow .12s;}
+  .cb-searchwrap:focus-within{border-color:var(--ink);box-shadow:0 0 0 3px color-mix(in srgb, var(--ink) 9%, transparent);}
+  .cb-searchic{color:var(--gray);flex:none;transition:color .12s;}
+  .cb-searchwrap:focus-within .cb-searchic{color:var(--ink);}
+  .cb-searchwrap .cb-usersearch{font-size:12.5px;color:var(--ink);background:transparent;border:0!important;outline:none!important;box-shadow:none!important;padding:1px 0;width:120px;transition:width .14s;-webkit-appearance:none;appearance:none;}
+  .cb-searchwrap .cb-usersearch:focus{width:165px;}
+  .cb-usersearch::placeholder{color:var(--gray);}
+  .cb-usersearch::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;}
+  .cb-secbody{margin-top:2px;}
+  .cb-secbody .sn-railhead:first-child{margin-top:6px;}
+  .cb-secempty{font-size:12px;color:var(--gray);padding:8px 2px 4px;}
+  .cb-subhead{cursor:pointer;user-select:none;}
+  /* Cancelled campaigns are NOT greyed on the admin board (Sam) — full-strength
+     ink/rail, only the gray rail + status distinguish them. */
+  .sn-board.cb-nogrey .sn-strip.cancelled{opacity:1;}
+  .sn-board.cb-nogrey .sn-strip.cancelled .sn-name{color:var(--ink);}
   .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;transition:color .12s,border-color .12s;}
   .sn-clear-done:hover{color:var(--ink);border-color:var(--ink);}
   .sn-foot .mini.sn-dismiss{padding:6px 10px;color:var(--gray);}
@@ -1431,6 +1498,10 @@
   .sn-strip.stopped{border-color:var(--red);}
   .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
   .sn-strip.stopped .sn-status{color:var(--red);}
+  /* Paused — amber accent + amber status, distinct from running (green) / stopped (red). */
+  .sn-strip.paused::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold,#d4a24a);}
+  .sn-strip.paused .sn-status{color:var(--gold,#d4a24a);}
+  .sn-board .dot.paused{background:var(--gold,#d4a24a);}
   .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
   .sn-progtxt b{color:var(--ink);font-weight:600;}
   /* queued — tidy mini card (solid, smaller title) */
@@ -1973,7 +2044,12 @@
       #nav-follower-growth .fgboard-head { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px; }
       #nav-follower-growth .fgboard-head .h { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); }
       #nav-follower-growth .fgboard-head .c { font-family:var(--mono); font-size:11px; color:var(--ink); }
-      #nav-follower-growth .fgacct-board { display:flex; flex-direction:column; gap:8px; max-height:440px; overflow-y:auto; padding-right:6px; }
+      /* No inner scroll: an internal max-height/overflow was clipping the benched
+         rows (which sort to the TOP) out of view — the operator saw only the
+         waiting account and thought the skipped ones were missing. Let the board
+         grow with its rows; the page scrolls normally. We only list in-tab
+         accounts now, so the list stays short. */
+      #nav-follower-growth .fgacct-board { display:flex; flex-direction:column; gap:8px; padding-right:6px; }
       #nav-follower-growth .fgacct { display:flex; align-items:center; gap:12px; padding:11px 13px; border:1px solid rgba(0,0,0,0.28); border-radius:11px; background:var(--bg-soft); }
       #nav-follower-growth .fgacct.done { border-left:3px solid var(--green); }
       #nav-follower-growth .fgacct.skip { border-left:3px solid var(--red); }
@@ -2081,6 +2157,43 @@
       #nav-follower-growth .fgap-run { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:7px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; white-space:nowrap; font-weight:600; }
       #nav-follower-growth .fgap-run:hover { opacity:.82; }
       #nav-follower-growth .fgap-run:disabled { opacity:.4; cursor:not-allowed; }
+      /* ── Follower Growth wizard ─────────────────────────────────────── */
+      #nav-follower-growth .fgw-step { border:1px solid var(--border,#e2e2e2); border-radius:14px; padding:20px 22px; margin:16px 0; background:var(--bg,#fff); }
+      #nav-follower-growth .fgw-step-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+      #nav-follower-growth .fgw-num { width:26px; height:26px; border-radius:50%; background:var(--ink); color:var(--bg); font-family:var(--mono); font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; flex:none; }
+      #nav-follower-growth .fgw-title { font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; font-weight:600; }
+      #nav-follower-growth .fgw-lead { font-size:13.5px; line-height:1.5; opacity:.85; margin:0 0 16px; }
+      #nav-follower-growth .fgw-sheet-link { background:none; border:none; color:var(--ink); font:inherit; font-weight:700; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px; }
+      #nav-follower-growth .fgw-sheet-link:hover { opacity:.7; }
+      /* Stacked: auto-generate box (tall — roles + accounts + Generate) on top,
+         bring-your-own below it. */
+      #nav-follower-growth .fgw-two-up { display:grid; grid-template-columns:1fr; gap:16px; align-items:start; }
+      #nav-follower-growth .fgw-path { border:1px solid var(--border,#e2e2e2); border-radius:10px; padding:14px 16px; }
+      #nav-follower-growth .fgw-path-auto { border-color:var(--ink,#111); }
+      #nav-follower-growth .fgw-gen-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px solid var(--border,#e2e2e2); }
+      #nav-follower-growth .fgw-gen-note { font-size:12.5px; opacity:.72; max-width:460px; line-height:1.45; }
+      #nav-follower-growth .fgw-btn-primary { padding:11px 22px; font-size:11px; }
+      #nav-follower-growth .fgw-path-head { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; margin-bottom:10px; opacity:.9; }
+      #nav-follower-growth .fgw-path-desc { font-size:13px; opacity:.75; margin:0 0 12px; }
+      #nav-follower-growth .fgw-format { background:rgba(0,0,0,.035); border-radius:8px; padding:10px 12px; margin:0 0 12px; }
+      #nav-follower-growth .fgw-format-h { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; margin-bottom:6px; }
+      #nav-follower-growth .fgw-format-cols { display:block; font-size:12.5px; line-height:1.55; word-break:break-word; }
+      #nav-follower-growth .fgw-format-note { font-size:12px; opacity:.72; margin-top:8px; line-height:1.45; }
+      #nav-follower-growth .fgw-byo-row { display:flex; gap:8px; align-items:center; }
+      #nav-follower-growth .fgw-byo-row input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
+      #nav-follower-growth .fgw-btn { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:9px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; font-weight:600; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgw-btn:hover { opacity:.85; }
+      #nav-follower-growth .fgw-btn:disabled { opacity:.4; cursor:not-allowed; }
+      #nav-follower-growth .fgw-list-status { margin-top:14px; font-size:13px; line-height:1.5; }
+      #nav-follower-growth .fgw-select { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
+      #nav-follower-growth .fgw-icon-btn { border:1px solid var(--border,#ccc); background:var(--bg,#fff); color:var(--ink); border-radius:8px; width:34px; height:34px; cursor:pointer; font-size:15px; flex:none; }
+      #nav-follower-growth .fgw-icon-btn:hover { border-color:var(--ink); }
+      #nav-follower-growth .fgw-live-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+      #nav-follower-growth .fgw-live-controls { display:flex; align-items:center; gap:12px; }
+      #nav-follower-growth .fgw-toggle-lab { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; opacity:.7; }
+      #nav-follower-growth .fgw-list-tab { font-size:12px; opacity:.8; padding:4px 10px; border:1px solid var(--border,#ddd); border-radius:9999px; white-space:nowrap; }
+      #nav-follower-growth .fgw-accounts-note { font-size:13px; opacity:.85; margin:4px 0 10px; line-height:1.5; }
+      #nav-follower-growth .fgw-log { margin:12px 0 0; background:#0d100d; color:#bdf5bd; font-family:var(--mono,monospace); font-size:11.5px; line-height:1.5; padding:12px 14px; border-radius:10px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
     </style>
     <div class="section" id="nav-follower-growth" style="display:none">
       <h2><span data-edit="h2-fg">Follower Growth</span></h2>
@@ -2093,56 +2206,112 @@
             <div class="fgap-title" id="fgap-title">AUTO-PILOT &#183; ON</div>
             <div class="fgap-next" id="fgap-next">Next run &#8212;</div>
           </div>
-          <button type="button" class="fgap-run" id="fgap-run" title="Dispatch the whole team's invites to the cloud VM right now, outside the schedule">&#9654; Run it now</button>
-          <span class="rt-tag">&#9729;&#65038; Cloud VM</span>
-          <button type="button" class="fgap-edit" id="fgap-edit">Edit schedule</button>
-          <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot"></button>
-          <button type="button" class="fgap-expand" id="fgap-expand" aria-expanded="false" title="Show details">&#8964;</button>
         </div>
       </div>
 
-      <!-- Manual controls = the full Team-Launch board. Collapsed by default;
-           the strip's expand chevron reveals it (run right now, pick roles/people). -->
-      <div id="fgap-manual" hidden>
-      <!-- Step 1 · role chips -->
-      <div class="fgtl-roles">
-        <div class="fgtl-step-eyebrow">&#9312; Which roles to invite &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
-        <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
-        <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
-        <div class="filter-foot"><span class="hint">Defaults toward marketers. Applies to everyone below.</span><span class="match" id="fgtl-match"></span></div>
-      </div>
+      <!-- Wizard: always visible. Numbered steps take you from list → accounts →
+           launch, with the live status streaming at the bottom. -->
+      <div id="fgap-manual">
 
-      <!-- Step 2 · browse + cart -->
-      <div class="fgtl-board2">
-        <div>
-          <div class="fgtl-search">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-            <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
-            <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
-          </div>
-          <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
-          <div class="fgtl-ready" id="fgtl-ready" style="margin-top:14px">
-            <div class="rl">
-              <span class="lab">Ready to launch</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
-              <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
+      <!-- ── STEP 1 · BUILD YOUR INVITE LIST ───────────────────────────── -->
+      <div class="fgw-step" id="fgw-step-1">
+        <div class="fgw-step-head"><span class="fgw-num">1</span><span class="fgw-title">Build your invite list</span></div>
+        <p class="fgw-lead">Your invites come from a tab in the central FG Google Sheet — one you can open, review and edit before it fires. <button type="button" id="fgtl-open-sheet" class="fgw-sheet-link">Open the FG Sheet &#8599;</button></p>
+
+        <div class="fgw-two-up">
+          <!-- A · auto-generate: roles → accounts → Generate, all in one box -->
+          <div class="fgw-path fgw-path-auto">
+            <div class="fgw-path-head">A &#183; Auto-generate</div>
+            <div class="fgtl-step-eyebrow">Which roles to invite &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
+            <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
+            <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
+            <div class="filter-foot"><span class="hint">Defaults toward marketers.</span><span class="match" id="fgtl-match"></span></div>
+
+            <!-- accounts picker — nested: whose networks to search -->
+            <div class="fgw-accounts-note">Now pick <b>whose networks</b> to search for people matching the roles above &#8212; each person is invited by the account that found them.</div>
+            <div class="fgtl-board2">
+              <div>
+                <div class="fgtl-search">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                  <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
+                  <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
+                </div>
+                <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
+                <div class="fgtl-ready" id="fgtl-ready" style="margin-top:14px">
+                  <div class="rl">
+                    <span class="lab">Ready</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
+                    <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
+                  </div>
+                  <button type="button" class="fgtl-ready-btn dis" id="fgtl-ready-btn" disabled>+ Add all ready</button>
+                </div>
+                <div class="fgtl-people" id="fgtl-people"></div>
+              </div>
+              <div class="fgtl-cart">
+                <div class="fgtl-cart-head">
+                  <h3>Accounts to search</h3>
+                  <button type="button" id="fgtl-clear" class="fgtl-clear" style="display:none">Clear all</button>
+                </div>
+                <div id="fgtl-cart" class="fgtl-cart-list"></div>
+                <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
+                  <div class="tot"><span>Accounts</span><b id="fgtl-t-people">0</b></div>
+                  <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv" title="Upper bound — already-invited connections are skipped when sending">0</b></div>
+                  <!-- old in-cart Launch button — hidden; launching now happens
+                       from Live status ↓ (Run it now) on the generated tab. -->
+                  <button class="fgtl-go-btn" id="fgtl-go" style="display:none" disabled>Launch</button>
+                  <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
+                </div>
+              </div>
             </div>
-            <button type="button" class="fgtl-ready-btn dis" id="fgtl-ready-btn" disabled>+ Add all ready</button>
+
+            <!-- Generate CTA — bottom of the auto-generate box -->
+            <div class="fgw-gen-row">
+              <button type="button" id="fgtl-generate" class="fgw-btn fgw-btn-primary" title="Build the list from the roles + accounts above and write it to a tab in the FG sheet">Generate list &#8594; writes a tab to the sheet</button>
+              <span class="fgw-gen-note">Writes the invite list to a new tab in the FG Sheet. You then launch it from <b>Live status</b> &#8595; (Run it now).</span>
+            </div>
           </div>
-          <div class="fgtl-people" id="fgtl-people"></div>
+
+          <!-- B · bring your own -->
+          <div class="fgw-path">
+            <div class="fgw-path-head">B &#183; Bring your own</div>
+            <p class="fgw-path-desc">Fill a tab in the FG Sheet yourself, then tell us its name.</p>
+            <div class="fgw-format">
+              <div class="fgw-format-h">Tab format &#8212; put these in row&nbsp;1:</div>
+              <code class="fgw-format-cols">First Name &#183; Last Name &#183; LinkedIn URL &#183; Job Title &#183; Company &#183; Account Email</code>
+              <div class="fgw-format-note"><b>LinkedIn URL</b> and <b>Account Email</b> are required. <b>Account Email</b> = the GoLogin account's login email (that's who sends each invite).</div>
+            </div>
+            <div class="fgw-byo-row">
+              <select id="fgtl-byo-tab" class="fgw-select"><option value="">Loading tabs&#8230;</option></select>
+              <button type="button" id="fgtl-byo-refresh" class="fgw-icon-btn" title="Reload tab list">&#8635;</button>
+              <button type="button" id="fgtl-byo-use" class="fgw-btn" title="Fire from this tab in the FG sheet">Use this tab</button>
+            </div>
+          </div>
         </div>
-        <div class="fgtl-cart">
-          <div class="fgtl-cart-head">
-            <h3>Your launch list</h3>
-            <button type="button" id="fgtl-clear" class="fgtl-clear" style="display:none">Clear all</button>
-          </div>
-          <div id="fgtl-cart" class="fgtl-cart-list"></div>
-          <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
-            <div class="tot"><span>People</span><b id="fgtl-t-people">0</b></div>
-            <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv" title="Upper bound — already-invited connections are skipped when sending">0</b></div>
-            <button class="fgtl-go-btn" id="fgtl-go" disabled>Launch all sequentially</button>
-            <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
+        <div id="fgtl-list-status" class="fgw-list-status"></div>
+      </div>
+
+      <!-- ── STEP 2 · SCHEDULE ─────────────────────────────────────────── -->
+      <div class="fgw-step" id="fgw-step-2">
+        <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Schedule</span></div>
+        <p class="fgw-lead">Runs automatically on the <b id="fgw-sched-days">1st &amp; 15th</b> at 6am London time, in the <b>&#9729;&#65038; cloud VM</b> — so it keeps going after you close your laptop. <span id="fgw-sched-next"></span></p>
+        <button type="button" id="fgw-edit-schedule" class="fgw-btn">Edit schedule</button>
+      </div>
+
+      <!-- ── LIVE STATUS ───────────────────────────────────────────────
+           Bottom of the wizard: Auto-Pilot on/off + Run it now, then the
+           streaming campaign log / per-account board / live card. -->
+      <div class="fgw-step" id="fgw-step-live">
+        <div class="fgw-live-head">
+          <div class="fgw-step-head" style="margin:0"><span class="fgw-num">3</span><span class="fgw-title">Live status</span></div>
+          <div class="fgw-live-controls">
+            <span id="fgw-list-tab" class="fgw-list-tab" style="display:none"></span>
+            <button type="button" class="fgtl-watch-btn" id="fgw-watch" style="display:none" title="Watch the campaign's browser live on the VM"><span id="fgw-watch-dot" class="fgtl-live-dot" hidden></span>&#128065; Watch VM</button>
+            <button type="button" class="fgap-run" id="fgap-run" title="Fire the invite-list tab you built in step 1 to the cloud VM now, outside the schedule">&#9654; Run it now</button>
+            <button type="button" class="fgtl-card-stop" id="fgw-stop" style="display:none" title="Stop the running campaign on the VM">Stop</button>
+            <span class="fgw-toggle-lab">Auto-Pilot</span>
+            <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot on/off"></button>
           </div>
         </div>
+        <pre id="fgw-log" class="fgw-log">The campaign log streams here while a run is active.</pre>
       </div>
 
       <!-- Per-account progress board — sits ABOVE the live card during a run -->
@@ -2473,8 +2642,9 @@
               <div class="ssc-foot-cap" id="scrape-foot-cap">leads scraped</div>
             </div>
             <div class="ssc-dock">
+              <button type="button" id="btn-scrape-view" class="btn btn-secondary" style="display:none" onclick="scrapeDockView()" title="Watch this scrape running on the VM">👁 View</button>
+              <button type="button" id="btn-scrape-save" class="btn btn-secondary" style="display:none" onclick="saveScrapeConfig(this)" title="Save config changes so they're kept next time you open this scrape">Save config</button>
               <button type="button" id="btn-scrape-start" class="btn btn-start" onclick="startScrapeJob()">Start Scrape</button>
-              <button type="button" id="btn-scrape-pause" class="btn btn-secondary" onclick="pauseScrapeJob()">Pause</button>
               <button type="button" id="btn-scrape-stop" class="btn btn-secondary" onclick="stopScrapeJob()">Stop</button>
             </div>
           </div>
@@ -2562,7 +2732,7 @@
             <button type="button" id="btn-start" class="btn btn-start" onclick="window.launchStartNow()">Start a campaign</button>
             <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
-            <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
+            <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveButton()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
           </div>
           <div id="launch-run-note" class="launch-run-note"></div>
           <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
@@ -2607,7 +2777,7 @@
 
     <!-- ── Live Status ── -->
     <div class="section collapsible collapsed" id="nav-status">
-      <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">Live Status</span></h2>
+      <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">7. Live Status</span></h2>
       <div class="collapsible-body">
       <!-- v2.59.22: when a campaign is running/monitoring the SAME dashboard
            card (#active-card) is relocated into this slot by placeLiveCard(),
@@ -2615,6 +2785,10 @@
            the same element renderActiveCard already drives) with a bigger log.
            The legacy cockpit/runbar below are hidden via #nav-status.is-card-live. -->
       <div id="wiz-live-slot"></div>
+      <!-- Per-account status for a cloud CC+IC campaign (Account | Status), rendered
+           by renderCloudAccountsPanel() from the engine's /accounts endpoint. Hidden
+           until there's data. -->
+      <div id="cloud-accounts-panel" class="cloud-accounts-panel" hidden></div>
       <!-- Post-launch tips — 2-col grid: cockpit + queue + log on the left,
            tips card on the right (320 px fixed). Tips card is hidden by
            default and shown by renderPostLaunchSidebar() during running /
@@ -3289,6 +3463,33 @@
     </div>
   </div>
 
+  <!-- v2.160.87 — Cloud check-now step 2: WHERE should the check run? Shown
+       after the scope question for CLOUD campaigns only. "Cloud VMs" keeps the
+       existing engine check; "This machine" runs the local GoLogin sweep
+       (same engine as the local campaigns' check) against the cloud campaign's
+       sheet, then mirrors results back to the engine. -->
+  <div id="check-where-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCheckWhereModal()">
+    <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="check-where-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCheckWhereModal()">&times;</button>
+      <div class="stop-choice-eyebrow">Run the check</div>
+      <h3 id="check-where-title" class="modal-title stop-choice-headline">Where should this check run?</h3>
+      <p class="stop-choice-sub">Same check either way — detect accepted connections and send the intro where Introduction Status is blank.</p>
+      <div class="stop-choice-row">
+        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('vm')">
+          <div class="stop-choice-pill-headline">Cloud VMs</div>
+          <div class="stop-choice-pill-sub">The cloud machines run it — you can close the app.</div>
+        </button>
+        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('local')">
+          <div class="stop-choice-pill-headline">This machine</div>
+          <div class="stop-choice-pill-sub">Opens the GoLogin browsers here, like a local campaign's check. Keep the app open.</div>
+        </button>
+      </div>
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="modal-cancel-link" onclick="closeCheckWhereModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v2.100 — Reconnect & retry failed intros. Replaces the native confirm()
        so the operator can flip auto-accept ON inline and, when the primary's
        GoLogin profile isn't known, pick which profile is the primary's. Driven
@@ -3441,7 +3642,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.36"></script>
+  <script type="module" src="/js/app.js?v=2.160.94"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

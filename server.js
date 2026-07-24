@@ -27,8 +27,9 @@ import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updat
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
-import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
+import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getAllJobsFast as getAllScrapeJobsFast, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
 import { addScrapeCampaign, listScrapeCampaigns, getScrapeCampaign, updateScrapeCampaign } from './src/scrape-campaigns.js';
+import { getScrapeOverride, saveScrapeOverride } from './src/scrape-config-overrides.js';
 import { appendAction, readScrapeLog } from './src/scrape-campaign-logs.js';
 import { mergeCampaignsWithJobs, groupJobsIntoCampaigns } from './public/js/scrape-board.mjs';
 import { getOperatorId } from './src/operator-id.js';
@@ -49,7 +50,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -92,8 +93,10 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg } from './src/connections/fg-sync.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
+import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
+import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -101,7 +104,7 @@ import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID }
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse } from './src/soo-writer.js';
 import { reconcileCloudConnections } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
-import { buildAutopilotConfig, nextRun } from './src/fg-autopilot.js';
+import { buildAutopilotConfig, nextRun, cycleKey } from './src/fg-autopilot.js';
 import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
 import { pickUnreconciled } from './src/fg-autopilot-reconcile.js';
 import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
@@ -1126,7 +1129,9 @@ function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 // to the engine via campaigns-client. The engine runs it in the cloud (survives
 // the laptop closing). No local browser is launched. The regular local
 // /api/campaign/start path below is untouched.
-app.post('/api/campaign/start-cloud', async (req, res) => {
+// Named so /api/campaign/cloud/:id/edit-redispatch can re-enter the same
+// pipeline after stopping the original campaign (excludeLeadUrls set).
+async function handleStartCloud(req, res) {
   try {
     const body = req.body || {};
     const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
@@ -1197,6 +1202,18 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
       // `row` = the FULL sheet row, so the engine personalizes templates against
       // every column header exactly like a local campaign ({company}, {Event}, …).
       leads.push({ leadUrl, fullName, memberUrn: row['LinkedIn URN'] || row['Member ID'] || null, routeAccount, row });
+    }
+    // Edit-redispatch: drop leads the ORIGINAL run already processed, so a
+    // "Save edits & resume" only redispatches what was still pending when the
+    // operator paused. Normal launches never set excludeLeadUrls.
+    const editExcluded = new Set((Array.isArray(body.excludeLeadUrls) ? body.excludeLeadUrls : []).map((u) => normalizeProfileUrl(u)));
+    if (editExcluded.size) {
+      const before = leads.length;
+      for (let i = leads.length - 1; i >= 0; i--) {
+        if (editExcluded.has(normalizeProfileUrl(leads[i].leadUrl))) leads.splice(i, 1);
+      }
+      cloudLog(`[cloud] edit-redispatch: skipped ${before - leads.length} already-processed lead(s), ${leads.length} remaining`);
+      if (!leads.length) return res.status(400).json({ error: 'Nothing left to send — every lead in the sheet was already processed by the original run.' });
     }
     if (!leads.length) {
       const why = autoRouted && skippedNoAccount.length
@@ -1353,7 +1370,8 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
-});
+}
+app.post('/api/campaign/start-cloud', handleStartCloud);
 
 // Cloud-campaign observability — proxied through the local server so the
 // frontend never handles the engine token (it lives in campaigns-client). The
@@ -1525,6 +1543,48 @@ app.get('/api/campaign/cloud/:id/leads', async (req, res) => {
   res.json(r);
   reconcileCloud(req.params.id, r.leads).catch(() => {}); // after response — never blocks
 });
+app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
+  const r = await getCloudCampaignAccounts(req.params.id);
+  if (r && r.error) return res.status(502).json(r);
+  res.json(r);
+});
+// Operator Retry on a benched (weekly-cap) account — proxied so the engine
+// token stays server-side.
+app.post('/api/campaign/cloud/:id/accounts/:pid/unbench', async (req, res) => {
+  const r = await unbenchCloudAccount(req.params.id, req.params.pid);
+  if (r && r.error) return res.status(502).json(r);
+  res.json(r || { ok: true });
+});
+// Local check of a CLOUD campaign — write-back step. After the operator runs
+// the local GoLogin sweep (POST /api/bulk-check-now) against a cloud campaign's
+// sheet, this re-reads that sheet and mirrors each lead's Connection Accepted
+// Status + Introduction Status into the engine (fill-only there), so the VM's
+// next sweep won't double-intro anyone the local check already introduced.
+app.post('/api/campaign/cloud/:id/sync-sheet-status', async (req, res) => {
+  try {
+    const d = await getCloudCampaign(req.params.id);
+    const camp = d && d.campaign;
+    if (!camp || !camp.sheet_url) return res.status(404).json({ error: 'Cloud campaign (or its sheet) not found.' });
+    const cfg = camp.config || {};
+    const linkedinColumn = ((req.body && req.body.linkedinColumn) || cfg.linkedinColumn || '').toString();
+    const rows = await fetchSheet(camp.sheet_url);
+    const urlOf = (row) => ((linkedinColumn && row[linkedinColumn]) || row['Linkedin URL'] || row['LinkedIn URL'] || row['linkedin url'] || '').toString().trim();
+    const leads = [];
+    for (const row of rows) {
+      const leadUrl = urlOf(row);
+      if (!leadUrl) continue;
+      const acc = (row['Connection Accepted Status'] || '').toString().trim();
+      const intro = (row['Introduction Status'] || '').toString().trim();
+      if (!acc && !intro) continue;
+      leads.push({ leadUrl, connectionAcceptedStatus: acc, introductionStatus: intro });
+    }
+    const r = await syncCloudLeadStatuses(req.params.id, leads);
+    if (r && r.error) return res.status(502).json(r);
+    res.json({ ok: true, sheetRows: rows.length, candidates: leads.length, matched: (r && r.matched) || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 // ── Team status (feature ⑩ — ADMIN-ONLY) ─────────────────────────────────
 // Per-operator aggregate over the engine cloud list + this machine's local
 // campaign/queue. HARD-GATED: only viewers whose login email is in
@@ -1664,6 +1724,23 @@ app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   if (!rec) return res.status(404).json({ error: 'No saved launch config for this campaign.' });
   res.json({ name: rec.name || '', config: rec.config || {} });
 });
+// v2.160.44: persist edits made in the OPEN-to-edit wizard back onto the
+// campaign's own launch-config snapshot (creating one for older campaigns that
+// never had it), so re-opening the stopped campaign shows the edits. The
+// campaign's engine status is untouched — it stays stopped.
+app.post('/api/campaign/cloud/:id/launch-config', async (req, res) => {
+  const body = req.body || {};
+  const config = body.config;
+  if (!config || typeof config !== 'object') {
+    return res.status(400).json({ error: 'Missing config.' });
+  }
+  try {
+    await saveCloudLaunchConfig(req.params.id, body.name || '', config);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Failed to save launch config.' });
+  }
+});
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
   const r = await stopCloudCampaign(req.params.id, {
     pause: !!req.query.pause,
@@ -1682,15 +1759,47 @@ app.post('/api/campaign/cloud/:id/resume', async (req, res) => {
 // record (engine flips terminal status → running; sent leads skipped). Surface
 // the engine's error (incl. 404 until it ships /restart) so the UI degrades.
 app.post('/api/campaign/cloud/:id/restart', async (req, res) => {
-  const r = await restartCloudCampaign(req.params.id, { fromStart: !!(req.body && req.body.fromStart) });
+  const r = await restartCloudCampaign(req.params.id, {
+    fromStart: !!(req.body && req.body.fromStart),
+    dailyLimit: req.body && req.body.dailyLimit,
+  });
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
+});
+// Edit a dispatched cloud campaign (OPEN → wizard → pause → Save edits &
+// resume). The engine has no in-place update, so "edit" = stop the paused
+// original and redispatch its still-pending leads as a NEW campaign with the
+// edited wizard config. Already-processed leads are excluded via
+// excludeLeadUrls so nobody is contacted twice.
+app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const cur = await getCloudCampaign(id);
+    if (cur && cur.error) return res.status(502).json(cur);
+    const status = String(((cur && cur.campaign) || cur || {}).status || '');
+    if (status === 'running') return res.status(409).json({ error: 'Pause the campaign first — edits redispatch its remaining leads.' });
+    const got = await getCloudCampaignLeads(id);
+    if (got && got.error) return res.status(502).json(got);
+    const processed = (got.leads || [])
+      .filter((l) => String(l.status || '') !== 'pending')
+      .map((l) => l.leadUrl)
+      .filter(Boolean);
+    // Stop the original for good BEFORE dispatching the replacement — two live
+    // campaigns sending to the same pending leads is the worst failure mode.
+    const stopped = await stopCloudCampaign(id);
+    if (stopped && stopped.error) return res.status(502).json({ error: `Could not stop the original campaign: ${stopped.error}` });
+    cloudLog(`[cloud] edit-redispatch: ${id} stopped (${processed.length} already-processed lead(s)) — redispatching remainder with edited config`);
+    req.body = { ...(req.body || {}), excludeLeadUrls: processed };
+    return handleStartCloud(req, res);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 // Monitoring controls (Task 3 Part B) — proxy ⚡ Check now / auto-checks toggle to
 // the engine. Surface the engine's error (incl. 404 until it ships these routes)
 // so the client degrades gracefully rather than throwing.
 app.post('/api/campaign/cloud/:id/check-now', async (req, res) => {
-  const r = await cloudCheckNow(req.params.id);
+  const r = await cloudCheckNow(req.params.id, (req.body && req.body.scope) === 'all' ? 'all' : 'campaign');
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });
@@ -2412,6 +2521,26 @@ let _fgActiveHandle = null;
 // ORTUS_DATA_DIR is set (e.g. the packaged Electron app / `npm run dev:app`).
 const _fgCloudRunStore = makeRunStore(dataPath('fg-cloud-runs.json'));
 
+// Sheet-driven (list) run reconcile: stamp Status / Invited At / Note / Member ID
+// back into the run's OWN list tab from the engine's per-lead results, so the tab
+// you built doubles as the live ledger. Idempotent (re-stamping the same value is
+// a no-op) and delta-only (pending leads produce no update). Returns
+// { reconciled } true once the campaign is terminal so the record is retired.
+async function reconcileListRun(record) {
+  const camp = await getCloudCampaign(record.cloudId);
+  const status = String((camp && (camp.campaign?.status ?? camp.status)) || '');
+  let leads = [];
+  try { const res = await getCloudCampaignLeads(record.cloudId); leads = (res && res.leads) || []; }
+  catch (e) { throw new Error(`could not read cloud leads: ${e.message}`); }
+  const updates = ledgerUpdatesFromLeads(leads);
+  if (updates.length) {
+    const r = await updateFgListLedger(record.tab, updates);
+    try { campaignLog(`[FG-cloud] list ledger "${record.tab}": stamped ${r.updated} row(s)`); } catch (_) {}
+  }
+  const terminal = ['done', 'cancelled', 'error', 'stopped'].includes(status);
+  return { reconciled: terminal, updated: updates.length };
+}
+
 // Reconcile every dispatched cloud-FG run: pull engine results and write invited
 // members back to the FG sheet. Runs on a timer while the app is open AND once at
 // startup (so a run that finished while the laptop was closed is written back).
@@ -2432,7 +2561,11 @@ async function reconcileFgCloudRuns() {
     for (const record of _fgCloudRunStore.load()) {
       if (record.status === 'reconciled') continue;
       try {
-        const out = await reconcileCloudRun(record, deps);
+        // Sheet-driven (list) runs write the ledger back into their OWN tab; the
+        // legacy per-account runs write the shared FG-Invites tab. Branch on kind.
+        const out = record.kind === 'list'
+          ? await reconcileListRun(record)
+          : await reconcileCloudRun(record, deps);
         if (out.reconciled) _fgCloudRunStore.update(record.cloudId, { status: 'reconciled' });
       } catch (e) {
         try { campaignLog(`[FG-cloud] reconcile ${record.cloudId} failed: ${e.message}`); } catch (_) {}
@@ -2467,6 +2600,110 @@ app.post('/api/fg/team-launch/stop', async (_req, res) => {
   res.json({ ok: true });
 });
 
+// The tab an FG run reads/writes: "FG <next run day>" so a list generated ahead
+// of time is picked up by the scheduled fire on that day. Same key for generate
+// and a shortly-after manual launch (nextRun is deterministic within a day).
+function fgNextRunCycleKey(days = [1, 15]) {
+  const d = nextRun(new Date(), { days, enabled: true });
+  return cycleKey(d || new Date());
+}
+
+// The FG Google Sheet's own URL — so the wizard can deep-link "Open the FG Sheet".
+// Asks the Apps Script (getSheetUrl); falls back to a local FG_SHEET_URL env var
+// when the deployed script predates that action.
+app.get('/api/fg/sheet-url', async (_req, res) => {
+  try {
+    // Retry (postFg default 3× w/ backoff): the Apps Script 302→echo dance
+    // intermittently 404s on a cold call, especially right after launch while the
+    // app is busy loading profiles. A single attempt would spuriously fail.
+    const r = await postFg({ action: 'getSheetUrl' }, { timeoutMs: 30000 });
+    if (r && r.url) return res.json({ url: r.url });
+  } catch (_) { /* fall through to env */ }
+  if (process.env.FG_SHEET_URL) return res.json({ url: process.env.FG_SHEET_URL });
+  return res.status(404).json({ error: 'FG sheet URL not available — redeploy the FG Apps Script (getSheetUrl) or set FG_SHEET_URL.' });
+});
+
+// All tab names in the FG sheet — populates the "bring your own" dropdown.
+app.get('/api/fg/tabs', async (_req, res) => {
+  try {
+    // Retry (postFg default 3× w/ backoff) — the listTabs call can transiently
+    // fail on a cold Apps Script; one attempt left the dropdown silently empty.
+    const r = await postFg({ action: 'listTabs' }, { timeoutMs: 30000 });
+    if (r && Array.isArray(r.tabs)) return res.json({ tabs: r.tabs });
+    return res.status(502).json({ error: (r && r.error) || 'Could not list tabs', tabs: [] });
+  } catch (e) { return res.status(502).json({ error: e.message, tabs: [] }); }
+});
+
+// Manually stamp the ledger (Status / Invited At / Note / Member ID) back into a
+// list tab from a cloud run's current results. The 30s reconcile does this
+// automatically; this endpoint is for firing it on demand (e.g. an in-flight run
+// registered before auto-reconcile, or a one-off catch-up).
+app.post('/api/fg/list/writeback', async (req, res) => {
+  const b = req.body || {};
+  const cloudId = String(b.cloudId || '').trim();
+  const tab = String(b.tab || '').trim();
+  if (!cloudId || !tab) return res.status(400).json({ error: 'cloudId and tab are required.' });
+  try {
+    const out = await reconcileListRun({ cloudId, tab, kind: 'list' });
+    return res.json({ ok: true, updated: out.updated, reconciled: out.reconciled });
+  } catch (e) { return res.status(502).json({ error: e.message }); }
+});
+
+// GENERATE (auto option): build the invite list from the role keywords and write
+// it to the per-run tab. No hard monthly cap — list all eligible; LinkedIn's own
+// invite credits are the ceiling. The tab is then reviewable/editable before the
+// fire reads it.
+app.post('/api/fg/list/generate', async (req, res) => {
+  const b = req.body || {};
+  const pairs = Array.isArray(b.pairs) ? b.pairs.filter((p) => p && p.operator && p.account && p.profileId) : [];
+  if (!pairs.length) return res.status(400).json({ error: 'At least one paired account is required.' });
+  const month = b.month || fgMonth();
+  const keywords = Array.isArray(b.keywords) ? b.keywords : [];
+  let snap;
+  try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
+  const alreadyInvited = invitedKeysFromState(snap.invites);
+  const criteria = fgCriteria({ jobTitles: keywords });
+
+  // Pre-compute each account's FG targets through the roster bridge (dbCall). The
+  // connections DB (~152MB) is NOT on operator machines, so a direct
+  // buildFgTargets() ENOENTs — dbCall runs the read locally when the DB is present
+  // and otherwise delegates to the central fg-roster /rpc (same match code).
+  // buildListRows() is synchronous, so we resolve every pair's targets up front and
+  // hand it a plain sync lookup. NOTE: budget is intentionally omitted — Infinity
+  // serialises to null over JSON/RPC, which would zero out the list; the roster's
+  // buildFgTargets defaults budget to Infinity when the arg is absent.
+  const targetsByProfile = new Map();
+  try {
+    for (const pair of pairs) {
+      const out = await dbCall('buildFgTargets', [criteria, {
+        operator: pair.operator, operatorName: pair.operatorName, account: pair.account,
+        month, alreadyInvited,
+      }]);
+      let reason = '';
+      if (!out || !out.count) reason = (out && out.matched === 0) ? 'no connections match these roles' : 'all matching connections already invited';
+      targetsByProfile.set(pair.profileId, { rows: (out && out.rows) || [], count: (out && out.count) || 0, reason });
+    }
+  } catch (e) {
+    // Never let a build failure (e.g. roster service not deployed) become an
+    // unhandled rejection — that would take the whole app down.
+    return res.status(502).json({ error: `Could not build the list: ${e.message}` });
+  }
+
+  const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+  const buildTargets = (pair) => targetsByProfile.get(pair.profileId) || { rows: [], count: 0, reason: 'no targets for this account' };
+  let built;
+  try {
+    built = buildListRows(pairs, { accountEmails }, { buildTargets });
+  } catch (e) {
+    return res.status(502).json({ error: `Could not build the list: ${e.message}` });
+  }
+  const { header, rows, perAccount, skipped } = built;
+  const tab = fgListTabName(b.cycleKey || fgNextRunCycleKey(b.days));
+  try { await writeFgList(tab, rows, { header }); }
+  catch (e) { return res.status(502).json({ error: `Could not write the list tab "${tab}": ${e.message}` }); }
+  return res.json({ tab, count: rows.length, perAccount, skipped });
+});
+
 app.post('/api/fg/team-launch/start', async (req, res) => {
   if (_fgTeam.running) return res.status(409).json({ error: 'A team launch is already running.' });
   const b = req.body || {};
@@ -2475,6 +2712,37 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
 
   if ((b.target || 'local') === 'cloud') {
     const month = b.month || fgMonth();
+
+    // Sheet-driven flow (new two-option FG): read the pre-generated invite-list
+    // tab and work down it. Each lead is pinned to its account (Account Email →
+    // profileId). No tab yet → tell the operator to generate it first.
+    if (b.source === 'list') {
+      const owner = getOperatorEmail() || req.user || '';
+      const tab = String(b.tab || '').trim() || fgListTabName(b.cycleKey || fgNextRunCycleKey(b.days));
+      let rows;
+      try { rows = await readFgList(tab); }
+      catch (e) { return res.status(502).json({ error: `Could not read the list tab "${tab}": ${e.message}` }); }
+      if (!rows || rows.length < 2) return res.status(400).json({ error: `No invite list in tab "${tab}" — generate the list first.` });
+      const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+      const out = await dispatchFromRows(rows, {
+        accountEmails,
+        // accountEmails in the config too → the engine's /accounts + campaign log
+        // show the account EMAIL (== GoLogin name), not the raw profileId.
+        campaign: { name: `Team Follower Growth · ${month}`, owner, config: { inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE, accountEmails } },
+      }, { startCloud: (payload) => startCloudCampaign(payload) });
+      if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
+      // Register this run so the reconcile loop stamps the ledger (Status /
+      // Invited At / Note / Member ID) back into ITS tab as invites go out.
+      try { _fgCloudRunStore.add({ cloudId: out.cloudId, kind: 'list', tab, owner, status: 'dispatched', dispatchedAt: Date.now() }); } catch (_) {}
+      reconcileFgCloudRuns().catch(() => {}); // kick a first poll shortly (non-blocking)
+      // Slim per-account plan (profileId → queued count) so the Live-status board
+      // can show how many invites each account has lined up. The engine's /leads
+      // reports pending leads as unrouted (account:null), so this fire-time plan is
+      // the only source of the per-account queued totals.
+      const plan = (out.perAccount || []).map((a) => ({ profileId: a.profileId, account: a.account, count: a.count }));
+      return res.json({ started: true, cloudId: out.cloudId, leadCount: out.leadCount, skipped: out.skipped, tab, perAccount: plan });
+    }
+
     const keywords = Array.isArray(b.keywords) ? b.keywords : [];
     let snap;
     try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
@@ -3380,16 +3648,45 @@ app.get('/api/scrape/campaigns', async (_req, res) => {
   try {
     // SHARED board: group EVERY operator's engine jobs into strips (not just
     // this install's). Each job is tagged with its own userId + owner email,
-    // so the board shows the whole team's scrapes.
-    const jobsRes = await getAllScrapeJobs();
+    // so the board shows the whole team's scrapes. Fast variant (single attempt,
+    // 10s) — this route is polled every 2.5s, so the next poll is the retry.
+    const jobsRes = await getAllScrapeJobsFast();
     if (jobsRes && jobsRes.error) return res.status(502).json({ error: jobsRes.error });
     const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes && jobsRes.jobs) || [];
     const me = getOperatorEmail() || '';
     const campaigns = groupJobsIntoCampaigns(jobs, { currentEmail: me, currentOperatorId: getOperatorId() });
+    // Apply any saved config overrides (operator edited + Saved a scrape's config)
+    // so the board strip AND openScrapeSetupFor reflect the saved edits on re-open.
+    for (const c of campaigns) {
+      const ov = await getScrapeOverride(c.id);
+      if (ov) {
+        if (ov.searchUrls && ov.searchUrls.length) c.searchUrls = ov.searchUrls;
+        if (ov.sheetUrl) c.sheetUrl = ov.sheetUrl;
+        if (ov.tabName) c.tabName = ov.tabName;
+        if (ov.name) c.name = ov.name;
+        if (ov.profileIds && ov.profileIds.length) c.profileIds = ov.profileIds;
+        c._edited = true;
+      }
+    }
     res.json({ campaigns, me });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+// Save an edited config for a scrape strip (keyed by its board id) so the edits
+// persist and win on re-open. Local-only; used by the wizard's Save button.
+app.post('/api/scrape/campaigns/:id/config', async (req, res) => {
+  try {
+    const { searchUrls, sheetUrl, tabName, name, profileIds } = req.body || {};
+    const saved = await saveScrapeOverride(req.params.id, { searchUrls, sheetUrl, tabName, name, profileIds });
+    res.json({ ok: true, config: saved });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.get('/api/scrape/campaigns/:id/config', async (req, res) => {
+  res.json({ config: await getScrapeOverride(req.params.id) });
 });
 
 app.post('/api/scrape/campaigns/:id/toggle', async (req, res) => {
@@ -3833,7 +4130,11 @@ app.post('/api/bulk-check-now', async (req, res) => {
   try {
     let { sheetUrl, linkedinColumn, profileId, profileIds,
           primaryName, primaryIntroBody, primaryUrl, introTitle,
-          autoAcceptPrimary, primarySource, allSenders, reviveFailedIntros } = req.body || {};
+          autoAcceptPrimary, primarySource, allSenders, reviveFailedIntros,
+          // Cloud-campaign local check (v2.160.87): the request carries the CLOUD
+          // campaign's mode/templates, since the local `campaign` singleton may
+          // hold a stale/unrelated local config. Fall back to current behaviour.
+          mode: reqMode, ccDmBody: reqCcDmBody, senderFirstNames: reqSenderFirstNames } = req.body || {};
     // v2.78: "all senders in the sheet" — ignore any campaign/explicit accounts
     // and derive every account from the sheet's Sender column (below), even
     // while a campaign is running.
@@ -4084,10 +4385,10 @@ app.post('/api/bulk-check-now', async (req, res) => {
           const _seen = new Set(r.connectedUrls);
           for (const u of _revive) if (!_seen.has(u)) r.connectedUrls.push(u);
         }
-        const _phaseMode = campaign.mode || '';
+        const _phaseMode = reqMode || campaign.mode || '';
         if (!r.error && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
           if (_phaseMode === 'connect_and_message') {
-            const _ccDmBody = ((campaign.templates && campaign.templates.ccDmBody) || '').trim();
+            const _ccDmBody = ((reqCcDmBody !== undefined ? reqCcDmBody : (campaign.templates && campaign.templates.ccDmBody)) || '').trim();
             if (_ccDmBody) {
               try {
                 await runAutoDms({
@@ -4098,7 +4399,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
                   linkedinColumn: linkedinColumn || '',
                   connectedUrls: r.connectedUrls,
                   templates: campaign.templates || {},
-                  senderFirstNames: campaign.senderFirstNames || {},
+                  senderFirstNames: reqSenderFirstNames || campaign.senderFirstNames || {},
                   log: campaignLog,
                 });
               } catch (dmErr) {
@@ -4117,7 +4418,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
                 linkedinColumn: linkedinColumn || '',
                 connectedUrls: r.connectedUrls,
                 templates: _effectiveTemplates,
-                senderFirstNames: campaign.senderFirstNames || {},
+                senderFirstNames: reqSenderFirstNames || campaign.senderFirstNames || {},
                 log: campaignLog,
               });
             } catch (introErr) {

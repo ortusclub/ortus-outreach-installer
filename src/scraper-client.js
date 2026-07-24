@@ -138,7 +138,7 @@ function authHeaders() {
  * never throws. HTTP 5xx/429 map to a transient-looking error so withWriteRetry
  * retries them; 4xx are returned as-is (retrying won't help).
  */
-async function requestOnce(method, path, body) {
+async function requestOnce(method, path, body, { timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
   const base = engineUrl();
   if (!base) {
     return { error: 'Scraper engine not configured (set SCRAPER_ENGINE_URL)' };
@@ -148,7 +148,7 @@ async function requestOnce(method, path, body) {
       method,
       headers: authHeaders(),
       body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const text = await res.text();
     let parsed;
@@ -237,6 +237,20 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
  *  each job with its own userId; we group by that. Retried like getJobs. */
 export function getAllJobs() {
   return requestWithRetry('GET', '/api/jobs');
+}
+
+/** Board-poll variant of getAllJobs: SINGLE attempt, SHORT timeout. The Sales Nav
+ *  Scraper board re-polls every 2.5s, so a failed poll doesn't matter — the next
+ *  one IS the retry. The retried getAllJobs (3 attempts x 20s) instead piled up to
+ *  ~60s per poll and surfaced a raw "aborted due to timeout" while the engine was
+ *  busy. 10s single-shot keeps the board responsive under load. */
+export function getAllJobsFast() {
+  // 25s (not the usual 20s or a tight 10s): the engine's /api/jobs currently
+  // returns the FULL job history for all operators — ~10MB / ~9s on a busy engine
+  // — so a short timeout spuriously fails the board's poll. Still single-attempt
+  // (the 2.5s board poll is its own retry). The real fix is slimming /api/jobs
+  // engine-side to a lightweight board projection.
+  return requestOnce('GET', '/api/jobs', undefined, { timeoutMs: 25000 });
 }
 
 /** Pause the running scrape for a profile. Idempotent → retried. */

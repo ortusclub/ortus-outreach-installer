@@ -17,6 +17,9 @@ export const ROSTER_FNS = [
   'searchConnections',
   'exportConnections',
   'buildLeadRows',
+  // Auto-generate the FG invite list: the connections DB isn't on operator
+  // machines, so the list builder must run over the roster service too.
+  'buildFgTargets',
 ];
 
 // Whitelist guard + call. The service's trust boundary: an untrusted `fn` never

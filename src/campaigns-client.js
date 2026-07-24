@@ -178,6 +178,12 @@ export function getCloudCampaignLeads(id) {
   return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}/leads`);
 }
 
+/** Per-account status for the campaign's accounts (daily used vs limit, parked/
+ *  throttled/weekly-cap, needs-login). Feeds the Live Status "Accounts" panel. */
+export function getCloudCampaignAccounts(id) {
+  return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}/accounts`);
+}
+
 /**
  * Signal the engine that the local primary browser has accepted the campaign's
  * pending sender invitations (cloud primary-handshake, local-only primary).
@@ -293,19 +299,33 @@ export function resumeCloudCampaign(id) {
  * control calls; returns { error, status } until the engine ships the route so
  * the UI can degrade gracefully.
  */
-export function restartCloudCampaign(id, { fromStart = false } = {}) {
-  return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/restart`, { fromStart: !!fromStart });
+export function restartCloudCampaign(id, { fromStart = false, dailyLimit } = {}) {
+  const body = { fromStart: !!fromStart };
+  if (dailyLimit != null && Number(dailyLimit) > 0) body.dailyLimit = Math.floor(Number(dailyLimit));
+  return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/restart`, body);
 }
 
 // Monitoring controls (Task 3 Part B) — mirror the local ⚡ Check now / Automatic
 // checks toggle. Single-shot (requestOnce): user-initiated, fine to fail loudly.
 // Return { error, status } until the engine ships these routes, so the UI can
 // degrade gracefully ("engine update pending") instead of throwing.
-export function cloudCheckNow(id) {
-  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check-now`);
+// scope: 'campaign' (default) sweeps just this campaign's accounts; 'all' sweeps
+// every unique account in the sheet's "Account Used" column (engine derives it).
+export function cloudCheckNow(id, scope = 'campaign') {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check-now`, { scope: scope === 'all' ? 'all' : 'campaign' });
 }
 export function setCloudAutoChecks(id, enabled) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });
+}
+// Un-bench a weekly-capped account (operator Retry in the Accounts panel).
+export function unbenchCloudAccount(id, profileId) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/unbench`, {});
+}
+// Local-check write-back: mirror the sheet's per-lead statuses into the engine
+// after the operator runs this cloud campaign's acceptance check on their OWN
+// machine (local GoLogin sweep). Engine applies fill-only — safe to re-post.
+export function syncCloudLeadStatuses(id, leads) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/lead-status-sync`, { leads: Array.isArray(leads) ? leads : [] });
 }
 
 /**

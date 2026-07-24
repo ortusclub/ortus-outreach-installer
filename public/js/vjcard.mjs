@@ -95,8 +95,15 @@ export function vjCardControlsFor(status = {}) {
   const queued = s.state === 'queued';
   const running = !monitor && !done && !queued;
 
+  // Running cloud → pause-to-edit wizard; STOPPED/cancelled cloud → the setup
+  // wizard prefilled + fully editable (edit & re-launch); cleanly-done cloud →
+  // the live cockpit. Both editors fall back to openCloudLive when no launch
+  // config was snapshotted (pre-2.133 campaigns).
   const openOnclick = cloud
-    ? (queued ? `viewCloudCampaign('${id}')` : `openCloudLive('${id}')`)
+    ? (queued ? `viewCloudCampaign('${id}')`
+      : running ? `openRunningCampaignEditor('${id}')`
+        : s.bad ? `openCampaignForEdit('${id}')`
+          : `openCloudLive('${id}')`)
     : (queued ? `window.editQueuedCampaign && window.editQueuedCampaign('${rawId}')` : 'viewRunningCampaign()');
 
   const c = {
@@ -131,7 +138,7 @@ export function vjCardControlsFor(status = {}) {
     }
     c.extra.push({ tip: 'Duplicate', kind: 'dup', onclick: `duplicateCampaign('${id}')` });
     if (!cloud && s.hist) c.extra.push({ tip: 'Debrief', kind: 'debrief', onclick: `window.openDebrief('${id}')` });
-    c.extra.push({ tip: 'Dismiss', kind: 'dismiss', onclick: cloud ? `dismissCloudDone('${id}', this)` : `dismissLocalDone('${id}')` });
+    c.extra.push({ tip: 'Delete', kind: 'delete', onclick: `deleteBoardCampaign('${id}', this)` });
   } else if (queued) {
     c.extra.push({ tip: 'Cancel', kind: 'cancel', onclick: cloud ? `stopCloudCampaignUI('${id}')` : `window.cancelQueuedCampaign && window.cancelQueuedCampaign('${rawId}')` });
   }

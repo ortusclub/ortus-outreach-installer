@@ -31,6 +31,11 @@ function doPost(e) {
     else if (data.action === 'fgMarkInvited') out = fgMarkInvited_(data);
     else if (data.action === 'fgMarkFailed') out = fgMarkFailed_(data);
     else if (data.action === 'fgObserveCredits') out = fgObserveCredits_(data);
+    else if (data.action === 'fgWriteList') out = fgWriteList_(data);
+    else if (data.action === 'fgReadList') out = fgReadList_(data);
+    else if (data.action === 'fgUpdateListLedger') out = fgUpdateListLedger_(data);
+    else if (data.action === 'getSheetUrl') out = { url: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
+    else if (data.action === 'listTabs') out = { tabs: SpreadsheetApp.getActiveSpreadsheet().getSheets().map(function (s) { return s.getName(); }) };
     else out = { error: 'Unknown action: ' + data.action };
     return json_(out);
   } catch (err) {
@@ -106,6 +111,100 @@ function fgQueue_(rows) {
     sh.getRange(startRow, 15, fresh.length, 1).setNumberFormat('dd mmm yyyy, HH:mm'); // Run At col (15th)
   }
   return { queued: fresh.length, skippedDuplicates: rows.length - fresh.length };
+}
+
+// ── Per-run invite-list tabs (fg-list.js) ──────────────────────────────────
+// A per-run tab (named "FG YYYY-MM-DD") is BOTH the editable intent list and
+// the ledger. fgWriteList creates/replaces it (the auto "Generate" path);
+// fgReadList reads it back at fire time (auto + a BYO tab living in this sheet).
+
+// Create (or fully replace) a per-run invite-list tab and write header + rows.
+// Idempotent: re-generating overwrites the tab so a list never doubles up.
+function fgWriteList_(data) {
+  var name = String(data.tab || '').trim();
+  if (!name) return { error: 'fgWriteList: missing tab name' };
+  var header = data.header || [];
+  var rows = data.rows || [];
+  var width = header.length || (rows[0] ? rows[0].length : 0);
+  if (!width) return { error: 'fgWriteList: nothing to write' };
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  else sh.clear();
+  if (header.length) {
+    sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  if (rows.length) {
+    sh.getRange(2, 1, rows.length, width).setValues(rows);
+  }
+  return { tab: name, written: rows.length };
+}
+
+// Read a per-run invite-list tab back as raw values (header row first). A
+// missing tab or a header-only tab returns { rows: [] } so the fire path skips
+// cleanly (and, for a missing tab, alerts the operator).
+function fgReadList_(data) {
+  var name = String(data.tab || '').trim();
+  if (!name) return { error: 'fgReadList: missing tab name' };
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sh) return { rows: [], missing: true };
+  var values = sh.getDataRange().getValues();
+  if (values.length < 2) return { rows: values.length ? values : [] };
+  return { rows: values };
+}
+
+// Write the ledger columns (Status / Invited At / Note / Member ID) back into a
+// per-run invite-list tab, matching rows by LinkedIn URL. The tab IS the ledger:
+// as the cloud run sends invites, this stamps each row so an operator can see,
+// in the same sheet they built, what actually went out. Only the rows named in
+// `updates` are touched; everything else (their edits, other columns) is left
+// alone. updates: [{ url, status, invitedAt, note, memberId }].
+function fgUpdateListLedger_(data) {
+  var name = String(data.tab || '').trim();
+  if (!name) return { error: 'fgUpdateListLedger: missing tab name' };
+  var updates = data.updates || [];
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sh) return { error: 'fgUpdateListLedger: tab not found: ' + name };
+  if (!updates.length) return { tab: name, updated: 0 };
+  var values = sh.getDataRange().getValues();
+  if (values.length < 2) return { tab: name, updated: 0 };
+
+  var header = values[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  function col(cands) { for (var k = 0; k < cands.length; k++) { var idx = header.indexOf(cands[k]); if (idx >= 0) return idx; } return -1; }
+  var iUrl = col(['linkedin url', 'profile url', 'url', 'linkedin']);
+  var iStatus = col(['status']);
+  var iWhen = col(['invited at', 'invited', 'date invited']);
+  var iNote = col(['note', 'notes']);
+  var iMember = col(['member id', 'memberid', 'member', 'linkedin id', 'urn']);
+  if (iUrl < 0) return { error: 'fgUpdateListLedger: no LinkedIn URL column in "' + name + '"' };
+
+  function nu(u) {
+    u = String(u == null ? '' : u).trim().toLowerCase();
+    u = u.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[?#].*$/, '').replace(/\/+$/, '');
+    return u;
+  }
+  var rowByUrl = {};
+  for (var i = 1; i < values.length; i++) { var key = nu(values[i][iUrl]); if (key && !(key in rowByUrl)) rowByUrl[key] = i; }
+
+  // Mutate the in-memory grid, then write each touched column back in ONE range
+  // call (setValues over the full column) — far fewer Sheets ops than per-cell.
+  var touched = false, n = 0;
+  for (var j = 0; j < updates.length; j++) {
+    var up = updates[j]; var ri = rowByUrl[nu(up.url)];
+    if (ri == null) continue;
+    if (iStatus >= 0 && up.status != null) values[ri][iStatus] = up.status;
+    if (iWhen >= 0 && up.invitedAt != null) values[ri][iWhen] = up.invitedAt;
+    if (iNote >= 0 && up.note != null) values[ri][iNote] = up.note;
+    if (iMember >= 0 && up.memberId != null && up.memberId !== '') values[ri][iMember] = up.memberId;
+    touched = true; n++;
+  }
+  if (touched) {
+    var last = values.length - 1;
+    function writeCol(idx) { if (idx < 0) return; var colVals = []; for (var k = 1; k < values.length; k++) colVals.push([values[k][idx]]); sh.getRange(2, idx + 1, last, 1).setValues(colVals); }
+    writeCol(iStatus); writeCol(iWhen); writeCol(iNote); writeCol(iMember);
+  }
+  return { tab: name, updated: n };
 }
 
 // Flip Queued -> Invited for the given Member IDs, stamp Invited At, bump budget.
