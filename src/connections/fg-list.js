@@ -39,6 +39,12 @@ const HEADER_ALIASES = {
 const norm = (v) => String(v == null ? '' : v).trim();
 const lc = (v) => norm(v).toLowerCase();
 
+// The per-run tab name. Encodes the cycle so Run ID / Month need not be columns
+// and a re-generate overwrites the same tab. cycleKey is the run day 'YYYY-MM-DD'.
+export function fgListTabName(cycleKey) {
+  return `FG ${norm(cycleKey)}`.trim();
+}
+
 // Stable identity key for a LinkedIn URL: lower-cased, protocol/host-agnostic,
 // no trailing slash or query/hash. Makes de-dupe and reconcile writeback robust
 // to the format differences a human paste inevitably introduces.
