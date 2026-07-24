@@ -31,6 +31,8 @@ function doPost(e) {
     else if (data.action === 'fgMarkInvited') out = fgMarkInvited_(data);
     else if (data.action === 'fgMarkFailed') out = fgMarkFailed_(data);
     else if (data.action === 'fgObserveCredits') out = fgObserveCredits_(data);
+    else if (data.action === 'fgWriteList') out = fgWriteList_(data);
+    else if (data.action === 'fgReadList') out = fgReadList_(data);
     else out = { error: 'Unknown action: ' + data.action };
     return json_(out);
   } catch (err) {
@@ -106,6 +108,47 @@ function fgQueue_(rows) {
     sh.getRange(startRow, 15, fresh.length, 1).setNumberFormat('dd mmm yyyy, HH:mm'); // Run At col (15th)
   }
   return { queued: fresh.length, skippedDuplicates: rows.length - fresh.length };
+}
+
+// ── Per-run invite-list tabs (fg-list.js) ──────────────────────────────────
+// A per-run tab (named "FG YYYY-MM-DD") is BOTH the editable intent list and
+// the ledger. fgWriteList creates/replaces it (the auto "Generate" path);
+// fgReadList reads it back at fire time (auto + a BYO tab living in this sheet).
+
+// Create (or fully replace) a per-run invite-list tab and write header + rows.
+// Idempotent: re-generating overwrites the tab so a list never doubles up.
+function fgWriteList_(data) {
+  var name = String(data.tab || '').trim();
+  if (!name) return { error: 'fgWriteList: missing tab name' };
+  var header = data.header || [];
+  var rows = data.rows || [];
+  var width = header.length || (rows[0] ? rows[0].length : 0);
+  if (!width) return { error: 'fgWriteList: nothing to write' };
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  else sh.clear();
+  if (header.length) {
+    sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  if (rows.length) {
+    sh.getRange(2, 1, rows.length, width).setValues(rows);
+  }
+  return { tab: name, written: rows.length };
+}
+
+// Read a per-run invite-list tab back as raw values (header row first). A
+// missing tab or a header-only tab returns { rows: [] } so the fire path skips
+// cleanly (and, for a missing tab, alerts the operator).
+function fgReadList_(data) {
+  var name = String(data.tab || '').trim();
+  if (!name) return { error: 'fgReadList: missing tab name' };
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sh) return { rows: [], missing: true };
+  var values = sh.getDataRange().getValues();
+  if (values.length < 2) return { rows: values.length ? values : [] };
+  return { rows: values };
 }
 
 // Flip Queued -> Invited for the given Member IDs, stamp Invited At, bump budget.
