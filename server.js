@@ -2589,7 +2589,10 @@ function fgNextRunCycleKey(days = [1, 15]) {
 // when the deployed script predates that action.
 app.get('/api/fg/sheet-url', async (_req, res) => {
   try {
-    const r = await postFg({ action: 'getSheetUrl' }, { timeoutMs: 30000, attempts: 1 });
+    // Retry (postFg default 3× w/ backoff): the Apps Script 302→echo dance
+    // intermittently 404s on a cold call, especially right after launch while the
+    // app is busy loading profiles. A single attempt would spuriously fail.
+    const r = await postFg({ action: 'getSheetUrl' }, { timeoutMs: 30000 });
     if (r && r.url) return res.json({ url: r.url });
   } catch (_) { /* fall through to env */ }
   if (process.env.FG_SHEET_URL) return res.json({ url: process.env.FG_SHEET_URL });
@@ -2599,7 +2602,9 @@ app.get('/api/fg/sheet-url', async (_req, res) => {
 // All tab names in the FG sheet — populates the "bring your own" dropdown.
 app.get('/api/fg/tabs', async (_req, res) => {
   try {
-    const r = await postFg({ action: 'listTabs' }, { timeoutMs: 30000, attempts: 1 });
+    // Retry (postFg default 3× w/ backoff) — the listTabs call can transiently
+    // fail on a cold Apps Script; one attempt left the dropdown silently empty.
+    const r = await postFg({ action: 'listTabs' }, { timeoutMs: 30000 });
     if (r && Array.isArray(r.tabs)) return res.json({ tabs: r.tabs });
     return res.status(502).json({ error: (r && r.error) || 'Could not list tabs', tabs: [] });
   } catch (e) { return res.status(502).json({ error: e.message, tabs: [] }); }

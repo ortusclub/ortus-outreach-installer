@@ -19827,13 +19827,22 @@ async function fgtlLoadTabs() {
   const sel = document.getElementById('fgtl-byo-tab');
   if (!sel) return;
   const cur = sel.value;
+  sel.innerHTML = '<option value="">Loading tabs…</option>';
   try {
     const r = await fetch('/api/fg/tabs');
-    const d = await r.json();
+    const d = await r.json().catch(() => ({}));
     const tabs = Array.isArray(d.tabs) ? d.tabs : [];
+    // A 502 (or explicit error) means the FG Apps Script call failed — say so and
+    // let the ↻ button retry, rather than showing an empty "— pick a tab —" that
+    // looks like the sheet simply has no tabs.
+    if (!r.ok || d.error) {
+      sel.innerHTML = `<option value="">(couldn’t reach the FG sheet — hit ↻ to retry)</option>`;
+      return;
+    }
+    if (!tabs.length) { sel.innerHTML = '<option value="">(no tabs found — hit ↻ to retry)</option>'; return; }
     sel.innerHTML = '<option value="">— pick a tab —</option>' + tabs.map((t) => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
     if (cur && tabs.includes(cur)) sel.value = cur;
-  } catch (_) { sel.innerHTML = '<option value="">(couldn’t load tabs — redeploy the FG script)</option>'; }
+  } catch (_) { sel.innerHTML = '<option value="">(couldn’t load tabs — hit ↻ to retry)</option>'; }
 }
 
 /** Open the central FG Google Sheet in the browser (asks the server for its URL). */
