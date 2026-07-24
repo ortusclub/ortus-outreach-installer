@@ -19474,30 +19474,38 @@ function fgapToggleExpand() {
 // "Run it now" — dispatch the whole team's Follower Growth batch to the cloud VM
 // immediately, outside the schedule (force). Needs the roster service deployed.
 async function fgapRunNow() {
-  if (!confirm("Run Follower Growth now? This dispatches the whole team's invites to the cloud VM immediately, outside the schedule.")) return;
+  // Sheet-driven model: Run it now fires the invite-list TAB you generated (auto)
+  // or chose (bring-your-own) up in step 1 — naming it so there's no ambiguity.
+  const tab = _fgtlListTab || '';
   const btn = document.getElementById('fgap-run');
+  if (!tab) {
+    showCampaignToast('Build a list first — Generate one (option A) or pick a tab under “Bring your own” (option B). Run it now then fires that tab.', 6000);
+    return;
+  }
+  if (!confirm(`Fire the invite list on tab “${tab}” now? This dispatches those invites to the cloud VM immediately, outside the schedule.`)) return;
+  // Resolve accounts from the launch cart AND the full paired team (deduped by
+  // profileId): a bring-your-own tab sets the account per row, so every Account
+  // Email in the sheet must map to a profileId even if the cart is empty.
+  const byId = {};
+  for (const p of [...fgtlAllPairedPairs(), ...fgtlPairs()]) { if (p && p.profileId) byId[p.profileId] = p; }
+  const pairs = Object.values(byId);
+  if (!pairs.length) {
+    showCampaignToast('Open the FG board first so the team roster loads, then Run it now.', 4500);
+    return;
+  }
   if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
   try {
-    // Run it now must be self-contained: publish the roster loaded on the board
-    // RIGHT NOW, then fire. The force-run on the service uses the STORED config —
-    // if the board-open publish never landed (e.g. it skipped on a stale
-    // `degraded` after a cold service), that config is empty and the run would
-    // return no-pairs. Refresh state first (clears a stale degraded), then push.
-    if (!fgtlAllPairedPairs().length) {
-      showCampaignToast('Open the FG board first so the team roster loads, then Run it now.', 4500);
-      return;
-    }
-    await fgapLoad();     // refresh cloud state so fgapPublish isn't gated by a stale degraded
-    await fgapPublish();  // publish the board's current roster before firing
-    // Tell the operator it's under way — building the whole team's targets + dispatch
-    // can take up to a minute; without this the button just sits on "Dispatching…".
-    showCampaignToast('Dispatching Follower Growth to the cloud — this can take a minute…', 6000);
-    const r = await fetch('/api/fg/autopilot/run', { method: 'POST' }).then((x) => x.json());
+    // Building targets + dispatch can take up to a minute; keep the operator informed.
+    showCampaignToast(`Dispatching “${tab}” to the cloud — this can take a minute…`, 6000);
+    const r = await fetch('/api/fg/team-launch/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'list', tab, pairs, target: 'cloud', month: new Date().toISOString().slice(0, 7) }),
+    }).then((x) => x.json());
     if (r.error) showCampaignToast(`Couldn’t run — ${r.error}`, 5000);
-    else if (r.skipped) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible accounts'}`, 4500);
-    else if (r.pending) showCampaignToast('Still dispatching in the cloud — check the FG board / Open Log before running it again.', 7000);
+    else if (r.skipped && !r.cloudId) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible invites in that tab'}`, 4500);
     else {
-      showCampaignToast('Follower Growth dispatched to the VM — it runs in the cloud.', 4500);
+      const n = (r.leadCount != null) ? `${r.leadCount} invites ` : '';
+      showCampaignToast(`Follower Growth dispatched from “${tab}” — ${n}running in the cloud.`, 5000);
       // Show the SAME live card + "Launching…" banner as the manual cloud launch.
       if (r.cloudId) fgapShowCloudLaunchCard(r.cloudId);
     }
@@ -19786,7 +19794,9 @@ function fgtlCloudPoll() {
     } else {
       const stopBtn = document.getElementById('fgtl-stop'); if (stopBtn) stopBtn.style.display = 'none';
       const cardStop = document.getElementById('fgtl-card-stop'); if (cardStop) cardStop.style.display = 'none';
-      const goBtn = document.getElementById('fgtl-go'); if (goBtn) goBtn.style.display = '';
+      // #fgtl-go (old in-cart Launch) is retired — launching is Live status → Run it
+      // now. Keep it hidden even after a run ends.
+      const goBtn = document.getElementById('fgtl-go'); if (goBtn) goBtn.style.display = 'none';
       _fgtlCloudId = null;
       // Reload budgets so the launch list reflects what the cloud run sent.
       fgLoadDb().then(() => fgtlRenderAll()).catch(() => fgtlRenderCart());
@@ -19853,12 +19863,22 @@ async function fgtlGenerateList() {
     if (!r.ok || d.error) { if (status) status.textContent = 'Could not generate: ' + (d.error || r.statusText); return; }
     _fgtlListTab = d.tab || '';
     const skips = (d.skipped && d.skipped.length) ? ` · ${d.skipped.length} account(s) skipped` : '';
-    if (status) status.innerHTML = `✓ Wrote <b>${escHtml(d.tab)}</b> — ${d.count} people${skips}. Review/edit that tab in the FG sheet, then Launch.`;
+    if (status) status.innerHTML = `✓ Wrote <b>${escHtml(d.tab)}</b> — ${d.count} people${skips}. Review/edit that tab in the FG sheet, then fire it from <b>Live status</b> ↓ (Run it now).`;
+    fgwSetListTab(_fgtlListTab);
   } catch (err) {
     if (status) status.textContent = 'Could not generate: ' + (err && err.message ? err.message : String(err));
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Generate list from roles'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Generate list &#8594; writes a tab to the sheet'; }
   }
+}
+
+/** Reflect the currently-selected invite-list tab into the Live Status head so
+ *  the operator can see exactly what "Run it now" will fire. */
+function fgwSetListTab(tab) {
+  const el = document.getElementById('fgw-list-tab');
+  if (!el) return;
+  if (tab) { el.innerHTML = `Ready to fire: <b>${escHtml(tab)}</b>`; el.style.display = ''; }
+  else { el.textContent = ''; el.style.display = 'none'; }
 }
 
 /** Point the launch at an existing FG tab (bring-your-own list). */
@@ -19868,7 +19888,8 @@ function fgtlUseByoTab() {
   const tab = (input && input.value || '').trim();
   if (!tab) { if (status) status.textContent = 'Type the name of an existing tab in the FG sheet.'; return; }
   _fgtlListTab = tab;
-  if (status) status.innerHTML = `✓ Will fire from your tab <b>${escHtml(tab)}</b> when you Launch.`;
+  if (status) status.innerHTML = `✓ Will fire from your tab <b>${escHtml(tab)}</b> — go to <b>Live status</b> ↓ and hit Run it now.`;
+  fgwSetListTab(tab);
 }
 
 /** POST to /api/fg/team-launch/start, then begin polling. */

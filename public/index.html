@@ -2160,9 +2160,14 @@
       #nav-follower-growth .fgw-lead { font-size:13.5px; line-height:1.5; opacity:.85; margin:0 0 16px; }
       #nav-follower-growth .fgw-sheet-link { background:none; border:none; color:var(--ink); font:inherit; font-weight:700; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px; }
       #nav-follower-growth .fgw-sheet-link:hover { opacity:.7; }
-      #nav-follower-growth .fgw-two-up { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
-      @media (max-width:860px){ #nav-follower-growth .fgw-two-up{ grid-template-columns:1fr; } }
+      /* Stacked: auto-generate box (tall — roles + accounts + Generate) on top,
+         bring-your-own below it. */
+      #nav-follower-growth .fgw-two-up { display:grid; grid-template-columns:1fr; gap:16px; align-items:start; }
       #nav-follower-growth .fgw-path { border:1px solid var(--border,#e2e2e2); border-radius:10px; padding:14px 16px; }
+      #nav-follower-growth .fgw-path-auto { border-color:var(--ink,#111); }
+      #nav-follower-growth .fgw-gen-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px solid var(--border,#e2e2e2); }
+      #nav-follower-growth .fgw-gen-note { font-size:12.5px; opacity:.72; max-width:460px; line-height:1.45; }
+      #nav-follower-growth .fgw-btn-primary { padding:11px 22px; font-size:11px; }
       #nav-follower-growth .fgw-path-head { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; margin-bottom:10px; opacity:.9; }
       #nav-follower-growth .fgw-path-desc { font-size:13px; opacity:.75; margin:0 0 12px; }
       #nav-follower-growth .fgw-format { background:rgba(0,0,0,.035); border-radius:8px; padding:10px 12px; margin:0 0 12px; }
@@ -2181,6 +2186,7 @@
       #nav-follower-growth .fgw-live-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
       #nav-follower-growth .fgw-live-controls { display:flex; align-items:center; gap:12px; }
       #nav-follower-growth .fgw-toggle-lab { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; opacity:.7; }
+      #nav-follower-growth .fgw-list-tab { font-size:12px; opacity:.8; padding:4px 10px; border:1px solid var(--border,#ddd); border-radius:9999px; white-space:nowrap; }
       #nav-follower-growth .fgw-accounts-note { font-size:13px; opacity:.85; margin:4px 0 10px; line-height:1.5; }
       #nav-follower-growth .fgw-log { margin:12px 0 0; background:#0d100d; color:#bdf5bd; font-family:var(--mono,monospace); font-size:11.5px; line-height:1.5; padding:12px 14px; border-radius:10px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
     </style>
@@ -2208,14 +2214,55 @@
         <p class="fgw-lead">Your invites come from a tab in the central FG Google Sheet — one you can open, review and edit before it fires. <button type="button" id="fgtl-open-sheet" class="fgw-sheet-link">Open the FG Sheet &#8599;</button></p>
 
         <div class="fgw-two-up">
-          <!-- A · auto-generate from roles -->
-          <div class="fgw-path">
+          <!-- A · auto-generate: roles → accounts → Generate, all in one box -->
+          <div class="fgw-path fgw-path-auto">
             <div class="fgw-path-head">A &#183; Auto-generate</div>
             <div class="fgtl-step-eyebrow">Which roles to invite &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
             <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
             <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
             <div class="filter-foot"><span class="hint">Defaults toward marketers.</span><span class="match" id="fgtl-match"></span></div>
-            <p class="fgw-path-desc" style="margin-top:10px">Then pick the accounts below &#8595; and hit <b>Generate list</b>.</p>
+
+            <!-- accounts picker — nested: whose networks to search -->
+            <div class="fgw-accounts-note">Now pick <b>whose networks</b> to search for people matching the roles above &#8212; each person is invited by the account that found them.</div>
+            <div class="fgtl-board2">
+              <div>
+                <div class="fgtl-search">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                  <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
+                  <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
+                </div>
+                <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
+                <div class="fgtl-ready" id="fgtl-ready" style="margin-top:14px">
+                  <div class="rl">
+                    <span class="lab">Ready</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
+                    <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
+                  </div>
+                  <button type="button" class="fgtl-ready-btn dis" id="fgtl-ready-btn" disabled>+ Add all ready</button>
+                </div>
+                <div class="fgtl-people" id="fgtl-people"></div>
+              </div>
+              <div class="fgtl-cart">
+                <div class="fgtl-cart-head">
+                  <h3>Accounts to search</h3>
+                  <button type="button" id="fgtl-clear" class="fgtl-clear" style="display:none">Clear all</button>
+                </div>
+                <div id="fgtl-cart" class="fgtl-cart-list"></div>
+                <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
+                  <div class="tot"><span>Accounts</span><b id="fgtl-t-people">0</b></div>
+                  <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv" title="Upper bound — already-invited connections are skipped when sending">0</b></div>
+                  <!-- old in-cart Launch button — hidden; launching now happens
+                       from Live status ↓ (Run it now) on the generated tab. -->
+                  <button class="fgtl-go-btn" id="fgtl-go" style="display:none" disabled>Launch</button>
+                  <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Generate CTA — bottom of the auto-generate box -->
+            <div class="fgw-gen-row">
+              <button type="button" id="fgtl-generate" class="fgw-btn fgw-btn-primary" title="Build the list from the roles + accounts above and write it to a tab in the FG sheet">Generate list &#8594; writes a tab to the sheet</button>
+              <span class="fgw-gen-note">Writes the invite list to a new tab in the FG Sheet. You then launch it from <b>Live status</b> &#8595; (Run it now).</span>
+            </div>
           </div>
 
           <!-- B · bring your own -->
@@ -2237,46 +2284,6 @@
         <div id="fgtl-list-status" class="fgw-list-status"></div>
       </div>
 
-      <!-- Accounts — ONLY for auto-generate (whose networks to search). A
-           bring-your-own list sets the account per row in the sheet instead. -->
-      <div class="fgw-accounts-note">Only for <b>auto-generate</b> &#8595; &mdash; pick whose networks to search for people matching the roles above. <span style="opacity:.7">(Bring-your-own lists set the account per row in the sheet, so you can skip this.)</span></div>
-      <div class="fgtl-board2">
-        <div>
-          <div class="fgtl-search">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-            <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
-            <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
-          </div>
-          <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
-          <div class="fgtl-ready" id="fgtl-ready" style="margin-top:14px">
-            <div class="rl">
-              <span class="lab">Ready to launch</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
-              <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
-            </div>
-            <button type="button" class="fgtl-ready-btn dis" id="fgtl-ready-btn" disabled>+ Add all ready</button>
-          </div>
-          <div class="fgtl-people" id="fgtl-people"></div>
-        </div>
-        <div class="fgtl-cart">
-          <div class="fgtl-cart-head">
-            <h3>Your launch list</h3>
-            <button type="button" id="fgtl-clear" class="fgtl-clear" style="display:none">Clear all</button>
-          </div>
-          <div id="fgtl-cart" class="fgtl-cart-list"></div>
-          <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
-            <div class="tot"><span>People</span><b id="fgtl-t-people">0</b></div>
-            <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv" title="Upper bound — already-invited connections are skipped when sending">0</b></div>
-            <button class="fgtl-go-btn" id="fgtl-go" disabled>Launch all sequentially</button>
-            <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
-          </div>
-        </div>
-      </div>
-
-      <div style="margin:8px 0 4px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <button type="button" id="fgtl-generate" class="fgw-btn" style="padding:11px 22px;font-size:11px" title="Build the list from the roles + accounts above and write it to a tab in the FG sheet">Generate list &#8594; writes a tab to the sheet</button>
-        <span style="font-size:12.5px;opacity:.72;max-width:420px">Writes the invite list to a tab in the FG Sheet. You then launch it from <b>Live status</b> &#8595; (Run it now).</span>
-      </div>
-
       <!-- ── STEP 2 · SCHEDULE ─────────────────────────────────────────── -->
       <div class="fgw-step" id="fgw-step-2">
         <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Schedule</span></div>
@@ -2291,7 +2298,8 @@
         <div class="fgw-live-head">
           <div class="fgw-step-head" style="margin:0"><span class="fgw-num">3</span><span class="fgw-title">Live status</span></div>
           <div class="fgw-live-controls">
-            <button type="button" class="fgap-run" id="fgap-run" title="Dispatch the whole team's invites to the cloud VM right now, outside the schedule">&#9654; Run it now</button>
+            <span id="fgw-list-tab" class="fgw-list-tab" style="display:none"></span>
+            <button type="button" class="fgap-run" id="fgap-run" title="Fire the invite-list tab you built in step 1 to the cloud VM now, outside the schedule">&#9654; Run it now</button>
             <span class="fgw-toggle-lab">Auto-Pilot</span>
             <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot on/off"></button>
           </div>

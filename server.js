@@ -2618,22 +2618,39 @@ app.post('/api/fg/list/generate', async (req, res) => {
   let snap;
   try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
   const alreadyInvited = invitedKeysFromState(snap.invites);
-  const buildTargets = (pair) => {
-    const out = buildFgTargets(fgCriteria({ jobTitles: keywords }), {
-      operator: pair.operator, operatorName: pair.operatorName, account: pair.account,
-      month, alreadyInvited, budget: Infinity,
-    });
-    let reason = '';
-    if (!out.count) reason = out.matched === 0 ? 'no connections match these roles' : 'all matching connections already invited';
-    return { rows: out.rows, count: out.count, reason };
-  };
+  const criteria = fgCriteria({ jobTitles: keywords });
+
+  // Pre-compute each account's FG targets through the roster bridge (dbCall). The
+  // connections DB (~152MB) is NOT on operator machines, so a direct
+  // buildFgTargets() ENOENTs — dbCall runs the read locally when the DB is present
+  // and otherwise delegates to the central fg-roster /rpc (same match code).
+  // buildListRows() is synchronous, so we resolve every pair's targets up front and
+  // hand it a plain sync lookup. NOTE: budget is intentionally omitted — Infinity
+  // serialises to null over JSON/RPC, which would zero out the list; the roster's
+  // buildFgTargets defaults budget to Infinity when the arg is absent.
+  const targetsByProfile = new Map();
+  try {
+    for (const pair of pairs) {
+      const out = await dbCall('buildFgTargets', [criteria, {
+        operator: pair.operator, operatorName: pair.operatorName, account: pair.account,
+        month, alreadyInvited,
+      }]);
+      let reason = '';
+      if (!out || !out.count) reason = (out && out.matched === 0) ? 'no connections match these roles' : 'all matching connections already invited';
+      targetsByProfile.set(pair.profileId, { rows: (out && out.rows) || [], count: (out && out.count) || 0, reason });
+    }
+  } catch (e) {
+    // Never let a build failure (e.g. roster service not deployed) become an
+    // unhandled rejection — that would take the whole app down.
+    return res.status(502).json({ error: `Could not build the list: ${e.message}` });
+  }
+
   const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+  const buildTargets = (pair) => targetsByProfile.get(pair.profileId) || { rows: [], count: 0, reason: 'no targets for this account' };
   let built;
   try {
     built = buildListRows(pairs, { accountEmails }, { buildTargets });
   } catch (e) {
-    // Never let a build failure (e.g. no local connections DB) become an
-    // unhandled rejection — that would take the whole app down.
     return res.status(502).json({ error: `Could not build the list: ${e.message}` });
   }
   const { header, rows, perAccount, skipped } = built;
