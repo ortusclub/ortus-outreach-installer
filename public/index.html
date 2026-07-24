@@ -2044,7 +2044,12 @@
       #nav-follower-growth .fgboard-head { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px; }
       #nav-follower-growth .fgboard-head .h { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); }
       #nav-follower-growth .fgboard-head .c { font-family:var(--mono); font-size:11px; color:var(--ink); }
-      #nav-follower-growth .fgacct-board { display:flex; flex-direction:column; gap:8px; max-height:440px; overflow-y:auto; padding-right:6px; }
+      /* No inner scroll: an internal max-height/overflow was clipping the benched
+         rows (which sort to the TOP) out of view — the operator saw only the
+         waiting account and thought the skipped ones were missing. Let the board
+         grow with its rows; the page scrolls normally. We only list in-tab
+         accounts now, so the list stays short. */
+      #nav-follower-growth .fgacct-board { display:flex; flex-direction:column; gap:8px; padding-right:6px; }
       #nav-follower-growth .fgacct { display:flex; align-items:center; gap:12px; padding:11px 13px; border:1px solid rgba(0,0,0,0.28); border-radius:11px; background:var(--bg-soft); }
       #nav-follower-growth .fgacct.done { border-left:3px solid var(--green); }
       #nav-follower-growth .fgacct.skip { border-left:3px solid var(--red); }
