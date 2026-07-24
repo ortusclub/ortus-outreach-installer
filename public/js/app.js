@@ -19507,10 +19507,16 @@ function fgapToggleExpand() {
 async function fgapRunNow() {
   // Sheet-driven model: Run it now fires the invite-list TAB you generated (auto)
   // or chose (bring-your-own) up in step 1 — naming it so there's no ambiguity.
-  const tab = _fgtlListTab || '';
+  let tab = _fgtlListTab || '';
+  // Fall back to the tab currently chosen in the Bring-your-own dropdown, or the
+  // last selection persisted across restarts — so Run-it-now works even if "Use
+  // this tab" wasn't clicked / the app was reloaded (which resets _fgtlListTab).
+  if (!tab) { const sel = document.getElementById('fgtl-byo-tab'); if (sel && sel.value) tab = String(sel.value).trim(); }
+  if (!tab) { try { tab = (localStorage.getItem('fg-last-tab') || '').trim(); } catch (_) {} }
+  if (tab) { _fgtlListTab = tab; try { localStorage.setItem('fg-last-tab', tab); } catch (_) {} }
   const btn = document.getElementById('fgap-run');
   if (!tab) {
-    showCampaignToast('Build a list first — Generate one (option A) or pick a tab under “Bring your own” (option B). Run it now then fires that tab.', 6000);
+    showCampaignToast('Pick a tab under “Bring your own” (option B) or Generate one (option A) first — Run it now then fires that tab.', 6000);
     return;
   }
   if (!confirm(`Fire the invite list on tab “${tab}” now? This dispatches those invites to the cloud VM immediately, outside the schedule.`)) return;
