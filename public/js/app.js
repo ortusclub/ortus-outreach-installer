@@ -20120,6 +20120,10 @@ function fgtlRenderAcctBoard(status) {
   const wrap = document.getElementById('fgtl-acctboard');
   const list = document.getElementById('fgtl-acct-list');
   if (!wrap || !list) return;
+  // While a CLOUD run is active, ONLY the cloud status (_cloud) may paint the board.
+  // A local/team-launch status (no _cloud, empty/partial account set) was clobbering
+  // it — dropping the benched/skipped accounts the cloud poll had just rendered.
+  if (_fgtlCloudId && status && !status._cloud) return;
   const accts0 = Array.isArray(status.perAccount) ? status.perAccount : [];
   // Show only once a run exists (accounts present). Hidden at idle/Ready.
   if (!accts0.length) { wrap.hidden = true; list.innerHTML = ''; return; }
