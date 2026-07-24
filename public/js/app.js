@@ -21967,10 +21967,11 @@ function v3RenderLogLine(rawLine) {
     restStr = isoMatch[2];
   }
   let cls = '';
-  // Roll-up summary line ("— N sent · N errors · N pending") is neutral, not an
-  // error — it starts with an em-dash. Classify it first so the word "errors" in
-  // "0 errors" can't trip the error regex below and paint it red (v2.160.9).
-  if (/^\s*—/.test(restStr)) { evtStr = 'sum'; }
+  // Roll-up summary lines are neutral, not errors — "— N sent · N errors",
+  // the cloud footer "Σ Total · N sent · N errors · N pending", and its
+  // "──────────" separator. Classify first so the word "error(s)" in a running
+  // total can't trip the error regex below and paint it red (v2.160.9, .92).
+  if (/^\s*(—|Σ|─)/.test(restStr)) { evtStr = 'sum'; }
   else if (/✓|connection_sent|message_sent|status_accepted|accepted/i.test(restStr)) { cls = 'is-ok'; evtStr = 'ok'; }
   else if (/✗|error|fail|FAILED|429/i.test(restStr)) { cls = 'is-err'; evtStr = 'err'; }
   else if (/⚠|warn|retry|backoff|park|SKIPPED/i.test(restStr)) { cls = 'is-warn'; evtStr = 'warn'; }
