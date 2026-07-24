@@ -2996,6 +2996,11 @@ function onModeChange() {
   const isFollowerGrowth = (mode === 'follower_growth');
   const fgPanel = document.getElementById('nav-follower-growth');
   if (fgPanel) fgPanel.style.display = isFollowerGrowth ? '' : 'none';
+  // Follower Growth has its OWN Live Status (wizard step 3) — completely hide the
+  // shared app-wide "7. Live Status" section so there's only one. Restored (shown)
+  // for every other campaign type, which relies on it.
+  const liveStatusSection = document.getElementById('nav-status');
+  if (liveStatusSection) liveStatusSection.style.display = isFollowerGrowth ? 'none' : '';
   if (isFollowerGrowth) {
     if (navAccounts) navAccounts.style.display = 'none';
     if (navPace) navPace.style.display = 'none';
