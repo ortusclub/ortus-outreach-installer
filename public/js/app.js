@@ -19770,10 +19770,14 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
   // old benched state. (The engine re-checks it too — bench is per-campaignId.)
   const thisCampId = String((campaign && campaign.id) || '');
   const creditByPid = {};
+  const benchByPid = {};
   for (const acc of ((extra && extra.accounts) || [])) {
-    if (acc && acc.profileId && acc.credits && String(acc.credits.campaignId || '') === thisCampId) {
-      creditByPid[String(acc.profileId)] = acc.credits;
-    }
+    if (!acc || !acc.profileId) continue;
+    const pid = String(acc.profileId);
+    if (acc.credits && String(acc.credits.campaignId || '') === thisCampId) creditByPid[pid] = acc.credits;
+    // Engine's per-run bench reason (no credits / logged out / error / …) — already
+    // scoped to this campaign, so its presence means "benched this run".
+    if (acc.bench) benchByPid[pid] = String(acc.bench);
   }
   let totalSent = 0, totalSkip = 0, doneAccounts = 0;
   const perAccount = pids.map((pid) => {
@@ -19783,11 +19787,14 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
     const cred = creditByPid[pid] || null;
     const creditsLeft = (cred && Number.isFinite(Number(cred.available))) ? Number(cred.available) : null;
     const noCredits = creditsLeft === 0;
+    const benchReason = benchByPid[pid] || '';
+    // Is it an ERROR bench (proxy/login/etc), as opposed to plain no-credits?
+    const isErrorBench = benchReason && !/no invite credits/i.test(benchReason);
     let status = 'waiting';
     // The engine's live signal is authoritative for "who's running RIGHT NOW":
     // pending leads come back unrouted, so the sent-count heuristic alone would
     // flip an account to "done" the instant it sends one. liveAccount overrides.
-    if (noCredits && processed === 0) { status = 'skipped'; }   // benched — no invite credits
+    if (processed === 0 && (noCredits || benchReason)) { status = 'skipped'; }  // benched (no credits / error)
     else if (livePid && pid === livePid && !isDone) { status = 'running'; }
     else if (c.pending === 0 && processed > 0) { status = 'done'; doneAccounts++; }
     else if (processed > 0) status = 'running';
@@ -19796,8 +19803,9 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
     // sheet). The engine can't report it (pending leads are unrouted), so fall
     // back to what we can see (processed + any routed pending) when absent.
     const planned = Number.isFinite(_fgtlPlanned[pid]) ? _fgtlPlanned[pid] : (processed + c.pending);
-    const reason = noCredits ? `no invite credits${cred && cred.refill ? ' · refills ' + cred.refill : ''}` : '';
-    return { account: label, status, invited: c.sent, targets: processed + c.pending, planned, creditsLeft, creditsRefill: (cred && cred.refill) || '', reason };
+    // Reason surfaced on the row: an error bench wins (most actionable), else credits.
+    const reason = isErrorBench ? benchReason : (noCredits ? `no invite credits${cred && cred.refill ? ' · refills ' + cred.refill : ''}` : (benchReason || ''));
+    return { account: label, status, invited: c.sent, targets: processed + c.pending, planned, creditsLeft, creditsRefill: (cred && cred.refill) || '', reason, errored: !!isErrorBench };
   });
   const totalProcessed = totalSent + totalSkip;
   // Authoritative headline counts (engine-computed) when available.
@@ -20161,16 +20169,23 @@ function fgtlRenderAcctBoard(status) {
       pillTxt = qTxt ? `${n} / ${q.toLocaleString()}` : 'running';
       sub = qTxt ? `sending invites… · ${n} of ${qTxt}` : 'sending invites…';
     } else if (st === 'skipped') {
-      // No invite credits → benched (the engine skips it this run, re-checks next).
-      if (left === 0) {
-        icCls = 'skip'; ic = '🚫'; pillCls = 'skipped'; rowCls = 'skip';
-        pillTxt = 'no credits';
+      icCls = 'skip'; pillCls = 'skipped'; rowCls = 'skip';
+      if (a.errored) {
+        // Error bench (proxy / login / network) — label the account WITH the error.
+        ic = '⚠️'; pillTxt = 'error';
+        sub = `benched — ${esc(a.reason || 'error')} · retries next run`;
+      } else if (left === 0) {
+        // No invite credits → benched (the engine skips it this run, re-checks next).
+        ic = '🚫'; pillTxt = 'no credits';
         sub = `benched — no invite credits${a.creditsRefill ? ' · refills ' + esc(a.creditsRefill) : ''}`;
+      } else if (a.loggedOut) {
+        ic = '🔒'; pillTxt = 'logged out';
+        sub = `benched — logged out, needs re-login`;
+      } else if (a.reason) {
+        ic = '⚠️'; pillTxt = 'benched';
+        sub = `benched — ${esc(a.reason)}`;
       } else {
-        icCls = 'skip'; pillCls = 'skipped'; rowCls = 'skip';
-        if (a.loggedOut) { ic = '🔒'; pillTxt = 'logged out'; }
-        else { ic = '✗'; pillTxt = 'skipped'; }
-        sub = `skipped${a.reason ? ' · ' + esc(a.reason) : ''}`;
+        ic = '✗'; pillTxt = 'skipped'; sub = 'skipped';
       }
     }
     return `<div class="fgacct ${rowCls}">
