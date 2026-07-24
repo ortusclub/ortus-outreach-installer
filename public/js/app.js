@@ -20280,13 +20280,19 @@ function fgtlRenderCard(status) {
   }
   // Same watch control, mirrored into the step-3 Live Status header so you can open
   // the VM view without scrolling to the card. Green dot lights when a browser is live.
+  const headRunning = !!_fgtlCloudId && !!status.running;
   const watchHead = document.getElementById('fgw-watch');
   if (watchHead) {
-    watchHead.style.display = (!!_fgtlCloudId && !!status.running) ? '' : 'none';
+    watchHead.style.display = headRunning ? '' : 'none';
     watchHead.classList.toggle('live-on', !!status.live);
     const dot2 = document.getElementById('fgw-watch-dot');
     if (dot2) dot2.hidden = !status.live;
   }
+  // Header Run/Stop swap: while a run is active, hide "Run it now" and show "Stop".
+  const headRun = document.getElementById('fgap-run');
+  const headStop = document.getElementById('fgw-stop');
+  if (headRun) headRun.style.display = headRunning ? 'none' : '';
+  if (headStop) headStop.style.display = headRunning ? '' : 'none';
 
   // Keep the on-card Stop button in sync (so it's there after navigate-away/back).
   const cardStop = document.getElementById('fgtl-card-stop');
@@ -20387,6 +20393,12 @@ function fgtlBindLaunch() {
   if (stopBtn && !stopBtn._b) {
     stopBtn._b = true;
     stopBtn.addEventListener('click', () => doStop(stopBtn));
+  }
+  // Stop button in the step-3 Live Status header (shown while a run is active).
+  const headStopBtn = document.getElementById('fgw-stop');
+  if (headStopBtn && !headStopBtn._b) {
+    headStopBtn._b = true;
+    headStopBtn.addEventListener('click', () => doStop(headStopBtn));
   }
   // Stop button living ON the live card — reachable once the run takes over the
   // view and the launch-list cart (with its own Stop) is hidden.
