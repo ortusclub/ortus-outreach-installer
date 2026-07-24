@@ -33,6 +33,8 @@ function doPost(e) {
     else if (data.action === 'fgObserveCredits') out = fgObserveCredits_(data);
     else if (data.action === 'fgWriteList') out = fgWriteList_(data);
     else if (data.action === 'fgReadList') out = fgReadList_(data);
+    else if (data.action === 'getSheetUrl') out = { url: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
+    else if (data.action === 'listTabs') out = { tabs: SpreadsheetApp.getActiveSpreadsheet().getSheets().map(function (s) { return s.getName(); }) };
     else out = { error: 'Unknown action: ' + data.action };
     return json_(out);
   } catch (err) {

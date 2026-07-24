@@ -93,7 +93,7 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, postFg } from './src/connections/fg-sync.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
 import { fgListTabName } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
@@ -2583,6 +2583,27 @@ function fgNextRunCycleKey(days = [1, 15]) {
   const d = nextRun(new Date(), { days, enabled: true });
   return cycleKey(d || new Date());
 }
+
+// The FG Google Sheet's own URL — so the wizard can deep-link "Open the FG Sheet".
+// Asks the Apps Script (getSheetUrl); falls back to a local FG_SHEET_URL env var
+// when the deployed script predates that action.
+app.get('/api/fg/sheet-url', async (_req, res) => {
+  try {
+    const r = await postFg({ action: 'getSheetUrl' }, { timeoutMs: 30000, attempts: 1 });
+    if (r && r.url) return res.json({ url: r.url });
+  } catch (_) { /* fall through to env */ }
+  if (process.env.FG_SHEET_URL) return res.json({ url: process.env.FG_SHEET_URL });
+  return res.status(404).json({ error: 'FG sheet URL not available — redeploy the FG Apps Script (getSheetUrl) or set FG_SHEET_URL.' });
+});
+
+// All tab names in the FG sheet — populates the "bring your own" dropdown.
+app.get('/api/fg/tabs', async (_req, res) => {
+  try {
+    const r = await postFg({ action: 'listTabs' }, { timeoutMs: 30000, attempts: 1 });
+    if (r && Array.isArray(r.tabs)) return res.json({ tabs: r.tabs });
+    return res.status(502).json({ error: (r && r.error) || 'Could not list tabs', tabs: [] });
+  } catch (e) { return res.status(502).json({ error: e.message, tabs: [] }); }
+});
 
 // GENERATE (auto option): build the invite list from the role keywords and write
 // it to the per-run tab. No hard monthly cap — list all eligible; LinkedIn's own

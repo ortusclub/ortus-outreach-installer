@@ -19325,7 +19325,7 @@ async function fgSendStop() {
 // GET/POST through the /api/fg/autopilot* proxy routes (token stays server-side).
 // ─────────────────────────────────────────────────────────────────────────────
 let _fgapData = null;      // last GET /api/fg/autopilot response: { config, runs, nextRunLabel }
-let _fgapExpanded = false;
+let _fgapExpanded = true; // wizard is always visible now (no collapse chevron)
 let _fgapPubTimer = null;
 
 async function fgapLoad() {
@@ -19799,6 +19799,30 @@ function fgtlCloudPoll() {
 // roles" or "Use this tab". Empty → legacy build-and-dispatch flow.
 let _fgtlListTab = '';
 
+/** Populate the "bring your own" dropdown with the FG sheet's tab names. */
+async function fgtlLoadTabs() {
+  const sel = document.getElementById('fgtl-byo-tab');
+  if (!sel) return;
+  const cur = sel.value;
+  try {
+    const r = await fetch('/api/fg/tabs');
+    const d = await r.json();
+    const tabs = Array.isArray(d.tabs) ? d.tabs : [];
+    sel.innerHTML = '<option value="">— pick a tab —</option>' + tabs.map((t) => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
+    if (cur && tabs.includes(cur)) sel.value = cur;
+  } catch (_) { sel.innerHTML = '<option value="">(couldn’t load tabs — redeploy the FG script)</option>'; }
+}
+
+/** Open the central FG Google Sheet in the browser (asks the server for its URL). */
+async function fgtlOpenSheet() {
+  try {
+    const r = await fetch('/api/fg/sheet-url');
+    const d = await r.json();
+    if (r.ok && d.url) { window.open(d.url, '_blank', 'noopener'); return; }
+    alert(d.error || 'FG sheet URL not available yet.');
+  } catch (e) { alert('Could not open the FG sheet: ' + (e && e.message ? e.message : String(e))); }
+}
+
 /** Generate the invite list from the current roles + cart and write it to a tab. */
 async function fgtlGenerateList() {
   const pairs = fgtlPairs();
@@ -20111,6 +20135,14 @@ function fgtlBindLaunch() {
   if (genBtn && !genBtn._b) { genBtn._b = true; genBtn.addEventListener('click', fgtlGenerateList); }
   const byoBtn = document.getElementById('fgtl-byo-use');
   if (byoBtn && !byoBtn._b) { byoBtn._b = true; byoBtn.addEventListener('click', fgtlUseByoTab); }
+  const openSheetBtn = document.getElementById('fgtl-open-sheet');
+  if (openSheetBtn && !openSheetBtn._b) { openSheetBtn._b = true; openSheetBtn.addEventListener('click', fgtlOpenSheet); }
+  const refreshTabsBtn = document.getElementById('fgtl-byo-refresh');
+  if (refreshTabsBtn && !refreshTabsBtn._b) { refreshTabsBtn._b = true; refreshTabsBtn.addEventListener('click', fgtlLoadTabs); }
+  const editSchedBtn = document.getElementById('fgw-edit-schedule');
+  if (editSchedBtn && !editSchedBtn._b) { editSchedBtn._b = true; editSchedBtn.addEventListener('click', fgapEditSchedule); }
+  const byoSel = document.getElementById('fgtl-byo-tab');
+  if (byoSel && !byoSel._loaded) { byoSel._loaded = true; fgtlLoadTabs(); }
   const doStop = async (btn) => {
     // Cloud FG run → stop the VM campaign; the cloud poll then resets the card.
     if (_fgtlCloudId) {
