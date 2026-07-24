@@ -6716,6 +6716,7 @@ let _cloudCardTimer = null;
 const _cloudEventLog = new Map();        // campaignId -> [{ t, line }]  (user actions)
 const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine per-account check events)
 const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
+const _cloudModeById = new Map();        // campaignId -> engine mode ('follower_growth' | 'connect_only' | …)
 function _pushCloudEvent(id, line) {
   if (!id || !line) return;
   let arr = _cloudEventLog.get(id);
@@ -6794,6 +6795,7 @@ async function _refreshCloudActiveStatus(id) {
     // VM opens, e.g. "🖥️ Checking liza.advocate@ortus.solutions…"). Captured here
     // and merged into the log by _combineCloudEvents. Newest-first from Redis.
     if (d && Array.isArray(d.monitorLog)) _cloudMonitorLog.set(id, d.monitorLog);
+    if (d && d.campaign && d.campaign.mode) _cloudModeById.set(id, d.campaign.mode);
     // Per-account status (daily used vs limit, throttled/weekly-cap, needs-login)
     // for the Live Status "Accounts" panel — best-effort, degrades to no panel.
     try {
@@ -6821,18 +6823,39 @@ function renderCloudAccountsPanel(id) {
   const accounts = (id && _cloudAccountsById.get(id)) || [];
   if (!accounts.length) { panel.hidden = true; panel.innerHTML = ''; return; }
   const badge = (cls, text) => `<span class="cap-badge ${cls}">${escHtml(text)}</span>`;
+  // Follower Growth only: the account label is the GoLogin profile NAME (== the
+  // login email) and the relevant number is INVITE CREDITS left, not the daily
+  // connection quota. Every OTHER campaign type keeps the existing panel exactly.
+  const isFG = _cloudModeById.get(id) === 'follower_growth';
+  const nameFor = (a) => a.email
+    || (((typeof allProfilesData !== 'undefined' && allProfilesData) || []).find((p) => String(p.id) === String(a.profileId)) || {}).name
+    || a.profileId || 'account';
   const rows = accounts.map((a) => {
-    const who = escHtml(a.email || a.profileId || 'account');
+    const who = escHtml(nameFor(a));
     const badges = [];
     // Blocking status first (most important), then daily usage, then primary link.
     const benched = !!(a.weeklyCap || a.parkReason === 'weekly');
     if (a.needsLogin) badges.push(badge('bad', '⚠ Not logged in'));
     else if (benched) badges.push(badge('bad', '🚫 Benched — weekly invitation limit · rest of the week'));
     else if (a.parked || a.parkReason === 'throttle') badges.push(badge('warn', '⏸ Throttled'));
-    else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
+    else if (!isFG && (a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
     else badges.push(badge('ok', '✓ Active'));
-    // Daily usage always shown.
-    badges.push(badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
+    if (isFG) {
+      // Invite credits left (from the observed FG credit data, keyed by profile
+      // name). FG uses all the credits it can, so the daily quota is irrelevant.
+      const name = nameFor(a);
+      let cr = null;
+      try { cr = (typeof fgtlCredit === 'function') ? fgtlCredit(name) : null; } catch (_) { cr = null; }
+      if (cr && cr.tracked && Number.isFinite(Number(cr.available))) {
+        const left = Number(cr.available);
+        badges.push(badge(left > 0 ? 'muted' : 'warn', `${left} invite credit${left === 1 ? '' : 's'} left`));
+      } else {
+        badges.push(badge('muted', 'credits — not checked yet'));
+      }
+    } else {
+      // Daily usage (non-FG campaigns).
+      badges.push(badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
+    }
     // Primary-connection (CC+IC only; null when N/A).
     if (a.primaryConnected === true) badges.push(badge('ok', '🔗 Connected to primary'));
     else if (a.primaryConnected === false) badges.push(badge('muted', 'Primary not yet connected'));
