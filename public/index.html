@@ -1384,6 +1384,8 @@
   .sn-setup-spinner{width:16px;height:16px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
   @keyframes sn-spin{to{transform:rotate(360deg);}}
   .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-clear-cat{margin-left:auto;font:inherit;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);background:none;border:1px solid var(--hairline);border-radius:9999px;padding:3px 10px;cursor:pointer;transition:color .12s,border-color .12s;}
+  .sn-clear-cat:hover{color:var(--ink);border-color:var(--ink);}
   .sn-railcount{color:#c4c4c4;}
   .sn-sectionhead{font-family:var(--display);font-size:20px;letter-spacing:.02em;color:var(--ink);margin:30px 0 4px;padding-bottom:8px;border-bottom:1px solid var(--hairline);}
   .sn-sectionhead:first-child{margin-top:8px;}
@@ -3544,7 +3546,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.94"></script>
+  <script type="module" src="/js/app.js?v=2.160.97"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

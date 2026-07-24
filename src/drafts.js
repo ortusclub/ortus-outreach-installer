@@ -67,7 +67,42 @@ async function persist() {
 }
 
 export async function getDrafts() {
-  return [...(await load())];
+  // Trashed drafts (bulk "Delete all") are hidden immediately but kept on disk
+  // for a 1-week grace window, then hard-purged by purgeTrashedDrafts.
+  return (await load()).filter((d) => !d.trashedAt).map((d) => ({ ...d }));
+}
+
+// Soft-delete: stamp trashedAt so the draft vanishes from the board now but the
+// data survives a week (recoverable by clearing the field on disk).
+export async function trashDraft(id) {
+  await load();
+  const d = cache.find((d) => d.id === id);
+  if (!d) return false;
+  d.trashedAt = Date.now();
+  await persist();
+  return true;
+}
+
+// Bulk soft-delete every non-trashed draft in ONE load + ONE persist (the
+// per-draft path would rewrite the whole file once per draft — 227 writes).
+export async function trashAllDrafts() {
+  await load();
+  const now = Date.now();
+  let n = 0;
+  for (const d of cache) { if (!d.trashedAt) { d.trashedAt = now; n++; } }
+  if (n) await persist();
+  return n;
+}
+
+// Hard-remove drafts trashed longer than maxAgeMs ago. Returns count removed.
+export async function purgeTrashedDrafts(maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
+  await load();
+  const cutoff = Date.now() - maxAgeMs;
+  const before = cache.length;
+  cache = cache.filter((d) => !(d.trashedAt && d.trashedAt < cutoff));
+  const removed = before - cache.length;
+  if (removed) await persist();
+  return removed;
 }
 
 export async function getDraft(id) {
@@ -84,6 +119,7 @@ export async function getMostRecentDraft() {
   if (!cache.length) return null;
   let best = null;
   for (const d of cache) {
+    if (d.trashedAt) continue;   // don't resurface a trashed draft in the Resume pill
     _backfillLastEditedAt(d);
     if (!best || String(d.lastEditedAt) > String(best.lastEditedAt)) best = d;
   }

@@ -8357,19 +8357,23 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
   // Saved drafts (Sam 2026-07-23): surface under a DRAFTS rail inside this
   // section — pre-rendered strips arrive via opts.draftsHtml (renderDraftStrip),
   // since drafts aren't board items (no bucket / no engine id).
+  // Categorized bulk "Delete all" (operators asked for it back, split by
+  // category). stopPropagation so it doesn't toggle the group's collapse.
+  const clearBtn = (fn, n) => n
+    ? `<button type="button" class="sn-clear-cat" onclick="event.stopPropagation(); ${fn}">Delete all</button>` : '';
+
   const draftsRail = opts.draftsHtml
-    ? `<div class="sn-railhead">Drafts <span class="sn-railcount">${opts.draftsCount || ''}</span></div>` + opts.draftsHtml
+    ? `<div class="sn-railhead">Drafts <span class="sn-railcount">${opts.draftsCount || ''}</span>${clearBtn('clearAllDrafts()', opts.draftsCount || 0)}</div>` + opts.draftsHtml
     : '';
 
   // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
   // groups (sections + Done/Cancelled) show a caret, so the affordance reads true.
-  // "Clear done" removed (Sam) — to remove a campaign, delete it, not hide it.
   const body = rail('Running', running)
     + rail('Paused', paused)
     + rail('Idle', idle)
     + draftsRail
-    + subGroup('done', 'Done', done)
-    + subGroup('cancelled', 'Stopped', cancelled);
+    + subGroup('done', 'Done', done, clearBtn("clearBoardCat('finished')", done.length))
+    + subGroup('cancelled', 'Stopped', cancelled, clearBtn("clearBoardCat('cancelled')", cancelled.length));
 
   // Non-admin flat board: no header, just the buckets.
   if (opts.flat) return body;
@@ -8391,6 +8395,7 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
 }
 
 let _campaignsBoardTimer = null;
+let _lastBoardHtml = '';  // anti-jank: skip the 4s re-render when nothing changed
 // Fetch local (status/queue/history) + cloud campaigns, normalize, render.
 async function renderCampaignsBoard() {
   const board = document.getElementById('campaigns-board');
@@ -8613,12 +8618,21 @@ async function renderCampaignsBoard() {
     html = _renderBoardSection('mine', '', shown, { flat: true, ..._draftOpts });
   }
   _snItemsById = new Map(items.map((x) => [x.id, x]));
-  // Keep the user-search caret alive across the 4s poll re-render: note whether
-  // it held focus BEFORE we blow away innerHTML, then restore after.
+  // Anti-jank: the 4s poll used to blow away the whole board every tick — killing
+  // clicks/scroll/expanded panes mid-interaction. Skip the rebuild when the
+  // rendered HTML is byte-identical to last time (the common case: a board of
+  // done/cancelled strips is static). Live strips whose countdowns tick still
+  // differ each render, so they keep updating.
+  const final = html || _campaignsEmptyState();
+  if (board.dataset.rendered === '1' && final === _lastBoardHtml) return;
+  _lastBoardHtml = final;
+  board.dataset.rendered = '1';
+  // Keep the user-search caret alive across the re-render: note whether it held
+  // focus BEFORE we blow away innerHTML, then restore after.
   const _searchHadFocus = document.activeElement
     && document.activeElement.classList
     && document.activeElement.classList.contains('cb-usersearch');
-  board.innerHTML = html || _campaignsEmptyState();
+  board.innerHTML = final;
   if (_searchHadFocus) {
     const inp = board.querySelector('.cb-usersearch');
     if (inp) { inp.focus(); const n = inp.value.length; try { inp.setSelectionRange(n, n); } catch { /* */ } }
@@ -8684,6 +8698,40 @@ function clearCampaignsDone() {
   renderCampaignsBoard();
 }
 window.clearCampaignsDone = clearCampaignsDone;
+
+// Categorized bulk clear. Campaigns are cloud/local (engine keeps cloud data on
+// its own lifecycle) → "clear" hides them from THIS board. Drafts get a real
+// soft-delete + 1-week purge via clearAllDrafts.
+function clearBoardCat(cat) {
+  const items = [..._snItemsById.values()];
+  const targets = cat === 'cancelled'
+    ? items.filter((x) => x.bucket === 'done' && x.bad)
+    : items.filter((x) => x.bucket === 'done' && !x.bad);
+  if (!targets.length) return;
+  const word = cat === 'cancelled' ? 'stopped / cancelled' : 'finished';
+  if (!confirm(`Clear all ${targets.length} ${word} campaign(s) from your board?`)) return;
+  for (const it of targets) {
+    if (it.where === 'cloud') _cloudDismissed.add(it.id);
+    else if (it.where === 'email' && typeof dismissEmailDone === 'function') dismissEmailDone(it.id);
+    else _localDismissed.add(it.id);
+  }
+  try { _cloudSaveDismissed(); } catch { /* */ }
+  renderCampaignsBoard();
+}
+window.clearBoardCat = clearBoardCat;
+
+// Soft-delete every draft (hidden now, kept 1 week, then server-purged).
+async function clearAllDrafts() {
+  let n = 0;
+  try { n = ((await (await fetch('/api/drafts')).json()).drafts || []).length; } catch { /* */ }
+  if (!n) return;
+  if (!confirm(`Delete all ${n} draft(s)? They stay recoverable for 1 week, then are removed for good.`)) return;
+  // ONE bulk request (not N deletes) — server trashes them all in a single write.
+  try { await fetch('/api/drafts/trash-all', { method: 'POST' }); } catch { /* */ }
+  try { if (typeof refreshDashboardDrafts === 'function') refreshDashboardDrafts(); } catch { /* */ }
+  renderCampaignsBoard();
+}
+window.clearAllDrafts = clearAllDrafts;
 
 // Shared prettier empty state for the sn-boards. cfg: { icon, title, sub,
 // ctaLabel, ctaFn, legend? }.

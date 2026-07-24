@@ -34,7 +34,7 @@ import { appendAction, readScrapeLog } from './src/scrape-campaign-logs.js';
 import { mergeCampaignsWithJobs, groupJobsIntoCampaigns } from './public/js/scrape-board.mjs';
 import { getOperatorId } from './src/operator-id.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
-import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
+import { getDrafts, getDraft, addDraft, updateDraft, removeDraft, trashDraft, trashAllDrafts, purgeTrashedDrafts } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
@@ -4585,9 +4585,19 @@ app.patch('/api/drafts/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Bulk "Delete all drafts" — one request, one disk write (vs 227 DELETEs).
+app.post('/api/drafts/trash-all', async (_req, res) => {
+  try { res.json({ ok: true, trashed: await trashAllDrafts() }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.delete('/api/drafts/:id', async (req, res) => {
   try {
-    const ok = await removeDraft(req.params.id);
+    // Bulk "Delete all drafts" sends {soft:true} → hide now, keep 1 week, then
+    // purgeTrashedDrafts removes it. A per-draft delete (no flag) is immediate.
+    const ok = (req.body && req.body.soft)
+      ? await trashDraft(req.params.id)
+      : await removeDraft(req.params.id);
     res.json({ ok });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -5796,6 +5806,12 @@ app.listen(PORT, async () => {
 
   await initNotifier();
   console.log(`  ✦ Notifications: ${process.env.SMTP_HOST ? 'email enabled' : 'email DISABLED — set SMTP_HOST/PORT/USER/PASS + NOTIFY_EMAILS'}\n`);
+
+  // Bulk "Delete all drafts" soft-deletes (trashedAt); hard-purge anything past
+  // the 1-week grace on boot, then daily.
+  const _purgeDrafts = () => purgeTrashedDrafts().then((n) => { if (n) console.log(`  ✦ Purged ${n} draft(s) past the 1-week trash window.`); }).catch(() => {});
+  _purgeDrafts();
+  setInterval(_purgeDrafts, 24 * 60 * 60 * 1000);
 
   // Post-campaign sweeps power the CC+IC auto-intro DM (and bulk-check
   // refresh for any other registered entry). Each tick respects per-entry
