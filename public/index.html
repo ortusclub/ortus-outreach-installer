@@ -1402,6 +1402,11 @@
   .cloud-accounts-panel .cap-badge.warn{color:var(--gold,#d4a24a);border-color:var(--gold,#d4a24a);}
   .cloud-accounts-panel .cap-badge.bad{color:var(--red);border-color:var(--red);}
   .cloud-accounts-panel .cap-badge.muted{color:var(--gray);}
+  /* Retry (un-bench) — styled as a clickable pill matching the cap-badges, ink
+     outline so it reads as the actionable one in the row. */
+  .cloud-accounts-panel .cap-retry{display:inline-block;padding:2px 12px;border-radius:9999px;font-size:11px;letter-spacing:.02em;white-space:nowrap;border:1px solid var(--ink,#111);color:var(--ink,#111);background:transparent;cursor:pointer;font-family:inherit;line-height:inherit;transition:background .12s,color .12s;}
+  .cloud-accounts-panel .cap-retry:hover{background:var(--ink,#111);color:var(--paper,#fff);}
+  .cloud-accounts-panel .cap-retry:disabled{opacity:.5;cursor:default;background:transparent;color:var(--ink,#111);}
   /* ── Admin board sections (Your / Other users / Admin) ── */
   .cb-section{border:1px solid var(--hairline);border-radius:14px;padding:4px 16px 14px;margin:14px 0;}
   .cb-section.cb-collapsed{padding-bottom:4px;}
@@ -3539,7 +3544,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.93"></script>
+  <script type="module" src="/js/app.js?v=2.160.94"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

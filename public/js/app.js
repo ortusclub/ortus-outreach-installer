@@ -6840,7 +6840,7 @@ function renderCloudAccountsPanel(id) {
     // account is eligible again from the next turn (three fresh 429 strikes
     // re-bench it automatically if LinkedIn is still capping).
     if (benched && !a.needsLogin) {
-      badges.push(`<button type="button" class="mini cap-retry" onclick="unbenchCloudAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)" title="Clear the bench and let this account try again">Retry</button>`);
+      badges.push(`<button type="button" class="cap-retry" onclick="unbenchCloudAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)" title="Clear the bench and let this account try again">Retry</button>`);
     }
     return `<div class="cap-row"><span class="cap-acct">${who}</span><span class="cap-status">${badges.join('')}</span></div>`;
   }).join('');
