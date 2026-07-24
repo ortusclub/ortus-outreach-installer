@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FG_LIST_HEADER, splitName, normUrl, inviteIdentity, mapHeader,
+  FG_LIST_HEADER, splitName, normUrl, inviteIdentity, invertAccountEmails, mapHeader,
   listRowFromContact, listRowFromFgRow, parseListRows,
 } from '../src/connections/fg-list.js';
 
@@ -27,6 +27,19 @@ test('normUrl strips scheme/www/trailing-slash/query and lower-cases', () => {
 test('inviteIdentity prefers Member ID, falls back to normalised URL', () => {
   assert.equal(inviteIdentity({ memberId: '12345', url: 'https://li/ada' }), '12345');
   assert.equal(inviteIdentity({ memberId: '', url: 'https://www.linkedin.com/in/Ada/' }), 'linkedin.com/in/ada');
+});
+
+test('invertAccountEmails lower-cases, skips blanks, and reports collisions', () => {
+  const r = invertAccountEmails({
+    pid_ada: 'Ada@Ortus.Example',
+    pid_grace: 'grace@ortus.example',
+    pid_blank: '',
+    pid_dup: 'ada@ortus.example',   // same email as pid_ada → collision, first wins
+  });
+  assert.equal(r.emailToProfileId['ada@ortus.example'], 'pid_ada');
+  assert.equal(r.emailToProfileId['grace@ortus.example'], 'pid_grace');
+  assert.equal(r.emailToProfileId['pid_blank'], undefined);
+  assert.deepEqual(r.collisions, ['ada@ortus.example']);
 });
 
 test('mapHeader matches aliases regardless of order/casing', () => {

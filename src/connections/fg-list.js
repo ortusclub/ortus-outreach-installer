@@ -59,6 +59,24 @@ export function inviteIdentity({ memberId = '', url = '' } = {}) {
   return norm(memberId) || normUrl(url);
 }
 
+// Invert the app's accountEmails map (profileId → email, built by the SoO fuzzy
+// resolver in server.js) into the email → profileId map parseListRows needs.
+// Emails are lower-cased. Blanks on either side are skipped. If two profiles
+// resolve to the same email the first wins and the email is returned in
+// `collisions` so the caller can warn — a real account-identity ambiguity, not
+// a silent merge.
+export function invertAccountEmails(accountEmails = {}) {
+  const emailToProfileId = {};
+  const collisions = [];
+  for (const [profileId, email] of Object.entries(accountEmails || {})) {
+    const key = lc(email);
+    if (!key || !profileId) continue;
+    if (emailToProfileId[key] && emailToProfileId[key] !== profileId) { collisions.push(key); continue; }
+    emailToProfileId[key] = profileId;
+  }
+  return { emailToProfileId, collisions };
+}
+
 // Split a display name into first + rest. "Ada Lovelace King" → { first:'Ada',
 // last:'Lovelace King' }. A single token has an empty last name.
 export function splitName(fullName) {

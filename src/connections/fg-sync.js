@@ -112,6 +112,25 @@ export async function markFgInvited({ memberIds, account, operator, month }) {
   return r; // { invited, remaining }
 }
 
+// Create (or replace) a per-run invite-list tab and write its header + rows.
+// `tab` is the tab name (e.g. "FG 2026-08-01"); `header`/`rows` are in
+// FG_LIST_HEADER order (see fg-list.js). Idempotent by design: re-writing the
+// same tab replaces its contents, so re-generating a list never doubles rows.
+export async function writeFgList(tab, rows, { header = [] } = {}) {
+  const r = await postFg({ action: 'fgWriteList', tab, header, rows }, { timeoutMs: 90000 });
+  if (r?.error) throw new Error(r.error);
+  return r; // { tab, written }
+}
+
+// Read a per-run invite-list tab back as raw sheet values (header row first),
+// ready for parseListRows(). Used at fire time for the auto tab and for a BYO
+// tab that lives in the central FG sheet.
+export async function readFgList(tab) {
+  const r = await postFg({ action: 'fgReadList', tab }, { timeoutMs: 60000 });
+  if (r?.error) throw new Error(r.error);
+  return r.rows || [];
+}
+
 // Write the modal's observed available-credit count straight to the account's FG
 // Budgets row (Remaining := available, Sent := allowance − available) plus the
 // refill date + an "Observed At" stamp. Authoritative over the 30−Sent estimate
