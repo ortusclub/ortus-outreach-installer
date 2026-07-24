@@ -1,12 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeAutopilotHandler } from '../services/fg-roster/autopilot.js';
+import { FG_LIST_HEADER } from '../src/connections/fg-list.js';
 
 const RUN_DAY = new Date('2026-08-01T06:00:00+01:00'); // London run day, 06:00
 const cfg = () => ({
   enabled: true, days: [1, 15], keywords: ['marketing'],
   pairs: [{ operator: 'op@x', operatorName: 'Op', account: 'a@x.com', profileId: 'gl-1' }],
+  publishedBy: 'owner@x.com',
 });
+
+// A pre-generated invite-list tab (header + 2 rows) for account a@x.com == gl-1.
+const listRows = () => [
+  FG_LIST_HEADER,
+  ['Jane', 'Doe', 'https://linkedin.com/in/jane', 'CMO', 'Acme', 'a@x.com', '', '', '', '111'],
+  ['John', 'Roe', 'https://linkedin.com/in/john', 'CEO', 'Beta', 'a@x.com', '', '', '', '222'],
+];
 
 function memRunStore(initial = []) {
   let runs = [...initial];
@@ -22,23 +31,11 @@ function memRunStore(initial = []) {
   };
 }
 
-// Minimal searchService stub: buildFgTargets returns 2 rows.
-const searchService = {
-  buildFgTargets: () => ({
-    rows: [
-      ['Jane', 'https://linkedin.com/in/jane', '111', 'Acme', 'CMO', '', '', '', '', '', '', '', ''],
-      ['John', 'https://linkedin.com/in/john', '222', 'Beta', 'CEO', '', '', '', '', '', '', '', ''],
-    ],
-    count: 2, matched: 2, eligible: 2,
-  }),
-};
-
 function base(overrides = {}) {
   const runStore = overrides.runStore || memRunStore();
   return {
-    searchService,
     startCloud: overrides.startCloud || (async () => ({ id: 'cloud-123' })),
-    queueInvites: async () => {},
+    readList: overrides.readList || (async () => listRows()),
     runStore,
     loadConfig: overrides.loadConfig || (() => cfg()),
     saveRuns: () => {},
@@ -48,48 +45,41 @@ function base(overrides = {}) {
     inviteUrl: 'https://linkedin.com/company/ortus',
     monthlyBudget: 30,
     tz: 'Europe/London',
-    _now: RUN_DAY,
     ...overrides,
   };
 }
 
-test('fires on a run day: dispatches once + records with cycleKey', async () => {
+test('run day with a generated list: reads the tab, dispatches once, records cycleKey + tab', async () => {
   const runStore = memRunStore();
-  let dispatched = 0;
-  const h = makeAutopilotHandler(base({ runStore, startCloud: async () => { dispatched++; return { id: 'cloud-123' }; }, _now: RUN_DAY }));
+  let payload = null;
+  const h = makeAutopilotHandler(base({ runStore, startCloud: async (p) => { payload = p; return { id: 'cloud-123' }; } }));
   const r = await h.run({ nowDate: RUN_DAY });
   assert.equal(r.dispatched, true);
   assert.equal(r.cloudId, 'cloud-123');
-  assert.equal(dispatched, 1);
+  assert.equal(r.tab, 'FG 2026-08-01');
+  // Dispatched follower_growth with 2 leads, each pinned to its account.
+  assert.equal(payload.mode, 'follower_growth');
+  assert.equal(payload.leads.length, 2);
+  assert.equal(payload.leads[0].routeAccount, 'gl-1');
   const rec = runStore._all().find((x) => x.cloudId === 'cloud-123');
   assert.equal(rec.cycleKey, '2026-08-01');
+  assert.equal(rec.tab, 'FG 2026-08-01');
+  assert.equal(rec.listDriven, true);
 });
 
-test('mirrors manual FG: caps at monthly budget + skips already-invited + writes Queued', async () => {
-  // Regression: autopilot used to pass budget:Infinity + alreadyInvited:[] + a no-op
-  // queue — dispatching EVERY matched connection (~15k), re-inviting done people, and
-  // never writing the sheet. It must match /api/fg/team-launch/start exactly.
-  let seenBudget, seenInvited;
-  const spy = { buildFgTargets: (_c, opts) => { seenBudget = opts.budget; seenInvited = opts.alreadyInvited; return { rows: [['J', 'u', '1', '', '', '', '', '', '', '', '', '', '']], count: 1, matched: 1, eligible: 1 }; } };
-  let queuedRows = null;
+test('no list generated for the run → skip (no-list) + alert, no dispatch', async () => {
+  let dispatched = 0; let alerts = 0;
   const h = makeAutopilotHandler(base({
-    searchService: spy, monthlyBudget: 30,
-    getFgState: async () => ({ invites: [{ 'Member ID': '999', Status: 'Invited' }, { 'LinkedIn URL': 'https://x/y', Status: 'Invited' }] }),
-    queueInvites: async (rows) => { queuedRows = rows; },
+    readList: async () => [],              // empty tab
+    startCloud: async () => { dispatched++; return { id: 'x' }; },
+    sendAlert: async () => { alerts++; return { sent: true }; },
   }));
-  await h.run({ force: true, nowDate: RUN_DAY });
-  assert.equal(seenBudget, 30, `budget should be 30, got ${seenBudget}`);
-  assert.deepEqual(seenInvited, ['999', 'https://x/y'], `alreadyInvited should come from the FG sheet, got ${JSON.stringify(seenInvited)}`);
-  assert.ok(Array.isArray(queuedRows) && queuedRows.length === 1, 'queueInvites must receive the dispatched rows (Queued write-back)');
-});
-
-test('FG sheet unreachable → still runs, just does not skip already-invited', async () => {
-  let seenInvited = 'unset';
-  const spy = { buildFgTargets: (_c, opts) => { seenInvited = opts.alreadyInvited; return { rows: [['J', 'u', '1', '', '', '', '', '', '', '', '', '', '']], count: 1, matched: 1, eligible: 1 }; } };
-  const h = makeAutopilotHandler(base({ searchService: spy, getFgState: async () => { throw new Error('sheet down'); } }));
-  const r = await h.run({ force: true, nowDate: RUN_DAY });
-  assert.equal(r.dispatched, true, 'a sheet hiccup must not block the run');
-  assert.deepEqual(seenInvited, [], 'falls back to [] when the sheet is unreadable');
+  const r = await h.run({ nowDate: RUN_DAY });
+  assert.equal(r.skipped, true);
+  assert.equal(r.reason, 'no-list');
+  assert.equal(r.tab, 'FG 2026-08-01');
+  assert.equal(dispatched, 0);
+  assert.equal(alerts, 1);
 });
 
 test('does not fire twice for the same cycle', async () => {
@@ -111,17 +101,22 @@ test('disabled config → skip, no dispatch', async () => {
   assert.equal(dispatched, 0);
 });
 
-test('force ignores the gate and dispatches even off a run day', async () => {
+test('force off a run day → reads the upcoming run tab and dispatches (manual cycleKey)', async () => {
   const OFF_DAY = new Date('2026-08-02T09:00:00+01:00');
-  let dispatched = 0;
-  const h = makeAutopilotHandler(base({ startCloud: async () => { dispatched++; return { id: 'm1' }; }, now: () => OFF_DAY.toISOString() }));
+  let dispatched = 0; let readTab = null;
+  const h = makeAutopilotHandler(base({
+    startCloud: async () => { dispatched++; return { id: 'm1' }; },
+    readList: async (tab) => { readTab = tab; return listRows(); },
+    now: () => OFF_DAY.toISOString(),
+  }));
   const r = await h.run({ force: true, nowDate: OFF_DAY });
   assert.equal(r.dispatched, true);
   assert.equal(dispatched, 1);
   assert.match(r.cycleKey, /-manual-/);
+  assert.equal(readTab, 'FG 2026-08-15'); // next scheduled run after Aug 2
 });
 
-test('dispatch failure → failed record + one alert', async () => {
+test('dispatch error (engine returns {error}) → failed record + one alert', async () => {
   const runStore = memRunStore();
   let alerts = 0;
   const h = makeAutopilotHandler(base({
@@ -136,16 +131,18 @@ test('dispatch failure → failed record + one alert', async () => {
   assert.equal(runStore._all().some((x) => x.status === 'failed' && x.cycleKey === '2026-08-01'), true);
 });
 
-test('force + empty pairs → skip, no dispatch', async () => {
-  let dispatched = 0;
+test('force + empty pairs → skip, no dispatch (never reads a tab)', async () => {
+  let dispatched = 0; let read = 0;
   const h = makeAutopilotHandler(base({
     loadConfig: () => ({ ...cfg(), pairs: [] }),
+    readList: async () => { read++; return listRows(); },
     startCloud: async () => { dispatched++; return { id: 'cloud-123' }; },
   }));
   const r = await h.run({ force: true, nowDate: RUN_DAY });
   assert.equal(r.skipped, true);
   assert.equal(r.reason, 'no-pairs');
   assert.equal(dispatched, 0);
+  assert.equal(read, 0);
 });
 
 test('sendAlert throwing does not mask dispatch failure', async () => {
@@ -161,26 +158,24 @@ test('sendAlert throwing does not mask dispatch failure', async () => {
   assert.equal(runStore._all().some((x) => x.status === 'failed' && x.cycleKey === '2026-08-01'), true);
 });
 
-test('no eligible targets → benign skip, no alert, no failed record', async () => {
+test('list with only unknown accounts → benign skip (no-usable-rows), no alert, no failed record', async () => {
   const runStore = memRunStore();
-  let alerts = 0;
-  let dispatched = 0;
-  const emptySearchService = { buildFgTargets: () => ({ rows: [], count: 0, matched: 0, eligible: 0 }) };
+  let alerts = 0; let dispatched = 0;
   const h = makeAutopilotHandler(base({
     runStore,
-    searchService: emptySearchService,
+    readList: async () => [FG_LIST_HEADER, ['X', 'Y', 'https://li/x', 'r', 'c', 'nobody@x.com', '', '', '', '']],
     startCloud: async () => { dispatched++; return { id: 'cloud-123' }; },
     sendAlert: async () => { alerts++; return { sent: true }; },
   }));
   const r = await h.run({ nowDate: RUN_DAY });
   assert.equal(r.skipped, true);
-  assert.equal(r.reason, 'no-eligible-targets');
+  assert.equal(r.reason, 'no-usable-rows');
   assert.equal(dispatched, 0);
   assert.equal(alerts, 0);
   assert.equal(runStore._all().some((x) => x.status === 'failed'), false);
 });
 
-test('startCloud exception → failed record + one alert', async () => {
+test('startCloud exception → failed record + one alert (dispatchFromRows never throws out)', async () => {
   const runStore = memRunStore();
   let alerts = 0;
   const h = makeAutopilotHandler(base({
@@ -193,4 +188,18 @@ test('startCloud exception → failed record + one alert', async () => {
   assert.match(r.error, /boom/);
   assert.equal(alerts, 1);
   assert.equal(runStore._all().some((x) => x.status === 'failed' && x.cycleKey === '2026-08-01'), true);
+});
+
+test('read error (Apps Script down) → failed record + alert', async () => {
+  const runStore = memRunStore();
+  let alerts = 0;
+  const h = makeAutopilotHandler(base({
+    runStore,
+    readList: async () => { throw new Error('fg script 500'); },
+    sendAlert: async () => { alerts++; return { sent: true }; },
+  }));
+  const r = await h.run({ nowDate: RUN_DAY });
+  assert.equal(r.failed, true);
+  assert.match(r.error, /fg script 500/);
+  assert.equal(alerts, 1);
 });

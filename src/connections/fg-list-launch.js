@@ -67,14 +67,19 @@ export async function dispatchFromRows(rows, { accountEmails = {}, campaign = {}
   if (!leads.length) {
     return { error: 'No invites to send — the list has no usable rows.', skipped };
   }
-  const resp = await deps.startCloud({
-    mode: 'follower_growth',
-    name: campaign.name || '',
-    owner: campaign.owner || '',
-    profileIds: [...new Set(leads.map((l) => l.routeAccount))],
-    leads,
-    config: campaign.config || {},
-  });
+  let resp;
+  try {
+    resp = await deps.startCloud({
+      mode: 'follower_growth',
+      name: campaign.name || '',
+      owner: campaign.owner || '',
+      profileIds: [...new Set(leads.map((l) => l.routeAccount))],
+      leads,
+      config: campaign.config || {},
+    });
+  } catch (e) {
+    return { error: (e && e.message) || 'Cloud dispatch failed.', skipped };
+  }
   if (!resp || resp.error || !resp.id) {
     return { error: (resp && resp.error) || 'Cloud dispatch failed.', skipped };
   }
