@@ -19799,6 +19799,19 @@ function fgtlCloudPoll() {
 // roles" or "Use this tab". Empty → legacy build-and-dispatch flow.
 let _fgtlListTab = '';
 
+/** Stream the campaign log into the Live Status section's log box. */
+function fgwStartLog() {
+  const box = document.getElementById('fgw-log');
+  if (!box || box._poll) return;
+  box._poll = setInterval(async () => {
+    try {
+      const s = await (await fetch('/api/fg/team-launch/status')).json();
+      const logs = (s && Array.isArray(s.logs)) ? s.logs : [];
+      if (logs.length) { box.textContent = logs.slice(-60).join('\n'); box.scrollTop = box.scrollHeight; }
+    } catch (_) { /* transient */ }
+  }, 4000);
+}
+
 /** Populate the "bring your own" dropdown with the FG sheet's tab names. */
 async function fgtlLoadTabs() {
   const sel = document.getElementById('fgtl-byo-tab');
@@ -20143,6 +20156,7 @@ function fgtlBindLaunch() {
   if (editSchedBtn && !editSchedBtn._b) { editSchedBtn._b = true; editSchedBtn.addEventListener('click', fgapEditSchedule); }
   const byoSel = document.getElementById('fgtl-byo-tab');
   if (byoSel && !byoSel._loaded) { byoSel._loaded = true; fgtlLoadTabs(); }
+  fgwStartLog();
   const doStop = async (btn) => {
     // Cloud FG run → stop the VM campaign; the cloud poll then resets the card.
     if (_fgtlCloudId) {
