@@ -2691,7 +2691,12 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       }, { startCloud: (payload) => startCloudCampaign(payload) });
       if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
       reconcileFgCloudRuns().catch(() => {}); // kick a first poll shortly (non-blocking)
-      return res.json({ started: true, cloudId: out.cloudId, leadCount: out.leadCount, skipped: out.skipped, tab });
+      // Slim per-account plan (profileId → queued count) so the Live-status board
+      // can show how many invites each account has lined up. The engine's /leads
+      // reports pending leads as unrouted (account:null), so this fire-time plan is
+      // the only source of the per-account queued totals.
+      const plan = (out.perAccount || []).map((a) => ({ profileId: a.profileId, account: a.account, count: a.count }));
+      return res.json({ started: true, cloudId: out.cloudId, leadCount: out.leadCount, skipped: out.skipped, tab, perAccount: plan });
     }
 
     const keywords = Array.isArray(b.keywords) ? b.keywords : [];

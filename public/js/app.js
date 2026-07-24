@@ -19506,6 +19506,11 @@ async function fgapRunNow() {
     else {
       const n = (r.leadCount != null) ? `${r.leadCount} invites ` : '';
       showCampaignToast(`Follower Growth dispatched from “${tab}” — ${n}running in the cloud.`, 5000);
+      // Capture the per-account queued plan (profileId → count) so the Live-status
+      // board can show how many invites each account has lined up. Persist by
+      // cloudId so a page reload mid-run can restore it (the engine can't supply
+      // per-account queued counts — pending leads come back unrouted).
+      if (Array.isArray(r.perAccount) && r.cloudId) fgtlSetPlanned(r.cloudId, r.perAccount);
       // Show the SAME live card + "Launching…" banner as the manual cloud launch.
       if (r.cloudId) fgapShowCloudLaunchCard(r.cloudId);
     }
@@ -19670,6 +19675,20 @@ let _fgtlLastStatus = null;
 let _fgtlCloudId = null;         // active cloud FG campaign id (null = local/none)
 let _fgtlCloudPairs = {};        // profileId → { account, operator } for friendly labels
 let _fgtlCloudTimer = null;
+let _fgtlPlanned = {};           // profileId → queued invite count for the active run
+
+// The per-account queued plan can't be recomputed from the engine (pending leads
+// come back unrouted), so persist it by cloudId at fire time and restore it when
+// the board reattaches to a run after a reload.
+function fgtlSetPlanned(cloudId, perAccount) {
+  _fgtlPlanned = {};
+  for (const a of (perAccount || [])) { if (a && a.profileId) _fgtlPlanned[String(a.profileId)] = Number(a.count) || 0; }
+  try { localStorage.setItem(`fg-planned-${cloudId}`, JSON.stringify(_fgtlPlanned)); } catch (_) { /* quota / private mode */ }
+}
+function fgtlRestorePlanned(cloudId) {
+  if (Object.keys(_fgtlPlanned).length) return;
+  try { const raw = localStorage.getItem(`fg-planned-${cloudId}`); if (raw) _fgtlPlanned = JSON.parse(raw) || {}; } catch (_) { /* ignore */ }
+}
 
 // Adapt a cloud FG campaign ({status,...}) + its leads into the status shape the
 // existing fgtlRenderCard/fgtlRenderAcctBoard already consume.
@@ -19701,16 +19720,25 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
     else byAcct[pid].pending++;
   }
   const pids = Object.keys(_fgtlCloudPairs).length ? Object.keys(_fgtlCloudPairs) : Object.keys(byAcct);
+  const livePid = String((extra && extra.liveAccount) || '');
   let totalSent = 0, totalSkip = 0, doneAccounts = 0;
   const perAccount = pids.map((pid) => {
     const c = byAcct[pid] || { sent: 0, skipped: 0, pending: 0 };
     totalSent += c.sent; totalSkip += c.skipped;
     const processed = c.sent + c.skipped;
     let status = 'waiting';
-    if (c.pending === 0 && processed > 0) { status = 'done'; doneAccounts++; }
+    // The engine's live signal is authoritative for "who's running RIGHT NOW":
+    // pending leads come back unrouted, so the sent-count heuristic alone would
+    // flip an account to "done" the instant it sends one. liveAccount overrides.
+    if (livePid && pid === livePid && !isDone) { status = 'running'; }
+    else if (c.pending === 0 && processed > 0) { status = 'done'; doneAccounts++; }
     else if (processed > 0) status = 'running';
     const label = (_fgtlCloudPairs[pid] && _fgtlCloudPairs[pid].account) || pid;
-    return { account: label, status, invited: c.sent, targets: processed + c.pending, reason: '' };
+    // planned = how many invites this account had queued at fire time (from the
+    // sheet). The engine can't report it (pending leads are unrouted), so fall
+    // back to what we can see (processed + any routed pending) when absent.
+    const planned = Number.isFinite(_fgtlPlanned[pid]) ? _fgtlPlanned[pid] : (processed + c.pending);
+    return { account: label, status, invited: c.sent, targets: processed + c.pending, planned, reason: '' };
   });
   const totalProcessed = totalSent + totalSkip;
   // Authoritative headline counts (engine-computed) when available.
@@ -19758,6 +19786,7 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
 // and paint the FG workspace card. Stops on a terminal status.
 function fgtlCloudPoll() {
   if (_fgtlCloudTimer) { clearTimeout(_fgtlCloudTimer); _fgtlCloudTimer = null; }
+  if (_fgtlCloudId) fgtlRestorePlanned(_fgtlCloudId); // reattach queued counts after a reload
   const tick = async () => {
     const id = _fgtlCloudId;
     if (!id) return;
@@ -20004,17 +20033,29 @@ function fgtlRenderAcctBoard(status) {
   const wrap = document.getElementById('fgtl-acctboard');
   const list = document.getElementById('fgtl-acct-list');
   if (!wrap || !list) return;
-  const accts = Array.isArray(status.perAccount) ? status.perAccount : [];
+  const accts0 = Array.isArray(status.perAccount) ? status.perAccount : [];
   // Show only once a run exists (accounts present). Hidden at idle/Ready.
-  if (!accts.length) { wrap.hidden = true; list.innerHTML = ''; return; }
+  if (!accts0.length) { wrap.hidden = true; list.innerHTML = ''; return; }
   wrap.hidden = false;
+
+  // Float the account that's working RIGHT NOW to the top, then the ones that
+  // just finished, then skipped, then the big "waiting its turn" queue. Stable
+  // within a status (preserves the backend's order, e.g. alphabetical waiting).
+  const RANK = { running: 0, done: 1, skipped: 2, waiting: 3 };
+  const accts = accts0
+    .map((a, i) => [a, i])
+    .sort((x, y) => (RANK[x[0].status] ?? 3) - (RANK[y[0].status] ?? 3) || x[1] - y[1])
+    .map((p) => p[0]);
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const counts = { done: 0, running: 0, skipped: 0, waiting: 0 };
   list.innerHTML = accts.map((a) => {
     const st = a.status || 'waiting';
     counts[st] = (counts[st] || 0) + 1;
-    let icCls = '', ic = '•', pillCls = 'waiting', pillTxt = 'waiting', sub = 'waiting its turn…', rowCls = '';
+    // How many invites this account has lined up from the sheet (queued).
+    const q = Number.isFinite(a.planned) ? a.planned : (Number.isFinite(a.targets) ? a.targets : null);
+    const qTxt = (q != null && q > 0) ? `${q.toLocaleString()} queued` : '';
+    let icCls = '', ic = '•', pillCls = 'waiting', pillTxt = qTxt || 'waiting', sub = qTxt ? `waiting its turn · ${qTxt}` : 'waiting its turn…', rowCls = '';
     if (st === 'done') {
       const n = a.invited || 0;
       const left = Number.isFinite(a.creditsAfter) ? a.creditsAfter : null;
@@ -20029,10 +20070,13 @@ function fgtlRenderAcctBoard(status) {
       if (left === 0) why = ' · used all available credits';
       else if (tgt != null && n >= tgt) why = ' · all matches invited';
       else if (left != null && left > 0) why = ` · ${left} credit${left === 1 ? '' : 's'} left`;
-      sub = `finished · ${n} invite${n === 1 ? '' : 's'} sent${why}`;
+      const ofQ = (q != null && q > n) ? ` of ${q.toLocaleString()} queued` : '';
+      sub = `finished · ${n} invite${n === 1 ? '' : 's'} sent${ofQ}${why}`;
     } else if (st === 'running') {
-      icCls = 'run'; ic = '⟳'; pillCls = 'running'; pillTxt = 'running'; rowCls = 'now';
-      sub = 'sending invites…';
+      icCls = 'run'; ic = '⟳'; pillCls = 'running'; rowCls = 'now';
+      const n = a.invited || 0;
+      pillTxt = qTxt ? `${n} / ${q.toLocaleString()}` : 'running';
+      sub = qTxt ? `sending invites… · ${n} of ${qTxt}` : 'sending invites…';
     } else if (st === 'skipped') {
       icCls = 'skip'; pillCls = 'skipped'; rowCls = 'skip';
       if (a.loggedOut) { ic = '🔒'; pillTxt = 'logged out'; }
@@ -20053,6 +20097,44 @@ function fgtlRenderAcctBoard(status) {
   if (counts.waiting) roll.push(`${counts.waiting} waiting`);
   const rollEl = document.getElementById('fgtl-acct-roll');
   if (rollEl) rollEl.textContent = roll.join(' · ');
+
+  fgwRenderCloudLog(accts, counts);
+}
+
+// Drive the Live-status log box (#fgw-log) for a CLOUD run. The team-launch log
+// poller (fgwStartLog) only has data for LOCAL runs, so it never writes here for
+// cloud — this fills the gap with a live snapshot: who's sending right now, who
+// just finished, and how big the queue still is. Snapshot (not append) each tick
+// so it stays correct without tracking transitions.
+function fgwRenderCloudLog(accts, counts) {
+  const box = document.getElementById('fgw-log');
+  if (!box) return;
+  const esc = (s) => String(s == null ? '' : s);
+  const running = accts.filter((a) => a.status === 'running');
+  const done = accts.filter((a) => a.status === 'done');
+  const lines = [];
+  const head = [];
+  if (counts.done) head.push(`${counts.done} done`);
+  if (counts.running) head.push(`${counts.running} running`);
+  if (counts.waiting) head.push(`${counts.waiting} waiting`);
+  lines.push(`Follower Growth · ${head.join(' · ') || 'starting…'}`);
+  lines.push('');
+  if (running.length) {
+    for (const a of running) {
+      const q = Number.isFinite(a.planned) ? a.planned : null;
+      lines.push(`▶ NOW: ${esc(a.account)} — sending invites (${a.invited || 0}${q ? ' / ' + q.toLocaleString() : ''})`);
+    }
+  } else if (counts.waiting) {
+    lines.push('… warming up the next account (browsers open one at a time)');
+  }
+  // A short tail of the most-recently-finished accounts, for context.
+  const recent = done.slice(-6);
+  if (recent.length) {
+    lines.push('');
+    for (const a of recent) lines.push(`✓ ${esc(a.account)} — ${a.invited || 0} sent`);
+  }
+  if (counts.waiting) { lines.push(''); lines.push(`… ${counts.waiting} account${counts.waiting === 1 ? '' : 's'} waiting their turn`); }
+  box.textContent = lines.join('\n');
 }
 
 /** Map status object onto #fgtl-* card elements. */
