@@ -6494,7 +6494,10 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
       const extra = `${email ? ` · via ${email}` : ''}${url ? ` · ${url}` : ''}`;
       return { t: ts(l.sentAt), line: `✓ ${name} · ${verb}${when ? ` · ${when}` : ''}${extra}` };
     }
-    return { t: ts(l.sentAt) || ts(l.dateLastAction), line: `✗ ${name} · ${l.error || 'error'}` };
+    // Error rows: timestamped from dateLastAction (engine v93 stamps the error
+    // moment) so ✗ lines carry a time and sort chronologically like the rest.
+    const errWhen = hhmm(l.sentAt || l.dateLastAction);
+    return { t: ts(l.sentAt) || ts(l.dateLastAction), line: `✗ ${name} · ${l.error || 'error'}${errWhen ? ` · ${errWhen}` : ''}` };
   });
   if (preCount) {
     entries.unshift({ t: -Infinity, line: `⏭ ${preCount} lead${preCount === 1 ? '' : 's'} already had a Connection Request Status in the sheet — excluded from this run (not re-sent)` });
