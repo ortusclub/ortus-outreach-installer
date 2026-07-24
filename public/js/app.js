@@ -19753,7 +19753,13 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
     else if (l.status === 'skipped') byAcct[pid].skipped++;
     else byAcct[pid].pending++;
   }
-  const pids = Object.keys(_fgtlCloudPairs).length ? Object.keys(_fgtlCloudPairs) : Object.keys(byAcct);
+  // Show ONLY the accounts this campaign actually uses — the engine's profile_ids
+  // (derived from the tab's Account Email column), NOT the full team roster we send
+  // for Account-Email→profileId resolution. Falls back to the roster / seen-in-leads
+  // only when the engine hasn't reported profile_ids yet.
+  const campPids = Array.isArray(campaign && campaign.profile_ids) ? campaign.profile_ids.map(String) : [];
+  const pids = campPids.length ? campPids
+    : (Object.keys(_fgtlCloudPairs).length ? Object.keys(_fgtlCloudPairs) : Object.keys(byAcct));
   const livePid = String((extra && extra.liveAccount) || '');
   // Per-account invite credits from the engine's /accounts endpoint (profileId →
   // { available, allowance, refill }). Lets the board show "N credits left" and
