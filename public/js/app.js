@@ -2996,11 +2996,10 @@ function onModeChange() {
   const isFollowerGrowth = (mode === 'follower_growth');
   const fgPanel = document.getElementById('nav-follower-growth');
   if (fgPanel) fgPanel.style.display = isFollowerGrowth ? '' : 'none';
-  // Follower Growth has its OWN Live Status (wizard step 3) — completely hide the
-  // shared app-wide "7. Live Status" section so there's only one. Restored (shown)
-  // for every other campaign type, which relies on it.
-  const liveStatusSection = document.getElementById('nav-status');
-  if (liveStatusSection) liveStatusSection.style.display = isFollowerGrowth ? 'none' : '';
+  // FG hides the shared "7. Live Status" section — enforced centrally in
+  // syncLiveStatusVisibility() (which also handles the cloud-view case), so we
+  // don't touch #nav-status display here (that would wrongly show it for idle
+  // non-FG modes).
   if (isFollowerGrowth) {
     if (navAccounts) navAccounts.style.display = 'none';
     if (navPace) navPace.style.display = 'none';
@@ -11699,16 +11698,14 @@ function syncLiveStatusVisibility() {
   // Running/monitoring are hidden while editing an unrelated draft; a FINISHED
   // campaign's log is shown regardless (the wizard resets to a fresh draft on
   // finish, so editingDraft is true — but the operator still wants the log).
-  // Follower Growth has its OWN self-contained log card (#fgtl-card); the generic
-  // campaign Live Status (#nav-status) must never appear in FG view, else a prior
-  // finished campaign's card lingers underneath the FG board (v2.119.2).
-  // ...UNLESS we've deliberately opened a cloud campaign's live card (_viewingCloudId
-  // set). A cloud FG run's card #2 must show exactly like any other VM campaign; the
-  // FG-board suppression only applies when we're actually on the board (no cloud view).
-  const inFollowerGrowth = (document.getElementById('campaign-mode')?.value === 'follower_growth') && !_viewingCloudId;
-  // Viewing a cloud campaign in the wizard → its Live Status (section 7) must show
-  // regardless of the local __cockpit state (which is idle for a VM campaign) and
-  // even if liveStatusForcedOpen was reset by an unrelated re-render.
+  // Follower Growth has its OWN self-contained Live Status (wizard step 3), which
+  // shows cloud FG runs via fgtlCloudPoll — so the generic "7. Live Status"
+  // (#nav-status) must NEVER appear in FG view, cloud run or not. (Previously the
+  // cloud-view case forced it back on, so section 7 reappeared when you opened a
+  // running FG campaign and only vanished on refresh — v2.119.2 exception dropped.)
+  const inFollowerGrowth = (document.getElementById('campaign-mode')?.value === 'follower_growth');
+  // Viewing a NON-FG cloud campaign in the wizard → its Live Status (section 7)
+  // must show regardless of the local __cockpit state (idle for a VM campaign).
   const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
   const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || cloudView || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
