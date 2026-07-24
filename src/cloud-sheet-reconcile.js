@@ -44,7 +44,10 @@ export function engineErrorToLocalReason(err) {
   if (l.includes('connect button not found')) return 'connect button not found';
   if (l.includes('modal did not appear') || l.includes('no modal')) return 'no modal appeared';
   if (l.includes('wrong person') || l.includes('connect_modal_wrong_person')) return 'connect_modal_wrong_person';
-  if (l.includes('email required') || (l.includes('email') && l.includes('verif'))) return 'email required';
+  // 'email_required' (underscore) = the engine's raw EMAIL_REQUIRED throw — the
+  // "enter their email to connect" gate. Previously missed (space-only match) and
+  // fell through to the generic 'connect failed' stamp.
+  if (l.includes('email required') || l.includes('email_required') || (l.includes('email') && l.includes('verif'))) return 'email required';
   if (l.includes('send not confirmed') || l.includes('send_not_confirmed')) return 'send_not_confirmed';
   // 429 (specific) before the generic rate-limit.
   if (l.includes('429') || l.includes('too many requests')) return 'voyager_rejected HTTP 429';

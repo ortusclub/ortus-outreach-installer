@@ -6443,6 +6443,11 @@ const _cloudSheetUrls = new Map();
 // cloud engine's per-lead status rows (GET /api/campaign/:id/leads). Ordered
 // chronologically (oldest → newest) so the render's slice(-8) shows the most
 // recent lines — matching how a local log reads — with a summary line last.
+// Returns TIMESTAMPED entries [{t, line}] (t: ms epoch, null = undated, ±Infinity
+// pins first/last) so _mergeCloudLog can interleave per-lead rows with the
+// engine's event feed in TRUE chronological order — previously the two streams
+// rendered as separate blocks ("ok" rows first, "log" events after), which read
+// as out-of-order to the operator.
 function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
   leads = Array.isArray(leads) ? leads : [];
   const hhmm = (iso) => {
@@ -6450,6 +6455,7 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
     const d = new Date(iso);
     return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+  const ts = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? t : null; };
   // profileId → sender email (from the campaign config the engine ships on the
   // single-campaign detail). Lets each CC-sent line name the account that sent it.
   const emails = (monitor && monitor.config && monitor.config.accountEmails) || {};
@@ -6471,7 +6477,7 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
     const tb = b.sentAt ? Date.parse(b.sentAt) : Infinity;
     return ta - tb;
   });
-  const lines = actioned.map((l) => {
+  const entries = actioned.map((l) => {
     const name = String(l.fullName || l.leadUrl || 'Lead').trim();
     if (l.status === 'sent') {
       // "already_processed" means the lead was already actioned in a prior run
@@ -6486,28 +6492,34 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
       const email = !isFG ? (emails[l.account] || l.account || '') : '';
       const url = !isFG ? shortUrl(l.leadUrl) : '';
       const extra = `${email ? ` · via ${email}` : ''}${url ? ` · ${url}` : ''}`;
-      return `✓ ${name} · ${verb}${when ? ` · ${when}` : ''}${extra}`;
+      return { t: ts(l.sentAt), line: `✓ ${name} · ${verb}${when ? ` · ${when}` : ''}${extra}` };
     }
-    return `✗ ${name} · ${l.error || 'error'}`;
+    return { t: ts(l.sentAt) || ts(l.dateLastAction), line: `✗ ${name} · ${l.error || 'error'}` };
   });
   if (preCount) {
-    lines.unshift(`⏭ ${preCount} lead${preCount === 1 ? '' : 's'} already had a Connection Request Status in the sheet — excluded from this run (not re-sent)`);
+    entries.unshift({ t: -Infinity, line: `⏭ ${preCount} lead${preCount === 1 ? '' : 's'} already had a Connection Request Status in the sheet — excluded from this run (not re-sent)` });
   }
   // CC+IC / CC+DM lifecycle events straight from the lead rows — so the VM log
   // shows acceptances + introductions (mirroring the local machine), not just the
   // initial connection send. Skipped for Follower Growth (no accept/intro phase).
+  // Timestamped via dateLastAction (engine v89 ships it) so they interleave
+  // chronologically; older engines → undated (sorts after dated lines).
   if (!isFG) {
     leads
       .filter((l) => l && !_isPre(l) && /connected|accepted/i.test(String(l.connectionAcceptedStatus || '')))
-      .forEach((l) => lines.push(`✓ ${String(l.fullName || l.leadUrl || 'Lead').trim()} · connection accepted`));
+      .forEach((l) => {
+        const when = hhmm(l.dateLastAction);
+        entries.push({ t: ts(l.dateLastAction), line: `✓ ${String(l.fullName || l.leadUrl || 'Lead').trim()} · connection accepted${when ? ` · ${when}` : ''}` });
+      });
     leads
       .filter((l) => l && !_isPre(l) && String(l.introductionStatus || '').trim())
       .forEach((l) => {
         const name = String(l.fullName || l.leadUrl || 'Lead').trim();
         const s = String(l.introductionStatus).trim();
-        lines.push(/fail|error|not in your connections|couldn'?t|unable/i.test(s)
-          ? `✗ ${name} · introduction failed · ${s}`
-          : `✓ ${name} · introduced`);
+        const when = hhmm(l.dateLastAction);
+        entries.push(/fail|error|not in your connections|couldn'?t|unable/i.test(s)
+          ? { t: ts(l.dateLastAction), line: `✗ ${name} · introduction failed · ${s}` }
+          : { t: ts(l.dateLastAction), line: `✓ ${name} · introduced${when ? ` · ${when}` : ''}` });
       });
   }
   // Check status is a real timestamped event → keep it in the chronological block,
@@ -6518,21 +6530,21 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
   if (checkDone) {
     const accepted = Math.max(0, Number(monitor.monitor_check_newly_accepted) || 0);
     const checkError = String(monitor.monitor_check_error || '').trim();
-    lines.push(checkError
+    entries.push({ t: ts(checkDone), line: checkError
       ? `✗ Check finished with an error${checkWhen ? ` · ${checkWhen}` : ''} · ${checkError}`
-      : `✓ Check complete${checkWhen ? ` · ${checkWhen}` : ''} · ${accepted} newly accepted`);
+      : `✓ Check complete${checkWhen ? ` · ${checkWhen}` : ''} · ${accepted} newly accepted` });
   } else if (checkStarted) {
-    lines.push(`◌ Check in progress${checkWhen ? ` · ${checkWhen}` : ''}`);
+    entries.push({ t: ts(checkStarted), line: `◌ Check in progress${checkWhen ? ` · ${checkWhen}` : ''}` });
   }
   // SUMMARY — always the very last line(s), visually separated so it's clearly a
-  // running total (NOT a chronological entry). Moved below the per-lead log + check
-  // status per operator feedback.
-  const sent = leads.filter((l) => l && l.status === 'sent').length;
+  // running total (NOT a chronological entry). Pre-actioned leads excluded from
+  // Σ sent (they were never sent by this run).
+  const sent = leads.filter((l) => l && l.status === 'sent' && !_isPre(l)).length;
   const err = leads.filter((l) => l && l.status === 'error').length;
-  const pending = Math.max(0, leads.length - sent - err);
-  lines.push('──────────');
-  lines.push(`Σ Total · ${sent} ${isFG ? 'invited' : 'sent'} · ${err} error${err === 1 ? '' : 's'}${pending > 0 ? ` · ${pending} pending` : ''}`);
-  return lines;
+  const pending = Math.max(0, leads.length - sent - err - preCount);
+  entries.push({ t: Infinity, line: '──────────' });
+  entries.push({ t: Infinity, line: `Σ Total · ${sent} ${isFG ? 'invited' : 'sent'} · ${err} error${err === 1 ? '' : 's'}${pending > 0 ? ` · ${pending} pending` : ''}` });
+  return entries;
 }
 
 // Adapt one cloud campaign ({campaign, leadCounts}) into an sn-strip.
@@ -6643,7 +6655,7 @@ async function renderCloudCampaigns() {
     if (st === 'running' || _snExpanded.has(c.id)) {
       try {
         const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
-        if (lr && Array.isArray(lr.leads)) d._logLines = _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c);
+        if (lr && Array.isArray(lr.leads)) d._logLines = _mergeCloudLog(_cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c), null);
       } catch { /* best-effort — the status note stays */ }
     }
     return d;
@@ -6718,21 +6730,23 @@ function _combineCloudEvents(id) {
   const eng = (_cloudMonitorLog.get(id) || []).map((e) => ({ t: Number(e && e.t) || 0, line: String((e && e.line) || '') })).filter((e) => e.line);
   return app.concat(eng).sort((a, b) => (a.t || 0) - (b.t || 0));
 }
-function _mergeCloudLog(leadLines, events) {
-  leadLines = Array.isArray(leadLines) ? leadLines : [];
-  // Peel off the summary footer (separator + "Σ Total …") so it always stays at the
-  // very bottom, below both the per-lead log AND the event lines — it's a running
-  // total, not a chronological entry.
-  let footer = [];
-  const sepIdx = leadLines.indexOf('──────────');
-  if (sepIdx >= 0) { footer = leadLines.slice(sepIdx); leadLines = leadLines.slice(0, sepIdx); }
-  let body = leadLines;
-  if (Array.isArray(events) && events.length) {
-    const stamp = (t) => { const d = new Date(t); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
-    const evLines = events.map((e) => { const hh = stamp(e.t); return hh ? `${e.line} · ${hh}` : e.line; });
-    body = leadLines.concat(evLines); // events are recent live actions → after the per-lead log
-  }
-  return body.concat(footer); // summary footer always last
+// ONE chronological list (operator feedback 2026-07-24: "log and ok were
+// separated — should be the same list in chronological order"). Takes the
+// timestamped lead entries [{t, line}] from _cloudLeadsToLog plus the engine
+// event feed [{t, line}], merges, and sorts by time: -Infinity pins first
+// (pre-actioned summary), undated lines sort after all dated ones, +Infinity
+// pins the Σ footer last. Stable sort keeps same-time lines in emit order.
+function _mergeCloudLog(leadEntries, events) {
+  leadEntries = Array.isArray(leadEntries) ? leadEntries : [];
+  const stamp = (t) => { const d = new Date(t); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
+  const evEntries = (Array.isArray(events) ? events : []).map((e) => {
+    const hh = stamp(e.t);
+    return { t: Number(e.t) || null, line: hh ? `${e.line} · ${hh}` : e.line };
+  });
+  const key = (e) => (e.t === -Infinity ? -8.64e15 : e.t === Infinity ? 8.64e15 : (e.t == null ? 8.63e15 : e.t));
+  return leadEntries.concat(evEntries)
+    .sort((a, b) => key(a) - key(b))
+    .map((e) => e.line);
 }
 
 function _buildCloudActiveStatus(c, leads, counts) {
@@ -8359,7 +8373,7 @@ async function renderCampaignsBoard() {
       if (st === 'running' || _snExpanded.has(c.id)) {
         try {
           const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
-          if (lr && Array.isArray(lr.leads)) d._logLines = _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c);
+          if (lr && Array.isArray(lr.leads)) d._logLines = _mergeCloudLog(_cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c), null);
         } catch { /* best-effort — the status note stays */ }
       }
       return d;
@@ -19630,7 +19644,7 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
   const liveAcctLabel = live
     ? ((_fgtlCloudPairs[String(extra.liveAccount || '')] && _fgtlCloudPairs[String(extra.liveAccount || '')].account) || extra.liveAccount || '')
     : '';
-  const logs = (typeof _cloudLeadsToLog === 'function') ? _cloudLeadsToLog(leads, true, {}) : [];
+  const logs = (typeof _cloudLeadsToLog === 'function') ? _mergeCloudLog(_cloudLeadsToLog(leads, true, {}), null) : [];
   if (phase === 'launching' && !isDone) {
     logs.push('⏳ — warming up the VM · invites start shortly (~2 min)');
   } else if (live) {
