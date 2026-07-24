@@ -6833,25 +6833,31 @@ function renderCloudAccountsPanel(id) {
   const rows = accounts.map((a) => {
     const who = escHtml(nameFor(a));
     const badges = [];
-    // Blocking status first (most important), then daily usage, then primary link.
+    // FG invite credits — prefer the engine's live modal reading (a.credits, set
+    // during the run); fall back to the app's observed FG credit data. null = not
+    // read yet. 0 = exhausted → the engine benches it for the rest of the run.
+    let fgLeft = null, fgRefill = '';
+    if (isFG) {
+      const eng = (a.credits && Number.isFinite(Number(a.credits.available))) ? a.credits : null;
+      if (eng) { fgLeft = Number(eng.available); fgRefill = eng.refill || ''; }
+      else {
+        try { const cr = (typeof fgtlCredit === 'function') ? fgtlCredit(nameFor(a)) : null; if (cr && cr.tracked && Number.isFinite(Number(cr.available))) fgLeft = Number(cr.available); }
+        catch (_) { /* no data */ }
+      }
+    }
+    // Blocking status first (most important), then usage/credits, then primary link.
     const benched = !!(a.weeklyCap || a.parkReason === 'weekly');
     if (a.needsLogin) badges.push(badge('bad', '⚠ Not logged in'));
     else if (benched) badges.push(badge('bad', '🚫 Benched — weekly invitation limit · rest of the week'));
+    else if (isFG && fgLeft === 0) badges.push(badge('bad', `🚫 Benched — no invite credits${fgRefill ? ' · refills ' + fgRefill : ''}`));
     else if (a.parked || a.parkReason === 'throttle') badges.push(badge('warn', '⏸ Throttled'));
     else if (!isFG && (a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
     else badges.push(badge('ok', '✓ Active'));
     if (isFG) {
-      // Invite credits left (from the observed FG credit data, keyed by profile
-      // name). FG uses all the credits it can, so the daily quota is irrelevant.
-      const name = nameFor(a);
-      let cr = null;
-      try { cr = (typeof fgtlCredit === 'function') ? fgtlCredit(name) : null; } catch (_) { cr = null; }
-      if (cr && cr.tracked && Number.isFinite(Number(cr.available))) {
-        const left = Number(cr.available);
-        badges.push(badge(left > 0 ? 'muted' : 'warn', `${left} invite credit${left === 1 ? '' : 's'} left`));
-      } else {
-        badges.push(badge('muted', 'credits — not checked yet'));
-      }
+      // FG uses all the credits it can, so show credits left — not the daily quota.
+      if (fgLeft != null && fgLeft > 0) badges.push(badge('muted', `${fgLeft} invite credit${fgLeft === 1 ? '' : 's'} left`));
+      else if (fgLeft == null) badges.push(badge('muted', 'credits — not checked yet'));
+      // fgLeft === 0 is already conveyed by the "no invite credits" status badge.
     } else {
       // Daily usage (non-FG campaigns).
       badges.push(badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
