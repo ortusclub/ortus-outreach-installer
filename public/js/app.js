@@ -19750,16 +19750,27 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
   }
   const pids = Object.keys(_fgtlCloudPairs).length ? Object.keys(_fgtlCloudPairs) : Object.keys(byAcct);
   const livePid = String((extra && extra.liveAccount) || '');
+  // Per-account invite credits from the engine's /accounts endpoint (profileId →
+  // { available, allowance, refill }). Lets the board show "N credits left" and
+  // bench 0-credit accounts, same data the standalone accounts panel uses.
+  const creditByPid = {};
+  for (const acc of ((extra && extra.accounts) || [])) {
+    if (acc && acc.profileId && acc.credits) creditByPid[String(acc.profileId)] = acc.credits;
+  }
   let totalSent = 0, totalSkip = 0, doneAccounts = 0;
   const perAccount = pids.map((pid) => {
     const c = byAcct[pid] || { sent: 0, skipped: 0, pending: 0 };
     totalSent += c.sent; totalSkip += c.skipped;
     const processed = c.sent + c.skipped;
+    const cred = creditByPid[pid] || null;
+    const creditsLeft = (cred && Number.isFinite(Number(cred.available))) ? Number(cred.available) : null;
+    const noCredits = creditsLeft === 0;
     let status = 'waiting';
     // The engine's live signal is authoritative for "who's running RIGHT NOW":
     // pending leads come back unrouted, so the sent-count heuristic alone would
     // flip an account to "done" the instant it sends one. liveAccount overrides.
-    if (livePid && pid === livePid && !isDone) { status = 'running'; }
+    if (noCredits && processed === 0) { status = 'skipped'; }   // benched — no invite credits
+    else if (livePid && pid === livePid && !isDone) { status = 'running'; }
     else if (c.pending === 0 && processed > 0) { status = 'done'; doneAccounts++; }
     else if (processed > 0) status = 'running';
     const label = (_fgtlCloudPairs[pid] && _fgtlCloudPairs[pid].account) || pid;
@@ -19767,7 +19778,8 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
     // sheet). The engine can't report it (pending leads are unrouted), so fall
     // back to what we can see (processed + any routed pending) when absent.
     const planned = Number.isFinite(_fgtlPlanned[pid]) ? _fgtlPlanned[pid] : (processed + c.pending);
-    return { account: label, status, invited: c.sent, targets: processed + c.pending, planned, reason: '' };
+    const reason = noCredits ? `no invite credits${cred && cred.refill ? ' · refills ' + cred.refill : ''}` : '';
+    return { account: label, status, invited: c.sent, targets: processed + c.pending, planned, creditsLeft, creditsRefill: (cred && cred.refill) || '', reason };
   });
   const totalProcessed = totalSent + totalSkip;
   // Authoritative headline counts (engine-computed) when available.
@@ -19819,12 +19831,14 @@ function fgtlCloudPoll() {
   const tick = async () => {
     const id = _fgtlCloudId;
     if (!id) return;
-    let campaign = null, leads = [], detail = null;
+    let campaign = null, leads = [], detail = null, accounts = [];
     try {
       detail = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
       campaign = (detail && (detail.campaign || detail)) || null;
       const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json();
       if (lr && Array.isArray(lr.leads)) leads = lr.leads;
+      // Per-account credits/state (best-effort — the engine may not report yet).
+      try { const ar = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/accounts`)).json(); if (ar && Array.isArray(ar.accounts)) accounts = ar.accounts; } catch (_) { /* no panel */ }
     } catch (_) { /* transient — retry */ }
     if (_fgtlCloudId !== id) return; // superseded (new launch / cleared)
     if (!campaign) { _fgtlCloudTimer = setTimeout(tick, 4000); return; }
@@ -19839,6 +19853,7 @@ function fgtlCloudPoll() {
       liveProgress: (detail && detail.liveProgress) || null,
       leadCounts: (detail && detail.leadCounts) || null,
       monitorLog: (detail && detail.monitorLog) || [],
+      accounts,
     };
     const status = _fgtlBuildCloudStatus(campaign, leads, extra);
     // Live-browser flag from the engine (top-level of the detail) → drives the
@@ -20088,10 +20103,14 @@ function fgtlRenderAcctBoard(status) {
     // How many invites this account has lined up from the sheet (queued).
     const q = Number.isFinite(a.planned) ? a.planned : (Number.isFinite(a.targets) ? a.targets : null);
     const qTxt = (q != null && q > 0) ? `${q.toLocaleString()} queued` : '';
+    // Invite credits left for this account (from the engine's /accounts reading).
+    const left = Number.isFinite(a.creditsLeft) ? a.creditsLeft : null;
+    const credTxt = left != null ? (left > 0 ? `${left} credit${left === 1 ? '' : 's'} left` : 'no credits') : '';
     let icCls = '', ic = '•', pillCls = 'waiting', pillTxt = qTxt || 'waiting', sub = qTxt ? `waiting its turn · ${qTxt}` : 'waiting its turn…', rowCls = '';
+    // Waiting rows: surface credits so you can see who can/can't send before its turn.
+    if (credTxt) sub = qTxt ? `waiting its turn · ${qTxt} · ${credTxt}` : `waiting its turn · ${credTxt}`;
     if (st === 'done') {
       const n = a.invited || 0;
-      const left = Number.isFinite(a.creditsAfter) ? a.creditsAfter : null;
       const tgt = Number.isFinite(a.targets) ? a.targets : null;
       icCls = 'done'; ic = '✓'; rowCls = 'dim done';
       // Pill carries the "we sent everything we could" signal so N sent never reads as a cap.
@@ -20111,10 +20130,17 @@ function fgtlRenderAcctBoard(status) {
       pillTxt = qTxt ? `${n} / ${q.toLocaleString()}` : 'running';
       sub = qTxt ? `sending invites… · ${n} of ${qTxt}` : 'sending invites…';
     } else if (st === 'skipped') {
-      icCls = 'skip'; pillCls = 'skipped'; rowCls = 'skip';
-      if (a.loggedOut) { ic = '🔒'; pillTxt = 'logged out'; }
-      else { ic = '✗'; pillTxt = 'skipped'; }
-      sub = `skipped${a.reason ? ' · ' + esc(a.reason) : ''}`;
+      // No invite credits → benched (the engine skips it this run, re-checks next).
+      if (left === 0) {
+        icCls = 'skip'; ic = '🚫'; pillCls = 'skipped'; rowCls = 'skip';
+        pillTxt = 'no credits';
+        sub = `benched — no invite credits${a.creditsRefill ? ' · refills ' + esc(a.creditsRefill) : ''}`;
+      } else {
+        icCls = 'skip'; pillCls = 'skipped'; rowCls = 'skip';
+        if (a.loggedOut) { ic = '🔒'; pillTxt = 'logged out'; }
+        else { ic = '✗'; pillTxt = 'skipped'; }
+        sub = `skipped${a.reason ? ' · ' + esc(a.reason) : ''}`;
+      }
     }
     return `<div class="fgacct ${rowCls}">
       <div class="ic ${icCls}">${ic}</div>
