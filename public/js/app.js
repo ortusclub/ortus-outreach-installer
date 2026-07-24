@@ -6765,6 +6765,9 @@ function _buildCloudActiveStatus(c, leads, counts) {
   return {
     _cloud: true, id: c.id, running: c.status === 'running' || c.status === 'paused', paused: c.status === 'paused',
     state: isMon ? 'monitoring' : undefined, queued: isQueued,
+    // Raw engine status ('cancelled'/'error'/'done'/…) — drives the live-status
+    // card's ▶ Continue / ⟲ Restart swap for stopped campaigns.
+    engineStatus: c.status || '',
     name: c.name || '(unnamed)', mode: c.mode,
     totalTargets: total, totalProcessed: sent,
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
@@ -6868,6 +6871,46 @@ function _adaptActiveCardControls(card, status) {
   const dock = document.getElementById('dock-active');
   const restartBtn = dock ? dock.querySelector('[data-tip="Restart"]') : null;
   if (restartBtn) { if (cloud) restartBtn.style.display = 'none'; else restartBtn.style.removeProperty('display'); }
+
+  // ▶ Continue / ⟲ Restart for a STOPPED (cancelled/errored) cloud campaign —
+  // the board strip had these but the live-status card didn't (operator feedback
+  // 2026-07-24: "campaign stopped but no play icon in the live status view").
+  // In that state Pause/Stop are meaningless → swap the cluster.
+  const _stoppedCloud = cloud && status && !status.running && !status.queued
+    && status.state !== 'monitoring' && ['cancelled', 'error'].includes(String(status.engineStatus || ''));
+  let ctBtn = document.getElementById('dock-cloud-continue');
+  let rsBtn = document.getElementById('dock-cloud-restart');
+  if (_stoppedCloud && dock) {
+    if (!ctBtn) {
+      ctBtn = document.createElement('button');
+      ctBtn.id = 'dock-cloud-continue';
+      ctBtn.className = 'dock-btn';
+      ctBtn.setAttribute('data-tip', 'Continue where it left off'); ctBtn.setAttribute('aria-label', 'Continue where it left off');
+      ctBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+      dock.insertBefore(ctBtn, dock.firstChild);
+    }
+    if (!rsBtn) {
+      rsBtn = document.createElement('button');
+      rsBtn.id = 'dock-cloud-restart';
+      rsBtn.className = 'dock-btn';
+      rsBtn.setAttribute('data-tip', 'Restart from the beginning'); rsBtn.setAttribute('aria-label', 'Restart from the beginning');
+      rsBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36L3 16"/><path d="M3 21v-5h5"/></svg>';
+      dock.insertBefore(rsBtn, ctBtn.nextSibling);
+    }
+    ctBtn.onclick = () => { try { window.restartCloudCampaignUI(_viewingCloudId, false); } catch (_) { /* */ } };
+    rsBtn.onclick = () => { try { window.restartCloudCampaignUI(_viewingCloudId, true); } catch (_) { /* */ } };
+    ctBtn.style.display = ''; rsBtn.style.display = '';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    const stopBtn = dock.querySelector('[data-tip="Stop"]');
+    if (stopBtn) stopBtn.style.display = 'none';
+  } else {
+    if (ctBtn) ctBtn.style.display = 'none';
+    if (rsBtn) rsBtn.style.display = 'none';
+    if (!cloud || (status && (status.running || status.queued || status.state === 'monitoring'))) {
+      const stopBtn = dock ? dock.querySelector('[data-tip="Stop"]') : null;
+      if (stopBtn) stopBtn.style.removeProperty('display');
+    }
+  }
   let cn = document.getElementById('dock-cloud-checknow');
   const wantCheck = cloud && status && status.state === 'monitoring' && !!dock;
   if (wantCheck) {
