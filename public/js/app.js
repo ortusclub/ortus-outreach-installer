@@ -19585,6 +19585,10 @@ function fgapBind() {
   document.getElementById('fgap-toggle')?.addEventListener('click', fgapToggle);
   document.getElementById('fgap-edit')?.addEventListener('click', fgapEditSchedule);
   document.getElementById('fgap-expand')?.addEventListener('click', fgapToggleExpand);
+  // Eyeball → open the live VM browser view for the active cloud FG run.
+  document.getElementById('fgw-watch')?.addEventListener('click', () => {
+    if (_fgtlCloudId && typeof openCloudCampaignView === 'function') openCloudCampaignView(_fgtlCloudId, 'Team Follower Growth');
+  });
 }
 
 /** Called once the FG board is showing (from initFollowerGrowth). */
@@ -20273,6 +20277,15 @@ function fgtlRenderCard(status) {
     watchBtn.classList.toggle('live-on', !!status.live);
     const dot = document.getElementById('fgtl-watch-dot');
     if (dot) dot.hidden = !status.live;
+  }
+  // Same watch control, mirrored into the step-3 Live Status header so you can open
+  // the VM view without scrolling to the card. Green dot lights when a browser is live.
+  const watchHead = document.getElementById('fgw-watch');
+  if (watchHead) {
+    watchHead.style.display = (!!_fgtlCloudId && !!status.running) ? '' : 'none';
+    watchHead.classList.toggle('live-on', !!status.live);
+    const dot2 = document.getElementById('fgw-watch-dot');
+    if (dot2) dot2.hidden = !status.live;
   }
 
   // Keep the on-card Stop button in sync (so it's there after navigate-away/back).
