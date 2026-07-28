@@ -280,6 +280,13 @@ export async function getRecentConnections(page, sinceMs = 0) {
                   publicId: member.publicIdentifier || '',
                   firstName: member.firstName || '',
                   lastName: member.lastName || '',
+                  // Strategies A and C already read this; B dropped it. The numeric
+                  // member id is the ONLY identity that bridges a Sales-Nav
+                  // /in/ACwAA… sheet URL to a Voyager ACoAA… URN (the two token
+                  // forms share no substring), so without it an ACwAA-sourced sheet
+                  // can never detect an acceptance.
+                  memberNumber: (member.objectUrn && typeof member.objectUrn === 'string'
+                    && (member.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
                   connectedAt: createdAt || 0,
                 });
                 pageOut++;
@@ -346,7 +353,10 @@ export async function getRecentConnections(page, sinceMs = 0) {
     // /voyager/api/identity/dash/profiles to fill in those fields. Lets
     // matching by slug or name work even when the slim connections payload
     // doesn't carry them.
-    const needsEnrich = conns.filter((c) => c.urn && !c.publicId && !c.firstName);
+    // Also enrich a conn that HAS a slug/name but no numeric member id — that id
+    // is the only bridge to a Sales-Nav /in/ACwAA… sheet URL, and the slim
+    // connections payload rarely carries it.
+    const needsEnrich = conns.filter((c) => c.urn && ((!c.publicId && !c.firstName) || !c.memberNumber));
     if (needsEnrich.length > 0) {
       try {
         const enriched = await _enrichProfilesByUrn(page, needsEnrich.map((c) => c.urn));
@@ -359,11 +369,13 @@ export async function getRecentConnections(page, sinceMs = 0) {
               publicId: c.publicId || e.publicId || '',
               firstName: c.firstName || e.firstName || '',
               lastName: c.lastName || e.lastName || '',
+              memberNumber: c.memberNumber || e.memberNumber || '',
             };
           });
           const filledSlugs = conns.filter((c) => c.publicId).length;
           const filledNames = conns.filter((c) => c.firstName || c.lastName).length;
-          console.log(`[helpers] Profile enrichment: ${filledSlugs} slugs, ${filledNames} names filled (of ${conns.length})`);
+          const filledNums = conns.filter((c) => c.memberNumber).length;
+          console.log(`[helpers] Profile enrichment: ${filledSlugs} slugs, ${filledNames} names, ${filledNums} member-numbers filled (of ${conns.length})`);
         }
       } catch (err) {
         console.log(`[helpers] Profile enrichment threw: ${err.message}`);
@@ -437,6 +449,10 @@ async function _enrichProfilesByUrn(page, urns) {
                 publicId: item.publicIdentifier || '',
                 firstName: item.firstName || '',
                 lastName: item.lastName || '',
+                // urn:li:member:NNN — the numeric identity the sheet's Member ID
+                // column matches on.
+                memberNumber: (typeof item.objectUrn === 'string'
+                  && (item.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
               });
             }
           }
@@ -459,6 +475,9 @@ async function _enrichProfilesByUrn(page, urns) {
         publicId: p.publicId || p.publicIdentifier || '',
         firstName: p.firstName || '',
         lastName: p.lastName || '',
+        memberNumber: p.memberNumber
+          || (typeof p.objectUrn === 'string' && (p.objectUrn.match(/urn:li:member:(\d+)/) || [])[1])
+          || '',
       });
     }
   }
