@@ -714,8 +714,10 @@ document.addEventListener('click', (e) => {
   if (_snExpanded.has(cid)) _snExpanded.delete(cid); else _snExpanded.add(cid);
   strip.classList.toggle('sn-collapsed', !_snExpanded.has(cid));
   // Cloud strips fetch their per-lead log only when running/expanded — kick a
-  // board refresh on expand so the log fills now instead of on the next poll.
-  if (_snExpanded.has(cid) && typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  // background cloud refresh on expand so the log fills promptly (it re-renders
+  // when it lands), and render now for the instant collapse/expand feel.
+  if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  if (_snExpanded.has(cid) && typeof _refreshCloudItems === 'function') _refreshCloudItems();
 });
 
 // Dismiss a done strip (local-only) and the "Clear done" bulk action.
@@ -6827,6 +6829,9 @@ function renderCloudAccountsPanel(id) {
     // Blocking status first (most important), then daily usage, then primary link.
     const benched = !!(a.weeklyCap || a.parkReason === 'weekly');
     if (a.needsLogin) badges.push(badge('bad', '⚠ Not logged in'));
+    // Parked by 3 consecutive proxy 407s — the VM literally cannot open this
+    // profile's browser. Distinct from a throttle: waiting won't fix it.
+    else if (a.parkReason === 'proxy') badges.push(badge('bad', '⛔ Proxy refused — fix the GoLogin profile, then Retry'));
     else if (benched) badges.push(badge('bad', '🚫 Benched — weekly invitation limit · rest of the week'));
     else if (a.parked || a.parkReason === 'throttle') badges.push(badge('warn', '⏸ Throttled'));
     else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
@@ -6944,7 +6949,13 @@ function _adaptActiveCardControls(card, status) {
     }
   }
   let cn = document.getElementById('dock-cloud-checknow');
-  const wantCheck = cloud && status && status.state === 'monitoring' && !!dock;
+  // Check now is available in EVERY state of a cloud connect_and_* campaign —
+  // including one stopped overall (cancelled/error/done). The engine treats a
+  // sweep outside 'monitoring' as a one-shot: it checks acceptances + fires the
+  // intro/DM backlog without resurrecting recurring monitoring or resuming sends.
+  const _cnMode = String((status && status.mode) || '');
+  const wantCheck = cloud && !!status && !!dock
+    && (_cnMode === 'connect_and_introduce' || _cnMode === 'connect_and_message');
   if (wantCheck) {
     if (!cn) {
       cn = document.createElement('button');
@@ -7939,7 +7950,13 @@ function renderUnifiedStrip(it) {
         ? `<button class="mini solid" onclick="openCampaignForEdit('${escHtml(it.id)}')">Open</button>`
         : _cloudOpen)
       : _openPill;
-    foot = restartBtns + dismiss + dup + debriefBtn + _doneOpen;
+    // ⚡ Check now on a FINISHED/STOPPED cloud connect_and_* strip — late
+    // acceptances still need a sweep + intro/DM backlog flush after the campaign
+    // was stopped overall. One-shot on the engine: no re-arm, no resumed sending.
+    const _cloudCheck = (cloud && (it.mode === 'connect_and_introduce' || it.mode === 'connect_and_message'))
+      ? `<button type="button" class="mini" onclick="event.stopPropagation();promptCloudCheckScope('${escHtml(it.id)}',this)" title="Run an acceptance check now">Check now</button>`
+      : '';
+    foot = _cloudCheck + restartBtns + dismiss + dup + debriefBtn + _doneOpen;
   }
 
   // Expanded (non-queued) strips render card #2 (.sn-vjcard) instead of the
@@ -8396,8 +8413,58 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
 
 let _campaignsBoardTimer = null;
 let _lastBoardHtml = '';  // anti-jank: skip the 4s re-render when nothing changed
-// Fetch local (status/queue/history) + cloud campaigns, normalize, render.
+const _cloudDetailCache = new Map();  // id → detail; terminal campaigns cached (never change)
+let _boardRenderInFlight = false;     // don't stack renders (each does N cloud fetches)
+let _cloudRaw = [];                   // background snapshot of cloud details; render builds from this
+let _cloudRefreshInFlight = false;
+
+// Cloud data comes from the remote engine (0.5–2s per call) — fetching it inside
+// the 4s render made every render block ~1.5s. Fetch it on a BACKGROUND timer
+// into _cloudRaw instead; the render builds cloud strips from that cache with no
+// network wait. Dismiss/ownership filtering still runs live in the render, so
+// those stay instant.
+async function _refreshCloudItems() {
+  if (_cloudRefreshInFlight) return;
+  _cloudRefreshInFlight = true;
+  try {
+    const cl = await (await fetch('/api/campaign/cloud-list')).json();
+    const cloudCamps = (cl && cl.campaigns) || [];
+    _cloudRaw = await Promise.all(cloudCamps.map(async (c) => {
+      let d;
+      const terminal = ['done', 'cancelled', 'error'].includes(c.status);
+      if (terminal && !_snExpanded.has(c.id) && _cloudDetailCache.has(c.id)) {
+        const cached = _cloudDetailCache.get(c.id);
+        if (cached && cached.campaign && ['done', 'cancelled', 'error'].includes(cached.campaign.status)) return cached;
+      }
+      try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+      catch { d = { campaign: c, leadCounts: {} }; }
+      _cloudDetailCache.set(c.id, d);
+      const st = ((d && d.campaign) || c).status;
+      if (st === 'running' || _snExpanded.has(c.id)) {
+        try {
+          const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
+          if (lr && Array.isArray(lr.leads)) d._logLines = _mergeCloudLog(_cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c), null);
+        } catch { /* best-effort */ }
+      }
+      return d;
+    }));
+  } catch (_) { /* keep last snapshot on engine hiccup */ }
+  finally { _cloudRefreshInFlight = false; }
+  try { renderCampaignsBoard(); } catch { /* */ }
+}
+window._refreshCloudItems = _refreshCloudItems;
+
+// Wrapper: the 4s poll must not start a new render while the previous is still
+// fetching from the remote engine — overlapping renders fired 2–3× the cloud
+// requests and made the fetch time climb to 20s+. Skip the tick instead.
 async function renderCampaignsBoard() {
+  if (_boardRenderInFlight) return;
+  _boardRenderInFlight = true;
+  try { await _renderCampaignsBoardInner(); }
+  finally { _boardRenderInFlight = false; }
+}
+// Fetch local (status/queue/history) + cloud campaigns, normalize, render.
+async function _renderCampaignsBoardInner() {
   const board = document.getElementById('campaigns-board');
   if (!board) return;
   // Keep the legacy dashboard hidden on EVERY cycle (defeats route/render races).
@@ -8439,26 +8506,10 @@ async function renderCampaignsBoard() {
     }
   } catch (_) { /* */ }
 
-  // 3) Cloud campaigns — from /api/campaign/cloud-list (+ per-campaign counts).
+  // 3) Cloud campaigns — built from the BACKGROUND snapshot (_cloudRaw), not
+  // fetched here, so the render never blocks on the slow remote engine.
   try {
-    const cl = await (await fetch('/api/campaign/cloud-list')).json();
-    const cloudCamps = (cl && cl.campaigns) || [];
-    const details = await Promise.all(cloudCamps.map(async (c) => {
-      let d;
-      try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
-      catch { d = { campaign: c, leadCounts: {} }; }
-      // Per-lead log: only for RUNNING (live) or currently EXPANDED strips, so
-      // the 4s board poll doesn't fetch leads for every done cloud campaign.
-      const st = ((d && d.campaign) || c).status;
-      if (st === 'running' || _snExpanded.has(c.id)) {
-        try {
-          const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
-          if (lr && Array.isArray(lr.leads)) d._logLines = _mergeCloudLog(_cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c), null);
-        } catch { /* best-effort — the status note stays */ }
-      }
-      return d;
-    }));
-    for (const d of details) {
+    for (const d of _cloudRaw) {
       const c = d.campaign || {}; const lc = d.leadCounts || {};
       if (['done', 'cancelled', 'error'].includes(c.status) && _cloudDismissed.has(c.id)) continue;
       if (c.sheet_url) _cloudSheetUrls.set(c.id, c.sheet_url);
@@ -8699,17 +8750,42 @@ function clearCampaignsDone() {
 }
 window.clearCampaignsDone = clearCampaignsDone;
 
+// App-styled confirm (replaces the native OS dialog). Returns a Promise<bool>.
+// Reuses the existing .modal-backdrop/.modal-card design so it matches the app.
+function appConfirm(message, opts = {}) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" style="max-width:420px">
+      <h3 class="modal-title">${escHtml(opts.title || 'Are you sure?')}</h3>
+      <div class="modal-body">${escHtml(message)}</div>
+      <div class="modal-actions" style="justify-content:flex-end;gap:10px;margin-top:18px">
+        <button type="button" class="modal-cancel-link ac-cancel">${escHtml(opts.cancelLabel || 'Cancel')}</button>
+        <button type="button" class="btn btn-primary ac-ok">${escHtml(opts.okLabel || 'Delete all')}</button>
+      </div></div>`;
+    const done = (v) => { document.removeEventListener('keydown', onKey); back.remove(); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') done(false); else if (e.key === 'Enter') done(true); };
+    back.querySelector('.ac-ok').onclick = () => done(true);
+    back.querySelector('.ac-cancel').onclick = () => done(false);
+    back.onclick = (e) => { if (e.target === back) done(false); };
+    document.body.appendChild(back);
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => { try { back.querySelector('.ac-ok').focus(); } catch { /* */ } }, 0);
+  });
+}
+window.appConfirm = appConfirm;
+
 // Categorized bulk clear. Campaigns are cloud/local (engine keeps cloud data on
 // its own lifecycle) → "clear" hides them from THIS board. Drafts get a real
 // soft-delete + 1-week purge via clearAllDrafts.
-function clearBoardCat(cat) {
+async function clearBoardCat(cat) {
   const items = [..._snItemsById.values()];
   const targets = cat === 'cancelled'
     ? items.filter((x) => x.bucket === 'done' && x.bad)
     : items.filter((x) => x.bucket === 'done' && !x.bad);
   if (!targets.length) return;
   const word = cat === 'cancelled' ? 'stopped / cancelled' : 'finished';
-  if (!confirm(`Clear all ${targets.length} ${word} campaign(s) from your board?`)) return;
+  if (!(await appConfirm(`Clear all ${targets.length} ${word} campaign(s) from your board?`, { title: 'Clear campaigns', okLabel: 'Clear all' }))) return;
   for (const it of targets) {
     if (it.where === 'cloud') _cloudDismissed.add(it.id);
     else if (it.where === 'email' && typeof dismissEmailDone === 'function') dismissEmailDone(it.id);
@@ -8725,7 +8801,7 @@ async function clearAllDrafts() {
   let n = 0;
   try { n = ((await (await fetch('/api/drafts')).json()).drafts || []).length; } catch { /* */ }
   if (!n) return;
-  if (!confirm(`Delete all ${n} draft(s)? They stay recoverable for 1 week, then are removed for good.`)) return;
+  if (!(await appConfirm(`Delete all ${n} draft(s)? They stay recoverable for 1 week, then are removed for good.`, { title: 'Delete drafts', okLabel: 'Delete all' }))) return;
   // ONE bulk request (not N deletes) — server trashes them all in a single write.
   try { await fetch('/api/drafts/trash-all', { method: 'POST' }); } catch { /* */ }
   try { if (typeof refreshDashboardDrafts === 'function') refreshDashboardDrafts(); } catch { /* */ }
@@ -8776,12 +8852,17 @@ function _scrapeEmptyState() {
 window.renderCampaignsBoard = renderCampaignsBoard;
 
 // Start the board (hide legacy sections, render, poll every 4s). Idempotent.
+let _cloudRefreshTimer = null;
 function startCampaignsBoard() {
   _hideLegacyDashboardSections();
   _wireStripOverflow();
   renderCampaignsBoard();
+  _refreshCloudItems();   // kick a background cloud fetch (renders again when it lands)
   if (_campaignsBoardTimer) clearInterval(_campaignsBoardTimer);
   _campaignsBoardTimer = setInterval(renderCampaignsBoard, 4000);
+  // Cloud snapshot refreshes on its own slower timer — off the render path.
+  if (_cloudRefreshTimer) clearInterval(_cloudRefreshTimer);
+  _cloudRefreshTimer = setInterval(_refreshCloudItems, 5000);
 }
 window.startCampaignsBoard = startCampaignsBoard;
 
@@ -8819,7 +8900,9 @@ async function stopCloudCampaignUI(id) {
   } catch { /* fall through to plain confirm */ }
 
   const isMonitorMode = (mode === 'connect_and_introduce' || mode === 'connect_and_message');
-  const isSending = (status === 'running' || status === 'queued');
+  // paused counts as "still sending": its unsent leads + pending invitations are
+  // exactly the state the choice is about.
+  const isSending = (status === 'running' || status === 'queued' || status === 'paused');
   const modal = document.getElementById('stop-choice-modal');
   if (isMonitorMode && isSending && modal) {
     _stopChoiceTarget = { cloud: true, id };
@@ -9723,7 +9806,26 @@ window.runHandshakeWizard = runHandshakeWizard;
 
 // server reads the sheet into leads and hands off to the engine; the campaign
 // then runs in the cloud and survives the laptop closing.
+// Re-entrancy guard: a slow multi-account CC+IC start (it runs the primary
+// handshake wizard, reads the sheet, builds leads, then POSTs) left the Start
+// button looking dead, so operators re-clicked — spawning duplicate campaigns
+// over the SAME leads + accounts, which then contended and stranded most leads
+// in "pending" (Sam's 3× "Poop" incident, 2026-07-24). Set synchronously before
+// the first await so JS's single thread makes it airtight against re-clicks.
+let _cloudSubmitInFlight = false;
 async function _submitCloudCampaign(body) {
+  if (_cloudSubmitInFlight) return; // ignore re-clicks while a start is dispatching
+  _cloudSubmitInFlight = true;
+  // Idempotency backstop: a stable id per launch attempt so any duplicated POST
+  // (network retry, second app window) collapses to ONE campaign engine-side.
+  // The engine dedupes on `id`; the client always documented this — it was just
+  // never wired through the server. Belt-and-suspenders on a double-outreach path.
+  if (!body.launchId) {
+    body.launchId = (globalThis.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : ('lnch_' + Date.now() + '_' + Math.random().toString(36).slice(2));
+  }
+  if (typeof showCampaignToast === 'function') showCampaignToast('☁︎ Starting cloud campaign…', 4000);
   try {
     // Path A: run the primary handshake locally BEFORE dispatch when this is a
     // cloud CC+IC campaign with auto-accept and a local-only primary. Otherwise
@@ -9764,6 +9866,8 @@ async function _submitCloudCampaign(body) {
     if (data.id) { try { await openCloudLive(data.id); } catch (_) { /* */ } }
   } catch (e) {
     alert('Could not reach the cloud engine:\n\n' + e.message);
+  } finally {
+    _cloudSubmitInFlight = false;
   }
 }
 
@@ -10112,6 +10216,12 @@ async function stopCampaign() {
 // (stop-sending-keep-monitoring vs. stop-everything) instead of the simple
 // yes/no modal. Other modes keep the original single-question modal.
 function confirmStopCampaign() {
+  // Viewing a CLOUD campaign (wizard read-only Stop, runbar Stop, legacy
+  // #btn-stop) → the choice belongs to the ENGINE, not the local cockpit.
+  // Without this the VM campaign fell through to the local confirm modal
+  // (__cockpit.mode is undefined for a cloud run) and never asked
+  // "stop everything vs. keep monitoring". Same routing as dashStopActive.
+  if (_viewingCloudId) { stopCloudCampaignUI(_viewingCloudId); return; }
   // v2.14.x: when the campaign is in monitoring state (sending finished,
   // watcher active), route to the dedicated stop-monitoring modal instead
   // of the running-campaign flow. Without this, the button was either
