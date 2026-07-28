@@ -6781,6 +6781,9 @@ function _buildCloudActiveStatus(c, leads, counts) {
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
     // Task 9 — primary needs-login surfacing on card #2 (Task 5's c.primarySession).
     primarySession: c.primarySession,
+    // Needed to run the local primary handshake for an account ADDED to a paused
+    // CC+IC campaign (the new sender must reach the primary or intros can't fire).
+    primaryUrl: (c.config && (c.config.primaryUrl || c.config.primaryPersonUrl)) || '',
     // v2.160.35: follow-up dual countdown on the cloud card-#2 takeover — lights
     // up once the engine exposes follow_up {count,dueAt,sender} on the detail.
     followUp: c.follow_up || null,
@@ -6847,10 +6850,151 @@ function renderCloudAccountsPanel(id) {
     if (benched && !a.needsLogin) {
       badges.push(`<button type="button" class="cap-retry" onclick="unbenchCloudAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)" title="Clear the bench and let this account try again">Retry</button>`);
     }
-    return `<div class="cap-row"><span class="cap-acct">${who}</span><span class="cap-status">${badges.join('')}</span></div>`;
+    // Editable (paused/stopped) → a toggle that REMOVES the account from the
+    // campaign, mirroring the local pause-edit panel. Never offered on the last
+    // account (a campaign needs at least one) — the engine rejects that too.
+    const tog = _cloudAccountsEditable() && accounts.length > 1
+      ? `<button type="button" class="cap-toggle on" role="switch" aria-checked="true"`
+        + ` title="Remove this account from the campaign" aria-label="Remove ${who} from the campaign"`
+        + ` onclick="removeCloudCampaignAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)"></button>`
+      : '';
+    return `<div class="cap-row"><span class="cap-acct">${who}</span><span class="cap-status">${badges.join('')}${tog}</span></div>`;
   }).join('');
-  panel.innerHTML = `<div class="cap-head"><span>Accounts</span><span>${accounts.length} account${accounts.length === 1 ? '' : 's'}</span></div>${rows}`;
+  panel.innerHTML = `<div class="cap-head"><span>Accounts</span><span>${accounts.length} account${accounts.length === 1 ? '' : 's'}</span></div>${rows}`
+    + _cloudAccountsAddHtml(id);
   panel.hidden = false;
+  if (_cloudAccountsEditable()) _fillCloudAccountAddOptions(id);
+}
+
+// Accounts can only be edited when no VM worker is mid-batch — paused, or
+// stopped (cancelled/error/done). The engine enforces the same rule; this just
+// keeps the controls from appearing when they'd be rejected.
+function _cloudAccountsEditable() {
+  const s = window.__cloudActiveStatus;
+  if (!s || !s._cloud) return false;
+  return ['paused', 'cancelled', 'error', 'done'].includes(String(s.engineStatus || ''));
+}
+
+function _cloudAccountsAddHtml(id) {
+  if (!_cloudAccountsEditable()) {
+    return `<div class="cap-foot-hint">Pause or stop the campaign to add or remove accounts.</div>`;
+  }
+  return `<div class="cap-add">
+      <label class="cap-add-lbl">＋ Add account</label>
+      <select id="cap-add-sel" class="cap-add-sel"><option value="">Loading GoLogin profiles…</option></select>
+      <button type="button" class="cap-add-btn" onclick="addCloudCampaignAccount('${escHtml(id)}', this)">Add</button>
+    </div>`;
+}
+
+// GoLogin profiles not already in this campaign — same source as the wizard's
+// account picker.
+async function _fillCloudAccountAddOptions(id) {
+  const sel = document.getElementById('cap-add-sel');
+  if (!sel) return;
+  try {
+    const d = await (await fetch('/api/profiles')).json();
+    const all = (d && Array.isArray(d.profiles)) ? d.profiles : (Array.isArray(d) ? d : []);
+    const inRun = new Set(((_cloudAccountsById.get(id) || []).map((a) => a.profileId)).filter(Boolean));
+    const free = all.filter((p) => !inRun.has(p.id));
+    sel.innerHTML = free.length
+      ? free.map((p) => `<option value="${escHtml(p.id)}" data-email="${escHtml(p.name || '')}">${escHtml(p.name || p.id)}</option>`).join('')
+      : '<option value="">No other GoLogin profiles available</option>';
+  } catch (_) {
+    sel.innerHTML = '<option value="">Could not read GoLogin profiles</option>';
+  }
+}
+
+// Toggle an account OFF — drops it from the campaign's account set on the engine.
+// Its already-sent leads keep being swept for acceptances (the engine unions
+// accounts that actually sent), and its unsent leads are simply picked up by the
+// remaining accounts, since cloud leads are only assigned at send time.
+async function removeCloudCampaignAccount(id, profileId, btn) {
+  const accounts = _cloudAccountsById.get(id) || [];
+  const who = (accounts.find((a) => a.profileId === profileId) || {}).email || profileId;
+  if (!confirm(`Remove ${who} from this campaign?\n\nIt stops sending. Leads it already invited are still checked for acceptances; its unsent leads go to the remaining accounts.`)) return;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/accounts`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remove: [profileId] }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { showCampaignToast(d.error || 'Could not remove the account.', 6000); return; }
+    _pushCloudEvent(id, `➖ ${who} removed from the campaign`);
+    showCampaignToast(`${who} removed — it won't send when you resume.`, 4500);
+    await _refreshCloudActiveStatus(id);
+    renderCloudAccountsPanel(id);
+  } catch (e) { showCampaignToast('Could not remove the account: ' + e.message, 6000); }
+  finally { if (btn) btn.disabled = false; }
+}
+window.removeCloudCampaignAccount = removeCloudCampaignAccount;
+
+// Add a GoLogin account to a paused/stopped cloud campaign. For CC+IC the new
+// sender must be connected to the primary person or its intros can never fire,
+// so we run the SAME local Phase-0 handshake the wizard runs at launch (this
+// machine's browsers — the VM has no operator Chrome) before registering it.
+async function addCloudCampaignAccount(id, btn) {
+  const sel = document.getElementById('cap-add-sel');
+  const profileId = sel && sel.value;
+  if (!profileId) { showCampaignToast('Pick a GoLogin profile first.', 3000); return; }
+  const email = (sel.selectedOptions[0] && sel.selectedOptions[0].dataset.email) || '';
+  const st = window.__cloudActiveStatus || {};
+  const needsHandshake = st.mode === 'connect_and_introduce' && !!st.primaryUrl;
+  if (btn) btn.disabled = true;
+  try {
+    if (needsHandshake) {
+      showCampaignToast(`Connecting ${email || 'the account'} to the primary — keep this app open…`, 8000);
+      const ok = await _runAddAccountHandshake(profileId, st.primaryUrl);
+      if (!ok) return; // _runAddAccountHandshake toasts the reason
+    }
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/accounts`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ add: [{ profileId, email }] }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { showCampaignToast(d.error || 'Could not add the account.', 6000); return; }
+    _pushCloudEvent(id, `➕ ${email || profileId} added to the campaign`);
+    showCampaignToast(`${email || 'Account'} added — it starts sending when you resume.`, 5000);
+    await _refreshCloudActiveStatus(id);
+    renderCloudAccountsPanel(id);
+  } catch (e) { showCampaignToast('Could not add the account: ' + e.message, 6000); }
+  finally { if (btn) btn.disabled = false; }
+}
+window.addCloudCampaignAccount = addCloudCampaignAccount;
+
+// Drive the local single-sender handshake and wait for it. Returns true when the
+// sender reached the primary (or already was connected).
+async function _runAddAccountHandshake(profileId, primaryUrl) {
+  try {
+    const start = await (await fetch('/api/campaign/cloud-preflight-handshake', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senderProfileIds: [profileId], primaryUrl, autoAcceptAllPending: true }),
+    })).json();
+    if (start && start.ok === false) {
+      showCampaignToast(start.error || 'Could not start the primary handshake.', 6000);
+      return false;
+    }
+    // Poll until the job settles (the job's own watchdog caps it at ~8 min).
+    for (let i = 0; i < 200; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      let j = {};
+      try { j = await (await fetch('/api/campaign/cloud-preflight-handshake/status')).json(); } catch (_) { continue; }
+      if (!j || !j.active) continue;
+      if (!j.done) continue;
+      if (j.error) { showCampaignToast(`Handshake failed: ${j.error}`, 8000); return false; }
+      // 'connected' is the only state that means the primary link is live (see
+      // cloud-preflight-handshake: sent / sent-no-identity / error are not).
+      const s = ((j.senders || []).find((x) => x.profileId === profileId) || {});
+      if (String(s.state || '') === 'connected') return true;
+      showCampaignToast(`The account didn't reach the primary (state: ${s.state || 'unknown'}). Not added — fix it and try again.`, 9000);
+      return false;
+    }
+    showCampaignToast('Handshake is taking too long — not added. Try again once the local browsers settle.', 8000);
+    return false;
+  } catch (e) {
+    showCampaignToast('Handshake error: ' + e.message, 6000);
+    return false;
+  }
 }
 window.renderCloudAccountsPanel = renderCloudAccountsPanel;
 

@@ -50,7 +50,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1135,7 +1135,7 @@ async function handleStartCloud(req, res) {
   try {
     const body = req.body || {};
     const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
-      delayMin, delayMax } = body;
+      delayMin, delayMax, launchId } = body;
     if (!isCloudMode(mode)) return res.status(400).json({ error: `Mode "${mode}" can't run in the cloud yet.` });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (rejectIfNoOperatorEmail(res)) return;
@@ -1351,6 +1351,9 @@ async function handleStartCloud(req, res) {
     // running campaign show as "someone else's" → hidden → unstoppable from the
     // UI. Fall back to the login only when no operator email is set.
     const result = await startCloudCampaign({
+      // Idempotency: a duplicated POST (operator re-click, retry, second window)
+      // with the same launchId collapses to ONE campaign engine-side.
+      id: launchId || undefined,
       mode, name: name || '', owner: getOperatorEmail() || req.user || '',
       profileIds: accounts, leads, config,
       // sheet_url handed to the engine for WRITE-BACK must be the operator's
@@ -1800,6 +1803,19 @@ app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
 // so the client degrades gracefully rather than throwing.
 app.post('/api/campaign/cloud/:id/check-now', async (req, res) => {
   const r = await cloudCheckNow(req.params.id, (req.body && req.body.scope) === 'all' ? 'all' : 'campaign');
+  if (r && r.error) return res.status(r.status || 502).json(r);
+  res.json(r);
+});
+// Edit a cloud campaign's account set (paused/stopped only) — the cloud twin of
+// the local pause-edit panel. Body: { add: [{profileId,email}], remove: [id] }.
+// For CC+IC the client runs the LOCAL primary handshake for an added account
+// BEFORE calling this, so the new sender is already connected to the primary.
+app.post('/api/campaign/cloud/:id/accounts', async (req, res) => {
+  const b = req.body || {};
+  const r = await setCloudCampaignAccounts(req.params.id, {
+    add: Array.isArray(b.add) ? b.add : [],
+    remove: Array.isArray(b.remove) ? b.remove : [],
+  });
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });

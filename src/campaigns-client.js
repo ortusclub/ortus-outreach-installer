@@ -317,6 +317,13 @@ export function cloudCheckNow(id, scope = 'campaign') {
 export function setCloudAutoChecks(id, enabled) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });
 }
+// Edit a cloud campaign's account set while it is paused/stopped — the cloud
+// twin of the local pause-edit panel (toggle an account off, add another
+// GoLogin profile). add: [{ profileId, email }], remove: [profileId]. The engine
+// refuses this while the campaign is running/queued (a worker is mid-batch).
+export function setCloudCampaignAccounts(id, { add = [], remove = [] } = {}) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts`, { add, remove });
+}
 // Un-bench a weekly-capped account (operator Retry in the Accounts panel).
 export function unbenchCloudAccount(id, profileId) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/unbench`, {});
