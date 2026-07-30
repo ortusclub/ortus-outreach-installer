@@ -10,6 +10,46 @@
 //           when sending — never invented)
 //   l2    — sub-detail (account · lead, or cadence info)
 
+// How long a wake may take before the "~2 min" estimate stops being honest.
+// Pod boot measured 65-98s on 2026-07-30; 5 min is comfortably above that.
+const WAKING_OVERRUN_MS = 5 * 60 * 1000;
+// Above the longest observed sweep (3m16s) and below the engine's 45-minute
+// monitor reap, so "auto-recovers" is true whenever this fires.
+const CHECKING_OVERRUN_MS = 15 * 60 * 1000;
+
+/**
+ * The monitoring hero's state, derived once and shared by every surface.
+ *
+ *   'counting' — a check is scheduled; show the countdown
+ *   'waking'   — the task is DUE but unclaimed; KEDA is booting a worker
+ *   'checking' — a worker holds the task; a sweep is running
+ *
+ * `overrun` means the state has outlasted its promise and the caption should
+ * say so instead of repeating an estimate that has stopped being true.
+ *
+ * Absent task fields (older engine, failed detail fetch) → 'counting'. Never
+ * invent a wake.
+ */
+export function monitorHeroState(status, now = Date.now()) {
+  if (!status) return { state: 'counting', overrun: false };
+
+  const claimed = status.monitorTaskStatus === 'claimed' || !!status.monitoringCheckInProgress;
+  if (claimed) {
+    const started = Date.parse(status.monitorCheckStartedAt || '');
+    return {
+      state: 'checking',
+      overrun: Number.isFinite(started) && (now - started) > CHECKING_OVERRUN_MS,
+    };
+  }
+
+  const due = Date.parse(status.monitorTaskDueAt || '');
+  if (status.monitorTaskStatus === 'pending' && Number.isFinite(due) && now >= due) {
+    return { state: 'waking', overrun: (now - due) > WAKING_OVERRUN_MS };
+  }
+
+  return { state: 'counting', overrun: false };
+}
+
 export function buildLiveActivity(status) {
   if (!status) return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
 
@@ -32,18 +72,32 @@ export function buildLiveActivity(status) {
   const lead = (ca && ca.lead) || '';
 
   if (monitoring) {
-    if (status.monitoringCheckInProgress) {
+    const hero = monitorHeroState(status);
+    if (hero.state === 'checking') {
       return {
         state: 'checking',
         icon: '↻',
         l1: 'Checking for new acceptances…',
-        l2: account ? `${account} · sweeping recent connections` : 'sweeping recent connections',
+        l2: hero.overrun
+          ? 'sweep looks stalled — auto-recovers'
+          : (account ? `${account} · sweeping recent connections` : 'sweeping recent connections'),
       };
     }
     const n = (status.participatingProfileIds || status.profileIds || []).length;
     const cadMin = Number(status.checkIntervalMinutes) || 60;
     const cad = cadMin >= 60 ? `${cadMin / 60}h` : `${cadMin} min`;
     const acctStr = n ? `${n} account${n === 1 ? '' : 's'} · ` : '';
+    if (hero.state === 'waking') {
+      // The worker is scale-to-zero between sweeps, so a due check spends ~2 min
+      // waiting for a pod. Saying "nothing running right now" here would be the
+      // false line that made the 2026-07-30 stall unreadable.
+      return {
+        state: 'waking',
+        icon: '◍',
+        l1: 'Waking a worker',
+        l2: hero.overrun ? "still waking — worker hasn't picked it up" : 'sweeping in ~2 min',
+      };
+    }
     return {
       state: 'monitoring',
       icon: '◷',
