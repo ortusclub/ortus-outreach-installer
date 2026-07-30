@@ -470,6 +470,15 @@
   }
   body[data-dashboard='v3'] .vj-mon-hero.is-checking .vj-mon-cap { color: var(--gold); }
   @keyframes vj-checking-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  /* WAKING — the scale-to-zero worker is booting (65-98s measured). Sized like
+     .is-checking so the three hero states read as one family, but BOLD and
+     STATIC: weight tells the operator which state they're in at a glance,
+     without reading the word. CHECKING stays lighter and pulses. */
+  body[data-dashboard='v3'] .vj-mon-hero.is-waking .vj-mon-count {
+    font-size: 1.5rem; font-weight: 700; color: var(--gold); letter-spacing: 0.07em;
+  }
+  body[data-dashboard='v3'] .vj-mon-hero.is-waking .vj-mon-cap { color: var(--gold); font-weight: 600; }
+  body[data-dashboard='v3'] .vj-live.is-waking .vj-live-l2 { color: var(--gold); font-weight: 700; }
   body[data-dashboard='v3'] .vj-mon-line {
     font-family: var(--mono); font-size: 0.82rem; color: var(--gray); margin-top: 14px;
   }

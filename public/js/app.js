@@ -25,7 +25,7 @@ import {
 } from '/js/tour.mjs';
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity } from '/js/live-activity.mjs';
+import { buildLiveActivity, monitorHeroState } from '/js/live-activity.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
@@ -6778,6 +6778,11 @@ function _buildCloudActiveStatus(c, leads, counts) {
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
     acceptedCount: accepted, logs: _mergeCloudLog(_cloudLeadsToLog(leads, c.mode === 'follower_growth', c), _combineCloudEvents(c.id)),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
+    // Monitor task row → the hero's three states (see monitorHeroState). Absent
+    // on a pre-fix engine, which monitorHeroState renders as a plain countdown.
+    monitorTaskStatus: c.monitorTaskStatus || null,
+    monitorTaskDueAt: c.monitorTaskDueAt || null,
+    monitorCheckStartedAt: c.monitor_check_started_at || null,
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
     // Task 9 — primary needs-login surfacing on card #2 (Task 5's c.primarySession).
     primarySession: c.primarySession,
@@ -22375,20 +22380,27 @@ function v3RenderMonitorHero(status) {
   const heroEl = document.querySelector('#active-monitor .vj-mon-hero');
   _monHeroNextCheckAt = status.nextCheckAt || null;
   if (countEl) {
-    // Bug 12: while a connection check is actually running, replace the
-    // "12:00 / until next check" countdown with a pulsing "CHECKING / NOW" in
-    // the same hero slot, instead of a confusing "now / until next check".
-    if (status.monitoringCheckInProgress) {
+    // Three states, one source of truth (monitorHeroState): counting down,
+    // waking a scale-to-zero worker, or sweeping. Bug 12 introduced CHECKING;
+    // WAKING fills the gap between the countdown hitting zero and a pod
+    // actually claiming the task.
+    const hero = monitorHeroState(status);
+    if (hero.state === 'checking') {
       countEl.textContent = 'CHECKING';
-      if (capEl) capEl.textContent = 'now';
-      if (heroEl) heroEl.classList.add('is-checking');
+      if (capEl) capEl.textContent = hero.overrun ? 'sweep looks stalled — auto-recovers' : 'now';
+    } else if (hero.state === 'waking') {
+      countEl.textContent = 'WAKING';
+      if (capEl) capEl.textContent = hero.overrun ? 'still waking — worker hasn’t picked it up' : 'sweeping in ~2 min';
     } else {
       const txt = status.nextCheckAt
         ? v3FmtCountdown(new Date(status.nextCheckAt).getTime() - Date.now())
         : '—';
       countEl.textContent = txt;
       if (capEl) capEl.textContent = 'until next check';
-      if (heroEl) heroEl.classList.remove('is-checking');
+    }
+    if (heroEl) {
+      heroEl.classList.toggle('is-checking', hero.state === 'checking');
+      heroEl.classList.toggle('is-waking', hero.state === 'waking');
     }
   }
   const lineEl = document.getElementById('monLine');
