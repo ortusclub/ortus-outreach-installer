@@ -95,7 +95,7 @@ export function buildLiveActivity(status) {
         state: 'waking',
         icon: '◍',
         l1: 'Waking a worker',
-        l2: hero.overrun ? "still waking — worker hasn't picked it up" : 'sweeping in ~2 min',
+        l2: hero.overrun ? 'still waking — worker hasn’t picked it up' : 'sweeping in ~2 min',
       };
     }
     return {
