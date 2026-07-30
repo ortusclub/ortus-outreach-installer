@@ -554,13 +554,19 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     // even though the lead IS still a connection. Operator screenshot
     // 2026-05-16: Cindy (intro'd 14:48) shown as "Still Pending (17:07)".
     if (cs === 'Connected' || cs === 'Already connected') continue;
-    // v2.78 interim speedup: don't re-stamp a row already marked "Still Pending".
-    // The marker was written on the first sweep; refreshing its timestamp every
-    // sweep is what made each account's write ~155 rows (minutes via the
-    // cell-by-cell Apps Script). Skipping already-pending rows shrinks later
-    // sweeps to just the newly-pending/newly-connected → seconds. (The Apps
-    // Script batch-write optimisation restores per-sweep refresh once deployed.)
-    if (/^still pending/i.test(cs)) continue;
+    // An already-"Still Pending" row IS re-stamped, so the cell answers "when was
+    // this last checked?" rather than "when did it first go pending?".
+    //
+    // v2.78 skipped these to keep the cell-by-cell Apps Script write small (~155
+    // rows/account = minutes). That froze the timestamp forever: operator report
+    // 2026-07-30 — leads invited on 27 Jul still read "Still Pending (2026-07-27
+    // 16:45)" after three days of hourly sweeps, which reads as "never checked"
+    // even though every row is evaluated on every sweep. handleBatchUpdate (the
+    // batch write that comment named as the precondition) has since shipped, so
+    // the refresh is affordable again.
+    //
+    // The Connected/Already-connected guard ABOVE still runs first, so this never
+    // downgrades an accepted row that aged off the ~80-connection recent window.
     // v2.71: any non-empty Intro Status blocks the Still-Pending downgrade
     // too — same one-shot semantics as the connectedUrls gate above.
     const _introStatusForGuard = (
