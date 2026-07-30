@@ -6718,6 +6718,10 @@ let _cloudCardTimer = null;
 const _cloudEventLog = new Map();        // campaignId -> [{ t, line }]  (user actions)
 const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine per-account check events)
 const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
+// Last hero state we logged per cloud campaign, so the "check due" line is
+// EDGE-triggered. The dashboard polls every 5s; logging on level would write
+// the same line ~24 times per wake.
+const _lastHeroState = new Map();
 function _pushCloudEvent(id, line) {
   if (!id || !line) return;
   let arr = _cloudEventLog.get(id);
@@ -6767,6 +6771,18 @@ function _buildCloudActiveStatus(c, leads, counts) {
   const total = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0) || leads.length;
   const sent = Number(counts.sent || 0) || leads.filter((l) => l && l.sentAt).length;
   const accepted = leads.filter((l) => l && /connected/i.test(String(l.connectionAcceptedStatus || ''))).length;
+  // Edge-trigger the operator-visible "a sweep is coming" line.
+  try {
+    const _hero = monitorHeroState({
+      monitorTaskStatus: c.monitorTaskStatus || null,
+      monitorTaskDueAt: c.monitorTaskDueAt || null,
+      monitorCheckStartedAt: c.monitor_check_started_at || null,
+    });
+    if (_lastHeroState.get(c.id) !== _hero.state) {
+      if (_hero.state === 'waking') _pushCloudEvent(c.id, '⏰ Check due — waking a worker, sweeping in ~2 min');
+      _lastHeroState.set(c.id, _hero.state);
+    }
+  } catch (_) { /* the log line must never break the status render */ }
   return {
     _cloud: true, id: c.id, running: c.status === 'running' || c.status === 'paused', paused: c.status === 'paused',
     state: isMon ? 'monitoring' : undefined, queued: isQueued,
@@ -7765,6 +7781,7 @@ function fillVjCard(root, status) {
     if (live) {
       live.hidden = (la.state === 'idle');
       live.classList.toggle('is-checking', la.state === 'checking');
+      live.classList.toggle('is-waking', la.state === 'waking');
       live.classList.toggle('is-paused', la.state === 'paused');
       set('activeLiveIco', la.icon); set('activeLiveL1', la.l1); set('activeLiveL2', la.l2);
     }
@@ -22135,6 +22152,7 @@ window.renderActiveCard = function(status) {
     if (liveEl) {
       liveEl.hidden = (la.state === 'idle');
       liveEl.classList.toggle('is-checking', la.state === 'checking');
+      liveEl.classList.toggle('is-waking', la.state === 'waking');
       liveEl.classList.toggle('is-paused', la.state === 'paused');
       v3SetText('activeLiveIco', la.icon);
       v3SetText('activeLiveL1', la.l1);
