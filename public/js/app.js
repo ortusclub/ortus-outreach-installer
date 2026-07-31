@@ -1957,13 +1957,21 @@ function renderProfiles(profiles) {
         'in-use':   { cls: 'inuse',    word: 'IN USE' },
         'blocked':  { cls: 'stop',     word: 'BLOCKED' },
       };
-      const _sm = _SMAP[_state.state] || _SMAP.free;
+      // No SoO row at all — 57 of 481 GoLogin profiles on 2026-07-31 (12%), mostly
+      // non-LinkedIn profiles that were never meant to be senders (zoominfo_ii,
+      // chatgpt/claude, the Luma tabs) plus accounts genuinely missing from the
+      // sheet. Without a row there is no first name, no credits and no assignee, so
+      // the tile CANNOT be trusted — say so instead of defaulting to a green FREE.
+      const _noSoo = !_soo;
+      const _sm = _noSoo ? { cls: 'nosoo', word: 'NOT IN SoO' } : (_SMAP[_state.state] || _SMAP.free);
       // 'blocked' worded from what the SoO actually says (no invented copy):
       //   restricted → LinkedIn block · na → CC/credit = NA · unavailable → Used/-/Partial.
       const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
       const _label = escHtml(_state.label || '');
-      const _word = (_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word;
+      const _word = _noSoo ? _sm.word : ((_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word);
       let _sub;
+      if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
+      else
       // v2.112.27: operator asked to drop "who uses who" from the picker for now —
       // show bare states (the who is still in classifyAccountState/the log if needed).
       if (_state.state === 'assigned') _sub = 'Assigned.';
@@ -1979,6 +1987,7 @@ function renderProfiles(profiles) {
         <span class="jt-word">${_word}</span>
       </div>`;
       _classes = 'profile-item jt ' + _state.state
+        + (_noSoo ? ' is-nosoo' : '')
         + (_checked ? ' selected' : '')
         + (_state.state === 'in-use' ? ' muted-soft' : '')
         + (_locked ? ' muted is-restricted' : '');

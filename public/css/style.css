@@ -1285,6 +1285,13 @@ select {
 .browse-card .profile-item.jt .jt-stat.s-assigned { background:rgba(58,110,165,0.12); }
 .browse-card .profile-item.jt .jt-stat.s-inuse { background:rgba(247,190,104,0.24); }
 .browse-card .profile-item.jt .jt-stat.s-stop { background:rgba(248,81,73,0.10); }
+/* No SoO row — the tile's data can't be trusted, so it reads red rather than
+   defaulting to a green FREE. The word is longer than the other states, so it
+   wraps instead of overflowing the fixed 108px stat zone. */
+.browse-card .profile-item.jt .jt-stat.s-nosoo { background:rgba(248,81,73,0.10); }
+.browse-card .profile-item.jt .s-nosoo .jt-dot { background:var(--red); }
+.browse-card .profile-item.jt .s-nosoo .jt-word { color:var(--red); font-size:0.82rem; text-align:center; line-height:1.15; }
+.browse-card .profile-item.jt.is-nosoo .jt-email { color:var(--red); }
 .browse-card .profile-item.jt .jt-dot { width:9px; height:9px; border-radius:50%; }
 .browse-card .profile-item.jt .s-free .jt-dot { background:var(--green); }
 .browse-card .profile-item.jt .s-assigned .jt-dot { background:var(--blue); }
@@ -5528,6 +5535,22 @@ body.route-salesnav .sidebar-nav { display: none; }
   color: var(--text-secondary, #555);
 }
 .wizard-queue-banner strong { color: var(--text-primary, #111); margin-right: 8px; }
+
+/* Apply / Cancel for an account-picker session, pinned to the top of §3 where
+   the operator is actually ticking accounts. */
+.acct-add-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--gold, #d4a24a);
+  border-radius: 6px;
+  background: var(--bg-soft, #f7f7f5);
+  font-size: 13px;
+}
+.acct-add-bar-txt { flex: 1; min-width: 220px; color: var(--text-secondary, #555); }
 
 /* Bulk-check status text: streams multi-line log output during a sweep,
    so we need newline rendering and a monospace-friendly block. */
