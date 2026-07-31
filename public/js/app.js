@@ -26,6 +26,7 @@ import {
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView } from '/js/live-activity.mjs';
+import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
@@ -5347,6 +5348,17 @@ function syncPauseOnThrottleHelp() {
     : '<b>Off:</b> the account keeps sending through throttling. Faster, but risks more skips and pushes the account toward restriction. Not recommended.';
 }
 
+// Is this launch going to the VM? Same two conditions the dispatch itself uses
+// (app.js ~6281): an engine-supported mode AND the run-target checkbox. Shared so
+// the Throughput panel can never disagree with where the campaign actually runs.
+const CLOUD_CAPABLE_MODES = new Set(['connect_only', 'message_only', 'introduce_back',
+  'connect_and_introduce', 'connect_and_message', 'follower_growth',
+  'inmail_only', 'open_profile_only', 'check_status']);
+function isCloudRunOn() {
+  return CLOUD_CAPABLE_MODES.has(document.getElementById('campaign-mode')?.value)
+    && !!document.getElementById('cloud-run-checkbox')?.checked;
+}
+
 function alphaRecalc() {
   // v2.11.0: simpler model. Total max invites this run = N accounts × campaign limit.
   // v2.61 redesign removed the alpha-total-leads/acct-count/per-acct/eq-total
@@ -5382,7 +5394,20 @@ function alphaRecalc() {
   const concurrencyRow = document.getElementById('alpha-concurrency-row');
   const concurrencyToggle = document.getElementById('concurrency-toggle');
   const concurrencyCount = document.getElementById('concurrency-count');
-  if (concurrencyRow) {
+  // Cloud: swap the whole knob for the pacing explanation. handleStartCloud never
+  // reads `concurrency`, so on the VM this control is a no-op — and the engine
+  // already works accounts in parallel under the shared account lock.
+  const cloudPacing = document.getElementById('alpha-cloud-pacing');
+  const onCloud = isCloudRunOn();
+  if (concurrencyRow) concurrencyRow.hidden = onCloud;
+  if (cloudPacing) cloudPacing.hidden = !onCloud;
+  if (onCloud) {
+    // Force the local multiplier back to 1 so a stale toggle can't feed the
+    // forecast a parallel speed-up the cloud will never deliver.
+    if (concurrencyToggle) concurrencyToggle.checked = false;
+    if (concurrencyCount) concurrencyCount.disabled = true;
+  }
+  if (concurrencyRow && !onCloud) {
     const unlocked = numAccounts >= 5;
     concurrencyRow.classList.toggle('is-unlocked', unlocked);
     if (!unlocked) {
@@ -5536,13 +5561,47 @@ function updateCampaignSummary() {
   const la = document.getElementById('launch-accounts');
   if (la) la.textContent = String(numAccounts);
   const le = document.getElementById('launch-eta');
-  if (le) le.textContent = durationStr;
+  // Same correction as the Throughput headline: on the VM an hour-count ETA is
+  // meaningless, so the launch strip reports days of capacity too.
+  if (le) {
+    if (isCloudRunOn()) {
+      const _cv = cloudThroughputView({ accounts: numAccounts, dailyLimit: limit, leadsInSheet });
+      le.textContent = _cv.finish;
+    } else {
+      le.textContent = durationStr;
+    }
+  }
 
   // Settings-section campaign hero
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   const accountWord = numAccounts === 1 ? 'account' : 'accounts';
   // Phase 2.8.16: when no accounts selected, show "—" everywhere instead of
   // misleading numbers derived from a default-of-1.
+  // CLOUD: describe capacity/day, not wall-clock. The local model above divides
+  // by "~50 leads/hr × parallel browsers", which does not describe the VM — work
+  // spreads over autoscaled pods and the parallel knob is never sent to the
+  // engine. What bounds a cloud campaign is the daily cap the engine enforces per
+  // account per day, so say that instead of inventing an hour count.
+  if (isCloudRunOn()) {
+    const cv = cloudThroughputView({
+      accounts: numAccounts,
+      dailyLimit: limit,
+      leadsInSheet,
+    });
+    setText('hero-actions', cv.actions);
+    setText('hero-actions-sub', cv.actionsSub);
+    setText('hero-duration-k', cv.durationK);
+    setText('hero-duration', cv.duration);
+    setText('hero-duration-sub', cv.durationSub);
+    setText('hero-finish-k', cv.finishK);
+    setText('hero-finish', cv.finish);
+    setText('hero-finish-sub', cv.finishSub);
+    return;
+  }
+  // Local runs keep the wall-clock forecast — and the labels, which the cloud
+  // branch above rewrites.
+  setText('hero-duration-k', 'Duration');
+  setText('hero-finish-k', 'Finishes');
   if (numAccounts === 0) {
     setText('hero-actions', '—');
     setText('hero-actions-sub', `select accounts to see forecast`);
@@ -6358,6 +6417,11 @@ function refreshRunTarget() {
   refreshCloudToggle();
   refreshLaunchForRunTarget();
   if (typeof refreshAccountPickerForRunTarget === 'function') refreshAccountPickerForRunTarget();
+  // Section 4 reads differently per target — capacity/day on the VM, wall-clock
+  // locally — and the Parallel-accounts knob is hidden in cloud. Without this the
+  // panel kept whichever target was selected when it last rendered.
+  if (typeof alphaRecalc === 'function') alphaRecalc();
+  if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
 }
 // #btn-queue / #btn-schedule are local-only launch paths (Queue →
 // addToQueueCampaign, Schedule → /api/schedules — neither dispatches cloud);

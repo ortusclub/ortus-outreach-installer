@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.36" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.36" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.118" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.118" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -752,6 +752,17 @@
         <button type="button" class="btn btn-primary" id="btn-cloud-edit-save" onclick="cloudEditSaveResume()" style="margin-left:12px; display:none">Save edits &amp; resume</button>
       </div>
 
+      <!-- "＋ Add account" on a live campaign's Accounts panel brings the operator
+           HERE, to the one canonical GoLogin picker (§3), with the campaign's
+           current accounts pre-ticked. Confirming patches the live campaign's
+           account set in place — no redispatch, same campaign id. -->
+      <div id="wizard-acct-add-banner" class="wizard-queue-banner" style="display:none">
+        <strong id="acct-add-banner-title">Choose accounts</strong>
+        <span id="acct-add-banner-detail">Tick the accounts you want on this campaign, below.</span>
+        <button type="button" class="btn btn-primary" id="btn-acct-add-apply" onclick="acctAddApply()" style="margin-left:12px">Apply</button>
+        <button type="button" class="btn" id="btn-acct-add-cancel" onclick="acctAddCancel()" style="margin-left:8px">Cancel</button>
+      </div>
+
       <!-- Campaign Name — first thing the operator names. Persisted to
            localStorage for now; backend wire-through (start → status → history)
            is a Phase 2 follow-up. -->
@@ -1049,13 +1060,16 @@
               <div class="alpha-big-unit" id="hero-actions-sub">select accounts to see forecast</div>
             </div>
             <div class="alpha-headline-eq">
+              <!-- The row LABELS carry ids because a cloud campaign is described
+                   in capacity/day rather than wall-clock (see cloudThroughputView):
+                   "Duration/Finishes" becomes "Capacity/<N> leads". -->
               <div class="alpha-eq-row">
-                <span class="alpha-eq-k">Duration</span>
+                <span class="alpha-eq-k" id="hero-duration-k">Duration</span>
                 <span class="alpha-eq-v" id="hero-duration">—</span>
                 <span class="alpha-eq-sub" id="hero-duration-sub">—</span>
               </div>
               <div class="alpha-eq-row">
-                <span class="alpha-eq-k">Finishes</span>
+                <span class="alpha-eq-k" id="hero-finish-k">Finishes</span>
                 <span class="alpha-eq-v" id="hero-finish">—</span>
                 <span class="alpha-eq-sub" id="hero-finish-sub">—</span>
               </div>
@@ -1103,6 +1117,23 @@
                 </label>
               </div>
               <div class="alpha-knob-help">Speeds up campaigns by running multiple GoLogin browsers simultaneously. If RAM gets tight, the bot drops back to one at a time automatically.</div>
+            </div>
+
+            <!-- Cloud replacement for the Parallel-accounts knob. That control is
+                 local-only: it caps how many GoLogin browsers run on THIS Mac, and
+                 the cloud dispatch never sends it to the engine. Showing a dial
+                 that does nothing is worse than showing none, so on the VM we
+                 explain the actual pacing instead. Toggled by alphaRecalc. -->
+            <div id="alpha-cloud-pacing" class="alpha-concurrency" hidden>
+              <div class="alpha-knob-label">Pacing</div>
+              <div class="alpha-knob-help">
+                Cloud campaigns are paced by the engine. Each account is worked on the VM, and the
+                shared account lock keeps a LinkedIn account to <b>one action at a time</b> across the
+                whole fleet — so your accounts already run in parallel.
+                <br><br>
+                There is no per-campaign browser count to set here: that knob exists locally because
+                your Mac's RAM is the limit. On the VM it isn't — the <b>daily limit</b> is.
+              </div>
             </div>
           </div>
 
@@ -1845,6 +1876,17 @@
     <div class="section collapsible collapsed" id="nav-accounts">
       <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select GoLogin Accounts</span> <span class="section-summary" id="summary-accounts"></span></h2>
       <div class="collapsible-body">
+
+      <!-- Apply / Cancel for an account-picker session on a LIVE campaign. It
+           lives HERE, inside §3, because that is where the operator is actually
+           ticking accounts — the twin banner at the top of the wizard is off
+           screen by then, and sticky is unreliable in this scroll context. -->
+      <div id="acct-add-bar" class="acct-add-bar" style="display:none">
+        <span class="acct-add-bar-txt" id="acct-add-bar-txt">Tick an account to add it.</span>
+        <button type="button" class="btn btn-primary" id="btn-acct-add-apply-2" onclick="acctAddApply()">Apply</button>
+        <button type="button" class="btn" onclick="acctAddCancel()">Cancel</button>
+      </div>
+
 
       <!-- v2.112.10 (Window C / banner-led): big Credit-passover banner up top,
            then a compact stat-pill row, then the Browse-accounts card. The
@@ -3652,7 +3694,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.107"></script>
+  <script type="module" src="/js/app.js?v=2.160.118"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

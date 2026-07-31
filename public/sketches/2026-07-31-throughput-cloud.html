@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Throughput · cloud variants · 2026-07-31</title>
+<!-- REAL app CSS — same tokens, same components, no re-implementation. -->
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { padding: 28px 34px 90px; background: var(--bg, #fff); }
+  .sk-head { max-width: 1180px; margin: 0 auto 26px; }
+  .sk-head h1 { font-family: var(--display); font-size: 1.5rem; letter-spacing: .04em; margin: 0 0 6px; }
+  .sk-head p { margin: 0; font-size: .84rem; opacity: .72; line-height: 1.55; max-width: 74ch; }
+  .sk-variant { max-width: 1180px; margin: 0 auto 46px; }
+  .sk-label {
+    display: flex; align-items: baseline; gap: 12px; margin: 0 0 4px;
+    font-family: var(--display); font-size: 1.02rem; letter-spacing: .05em;
+  }
+  .sk-tag {
+    font-family: var(--display); font-size: .62rem; letter-spacing: .12em;
+    padding: 3px 8px; border: 1px solid currentColor; border-radius: 999px;
+  }
+  .sk-tag.rec { color: #3fb950; }
+  .sk-tag.ask { color: var(--gold, #F7BE68); }
+  .sk-note { font-size: .8rem; opacity: .74; margin: 0 0 14px; line-height: 1.5; max-width: 78ch; }
+  .sk-note b { opacity: .95; }
+  .sk-mode {
+    display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px;
+    font-size: .74rem; letter-spacing: .1em; font-family: var(--display);
+    padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,.18);
+  }
+  .sk-mode .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold, #F7BE68); }
+  /* Cloud-only note block, styled like the existing knob help text. */
+  .cloud-explain {
+    font-size: .78rem; line-height: 1.55; opacity: .8;
+    border-left: 2px solid rgba(0,0,0,.12); padding: 2px 0 2px 12px;
+  }
+  .cloud-explain b { opacity: 1; }
+  .sk-strike { text-decoration: line-through; opacity: .4; }
+</style>
+</head>
+<body>
+
+<div class="sk-head">
+  <h1>Throughput · what section 4 should say for a CLOUD campaign</h1>
+  <p>
+    Two settings live in this panel. <b>Daily limit</b> already works on the VM — it is sent to the
+    engine and enforced per account per day. <b>Parallel accounts</b> is <b>not</b> sent at all: the
+    wizard puts it in the request body and the server never reads it. The duration estimate is also
+    local-only — it is computed from “~100 connections/hr (2 parallel)”, which does not describe the VM.
+    Three ways to resolve that, below.
+  </p>
+</div>
+
+<!-- ─────────────────────────── VARIANT A ─────────────────────────── -->
+<div class="sk-variant">
+  <div class="sk-label">A · Honest cloud panel <span class="sk-tag rec">RECOMMENDED</span></div>
+  <p class="sk-note">
+    Parallel accounts is hidden when “Run in cloud” is on, because it does nothing there. The headline
+    forecast switches from a wall-clock guess to the constraint that actually bounds a VM campaign:
+    <b>daily limit × accounts</b>. No new engine work.
+  </p>
+  <div class="sk-mode"><span class="dot"></span> RUN IN CLOUD · ON</div>
+
+  <div class="alpha-throughput">
+    <div class="alpha-headline">
+      <div class="alpha-headline-left">
+        <div class="alpha-big">210</div>
+        <div class="alpha-big-unit">6 accounts × 35 per day</div>
+      </div>
+      <div class="alpha-headline-eq">
+        <div class="alpha-eq-row">
+          <span class="alpha-eq-k">Capacity</span>
+          <span class="alpha-eq-v">210 / day</span>
+          <span class="alpha-eq-sub">the VM's real limit</span>
+        </div>
+        <div class="alpha-eq-row">
+          <span class="alpha-eq-k">200 leads</span>
+          <span class="alpha-eq-v">~1 day</span>
+          <span class="alpha-eq-sub">done by Sat, 1 Aug</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="alpha-controls alpha-controls--two-col">
+      <div>
+        <div class="alpha-knob-label">Daily limit <span class="alpha-knob-sublabel">· per account per day</span></div>
+        <div class="alpha-knob-row">
+          <input class="alpha-knob-input" type="number" value="35" min="1" max="500" />
+          <div class="step-col">
+            <button type="button" class="step-btn">+</button>
+            <button type="button" class="step-btn">−</button>
+          </div>
+          <span class="alpha-knob-suffix">invites / day</span>
+        </div>
+        <div class="alpha-knob-help">
+          LinkedIn caps invites at ~100/account/week. <b>50</b> is a safe daily default — runs
+          back-to-back for 2 days before LinkedIn starts throttling.
+        </div>
+      </div>
+
+      <div>
+        <div class="alpha-knob-label">Pacing</div>
+        <div class="cloud-explain">
+          Cloud campaigns are paced by the engine. Each account is worked by the VM, and the shared
+          account lock keeps a LinkedIn account to <b>one action at a time</b> across the whole fleet —
+          so your accounts already run in parallel.
+          <br><br>
+          There is no per-campaign browser count to set here: that knob exists locally because your
+          Mac's RAM is the limit. On the VM it isn't.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────── VARIANT B ─────────────────────────── -->
+<div class="sk-variant">
+  <div class="sk-label">B · Keep the knob, fleet-wide <span class="sk-tag ask">WHAT YOU ASKED FOR</span></div>
+  <p class="sk-note">
+    The control stays and is wired through to the engine. It has to be enforced <b>across all pods</b>,
+    not per pod — so the honest label is “accounts at a time, fleet-wide”. Note the direction of travel:
+    the engine already runs accounts concurrently, so this can only ever <b>slow a campaign down</b>.
+    Needs engine work + a deploy.
+  </p>
+  <div class="sk-mode"><span class="dot"></span> RUN IN CLOUD · ON</div>
+
+  <div class="alpha-throughput">
+    <div class="alpha-headline">
+      <div class="alpha-headline-left">
+        <div class="alpha-big">210</div>
+        <div class="alpha-big-unit">6 accounts × 35 per day</div>
+      </div>
+      <div class="alpha-headline-eq">
+        <div class="alpha-eq-row">
+          <span class="alpha-eq-k">Capacity</span>
+          <span class="alpha-eq-v">210 / day</span>
+          <span class="alpha-eq-sub">the VM's real limit</span>
+        </div>
+        <div class="alpha-eq-row">
+          <span class="alpha-eq-k">200 leads</span>
+          <span class="alpha-eq-v">~1 day</span>
+          <span class="alpha-eq-sub">done by Sat, 1 Aug</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="alpha-controls alpha-controls--two-col">
+      <div>
+        <div class="alpha-knob-label">Daily limit <span class="alpha-knob-sublabel">· per account per day</span></div>
+        <div class="alpha-knob-row">
+          <input class="alpha-knob-input" type="number" value="35" min="1" max="500" />
+          <div class="step-col">
+            <button type="button" class="step-btn">+</button>
+            <button type="button" class="step-btn">−</button>
+          </div>
+          <span class="alpha-knob-suffix">invites / day</span>
+        </div>
+        <div class="alpha-knob-help">
+          LinkedIn caps invites at ~100/account/week. <b>50</b> is a safe daily default.
+        </div>
+      </div>
+
+      <div class="alpha-concurrency">
+        <div class="alpha-knob-label">
+          Parallel accounts
+          <span class="unlock-pill">fleet-wide</span>
+        </div>
+        <div class="alpha-knob-row" style="gap:14px;">
+          <input class="alpha-knob-input" type="number" value="4" min="1" max="12" />
+          <div class="step-col">
+            <button type="button" class="step-btn">+</button>
+            <button type="button" class="step-btn">−</button>
+          </div>
+          <span class="alpha-knob-suffix">at a time</span>
+          <label class="alpha-toggle" title="Cap how many accounts the VM works at once">
+            <input type="checkbox" checked />
+            <span class="alpha-toggle-track"></span>
+          </label>
+        </div>
+        <div class="alpha-knob-help">
+          Caps how many of this campaign's accounts the VM works simultaneously, across every worker.
+          <b>Leave off to run at full speed</b> — the engine already parallelises. Turn it on only to
+          deliberately slow a campaign down.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────── VARIANT C ─────────────────────────── -->
+<div class="sk-variant">
+  <div class="sk-label">C · Minimal — leave the layout, fix only the lie</div>
+  <p class="sk-note">
+    Smallest possible change. The control stays exactly where it is but is visibly disabled with a
+    reason, and the duration row is corrected. Useful if you want the two modes to look identical and
+    only the copy to differ.
+  </p>
+  <div class="sk-mode"><span class="dot"></span> RUN IN CLOUD · ON</div>
+
+  <div class="alpha-throughput">
+    <div class="alpha-headline">
+      <div class="alpha-headline-left">
+        <div class="alpha-big">210</div>
+        <div class="alpha-big-unit">6 accounts × 35 per day</div>
+      </div>
+      <div class="alpha-headline-eq">
+        <div class="alpha-eq-row">
+          <span class="alpha-eq-k">Duration</span>
+          <span class="alpha-eq-v">~1 day</span>
+          <span class="alpha-eq-sub">paced by the daily limit, not the clock</span>
+        </div>
+        <div class="alpha-eq-row">
+          <span class="alpha-eq-k">Finishes</span>
+          <span class="alpha-eq-v">Sat, 1 Aug</span>
+          <span class="alpha-eq-sub">200 leads at 210/day</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="alpha-controls alpha-controls--two-col">
+      <div>
+        <div class="alpha-knob-label">Daily limit <span class="alpha-knob-sublabel">· per account per day</span></div>
+        <div class="alpha-knob-row">
+          <input class="alpha-knob-input" type="number" value="35" min="1" max="500" />
+          <div class="step-col">
+            <button type="button" class="step-btn">+</button>
+            <button type="button" class="step-btn">−</button>
+          </div>
+          <span class="alpha-knob-suffix">invites / day</span>
+        </div>
+        <div class="alpha-knob-help">LinkedIn caps invites at ~100/account/week.</div>
+      </div>
+
+      <div class="alpha-concurrency">
+        <div class="alpha-knob-label">
+          <span class="sk-strike">Parallel accounts</span>
+          <span class="unlock-pill">local runs only</span>
+        </div>
+        <div class="alpha-knob-row" style="gap:14px; opacity:.4;">
+          <input class="alpha-knob-input" type="number" value="2" min="2" max="5" disabled />
+          <div class="step-col">
+            <button type="button" class="step-btn" disabled>+</button>
+            <button type="button" class="step-btn" disabled>−</button>
+          </div>
+          <span class="alpha-knob-suffix">at a time</span>
+          <label class="alpha-toggle"><input type="checkbox" disabled /><span class="alpha-toggle-track"></span></label>
+        </div>
+        <div class="alpha-knob-help">
+          Only applies when the campaign runs on your Mac. In the cloud the engine decides — your
+          accounts already run in parallel.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
