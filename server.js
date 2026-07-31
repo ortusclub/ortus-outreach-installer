@@ -45,7 +45,7 @@ import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-ta
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
-import { primaryKeyFromUrl, loadPrimaryStatus } from './src/primary-status-store.js';
+import { primaryKeyFromUrl, loadPrimaryStatus, seedConnectedIds } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
@@ -1345,6 +1345,27 @@ async function handleStartCloud(req, res) {
       config.monthlyBudget = Number(body.monthlyBudget || t.monthlyBudget || 30);
     }
 
+    // Hand the engine what THIS machine already knows about each sender's
+    // connection to the primary. The engine's campaign_primary_conn is keyed per
+    // CAMPAIGN, so without this a new campaign starts blank and every account
+    // shows "Primary not yet connected" — even ones connected in an earlier run.
+    // primary-status.json is keyed per account+primary, so it remembers across
+    // campaigns; seed only the CONNECTED ones (a fact), never a guess.
+    let primaryConn;
+    if (mode === 'connect_and_introduce') {
+      try {
+        const _pKey = primaryKeyFromUrl(String(t.primaryUrl || '').trim());
+        if (_pKey) {
+          const _pStore = await loadPrimaryStatus(dataPath('primary-status.json'));
+          const _connected = seedConnectedIds(_pStore, _pKey).filter((pid) => accounts.includes(pid));
+          if (_connected.length) {
+            primaryConn = Object.fromEntries(_connected.map((pid) => [pid, 'connected']));
+            cloudLog(`[cloud] seeding primary-connection for ${_connected.length} account(s) already connected to the primary`);
+          }
+        }
+      } catch (e) { cloudLog(`[cloud] primary-connection seed skipped: ${e.message}`); }
+    }
+
     // Owner MUST be the per-machine operator identity, because that is exactly
     // what the dashboard's cloud board filters "mine" against (snCurrentEmail =
     // /api/operator-identity). Tagging with req.user (the shared login) made a
@@ -1363,6 +1384,7 @@ async function handleStartCloud(req, res) {
       // field's gid differed from the picked tab (operator picked Sheet2 but a
       // stale gid=Sheet5 in the URL field → all stamps landed on Sheet5).
       dailyLimit: dailyLimit || 50, sheetUrl: cloudSheetUrl,
+      primaryConn,
     });
     if (result.error) return res.status(502).json({ error: result.error, cloud: true });
     cloudLog(`[cloud] campaign ${result.id} (${mode}) dispatched to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
@@ -1812,8 +1834,30 @@ app.post('/api/campaign/cloud/:id/check-now', async (req, res) => {
 // BEFORE calling this, so the new sender is already connected to the primary.
 app.post('/api/campaign/cloud/:id/accounts', async (req, res) => {
   const b = req.body || {};
+  const add = Array.isArray(b.add) ? b.add : [];
+  // Resolve each added account's REAL SoO email here, exactly as handleStartCloud
+  // does at launch (fuzzy match + skip-on-doubt). The client can only offer the
+  // GoLogin profile NAME, which is not always the SoO email — sending that through
+  // put a display name into config.accountEmails, so the accounts panel labelled
+  // the row with it and the engine's SoO Needs-Login stamping (matched by email)
+  // never found the account. Best-effort: a SoO failure leaves the client's value.
+  if (add.length) {
+    try {
+      const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
+      const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
+      const soo = await fetchSoOData();
+      const sooEmails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
+      for (const a of add) {
+        const label = idToName.get(a.profileId) || String(a.email || '').trim();
+        if (!label) continue;
+        const r2 = resolveSoOEmail(label, sooEmails);
+        if (r2 && r2.email) a.email = r2.email;
+        else if (r2 && r2.ambiguous) cloudLog(`[cloud] SoO email ambiguous for "${label}" — added without an email (no Needs-Login stamping for it)`);
+      }
+    } catch (e) { cloudLog(`[cloud] add-account SoO email resolve skipped: ${e.message}`); }
+  }
   const r = await setCloudCampaignAccounts(req.params.id, {
-    add: Array.isArray(b.add) ? b.add : [],
+    add,
     remove: Array.isArray(b.remove) ? b.remove : [],
   });
   if (r && r.error) return res.status(r.status || 502).json(r);

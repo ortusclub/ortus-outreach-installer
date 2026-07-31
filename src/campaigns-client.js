@@ -153,6 +153,9 @@ export function startCloudCampaign(c = {}) {
     dailyLimit: c.dailyLimit ?? 50,
     config: c.config || {},
     leads,
+    // CC+IC: accounts this machine already knows are connected to the primary,
+    // so the engine's per-campaign table starts with the truth instead of blank.
+    ...(c.primaryConn && Object.keys(c.primaryConn).length ? { primaryConn: c.primaryConn } : {}),
   });
 }
 
