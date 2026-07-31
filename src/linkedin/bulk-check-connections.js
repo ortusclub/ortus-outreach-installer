@@ -148,6 +148,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
 
   const updates = [];
   const connectedUrls = [];
+  let freshConnected = 0;
   let dbgRowsScanned = 0, dbgWithUrl = 0, dbgWithCRS = 0;
   let dbgAlreadyConnected = 0, dbgAlreadyDeclined = 0, dbgPidMatched = 0;
   let dbgAlreadyIntroduced = 0;
@@ -170,6 +171,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     return {
       updates: [],
       connectedUrls: [],
+      freshConnected: 0,
       diag: {
         rowsScanned: rows.length, withUrl: 0, withCRS: 0,
         alreadyConnected: 0, alreadyDeclined: 0, alreadyIntroduced: 0,
@@ -223,7 +225,13 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   // the safeguard fired — best-effort: byte-identical URLs collapse to one
   // addressable row in the Apps Script, so the log/diag count below is the
   // authoritative signal).
-  const tryQueueIntro = (u, r, introStatusVal) => {
+  // `alreadyConnected` = the row's Connection Accepted Status was ALREADY at a
+  // Connected value before this sweep, so the lead did not accept just now; it
+  // is only being re-queued because its intro slot is still open (an intro that
+  // was interrupted or failed). Counting those as "newly accepted" made the
+  // sweep summary report the same people every hour forever — see
+  // tests/bulk-check-fresh-count.test.js.
+  const tryQueueIntro = (u, r, introStatusVal, alreadyConnected = false) => {
     const idKeys = leadIdentityKeys(u, r);
     const isDup = idKeys.some((k) => terminalIntroKeys.has(k) || queuedIdentityKeys.has(k));
     if (isDup) {
@@ -237,6 +245,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       return false;
     }
     connectedUrls.push(u);
+    if (!alreadyConnected) freshConnected++;
     for (const k of idKeys) queuedIdentityKeys.add(k);
     return true;
   };
@@ -458,7 +467,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       // Duplicate-profile guard (2026-06-16): tryQueueIntro collapses a second
       // row for the same person; on a duplicate we skip the Connected re-stamp
       // below (it's already stamped on the twin) and let the dup flag stand.
-      if (sweepingConnected && !tryQueueIntro(url, row, introductionStatus)) {
+      if (sweepingConnected && !tryQueueIntro(url, row, introductionStatus, ccAlreadyStamped)) {
         continue;
       }
 
@@ -530,11 +539,13 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
             row['DM Status'] || row['dm status'] || row['DM status'] ||
             row['Direct Message Status'] || row['dmStatus'] || ''
           ).toString().trim();
-          if (_dmStatus === '') tryQueueIntro(url, row, '');
+          // alreadyConnected=true on both: this whole branch is gated on the
+          // sheet ALREADY reading Connected, so nothing here accepted just now.
+          if (_dmStatus === '') tryQueueIntro(url, row, '', true);
         } else {
           // v2.98: open slot = genuinely blank OR the reconnect-retry sentinel.
           const _introStatus = row['Introduction Status'] || row['introduction status'] || '';
-          if (isIntroSlotOpen(_introStatus)) tryQueueIntro(url, row, _introStatus);
+          if (isIntroSlotOpen(_introStatus)) tryQueueIntro(url, row, _introStatus, true);
         }
       }
       continue;
@@ -585,6 +596,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   return {
     updates,
     connectedUrls,
+    freshConnected,
     diag: {
       rowsScanned: dbgRowsScanned,
       withUrl: dbgWithUrl,
