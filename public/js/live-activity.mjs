@@ -50,6 +50,47 @@ export function monitorHeroState(status, now = Date.now()) {
   return { state: 'counting', overrun: false };
 }
 
+/**
+ * What the monitoring hero should DISPLAY — the big value, its caption, and the
+ * state class — for a given status. One helper so every surface renders the same
+ * thing.
+ *
+ * This exists because they didn't. The expanded board card is a cloneNode(true)
+ * of the live card #2 DOM, so it inherits card #2's caption text and state class
+ * at clone time; its own filler refreshed only the number. When card #2 was
+ * mid-sweep the board card froze at caption "now" in checking-gold while its
+ * countdown ticked on beside it — operator screenshot 2026-07-31 showing
+ * "52:05 NOW" in gold. Any renderer that sets the number must set the caption
+ * and the class from the SAME decision, so they cannot drift again.
+ *
+ * `fmtCountdown` is injected because the formatter lives in app.js; pass a
+ * function taking milliseconds-remaining.
+ */
+export function monitorHeroView(status, fmtCountdown, now = Date.now()) {
+  const hero = monitorHeroState(status, now);
+  if (hero.state === 'checking') {
+    return {
+      count: 'CHECKING',
+      cap: hero.overrun ? 'sweep looks stalled — auto-recovers' : 'now',
+      state: 'checking',
+    };
+  }
+  if (hero.state === 'waking') {
+    return {
+      count: 'WAKING',
+      cap: hero.overrun ? 'still waking — worker hasn’t picked it up' : 'sweeping in ~2 min',
+      state: 'waking',
+    };
+  }
+  return {
+    count: status && status.nextCheckAt
+      ? fmtCountdown(new Date(status.nextCheckAt).getTime() - now)
+      : '—',
+    cap: 'until next check',
+    state: 'counting',
+  };
+}
+
 export function buildLiveActivity(status) {
   if (!status) return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
 

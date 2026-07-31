@@ -25,7 +25,7 @@ import {
 } from '/js/tour.mjs';
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity, monitorHeroState } from '/js/live-activity.mjs';
+import { buildLiveActivity, monitorHeroState, monitorHeroView } from '/js/live-activity.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
@@ -954,7 +954,7 @@ let localBrowserFirstName = (typeof localStorage !== 'undefined' && localStorage
 
 function resolveSenderFirstName(profileId, profileName) {
   if (profileId === 'local-browser') {
-    // v2.11.15: manual override wins, but if the operator hasn't set
+    // v2.11.15: manual override wins, but if the operator hasn’t set
     // localBrowserFirstName, auto-resolve to the SoO firstName for the
     // signed-in user — same source the "Good morning, Antonio" greeting
     // uses (app.js:3320). Operator no longer has to type their own name
@@ -1999,6 +1999,7 @@ function renderProfiles(profiles) {
     const cb = item.querySelector('input');
     cb.addEventListener('change', () => {
       if (_locked) { cb.checked = false; return; } // blocked / NA — never selectable
+      try { if (_acctAdd) _acctAddTouched = true; } catch (_) { /* */ }
       if (cb.checked) {
         if (!selectedProfileIds.includes(p.id)) {
           selectedProfileIds.push(p.id);
@@ -2020,6 +2021,9 @@ function renderProfiles(profiles) {
 }
 
 function renderSelectedPanel() {
+  // Live "N to add · M to remove" while picking accounts for a running cloud
+  // campaign. No-op (and cheap) when that flow isn't active.
+  try { if (_acctAdd) _renderAcctAddBanner(); } catch (_) { /* */ }
   const panel = document.getElementById('selected-panel');
   const list = document.getElementById('selected-list');
   const count = document.getElementById('profiles-count');
@@ -2095,7 +2099,7 @@ function renderGuardrailAlert() {
     const _isCc = s.passover.channel === 'cc';
     const _when = _isCc ? 'Thursday' : 'the 16th';
     const _chan = _isCc ? "this week's CC credits" : "this month's OP/InMail/Sales Nav credits";
-    bits.push(`<b>${_chan} open ${_when} (${escHtml(s.passover.label)})</b> — that cycle hasn't started yet (you can still launch)`);
+    bits.push(`<b>${_chan} open ${_when} (${escHtml(s.passover.label)})</b> — that cycle hasn’t started yet (you can still launch)`);
   }
   el.innerHTML = `<span class="big">⚠</span><span class="txt">${bits.join(', and ')}.</span>`;
   el.classList.remove('hidden');
@@ -5193,7 +5197,7 @@ async function previewSheet() {
 
     // v2.58.x — IC sheet mapping (Variant C — progressive disclosure).
     // Flip the empty state hidden, show the filled form, populate dropdown
-    // options. Auto-detect badge appears only if the operator hasn't already
+    // options. Auto-detect badge appears only if the operator hasn’t already
     // manually picked a column (tracked via data-manual-pick).
     try {
       const empty = document.getElementById('ic-extras-empty');
@@ -6791,6 +6795,11 @@ function _buildCloudActiveStatus(c, leads, counts) {
     engineStatus: c.status || '',
     name: c.name || '(unnamed)', mode: c.mode,
     totalTargets: total, totalProcessed: sent,
+    // Leads that still have to be sent. 'claimed' is counted with 'pending': a
+    // campaign stopped mid-batch leaves claims behind, and the engine's reaper
+    // releases them — they are work still owed, not work done. Drives the
+    // ▶ Resume sending control on a stopped / monitoring connect campaign.
+    pendingCount: (Number(counts.pending) || 0) + (Number(counts.claimed) || 0),
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
     acceptedCount: accepted, logs: _mergeCloudLog(_cloudLeadsToLog(leads, c.mode === 'follower_growth', c), _combineCloudEvents(c.id)),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
@@ -6884,46 +6893,217 @@ function renderCloudAccountsPanel(id) {
   panel.innerHTML = `<div class="cap-head"><span>Accounts</span><span>${accounts.length} account${accounts.length === 1 ? '' : 's'}</span></div>${rows}`
     + _cloudAccountsAddHtml(id);
   panel.hidden = false;
-  if (_cloudAccountsEditable()) _fillCloudAccountAddOptions(id);
 }
 
-// Accounts can only be edited when no VM worker is mid-batch — paused, or
-// stopped (cancelled/error/done). The engine enforces the same rule; this just
-// keeps the controls from appearing when they'd be rejected.
+// REMOVING races a worker that may be mid-send from that very account, so it
+// needs a pause — the engine enforces the same rule and 409s otherwise.
 function _cloudAccountsEditable() {
   const s = window.__cloudActiveStatus;
   if (!s || !s._cloud) return false;
-  return ['paused', 'cancelled', 'error', 'done'].includes(String(s.engineStatus || ''));
+  const st = String(s.engineStatus || '');
+  if (!st) return false; // detail fetch failed — don't offer an edit we can't validate
+  return !['running', 'queued', 'pending'].includes(st);
+}
+
+// ADDING is safe in any status (a lead carries no account until claim time), so
+// the picker is always reachable. Gating it behind a pause is what left the
+// operator ticking accounts in the wizard with nothing to commit them.
+function _cloudAccountsAddable() {
+  const s = window.__cloudActiveStatus;
+  return !!(s && s._cloud && String(s.engineStatus || ''));
 }
 
 function _cloudAccountsAddHtml(id) {
-  if (!_cloudAccountsEditable()) {
-    return `<div class="cap-foot-hint">Pause or stop the campaign to add or remove accounts.</div>`;
-  }
+  if (!_cloudAccountsAddable()) return '';
+  // One canonical picker. A second, raw <select> of every GoLogin profile here
+  // was unusable (474 profiles, shown by raw profile name, no SoO state) — so
+  // this just sends the operator up to §3's real tile grid instead.
+  const hint = _cloudAccountsEditable() ? '' : ' <span class="cap-add-lbl">· pause it to remove one</span>';
   return `<div class="cap-add">
       <label class="cap-add-lbl">＋ Add account</label>
-      <select id="cap-add-sel" class="cap-add-sel"><option value="">Loading GoLogin profiles…</option></select>
-      <button type="button" class="cap-add-btn" onclick="addCloudCampaignAccount('${escHtml(id)}', this)">Add</button>
+      <button type="button" class="cap-add-btn" onclick="openCloudAccountPicker('${escHtml(id)}')">Choose in the account picker ↑</button>${hint}
     </div>`;
 }
 
-// GoLogin profiles not already in this campaign — same source as the wizard's
-// account picker.
-async function _fillCloudAccountAddOptions(id) {
-  const sel = document.getElementById('cap-add-sel');
-  if (!sel) return;
-  try {
-    const d = await (await fetch('/api/profiles')).json();
-    const all = (d && Array.isArray(d.profiles)) ? d.profiles : (Array.isArray(d) ? d : []);
-    const inRun = new Set(((_cloudAccountsById.get(id) || []).map((a) => a.profileId)).filter(Boolean));
-    const free = all.filter((p) => !inRun.has(p.id));
-    sel.innerHTML = free.length
-      ? free.map((p) => `<option value="${escHtml(p.id)}" data-email="${escHtml(p.name || '')}">${escHtml(p.name || p.id)}</option>`).join('')
-      : '<option value="">No other GoLogin profiles available</option>';
-  } catch (_) {
-    sel.innerHTML = '<option value="">Could not read GoLogin profiles</option>';
+// ── Add/remove a live cloud campaign's accounts via the wizard's §3 picker ────
+// Takes the operator to the canonical GoLogin selector with this campaign's
+// accounts pre-ticked, then patches the account set in place from the diff.
+// NOT the edit-redispatch flow: no new campaign id, no leads moved.
+let _acctAdd = null; // { cloudId, name, before:[…], prevSelection:[…], mode, primaryUrl }
+let _acctAddTouched = false; // operator has ticked something — stop re-asserting over them
+
+// Re-enable anything inside §3 that a PREVIOUS read-only lock pass disabled.
+// _setCloudEditLock only clears its dataset flag on an explicit unlock, and we
+// don't want to unlock the whole wizard (an active campaign's config must stay
+// frozen) — so clear it for the picker alone.
+function _unlockAcctPicker() {
+  for (const sel of ['#nav-accounts', '#wizard-acct-add-banner']) {
+    const root = document.querySelector(sel);
+    if (!root) continue;
+    root.querySelectorAll('[data-cloud-edit-locked]').forEach((el) => {
+      el.disabled = false; delete el.dataset.cloudEditLocked;
+    });
   }
 }
+
+async function openCloudAccountPicker(id) {
+  _acctAddTouched = false;
+  const st = window.__cloudActiveStatus || {};
+  const before = ((_cloudAccountsById.get(id) || []).map((a) => a.profileId)).filter(Boolean);
+  _acctAdd = {
+    cloudId: id, name: st.name || 'this campaign', before,
+    prevSelection: selectedProfileIds.slice(),
+    mode: st.mode || '', primaryUrl: st.primaryUrl || '',
+  };
+  selectedProfileIds = before.slice();
+  goCreateCampaign();
+  // The grid may not be loaded yet on a cold wizard — loadProfiles() renders it.
+  if (allProfilesData && allProfilesData.length) renderProfiles(allProfilesData);
+  else { try { await loadProfiles(); } catch (_) { /* the picker shows its own error */ } }
+  _renderAcctAddBanner();
+  _unlockAcctPicker();
+  const sect = document.getElementById('nav-accounts');
+  if (sect) {
+    sect.classList.remove('collapsed'); // it ships collapsed — open it or the grid is invisible
+    try { sect.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { sect.scrollIntoView(); }
+  }
+  // goCreateCampaign() set location.hash, whose deferred hashchange handler and
+  // the wizard pollers run AFTER this synchronous setup and can re-render the
+  // grid off other state. Same remedy _enforceCloudReadOnlyView uses: re-assert
+  // idempotently once those have run, rather than chase each clobber.
+  [120, 600, 1500].forEach((ms) => setTimeout(() => {
+    if (!_acctAdd || _acctAdd.cloudId !== id) return;
+    const want = _acctAdd.before;
+    const same = selectedProfileIds.length === want.length && want.every((p) => selectedProfileIds.includes(p));
+    if (!same && !_acctAddTouched) {
+      selectedProfileIds = want.slice();
+      try { if (allProfilesData && allProfilesData.length) renderProfiles(allProfilesData); } catch (_) { /* */ }
+    }
+    _renderAcctAddBanner();
+    _unlockAcctPicker(); // the 5s cloud poll re-asserts the read-only lock
+  }, ms));
+}
+window.openCloudAccountPicker = openCloudAccountPicker;
+
+// Live-updating summary of what Apply will do. Called from renderSelectedPanel()
+// so it tracks every tick/untick in the grid.
+function _renderAcctAddBanner() {
+  const banner = document.getElementById('wizard-acct-add-banner');
+  const bar = document.getElementById('acct-add-bar');
+  if (!banner && !bar) return;
+  if (!_acctAdd) {
+    if (banner) banner.style.display = 'none';
+    if (bar) bar.style.display = 'none';
+    return;
+  }
+  const { add, remove } = _acctAddDiff();
+  const title = document.getElementById('acct-add-banner-title');
+  const detail = document.getElementById('acct-add-banner-detail');
+  if (banner) banner.style.display = '';
+  if (bar) bar.style.display = '';
+  if (title) title.textContent = `Choosing accounts for "${_acctAdd.name}".`;
+  const bits = [];
+  if (add.length) bits.push(`${add.length} to add`);
+  if (remove.length) bits.push(`${remove.length} to remove`);
+  const removeBlocked = remove.length && !_cloudAccountsEditable();
+  const text = removeBlocked
+    ? `${bits.join(' · ')} — but removing needs a pause. Adding is fine while it runs.`
+    : bits.length
+      ? `${bits.join(' · ')} for "${_acctAdd.name}" — the campaign keeps running, nothing is redispatched.`
+      : `Choosing accounts for "${_acctAdd.name}" — tick one below to add it, untick one to remove it.`;
+  if (detail) detail.textContent = text;
+  const barTxt = document.getElementById('acct-add-bar-txt');
+  if (barTxt) barTxt.textContent = text;
+  for (const el of [document.getElementById('btn-acct-add-apply'), document.getElementById('btn-acct-add-apply-2')]) {
+    if (!el) continue;
+    el.disabled = !bits.length;
+    el.textContent = bits.length ? `Apply (${bits.join(', ')})` : 'Apply';
+  }
+}
+
+// Cloud campaigns run on the VM, which has no operator Chrome — 'local-browser'
+// can never be one of their accounts, so it never counts either way.
+function _acctAddDiff() {
+  if (!_acctAdd) return { add: [], remove: [] };
+  const before = _acctAdd.before.filter((p) => p !== 'local-browser');
+  const after = selectedProfileIds.filter((p) => p && p !== 'local-browser');
+  return {
+    add: after.filter((p) => !before.includes(p)),
+    remove: before.filter((p) => !after.includes(p)),
+  };
+}
+
+function acctAddCancel() {
+  if (_acctAdd) selectedProfileIds = _acctAdd.prevSelection.slice();
+  const id = _acctAdd && _acctAdd.cloudId;
+  _acctAdd = null;
+  _renderAcctAddBanner();
+  try { if (allProfilesData && allProfilesData.length) renderProfiles(allProfilesData); } catch (_) { /* */ }
+  if (id) { try { openCloudLive(id); } catch (_) { /* */ } }
+}
+window.acctAddCancel = acctAddCancel;
+
+async function acctAddApply() {
+  if (!_acctAdd) return;
+  const { cloudId, mode, primaryUrl } = _acctAdd;
+  const { add, remove } = _acctAddDiff();
+  if (!add.length && !remove.length) return;
+  // Match the engine: removals need a pause, additions don't. Say so instead of
+  // letting Apply come back with a 409 after the operator has already picked.
+  if (remove.length && !_cloudAccountsEditable()) {
+    showCampaignToast('Pause the campaign first to remove an account — adding is fine while it runs.', 6000);
+    return;
+  }
+  // CC+IC: a new sender must be connected to the primary person or its intros can
+  // never fire. Same local Phase-0 handshake the wizard runs at launch — the VM
+  // has no operator Chrome, so it has to happen on this machine.
+  const isIntroMode = mode === 'connect_and_introduce';
+  if (isIntroMode && add.length && !primaryUrl) {
+    showCampaignToast('Can’t add an account — this CC+IC campaign has no primary person URL, so the new sender could never send its intros.', 7000);
+    return;
+  }
+  if (remove.length && !(_acctAdd.before.length - remove.length + add.length)) {
+    showCampaignToast('A campaign needs at least one account.', 5000);
+    return;
+  }
+  const btn = document.getElementById('btn-acct-add-apply');
+  if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+  try {
+    for (const profileId of (isIntroMode ? add : [])) {
+      const who = selectedProfileNames[profileId] || profileId;
+      showCampaignToast(`Connecting ${who} to the primary — keep this app open…`, 8000);
+      const ok = await _runAddAccountHandshake(profileId, primaryUrl);
+      if (!ok) return; // _runAddAccountHandshake toasts the reason
+    }
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(cloudId)}/accounts`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        // email is a fallback label only — the server re-resolves each added
+        // account's real SoO email with the same matcher launch uses.
+        add: add.map((profileId) => ({ profileId, email: selectedProfileNames[profileId] || '' })),
+        remove,
+      }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { showCampaignToast(d.error || 'Could not update the accounts.', 6000); return; }
+    for (const p of add) _pushCloudEvent(cloudId, `➕ ${selectedProfileNames[p] || p} added to the campaign`);
+    for (const p of remove) _pushCloudEvent(cloudId, `➖ ${p} removed from the campaign`);
+    showCampaignToast(`Accounts updated — ${add.length} added, ${remove.length} removed.`, 5000);
+    selectedProfileIds = _acctAdd.prevSelection.slice();
+    _acctAdd = null;
+    _renderAcctAddBanner();
+    try { if (allProfilesData && allProfilesData.length) renderProfiles(allProfilesData); } catch (_) { /* */ }
+    try { await openCloudLive(cloudId); } catch (_) { /* */ }
+    await _refreshCloudActiveStatus(cloudId);
+    renderCloudAccountsPanel(cloudId);
+  } catch (e) {
+    showCampaignToast('Could not update the accounts: ' + e.message, 6000);
+  } finally {
+    if (btn) { btn.disabled = false; }
+    _renderAcctAddBanner();
+  }
+}
+window.acctAddApply = acctAddApply;
 
 // Toggle an account OFF — drops it from the campaign's account set on the engine.
 // Its already-sent leads keep being swept for acceptances (the engine unions
@@ -6950,38 +7130,6 @@ async function removeCloudCampaignAccount(id, profileId, btn) {
 }
 window.removeCloudCampaignAccount = removeCloudCampaignAccount;
 
-// Add a GoLogin account to a paused/stopped cloud campaign. For CC+IC the new
-// sender must be connected to the primary person or its intros can never fire,
-// so we run the SAME local Phase-0 handshake the wizard runs at launch (this
-// machine's browsers — the VM has no operator Chrome) before registering it.
-async function addCloudCampaignAccount(id, btn) {
-  const sel = document.getElementById('cap-add-sel');
-  const profileId = sel && sel.value;
-  if (!profileId) { showCampaignToast('Pick a GoLogin profile first.', 3000); return; }
-  const email = (sel.selectedOptions[0] && sel.selectedOptions[0].dataset.email) || '';
-  const st = window.__cloudActiveStatus || {};
-  const needsHandshake = st.mode === 'connect_and_introduce' && !!st.primaryUrl;
-  if (btn) btn.disabled = true;
-  try {
-    if (needsHandshake) {
-      showCampaignToast(`Connecting ${email || 'the account'} to the primary — keep this app open…`, 8000);
-      const ok = await _runAddAccountHandshake(profileId, st.primaryUrl);
-      if (!ok) return; // _runAddAccountHandshake toasts the reason
-    }
-    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/accounts`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add: [{ profileId, email }] }),
-    });
-    const d = await res.json().catch(() => ({}));
-    if (!res.ok || d.error) { showCampaignToast(d.error || 'Could not add the account.', 6000); return; }
-    _pushCloudEvent(id, `➕ ${email || profileId} added to the campaign`);
-    showCampaignToast(`${email || 'Account'} added — it starts sending when you resume.`, 5000);
-    await _refreshCloudActiveStatus(id);
-    renderCloudAccountsPanel(id);
-  } catch (e) { showCampaignToast('Could not add the account: ' + e.message, 6000); }
-  finally { if (btn) btn.disabled = false; }
-}
-window.addCloudCampaignAccount = addCloudCampaignAccount;
 
 // Drive the local single-sender handshake and wait for it. Returns true when the
 // sender reached the primary (or already was connected).
@@ -7080,9 +7228,20 @@ function _adaptActiveCardControls(card, status) {
   // In that state Pause/Stop are meaningless → swap the cluster.
   const _stoppedCloud = cloud && status && !status.running && !status.queued
     && status.state !== 'monitoring' && ['cancelled', 'error'].includes(String(status.engineStatus || ''));
+  // ▶ Resume sending — a connect campaign that was stopped with "keep checking"
+  // sits in 'monitoring' with its unsent leads still pending (37 sent · 116
+  // pending). Pause/Stop don't apply and _stoppedCloud excludes monitoring, so
+  // there was no way back: the remaining connects could never be sent. This adds
+  // the Continue button (and only that — no "restart from the beginning", which
+  // here would mean re-sending everything) whenever there is genuinely work left.
+  const _pendingLeft = Number((status && status.pendingCount) || 0);
+  const _resumeOnly = cloud && !!status && !status.running && !status.queued && !_stoppedCloud
+    && /^connect/.test(String(status.mode || ''))
+    && _pendingLeft > 0
+    && ['monitoring', 'done'].includes(String(status.engineStatus || ''));
   let ctBtn = document.getElementById('dock-cloud-continue');
   let rsBtn = document.getElementById('dock-cloud-restart');
-  if (_stoppedCloud && dock) {
+  if ((_stoppedCloud || _resumeOnly) && dock) {
     if (!ctBtn) {
       ctBtn = document.createElement('button');
       ctBtn.id = 'dock-cloud-continue';
@@ -7101,10 +7260,23 @@ function _adaptActiveCardControls(card, status) {
     }
     ctBtn.onclick = () => { try { window.restartCloudCampaignUI(_viewingCloudId, false); } catch (_) { /* */ } };
     rsBtn.onclick = () => { try { window.restartCloudCampaignUI(_viewingCloudId, true); } catch (_) { /* */ } };
-    ctBtn.style.display = ''; rsBtn.style.display = '';
-    if (pauseBtn) pauseBtn.style.display = 'none';
-    const stopBtn = dock.querySelector('[data-tip="Stop"]');
-    if (stopBtn) stopBtn.style.display = 'none';
+    const _resumeTip = `Resume sending — ${_pendingLeft} still to go`;
+    ctBtn.setAttribute('data-tip', _resumeOnly ? _resumeTip : 'Continue where it left off');
+    ctBtn.setAttribute('aria-label', _resumeOnly ? _resumeTip : 'Continue where it left off');
+    ctBtn.style.display = '';
+    // Restart-from-the-beginning only makes sense for a genuinely stopped run.
+    // On a monitoring campaign it would re-send every lead — never offer it.
+    rsBtn.style.display = _resumeOnly ? 'none' : '';
+    // Monitoring keeps its own Pause/Stop (the checks are still running); a
+    // stopped campaign has nothing to pause or stop.
+    if (!_resumeOnly) {
+      if (pauseBtn) pauseBtn.style.display = 'none';
+      const stopBtn = dock.querySelector('[data-tip="Stop"]');
+      if (stopBtn) stopBtn.style.display = 'none';
+    } else {
+      const stopBtn = dock.querySelector('[data-tip="Stop"]');
+      if (stopBtn) stopBtn.style.removeProperty('display');
+    }
   } else {
     if (ctBtn) ctBtn.style.display = 'none';
     if (rsBtn) rsBtn.style.display = 'none';
@@ -7714,8 +7886,21 @@ function vjCardSkeleton(cid) {
 }
 
 function _fillVjMonitorHero(root, status) {
+  // This card is a cloneNode(true) of card #2's LIVE DOM, so it arrives carrying
+  // whatever caption and state class card #2 happened to be showing when it was
+  // cloned. Updating only the number left those frozen — a gold "now" caption
+  // beside a ticking countdown (operator screenshot 2026-07-31). Render all three
+  // from one decision, exactly as v3RenderMonitorHero does.
+  const view = monitorHeroView(status, v3FmtCountdown);
   const countEl = root.querySelector('[data-f="monCount"]');
-  if (countEl) countEl.textContent = status.nextCheckAt ? v3FmtCountdown(new Date(status.nextCheckAt).getTime() - Date.now()) : '—';
+  if (countEl) countEl.textContent = view.count;
+  const capEl = root.querySelector('.vj-mon-cap');
+  if (capEl) capEl.textContent = view.cap;
+  const heroElB = root.querySelector('.vj-mon-hero');
+  if (heroElB) {
+    heroElB.classList.toggle('is-checking', view.state === 'checking');
+    heroElB.classList.toggle('is-waking', view.state === 'waking');
+  }
   const lineEl = root.querySelector('[data-f="monLine"]');
   if (lineEl) {
     const sent = Number(status.totalProcessed) || 0;
@@ -7843,7 +8028,12 @@ function _startVjTick() {
     cards.forEach((card) => {
       const nc = card.dataset.nextcheck;
       const el = card.querySelector('[data-f="monCount"]');
-      if (el) el.textContent = nc ? v3FmtCountdown(new Date(nc).getTime() - Date.now()) : '—';
+      // Don't tick over a state word: while the hero reads CHECKING or WAKING the
+      // number is not what's on screen, and overwriting it every second is what
+      // produced a countdown sitting under a "now" caption.
+      const heroB = card.querySelector('.vj-mon-hero');
+      const busyB = heroB && (heroB.classList.contains('is-checking') || heroB.classList.contains('is-waking'));
+      if (el && !busyB) el.textContent = nc ? v3FmtCountdown(new Date(nc).getTime() - Date.now()) : '—';
       const fd = card.dataset.fudue;
       if (fd) _setFuDual(card.querySelector('[data-f="fuCount"]'), Number(fd));
     });
@@ -9189,6 +9379,11 @@ function _setCloudEditLock(locked) {
     // (#nav-status — Run check now / pause / show are campaign controls, not
     // config-edit fields; they must stay usable while viewing an active campaign).
     if (el.closest('#wizard-cloud-edit-banner') || el.closest('.wizard-back-row') || el.closest('.back-link') || el.closest('#nav-status')) return;
+    // Picking accounts for a live campaign is a campaign CONTROL, not a config
+    // edit — the same reason #nav-status is exempt. Without this the read-only
+    // lock (re-asserted by the 5s cloud poll) disabled the very picker the
+    // operator was sent to, and every click just toasted "stop it first".
+    try { if (_acctAdd && (el.closest('#nav-accounts') || el.closest('#wizard-acct-add-banner'))) return; } catch (_) { /* */ }
     if (locked) {
       if (!el.disabled) { el.disabled = true; el.dataset.cloudEditLocked = '1'; }
     } else if (el.dataset.cloudEditLocked) {
@@ -9360,6 +9555,7 @@ function _wireReadOnlyEditGuard() {
   root.addEventListener('mousedown', (e) => {
     if (!(_cloudEdit && _cloudEdit.readOnly)) return;
     if (e.target.closest('#wizard-cloud-edit-banner') || e.target.closest('.wizard-back-row') || e.target.closest('.back-link') || e.target.closest('#nav-status')) return;
+    try { if (_acctAdd && (e.target.closest('#nav-accounts') || e.target.closest('#wizard-acct-add-banner'))) return; } catch (_) { /* */ }
     if (!e.target.closest('.mode-card, input, select, textarea, button, label, #mode-grid, .launch-actions')) return;
     const now = (window.performance && performance.now) ? performance.now() : 0;
     if (now - _readOnlyToastAt < 1200) return;
@@ -9565,7 +9761,15 @@ async function restartCloudCampaignUI(id, fromStart) {
       if (typeof showCampaignToast === 'function') showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Restart isn’t live yet — engine update pending.', 6000);
       return;
     }
-    if (typeof showCampaignToast === 'function') showCampaignToast(fromStart ? 'Restarting the cloud campaign from the beginning…' : 'Continuing the cloud campaign…', 4500);
+    if (d.alreadyRunning) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Already sending — nothing to resume.', 4000);
+      return;
+    }
+    const left = Number(d.pending) || 0;
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(fromStart ? 'Restarting the cloud campaign from the beginning…'
+        : `Resuming — the VM will send the ${left ? `${left} remaining` : 'remaining'} lead(s).`, 4500);
+    }
     _pushCloudEvent(id, fromStart ? '▶️ Started (from the beginning)' : '▶️ Started (continuing where it left off)');
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
@@ -10743,7 +10947,7 @@ function _pePrefillFields() {
         .then(r => r.json())
         .then(data => {
           if (!data || !data.ok || !data.settings) return;
-          // Only apply if we're still mid pre-fill and the operator hasn't typed.
+          // Only apply if we're still mid pre-fill and the operator hasn’t typed.
           if (!_peFilled || __cockpit.paused !== true) return;
           if (bodyEl.value) return;
           bodyEl.value = _peReadBody(data.settings.templates, field);
@@ -15242,7 +15446,7 @@ async function renderTeamStatus(force = false) {
     // "You" is the OPERATOR (who you're operating as, e.g. antonio@) — the same
     // identity the rows are owned by — NOT the shared login (ortus@). snCurrentEmail
     // is loaded at startup (initOperatorIdentity); guard the first-render race by
-    // fetching it on demand if it hasn't landed, before falling back to the login.
+    // fetching it on demand if it hasn’t landed, before falling back to the login.
     if (!snCurrentEmail) { try { await loadOperatorEmail(); } catch { /* keep fallback */ } }
     const you = String(snCurrentEmail || _viewerEmail || '').toLowerCase();
 
@@ -15618,6 +15822,9 @@ function applyRoute() {
   // Leaving the wizard abandons any cloud-edit session (unlock + banner reset)
   // so a later fresh "+ New campaign" never inherits the lock.
   if (!isWizard && typeof clearCloudEditMode === 'function') clearCloudEditMode();
+  // Same for the account-picker session, or a later "+ New campaign" inherits its
+  // banner and would patch a campaign the operator has navigated away from.
+  try { if (!isWizard && _acctAdd) { _acctAdd = null; _acctAddTouched = false; _renderAcctAddBanner(); } } catch (_) { /* */ }
   const isConnections = hash.startsWith('#/connections');
   const isSalesNav = hash.startsWith('#/salesnav');
   const isReplies = hash.startsWith('#/replies');
@@ -16530,7 +16737,7 @@ let pastManageMode = false;
 // (not array positions) so multi-delete addresses the on-disk record.
 let pastSelectedIdxs = new Set();
 // v2.11.8: queue of indexes pending deletion. While the timer is alive the
-// rows are hidden client-side but the server hasn't been hit yet — Undo
+// rows are hidden client-side but the server hasn’t been hit yet — Undo
 // cancels the timer and restores. Timer commit fires the batch DELETE.
 let pastPendingDeletes = [];
 let pastPendingTimer = null;
@@ -16550,7 +16757,7 @@ let pastPendingTimer = null;
 //   timer fires             → commitPendingDeletes()       → POST /api/history/delete-batch
 //
 // While the timer is alive the rows are hidden client-side via
-// pastPendingDeletes; the server hasn't been touched yet, so closing
+// pastPendingDeletes; the server hasn’t been touched yet, so closing
 // the app within the 5s window leaves history.json intact (data-safe).
 
 function onPastRowCheckboxChange(event, idx) {
@@ -18117,7 +18324,7 @@ async function bulkCheckNow() {
   try {
     // Send the full selected array. Server now accepts profileIds (plural).
     // Falls back to deriving from the sheet's Account Used column when the
-    // operator hasn't selected anyone.
+    // operator hasn’t selected anyone.
     const body = { sheetUrl, linkedinColumn };
     if (profileIds.length) body.profileIds = profileIds;
     // Pull the wizard's Primary Person fields if filled — server uses them
@@ -19313,7 +19520,7 @@ function fgtlRenderPeople() {
   const el = document.getElementById('fgtl-people'); if (!el) return;
   const q = (document.getElementById('fgtl-search')?.value || '').toLowerCase();
   // Hide non-Ortus accounts (SoO Company ≠ The Ortus Club). Fail-open: if SoO data
-  // hasn't loaded (empty), show everyone so a transient SoO outage doesn't block launching.
+  // hasn’t loaded (empty), show everyone so a transient SoO outage doesn't block launching.
   const sooReady = typeof sooData !== 'undefined' && sooData && Object.keys(sooData).length > 0;
   el.innerHTML = fgtlPeople
     .filter((p) => p.email.toLowerCase().includes(q))
@@ -21961,7 +22168,7 @@ window.renderActiveCard = function(status) {
     if (window.__cloudActiveStatus) {
       status = window.__cloudActiveStatus;
     } else {
-      // v2.160.53: viewing a SPECIFIC cloud campaign but its status hasn't loaded
+      // v2.160.53: viewing a SPECIFIC cloud campaign but its status hasn’t loaded
       // yet (the ~<1s window while _refreshCloudActiveStatus fetches). Don't paint
       // the cloud AGGREGATE hero ("N campaigns running in the cloud") over it —
       // leave the card as-is; the cloud poll fills in the specific campaign shortly.
@@ -21975,7 +22182,7 @@ window.renderActiveCard = function(status) {
   // monitoring story; the cockpit ring already handled this state).
   const isMonitoring = !!(status && !status.running && status.state === 'monitoring');
   // A cloud campaign that's still pending/queued on the VM (worker scaling up,
-  // hasn't claimed it yet). Not running, not monitoring, and NOT finished —
+  // hasn’t claimed it yet). Not running, not monitoring, and NOT finished —
   // render a "Launching…" state so the operator doesn't mistake it for done and
   // spam Start. Must be checked BEFORE isFinished, which would otherwise catch
   // it (queued campaigns already carry a summary log line → logs.length > 0).
@@ -22402,20 +22609,9 @@ function v3RenderMonitorHero(status) {
     // waking a scale-to-zero worker, or sweeping. Bug 12 introduced CHECKING;
     // WAKING fills the gap between the countdown hitting zero and a pod
     // actually claiming the task.
-    const hero = monitorHeroState(status);
-    if (hero.state === 'checking') {
-      countEl.textContent = 'CHECKING';
-      if (capEl) capEl.textContent = hero.overrun ? 'sweep looks stalled — auto-recovers' : 'now';
-    } else if (hero.state === 'waking') {
-      countEl.textContent = 'WAKING';
-      if (capEl) capEl.textContent = hero.overrun ? 'still waking — worker hasn’t picked it up' : 'sweeping in ~2 min';
-    } else {
-      const txt = status.nextCheckAt
-        ? v3FmtCountdown(new Date(status.nextCheckAt).getTime() - Date.now())
-        : '—';
-      countEl.textContent = txt;
-      if (capEl) capEl.textContent = 'until next check';
-    }
+    const hero = monitorHeroView(status, v3FmtCountdown);
+    countEl.textContent = hero.count;
+    if (capEl) capEl.textContent = hero.cap;
     if (heroEl) {
       heroEl.classList.toggle('is-checking', hero.state === 'checking');
       heroEl.classList.toggle('is-waking', hero.state === 'waking');
@@ -22479,7 +22675,9 @@ function _tickMonHeroCountdown() {
   if (!card || !card.classList.contains('is-monitor')) return;
   if (!_monHeroNextCheckAt) return;
   const heroEl = document.querySelector('#active-monitor .vj-mon-hero');
-  if (heroEl && heroEl.classList.contains('is-checking')) return; // leave "CHECKING"
+  // Leave BOTH state words alone — is-waking was missing here, so a 1s tick
+  // replaced "WAKING" with a countdown the moment after it was rendered.
+  if (heroEl && (heroEl.classList.contains('is-checking') || heroEl.classList.contains('is-waking'))) return;
   const countEl = document.getElementById('monCount');
   if (countEl) {
     countEl.textContent = v3FmtCountdown(new Date(_monHeroNextCheckAt).getTime() - Date.now());
