@@ -25,7 +25,7 @@ import {
 } from '/js/tour.mjs';
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity, monitorHeroState, monitorHeroView } from '/js/live-activity.mjs';
+import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText } from '/js/live-activity.mjs';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
@@ -7926,7 +7926,6 @@ function _buildSkippedSection(it) {
 // per-campaign, scoped by data-f. The collapsed strip is unchanged. See
 // docs/superpowers/specs/2026-07-11-expanded-strip-card2-parity-design.md
 let _snItemsById = new Map();
-let _vjTick = null;
 
 function vjCardSkeleton(cid) {
   const src = document.getElementById('active-card');
@@ -8093,26 +8092,49 @@ window.copyVjCardLog = function (btn) {
   const orig = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = orig; }, 1200);
 };
 
-function _startVjTick() {
-  if (_vjTick) return;
-  _vjTick = setInterval(() => {
-    const cards = document.querySelectorAll('#sn-board .sn-strip:not(.sn-collapsed) .sn-vjcard.is-monitor');
-    if (!cards.length) { _stopVjTick(); return; }
-    cards.forEach((card) => {
-      const nc = card.dataset.nextcheck;
-      const el = card.querySelector('[data-f="monCount"]');
-      // Don't tick over a state word: while the hero reads CHECKING or WAKING the
-      // number is not what's on screen, and overwriting it every second is what
-      // produced a countdown sitting under a "now" caption.
-      const heroB = card.querySelector('.vj-mon-hero');
-      const busyB = heroB && (heroB.classList.contains('is-checking') || heroB.classList.contains('is-waking'));
-      if (el && !busyB) el.textContent = nc ? v3FmtCountdown(new Date(nc).getTime() - Date.now()) : '—';
-      const fd = card.dataset.fudue;
-      if (fd) _setFuDual(card.querySelector('[data-f="fuCount"]'), Number(fd));
+// Board-strip monitoring countdowns, ticked once a second.
+//
+// This used to be an interval started from _fillVjCards and stopped by itself
+// whenever a tick found no EXPANDED monitor card — which deadlocked. The two
+// halves disagreed about when the ticker should exist: _fillVjCards started it
+// for any monitoring campaign (collapsed included), the tick required an
+// expanded one and destroyed the interval when it found none. So with every
+// strip collapsed the ticker killed itself one second in; expanding a strip is
+// a local class toggle that doesn't re-render the board; and the board's
+// anti-jank skip (`final === _lastBoardHtml → return`) meant _fillVjCards —
+// the only thing that could restart it — never ran again. Countdowns froze
+// until something else changed the board HTML. The campaign-tab card never had
+// this because its ticker is a plain module-level interval.
+//
+// So: one module-level interval that no-ops when there is nothing to tick,
+// never stops, and is never coupled to the render path.
+//
+// The countdown source is _snItemsById (assigned BEFORE the anti-jank early
+// return, so it's fresh even on a skipped render) with the card's dataset as
+// the fallback — otherwise a skipped render would leave a stale nextcheck
+// ticking past zero into a permanent "now".
+function _tickVjCards() {
+  const cards = document.querySelectorAll('#sn-board .sn-strip:not(.sn-collapsed) .sn-vjcard.is-monitor');
+  if (!cards.length) return; // nothing on screen to tick — NOT a reason to stop
+  cards.forEach((card) => {
+    const cid = card.closest('.sn-strip')?.dataset.cid;
+    const it = cid ? _snItemsById.get(cid) : null;
+    let status = null;
+    try { status = it ? statusFromItem(it) : null; } catch (_) { status = null; }
+    const heroB = card.querySelector('.vj-mon-hero');
+    const busy = !!(heroB && (heroB.classList.contains('is-checking') || heroB.classList.contains('is-waking')));
+    const text = monitorTickText({
+      nextCheckAt: (status && status.nextCheckAt) || card.dataset.nextcheck || null,
+      busy,
+      fmtCountdown: v3FmtCountdown,
     });
-  }, 1000);
+    const el = card.querySelector('[data-f="monCount"]');
+    if (el && text !== null) el.textContent = text;
+    const fd = (status && status.followUp && status.followUp.dueAt) || card.dataset.fudue;
+    if (fd) _setFuDual(card.querySelector('[data-f="fuCount"]'), Number(fd));
+  });
 }
-function _stopVjTick() { if (_vjTick) { clearInterval(_vjTick); _vjTick = null; } }
+setInterval(_tickVjCards, 1000);
 
 // Fill every strip's cloned card from its board item. Called after each board
 // render. We fill COLLAPSED cards too (cheap text sets on a display:none node):
@@ -8121,7 +8143,6 @@ function _stopVjTick() { if (_vjTick) { clearInterval(_vjTick); _vjTick = null; 
 // flashing the local #active-card template the skeleton was cloned from.
 function _fillVjCards(board) {
   const cards = board.querySelectorAll('.sn-strip .sn-vjcard');
-  let anyMonitor = false;
   cards.forEach((card) => {
     const cid = card.closest('.sn-strip')?.dataset.cid;
     const it = cid ? _snItemsById.get(cid) : null;
@@ -8130,9 +8151,10 @@ function _fillVjCards(board) {
     card.dataset.nextcheck = status.nextCheckAt || '';
     card.dataset.fudue = (status.followUp && status.followUp.dueAt) || '';
     try { fillVjCard(card, status); } catch (_) { /* per-card best-effort */ }
-    if (status.state === 'monitoring') anyMonitor = true;
   });
-  if (anyMonitor) _startVjTick(); else _stopVjTick();
+  // No ticker wiring here on purpose — _tickVjCards runs on its own module-level
+  // interval. Starting/stopping it from the render path is exactly what froze
+  // every board countdown once the anti-jank skip stopped calling this.
 }
 
 function renderUnifiedStrip(it) {
@@ -22749,12 +22771,12 @@ function _tickMonHeroCountdown() {
   if (!_monHeroNextCheckAt) return;
   const heroEl = document.querySelector('#active-monitor .vj-mon-hero');
   // Leave BOTH state words alone — is-waking was missing here, so a 1s tick
-  // replaced "WAKING" with a countdown the moment after it was rendered.
-  if (heroEl && (heroEl.classList.contains('is-checking') || heroEl.classList.contains('is-waking'))) return;
+  // replaced "WAKING" with a countdown the moment after it was rendered. Shared
+  // with the board ticker via monitorTickText so the two can't drift apart.
+  const busy = !!(heroEl && (heroEl.classList.contains('is-checking') || heroEl.classList.contains('is-waking')));
+  const text = monitorTickText({ nextCheckAt: _monHeroNextCheckAt, busy, fmtCountdown: v3FmtCountdown });
   const countEl = document.getElementById('monCount');
-  if (countEl) {
-    countEl.textContent = v3FmtCountdown(new Date(_monHeroNextCheckAt).getTime() - Date.now());
-  }
+  if (countEl && text !== null) countEl.textContent = text;
   if (_fuHeroDueAt) _setFuDual(document.getElementById('fuCount'), _fuHeroDueAt);
 }
 setInterval(_tickMonHeroCountdown, 1000);

@@ -91,6 +91,34 @@ export function monitorHeroView(status, fmtCountdown, now = Date.now()) {
   };
 }
 
+/**
+ * What the 1-second display tick should write into a monitoring countdown —
+ * or null meaning "leave the number alone".
+ *
+ * Two callers tick a countdown once a second (the campaign-tab card and each
+ * expanded board strip) and both need the same two refusals:
+ *
+ *   - while the hero reads CHECKING or WAKING the number on screen is a STATE
+ *     WORD, not a countdown; overwriting it every second is what produced a
+ *     ticking "52:05" under a gold "now" caption.
+ *   - with no nextCheckAt there is nothing to count toward, so show a dash
+ *     rather than a countdown to the epoch.
+ *
+ * @param {object} o
+ * @param {string|number|null} o.nextCheckAt  when the next sweep is due
+ * @param {boolean} o.busy                    hero is showing CHECKING/WAKING
+ * @param {(ms:number)=>string} o.fmtCountdown
+ * @param {number} [o.now]
+ * @returns {string|null} text to write, or null to leave the DOM untouched
+ */
+export function monitorTickText({ nextCheckAt, busy, fmtCountdown, now = Date.now() }) {
+  if (busy) return null;
+  if (!nextCheckAt) return '—';
+  const at = typeof nextCheckAt === 'number' ? nextCheckAt : new Date(nextCheckAt).getTime();
+  if (!Number.isFinite(at)) return '—';
+  return fmtCountdown(at - now);
+}
+
 export function buildLiveActivity(status) {
   if (!status) return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
 
