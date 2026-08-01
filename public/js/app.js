@@ -8114,7 +8114,13 @@ window.copyVjCardLog = function (btn) {
 // the fallback — otherwise a skipped render would leave a stale nextcheck
 // ticking past zero into a permanent "now".
 function _tickVjCards() {
-  const cards = document.querySelectorAll('#sn-board .sn-strip:not(.sn-collapsed) .sn-vjcard.is-monitor');
+  // `.sn-board` (class), NOT `#sn-board` (id). There are TWO boards: the
+  // dashboard renders into #campaigns-board, the Sales Nav Scraper page into
+  // #sn-board — and both carry class="sn-board". The id selector meant this
+  // never matched a single dashboard card, so the strip countdown never ticked
+  // there at all: what looked like a 5-second tick was the board poll
+  // re-rendering the strip, and the freeze was that redraw being skipped.
+  const cards = document.querySelectorAll('.sn-board .sn-strip:not(.sn-collapsed) .sn-vjcard.is-monitor');
   if (!cards.length) return; // nothing on screen to tick — NOT a reason to stop
   cards.forEach((card) => {
     const cid = card.closest('.sn-strip')?.dataset.cid;
