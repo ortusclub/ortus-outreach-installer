@@ -999,6 +999,10 @@ const PREVIEW_FIELD_LABELS = {
   opProfileBody: 'Open Profile Body',
   introTitle: 'Group conversation title',
   primaryIntroBody: 'Intro DM Body',
+  // v2.160.127: the CC+IC automated first follow-up. It IS sent (into the group
+  // thread, after the last intro), so it belongs in a modal whose job is showing
+  // what goes out. Listed after primaryIntroBody because that's the send order.
+  followUpBody: 'First follow-up message',
   ccDmBody: 'Post-acceptance DM',
 };
 
@@ -1077,7 +1081,13 @@ function gatherCampaignFormState() {
     autoAcceptPrimary: _isIntroFlow ? !!document.getElementById('auto-accept-toggle')?.checked : false,
     autoAcceptAllPending: _isIntroFlow ? !!document.getElementById('auto-accept-all-toggle')?.checked : false,
     followUpEnabled: _isIntroFlow ? !!document.getElementById('follow-up-toggle')?.checked : false,
-    followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
+    // v2.160.127: previewed as its own card (PREVIEW_FIELD_LABELS.followUpBody).
+    // Gated on the toggle as well as the mode: with follow-ups OFF this message
+    // is never sent, and a preview that shows an unsent message is the exact bug
+    // the ccDmBody gate above just fixed.
+    followUpBody: (_isIntroFlow && document.getElementById('follow-up-toggle')?.checked)
+      ? (document.getElementById('follow-up-body')?.value || '')
+      : '',
     followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
     primarySource: _isIntroFlow ? readPrimarySource() : 'local-browser',
     // v2.62: CC+DM post-acceptance body. Only meaningful when
