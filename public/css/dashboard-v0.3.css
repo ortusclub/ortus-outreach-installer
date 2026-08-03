@@ -442,8 +442,13 @@
   body[data-dashboard='v3'] .vj-card.is-preflight .vj-hbar > i { background: var(--gold, #caa24a); }
   body[data-dashboard='v3'] .vj-card.is-preflight .vj-hero { display: none; }
   body[data-dashboard='v3'] .vj-card.is-preflight .pf-list { display: flex; grid-area: hero; flex-direction: column; gap: 2px; }
-  body[data-dashboard='v3'] .pf-row { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 12px; padding: 9px 2px; border-bottom: 1px solid var(--hairline-soft, rgba(0,0,0,.06)); }
-  body[data-dashboard='v3'] .pf-row:last-child { border-bottom: none; }
+  /* Scoped to .pf-list: `.pf-row` is ALSO the pre-flight linter modal's row
+     (style.css .pf-row, columns 56px/160px/1fr, children .rowno/.lead/.reason).
+     Unscoped, this rule loaded later AND outranked it, so the modal rendered at
+     22px/1fr/auto — "Row 6" (white-space:nowrap) printed on top of the lead
+     name and every reason hugged the right edge. Keep it inside .pf-list. */
+  body[data-dashboard='v3'] .pf-list .pf-row { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 12px; padding: 9px 2px; border-bottom: 1px solid var(--hairline-soft, rgba(0,0,0,.06)); }
+  body[data-dashboard='v3'] .pf-list .pf-row:last-child { border-bottom: none; }
   body[data-dashboard='v3'] .pf-ic { font-family: var(--mono); text-align: center; font-size: 0.95rem; }
   body[data-dashboard='v3'] .pf-acct { color: var(--ink); font-weight: 500; }
   body[data-dashboard='v3'] .pf-state { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.04em; color: var(--gray); }
