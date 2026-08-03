@@ -22,7 +22,7 @@
 
 import fs from 'fs/promises';
 import { dataPath } from './paths.js';
-import { bumpConnectionsThisWeek } from './soo-writer.js';
+import { bumpConnectionsThisWeek, flipAccountInUse, resolveSoOTarget, cloudFlipAction } from './soo-writer.js';
 
 const FILE = dataPath('cloud-soo-reconcile.json');
 const MAX_CAMPAIGNS = 300;
@@ -127,12 +127,100 @@ export async function reconcileCloudConnections({ id, mode, accountEmails = {}, 
 
   rec.counted = [...counted];
   rec.ts = Date.now();
-  // Prune oldest campaigns so the store can't grow unbounded.
-  const ids = Object.keys(cache.campaigns);
-  if (ids.length > MAX_CAMPAIGNS) {
-    ids.sort((a, b) => (cache.campaigns[a].ts || 0) - (cache.campaigns[b].ts || 0));
-    for (const old of ids.slice(0, ids.length - MAX_CAMPAIGNS)) delete cache.campaigns[old];
-  }
+  prune();
   await persist();
   return { bumped, byAccount };
+}
+
+/** Drop the oldest campaigns so the store can't grow unbounded. */
+function prune() {
+  const ids = Object.keys(cache.campaigns);
+  if (ids.length <= MAX_CAMPAIGNS) return;
+  ids.sort((a, b) => (cache.campaigns[a].ts || 0) - (cache.campaigns[b].ts || 0));
+  for (const old of ids.slice(0, ids.length - MAX_CAMPAIGNS)) delete cache.campaigns[old];
+}
+
+/**
+ * Retry the SoO "In Use" flip for a cloud campaign's accounts.
+ *
+ * The cloud flip fires ONCE, at dispatch (server.js). If the SoO fetch failed
+ * there, accountEmails came back empty and every account was skipped — and
+ * nothing re-ran it, so a cloud campaign could send for days with every account
+ * still reading "Available" on the board while it was in use. A local campaign
+ * retries on the next lead; this is the cloud equivalent.
+ *
+ * Trigger is the same as local: an account is flipped once it has ACTUALLY SENT
+ * something, not because a campaign was dispatched. An account that never sends
+ * is never reserved.
+ *
+ * Settle semantics mirror the local loop's claim-release:
+ *   - written / guard-skipped / no row matched / write-back off → SETTLED,
+ *     recorded durably, never attempted again for this campaign
+ *   - transport failure → left unsettled so the next poll retries
+ *
+ * Best-effort; never throws to the caller.
+ *
+ * @param {object}   p
+ * @param {string}   p.id            engine campaign id (dedup key)
+ * @param {string}   p.mode          campaign mode
+ * @param {object}   p.accountEmails profileId -> SoO email (from engine config)
+ * @param {Array}    p.leads         per-lead rows from GET /api/campaign/:id/leads
+ * @param {string}   [p.operatorEmail] reserver stamp, already resolved by caller
+ * @param {function} [p.log]
+ */
+export async function reconcileCloudInUse({ id, mode, accountEmails = {}, leads = [], operatorEmail = '', log = () => {}, retryOpts } = {}) {
+  if (!id) return { flipped: 0 };
+  const target = resolveSoOTarget(mode, cloudFlipAction(mode));
+  if (!target) return { flipped: 0 };  // message_only / introduce_back / check_status / FG
+  if (!Array.isArray(leads) || !leads.length) return { flipped: 0 };
+
+  await load();
+  const rec = cache.campaigns[id] || (cache.campaigns[id] = { counted: [], ts: 0 });
+  const settled = new Set(rec.flippedAccounts || []);
+
+  // Emails of accounts with at least one send on the board — the cloud's stand-in
+  // for local's "first successful send" trigger.
+  const pending = new Set();
+  for (const l of leads) {
+    if (!l || l.status !== 'sent') continue;
+    const email = accountEmails[l.account];
+    if (email && !settled.has(email)) pending.add(email);
+  }
+  if (!pending.size) return { flipped: 0 };
+
+  let flipped = 0;
+  for (const email of pending) {
+    try {
+      const res = await flipAccountInUse({
+        email,
+        creditHeader: target.creditHeader,
+        userHeader: target.userHeader,
+        operatorEmail,
+      }, retryOpts);
+      if (res && res.ok && res.matched && res.written && res.written.length) {
+        settled.add(email); flipped++;
+        log(`[cloud] SoO: ${email} → ${target.creditHeader} = In Use (${operatorEmail || '—'}) [reconcile].`);
+      } else if (res && res.ok && res.matched) {
+        // Row found, guard left the cell alone — usually because the dispatch-time
+        // flip already did it. Deterministic: settle, don't re-POST every poll.
+        settled.add(email);
+      } else if (res && res.ok && res.matched === false) {
+        settled.add(email);
+        log(`[cloud] SoO: no row matched "${email}" — nothing flipped [reconcile].`);
+      } else if (res && res.disabled) {
+        settled.add(email);
+      } else {
+        // Transport failure — says nothing about the sheet. Leave unsettled.
+        log(`[cloud] SoO: In-Use flip failed for ${email} — ${(res && res.error) || 'unknown'}. Will retry on the next poll.`);
+      }
+    } catch (e) {
+      log(`[cloud] SoO: In-Use flip error for ${email}: ${e.message}. Will retry on the next poll.`);
+    }
+  }
+
+  rec.flippedAccounts = [...settled];
+  rec.ts = Date.now();
+  prune();
+  await persist();
+  return { flipped };
 }

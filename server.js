@@ -101,8 +101,8 @@ import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
 import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
-import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse } from './src/soo-writer.js';
-import { reconcileCloudConnections } from './src/cloud-soo-reconcile.js';
+import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse, cloudFlipAction } from './src/soo-writer.js';
+import { reconcileCloudConnections, reconcileCloudInUse } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
 import { buildAutopilotConfig, nextRun, cycleKey } from './src/fg-autopilot.js';
 import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
@@ -1262,13 +1262,10 @@ async function handleStartCloud(req, res) {
     // Reuses accountEmails (already fuzzily resolved, skip-on-doubt) so an
     // ambiguous GoLogin label is left untouched rather than reserving the wrong
     // person's account.
-    const flipAction = ({
-      connect_only: 'connection_sent',
-      connect_and_introduce: 'connection_sent',
-      connect_and_message: 'connection_sent',
-      inmail_only: 'inmail_sent',
-      open_profile_only: 'message_sent',
-    })[mode] || '';
+    // cloudFlipAction lives in soo-writer.js so the reconcile-time retry
+    // (cloud-soo-reconcile.reconcileCloudInUse) reads the SAME mode map — two
+    // copies would eventually disagree about which cloud modes touch the SoO.
+    const flipAction = cloudFlipAction(mode);
     const flipTarget = flipAction ? resolveSoOTarget(mode, flipAction) : null;
     if (flipTarget) {
       const stampEmail = resolveOperatorStamp({
@@ -1473,6 +1470,24 @@ async function reconcileCloud(id, leads) {
         leads, log: cloudLog,
       });
     } catch (e) { cloudLog(`[cloud] SoO connections reconcile skipped for ${id}: ${e.message}`); }
+
+    // (C) SoO — In-Use flip for any account that has sent but isn't reserved on
+    // the board yet. The dispatch-time flip is one shot: if the SoO was
+    // unreachable then, nothing else ever retried it and the account stayed
+    // "Available" for the campaign's whole life. Same trigger as a local run
+    // (first actual send), durable settle-list so this doesn't re-POST forever.
+    try {
+      await reconcileCloudInUse({
+        id, mode,
+        accountEmails: (c.config && c.config.accountEmails) || {},
+        leads,
+        operatorEmail: resolveOperatorStamp({
+          perMachineEmail: getOperatorEmail(),
+          loginEmail: c.owner || '',
+        }),
+        log: cloudLog,
+      });
+    } catch (e) { cloudLog(`[cloud] SoO In-Use reconcile skipped for ${id}: ${e.message}`); }
   } catch (e) { cloudLog(`[cloud] reconcile skipped for ${id}: ${e.message}`); }
 }
 

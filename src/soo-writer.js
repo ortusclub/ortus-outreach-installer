@@ -12,11 +12,14 @@
  */
 import { SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './sheets-webapp-url.js';
 
-// 25s PER HOP, matching the SoO read in src/soo.js. It used to be 10s shared
-// across both hops of the POST-then-follow-the-302 dance, which is a cold Apps
-// Script container's entire warm-up budget — hence the intermittent
-// "The operation was aborted due to timeout" on the In Use flip.
-const SOO_WRITE_TIMEOUT_MS = 25_000;
+// 30s PER HOP. It used to be 10s SHARED across both hops of the
+// POST-then-follow-the-302 dance — less than a cold Apps Script container's
+// warm-up, hence the intermittent "The operation was aborted due to timeout"
+// on the In Use flip. 30s is the engine's number (campaign-soo-writer.js),
+// measured against this same webapp: it cold-starts in 28-58s.
+const SOO_WRITE_TIMEOUT_MS = 30_000;
+
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The connection-request modes. A 'connection_sent' in any of these consumes a
 // CC (connection) credit. open_profile_only is intentionally not here (it never
@@ -31,6 +34,25 @@ const CONNECT_MODES = new Set([
 // board). Matched by header text in the Apps Script — must equal the sheet
 // header EXACTLY. The count is accumulated + weekly-reset server-side.
 export const SOO_CONN_WEEK_HEADER = 'Number of Connections (this week)';
+
+/**
+ * The send `action` a cloud campaign of this mode will produce — the cloud side
+ * has no per-send hook, so it has to name the action up front to ask
+ * resolveSoOTarget which column to flip. Returns '' for modes that write nothing.
+ *
+ * Shared by the dispatch-time flip (server.js) and the reconcile-time retry
+ * (cloud-soo-reconcile.js) so the two can never disagree about which cloud modes
+ * touch the SoO.
+ */
+export function cloudFlipAction(mode) {
+  return ({
+    connect_only: 'connection_sent',
+    connect_and_introduce: 'connection_sent',
+    connect_and_message: 'connection_sent',
+    inmail_only: 'inmail_sent',
+    open_profile_only: 'message_sent',
+  })[mode] || '';
+}
 
 /**
  * True when this send is a connection request that should tick the weekly
@@ -278,26 +300,52 @@ async function postOnce(payload) {
   return response.json();
 }
 
-/** True for the abort a timed-out fetch throws (name is the reliable part). */
-function isTimeout(err) {
-  return err && (err.name === 'TimeoutError' || /aborted due to timeout/i.test(err.message || ''));
+/**
+ * A transient failure is one a retry can fix — timeout, socket/DNS, 5xx, 429.
+ * A permanent one (auth, bad request, a script-level rejection) returns
+ * immediately, because retrying it only multiplies the latency.
+ *
+ * Mirror of the engine's campaign-soo-writer.isTransientWriteError /
+ * campaign-sheet-writer's copy. The engine deliberately keeps its own local
+ * copy so its files apply in any order; keep this regex in sync with those.
+ */
+const TRANSIENT_RE = /timeout|abort|ECONN|EAI_AGAIN|socket|network|fetch failed|terminated|\b(429|500|502|503|504)\b/i;
+export function isTransientSoOError(err) {
+  const msg = err && (err.message || err);
+  return TRANSIENT_RE.test(String(msg || ''));
 }
 
-// POST a setSoO payload to the central Apps Script. Mirrors src/soo.js: Apps
-// Script answers POST with a 302 that node fetch would downgrade to GET, so we
-// stop on the redirect and re-fetch the Location.
+// Actions whose payload is IDEMPOTENT — it sets fixed cells, server-side guarded,
+// so re-sending it after an ambiguous failure is a no-op rather than a double
+// write. Only these may be retried.
 //
-// One retry, TIMEOUT ONLY. A timeout is the cold-container case and the write
-// probably never reached the script; an HTTP error or a script-level error is
-// deterministic and retrying it just doubles the latency. Not retried more than
-// once — these writes are best-effort and must never stall the send loop.
-async function postSetSoO(payload) {
-  try {
-    return await postOnce(payload);
-  } catch (err) {
-    if (!isTimeout(err)) throw err;
-    return postOnce(payload);
+// 'bumpSoOConnections' is deliberately NOT here: it posts a DELTA (+N) that the
+// Apps Script accumulates. A timeout raised AFTER the script committed the write
+// is indistinguishable from one raised before it, so retrying would inflate the
+// weekly connection tally — real reporting data. It gets one attempt, and the
+// cloud reconciler's durable "leave it uncounted, a later poll retries" is what
+// makes that safe (src/cloud-soo-reconcile.js).
+const IDEMPOTENT_ACTIONS = new Set(['setSoO']);
+
+// POST a payload to the central Apps Script, retrying transient failures.
+//
+// 4 attempts, linear backoff — matching the engine's campaign-soo-writer, which
+// was tuned against the live webapp: it cold-starts in 28-58s, so a single short
+// attempt aborts every write while the container is warming. That measurement is
+// why SOO_WRITE_TIMEOUT_MS is 30s per hop rather than the 10s this used to use.
+async function postSetSoO(payload, { maxAttempts = 4, baseDelayMs = 1500, sleep = _sleep } = {}) {
+  const attempts = IDEMPOTENT_ACTIONS.has(payload && payload.action) ? maxAttempts : 1;
+  let lastErr;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await postOnce(payload);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= attempts || !isTransientSoOError(err)) break;
+      await sleep(baseDelayMs * attempt);
+    }
   }
+  throw lastErr;
 }
 
 /**
@@ -305,14 +353,14 @@ async function postSetSoO(payload) {
  * and stamp the operator email into the paired User cell. Best-effort.
  * @returns {Promise<object>} { ok, matched, written, skipped } or { ok:false, ... }
  */
-export async function flipAccountInUse({ email, creditHeader, userHeader, operatorEmail }) {
+export async function flipAccountInUse({ email, creditHeader, userHeader, operatorEmail }, retryOpts) {
   if (!sooWritebackEnabled()) return { ok: false, disabled: true };
   if (!email) return { ok: false, error: 'no email' };
   if (!creditHeader || !userHeader) return { ok: false, error: 'no headers' };
   try {
     // operatorEmail is already resolved by the caller (resolveOperatorStamp):
     // the per-machine operator identity, or a blanked shared login. Stamp verbatim.
-    const data = await postSetSoO(buildFlipPayload({ email, creditHeader, userHeader, operatorEmail }));
+    const data = await postSetSoO(buildFlipPayload({ email, creditHeader, userHeader, operatorEmail }), retryOpts);
     if (data && data.error) return { ok: false, error: data.error };
     return { ok: true, ...data };
   } catch (err) {
@@ -326,11 +374,11 @@ export async function flipAccountInUse({ email, creditHeader, userHeader, operat
  * throws. Fires once per successful connection send ("live" write-back).
  * @returns {Promise<object>} { ok, matched, value, week, reset } or { ok:false, ... }
  */
-export async function bumpConnectionsThisWeek({ email, delta = 1 }) {
+export async function bumpConnectionsThisWeek({ email, delta = 1 }, retryOpts) {
   if (!sooWritebackEnabled()) return { ok: false, disabled: true };
   if (!email) return { ok: false, error: 'no email' };
   try {
-    const data = await postSetSoO(buildBumpConnectionsPayload({ email, delta }));
+    const data = await postSetSoO(buildBumpConnectionsPayload({ email, delta }), retryOpts);
     if (data && data.error) return { ok: false, error: data.error };
     return { ok: true, ...data };
   } catch (err) {
@@ -343,11 +391,11 @@ export async function bumpConnectionsThisWeek({ email, delta = 1 }) {
  * by the app (manual clear by the LinkedIn team).
  * @returns {Promise<object>} { ok, matched, written } or { ok:false, ... }
  */
-export async function markAccountNeedsLoginSoO({ email }) {
+export async function markAccountNeedsLoginSoO({ email }, retryOpts) {
   if (!sooWritebackEnabled()) return { ok: false, disabled: true };
   if (!email) return { ok: false, error: 'no email' };
   try {
-    const data = await postSetSoO(buildNeedsLoginPayload({ email }));
+    const data = await postSetSoO(buildNeedsLoginPayload({ email }), retryOpts);
     if (data && data.error) return { ok: false, error: data.error };
     return { ok: true, ...data };
   } catch (err) {
