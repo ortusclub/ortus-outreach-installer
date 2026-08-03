@@ -2197,6 +2197,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         if (!target) return;
         const acctNorm = (accountName || '').toString().toLowerCase().trim();
         if (!acctNorm || _sooFlipped.has(acctNorm)) return;
+        // Claim the account NOW so two sends can't post the same flip
+        // concurrently — but the claim is released again on a transport
+        // failure (see the `catch`/`!res.ok` branches below), so the next lead
+        // for this account retries instead of the flip being lost for the run.
+        // It used to be a permanent mark taken BEFORE the attempt: one timeout
+        // and the account sat on "Available" in the SoO for the whole campaign
+        // while it was actually in use, free for someone else to grab.
         _sooFlipped.add(acctNorm);
         // Authoritative reserver = the per-machine operator email (set in the
         // app), since every operator logs in with the SAME shared credential.
@@ -2243,10 +2250,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         } else if (res && res.disabled) {
           log(`  ⚠ SoO: write-back is OFF on this machine (ORTUS_SOO_WRITEBACK) — ${accountName} left as-is.`);
         } else if (!res || !res.ok) {
-          log(`  ⚠ SoO: flip failed for ${accountName} — ${(res && res.error) || 'unknown error'}.`);
+          // Transport-level failure (timeout, HTTP error, script error). Unlike
+          // "no row matched" or a guard skip, this says nothing about the sheet
+          // — release the claim so the next lead for this account tries again.
+          _sooFlipped.delete(acctNorm);
+          log(`  ⚠ SoO: flip failed for ${accountName} — ${(res && res.error) || 'unknown error'}. Will retry on the next lead.`);
         }
       } catch (err) {
-        log(`  ⚠ SoO flip failed for ${accountName}: ${err.message}`);
+        const acctNorm = (accountName || '').toString().toLowerCase().trim();
+        if (acctNorm) _sooFlipped.delete(acctNorm);
+        log(`  ⚠ SoO flip failed for ${accountName}: ${err.message}. Will retry on the next lead.`);
       }
     }
 

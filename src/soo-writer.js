@@ -12,7 +12,11 @@
  */
 import { SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './sheets-webapp-url.js';
 
-const SOO_WRITE_TIMEOUT_MS = 10_000;
+// 25s PER HOP, matching the SoO read in src/soo.js. It used to be 10s shared
+// across both hops of the POST-then-follow-the-302 dance, which is a cold Apps
+// Script container's entire warm-up budget — hence the intermittent
+// "The operation was aborted due to timeout" on the In Use flip.
+const SOO_WRITE_TIMEOUT_MS = 25_000;
 
 // The connection-request modes. A 'connection_sent' in any of these consumes a
 // CC (connection) credit. open_profile_only is intentionally not here (it never
@@ -249,26 +253,51 @@ export function buildNeedsLoginPayload({ email }) {
   };
 }
 
-// POST a setSoO payload to the central Apps Script. Mirrors src/soo.js: Apps
-// Script answers POST with a 302 that node fetch would downgrade to GET, so we
-// stop on the redirect and re-fetch the Location.
-async function postSetSoO(payload) {
-  const signal = AbortSignal.timeout(SOO_WRITE_TIMEOUT_MS);
+// One attempt: POST, then follow the 302 by hand (node fetch would downgrade
+// the redirected POST to a GET).
+async function postOnce(payload) {
+  // A FRESH signal per hop — the redirect follow gets its own full budget, the
+  // way every other webapp caller here does it (soo.js:93, sheets.js:288,
+  // sheets-writer.js:88, log-writer.js:232). Sharing one signal meant the
+  // second hop inherited whatever was left of the first, and since Apps Script
+  // answers every POST with a 302 there is ALWAYS a second hop.
   const initial = await fetch(SHEETS_WEBAPP_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
     redirect: 'manual',
-    signal,
+    signal: AbortSignal.timeout(SOO_WRITE_TIMEOUT_MS),
   });
   let response = initial;
   if (initial.status >= 300 && initial.status < 400) {
     const location = initial.headers.get('location');
     if (!location) throw new Error('redirect with no Location header');
-    response = await fetch(location, { signal });
+    response = await fetch(location, { signal: AbortSignal.timeout(SOO_WRITE_TIMEOUT_MS) });
   }
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
+}
+
+/** True for the abort a timed-out fetch throws (name is the reliable part). */
+function isTimeout(err) {
+  return err && (err.name === 'TimeoutError' || /aborted due to timeout/i.test(err.message || ''));
+}
+
+// POST a setSoO payload to the central Apps Script. Mirrors src/soo.js: Apps
+// Script answers POST with a 302 that node fetch would downgrade to GET, so we
+// stop on the redirect and re-fetch the Location.
+//
+// One retry, TIMEOUT ONLY. A timeout is the cold-container case and the write
+// probably never reached the script; an HTTP error or a script-level error is
+// deterministic and retrying it just doubles the latency. Not retried more than
+// once — these writes are best-effort and must never stall the send loop.
+async function postSetSoO(payload) {
+  try {
+    return await postOnce(payload);
+  } catch (err) {
+    if (!isTimeout(err)) throw err;
+    return postOnce(payload);
+  }
 }
 
 /**
