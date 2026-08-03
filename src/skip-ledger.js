@@ -35,6 +35,46 @@ export function getSkips() {
   return [..._ledger];
 }
 
+// Human wording per reason, for the one-line exhaustion summary. A reason with
+// no entry here falls back to its raw slug rather than being dropped — an
+// unknown reason is still information the operator needs.
+const REASON_LABELS = {
+  [ALREADY_PROCESSED]:    'already actioned by this app',
+  [IDENTITY_UNCONFIRMED]: 'identity unconfirmed',
+  [WATCHDOG_TIMEOUT]:     'timed out',
+  [MALFORMED_URL]:        'no usable LinkedIn URL',
+  [DUPLICATE_ROW]:        'duplicate row',
+  [FAILED_REPEATEDLY]:    'failed repeatedly',
+  [TERMINAL_STAGE]:       'already marked done in the sheet',
+  [OTHER]:                'other',
+};
+
+/**
+ * One-line "why there was nothing left" tail for the live log.
+ *
+ * Every in-loop drop already calls recordSkip, but the ledger is in-memory and
+ * never surfaced while a run is going, so a campaign that dropped hundreds of
+ * rows logged only "All leads processed or filtered out". An operator then
+ * rebuilt the sheet repeatedly against a filter that was never about the sheet.
+ *
+ * Returns '' when nothing was skipped, so the caller can append unconditionally.
+ *
+ * @param {ReturnType<typeof getSkips>} skips
+ * @returns {string} e.g. ' 430 row(s) skipped: 430 already actioned by this app.'
+ */
+export function summarizeSkips(skips) {
+  if (!Array.isArray(skips) || skips.length === 0) return '';
+  const counts = new Map();
+  for (const s of skips) {
+    const reason = s?.reason || OTHER;
+    counts.set(reason, (counts.get(reason) || 0) + 1);
+  }
+  const parts = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, n]) => `${n} ${REASON_LABELS[reason] || reason}`);
+  return ` ${skips.length} row(s) skipped: ${parts.join(', ')}.`;
+}
+
 /** Resets the ledger. Call at campaign start. */
 export function clearSkips() {
   _ledger = [];

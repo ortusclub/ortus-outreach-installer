@@ -81,7 +81,7 @@ import {
 } from './primary-status-store.js';
 import { buildDebrief } from './debrief.js';
 import {
-  recordSkip, clearSkips, getSkips,
+  recordSkip, clearSkips, getSkips, summarizeSkips,
   ALREADY_PROCESSED, IDENTITY_UNCONFIRMED, WATCHDOG_TIMEOUT,
   MALFORMED_URL, FAILED_REPEATEDLY, OTHER, TERMINAL_STAGE,
 } from './skip-ledger.js';
@@ -3410,11 +3410,20 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // Skip URLs already touched by THIS installation's local state,
             // EXCEPT for modes where re-touching is intentional (message_only
             // sends DMs after acceptance; open_profile_only is fire-and-forget;
-            // introduce_back fires from already-connected rows;
-            // connect_and_introduce / connect_and_message trust the sheet as
-            // source of truth so a cleared row gets re-processed even if the
-            // local state remembers it).
-            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && mode !== 'connect_and_introduce' && mode !== 'connect_and_message' && state.processed[candidateUrl]) {
+            // introduce_back fires from already-connected rows; the cold-lead
+            // connect modes trust the sheet as source of truth so a cleared row
+            // gets re-processed even if the local state remembers it).
+            //
+            // v2.160.122: connect_only joined that exemption. Its PRE-FILTER
+            // already reads Stage and nothing else (~line 2471), so pre-flight
+            // counted rows this picker then dropped — silently, since recordSkip
+            // doesn't log. Field report 2026-08-03: "Pre-filter → 431 to process,
+            // 0 skipped", one lead sent, then "All leads processed or filtered
+            // out". 430 rows were blocked by a state.json the operator can't see,
+            // and moving the leads to a fresh sheet never helped because the
+            // memory is keyed by URL, not by sheet. The sheet is the source of
+            // truth for these modes on both sides of the run now.
+            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && mode !== 'connect_only' && mode !== 'connect_and_introduce' && mode !== 'connect_and_message' && state.processed[candidateUrl]) {
               // ALREADY_PROCESSED skip — record with original action+date from the state entry
               const _prev = state.processed[candidateUrl];
               const _prevAction = _prev?.action || 'unknown';
@@ -3453,7 +3462,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             }
             break;
           }
-          log('All leads processed or filtered out.');
+          // v2.160.122: say WHY. Every in-loop drop calls recordSkip, but that
+          // only appends to an in-memory ledger — nothing reaches the live log,
+          // so exhaustion read as "no more rows" with no trace of the hundreds
+          // of rows that were dropped a millisecond earlier.
+          log(`All leads processed or filtered out.${summarizeSkips(getSkips())}`);
           leadsExhausted = true;
           break;
         }
