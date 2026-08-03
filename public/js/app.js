@@ -1083,7 +1083,12 @@ function gatherCampaignFormState() {
     // v2.62: CC+DM post-acceptance body. Only meaningful when
     // mode === 'connect_and_message'; campaign.js reads templates.ccDmBody
     // from runAutoDms. Other modes ignore it.
-    ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
+    // v2.160.126: mode-gate it, like every other cross-mode field above.
+    // Ungated, a half-typed leftover in the hidden #tpl-cc-dm-body textarea
+    // rendered a phantom "Post-acceptance DM" card in a CC+IC preflight
+    // preview (the modal shows any field that isn't empty, app.js:1196) —
+    // operator report 2026-08-03: "Hi Bach, my name is" on a CC+IC campaign.
+    ccDmBody: _isCcDm ? (document.getElementById('tpl-cc-dm-body')?.value || '') : '',
   };
 
   const senderFirstNames = {};
@@ -6128,8 +6133,13 @@ async function startCampaign(opts = {}) {
     followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
     followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
     primarySource: _isIntroFlow ? readPrimarySource() : 'local-browser',
-    // v2.62: CC+DM post-acceptance body — read at launch time too
-    ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
+    // v2.62: CC+DM post-acceptance body — read at launch time too.
+    // v2.160.126: mode-gated, matching the preview path. Every consumer
+    // already checks mode === 'connect_and_message' (campaign.js:2956, 4205,
+    // 4263, 6192), so this changes nothing for a real CC+DM run — it just
+    // stops a stray body being persisted into a CC+IC campaign's templates,
+    // where a future consumer could read it without checking the mode.
+    ccDmBody: mode === 'connect_and_message' ? (document.getElementById('tpl-cc-dm-body')?.value || '') : '',
   };
 
   // v2.94.x: if either primary-side action is on and the primary is set to a
