@@ -292,10 +292,15 @@ var OLD_COLUMNS_TO_REMOVE = [
   'Connection Status',
   'CC',
   'Date',
-  'Time',
-  // Sender column dropped 2026-05-10 — Account Used carries the same info,
-  // making Sender redundant.
-  'Sender'
+  'Time'
+  // 'Sender' was here from 2026-05-10 ("Account Used carries the same info"),
+  // but the column came BACK: ALWAYS_PROVISIONED_V2 provisions it on every
+  // prepareSheet and FIELD_MAP still routes `sender` to it, so both the app and
+  // the cloud engine write it. Net effect of listing it here was that every
+  // campaign launched against an already-used sheet deleted the column (losing
+  // every historical sender) and then immediately re-created it empty.
+  // Operator report 2026-08-03: a second run on the same sheet blanked the
+  // sender for all 50 rows the first run had stamped. Do not re-add.
 ];
 
 // ── Field name → Column header mapping ──
@@ -610,10 +615,39 @@ function handleEnsureColumns(sheet, data) {
   // 0) Migration — copy values from any old column header into its renamed
   // counterpart BEFORE the OLD_COLUMNS_TO_REMOVE pass deletes the old name.
   // Only runs when the new column doesn't already exist (idempotent).
+  // Columns whose values this run has provably moved somewhere else. Only these
+  // are safe for the delete pass below to destroy.
+  var migratedAway = {};
+
   COLUMN_RENAMES.forEach(function(r) {
     var fromIdx = headers.indexOf(r.from);
     if (fromIdx === -1) return;
-    if (headers.indexOf(r.to) !== -1) return;
+    if (r.from === r.to) return;             // self-rename ('Connected') — nothing to do
+    var toIdx = headers.indexOf(r.to);
+    if (toIdx !== -1) {
+      // Destination already exists — the old guard bailed here, and then the
+      // delete pass destroyed `from` WITHOUT moving its values. That is the
+      // common case on any sheet prepareSheet has touched (it provisions
+      // 'Date of Last Action' / 'Time of Last Action' every run), so legacy
+      // 'Date'/'Time'/'Status' data was being dropped silently.
+      // Backfill instead: copy `from` into `to` only where `to` is blank, so a
+      // newer value never gets clobbered by an older one.
+      var lastRowBf = sheet.getLastRow();
+      if (lastRowBf >= 2) {
+        var fromVals = sheet.getRange(2, fromIdx + 1, lastRowBf - 1, 1).getValues();
+        var toVals   = sheet.getRange(2, toIdx   + 1, lastRowBf - 1, 1).getValues();
+        var touched = false;
+        for (var b = 0; b < toVals.length; b++) {
+          var cur = (toVals[b][0] == null ? '' : toVals[b][0]).toString().trim();
+          var old = (fromVals[b][0] == null ? '' : fromVals[b][0]).toString().trim();
+          if (cur === '' && old !== '') { toVals[b][0] = fromVals[b][0]; touched = true; }
+        }
+        if (touched) sheet.getRange(2, toIdx + 1, lastRowBf - 1, 1).setValues(toVals);
+      }
+      migratedAway[r.from] = true;
+      migrated.push(r.from + ' → ' + r.to + ' (backfilled blanks)');
+      return;
+    }
     var lastRowMig = sheet.getLastRow();
     sheet.insertColumnAfter(fromIdx + 1);
     sheet.getRange(1, fromIdx + 2).setValue(r.to).setFontWeight('bold');
@@ -622,16 +656,38 @@ function handleEnsureColumns(sheet, data) {
       sheet.getRange(2, fromIdx + 2, lastRowMig - 1, 1).setValues(oldVals);
     }
     headers.splice(fromIdx + 1, 0, r.to);
+    migratedAway[r.from] = true;
     migrated.push(r.from + ' → ' + r.to);
   });
 
-  // 1) Remove old tracking columns (iterate right → left so indices stay valid)
+  // 1) Remove old tracking columns (iterate right → left so indices stay valid).
+  //
+  // NEVER DELETE DATA THIS RUN DIDN'T MOVE. deleteColumn is irreversible and
+  // this runs on EVERY campaign launch (server.js ensureTrackingColumns), not
+  // once — so a lossy rule here destroys a little more history every time.
+  // A listed column is dropped only when it is genuinely disposable:
+  //   • it was migrated/backfilled into its replacement above, or
+  //   • it holds no data at all (header-only leftover).
+  // Anything else is KEPT and reported in `keptWithData`, so the operator can
+  // delete it by hand once they've looked at it. 2026-08-03: before this, a
+  // rename whose destination already existed bailed out and then had its source
+  // deleted unmigrated, and 'Date Last Action' was deleted with no rename entry
+  // to move it anywhere.
+  var keptWithData = [];
+  var lastRowDel = sheet.getLastRow();
   for (var i = headers.length - 1; i >= 0; i--) {
-    if (OLD_COLUMNS_TO_REMOVE.indexOf(headers[i]) !== -1) {
-      sheet.deleteColumn(i + 1);
-      removed.push(headers[i]);
-      headers.splice(i, 1);
+    if (OLD_COLUMNS_TO_REMOVE.indexOf(headers[i]) === -1) continue;
+    var hasData = false;
+    if (!migratedAway[headers[i]] && lastRowDel >= 2) {
+      var colVals = sheet.getRange(2, i + 1, lastRowDel - 1, 1).getValues();
+      for (var v = 0; v < colVals.length; v++) {
+        if ((colVals[v][0] == null ? '' : colVals[v][0]).toString().trim() !== '') { hasData = true; break; }
+      }
     }
+    if (hasData) { keptWithData.push(headers[i]); continue; }
+    sheet.deleteColumn(i + 1);
+    removed.push(headers[i]);
+    headers.splice(i, 1);
   }
 
   // 2) Add missing tracking columns for THIS mode. Existing columns from
@@ -712,7 +768,10 @@ function handleEnsureColumns(sheet, data) {
     headers: headers,
     added: added,
     removed: removed,
+    migrated: migrated,
+    keptWithData: keptWithData,
     message: 'ensureColumns complete. added=[' + added.join(', ') + '] removed=[' + removed.join(', ') + ']'
+      + (keptWithData.length ? ' kept-with-data=[' + keptWithData.join(', ') + ']' : '')
   });
 }
 
