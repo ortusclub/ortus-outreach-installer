@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gateConnectIdentity, campaign } from '../src/campaign.js';
-import { getPrefs } from '../src/operator-prefs.js';
+import { getPrefs, identityGateEnabled } from '../src/operator-prefs.js';
 
 // v2.113.x: operator toggle for the pre-send identity safeguard.
 //   OFF (default, 2026-06-22) → behave like pre-gate v2.97: navigate to the
@@ -87,4 +87,39 @@ test('blind mode tolerates a navigation glitch (lets the send re-navigate)', asy
   });
   assert.equal(res.ok, true);
   assert.equal(res.navigated, false);
+});
+
+// ─── The toggle must reach the VM, not just the local runner ────────────────
+//
+// 2026-08-05: the sidebar read "Identity safeguard · Off" while a cloud campaign
+// logged `identity_unverified (name-mismatch …)` on every lead and sent nothing.
+// The launch payload never carried the pref, and the engine reads
+// `cfg.identityGateEnabled !== false` — so an ABSENT key resolved to ON. Local
+// and cloud read the same pref through opposite defaults.
+//
+// identityGateEnabled() is now the single mapping both sides call. These pin the
+// property that matters: it always returns a real boolean, so the engine's
+// `!== false` can never see `undefined` and turn the gate on behind the toggle.
+
+test('identityGateEnabled never returns undefined — the value the engine reads as ON', async () => {
+  for (const input of [null, undefined, {}, { tz: 'Europe/Zurich' }]) {
+    assert.equal(typeof identityGateEnabled(input), 'boolean', `input: ${JSON.stringify(input)}`);
+  }
+});
+
+test('identityGateEnabled mirrors the operator pref, defaulting OFF', async () => {
+  assert.equal(identityGateEnabled({ identityGate: true }), true);
+  assert.equal(identityGateEnabled({ identityGate: false }), false);
+  assert.equal(identityGateEnabled({}), false, 'a pref file without the key is OFF, as local has always read it');
+  assert.equal(identityGateEnabled(null), false, 'no operator is OFF');
+});
+
+test('the value survives the engine gate expression it is fed into', async () => {
+  // campaign-action.js: `verifyIdentity: cfg.identityGateEnabled !== false`
+  const asEngineReadsIt = (v) => v !== false;
+  assert.equal(asEngineReadsIt(identityGateEnabled({ identityGate: false })), false,
+    'toggle OFF must reach the engine as OFF — the bug was this landing on true');
+  assert.equal(asEngineReadsIt(identityGateEnabled({ identityGate: true })), true);
+  assert.equal(asEngineReadsIt(undefined), true,
+    'and the absent key really did mean ON — which is why it had to be sent');
 });

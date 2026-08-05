@@ -74,7 +74,7 @@ _setAlertImpl((msg) => {
   try { appendFatalErrorSync({ at: new Date().toISOString(), source: 'log-writer', message: msg }); } catch (_) { /* */ }
 });
 import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } from './src/notification-prefs.js';
-import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs } from './src/operator-prefs.js';
+import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs, identityGateEnabled } from './src/operator-prefs.js';
 import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/operator-identity.js';
 import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-configs.js';
 import { fetchSoOData } from './src/soo.js';
@@ -108,6 +108,7 @@ import { buildAutopilotConfig, nextRun, cycleKey } from './src/fg-autopilot.js';
 import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
 import { pickUnreconciled } from './src/fg-autopilot-reconcile.js';
 import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
+import { getEnrichState, startEnrichPoller } from './src/enrich-runner.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -541,6 +542,14 @@ app.delete('/api/server-log', (_req, res) => {
   serverLogs.length = 0;
   res.json({ cleared: true });
 });
+
+// ---------------------------------------------------------------------------
+// Guest photos — the door check-in tool's "Fetch photos" button lands here.
+// ---------------------------------------------------------------------------
+// The check-in site is static and can't drive a browser, so its button leaves a
+// request in the check-in sheet and startEnrichPoller() picks it up. Exposed
+// read-only here so you can see what the poller is doing without the sheet.
+app.get('/api/enrich/state', (_req, res) => res.json(getEnrichState()));
 
 // ---------------------------------------------------------------------------
 // GoLogin profiles
@@ -1339,7 +1348,18 @@ async function handleStartCloud(req, res) {
       const _ownerEmail = getOperatorEmail() || req.user || '';
       const _prefs = _ownerEmail ? await getOperatorPrefs(_ownerEmail) : null;
       if (_prefs && _prefs.tz) config.tz = _prefs.tz;
-    } catch { /* non-fatal — tz is optional */ }
+      // Identity safeguard → engine. This was never sent, so the sidebar toggle
+      // governed local runs only: the engine reads `identityGateEnabled !== false`
+      // and an absent key resolved to ON, forcing the gate on every cloud send
+      // while the UI read "Off". Send the SAME boolean local computes
+      // (src/campaign.js: `prefs.identityGate === true`, default OFF) so the two
+      // sides can't diverge — never a bare `undefined`, which the engine reads
+      // as ON. See the VM-mirrors-local rule.
+      config.identityGateEnabled = identityGateEnabled(_prefs);
+    } catch {
+      // A prefs read failure resolves to OFF, exactly as local's catch does.
+      config.identityGateEnabled = false;
+    }
     // Follower Growth needs the page invite URL + a monthly credit budget. The
     // operator can override the URL from the wizard; otherwise use the Ortus
     // Club page invite URL the local FG flow already uses.
@@ -6046,6 +6066,9 @@ app.listen(PORT, async () => {
 
   await initNotifier();
   console.log(`  ✦ Notifications: ${process.env.SMTP_HOST ? 'email enabled' : 'email DISABLED — set SMTP_HOST/PORT/USER/PASS + NOTIFY_EMAILS'}\n`);
+
+  // Door check-in "Fetch photos" requests.
+  startEnrichPoller();
 
   // Bulk "Delete all drafts" soft-deletes (trashedAt); hard-purge anything past
   // the 1-week grace on boot, then daily.

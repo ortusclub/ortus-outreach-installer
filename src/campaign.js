@@ -29,7 +29,7 @@ import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
-import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
+import { getPrefs as getOperatorPrefs, identityGateEnabled } from './operator-prefs.js';
 import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
 import { emptyTally, applyOutcome } from './campaign-tally.js';
@@ -1876,8 +1876,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // (identityGate === true). No operator / missing pref / read failure all
     // resolve to OFF, matching the v2.97 connect-straight-to-URL path (404 skip
     // is preserved inside gateConnectIdentity's blind branch regardless).
-    campaign.identityGateEnabled = prefs ? prefs.identityGate === true : false;
-  } catch { setOperatorTz(''); campaign.identityGateEnabled = false; }
+    campaign.identityGateEnabled = identityGateEnabled(prefs);
+  } catch { setOperatorTz(''); campaign.identityGateEnabled = identityGateEnabled(null); }
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign._skipCleanup = false;

@@ -36,6 +36,22 @@ async function writeAll(data) {
   catch (err) { console.warn(`[operator-prefs] write failed: ${err.message}`); }
 }
 
+/**
+ * The one place that turns the stored pref into the boolean BOTH runners use.
+ *
+ * It exists because they diverged: local read `prefs.identityGate === true`
+ * (absent → OFF) while the cloud launch never sent the key at all, and the
+ * engine reads `identityGateEnabled !== false` (absent → ON). So a sidebar
+ * reading "Off" still gated every VM send. Never return undefined — that is
+ * exactly the value the engine flips to ON.
+ *
+ * @param {object|null} prefs  a getPrefs() result, or null when there's no operator
+ * @returns {boolean}
+ */
+export function identityGateEnabled(prefs) {
+  return prefs ? prefs.identityGate === true : false;
+}
+
 export async function getPrefs(email) {
   if (!email) return { ...DEFAULTS };
   const all = await readAll();
