@@ -503,6 +503,25 @@
   body[data-dashboard='v3'] .stg-acct .cap-badge.bad .nm { color: var(--red); }
   body[data-dashboard='v3'] .stg-acct.sel .cap-badge { box-shadow: 0 0 0 3px rgba(247,190,104,.22); }
 
+  /* What the operator can actually DO about it. Only ever rendered from real
+     account state — never a generic "try again later". */
+  body[data-dashboard='v3'] .vj-stage-fix { margin-top: 12px; font-size: 0.79rem; color: var(--ink); }
+  body[data-dashboard='v3'] .vj-stage-fix:empty { display: none; }
+  body[data-dashboard='v3'] .vj-stage-fix .fixhd {
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gold, #d4a24a); margin-bottom: 5px;
+  }
+  body[data-dashboard='v3'] .vj-stage-fix ul { margin: 0; padding: 0 0 0 15px; }
+  body[data-dashboard='v3'] .vj-stage-fix li { margin: 0 0 3px; color: var(--gray); line-height: 1.5; }
+  body[data-dashboard='v3'] .vj-stage-fix li b { color: var(--ink); font-weight: 600; }
+  body[data-dashboard='v3'] .vj-stage-fix .fixacts { display: flex; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
+  body[data-dashboard='v3'] .vj-stage-fix .fixacts button {
+    font-size: 0.72rem; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--hairline-soft); background: transparent; color: var(--ink);
+  }
+  body[data-dashboard='v3'] .vj-stage-fix .fixacts button:hover { border-color: var(--gold, #d4a24a); }
+  body[data-dashboard='v3'] .vj-stage-fix .fixacts button:disabled { opacity: .5; cursor: default; }
+
   body[data-dashboard='v3'] .vj-stage-drawer:empty { display: none; }
   body[data-dashboard='v3'] .stg-drawer {
     margin-top: 11px; border: 1px solid var(--hairline-soft); border-radius: 10px;

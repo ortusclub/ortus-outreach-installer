@@ -28,6 +28,10 @@ export function statusFromItem(it = {}) {
     totalTargets: Number(it.total) || 0,
     totalProcessed: Number(it.sent) || 0,
     accountsCount: Number(it.accounts) || 0,
+    // The live stage counts accounts from these, not from accountsCount — a
+    // board strip that only carried the number showed "0 accounts" beside a
+    // stats line reading "3 accounts".
+    profileIds: Array.isArray(it.profileIds) ? it.profileIds : [],
     acceptedCount: (it.acceptedCount == null ? undefined : it.acceptedCount),
     paused: !!it.paused,
     // Live-browser flag + the engine's per-person phase tick. The strip's card

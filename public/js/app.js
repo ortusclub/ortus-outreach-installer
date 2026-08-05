@@ -6917,6 +6917,9 @@ function _buildCloudActiveStatus(c, leads, counts) {
 // reads this: "updated 3s ago" is a fact about the app↔engine link, and a link
 // that has gone quiet is exactly what "it looks crashed" feels like.
 const _cloudPolledAt = new Map();
+// When each campaign's /accounts payload was last fetched for the board (the
+// opened campaign has its own poll).
+const _cloudAccountsAt = new Map();
 
 // The engine's live stamp (cmp:live:<id>) → the card's currentAction. Without
 // this mapping buildLiveActivity has nothing to say during a cloud send and
@@ -7316,7 +7319,9 @@ window.renderCloudAccountsPanel = renderCloudAccountsPanel;
 
 // Operator "Retry" on a benched (weekly-cap) account — clears the bench on the
 // engine; the account is eligible again from the next turn.
-async function unbenchCloudAccount(campaignId, profileId, btn) {
+// `quiet` suppresses the success toast so the bulk Retry (stageRetryBlocked)
+// doesn't fire one per account — it reports once, on its own button.
+async function unbenchCloudAccount(campaignId, profileId, btn, quiet) {
   if (!campaignId || !profileId) return;
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
@@ -7327,7 +7332,7 @@ async function unbenchCloudAccount(campaignId, profileId, btn) {
       if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
       return;
     }
-    showCampaignToast('▶ Account un-benched — it will try again on its next turn. Three fresh rate-limits re-bench it automatically.', 7000);
+    if (!quiet) showCampaignToast('▶ Account un-benched — it will try again on its next turn. Three fresh rate-limits re-bench it automatically.', 7000);
     if (_viewingCloudId) { try { await _refreshCloudActiveStatus(_viewingCloudId); } catch (_) { /* */ } }
   } catch (e) {
     showCampaignToast('Could not reach the engine: ' + e.message, 6000);
@@ -8035,6 +8040,7 @@ function vjCardSkeleton(cid) {
     const _cg = _cstage.querySelector('[data-f="stageGly"]'); if (_cg) _cg.innerHTML = '';
     const _ca = _cstage.querySelector('[data-f="stageAccts"]'); if (_ca) _ca.innerHTML = '';
     const _cd = _cstage.querySelector('[data-f="stageDrawer"]'); if (_cd) _cd.innerHTML = '';
+    const _cf = _cstage.querySelector('[data-f="stageFix"]'); if (_cf) _cf.innerHTML = '';
   }
   const _cbar = clone.querySelector('[data-f="activeBar"]'); if (_cbar) _cbar.style.width = '0%';
   const _clog = clone.querySelector('[data-f="active-log"]'); if (_clog) _clog.innerHTML = '';
@@ -8985,6 +8991,22 @@ async function _refreshCloudItems() {
       catch { d = { campaign: c, leadCounts: {} }; }
       _cloudDetailCache.set(c.id, d);
       _cloudPolledAt.set(c.id, Date.now()); // feeds the live stage's heartbeat
+      // A STALLED campaign needs its per-account states on the board, not just
+      // in the opened campaign's panel — that's where the stage names which
+      // account is capped and which is benched, and offers Retry. Fetched only
+      // while it's stalled, so a healthy board costs no extra request.
+      // Refreshed on a TTL rather than once: after a Retry the counts and park
+      // reasons change, and advice computed from a stale snapshot would keep
+      // telling the operator to fix something they just fixed.
+      const _acctAge = Date.now() - (_cloudAccountsAt.get(c.id) || 0);
+      const _ca = _cloudCurrentAction(d);
+      if (_ca && _ca.phase === 'waiting' && _acctAge > 30000) {
+        _cloudAccountsAt.set(c.id, Date.now());
+        try {
+          const ar = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/accounts`)).json();
+          if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(c.id, ar.accounts);
+        } catch (_) { /* the stage degrades to the reason line alone */ }
+      }
       const st = ((d && d.campaign) || c).status;
       if (st === 'running' || _snExpanded.has(c.id)) {
         try {
@@ -9084,7 +9106,7 @@ async function _renderCampaignsBoardInner() {
         // run. Exclude them from BOTH sides of "X of Y sent".
         bucket, sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)),
         total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - Number(lc._preActioned || 0),
-        accounts: (c.profile_ids || []).length, mine,
+        accounts: (c.profile_ids || []).length, profileIds: c.profile_ids || [], mine,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Stopped' : 'Error',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
@@ -22375,6 +22397,18 @@ function _hideStage(root) {
   if (!stage) return;
   stage.hidden = true;
   stage.dataset.phase = ''; stage.dataset.who = ''; stage.dataset.acctkey = '';
+  const fix = _stgFld(root, 'stageFix'); if (fix) fix.innerHTML = '';
+}
+
+// Seconds while it's still seconds. A lead takes ~45s, so anything past a
+// couple of minutes is a stall and reads better as minutes — "384s" made the
+// operator do arithmetic to notice nothing had moved in six minutes.
+function _fmtElapsed(sec) {
+  if (sec < 90) return sec + 's';
+  const m = Math.round(sec / 60);
+  if (m < 90) return m + 'm';
+  const h = Math.floor(m / 60);
+  return h + 'h ' + (m % 60) + 'm';
 }
 
 function _stageGlyphHtml(phase) {
@@ -22426,6 +22460,52 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
     + `${isCurrent ? 'Currently driving this campaign on the VM.' : 'Not currently driving anything.'}</div>`
     + (acts.length ? `<div class="acts">${acts.join('')}</div>` : '') + '</div>';
 }
+
+// What can actually be done about a stall, derived from the accounts' real
+// states — one line per blocked account group, each naming the account. Never a
+// generic "try again later": the operator asked what to DO.
+//
+// The daily reset is midnight UTC because that is what the engine benches to
+// (campaign-worker.js _secsToDayEnd), not the operator's local midnight.
+function _stageFixHtml(cid, accts) {
+  if (!accts.length) return '';
+  const nm = (a) => escHtml(String(a.email || a.profileId || '').split('@')[0]);
+  const list = (xs) => xs.map(nm).join(', ');
+  const needsLogin = accts.filter((a) => a.needsLogin);
+  const proxy = accts.filter((a) => !a.needsLogin && a.parkReason === 'proxy');
+  const weekly = accts.filter((a) => !a.needsLogin && (a.weeklyCap || a.parkReason === 'weekly'));
+  const throttled = accts.filter((a) => !a.needsLogin && a.parkReason === 'throttle');
+  const capped = accts.filter((a) => !a.parked && !a.needsLogin
+    && (a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit);
+  const rows = [];
+  if (needsLogin.length) rows.push(`<b>${list(needsLogin)}</b> — log back in on GoLogin, then hit Retry. Nothing else will unblock it.`);
+  if (proxy.length) rows.push(`<b>${list(proxy)}</b> — its GoLogin proxy is refusing the browser. Fix the profile's proxy, then Retry.`);
+  if (weekly.length) rows.push(`<b>${list(weekly)}</b> — LinkedIn's weekly invite cap. It lifts on its own; Retry to test whether it already has.`);
+  if (throttled.length) rows.push(`<b>${list(throttled)}</b> — rate-limited, backing off. It resumes by itself; Retry only if you want it sooner.`);
+  if (capped.length) rows.push(`<b>${list(capped)}</b> — at the daily limit. Resets at midnight UTC, or raise the limit in batch settings.`);
+  if (!rows.length) return '';
+  rows.push('Adding another account is the only thing that gets this campaign sending again <em>today</em>.');
+  const retryable = accts.filter((a) => !a.needsLogin && (a.parked || a.weeklyCap));
+  const acts = [];
+  if (retryable.length) {
+    acts.push(`<button type="button" onclick="stageRetryBlocked('${escHtml(cid)}',this)">Retry ${retryable.length} blocked account${retryable.length === 1 ? '' : 's'}</button>`);
+  }
+  acts.push(`<button type="button" onclick="openCloudAccountPicker('${escHtml(cid)}')">＋ Add an account</button>`);
+  return `<div class="fixhd">What you can do</div><ul>${rows.map((r) => `<li>${r}</li>`).join('')}</ul>`
+    + `<div class="fixacts">${acts.join('')}</div>`;
+}
+
+// Clear the bench on every blocked account at once. Each call is the same
+// engine route the per-account Retry uses; a failure on one must not stop the
+// rest, so they're settled independently.
+window.stageRetryBlocked = async function (cid, btn) {
+  const accts = (_cloudAccountsById.get(cid) || []).filter((a) => !a.needsLogin && (a.parked || a.weeklyCap));
+  if (!accts.length) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Retrying…'; }
+  await Promise.allSettled(accts.map((a) => unbenchCloudAccount(cid, a.profileId, null, true)));
+  if (btn) btn.textContent = 'Retried — watching for the next turn';
+  try { await _refreshCloudActiveStatus(cid); } catch (_) { /* the poll catches up anyway */ }
+};
 
 function renderLiveStage(root, status) {
   const stage = root && _stgFld(root, 'active-stage');
@@ -22482,7 +22562,7 @@ function renderLiveStage(root, status) {
   const isCur = (a) => !paused && !!cur && (a.profileId === cur || a.email === cur);
   const sel = _stageSel.get(cid) || '';
   const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}`).join(',')
-    + `|${cur}|${sel}|${paused ? 1 : 0}`;
+    + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}`;
   if (stage.dataset.acctkey !== akey) {
     const pills = _stgFld(root, 'stageAccts');
     if (pills) {
@@ -22496,6 +22576,9 @@ function renderLiveStage(root, status) {
       const a = accts.find((x) => x.profileId === sel);
       drawer.innerHTML = a ? _stageDrawerHtml(cid, a, isCur(a), !!status.live) : '';
     }
+    // Only the stalled state gets advice — during a send there is nothing to fix.
+    const fix = _stgFld(root, 'stageFix');
+    if (fix) fix.innerHTML = phase === 'waiting' ? _stageFixHtml(cid, accts) : '';
     stage.dataset.acctkey = akey;
   }
 
@@ -22532,7 +22615,7 @@ function _tickLiveStages() {
     const rec = _stagePhaseAt.get(cid);
     const secs = stage.querySelector('.vj-stage-secs');
     if (secs && rec) {
-      const s = Math.max(0, Math.round((Date.now() - rec.at) / 1000)) + 's';
+      const s = _fmtElapsed(Math.max(0, Math.round((Date.now() - rec.at) / 1000)));
       if (secs.textContent !== s) secs.textContent = s;
     }
     const polled = _cloudPolledAt.get(cid) || 0;
