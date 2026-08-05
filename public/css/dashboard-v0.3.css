@@ -446,6 +446,18 @@
     border-top-color: var(--blue); border-right-color: var(--blue);
     animation: vj-live-spin 1s linear infinite;
   }
+  /* waiting — a slow amber pulse. Deliberately NOT a spinner: no work is
+     happening, and a spinner would claim otherwise. */
+  body[data-dashboard='v3'] .stg-wait {
+    width: 26px; height: 26px; border-radius: 9999px;
+    border: 2.5px solid var(--gold, #d4a24a); animation: stg-wait 2.2s ease-in-out infinite;
+  }
+  @keyframes stg-wait {
+    0%, 100% { opacity: .28; transform: scale(.82); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  body[data-dashboard='v3'] .vj-stage.is-waiting { border-color: var(--gold, #d4a24a); }
+  body[data-dashboard='v3'] .vj-stage.is-waiting .vj-stage-verb { color: var(--gold, #d4a24a); }
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-fly i,
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-typ i,
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-swp { animation-play-state: paused; opacity: .35; }

@@ -6922,9 +6922,33 @@ const _cloudPolledAt = new Map();
 // this mapping buildLiveActivity has nothing to say during a cloud send and
 // falls through to the literal placeholder "Working…" with an empty sub-line.
 // Returns null when the engine hasn't stamped a phase — never invents one.
+// "⏳ No account free right now — 1 at the daily limit · 2 parked (…) · retrying
+// automatically" — the engine says this every 10 minutes while a campaign is
+// running with nothing it can send from. Pull the newest one (Redis returns
+// newest-first) and keep it only while it's current, so a stale line from
+// hours ago can't claim a live stall.
+const _WAIT_FRESH_MS = 15 * 60 * 1000;
+function _cloudWaitingReason(monitorLog) {
+  const hit = (Array.isArray(monitorLog) ? monitorLog : [])
+    .find((e) => e && /No account free/i.test(String(e.line || '')));
+  if (!hit) return '';
+  if (Number(hit.t) && Date.now() - Number(hit.t) > _WAIT_FRESH_MS) return '';
+  const tail = String(hit.line).split('—').slice(1).join('—').trim();
+  return tail.replace(/\s*·\s*retrying automatically\s*$/i, '').trim();
+}
+
 function _cloudCurrentAction(d) {
   const lp = d && d.liveProgress;
-  if (!lp || !lp.phase) return null;
+  if (!lp || !lp.phase) {
+    // No browser open. If the engine is telling us why, say THAT — never
+    // "Working…", which is the word that made a ten-hour stall look healthy.
+    const c = (d && d.campaign) || {};
+    if (c.status !== 'running') return null;
+    const why = _cloudWaitingReason(d && d.monitorLog);
+    if (!why) return null;
+    return { phase: 'waiting', label: 'Waiting for a free account',
+      account: '', lead: 'No account free', sub: why };
+  }
   const who = String(lp.selecting || '').trim();
   const acct = String((d && d.liveAccount) || '').trim();
   const n = Number(lp.done) || 0, tot = Number(lp.total) || 0;
@@ -22356,6 +22380,9 @@ function _hideStage(root) {
 function _stageGlyphHtml(phase) {
   if (phase === 'sending') return '<span class="stg-fly"><u></u><i>➤</i><i>➤</i><i>➤</i></span>';
   if (phase === 'introducing') return '<span class="stg-typ"><i></i><i></i><i></i></span>';
+  // Waiting gets a SLOW pulse, not a spinner: nothing is turning, and a spinner
+  // would say work is happening when the whole point is that none is.
+  if (phase === 'waiting') return '<span class="stg-wait"></span>';
   return '<span class="stg-swp"></span>';
 }
 
@@ -22415,6 +22442,7 @@ function renderLiveStage(root, status) {
   _stageStatus.set(stage, status);
   const paused = !!(status.paused || status._paused);
   stage.classList.toggle('is-checking', phase === 'checking');
+  stage.classList.toggle('is-waiting', phase === 'waiting');
   stage.classList.toggle('is-paused', paused);
 
   // Elapsed clock — restarted only when the phase or the person changes, and
@@ -22764,9 +22792,12 @@ window.renderActiveCard = function(status) {
   v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
   try { renderActiveProfiles(status); } catch (err) { console.warn('[active-profiles] render failed:', err.message); }
   const isPaused = !!(status._paused || status.paused);
+  // "Sending" while every account is capped or benched is the same lie the live
+  // line used to tell. If the engine says nothing can send, this says so too.
+  const _waiting = !!(status.currentAction && status.currentAction.phase === 'waiting');
   v3SetText('sendingLbl', isMonitoring
     ? (status.monitoringCheckInProgress ? 'Checking now…' : 'Monitoring')
-    : (isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : 'Sending')));
+    : (isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : (_waiting ? 'Waiting' : 'Sending'))));
   const glyph = document.getElementById('activeGlyph');
   if (glyph) glyph.textContent = v3ModeBadge(status.mode);
   const bar = card.querySelector('.vj-hbar > i');

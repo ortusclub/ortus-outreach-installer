@@ -134,6 +134,12 @@ export const LIVE_PHASES = {
   sending:     { verb: 'Sending connection',   icon: '➤', state: 'sending',  glyph: 'fly' },
   introducing: { verb: 'Writing introduction', icon: '✎', state: 'sending',  glyph: 'typ' },
   checking:    { verb: 'Checking acceptances', icon: '↻', state: 'checking', glyph: 'swp' },
+  // Not a thing the VM is DOING — a thing it can't do. A campaign whose every
+  // account is capped or benched stays status:'running' forever, so the card
+  // showed a green RUNNING dot over "Working…" while nothing had been sent for
+  // ten hours (operator screenshot 2026-08-05: last send 03:45, the engine
+  // logging "No account free right now" every 10 minutes since).
+  waiting:     { verb: 'Waiting for a free account', icon: '◷', state: 'waiting', glyph: 'wait' },
 };
 
 export function buildLiveActivity(status) {

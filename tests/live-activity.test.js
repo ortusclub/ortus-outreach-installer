@@ -130,3 +130,18 @@ test('an unknown phase is ignored, not rendered blank', () => {
   assert.equal(r.phase, undefined);
   assert.equal(r.l1, 'Working…'); // the old fallback, unchanged
 });
+
+test('every account capped/benched → says so, never "Working…"', () => {
+  // The 2026-08-05 stall: status stayed 'running' with a green dot while the
+  // engine logged "No account free right now" every 10 minutes for ten hours.
+  const r = buildLiveActivity({
+    running: true,
+    currentAction: { phase: 'waiting', label: 'Waiting for a free account',
+      lead: 'No account free', sub: '1 at the daily limit · 2 parked (throttled / needs login / weekly cap)' },
+  });
+  assert.equal(r.state, 'waiting');
+  assert.equal(r.phase, 'waiting');
+  assert.notEqual(r.l1, 'Working…');
+  assert.match(r.verb, /free account/i);
+  assert.match(r.sub, /daily limit/);
+});
