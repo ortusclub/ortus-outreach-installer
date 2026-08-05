@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.127" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.127" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.128" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.128" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -298,6 +298,24 @@
             <span class="vj-live-l1" id="activeLiveL1"></span>
             <span class="vj-live-l2" id="activeLiveL2"></span>
           </span>
+        </div>
+        <!-- v2.160.128: live stage — takes the same grid slot as .vj-live when
+             the engine is sending / introducing / checking a NAMED person, so
+             the operator can see it working instead of a static "Working…".
+             Filled by renderLiveStage(); the two are mutually exclusive. -->
+        <div class="vj-stage" id="active-stage" aria-live="polite" hidden>
+          <div class="vj-stage-gly" id="stageGly"></div>
+          <div class="vj-stage-body">
+            <div class="vj-stage-verb" id="stageVerb"></div>
+            <div class="vj-stage-name" id="stageName"></div>
+            <div class="vj-stage-sub" id="stageSub"></div>
+            <div class="vj-stage-accts" id="stageAccts"></div>
+            <div class="vj-stage-drawer" id="stageDrawer"></div>
+            <div class="vj-stage-beat">
+              <span class="l"><span class="bd" id="stageBeatDot"></span><span id="stageBeatTxt"></span></span>
+              <span id="stageBeatRight"></span>
+            </div>
+          </div>
         </div>
         <div class="pf-list" id="active-preflight-list" hidden></div>
         <div id="active-sheetwrite-warn" hidden></div>
@@ -3694,7 +3712,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.127"></script>
+  <script type="module" src="/js/app.js?v=2.160.128"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

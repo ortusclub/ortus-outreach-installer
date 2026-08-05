@@ -30,6 +30,12 @@ export function statusFromItem(it = {}) {
     accountsCount: Number(it.accounts) || 0,
     acceptedCount: (it.acceptedCount == null ? undefined : it.acceptedCount),
     paused: !!it.paused,
+    // Live-browser flag + the engine's per-person phase tick. The strip's card
+    // is a clone of #active-card, so it renders the same live stage — without
+    // these it can only fall back to the one-line "Working…".
+    live: !!it.live,
+    liveAccount: it.liveAccount || '',
+    currentAction: it.currentAction || null,
     logs: Array.isArray(it.logs) ? it.logs : [],
     nextCheckAt: it.nextCheckAt,
     monitoringUntil: it.monitoringUntil,

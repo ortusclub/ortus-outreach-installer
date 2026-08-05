@@ -387,6 +387,143 @@
   }
   body[data-dashboard='v3'] .vj-live-l2:empty { display: none; }
 
+  /* ── Live stage (v2.160.128) ────────────────────────────────────────────
+     What the VM is doing RIGHT NOW, in the same grid slot as .vj-live — the
+     two are mutually exclusive: with a real per-person phase tick from the
+     engine the stage takes over, without one the old one-line .vj-live stays.
+     Sam, 2026-08-04: "if you are waiting around for something to happen, make
+     it obvious that it's loading rather than it's crashed."
+
+     Every animation here is INDETERMINATE on purpose. A ring or a bar would
+     claim to know how long a lead takes, and nothing does. The only number is
+     elapsed seconds, which is a fact. */
+  body[data-dashboard='v3'] .vj-stage {
+    grid-area: live; display: flex; gap: 20px; align-items: flex-start;
+    padding: 18px 20px; border-radius: 12px;
+    background: rgba(255,255,255,.03); border: 1px solid var(--hairline-soft);
+  }
+  body[data-dashboard='v3'] .vj-stage[hidden] { display: none; }
+  body[data-dashboard='v3'] .vj-stage-gly {
+    width: 78px; height: 56px; flex: none; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  body[data-dashboard='v3'] .vj-stage-secs {
+    position: absolute; bottom: -4px; left: 0; right: 0; text-align: center;
+    font-family: var(--mono); font-size: 0.68rem; color: var(--gray);
+  }
+  /* sending — invites flying down a dotted wire */
+  body[data-dashboard='v3'] .stg-fly { position: relative; width: 70px; height: 26px; }
+  body[data-dashboard='v3'] .stg-fly i {
+    position: absolute; top: 4px; left: 0; font-size: 1.05rem; color: var(--green); opacity: 0;
+    animation: stg-fly 1.5s cubic-bezier(.4,0,.6,1) infinite;
+  }
+  body[data-dashboard='v3'] .stg-fly i:nth-child(3) { animation-delay: .5s; }
+  body[data-dashboard='v3'] .stg-fly i:nth-child(4) { animation-delay: 1s; }
+  @keyframes stg-fly {
+    0% { transform: translateX(0) scale(.85); opacity: 0; }
+    18% { opacity: 1; } 72% { opacity: 1; }
+    100% { transform: translateX(50px) scale(1); opacity: 0; }
+  }
+  body[data-dashboard='v3'] .stg-fly u {
+    position: absolute; top: 12px; left: 2px; width: 64px; height: 1px; display: block;
+    background: repeating-linear-gradient(90deg, var(--hairline-soft) 0 4px, transparent 4px 8px);
+  }
+  /* introducing — writing */
+  body[data-dashboard='v3'] .stg-typ { display: flex; gap: 6px; align-items: center; height: 26px; }
+  body[data-dashboard='v3'] .stg-typ i {
+    width: 8px; height: 8px; border-radius: 9999px; background: var(--green); opacity: .3;
+    animation: stg-typ 1.25s ease-in-out infinite;
+  }
+  body[data-dashboard='v3'] .stg-typ i:nth-child(2) { animation-delay: .16s; }
+  body[data-dashboard='v3'] .stg-typ i:nth-child(3) { animation-delay: .32s; }
+  @keyframes stg-typ {
+    0%,60%,100% { opacity: .28; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-5px); }
+  }
+  /* checking — sweeping */
+  body[data-dashboard='v3'] .stg-swp {
+    width: 30px; height: 30px; border-radius: 9999px; border: 2.5px solid var(--hairline-soft);
+    border-top-color: var(--blue); border-right-color: var(--blue);
+    animation: vj-live-spin 1s linear infinite;
+  }
+  body[data-dashboard='v3'] .vj-stage.is-paused .stg-fly i,
+  body[data-dashboard='v3'] .vj-stage.is-paused .stg-typ i,
+  body[data-dashboard='v3'] .vj-stage.is-paused .stg-swp { animation-play-state: paused; opacity: .35; }
+
+  body[data-dashboard='v3'] .vj-stage-body { flex: 1; min-width: 0; }
+  body[data-dashboard='v3'] .vj-stage-verb {
+    font-family: var(--mono); font-size: 0.67rem; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--green);
+  }
+  body[data-dashboard='v3'] .vj-stage.is-checking .vj-stage-verb { color: var(--blue); }
+  body[data-dashboard='v3'] .vj-stage.is-paused .vj-stage-verb { color: var(--gray); }
+  body[data-dashboard='v3'] .vj-stage-name {
+    font-family: var(--display); font-size: 2.15rem; letter-spacing: 0.02em; line-height: 1.04;
+    margin: 4px 0 3px; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  body[data-dashboard='v3'] .vj-stage-name.swap { animation: stg-name-in .42s cubic-bezier(.2,.7,.3,1); }
+  @keyframes stg-name-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  body[data-dashboard='v3'] .vj-stage-sub { font-size: 0.79rem; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-stage-sub:empty { display: none; }
+
+  /* Account row — one pill per account: name + today's count in the same oval,
+     colour carries the state, a word only where a number can't say it. */
+  body[data-dashboard='v3'] .vj-stage-accts {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px; align-items: center;
+  }
+  body[data-dashboard='v3'] .vj-stage-accts:empty { display: none; }
+  body[data-dashboard='v3'] .stg-acct { background: transparent; border: 0; padding: 0; cursor: pointer; }
+  body[data-dashboard='v3'] .stg-acct .cap-badge {
+    display: inline-flex; align-items: center; gap: 7px; padding: 4px 12px; border-radius: 9999px;
+    font-size: 11px; letter-spacing: 0.02em; border: 1px solid var(--hairline);
+    white-space: nowrap; color: var(--gray); transition: border-color .18s, color .18s;
+  }
+  body[data-dashboard='v3'] .stg-acct .cap-badge .nm { font-family: var(--body); font-size: 0.76rem; color: var(--gray); transition: color .18s; }
+  body[data-dashboard='v3'] .stg-acct .cap-badge .n { opacity: .72; }
+  body[data-dashboard='v3'] .stg-acct:hover .cap-badge { border-color: var(--ink); }
+  body[data-dashboard='v3'] .stg-acct:hover .cap-badge .nm { color: var(--ink); }
+  body[data-dashboard='v3'] .stg-acct .cap-badge.ok { color: var(--green); border-color: var(--green); }
+  body[data-dashboard='v3'] .stg-acct .cap-badge.ok .nm { color: var(--green); font-weight: 500; }
+  body[data-dashboard='v3'] .stg-acct .cap-badge.warn { color: var(--gold, #d4a24a); border-color: var(--gold, #d4a24a); }
+  body[data-dashboard='v3'] .stg-acct .cap-badge.warn .nm { color: var(--gold, #d4a24a); }
+  body[data-dashboard='v3'] .stg-acct .cap-badge.bad { color: var(--red); border-color: var(--red); }
+  body[data-dashboard='v3'] .stg-acct .cap-badge.bad .nm { color: var(--red); }
+  body[data-dashboard='v3'] .stg-acct.sel .cap-badge { box-shadow: 0 0 0 3px rgba(247,190,104,.22); }
+
+  body[data-dashboard='v3'] .vj-stage-drawer:empty { display: none; }
+  body[data-dashboard='v3'] .stg-drawer {
+    margin-top: 11px; border: 1px solid var(--hairline-soft); border-radius: 10px;
+    padding: 14px 16px; background: var(--card-bg);
+    animation: stg-row-in .3s cubic-bezier(.2,.7,.3,1);
+  }
+  @keyframes stg-row-in { from { opacity: 0; transform: translateY(-9px); } to { opacity: 1; transform: none; } }
+  body[data-dashboard='v3'] .stg-drawer .dh { display: flex; align-items: baseline; gap: 11px; margin-bottom: 9px; }
+  body[data-dashboard='v3'] .stg-drawer .dh b { font-size: 0.92rem; }
+  body[data-dashboard='v3'] .stg-drawer .dh .st { font-family: var(--mono); font-size: 0.63rem; letter-spacing: 0.12em; text-transform: uppercase; }
+  body[data-dashboard='v3'] .stg-drawer .dl { font-size: 0.79rem; color: var(--gray); line-height: 1.6; }
+  body[data-dashboard='v3'] .stg-drawer .x { margin-left: auto; cursor: pointer; color: var(--gray); font-size: 0.8rem; }
+  body[data-dashboard='v3'] .stg-drawer .acts { display: flex; gap: 7px; margin-top: 12px; flex-wrap: wrap; }
+  body[data-dashboard='v3'] .stg-drawer .acts button {
+    font-size: 0.72rem; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--hairline-soft); background: transparent; color: var(--ink);
+  }
+  body[data-dashboard='v3'] .stg-drawer .acts button:hover { border-color: var(--gold, #d4a24a); }
+
+  /* Heartbeat — "is this thing still alive?" answered without guessing. The
+     dot flashes on each poll that brought fresh data; the line goes gold when
+     the app has heard nothing from the VM for a while. */
+  body[data-dashboard='v3'] .vj-stage-beat {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--hairline-soft);
+    font-family: var(--mono); font-size: 0.65rem; color: var(--gray);
+  }
+  body[data-dashboard='v3'] .vj-stage-beat .l { display: flex; align-items: center; gap: 8px; }
+  body[data-dashboard='v3'] .vj-stage-beat .bd { width: 6px; height: 6px; border-radius: 9999px; background: var(--green); opacity: .28; }
+  body[data-dashboard='v3'] .vj-stage-beat .bd.hit { animation: stg-beat .9s ease-out; }
+  @keyframes stg-beat { 0% { opacity: 1; transform: scale(1.9); } 100% { opacity: .28; transform: scale(1); } }
+  body[data-dashboard='v3'] .vj-stage-beat .stale { color: var(--gold, #d4a24a); }
+
   body[data-dashboard='v3'] .vj-eyebrow { grid-area: eyebrow; display: flex; align-items: center; gap: 14px; color: var(--ink); padding-right: 64px; }
   body[data-dashboard='v3'] .vj-eyebrow .vj-tag { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
   body[data-dashboard='v3'] .vj-eyebrow .vj-tag .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--green); display: inline-block; }

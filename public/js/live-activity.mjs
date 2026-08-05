@@ -119,6 +119,23 @@ export function monitorTickText({ nextCheckAt, busy, fmtCountdown, now = Date.no
   return fmtCountdown(at - now);
 }
 
+/**
+ * The three things the VM actually does to a NAMED person, and how each reads.
+ *
+ * `introducing` is a phase of its own even though it runs inside the acceptance
+ * sweep: the card used to say "Checking for new acceptances…" from the first
+ * intro to the last, which is why intros felt like nothing was happening.
+ *
+ * Every glyph is INDETERMINATE. Lead duration is unknown, so a ring or a bar
+ * would be claiming knowledge nothing has; elapsed seconds is the only honest
+ * number and the stage shows that instead.
+ */
+export const LIVE_PHASES = {
+  sending:     { verb: 'Sending connection',   icon: '➤', state: 'sending',  glyph: 'fly' },
+  introducing: { verb: 'Writing introduction', icon: '✎', state: 'sending',  glyph: 'typ' },
+  checking:    { verb: 'Checking acceptances', icon: '↻', state: 'checking', glyph: 'swp' },
+};
+
 export function buildLiveActivity(status) {
   if (!status) return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
 
@@ -139,6 +156,21 @@ export function buildLiveActivity(status) {
   const ca = status.currentAction || null;
   const account = (ca && ca.account) || status.currentProfile || '';
   const lead = (ca && ca.lead) || '';
+
+  // A real per-person phase tick from the engine beats every derived state
+  // below — it names WHAT is happening and to WHOM, which is the whole point.
+  // It outranks the monitoring branch deliberately: intros fire inside the
+  // sweep, so without this an intro run reports as "Checking for new
+  // acceptances…". Paused still wins (the phase is stale the moment we pause).
+  const P = ca && LIVE_PHASES[ca.phase];
+  if (P && !paused) {
+    return {
+      state: P.state, icon: P.icon, phase: ca.phase,
+      l1: ca.label || P.verb,
+      l2: [account, lead].filter(Boolean).join(' · '),
+      verb: P.verb, who: lead || account || '', sub: ca.sub || '',
+    };
+  }
 
   if (monitoring) {
     const hero = monitorHeroState(status);

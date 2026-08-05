@@ -6913,6 +6913,34 @@ function _buildCloudActiveStatus(c, leads, counts) {
   };
 }
 
+// When each cloud campaign's detail last came back. The live stage's heartbeat
+// reads this: "updated 3s ago" is a fact about the app↔engine link, and a link
+// that has gone quiet is exactly what "it looks crashed" feels like.
+const _cloudPolledAt = new Map();
+
+// The engine's live stamp (cmp:live:<id>) → the card's currentAction. Without
+// this mapping buildLiveActivity has nothing to say during a cloud send and
+// falls through to the literal placeholder "Working…" with an empty sub-line.
+// Returns null when the engine hasn't stamped a phase — never invents one.
+function _cloudCurrentAction(d) {
+  const lp = d && d.liveProgress;
+  if (!lp || !lp.phase) return null;
+  const who = String(lp.selecting || '').trim();
+  const acct = String((d && d.liveAccount) || '').trim();
+  const n = Number(lp.done) || 0, tot = Number(lp.total) || 0;
+  if (lp.phase === 'checking') {
+    // `selecting` IS the account being swept here — there's no lead in a sweep.
+    return { phase: 'checking', label: who ? `Checking ${who} for acceptances` : 'Checking for new acceptances',
+      account: who || acct, lead: '', sub: tot ? `account ${n} of ${tot}` : '' };
+  }
+  if (lp.phase === 'introducing') {
+    return { phase: 'introducing', label: who ? `Introducing ${who}` : 'Writing introductions',
+      account: acct, lead: who, sub: tot ? `${n} of ${tot} accepted connections` : '' };
+  }
+  return { phase: 'sending', label: who ? `Sending connection to ${who}` : 'Sending connection',
+    account: acct, lead: who, sub: '' };
+}
+
 async function _refreshCloudActiveStatus(id) {
   try {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
@@ -6936,6 +6964,8 @@ async function _refreshCloudActiveStatus(id) {
       window.__cloudActiveStatus.live = !!(d && d.live);
       window.__cloudActiveStatus.liveAccount = (d && d.liveAccount) || '';
       window.__cloudActiveStatus.paused = !!(d && d.campaign && d.campaign.status === 'paused');
+      window.__cloudActiveStatus.currentAction = _cloudCurrentAction(d);
+      _cloudPolledAt.set(id, Date.now());
     }
   } catch (_) { if (!window.__cloudActiveStatus) window.__cloudActiveStatus = { _cloud: true, id, name: 'Cloud campaign', running: true, logs: [] }; }
 }
@@ -7968,8 +7998,20 @@ function vjCardSkeleton(cid) {
   // local template before fillVjCard ran. Blank every value field + the local
   // controls/bulk panel so an unfilled clone is neutral, never local-looking.
   ['activeName', 'activeEyebrow', 'activePct', 'activeSent', 'activeTotal', 'activeAccounts',
-   'activeAccepted', 'sendingLbl', 'activeLiveIco', 'activeLiveL1', 'activeLiveL2', 'monCount', 'monLine']
+   'activeAccepted', 'sendingLbl', 'activeLiveIco', 'activeLiveL1', 'activeLiveL2', 'monCount', 'monLine',
+   'stageVerb', 'stageName', 'stageSub', 'stageBeatTxt', 'stageBeatRight']
     .forEach((fld) => { const el = clone.querySelector(`[data-f="${fld}"]`); if (el) el.textContent = ''; });
+  // The live stage arrives carrying the singleton's person, phase glyph and
+  // render-guard dataset. Blank it so an unfilled clone can never show someone
+  // else's lead, and so renderLiveStage redraws it from scratch for THIS card.
+  const _cstage = clone.querySelector('[data-f="active-stage"]');
+  if (_cstage) {
+    _cstage.hidden = true;
+    _cstage.dataset.phase = ''; _cstage.dataset.who = ''; _cstage.dataset.acctkey = ''; _cstage.dataset.cid = '';
+    const _cg = _cstage.querySelector('[data-f="stageGly"]'); if (_cg) _cg.innerHTML = '';
+    const _ca = _cstage.querySelector('[data-f="stageAccts"]'); if (_ca) _ca.innerHTML = '';
+    const _cd = _cstage.querySelector('[data-f="stageDrawer"]'); if (_cd) _cd.innerHTML = '';
+  }
   const _cbar = clone.querySelector('[data-f="activeBar"]'); if (_cbar) _cbar.style.width = '0%';
   const _clog = clone.querySelector('[data-f="active-log"]'); if (_clog) _clog.innerHTML = '';
   const _cctrl = clone.querySelector('.vj-controls'); if (_cctrl) _cctrl.innerHTML = '';
@@ -8062,6 +8104,8 @@ function fillVjCard(root, status) {
       live.classList.toggle('is-paused', la.state === 'paused');
       set('activeLiveIco', la.icon); set('activeLiveL1', la.l1); set('activeLiveL2', la.l2);
     }
+    const staged = renderLiveStage(root, status);
+    if (live && staged) live.hidden = true;
   } catch (_) { /* live line best-effort */ }
 
   if (f.isMonitor) _fillVjMonitorHero(root, status);
@@ -8916,6 +8960,7 @@ async function _refreshCloudItems() {
       try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
       catch { d = { campaign: c, leadCounts: {} }; }
       _cloudDetailCache.set(c.id, d);
+      _cloudPolledAt.set(c.id, Date.now()); // feeds the live stage's heartbeat
       const st = ((d && d.campaign) || c).status;
       if (st === 'running' || _snExpanded.has(c.id)) {
         try {
@@ -9007,6 +9052,8 @@ async function _renderCampaignsBoardInner() {
         // Live-browser flag from the engine (top-level of the /:id detail, NOT
         // inside d.campaign) — drives the green LIVE dot on the Show button.
         live: !!(d && d.live), liveAccount: (d && d.liveAccount) || '',
+        // The engine's per-person phase tick → the strip card's live stage.
+        currentAction: _cloudCurrentAction(d),
         // _preActioned (Sam 2026-07-23): leads whose sheet row already carried a
         // Connection Request Status on import — the engine parks them in
         // status='sent' so they're never re-opened, but they aren't part of this
@@ -22278,6 +22325,207 @@ function renderPrimaryLoginWarn(status) {
   el.innerHTML = `<div class="needs-login">⚠ ${parked} follow-up${parked === 1 ? '' : 's'} parked — waiting for ${name} to log in</div>`;
 }
 
+// ── Live stage (v2.160.128) ──────────────────────────────────────────────────
+// One renderer for BOTH surfaces: the singleton #active-card (ids) and the
+// expanded board strip's clone of it (data-f). vjCardSkeleton rewrites every id
+// to data-f, so a lookup that tries both works on either.
+//
+// THE RENDER RULE: both surfaces re-render on a poll (2s local, 5s cloud). A
+// naive innerHTML= restarts every CSS animation on every tick, which strobes and
+// — with the drawer — reads as the panel opening and closing forever. So every
+// animating node is written ONLY when its content actually changes, tracked in
+// the stage element's own dataset.
+const _stagePhaseAt = new Map();   // campaign id → { key, at } — elapsed clock
+const _stageSel = new Map();       // campaign id → selected account (drawer)
+const _stageStatus = new WeakMap(); // stage node → the status it last drew
+
+function _stgFld(root, name) {
+  return root.querySelector('#' + name) || root.querySelector(`[data-f="${name}"]`);
+}
+
+// Launching / finished / idle: nothing is being done to anyone, so the stage
+// must go — otherwise it strands the last person it was showing on screen.
+// dataset keys are cleared too, so the next run redraws (and re-animates) fresh.
+function _hideStage(root) {
+  const stage = root && _stgFld(root, 'active-stage');
+  if (!stage) return;
+  stage.hidden = true;
+  stage.dataset.phase = ''; stage.dataset.who = ''; stage.dataset.acctkey = '';
+}
+
+function _stageGlyphHtml(phase) {
+  if (phase === 'sending') return '<span class="stg-fly"><u></u><i>➤</i><i>➤</i><i>➤</i></span>';
+  if (phase === 'introducing') return '<span class="stg-typ"><i></i><i></i><i></i></span>';
+  return '<span class="stg-swp"></span>';
+}
+
+// One pill per account: [state colour] name  count. A word only where a number
+// can't say it. Data is the engine's /accounts payload — nothing invented.
+function _stageAcctPill(a, isCurrent) {
+  const email = String(a.email || a.profileId || '');
+  const nm = email.includes('@') ? email.split('@')[0] : email;
+  const count = `${a.dailyCount || 0}/${a.dailyLimit || 0}`;
+  let cls = '', text = count;
+  if (a.needsLogin) { cls = 'bad'; text = 'Needs login'; }
+  else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
+  else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Benched'; }
+  else if (a.parked || a.parkReason === 'throttle') { cls = 'warn'; text = 'Throttled'; }
+  else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) cls = 'warn';
+  else if (isCurrent) cls = 'ok';
+  return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')">`
+    + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>`;
+}
+
+// The pill's drawer. Only actions that already exist and act on THIS account:
+// watching its browser, and clearing a bench. Add/remove live in the accounts
+// panel below the card — this doesn't duplicate them.
+function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
+  const email = escHtml(String(a.email || a.profileId || ''));
+  const benched = !!(a.weeklyCap || a.parkReason === 'weekly' || a.parked);
+  const st = a.needsLogin ? '<span class="st" style="color:var(--red)">needs login</span>'
+    : benched ? '<span class="st" style="color:var(--red)">benched</span>'
+    : ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) ? '<span class="st" style="color:var(--gold,#d4a24a)">at daily limit</span>'
+    : isCurrent ? '<span class="st" style="color:var(--green)">working now</span>'
+    : '<span class="st" style="color:var(--gray)">idle</span>';
+  const acts = [];
+  if (isCurrent && canWatch) acts.push(`<button type="button" onclick="openCloudCampaignView('${escHtml(cid)}')">👁 Watch this browser live</button>`);
+  if (benched && !a.needsLogin) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
+  const why = a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
+    : (a.weeklyCap || a.parkReason === 'weekly') ? ' · LinkedIn weekly invitation cap'
+    : a.parkReason === 'throttle' ? ' · rate-limited, backing off' : '';
+  return `<div class="stg-drawer"><div class="dh"><b>${email}</b>${st}`
+    + `<span class="x" onclick="stageAcctPick(this,'')">✕ close</span></div>`
+    + `<div class="dl">${a.dailyCount || 0}/${a.dailyLimit || 0} sent today${why}<br>`
+    + `${isCurrent ? 'Currently driving this campaign on the VM.' : 'Not currently driving anything.'}</div>`
+    + (acts.length ? `<div class="acts">${acts.join('')}</div>` : '') + '</div>';
+}
+
+function renderLiveStage(root, status) {
+  const stage = root && _stgFld(root, 'active-stage');
+  if (!stage) return false;
+  let la = null;
+  try { la = buildLiveActivity(status); } catch (_) { la = null; }
+  const ca = (status && status.currentAction) || null;
+  const phase = la && la.phase;
+  if (!phase) { stage.hidden = true; return false; }
+
+  const cid = String((status && status.id) || '');
+  stage.hidden = false;
+  stage.dataset.cid = cid;
+  _stageStatus.set(stage, status);
+  const paused = !!(status.paused || status._paused);
+  stage.classList.toggle('is-checking', phase === 'checking');
+  stage.classList.toggle('is-paused', paused);
+
+  // Elapsed clock — restarted only when the phase or the person changes, and
+  // held per CAMPAIGN so a re-created strip clone doesn't reset it to 0.
+  const key = `${phase}|${la.who || ''}`;
+  const rec = _stagePhaseAt.get(cid);
+  if (!rec || rec.key !== key) _stagePhaseAt.set(cid, { key, at: Date.now() });
+
+  // Glyph: only on a phase change, or its animation restarts every poll.
+  if (stage.dataset.phase !== phase) {
+    const g = _stgFld(root, 'stageGly');
+    if (g) g.innerHTML = _stageGlyphHtml(phase) + '<span class="vj-stage-secs"></span>';
+    stage.dataset.phase = phase;
+  }
+  const verbEl = _stgFld(root, 'stageVerb');
+  if (verbEl) verbEl.textContent = paused ? 'Paused — finishing this lead' : la.verb;
+
+  // Name: only when the person changes, or the slide-in replays every poll.
+  const who = la.who || '';
+  const nameEl = _stgFld(root, 'stageName');
+  if (nameEl && stage.dataset.who !== who) {
+    nameEl.textContent = who.toUpperCase();
+    nameEl.classList.remove('swap'); void nameEl.offsetWidth; nameEl.classList.add('swap');
+    stage.dataset.who = who;
+  }
+  const subEl = _stgFld(root, 'stageSub');
+  if (subEl) {
+    const acct = ca && ca.account && ca.account !== who ? ca.account : '';
+    const sub = [acct, ca && ca.sub].filter(Boolean).join(' · ');
+    if (subEl.textContent !== sub) subEl.textContent = sub;
+  }
+
+  // Account pills + drawer — keyed on everything they draw, so they're rewritten
+  // when (and only when) something in them actually changed.
+  const accts = (cid && _cloudAccountsById.get(cid)) || [];
+  const cur = (ca && ca.account) || status.liveAccount || '';
+  const isCur = (a) => !paused && !!cur && (a.profileId === cur || a.email === cur);
+  const sel = _stageSel.get(cid) || '';
+  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}`).join(',')
+    + `|${cur}|${sel}|${paused ? 1 : 0}`;
+  if (stage.dataset.acctkey !== akey) {
+    const pills = _stgFld(root, 'stageAccts');
+    if (pills) {
+      pills.innerHTML = accts.map((a) => {
+        const html = _stageAcctPill(a, isCur(a));
+        return sel && a.profileId === sel ? html.replace('class="stg-acct"', 'class="stg-acct sel"') : html;
+      }).join('');
+    }
+    const drawer = _stgFld(root, 'stageDrawer');
+    if (drawer) {
+      const a = accts.find((x) => x.profileId === sel);
+      drawer.innerHTML = a ? _stageDrawerHtml(cid, a, isCur(a), !!status.live) : '';
+    }
+    stage.dataset.acctkey = akey;
+  }
+
+  // The heartbeat's right-hand facts (the left half ticks once a second).
+  const right = _stgFld(root, 'stageBeatRight');
+  if (right) {
+    const n = ((status.participatingProfileIds || status.profileIds) || []).length;
+    const acc = status.acceptedCount;
+    const txt = `${n} account${n === 1 ? '' : 's'}${acc == null || acc === '—' ? '' : ` · ${acc} accepted`}`;
+    if (right.textContent !== txt) right.textContent = txt;
+  }
+  return true;
+}
+
+// Pill click → open/close that account's drawer. Re-renders THIS card straight
+// away rather than waiting up to 5s for the next poll.
+window.stageAcctPick = function (el, profileId) {
+  const stage = el && el.closest('.vj-stage');
+  if (!stage) return;
+  const cid = stage.dataset.cid || '';
+  _stageSel.set(cid, (_stageSel.get(cid) || '') === profileId ? '' : profileId);
+  stage.dataset.acctkey = ''; // force the pills + drawer to redraw
+  const root = stage.closest('.vj-card');
+  const st = _stageStatus.get(stage);
+  if (root && st) { try { renderLiveStage(root, st); } catch (_) { /* */ } }
+};
+
+// Elapsed seconds + heartbeat, ticked once a second on every visible stage.
+// Deliberately NOT part of the poll render: these are clocks, and a clock that
+// only moves when the network answers is the thing that looks frozen.
+function _tickLiveStages() {
+  document.querySelectorAll('.vj-stage:not([hidden])').forEach((stage) => {
+    const cid = stage.dataset.cid || '';
+    const rec = _stagePhaseAt.get(cid);
+    const secs = stage.querySelector('.vj-stage-secs');
+    if (secs && rec) {
+      const s = Math.max(0, Math.round((Date.now() - rec.at) / 1000)) + 's';
+      if (secs.textContent !== s) secs.textContent = s;
+    }
+    const polled = _cloudPolledAt.get(cid) || 0;
+    if (!polled) return;
+    const age = Math.max(0, Math.round((Date.now() - polled) / 1000));
+    const txtEl = stage.querySelector('.vj-stage-beat .l > span:last-child');
+    // 20s: the cloud detail polls every 5s, so three missed polls in a row is a
+    // real silence, not a slow one.
+    const html = age > 20
+      ? `<span class="stale">no update from the VM · ${age}s — it may be waking or wedged</span>`
+      : `updated ${age}s ago`;
+    if (txtEl && txtEl.dataset.h !== html) { txtEl.innerHTML = html; txtEl.dataset.h = html; }
+    const dot = stage.querySelector('.vj-stage-beat .bd');
+    if (dot && stage.dataset.beat !== String(polled)) {
+      stage.dataset.beat = String(polled);
+      dot.classList.remove('hit'); void dot.offsetWidth; dot.classList.add('hit');
+    }
+  });
+}
+setInterval(_tickLiveStages, 1000);
+
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
@@ -22333,6 +22581,7 @@ window.renderActiveCard = function(status) {
     if (bar) bar.style.width = '0%';
     const liveEl = document.getElementById('active-live');
     if (liveEl) liveEl.hidden = true;
+    _hideStage(card);
     const profEl = document.getElementById('active-profiles');
     if (profEl) { profEl.hidden = true; profEl.innerHTML = ''; }
     try { applyCheckSectionMode(status.mode); } catch (_) { /* section relabel best-effort */ }
@@ -22373,6 +22622,7 @@ window.renderActiveCard = function(status) {
     if (bar) bar.style.width = pct + '%';
     const liveEl = document.getElementById('active-live');
     if (liveEl) liveEl.hidden = true;
+    _hideStage(card);
     const profEl = document.getElementById('active-profiles');
     if (profEl) { profEl.hidden = true; profEl.innerHTML = ''; }
     try { applyCheckSectionMode(status.mode); } catch (_) { /* section relabel best-effort */ }
@@ -22438,6 +22688,7 @@ window.renderActiveCard = function(status) {
     window.__activeCardActive = false;
     const liveEl0 = document.getElementById('active-live');
     if (liveEl0) liveEl0.hidden = true;
+    _hideStage(card);
     const profEl0 = document.getElementById('active-profiles');
     if (profEl0) { profEl0.hidden = true; profEl0.innerHTML = ''; }
     // Hide skips panel when idle (new campaign start will reset state).
@@ -22486,6 +22737,10 @@ window.renderActiveCard = function(status) {
       v3SetText('activeLiveL1', la.l1);
       v3SetText('activeLiveL2', la.l2);
     }
+    // The stage supersedes the one-line version whenever the engine is naming a
+    // person — they share the grid slot, so exactly one of them is ever shown.
+    const staged = renderLiveStage(card, status);
+    if (liveEl && staged) liveEl.hidden = true;
   } catch (_) { /* live line is best-effort */ }
   // Bug 14: once a campaign is launched, keep the live log visible through the
   // whole running → monitoring lifecycle. Auto-open the details panel on the

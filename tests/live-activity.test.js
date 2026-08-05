@@ -69,3 +69,64 @@ test('one account is singular', () => {
   assert.match(r.l2, /1 account\b/);
   assert.match(r.l2, /1h/);
 });
+
+// ── Live phase ticks (v2.160.128) ────────────────────────────────────────────
+// The engine now stamps {phase, selecting} per person into cmp:live:<id>, and
+// the app maps it onto currentAction. Before this, a cloud send had no
+// currentAction at all and every one fell through to the literal "Working…".
+
+test('a sending tick names the person instead of "Working…"', () => {
+  const r = buildLiveActivity({
+    running: true,
+    currentAction: { phase: 'sending', label: 'Sending connection to Sarah Whitfield',
+      account: 'matt.adcock@ortus.solutions', lead: 'Sarah Whitfield' },
+  });
+  assert.equal(r.state, 'sending');
+  assert.equal(r.phase, 'sending');
+  assert.equal(r.who, 'Sarah Whitfield');
+  assert.match(r.l1, /Sarah Whitfield/);
+  assert.notEqual(r.l1, 'Working…');
+});
+
+test('introducing beats the monitoring branch — intros are not a sweep', () => {
+  // Intros fire INSIDE the acceptance sweep, so the campaign is still
+  // state:'monitoring'. Reporting that as "Checking for new acceptances…" for
+  // the whole intro run is exactly what made intros look like nothing.
+  const r = buildLiveActivity({
+    running: false, state: 'monitoring', monitoringCheckInProgress: true,
+    currentAction: { phase: 'introducing', label: 'Introducing Daniel Okonjo',
+      account: 'matt.adcock@ortus.solutions', lead: 'Daniel Okonjo', sub: '2 of 6 accepted connections' },
+  });
+  assert.equal(r.phase, 'introducing');
+  assert.equal(r.who, 'Daniel Okonjo');
+  assert.match(r.verb, /introduction/i);
+  assert.doesNotMatch(r.l1, /Checking/);
+});
+
+test('a checking tick names the account being swept', () => {
+  const r = buildLiveActivity({
+    running: false, state: 'monitoring', monitoringCheckInProgress: true,
+    currentAction: { phase: 'checking', label: 'Checking matt.adcock@ortus.solutions for acceptances',
+      account: 'matt.adcock@ortus.solutions', lead: '', sub: 'account 1 of 4' },
+  });
+  assert.equal(r.phase, 'checking');
+  assert.equal(r.state, 'checking');
+  assert.match(r.who, /matt\.adcock/);
+});
+
+test('paused outranks a stale phase tick', () => {
+  const r = buildLiveActivity({
+    running: true, paused: true,
+    currentAction: { phase: 'sending', lead: 'Sarah Whitfield' },
+  });
+  assert.equal(r.state, 'paused');
+  assert.equal(r.phase, undefined);
+});
+
+test('an unknown phase is ignored, not rendered blank', () => {
+  const r = buildLiveActivity({
+    running: true, currentAction: { phase: 'teleporting', lead: 'Nobody' },
+  });
+  assert.equal(r.phase, undefined);
+  assert.equal(r.l1, 'Working…'); // the old fallback, unchanged
+});
