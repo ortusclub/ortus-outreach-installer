@@ -7015,7 +7015,7 @@ function renderCloudAccountsPanel(id) {
     // Parked by 3 consecutive proxy 407s — the VM literally cannot open this
     // profile's browser. Distinct from a throttle: waiting won't fix it.
     else if (a.parkReason === 'proxy') badges.push(badge('bad', '⛔ Proxy refused — fix the GoLogin profile, then Retry'));
-    else if (benched) badges.push(badge('bad', '🚫 Benched — weekly invitation limit · rest of the week'));
+    else if (benched) badges.push(badge('bad', `🚫 Benched — weekly invitation limit · resets ${_nextMondayText()}`));
     else if (a.parked || a.parkReason === 'throttle') badges.push(badge('warn', '⏸ Throttled'));
     else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
     else badges.push(badge('ok', '✓ Active'));
@@ -7027,7 +7027,10 @@ function renderCloudAccountsPanel(id) {
     // Benched → operator override: Retry clears the bench engine-side, and the
     // account is eligible again from the next turn (three fresh 429 strikes
     // re-bench it automatically if LinkedIn is still capping).
-    if (benched && !a.needsLogin) {
+    // A weekly cap gets no Retry — it's a window, not a cooldown. Offering one
+    // here while the live stage says "don't retry before Monday" is the app
+    // arguing with itself, and taking it spends strikes for nothing.
+    if (benched && !a.needsLogin && !(a.weeklyCap || a.parkReason === 'weekly')) {
       badges.push(`<button type="button" class="cap-retry" onclick="unbenchCloudAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)" title="Clear the bench and let this account try again">Retry</button>`);
     }
     // Editable (paused/stopped) → a toggle that REMOVES the account from the
@@ -22448,11 +22451,14 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
     : ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) ? '<span class="st" style="color:var(--gold,#d4a24a)">at daily limit</span>'
     : isCurrent ? '<span class="st" style="color:var(--green)">working now</span>'
     : '<span class="st" style="color:var(--gray)">idle</span>';
+  const weekly = !!(a.weeklyCap || a.parkReason === 'weekly');
   const acts = [];
   if (isCurrent && canWatch) acts.push(`<button type="button" onclick="openCloudCampaignView('${escHtml(cid)}')">👁 Watch this browser live</button>`);
-  if (benched && !a.needsLogin) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
+  // No Retry on a weekly cap. It's a window, not a cooldown — nothing changes
+  // until it rolls over, and asking again only spends strikes.
+  if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
   const why = a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
-    : (a.weeklyCap || a.parkReason === 'weekly') ? ' · LinkedIn weekly invitation cap'
+    : weekly ? ` · LinkedIn weekly invitation cap — resets ${_nextMondayText()}`
     : a.parkReason === 'throttle' ? ' · rate-limited, backing off' : '';
   return `<div class="stg-drawer"><div class="dh"><b>${email}</b>${st}`
     + `<span class="x" onclick="stageAcctPick(this,'')">✕ close</span></div>`
@@ -22467,6 +22473,21 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
 //
 // The daily reset is midnight UTC because that is what the engine benches to
 // (campaign-worker.js _secsToDayEnd), not the operator's local midnight.
+// LinkedIn's invite window rolls over at Monday 00:00 UTC — the same boundary
+// the engine benches a weekly-capped account to (campaign-worker _secsToNextMonday).
+// Rendered as the date plus the wait, because "resets Monday" on a Wednesday
+// reads as "the day after tomorrow" to nobody.
+function _nextMondayText() {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const days = (8 - d.getUTCDay()) % 7 || 7;
+  d.setUTCDate(d.getUTCDate() + days);
+  // en-GB, not the machine locale: this string is spliced into an English
+  // sentence, and on an Italian-locale laptop [] rendered "resets luned\u00ec 10 ago".
+  const when = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return `${when} (in ${days} day${days === 1 ? '' : 's'})`;
+}
+
 function _stageFixHtml(cid, accts) {
   if (!accts.length) return '';
   const nm = (a) => escHtml(String(a.email || a.profileId || '').split('@')[0]);
@@ -22480,12 +22501,18 @@ function _stageFixHtml(cid, accts) {
   const rows = [];
   if (needsLogin.length) rows.push(`<b>${list(needsLogin)}</b> — log back in on GoLogin, then hit Retry. Nothing else will unblock it.`);
   if (proxy.length) rows.push(`<b>${list(proxy)}</b> — its GoLogin proxy is refusing the browser. Fix the profile's proxy, then Retry.`);
-  if (weekly.length) rows.push(`<b>${list(weekly)}</b> — LinkedIn's weekly invite cap. It lifts on its own; Retry to test whether it already has.`);
+  if (weekly.length) rows.push(`<b>${list(weekly)}</b> — LinkedIn's weekly invite cap. It resets ${_nextMondayText()}. Don't retry before then: the cap doesn't ease off during the week, and asking again just spends strikes.`);
   if (throttled.length) rows.push(`<b>${list(throttled)}</b> — rate-limited, backing off. It resumes by itself; Retry only if you want it sooner.`);
   if (capped.length) rows.push(`<b>${list(capped)}</b> — at the daily limit. Resets at midnight UTC, or raise the limit in batch settings.`);
   if (!rows.length) return '';
-  rows.push('Adding another account is the only thing that gets this campaign sending again <em>today</em>.');
-  const retryable = accts.filter((a) => !a.needsLogin && (a.parked || a.weeklyCap));
+  if (weekly.length || capped.length) {
+    rows.push('Adding another account is the only thing that gets this campaign sending again <em>today</em>.');
+  }
+  // Weekly-capped accounts are deliberately excluded: the cap is a window, not
+  // a cooldown, so an early retry can only burn strikes. Throttles, proxies
+  // and plain parks are the ones a Retry can genuinely clear.
+  const retryable = accts.filter((a) => !a.needsLogin && !a.weeklyCap
+    && a.parkReason !== 'weekly' && (a.parked || a.parkReason === 'throttle'));
   const acts = [];
   if (retryable.length) {
     acts.push(`<button type="button" onclick="stageRetryBlocked('${escHtml(cid)}',this)">Retry ${retryable.length} blocked account${retryable.length === 1 ? '' : 's'}</button>`);
@@ -22499,7 +22526,8 @@ function _stageFixHtml(cid, accts) {
 // engine route the per-account Retry uses; a failure on one must not stop the
 // rest, so they're settled independently.
 window.stageRetryBlocked = async function (cid, btn) {
-  const accts = (_cloudAccountsById.get(cid) || []).filter((a) => !a.needsLogin && (a.parked || a.weeklyCap));
+  const accts = (_cloudAccountsById.get(cid) || []).filter((a) => !a.needsLogin && !a.weeklyCap
+    && a.parkReason !== 'weekly' && (a.parked || a.parkReason === 'throttle'));
   if (!accts.length) return;
   if (btn) { btn.disabled = true; btn.textContent = 'Retrying…'; }
   await Promise.allSettled(accts.map((a) => unbenchCloudAccount(cid, a.profileId, null, true)));

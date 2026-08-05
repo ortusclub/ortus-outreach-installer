@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.130" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.130" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.131" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.131" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -299,7 +299,7 @@
             <span class="vj-live-l2" id="activeLiveL2"></span>
           </span>
         </div>
-        <!-- v2.160.130: live stage — takes the same grid slot as .vj-live when
+        <!-- v2.160.131: live stage — takes the same grid slot as .vj-live when
              the engine is sending / introducing / checking a NAMED person, so
              the operator can see it working instead of a static "Working…".
              Filled by renderLiveStage(); the two are mutually exclusive. -->
@@ -3713,7 +3713,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.130"></script>
+  <script type="module" src="/js/app.js?v=2.160.131"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
