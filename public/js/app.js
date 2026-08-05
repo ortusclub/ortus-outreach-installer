@@ -6948,6 +6948,18 @@ function _cloudCurrentAction(d) {
     const c = (d && d.campaign) || {};
     if (c.status !== 'running') return null;
     const why = _cloudWaitingReason(d && d.monitorLog);
+    // Asleep on the engine's blocked_until: no account can work before then, so
+    // the VM stepped back and stops writing log lines. Read the column directly —
+    // the "No account free" line it slept on goes stale within 15 minutes, and
+    // without this the card falls back to the "Working…" that hid a ten-hour
+    // stall. See the engine's campaigns.blocked_until (scraper v130).
+    const wake = c.blocked_until ? new Date(c.blocked_until).getTime() : 0;
+    if (wake > Date.now()) {
+      const when = new Date(wake).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return { phase: 'waiting', label: 'Waiting for a free account',
+        account: '', lead: 'No account free',
+        sub: `${why || 'every account is at a limit or benched'} · the VM stands down until ${when} to save cost, then picks itself back up` };
+    }
     if (!why) return null;
     return { phase: 'waiting', label: 'Waiting for a free account',
       account: '', lead: 'No account free', sub: why };
