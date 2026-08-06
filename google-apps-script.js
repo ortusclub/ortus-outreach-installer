@@ -419,6 +419,9 @@ function doPost(e) {
       case 'ensureColumns':
         return handleEnsureColumns(sheet, data);
 
+      case 'updateRows':
+        return handleUpdateRows(sheet, data);
+
       case 'updateRow':
       default:
         return handleUpdateRow(sheet, data);
@@ -1115,6 +1118,79 @@ function columnToLetter(n) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Action: Update a single row
 // ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * BULK write-back — many leads, ONE execution.
+ *
+ * The cloud engine used to POST once per dirty lead. This deployment is shared
+ * by every operator, and Google caps a web app at 30 simultaneous executions and
+ * 6 hours of total runtime per day, so 20 operators writing ~1000 leads each
+ * modelled to ~8.3h/day — over quota, at which point write-back silently stops
+ * for EVERYONE until midnight PT. Batching cuts executions by ~200x.
+ *
+ * The saving is not only the HTTP round trips: getHeaders() and the URL-column
+ * resolution happen ONCE for the whole batch instead of per lead.
+ *
+ * Body: { action:'updateRows', sheetId, gid, urlColumnName, rows:[ {linkedinUrl, ...fields} ] }
+ * Reply: { success, results:[ {ok:true,row,rows,updated} | {error} ] } — index-aligned
+ * with `rows`, so one lead missing from the sheet never fails the rest of the batch.
+ */
+function handleUpdateRows(sheet, data) {
+  var rows = data.rows;
+  if (!rows || !rows.length) {
+    return jsonResponse({ error: 'rows is required' });
+  }
+
+  var headers = getHeaders(sheet);
+
+  // Resolve the URL column once for the whole batch.
+  var urlColIndex = -1;
+  if (data.urlColumnName) {
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i] === data.urlColumnName) { urlColIndex = i; break; }
+    }
+  }
+  if (urlColIndex === -1) {
+    urlColIndex = findUrlColumn(headers, sheet);
+  }
+  if (urlColIndex === -1) {
+    return jsonResponse({ error: 'No LinkedIn URL column found in the sheet' });
+  }
+
+  var results = [];
+  for (var r = 0; r < rows.length; r++) {
+    var item = rows[r] || {};
+    if (!item.linkedinUrl) {
+      results.push({ error: 'linkedinUrl is required' });
+      continue;
+    }
+    try {
+      // Same semantics as handleUpdateRow: stamp EVERY copy of the lead
+      // (duplicate rows), auditing only once per lead.
+      var targetRows = findRowsByUrl(sheet, urlColIndex, item.linkedinUrl);
+      if (targetRows.length === 0) {
+        results.push({ error: 'Row not found for: ' + item.linkedinUrl });
+        continue;
+      }
+      var updated = [];
+      for (var ti = 0; ti < targetRows.length; ti++) {
+        updated = writeFields(sheet, headers, targetRows[ti], item, /* skipAudit */ ti > 0);
+      }
+      results.push({ ok: true, row: targetRows[0], rows: targetRows, updated: updated });
+    } catch (err) {
+      // One bad lead must never abort the batch — the engine leaves only the
+      // failed ones dirty and retries them on the next sweep.
+      results.push({ error: String(err && err.message ? err.message : err) });
+    }
+  }
+
+  return jsonResponse({
+    success: true,
+    sheetId: data.sheetId,
+    count: results.length,
+    results: results
+  });
+}
 
 function handleUpdateRow(sheet, data) {
   if (!data.linkedinUrl) {
