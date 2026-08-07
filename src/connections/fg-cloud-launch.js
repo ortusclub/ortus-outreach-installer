@@ -186,7 +186,12 @@ export async function startTeamLaunchCloud(pairs, deps) {
     owner: deps.owner || '',
     profileIds: [...new Set(pairs.map((p) => p.profileId))],
     leads,
-    config: { inviteUrl: deps.inviteUrl, monthlyBudget: deps.monthlyBudget },
+    config: {
+      inviteUrl: deps.inviteUrl, monthlyBudget: deps.monthlyBudget,
+      // Engine labels every log line / account pill with config.accountEmails —
+      // without it the run prints raw 24-hex GoLogin ids.
+      accountEmails: Object.fromEntries(pairs.map((p) => [p.profileId, p.account])),
+    },
   });
   if (!resp || resp.error || !resp.id) return { error: (resp && resp.error) || 'Cloud dispatch failed.' };
   const cloudId = resp.id;

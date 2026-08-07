@@ -180,7 +180,7 @@ test('startTeamLaunchCloud dispatches, queues proof, persists record', async () 
   const queued = [];
   const res = await startTeamLaunchCloud(onePair, {
     buildTargets: oneTarget,
-    startCloud: async (p) => { assert.equal(p.mode, 'follower_growth'); assert.deepEqual(p.config, { inviteUrl: 'https://linkedin.com/company/ortus/invite', monthlyBudget: 30 }); assert.equal(p.leads.length, 1); assert.deepEqual(p.profileIds, ['p1']); return { id: 'cloud-1' }; },
+    startCloud: async (p) => { assert.equal(p.mode, 'follower_growth'); assert.deepEqual(p.config, { inviteUrl: 'https://linkedin.com/company/ortus/invite', monthlyBudget: 30, accountEmails: { p1: 'a1@x.com' } }); assert.equal(p.leads.length, 1); assert.deepEqual(p.profileIds, ['p1']); return { id: 'cloud-1' }; },
     queueInvites: async (rows) => { queued.push(...rows); },
     runStore: store, now: () => '2026-07-15T00:00:00Z', log: () => {},
     month: '2026-07', owner: 'o1@x.com', name: 'Team FG', inviteUrl: 'https://linkedin.com/company/ortus/invite', monthlyBudget: 30,
