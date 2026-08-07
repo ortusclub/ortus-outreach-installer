@@ -20,6 +20,14 @@ var BUDGET_HEADER = ['Account','Operator','Month','Sent','Credits Available','Ob
 // overrides live in the Allowance column. Keep in sync with FG_DEFAULT_MONTHLY_ALLOWANCE.
 var DEFAULT_ALLOWANCE = 30;
 
+// KEEP IN SYNC with FG_MASTER_HEADER in src/connections/fg-master.js.
+var FG_MASTER_HEADER = [
+  'First Name', 'Last Name', 'Job Title', 'Company', 'Geo',
+  'LinkedIn URL', 'Member ID', 'Connected Accounts',
+  'Invited', 'Invited At', 'Invited By'
+];
+var FG_MASTER_TAB = 'FG Master';
+
 function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000); // serialize concurrent operators
@@ -34,6 +42,7 @@ function doPost(e) {
     else if (data.action === 'fgWriteList') out = fgWriteList_(data);
     else if (data.action === 'fgReadList') out = fgReadList_(data);
     else if (data.action === 'fgUpdateListLedger') out = fgUpdateListLedger_(data);
+    else if (data.action === 'fgWriteMaster') out = fgWriteMaster_(data);
     else if (data.action === 'getSheetUrl') out = { url: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
     else if (data.action === 'listTabs') out = { tabs: SpreadsheetApp.getActiveSpreadsheet().getSheets().map(function (s) { return s.getName(); }) };
     else out = { error: 'Unknown action: ' + data.action };
@@ -207,6 +216,72 @@ function fgUpdateListLedger_(data) {
   return { tab: name, updated: n };
 }
 
+// Chunked build of the FG Master tab. mode 'replace' clears the tab and writes
+// the header; mode 'append' adds a chunk at the bottom. The app posts ~5k rows
+// per call because one setValues cannot hold the whole network.
+function fgWriteMaster_(data) {
+  var name = String(data.tab || FG_MASTER_TAB).trim();
+  var header = data.header || FG_MASTER_HEADER;
+  var rows = data.rows || [];
+  var mode = String(data.mode || 'append');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (mode === 'replace') {
+    sh.clear();
+    sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  if (rows.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, header.length).setValues(rows);
+  }
+  return { tab: name, written: rows.length, mode: mode };
+}
+
+// Normalised LinkedIn URL — mirror of normUrl() in src/connections/fg-list.js.
+function fgNormUrl_(url) {
+  var s = String(url == null ? '' : url).trim().toLowerCase();
+  if (!s) return '';
+  s = s.split('?')[0].split('#')[0];
+  s = s.replace(/^https?:\/\//, '').replace(/^www\./, '');
+  return s.replace(/\/+$/, '');
+}
+
+// Stamp Invited / Invited At / Invited By onto FG Master rows.
+// `people` is [{ memberId, url }]. Reads ONLY the two key columns (not the whole
+// ~3M-cell grid) so this stays far inside the 6-minute execution limit. A missing
+// tab is a no-op: a deployment that has not built the master yet is fine.
+function fgStampMaster_(people, invitedBy, whenText) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(FG_MASTER_TAB);
+  if (!sh) return 0;
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+  var iUrl = FG_MASTER_HEADER.indexOf('LinkedIn URL');
+  var iMember = FG_MASTER_HEADER.indexOf('Member ID');
+  var iInvited = FG_MASTER_HEADER.indexOf('Invited');
+  var urls = sh.getRange(2, iUrl + 1, last - 1, 1).getValues();
+  var members = sh.getRange(2, iMember + 1, last - 1, 1).getValues();
+  var byKey = {};
+  for (var i = 0; i < urls.length; i++) {
+    var mid = String(members[i][0] || '').trim();
+    var key = mid || fgNormUrl_(urls[i][0]);
+    if (key && !(key in byKey)) byKey[key] = i + 2; // sheet row number
+    var uKey = fgNormUrl_(urls[i][0]);
+    if (uKey && !(uKey in byKey)) byKey[uKey] = i + 2; // also findable by URL alone
+  }
+  var n = 0;
+  for (var j = 0; j < people.length; j++) {
+    var p = people[j] || {};
+    var k = String(p.memberId || '').trim() || fgNormUrl_(p.url);
+    var row = byKey[k];
+    if (!row) row = byKey[fgNormUrl_(p.url)];
+    if (!row) continue;
+    sh.getRange(row, iInvited + 1, 1, 3).setValues([['Invited', whenText, invitedBy]]);
+    n++;
+  }
+  return n;
+}
+
 // Flip Queued -> Invited for the given Member IDs, stamp Invited At, bump budget.
 function fgMarkInvited_(data) {
   var ids = {}; (data.memberIds || []).forEach(function (id) { ids[String(id)] = true; });
@@ -215,17 +290,35 @@ function fgMarkInvited_(data) {
   var iMember = FG_HEADER.indexOf('Member ID');
   var iStatus = FG_HEADER.indexOf('Status');
   var iWhen = FG_HEADER.indexOf('Invited At');
+  var iUrl = FG_HEADER.indexOf('LinkedIn URL');
+  var now = new Date();
   var n = 0;
+  var people = [];  // [{ memberId, url }] for the FG Master stamp
   for (var i = 0; i < r.data.length; i++) {
     var row = r.data[i];
     if (ids[String(row[iMember])] && row[iStatus] !== 'Invited') {
       sh.getRange(i + 2, iStatus + 1).setValue('Invited');
-      sh.getRange(i + 2, iWhen + 1).setValue(new Date()).setNumberFormat('dd mmm yyyy, HH:mm');
+      sh.getRange(i + 2, iWhen + 1).setValue(now).setNumberFormat('dd mmm yyyy, HH:mm');
+      people.push({ memberId: String(row[iMember] || ''), url: String(row[iUrl] || '') });
       n++;
     }
   }
+  // Callers that know the URL (cloud + list runs) pass `invited` so people whose
+  // Member ID is blank — a large share of the DB — still stamp on the master.
+  (data.invited || []).forEach(function (p) {
+    if (p && (p.memberId || p.url)) people.push({ memberId: String(p.memberId || ''), url: String(p.url || '') });
+  });
   var sent = bumpBudget_(data.account, data.operator, data.month, n);
-  return { invited: n, sent: sent };
+  var master = 0;
+  try {
+    if (people.length) {
+      master = fgStampMaster_(people, String(data.account || ''), Utilities.formatDate(now, 'UTC', "yyyy-MM-dd HH:mm 'UTC'"));
+    }
+  } catch (err) {
+    // A reporting tab must never cost us an invite record.
+    master = 0;
+  }
+  return { invited: n, sent: sent, master: master };
 }
 
 // Flip still-'Queued' rows for a run to 'Failed' + reason. Runs post-reconcile,
