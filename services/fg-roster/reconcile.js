@@ -83,7 +83,7 @@ export async function reconcileListRecord(record, deps) {
 
     for (const g of groups) {
       try {
-        await deps.markInvited({ memberIds: g.memberIds, account: g.account, operator: g.operator, month: g.month });
+        await deps.markInvited({ memberIds: g.memberIds, invited: g.invited, account: g.account, operator: g.operator, month: g.month });
         deps.log(`reconcile ${record.cloudId}: marked ${g.memberIds.length} invite(s)/follow(s) for ${g.account}`);
       } catch (e) {
         deps.log(`reconcile ${record.cloudId}: FG Invites writeback failed for ${g.account} (${e.message})`);

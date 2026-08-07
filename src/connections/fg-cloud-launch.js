@@ -63,23 +63,28 @@ function isInvited(lead) {
  * Turn cloud per-lead rows into per-account markFgInvited arguments.
  * @param {Array} cloudLeads [{ leadUrl, account(=profileId), stage, status }]
  * @param {{perAccount:Array}} record
- * @returns {Array} [{ account, operator, month, memberIds:[…] }]
+ * @returns {Array} [{ account, operator, month, memberIds:[…], invited:[{memberId,url}] }]
  */
 export function invitedWritebackFromLeads(cloudLeads, record) {
   const byProfile = new Map((record && record.perAccount || []).map((a) => [String(a.profileId), a]));
-  const idsByProfile = new Map(); // profileId → Set(memberId)
+  const groupByProfile = new Map(); // profileId → { ids:Set(memberId), invited:[{memberId,url}] }
   for (const lead of cloudLeads || []) {
     if (!isInvited(lead)) continue;
     const meta = byProfile.get(String(lead.account));
     if (!meta) continue;
-    const memberId = meta.rowsByUrl[String(lead.leadUrl || '').trim()];
-    if (!memberId) continue;
-    if (!idsByProfile.has(meta.profileId)) idsByProfile.set(meta.profileId, new Set());
-    idsByProfile.get(meta.profileId).add(String(memberId));
+    const leadUrl = String(lead.leadUrl || '').trim();
+    const memberId = meta.rowsByUrl[leadUrl];
+    if (memberId === undefined) continue; // url not tracked for this profile at all
+    if (!groupByProfile.has(meta.profileId)) groupByProfile.set(meta.profileId, { ids: new Set(), invited: [] });
+    const g = groupByProfile.get(meta.profileId);
+    if (memberId) g.ids.add(String(memberId));
+    // Member ID stays the FG Invites key; the URL is what lets FG Master stamp
+    // people whose linkedin_membership_id is null (a large share of the DB).
+    g.invited.push({ memberId: String(memberId || ''), url: leadUrl });
   }
-  return [...idsByProfile.entries()].map(([profileId, ids]) => {
+  return [...groupByProfile.entries()].map(([profileId, g]) => {
     const meta = byProfile.get(String(profileId));
-    return { account: meta.account, operator: meta.operator, month: meta.month, memberIds: [...ids] };
+    return { account: meta.account, operator: meta.operator, month: meta.month, memberIds: [...g.ids], invited: g.invited };
   });
 }
 
@@ -121,7 +126,7 @@ export async function reconcileCloudRun(record, deps) {
   const groups = invitedWritebackFromLeads(leads, record);
   for (const g of groups) {
     try {
-      await deps.markInvited({ memberIds: g.memberIds, account: g.account, operator: g.operator, month: g.month });
+      await deps.markInvited({ memberIds: g.memberIds, invited: g.invited, account: g.account, operator: g.operator, month: g.month });
     } catch (e) {
       deps.log(`⚠ STRANDED: ${g.memberIds.length} invite(s) WERE sent for ${g.account} but the FG-sheet write-back failed — they will be re-checked next reconcile (${e.message})`);
       return { reconciled: false, stranded: true };

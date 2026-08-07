@@ -2765,7 +2765,7 @@ async function reconcileListRun(record) {
     }
     for (const g of groups) {
       try {
-        await markFgInvited({ memberIds: g.memberIds, account: g.account, operator: g.operator, month: g.month });
+        await markFgInvited({ memberIds: g.memberIds, invited: g.invited, account: g.account, operator: g.operator, month: g.month });
         try { campaignLog(`[FG-cloud] list run ${record.cloudId}: marked ${g.memberIds.length} invite(s)/follow(s) for ${g.account} in FG Invites`); } catch (_) {}
       } catch (e) {
         try { campaignLog(`[FG-cloud] ⚠ list run ${record.cloudId}: FG Invites writeback failed for ${g.account} (${e.message}) — will retry next reconcile`); } catch (_) {}

@@ -107,10 +107,10 @@ export async function markFgFailed({ runId, reason, reasons }) {
 
 // Flip the given Member IDs from Queued → Invited (stamp Invited At) and bump
 // the account's FG Budgets row for the month.
-export async function markFgInvited({ memberIds, account, operator, month }) {
-  const r = await postFg({ action: 'fgMarkInvited', memberIds, account, operator, month }, { timeoutMs: 90000 });
+export async function markFgInvited({ memberIds, invited, account, operator, month }) {
+  const r = await postFg({ action: 'fgMarkInvited', memberIds, invited, account, operator, month }, { timeoutMs: 90000 });
   if (r?.error) throw new Error(r.error);
-  return r; // { invited, remaining }
+  return r; // { invited, remaining, master }
 }
 
 // Create (or replace) a per-run invite-list tab and write its header + rows.

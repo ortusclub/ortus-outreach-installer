@@ -67,8 +67,17 @@ test('invitedWritebackFromLeads groups invited leads by account, resolves member
   const groups = invitedWritebackFromLeads(cloudLeads, record);
   const g1 = groups.find((g) => g.account === 'a1@x.com');
   const g2 = groups.find((g) => g.account === 'a2@x.com');
-  assert.deepEqual(g1, { account: 'a1@x.com', operator: 'o1@x.com', month: '2026-07', memberIds: ['111', '112'] });
-  assert.deepEqual(g2, { account: 'a2@x.com', operator: 'o2@x.com', month: '2026-07', memberIds: ['221'] });
+  assert.deepEqual(g1, {
+    account: 'a1@x.com', operator: 'o1@x.com', month: '2026-07', memberIds: ['111', '112'],
+    invited: [
+      { memberId: '111', url: 'https://linkedin.com/in/jane' },
+      { memberId: '112', url: 'https://linkedin.com/in/joe' },
+    ],
+  });
+  assert.deepEqual(g2, {
+    account: 'a2@x.com', operator: 'o2@x.com', month: '2026-07', memberIds: ['221'],
+    invited: [{ memberId: '221', url: 'https://linkedin.com/in/kim' }],
+  });
 });
 
 test('invitedWritebackFromLeads ignores non-invited leads and unknown urls', () => {
@@ -127,7 +136,10 @@ test('reconcileCloudRun writes invited memberIds back on a terminal campaign', a
     log: () => {},
   });
   assert.equal(res.reconciled, true);
-  assert.deepEqual(marks, [{ memberIds: ['111'], account: 'a1@x.com', operator: 'o1@x.com', month: '2026-07' }]);
+  assert.deepEqual(marks, [{
+    memberIds: ['111'], invited: [{ memberId: '111', url: 'https://linkedin.com/in/jane' }],
+    account: 'a1@x.com', operator: 'o1@x.com', month: '2026-07',
+  }]);
 });
 
 test('reconcileCloudRun on markInvited failure logs STRANDED and does not throw', async () => {
