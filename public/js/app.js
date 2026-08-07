@@ -20616,7 +20616,12 @@ function fgtlRenderProfileOpts(em, prof, pq) {
 function fgtlRenderCart() {
   const el = document.getElementById('fgtl-cart'); if (!el) return;
   const emails = Object.keys(fgtlPicked);
-  const card = document.getElementById('fgtl-card'); if (card) card.style.display = emails.length ? '' : 'none';
+  // fgSyncLiveSurfaces marks this card hidden while a cloud run owns the screen.
+  // Setting display straight from the picker state overrode that mark on a cold
+  // load — this render runs before the poll re-attaches to the cloud run — and
+  // the FG screen's own card came back as a second card next to the shared one.
+  const card = document.getElementById('fgtl-card');
+  if (card) card.style.display = (card.dataset.fgHidden || _fgtlCloudSeen) ? 'none' : (emails.length ? '' : 'none');
   const clr = document.getElementById('fgtl-clear');
   if (!emails.length) { el.innerHTML = '<div class="empty">Add colleagues from the left.<br>You will see their paired account and how many invites they can send.</div>'; const foot = document.getElementById('fgtl-foot'); if (foot) foot.style.display = 'none'; if (clr) clr.style.display = 'none'; fgapQueuePublish(); return; }
   if (clr) clr.style.display = '';
