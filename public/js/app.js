@@ -20598,6 +20598,20 @@ function fgtlRenderAnswer() {
   sub.innerHTML = matches > invites
     ? `from ${acc} · <b>${matches.toLocaleString()}</b> of their connections match these roles, but LinkedIn gives each account about 30 follow invites a month — the rest wait for the next run.`
     : `from ${acc} · every matching connection fits inside this month's invite allowance.`;
+
+  // The pool is capped by how many accounts can send, not by the roles — say so
+  // with the count, because it's the only lever that actually moves the number.
+  const out = fgtlPeople.filter((p) => !fgtlCanSend(p));
+  if (!out.length) return;
+  const noProfile = out.filter((p) => fgtlEligibility(p.email).eligible && !p.paired).length;
+  const missed = out.reduce((s, p) => s + (p.matched || 0), 0);
+  const bits = [];
+  if (noProfile) bits.push(`<b>${noProfile}</b> need a GoLogin profile`);
+  const rest = out.length - noProfile;
+  if (rest) bits.push(`${rest} can't invite or have no match`);
+  sub.innerHTML += `<br><span class="rv-sub-out"><b>${out.length}</b> more networks are sitting this out (${bits.join(' · ')})`
+    + (missed ? ` — another <b>${missed.toLocaleString()}</b> matching connections behind them` : '')
+    + `. Open “Which accounts?” to see who.</span>`;
 }
 
 async function fgtlRefreshMatched() {
