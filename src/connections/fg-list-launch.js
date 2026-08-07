@@ -75,7 +75,11 @@ export async function dispatchFromRows(rows, { accountEmails = {}, campaign = {}
       owner: campaign.owner || '',
       profileIds: [...new Set(leads.map((l) => l.routeAccount))],
       leads,
-      config: campaign.config || {},
+      // accountEmails goes with EVERY dispatch, not just the ones whose caller
+      // remembered: the engine labels every log line and account pill with
+      // config.accountEmails[profileId] and prints raw 24-hex GoLogin ids
+      // without it. Auto-Pilot fires through here too.
+      config: { ...(campaign.config || {}), accountEmails },
     });
   } catch (e) {
     return { error: (e && e.message) || 'Cloud dispatch failed.', skipped };

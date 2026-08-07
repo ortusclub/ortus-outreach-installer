@@ -66,6 +66,9 @@ test('dispatchFromRows builds routed leads and dispatches follower_growth', asyn
   assert.deepEqual([...captured.profileIds].sort(), ['pid_ada', 'pid_grace']);
   assert.equal(captured.leads[0].routeAccount, 'pid_ada');
   assert.equal(captured.config.monthlyBudget, 30);
+  // Every dispatch carries accountEmails — the engine labels its log lines and
+  // account pills with it, and prints raw GoLogin ids when it's missing.
+  assert.deepEqual(captured.config.accountEmails, ACCOUNT_EMAILS);
 });
 
 test('dispatchFromRows returns an error (not throw) when nothing usable', async () => {

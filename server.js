@@ -3124,13 +3124,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
       const out = await dispatchFromRows(rows, {
         accountEmails,
-        campaign: { name: `Team Follower Growth · ${month}`, owner, config: {
-          inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE,
-          // The engine labels every log line and account pill with
-          // config.accountEmails[profileId]; without it the run prints raw
-          // 24-hex GoLogin ids nobody can read.
-          accountEmails,
-        } },
+        campaign: { name: `Team Follower Growth · ${month}`, owner, config: { inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
       }, { startCloud: (payload) => startCloudCampaign(payload) });
       if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
       // Register this run so the reconcile loop stamps the ledger (Status /
