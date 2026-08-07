@@ -20543,18 +20543,29 @@ function fgtlAutoSelect() {
   }
 }
 
-// The headline: how many people this run would invite, and from how many accounts.
+// The headline is what this run will actually SEND — not the size of the pool.
+// The two differ a lot: each LinkedIn account gets ~30 follow invites a month, so
+// 66 accounts cap the run at ~2k however many connections match. Saying "people
+// match" over the capped number was a lie; both numbers are shown instead.
 function fgtlRenderAnswer() {
   const emails = Object.keys(fgtlPicked);
-  const total = emails.reduce((s, em) => {
+  let invites = 0;
+  let matches = 0;
+  for (const em of emails) {
     const p = fgtlPeople.find((x) => x.email === em);
-    const prof = p && (fgtlPicked[em].profile || p.paired);
-    return s + (prof ? fgtlInvitesLeft(p, prof) : 0);
-  }, 0);
+    if (!p) continue;
+    const prof = fgtlPicked[em].profile || p.paired;
+    if (prof) invites += fgtlInvitesLeft(p, prof);
+    matches += p.matched || 0;
+  }
   const n = document.getElementById('fg-answer-n');
-  if (n) n.textContent = total.toLocaleString();
-  const acc = document.getElementById('fg-answer-acc');
-  if (acc) acc.textContent = `${emails.length} account${emails.length === 1 ? '' : 's'}`;
+  if (n) n.textContent = invites.toLocaleString();
+  const sub = document.getElementById('fg-answer-sub');
+  if (!sub) return;
+  const acc = `<b>${emails.length} account${emails.length === 1 ? '' : 's'}</b>`;
+  sub.innerHTML = matches > invites
+    ? `from ${acc} · <b>${matches.toLocaleString()}</b> of their connections match these roles, but LinkedIn gives each account about 30 follow invites a month — the rest wait for the next run.`
+    : `from ${acc} · every matching connection fits inside this month's invite allowance.`;
 }
 
 async function fgtlRefreshMatched() {

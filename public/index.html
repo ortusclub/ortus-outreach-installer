@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.157" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.157" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.158" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.158" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2350,8 +2350,8 @@
         <!-- The answer -->
         <div class="rv-answer">
           <div>
-            <div class="rv-big"><span id="fg-answer-n">0</span> <span class="rv-big-lab">people match</span></div>
-            <div class="rv-sub">across <b id="fg-answer-acc">0 accounts</b> &#183; each person is invited by the account that already knows them</div>
+            <div class="rv-big"><span id="fg-answer-n">0</span> <span class="rv-big-lab">invites this run</span></div>
+            <div class="rv-sub" id="fg-answer-sub"></div>
           </div>
           <button type="button" class="rv-who" id="fg-who-toggle">Which accounts? &#9662;</button>
         </div>
@@ -3799,7 +3799,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.157"></script>
+  <script type="module" src="/js/app.js?v=2.160.158"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
