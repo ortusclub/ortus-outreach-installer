@@ -108,7 +108,6 @@ import { buildAutopilotConfig, nextRun, cycleKey } from './src/fg-autopilot.js';
 import { publishAutopilotConfig } from './src/fg-autopilot-publish.js';
 import { pickUnreconciled } from './src/fg-autopilot-reconcile.js';
 import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
-import { getEnrichState, startEnrichPoller } from './src/enrich-runner.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -542,14 +541,6 @@ app.delete('/api/server-log', (_req, res) => {
   serverLogs.length = 0;
   res.json({ cleared: true });
 });
-
-// ---------------------------------------------------------------------------
-// Guest photos — the door check-in tool's "Fetch photos" button lands here.
-// ---------------------------------------------------------------------------
-// The check-in site is static and can't drive a browser, so its button leaves a
-// request in the check-in sheet and startEnrichPoller() picks it up. Exposed
-// read-only here so you can see what the poller is doing without the sheet.
-app.get('/api/enrich/state', (_req, res) => res.json(getEnrichState()));
 
 // ---------------------------------------------------------------------------
 // GoLogin profiles
@@ -6066,9 +6057,6 @@ app.listen(PORT, async () => {
 
   await initNotifier();
   console.log(`  ✦ Notifications: ${process.env.SMTP_HOST ? 'email enabled' : 'email DISABLED — set SMTP_HOST/PORT/USER/PASS + NOTIFY_EMAILS'}\n`);
-
-  // Door check-in "Fetch photos" requests.
-  startEnrichPoller();
 
   // Bulk "Delete all drafts" soft-deletes (trashedAt); hard-purge anything past
   // the 1-week grace on boot, then daily.
