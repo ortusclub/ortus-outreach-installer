@@ -1,57 +1,64 @@
-# Ortus Outreach 3.0 — What's New
+# Ortus Outreach 3.0
 
-*Six weeks, 489 changes. The short version: campaigns now run on our own cloud VM instead of your laptop, Follower Growth became a real product, and the Sales Nav scraper got a proper board.*
-
----
-
-**☁️ Your laptop is no longer the bottleneck**
-
-Campaigns run on our cloud VM. Start one, shut the lid, go home — it keeps sending. Reopen the app whenever and it reattaches to the live run, right where it is.
-
-You can also schedule a campaign to start later, and the VM holds it. Your Mac doesn't need to be awake.
-
-**👀 You can finally see what it's doing**
-
-The live card names the person the VM is working on right now, not "Working…". Every account shows as a pill with its own state: how many it sent, and if it stopped — **No credits**, **Logged out**, **Weekly cap**, **Error** — in one word, with the full explanation on hover.
-
-When a campaign stalls, it says why and what to do about it. A weekly cap tells you the date it resets instead of offering a pointless Retry.
-
-**📈 Follower Growth, rebuilt**
-
-Pick the roles you want → the app builds the invite list into a Google Sheet tab → you review it, delete anyone you don't want → launch. Nothing sends until someone has actually looked at it.
-
-- **Auto-Pilot** fires the run automatically on the 1st and 15th at 6am, on the VM. It builds the list 3 days early and emails you that it's ready to review.
-- **FG Master** — the whole warm network in one sheet tab, built incrementally, with the team's manual funnel folded in.
-- The role vocabulary now covers ~50k marketing people properly.
-- A finished run explains why it stopped short instead of leaving you to work it out.
-
-**🔍 Sales Nav scraper: one shared board**
-
-Every operator's scrapes on one board — see what's running across the team, not just your own. Set up a scrape inline without leaving the page, pause and resume anything, and read a real operator log that survives the run.
-
-**💬 Reply checking**
-
-Reads Sales Navigator's inbox for Open Profile and InMail replies, with a per-account live card and the full message in a read pane. Open any thread straight into the right GoLogin browser.
-
-**🗂 Multi-workspace GoLogin**
-
-Three workspaces now, including Marketing. Marketing accounts are open to everyone but restricted to Follower Growth and Post Amplification only — so they can't be used for anything else by accident.
-
-**📊 The FG sheet is readable now**
-
-Run Health, FG Budgets and each run's invite list are colour-coded — green sent, amber partial or waiting, red failed or out of credits — with proper headers and dates. You can tell what happened at a glance instead of reading raw cells.
-
-**Also in this release**
-
-- Post Amplification unlocked
-- Choose **local or VM** with a tab at the top, instead of a checkbox buried in Launch
-- Sheet write-back from cloud campaigns matches local exactly
-- Identity safeguard sent correctly to the VM
-- **Check Status** campaign retired — the acceptance sweep behind CC+IC is unaffected
-- Warm-up removed (it wasn't earning its place)
+The first major release since 2.120. Campaigns now run on our own cloud infrastructure rather than on your machine, Follower Growth has been rebuilt as a complete workflow, and the Sales Navigator scraper has a shared team board.
 
 ---
 
-**Get it:** download the new DMG from GitHub Releases, drag to Applications, replace the old one.
+## Campaigns run in the cloud
 
-*Questions or anything looks wrong — send a screenshot.*
+Campaigns execute on a dedicated cloud VM instead of your laptop. Start a campaign, close your machine, and it continues sending. Reopening the app reattaches to the run in progress.
+
+Campaigns can also be scheduled to start later, held by the VM. Your machine does not need to be awake.
+
+## Full visibility while a campaign runs
+
+The live status card names the specific person being actioned rather than showing a generic progress state. Each account appears with its own status: invites sent, or the reason it stopped — no credits, logged out, weekly cap reached, or an error — with the full explanation available on hover.
+
+A stalled campaign now explains the cause and the available remedy. An account at LinkedIn's weekly invitation cap reports the date it resets rather than offering a retry that cannot succeed.
+
+## Follower Growth
+
+Follower Growth is now a reviewed workflow: select the roles to target, the application builds the invite list into a dedicated Google Sheet tab, you review and edit it, then launch. Nothing is sent before someone has approved the list.
+
+- **Auto-Pilot** runs the campaign automatically on the 1st and 15th of each month at 06:00. It generates the invite list three days in advance and notifies you that it is ready for review.
+- **FG Master** consolidates the entire warm network into a single sheet tab, built incrementally, with the team's manual funnel data merged in.
+- Role matching now covers the full marketing vocabulary — approximately 50,000 contacts.
+- A completed run reports why it stopped short of its target.
+
+## Sales Navigator scraper
+
+All operators' scrapes appear on one shared board, giving visibility across the team rather than only your own jobs. Scrapes can be configured inline without leaving the board, paused and resumed at any point, and each has a persistent operator log that survives the run.
+
+## Reply checking
+
+Reads the Sales Navigator inbox for Open Profile and InMail replies, with per-account live status and the full message body in a reading pane. Any thread can be opened directly in the correct GoLogin browser profile.
+
+## GoLogin workspaces
+
+Three workspaces are now supported, including Marketing. Marketing accounts are available to all operators but restricted to Follower Growth and Post Amplification, so they cannot be used for other campaign types.
+
+## Reporting
+
+The Follower Growth sheet — Run Health, FG Budgets, and each run's invite list — is now colour-coded and formatted: green for sent, amber for partial or pending, red for failed or out of credits, with proper headers and date formatting.
+
+## Additional changes
+
+- Post Amplification is now available
+- Local and VM execution are selected by tabs at the top of the campaign setup, replacing the checkbox in the Launch step
+- Sheet write-back from cloud campaigns matches local execution exactly
+- The identity safeguard setting is correctly applied to cloud runs
+- The Check Status campaign type has been retired; the acceptance sweep used by Connect + Introduce is unaffected
+- The warm-up step has been removed
+
+---
+
+## Installation
+
+Download the appropriate disk image from the release page:
+
+- **Ortus-Outreach-arm64.dmg** — Apple Silicon (M1 and later)
+- **Ortus-Outreach-intel.dmg** — Intel Macs
+
+Drag the application to Applications, replacing the existing version. On first launch, right-click the application and select Open to bypass the Gatekeeper warning, as the build is unsigned.
+
+Please report any issues with a screenshot.
