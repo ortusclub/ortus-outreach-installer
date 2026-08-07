@@ -20112,6 +20112,15 @@ const FG_DEFAULT_CHIPS = [
   'consumer insight', 'customer insight', 'market insight',
   'influencer', 'community manager', 'audience development',
   'digital strategy', 'chief digital',
+  // Commercial-adjacent, added to take the pool from 36.6k to 50.5k. Looser than
+  // the block above: "commercial" and "customer success" also catch commercial
+  // banking and supply-chain titles, and "chief executive" catches every CEO
+  // regardless of sector. Kept because step 2 makes you read the list before it
+  // fires — breadth is cheap when the review is real. Drop these back out if the
+  // generated tabs start reading like the wrong audience.
+  'commercial', 'partnership', 'revenue', 'customer experience', 'customer success',
+  'media', 'chief executive', 'events', 'event ',
+  'category management', 'trade marketing', 'merchandis',
 ];
 let fgChips = [];
 let _fgBuilt = null;     // last /api/fg/build response { rows, count, eligible, budget, account, month, ... }
