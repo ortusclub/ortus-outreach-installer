@@ -3944,31 +3944,88 @@ app.post('/api/scrape/campaigns', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Sales Nav board cache.
+//
+// Measured 2026-08-07, per request: the engine's GET /api/jobs takes 7.7-10s
+// and returns 14.7MB (2,807 jobs). Grouping is 9ms and the override loop is
+// 1ms — the engine round trip IS the latency, and it sat directly on the
+// request path. Three separate client paths pay it: the 2.5s board poll,
+// openScrapeSetupFor(), and rerunScrape(), the last two only to .find() a
+// single record by id.
+//
+// So the board never painted on open, while the campaigns dashboard (which
+// renders local files) is instant. Serve from memory and refresh behind the
+// request instead: a stale board is enormously better than no board, and the
+// 2.5s poll replaces it within one tick anyway.
+const SCRAPE_BOARD_TTL = 15000; // refresh in the background past this age
+let _scrapeBoard = null;        // { at, campaigns, me }
+let _scrapeBoardInflight = null; // dedupes concurrent refreshes into one fetch
+
+async function refreshScrapeBoard() {
+  // SHARED board: group EVERY operator's engine jobs into strips (not just
+  // this install's). Each job is tagged with its own userId + owner email,
+  // so the board shows the whole team's scrapes.
+  const jobsRes = await getAllScrapeJobsFast();
+  if (jobsRes && jobsRes.error) throw new Error(jobsRes.error);
+  const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes && jobsRes.jobs) || [];
+  const me = getOperatorEmail() || '';
+  const campaigns = groupJobsIntoCampaigns(jobs, { currentEmail: me, currentOperatorId: getOperatorId() });
+  // Apply any saved config overrides (operator edited + Saved a scrape's config)
+  // so the board strip AND openScrapeSetupFor reflect the saved edits on re-open.
+  for (const c of campaigns) {
+    const ov = await getScrapeOverride(c.id);
+    if (ov) {
+      if (ov.searchUrls && ov.searchUrls.length) c.searchUrls = ov.searchUrls;
+      if (ov.sheetUrl) c.sheetUrl = ov.sheetUrl;
+      if (ov.tabName) c.tabName = ov.tabName;
+      if (ov.name) c.name = ov.name;
+      if (ov.profileIds && ov.profileIds.length) c.profileIds = ov.profileIds;
+      c._edited = true;
+    }
+  }
+  _scrapeBoard = { at: Date.now(), campaigns, me };
+  return _scrapeBoard;
+}
+
+/** Refresh at most once at a time; callers share the in-flight promise. */
+function refreshScrapeBoardOnce() {
+  if (!_scrapeBoardInflight) {
+    _scrapeBoardInflight = refreshScrapeBoard().finally(() => { _scrapeBoardInflight = null; });
+  }
+  return _scrapeBoardInflight;
+}
+
+/**
+ * The board, served from memory. Only the very first call after boot can block;
+ * everything after it returns immediately and refreshes behind the response.
+ */
+async function getScrapeBoard() {
+  if (!_scrapeBoard) return refreshScrapeBoardOnce();
+  if (Date.now() - _scrapeBoard.at > SCRAPE_BOARD_TTL) {
+    // Stale — kick a refresh but DON'T await it. A failed background refresh
+    // must not reject into a caller that already has good data to return.
+    refreshScrapeBoardOnce().catch(() => { /* keep serving the last good board */ });
+  }
+  return _scrapeBoard;
+}
+
 app.get('/api/scrape/campaigns', async (_req, res) => {
   try {
-    // SHARED board: group EVERY operator's engine jobs into strips (not just
-    // this install's). Each job is tagged with its own userId + owner email,
-    // so the board shows the whole team's scrapes. Fast variant (single attempt,
-    // 10s) — this route is polled every 2.5s, so the next poll is the retry.
-    const jobsRes = await getAllScrapeJobsFast();
-    if (jobsRes && jobsRes.error) return res.status(502).json({ error: jobsRes.error });
-    const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes && jobsRes.jobs) || [];
-    const me = getOperatorEmail() || '';
-    const campaigns = groupJobsIntoCampaigns(jobs, { currentEmail: me, currentOperatorId: getOperatorId() });
-    // Apply any saved config overrides (operator edited + Saved a scrape's config)
-    // so the board strip AND openScrapeSetupFor reflect the saved edits on re-open.
-    for (const c of campaigns) {
-      const ov = await getScrapeOverride(c.id);
-      if (ov) {
-        if (ov.searchUrls && ov.searchUrls.length) c.searchUrls = ov.searchUrls;
-        if (ov.sheetUrl) c.sheetUrl = ov.sheetUrl;
-        if (ov.tabName) c.tabName = ov.tabName;
-        if (ov.name) c.name = ov.name;
-        if (ov.profileIds && ov.profileIds.length) c.profileIds = ov.profileIds;
-        c._edited = true;
-      }
-    }
-    res.json({ campaigns, me });
+    const board = await getScrapeBoard();
+    res.json({ campaigns: board.campaigns, me: board.me, cachedAt: board.at });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// One scrape by board id. openScrapeSetupFor() and rerunScrape() used to pull
+// the whole 22MB list and .find() in it; this hands them the single record.
+app.get('/api/scrape/campaigns/:id', async (req, res) => {
+  try {
+    const board = await getScrapeBoard();
+    const rec = (board.campaigns || []).find((c) => c.id === req.params.id) || null;
+    res.json({ campaign: rec, me: board.me });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -6272,6 +6329,13 @@ app.listen(PORT, async () => {
 
   await initNotifier();
   console.log(`  ✦ Notifications: ${process.env.SMTP_HOST ? 'email enabled' : 'email DISABLED — set SMTP_HOST/PORT/USER/PASS + NOTIFY_EMAILS'}\n`);
+
+  // Warm the Sales Nav board so the FIRST open is instant too, not just later
+  // ones. Deliberately not awaited — the engine fetch takes ~8s and must not
+  // hold up boot. Failure is silent: the route falls back to fetching on demand.
+  refreshScrapeBoardOnce()
+    .then((b) => console.log(`  ✦ Sales Nav board: warmed (${(b.campaigns || []).length} scrapes)`))
+    .catch((e) => console.log(`  ✦ Sales Nav board: warm-up failed (${e.message}) — will load on demand`));
 
   // Bulk "Delete all drafts" soft-deletes (trashedAt); hard-purge anything past
   // the 1-week grace on boot, then daily.

@@ -572,9 +572,10 @@ async function openScrapeSetupFor(cid) {
     _snOpenedScrape = { cid, tabName: '' };
     try { scrapeLogLines = []; scrapeLogSince = 0; if (typeof renderScrapeLogPanel === 'function') renderScrapeLogPanel(); } catch (_) { /* */ }
     try {
-      const r = await fetch('/api/scrape/campaigns');
+      // Single record, not the whole board — the list response is ~22MB.
+      const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}`);
       const d = await r.json();
-      const rec = (d.campaigns || []).find((c) => c.id === cid);
+      const rec = d.campaign;
       if (rec) {
         if (urls) urls.value = (rec.searchUrls || []).join('\n');
         if (sheet) sheet.value = rec.sheetUrl || '';
@@ -628,9 +629,10 @@ async function rerunScrape(cid, btn) {
   if (btn) btn.disabled = true;
   const toast = (m) => { try { showCampaignToast(m, 4500); } catch (_) { try { alert(m); } catch (_) {} } };
   try {
-    const r = await fetch('/api/scrape/campaigns');
+    // Single record, not the whole board — the list response is ~22MB.
+    const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}`);
     const d = await r.json();
-    const rec = (d.campaigns || []).find((c) => c.id === cid);
+    const rec = d.campaign;
     if (!rec) { toast('Re-run: couldn’t find this scrape’s config — try Open instead.'); return; }
     const urls = (rec.searchUrls || []).filter(Boolean);
     const sheetUrl = rec.sheetUrl || '';
