@@ -7455,6 +7455,15 @@ async function _refreshCloudActiveStatus(id) {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
     let leads = [];
     try { const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json(); if (lr && Array.isArray(lr.leads)) leads = lr.leads; } catch (_) { /* */ }
+    // Live Status is a SECOND render path — the board's _refreshCloudItems does
+    // this same enrichment, and without it here the card on this route falls back
+    // to a bare "Working…" with no pills while the dashboard's card is complete.
+    if (leads.length) {
+      _cloudAcctCounts.set(id, _cloudCountsByAccount(leads));
+      if (d) d._fgLast = _fgLastActivity(leads);
+    }
+    // The detail cache is what renderCloudAccountsPanel reads the mode off.
+    if (d) _cloudDetailCache.set(id, d);
     // Engine's per-account check-sweep events (reliable — one line per account the
     // VM opens, e.g. "🖥️ Checking liza.advocate@ortus.solutions…"). Captured here
     // and merged into the log by _combineCloudEvents. Newest-first from Redis.
