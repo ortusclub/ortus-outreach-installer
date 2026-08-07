@@ -636,6 +636,11 @@ function _snCanControl(c) {
 // board's #sn-setup-body, leaving a placeholder so we can move them back exactly.
 const SN_SETUP_SECTIONS = ['nav-scrape', 'nav-accounts', 'nav-scrape-launch'];
 let _snSetupOpen = false;
+// The composer borrows the wizard's ONE campaign-mode select. Remember what it
+// was so closing puts it back — otherwise the wizard stays in scrape layout
+// (2b showing, Throughput/Templates/Sheet/Launch hidden) until the operator
+// happens to click a campaign-type tile.
+let _snPrevMode = null;
 
 function _snMoveSetupIn() {
   const body = document.getElementById('sn-setup-body');
@@ -691,7 +696,12 @@ async function openScrapeSetupFor(cid) {
   if (!host) return;
   _scrapePausedLocal = false; // fresh open — don't inherit a prior scrape's paused state
   const sel = document.getElementById('campaign-mode');
-  if (sel) sel.value = 'sales_nav_scrape';
+  if (sel) {
+    // Only capture on the FIRST open — re-opening the composer must not record
+    // 'sales_nav_scrape' as the mode to restore.
+    if (_snPrevMode === null && sel.value !== 'sales_nav_scrape') _snPrevMode = sel.value;
+    sel.value = 'sales_nav_scrape';
+  }
   _snMoveSetupIn();
   if (typeof onModeChange === 'function') onModeChange(); // reveals the scrape sections
   _snHeroName();
@@ -879,6 +889,16 @@ function closeScrapeSetup() {
   _snSetupOpen = false;
   _snOpenedScrape = null; // back to the board — stop showing an opened scrape's log
   _setScrapeSaveVisible(false);
+  // Hand the wizard back the mode it had. Restoring the select alone isn't
+  // enough — onModeChange() is what re-shows Throughput/Templates/Sheet/Launch
+  // and hides 2b, so the wizard was carrying scrape layout into a normal
+  // campaign until a type tile was clicked.
+  const sel = document.getElementById('campaign-mode');
+  if (sel && sel.value === 'sales_nav_scrape') {
+    sel.value = _snPrevMode || 'connect_only';
+    if (typeof onModeChange === 'function') { try { onModeChange(); } catch (_) { /* */ } }
+  }
+  _snPrevMode = null;
 }
 window.closeScrapeSetup = closeScrapeSetup;
 
