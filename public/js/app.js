@@ -34,7 +34,7 @@ import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
-import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail } from '/js/scrape-board.mjs';
+import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
@@ -3585,10 +3585,15 @@ async function startScrapeJob() {
   // they immediately see the new card under "Now running" (no more feeling stuck
   // in the setup with no way back).
   if (started > 0) {
-    toast(`Started — see it under “Now running”.`);
-    try { if (typeof closeScrapeSetup === 'function') closeScrapeSetup(); } catch (_) { /* */ }
-    try { pollSalesNavBoard(); } catch (_) { /* */ }
-    try { document.getElementById('sn-board')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ }
+    toast(`Started — collecting now. Live status is right here.`);
+    // Stay on the Launch card so the operator watches the scrape come alive —
+    // rather than closing the composer and jumping to the board, which flashes
+    // "No scrapes yet" until its first (slow) poll lands and reads like a failure.
+    // Kick an immediate refresh + scroll to the card so it fills at once; the board
+    // still updates in the background.
+    try { pollSalesNavBoard(); } catch (_) { /* keep the board fresh in the background */ }
+    try { await pollScrapeJobs(); } catch (_) { /* fill the live-status card now */ }
+    try { document.getElementById('nav-scrape-launch')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ }
   }
   startScrapePolling();
 }
@@ -3621,7 +3626,11 @@ async function stopScrapeJob() {
   await _scrapeControlAll('/api/scrape/stop');
   _scrapePausedLocal = false;
   _applyScrapePauseButton();
-  stopScrapePolling();
+  // Keep polling briefly so the card reflects the STOP — jobs flip to cancelled/
+  // done with their final lead counts — instead of freezing on the last "running"
+  // frame. Poll now + once more after the engine has cancelled, then stop the loop.
+  try { await pollScrapeJobs(); } catch (_) { /* */ }
+  setTimeout(async () => { try { await pollScrapeJobs(); } catch (_) { /* */ } stopScrapePolling(); }, 5000);
 }
 
 // Apply a control action (pause/stop) keyed by profileId on the engine.
@@ -3952,7 +3961,9 @@ async function pollScrapeJobs() {
     const r = await fetch('/api/scrape/jobs');
     const res = await r.json();
     if (res && res.error) {
-      el.innerHTML = `<div style="color:var(--gray);font-size:12px;padding:10px 0;">${escHtml(res.error)}</div>`;
+      const busy = /timeout|aborted|network|fetch/i.test(String(res.error));
+      el.innerHTML = `<div style="color:var(--gray);font-size:12px;padding:10px 0;">${busy ? "Couldn't reach the scraper engine (it's busy) — retrying. A running scrape isn't affected." : escHtml(res.error)}</div>`;
+      _setScrapeVjCard({ leads: 0, pages: 0, accounts: 0, done: 0, total: 0, status: busy ? 'stalled' : 'idle', errorText: res.error, tabs: [] });
       renderScrapeQueueTab([]);
       return;
     }
@@ -3965,6 +3976,7 @@ async function pollScrapeJobs() {
     if (!jobs.length) {
       el.innerHTML = '<div class="scrape-job-empty">No scrape jobs yet.</div>';
       _setScrapeFoot(0, 0, 0);
+      _setScrapeVjCard({ leads: 0, pages: 0, accounts: 0, done: 0, total: 0, status: 'idle', tabs: [] });
       renderScrapeQueueTab([]);
       return;
     }
@@ -3986,8 +3998,18 @@ async function pollScrapeJobs() {
         </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
     }).join('');
     const totalLeads = jobs.reduce((a, j) => a + (j.profiles || 0), 0);
+    const totalPages = jobs.reduce((a, j) => a + (j.pages || 0), 0);
+    const accounts = new Set(jobs.map((j) => j.profileId).filter(Boolean)).size;
     const doneCount = jobs.filter((j) => j.state === 'done').length;
     _setScrapeFoot(totalLeads, doneCount, jobs.length);
+    _setScrapeVjCard({
+      leads: totalLeads, pages: totalPages, accounts, done: doneCount, total: jobs.length,
+      status: campaignStatus(jobs),
+      name: _scrapeVjName(),
+      errorText: (jobs.find((j) => j.error) || {}).error || '',
+      queueEta: (() => { const q = jobs.find((j) => j.state === 'queued' && j.etaMs); return q ? fmtEta(q.etaMs) : ''; })(),
+      tabs: jobs.map((j) => j.tabName).filter(Boolean),   // scope the live log to THESE scrapes only
+    });
     renderScrapeQueueTab(jobs);
     _syncScrapeDock(jobs);
   } catch (_) { /* keep last render */ }
@@ -4024,6 +4046,140 @@ function _setScrapeFoot(leads, done, total) {
   const c = document.getElementById('scrape-foot-cap');
   if (b) b.textContent = String(leads);
   if (c) c.textContent = total ? `leads scraped · ${done} of ${total} done` : 'leads scraped';
+}
+
+// The scrape name shown on the vj-card (the operator's campaign/tab name; falls
+// back to a generic label so the card is never blank).
+function _scrapeVjName() {
+  const n = (document.getElementById('scrape-name') || {}).value
+    || (_snOpenedScrape && _snOpenedScrape.tabName) || '';
+  return String(n).trim() || 'Sales Nav Scrape';
+}
+
+// Scrape-specific labels for the live-status card.
+const _SCRAPE_VJ = {
+  running: { eyebrow: 'Collecting', state: 'Collecting', l1: 'Collecting leads from Sales Navigator…' },
+  queued:  { eyebrow: 'In queue',   state: 'In queue',   l1: 'Waiting in the queue for an account…' },
+  done:    { eyebrow: 'Done',       state: 'Done',       l1: 'Finished.' },
+  error:   { eyebrow: 'Stopped',    state: 'Stopped',    l1: 'Stopped before finishing.' },
+  idle:    { eyebrow: 'No scrape running', state: 'Idle', l1: 'Add search URLs and pick accounts, then press Start.' },
+  stalled: { eyebrow: 'Reconnecting…', state: 'Engine busy', l1: "Can't reach the scraper engine right now — it's busy answering status requests. Retrying… (any running scrape keeps going on the server, and results still land in your sheet.)" },
+};
+
+// Clone the REAL campaign live-status card into the scrape slot ONCE, then fold the
+// ENTIRE scrape UI into it so there's ONE card (no duplicate log or Stop): hero
+// relabeled for a scrape, the Jobs/Queue tabs + panes moved below the live log, and
+// the scrape footer (leads total + Start/Stop/View/Save dock) moved in as the card
+// footer. The separate bottom card is then hidden. Returns the card root.
+function _ensureScrapeVjCard() {
+  const slot = document.getElementById('scrape-vjcard-slot');
+  if (!slot) return null;
+  let root = slot.querySelector('.vj-card');
+  if (root) return root;
+  const html = (typeof vjCardSkeleton === 'function') ? vjCardSkeleton('scrape') : '';
+  if (!html) return null;
+  slot.innerHTML = html;
+  root = slot.querySelector('.vj-card');
+  if (!root) return null;
+  root.classList.add('sn-scrape-vjcard', 'is-detailed');
+
+  // Hero → scrape labels (data-f value spans are filled each poll).
+  const meta = root.querySelector('.vj-meta');
+  if (meta) meta.innerHTML =
+    '<span><b data-f="activeSent">0</b> of <span data-f="activeTotal">0</span> searches done</span>' +
+    '<span><b data-f="scrapePages">0</b> pages · <b data-f="scrapeLeads">0</b> leads</span>';
+  const stats = root.querySelector('.vj-stats');
+  if (stats) stats.innerHTML =
+    '<span><b data-f="activeAccounts">0</b> accounts</span>' +
+    '<span>· <b data-f="sendingLbl">Idle</b></span>';
+  // The hero controls slot is unused — the Start/Stop/View dock moves in below.
+  const ctrl = root.querySelector('.vj-controls'); if (ctrl) ctrl.innerHTML = '';
+
+  // Fold the bottom card's content into this one card, then hide it.
+  const statusCard = document.querySelector('#nav-scrape-launch .scrape-statuscard');
+  if (statusCard) {
+    // Drop the Logs tab — the live log above replaces it.
+    const logsBtn = statusCard.querySelector('.scrape-tab[data-stab="logs"]'); if (logsBtn) logsBtn.remove();
+    const logsPane = document.getElementById('scrape-tab-logs'); if (logsPane) logsPane.remove();
+    // Move the Jobs/Queue tabs + panes + footer (leads + dock) into the card.
+    const extra = document.createElement('div');
+    extra.className = 'sn-scrape-extra';
+    const loghead = statusCard.querySelector('.ssc-loghead'); if (loghead) extra.appendChild(loghead);
+    const jobs = document.getElementById('scrape-tab-jobs'); if (jobs) extra.appendChild(jobs);
+    const queue = document.getElementById('scrape-tab-queue'); if (queue) extra.appendChild(queue);
+    const foot = statusCard.querySelector('.ssc-foot'); if (foot) extra.appendChild(foot);
+    // Drop the footer VIEW button — each Jobs row already has its own VIEW.
+    const footView = document.getElementById('btn-scrape-view'); if (footView) footView.remove();
+    root.appendChild(extra);
+    statusCard.style.display = 'none';
+  }
+
+  // Log-panel "Copy all" → scrape console.
+  const acts = root.querySelector('.vj-log-acts');
+  if (acts) acts.innerHTML = '<button type="button" class="vj-log-act" onclick="copyScrapeLog()">Copy all</button>';
+  return root;
+}
+
+// Fill the one scrape card each poll — fields set directly (NOT via fillVjCard,
+// which would re-render campaign controls/live-activity every tick), plus the live
+// log rendered from the scrape console with the campaign log-line renderer.
+function _setScrapeVjCard(s) {
+  const root = _ensureScrapeVjCard();
+  if (!root) return;
+  const state = s.status || 'idle';
+  const V = _SCRAPE_VJ[state] || _SCRAPE_VJ.idle;
+  const leads = s.leads || 0, pages = s.pages || 0, accounts = s.accounts || 0;
+  const done = s.done || 0, total = s.total || 0;
+  const idle = state === 'idle';
+  const setF = (f, v) => { const e = root.querySelector(`[data-f="${f}"]`); if (e) e.textContent = String(v); };
+
+  setF('activeName', idle ? 'No scrape running' : (s.name || _scrapeVjName()));
+  setF('activeEyebrow', V.eyebrow);
+  setF('sendingLbl', V.state);
+  setF('activeSent', done);
+  setF('activeTotal', total);
+  setF('scrapePages', pages);
+  setF('scrapeLeads', leads);
+  setF('activeAccounts', accounts);
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  setF('activePct', pct);
+  const bar = root.querySelector('[data-f="activeBar"]'); if (bar) bar.style.width = pct + '%';
+  const glyph = root.querySelector('[data-f="activeGlyph"]'); if (glyph) glyph.textContent = 'SN';
+
+  // Live line.
+  const live = root.querySelector('[data-f="active-live"]');
+  if (live) {
+    live.hidden = false;
+    let l1 = V.l1, l2 = '';
+    if (state === 'running') l2 = `${leads} lead${leads === 1 ? '' : 's'} so far · ${pages} page${pages === 1 ? '' : 's'} · ${accounts} account${accounts === 1 ? '' : 's'}`;
+    else if (state === 'queued') l2 = s.queueEta ? `starts in ~${s.queueEta}` : '';
+    else if (state === 'done') l2 = `${leads} lead${leads === 1 ? '' : 's'} collected across ${total} search${total === 1 ? '' : 'es'}`;
+    else if (state === 'error') { l1 = s.errorText || V.l1; }
+    setF('activeLiveIco', '›'); setF('activeLiveL1', l1); setF('activeLiveL2', l2);
+  }
+
+  // Live log — the scrape console (scrapeLogLines). Operator scoping is done at the
+  // source (the /api/logs?userId= feed), NOT filtered here — a client-side tab-name
+  // filter wrongly hid the operator's own lines when the engine tab name differed.
+  const logEl = root.querySelector('[data-f="active-log"]');
+  if (logEl) {
+    const src = Array.isArray(scrapeLogLines) ? scrapeLogLines : [];
+    const head = root.querySelector('.vj-log-head .vj-details-head');
+    if (!src.length) {
+      logEl.innerHTML = '<div style="padding:6px 2px;color:var(--gray);opacity:.75;white-space:normal;line-height:1.6;">No activity yet — your scrape events appear here once it starts.</div>';
+      if (head) head.textContent = 'Live log';
+    } else if (typeof v3RenderLogLine === 'function') {
+      const lines = src.slice(-15).map((l) => {
+        let iso = ''; try { iso = new Date(l.ts).toISOString(); } catch (_) { /* */ }
+        return `[${iso}] ${l.tabName ? l.tabName + ' — ' : ''}${l.message || ''}`;
+      });
+      logEl.innerHTML = lines.map((x) => v3RenderLogLine(x)).join('');
+      logEl.scrollTop = logEl.scrollHeight;
+      if (head) head.textContent = `Live log · last ${lines.length} event${lines.length === 1 ? '' : 's'}`;
+    }
+  }
+
+  root.classList.toggle('is-queued', state === 'queued');
 }
 
 // app.js is loaded as a <script type="module">, so these are module-scoped and
