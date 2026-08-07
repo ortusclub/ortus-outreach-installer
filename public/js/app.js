@@ -20441,11 +20441,11 @@ function fgtlRenderPeople() {
         }
       }
     }
-    // Don't block on a 0-credit SNAPSHOT — credits refill on accept/withdraw, so
-    // the account may have free slots again by run time (the live modal decides).
-    // Only a wrong-company (ineligible) account or a zero-match one is truly addable-never.
-    const blocked = zero || !elig.eligible;
-    const label = isIn ? 'added' : !elig.eligible ? 'can’t invite' : zero ? 'no match' : '+ add';
+    // Accounts are IN by default now — this button drops one out of the run (or
+    // puts it back). Accounts that simply cannot send say why, and aren't clickable.
+    const blocked = !fgtlCanSend(p);
+    const why = !elig.eligible ? 'can’t invite' : !p.paired ? 'no profile' : zero ? 'no match' : '';
+    const label = blocked ? why : isIn ? 'exclude' : 'include';
     return `<div class="fgtl-prow ${isIn ? 'in' : ''}">
       <div class="fgtl-rowmain">
         <div class="fgtl-emline"><span class="em">${escHtml(p.email)}</span>${pill}</div>
@@ -20512,13 +20512,50 @@ function fgtlIsReady(p) {
   return true;
 }
 function fgtlReadyPeople() { return fgtlPeople.filter(fgtlIsReady); }
+// Accounts are opt-out now, so this strip reports what IS sending, and the
+// button only has work to do when something has been excluded.
 function fgtlRenderReady() {
-  const n = fgtlReadyPeople().length;
-  const nEl = document.getElementById('fgtl-ready-n'); if (nEl) nEl.textContent = n;
+  const nEl = document.getElementById('fgtl-ready-n');
+  if (nEl) nEl.textContent = Object.keys(fgtlPicked).length;
   const btn = document.getElementById('fgtl-ready-btn');
-  if (btn) { btn.classList.toggle('dis', n === 0); btn.disabled = n === 0; }
+  if (btn) { const off = fgtlExcluded.size === 0; btn.classList.toggle('dis', off); btn.disabled = off; }
 }
-function fgtlRenderAll() { fgtlRenderPeople(); fgtlRenderCart(); fgtlRenderReady(); }
+function fgtlRenderAll() { fgtlRenderPeople(); fgtlRenderCart(); fgtlRenderReady(); fgtlRenderAnswer(); }
+
+// Accounts the operator has explicitly taken OUT of the run. Everything else
+// that can send is in by default — picking accounts is no longer a step, so the
+// only thing worth remembering is the exceptions.
+const fgtlExcluded = new Set();
+
+// Can this account send at all? (Ortus account + a paired GoLogin profile + at
+// least one connection matching the current roles.) A 0-credit snapshot is NOT
+// disqualifying — credits refill when invites are accepted or withdrawn.
+function fgtlCanSend(p) {
+  return !!(p && p.paired && p.matched && fgtlEligibility(p.email).eligible);
+}
+
+// Everyone who can send is in the run unless explicitly excluded.
+function fgtlAutoSelect() {
+  for (const p of fgtlPeople) {
+    const on = fgtlCanSend(p) && !fgtlExcluded.has(p.email);
+    if (on && !fgtlPicked[p.email]) fgtlPicked[p.email] = {};
+    else if (!on && fgtlPicked[p.email]) delete fgtlPicked[p.email];
+  }
+}
+
+// The headline: how many people this run would invite, and from how many accounts.
+function fgtlRenderAnswer() {
+  const emails = Object.keys(fgtlPicked);
+  const total = emails.reduce((s, em) => {
+    const p = fgtlPeople.find((x) => x.email === em);
+    const prof = p && (fgtlPicked[em].profile || p.paired);
+    return s + (prof ? fgtlInvitesLeft(p, prof) : 0);
+  }, 0);
+  const n = document.getElementById('fg-answer-n');
+  if (n) n.textContent = total.toLocaleString();
+  const acc = document.getElementById('fg-answer-acc');
+  if (acc) acc.textContent = `${emails.length} account${emails.length === 1 ? '' : 's'}`;
+}
 
 async function fgtlRefreshMatched() {
   // Show a spinner while the (sometimes slow) colleagues fetch is in flight, so
@@ -20532,6 +20569,7 @@ async function fgtlRefreshMatched() {
     const r = await fetch(`/api/fg/colleagues?roles=${roles}`);
     const j = await r.json();
     fgtlPeople = (j.colleagues || []).map((c) => ({ ...c, paired: fgtlAutoPairName(c.email) }));
+    fgtlAutoSelect();
     fgtlRenderAll();
   } catch (_) {
     if (peopleEl) peopleEl.innerHTML = '<div class="fgtl-loading">Couldn’t load the team — try again.</div>';
@@ -20582,9 +20620,26 @@ function fgtlBindBoard() {
     const chipX = e.target.closest('[data-fgtlchip]');
     if (chipX) { const k = chipX.dataset.fgtlchip; const i = fgtlChips.indexOf(k); if (i > -1) { fgtlChips.splice(i, 1); fgtlRenderChips(); clearTimeout(_fgtlRefreshTimer); _fgtlRefreshTimer = setTimeout(fgtlRefreshMatched, 250); } return; }
     // chip input keydown handled in bindBoard for chip-input
-    const add = e.target.closest('[data-fgadd]'); if (add && !add.disabled) { fgtlPicked[add.dataset.fgadd] = {}; fgtlRenderAll(); return; }
-    const rm = e.target.closest('[data-fgrm]'); if (rm) { delete fgtlPicked[rm.dataset.fgrm]; fgtlRenderAll(); return; }
-    if (e.target.id === 'fgtl-clear') { fgtlPicked = {}; fgtlRenderAll(); return; }
+    // One button per account, toggling it out of / back into the run.
+    const add = e.target.closest('[data-fgadd]');
+    if (add && !add.disabled) {
+      const em = add.dataset.fgadd;
+      if (fgtlExcluded.has(em)) fgtlExcluded.delete(em); else fgtlExcluded.add(em);
+      fgtlAutoSelect(); fgtlRenderAll(); return;
+    }
+    const rm = e.target.closest('[data-fgrm]'); if (rm) { fgtlExcluded.add(rm.dataset.fgrm); fgtlAutoSelect(); fgtlRenderAll(); return; }
+    if (e.target.id === 'fgtl-clear') { for (const p of fgtlPeople) fgtlExcluded.add(p.email); fgtlAutoSelect(); fgtlRenderAll(); return; }
+    if (e.target.id === 'fg-who-toggle') {
+      const panel = document.getElementById('fg-who-panel');
+      if (panel) { const open = panel.style.display !== 'none'; panel.style.display = open ? 'none' : ''; e.target.innerHTML = open ? 'Which accounts? &#9662;' : 'Hide accounts &#9652;'; }
+      return;
+    }
+    if (e.target.id === 'fg-byo-toggle') {
+      e.preventDefault();
+      const panel = document.getElementById('fg-byo-panel');
+      if (panel) panel.style.display = panel.style.display === 'none' ? '' : 'none';
+      return;
+    }
     const ch = e.target.closest('[data-fgchange]'); if (ch) { (fgtlPicked[ch.dataset.fgchange] ||= {}).changing = true; fgtlRenderCart(); return; }
     const opt = e.target.closest('[data-fgopt]'); if (opt) { const em = opt.dataset.fgopt; fgtlPicked[em].profile = opt.dataset.name; fgtlPicked[em].changing = false; fgtlPicked[em].pq = ''; fgtlRenderCart(); return; }
     if (e.target.id === 'fgtl-db-toggle') { const b = document.getElementById('fgtl-db-body'); if (b) b.style.display = b.style.display === 'none' ? 'block' : 'none'; return; }
@@ -20595,7 +20650,8 @@ function fgtlBindBoard() {
       return;
     }
     if (e.target.id === 'fgtl-ready-btn' && !e.target.disabled) {
-      fgtlReadyPeople().forEach((p) => { fgtlPicked[p.email] = {}; });
+      fgtlExcluded.clear();
+      fgtlAutoSelect();
       fgtlRenderAll();
       return;
     }
@@ -21032,6 +21088,7 @@ async function initFollowerGrowth() {
   fgtlRenderChips();
   fgtlBindBoard();
   fgtlBindLaunch();
+  fgReviewRenderGate();
 
   // 4b. Ensure SoO is loaded so launch-list eligibility (Company col AQ) is
   // accurate on first render — else every account shows optimistically eligible.
@@ -21424,7 +21481,7 @@ async function fgtlGenerateList() {
   const pairs = fgtlPairs();
   const status = document.getElementById('fgtl-list-status');
   const btn = document.getElementById('fgtl-generate');
-  if (!pairs.length) { if (status) status.textContent = 'Add at least one account to the launch list first.'; return; }
+  if (!pairs.length) { if (status) status.textContent = 'No account can send right now — open “Which accounts?” above to see why.'; return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
   if (status) status.textContent = 'Building the list from roles + connections…';
   try {
@@ -21436,13 +21493,64 @@ async function fgtlGenerateList() {
     if (!r.ok || d.error) { if (status) status.textContent = 'Could not generate: ' + (d.error || r.statusText); return; }
     _fgtlListTab = d.tab || '';
     const skips = (d.skipped && d.skipped.length) ? ` · ${d.skipped.length} account(s) skipped` : '';
-    if (status) status.innerHTML = `✓ Wrote <b>${escHtml(d.tab)}</b> — ${d.count} people${skips}. Review/edit that tab in the FG sheet, then fire it from <b>Live status</b> ↓ (Run it now).`;
+    if (status) status.textContent = '';
+    fgReviewSetList(d.tab, d.count, skips);
     fgwSetListTab(_fgtlListTab);
   } catch (err) {
     if (status) status.textContent = 'Could not generate: ' + (err && err.message ? err.message : String(err));
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = 'Generate list &#8594; writes a tab to the sheet'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Write the list to the sheet'; }
   }
+}
+
+// ── Review gate ────────────────────────────────────────────────────────────
+// A list can be fired only once someone has opened it in the sheet. The lock is
+// UI-level and deliberately so: it exists to make the review habitual, not to
+// stop a determined operator (Auto-Pilot's scheduled runs are unaffected).
+let _fgReviewedTab = '';
+
+function fgReviewSetList(tab, count, skips) {
+  const box = document.getElementById('fg-review-state');
+  const line = document.getElementById('fg-review-line');
+  if (line) line.innerHTML = `Written to <b>${escHtml(tab)}</b> · ${Number(count || 0).toLocaleString()} people${skips || ''}`;
+  if (box) box.style.display = '';
+  _fgReviewedTab = '';
+  fgReviewRenderGate();
+}
+
+function fgReviewRenderGate() {
+  const gate = document.getElementById('fg-gate');
+  const title = gate && gate.querySelector('.rv-gate-title');
+  const body = gate && gate.querySelector('.rv-gate-body');
+  const meta = document.getElementById('fg-review-meta');
+  const ok = !!_fgtlListTab && _fgReviewedTab === _fgtlListTab;
+  if (gate) gate.classList.toggle('unlocked', ok);
+  if (title) title.textContent = ok ? 'Ready to launch' : 'Launch is locked';
+  if (body) {
+    body.textContent = ok
+      ? 'You have opened the tab. Fire it from Live status ↓ (Run it now).'
+      : _fgtlListTab
+        ? 'until the tab has been opened at least once'
+        : 'write a list to the sheet first';
+  }
+  if (meta) meta.textContent = ok ? 'Reviewed — whatever is left in that tab is what gets invited.' : '';
+  // Gate the two ways to fire this list. Never leave a button disabled with no
+  // explanation — the title says why.
+  for (const id of ['fgap-run', 'fgtl-go']) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    if (!_fgtlListTab) continue; // nothing generated yet — leave the button as it was
+    b.disabled = !ok;
+    b.title = ok ? '' : 'Open the invite-list tab in the sheet first — step 2';
+  }
+}
+
+/** Opening the tab IS the review — record it, then send them to the sheet. */
+async function fgReviewOpenTab(e) {
+  if (e) e.preventDefault();
+  _fgReviewedTab = _fgtlListTab;
+  fgReviewRenderGate();
+  await fgtlOpenSheet();
 }
 
 /** Reflect the currently-selected invite-list tab into the Live Status head so
@@ -21462,6 +21570,9 @@ function fgtlUseByoTab() {
   if (!tab) { if (status) status.textContent = 'Type the name of an existing tab in the FG sheet.'; return; }
   _fgtlListTab = tab;
   if (status) status.innerHTML = `✓ Will fire from your tab <b>${escHtml(tab)}</b> — go to <b>Live status</b> ↓ and hit Run it now.`;
+  // You filled this tab in yourself, so it is reviewed by definition.
+  _fgReviewedTab = tab;
+  fgReviewRenderGate();
   fgwSetListTab(tab);
 }
 
@@ -21797,6 +21908,8 @@ function fgtlBindLaunch() {
   if (byoBtn && !byoBtn._b) { byoBtn._b = true; byoBtn.addEventListener('click', fgtlUseByoTab); }
   const openSheetBtn = document.getElementById('fgtl-open-sheet');
   if (openSheetBtn && !openSheetBtn._b) { openSheetBtn._b = true; openSheetBtn.addEventListener('click', fgtlOpenSheet); }
+  const openTabBtn = document.getElementById('fg-open-tab');
+  if (openTabBtn && !openTabBtn._b) { openTabBtn._b = true; openTabBtn.addEventListener('click', fgReviewOpenTab); }
   const fgMasterBtn = document.getElementById('fg-master-build');
   // The build runs server-side, so a page reload only loses the poller — re-attach it.
   if (fgMasterBtn && !fgMasterBtn._b) { fgMasterBtn._b = true; fgMasterBtn.addEventListener('click', () => fgMasterBuild(false)); fgMasterBtn.disabled = true; fgMasterPoll(); }
