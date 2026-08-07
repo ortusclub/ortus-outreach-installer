@@ -200,7 +200,10 @@ export async function writeFgMaster(rows, {
 // never comes back in one response. Returns { keys:Set, rows, exists } — `exists`
 // false means there is no tab yet and the caller must do a full build.
 export async function readFgMasterKeys({
-  tab = 'FG Master', post = postFg, pageSize = 100000, onProgress = null,
+  // 100k keys came back as a 1.2MB body after ~40s in the Apps Script — close
+  // enough to the limits that one slow page failed and was read as "no tab".
+  // 25k keeps each page well under both.
+  tab = 'FG Master', post = postFg, pageSize = 25000, onProgress = null,
 } = {}) {
   const keys = new Set();
   let offset = 0;
