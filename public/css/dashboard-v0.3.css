@@ -465,7 +465,14 @@
      record and not as something still happening — no spinner, muted glyph. */
   body[data-dashboard='v3'] .vj-stage.is-done .vj-stage-gly,
   body[data-dashboard='v3'] .vj-stage.is-done .stg-fly i { animation: none; opacity: .45; }
-  body[data-dashboard='v3'] .vj-stage.is-done .vj-stage-secs { display: none; }
+  body[data-dashboard='v3'] .vj-stage.is-done .vj-stage-secs,
+  body[data-dashboard='v3'] .vj-stage.is-done .vj-stage-beat { display: none; }
+  /* Nothing inside a finished stage may spin, pulse or sweep. */
+  body[data-dashboard='v3'] .vj-stage.is-done * { animation: none !important; }
+  body[data-dashboard='v3'] .stg-done {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; font-size: 15px; opacity: .5;
+  }
   body[data-dashboard='v3'] .vj-stage.is-waiting .vj-stage-verb { color: var(--gold, #d4a24a); }
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-fly i,
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-typ i,

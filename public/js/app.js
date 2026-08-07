@@ -21918,7 +21918,7 @@ async function fgtlLaunch() {
       return;
     }
     if (typeof showCampaignToast === 'function') showCampaignToast('☁︎ Cloud Follower Growth dispatched — running on the VM. It keeps going even if you close the app.', 6000);
-    _fgtlCloudId = data.cloudId;
+    _fgtlCloudId = data.cloudId; _fgtlCloudSeen = true;
     _fgtlCloudPairs = {};
     for (const p of pairs) { if (p && p.profileId) _fgtlCloudPairs[String(p.profileId)] = { account: p.account, operator: p.operator }; }
     if (goBtn) { goBtn.style.display = 'none'; goBtn.disabled = false; }
@@ -22257,7 +22257,7 @@ function fgtlBindLaunch() {
 // starts the cloud poll.
 function fgtlAttachCloud(id, pairs) {
   if (!id) return;
-  _fgtlCloudId = id;
+  _fgtlCloudId = id; _fgtlCloudSeen = true;
   _fgtlCloudPairs = {};
   const arr = Array.isArray(pairs) ? pairs : [];
   for (const p of arr) { if (p && p.profileId) _fgtlCloudPairs[String(p.profileId)] = { account: p.account, operator: p.operator }; }
@@ -23661,6 +23661,9 @@ function _fmtElapsed(sec) {
 }
 
 function _stageGlyphHtml(phase) {
+  // A finished run is a record, not an activity: anything that spins or pulses
+  // claims the VM is still working. Static mark only.
+  if (phase === 'done') return '<span class="stg-done">✓</span>';
   if (phase === 'sending') return '<span class="stg-fly"><u></u><i>➤</i><i>➤</i><i>➤</i></span>';
   if (phase === 'introducing') return '<span class="stg-typ"><i></i><i></i><i></i></span>';
   // Waiting gets a SLOW pulse, not a spinner: nothing is turning, and a spinner
@@ -23958,6 +23961,14 @@ window.stageAcctPick = function (el, profileId) {
 function _tickLiveStages() {
   document.querySelectorAll('.vj-stage:not([hidden])').forEach((stage) => {
     const cid = stage.dataset.cid || '';
+    // Finished run: the elapsed clock and the "updated Ns ago" heartbeat are
+    // both statements about a LIVE app↔engine link. On a done card they tick
+    // upward forever and read as "still going". Drop them entirely.
+    if (stage.classList.contains('is-done')) {
+      const beat = stage.querySelector('.vj-stage-beat');
+      if (beat && !beat.hidden) beat.hidden = true;
+      return;
+    }
     const rec = _stagePhaseAt.get(cid);
     const secs = stage.querySelector('.vj-stage-secs');
     if (secs && rec) {
