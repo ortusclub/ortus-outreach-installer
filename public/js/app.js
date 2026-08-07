@@ -21241,6 +21241,40 @@ async function fgtlOpenSheet() {
   } catch (e) { alert('Could not open the FG sheet: ' + (e && e.message ? e.message : String(e))); }
 }
 
+/** Rebuild the FG Master tab (whole warm network + invite ledger) and poll progress. */
+async function fgMasterBuild() {
+  const btn = document.getElementById('fg-master-build');
+  const status = document.getElementById('fg-master-status');
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Starting…';
+  try {
+    const r = await fetch('/api/fg/master/build', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.error) { if (status) status.textContent = d.error || r.statusText; if (btn) btn.disabled = false; return; }
+    fgMasterPoll();
+  } catch (e) {
+    if (status) status.textContent = 'Could not start: ' + (e && e.message ? e.message : String(e));
+    if (btn) btn.disabled = false;
+  }
+}
+
+/** Poll the master build until it finishes; re-enables the button at the end. */
+async function fgMasterPoll() {
+  const btn = document.getElementById('fg-master-build');
+  const status = document.getElementById('fg-master-status');
+  try {
+    const d = await (await fetch('/api/fg/master/status')).json();
+    if (status) {
+      if (d.phase === 'done') status.textContent = `✓ ${d.written} people written (${d.backfilled} already invited).`;
+      else if (d.phase === 'error') status.textContent = 'Failed: ' + (d.error || 'unknown error');
+      else if (d.total) status.textContent = `${d.phase}… ${d.done}/${d.total}`;
+      else status.textContent = d.phase + '…';
+    }
+    if (d.running) { setTimeout(fgMasterPoll, 2000); return; }
+  } catch (_) { if (status) status.textContent = 'Lost contact with the build.'; }
+  if (btn) btn.disabled = false;
+}
+
 /** Generate the invite list from the current roles + cart and write it to a tab. */
 async function fgtlGenerateList() {
   const pairs = fgtlPairs();
@@ -21619,6 +21653,8 @@ function fgtlBindLaunch() {
   if (byoBtn && !byoBtn._b) { byoBtn._b = true; byoBtn.addEventListener('click', fgtlUseByoTab); }
   const openSheetBtn = document.getElementById('fgtl-open-sheet');
   if (openSheetBtn && !openSheetBtn._b) { openSheetBtn._b = true; openSheetBtn.addEventListener('click', fgtlOpenSheet); }
+  const fgMasterBtn = document.getElementById('fg-master-build');
+  if (fgMasterBtn && !fgMasterBtn._b) { fgMasterBtn._b = true; fgMasterBtn.addEventListener('click', fgMasterBuild); }
   const refreshTabsBtn = document.getElementById('fgtl-byo-refresh');
   if (refreshTabsBtn && !refreshTabsBtn._b) { refreshTabsBtn._b = true; refreshTabsBtn.addEventListener('click', fgtlLoadTabs); }
   const editSchedBtn = document.getElementById('fgw-edit-schedule');
