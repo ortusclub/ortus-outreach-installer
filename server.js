@@ -30,8 +30,10 @@ import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeRes
 import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getAllJobsFast as getAllScrapeJobsFast, getLogs as getScrapeLogs, getRunLogs as getScrapeRunLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
 import { addScrapeCampaign, listScrapeCampaigns, getScrapeCampaign, updateScrapeCampaign } from './src/scrape-campaigns.js';
 import { getScrapeOverride, saveScrapeOverride } from './src/scrape-config-overrides.js';
-import { appendAction, readScrapeLog } from './src/scrape-campaign-logs.js';
-import { mergeCampaignsWithJobs, groupJobsIntoCampaigns } from './public/js/scrape-board.mjs';
+import { appendAction, appendScrapeLog, readScrapeLog } from './src/scrape-campaign-logs.js';
+import {
+  mergeCampaignsWithJobs, groupJobsIntoCampaigns, scrapeCampaignId, diffBoardEvents, baseTabName,
+} from './public/js/scrape-board.mjs';
 import { getOperatorId } from './src/operator-id.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft, trashDraft, trashAllDrafts, purgeTrashedDrafts } from './src/drafts.js';
@@ -96,6 +98,7 @@ import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
 import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg, writeFgMaster } from './src/connections/fg-sync.js';
 import { buildMasterRows, invitedIndexFromFgInvites } from './src/connections/fg-master.js';
+import { readSeedDir, mergeFunnelSeeds } from './src/connections/fg-funnel-seed.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
 import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
@@ -2900,7 +2903,7 @@ app.get('/api/fg/sheet-url', async (_req, res) => {
 });
 
 // FG Master build progress — polled by the UI, same shape as _fgSend.
-let _fgMaster = { running: false, phase: 'idle', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, error: null, finishedAt: null };
+let _fgMaster = { running: false, phase: 'idle', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, fromFunnelSheet: 0, error: null, finishedAt: null };
 
 app.get('/api/fg/master/status', (_req, res) => res.json(_fgMaster));
 
@@ -2910,7 +2913,7 @@ app.get('/api/fg/master/status', (_req, res) => res.json(_fgMaster));
 app.post('/api/fg/master/build', async (_req, res) => {
   if (_fgMaster.running) return res.status(409).json({ error: 'A master build is already running.' });
   res.json({ started: true });
-  _fgMaster = { running: true, phase: 'reading', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, error: null, finishedAt: null };
+  _fgMaster = { running: true, phase: 'reading', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, fromFunnelSheet: 0, error: null, finishedAt: null };
   (async () => {
     try {
       let invitedIndex = new Map();
@@ -2925,8 +2928,23 @@ app.post('/api/fg/master/build', async (_req, res) => {
       }
       _fgMaster.phase = 'building';
       const records = listMasterRecords({});
-      const { rows, count, droppedNoUrl } = buildMasterRows(records, invitedIndex);
-      _fgMaster = { ..._fgMaster, phase: 'writing', total: count, droppedNoUrl };
+      const { rows, droppedNoUrl } = buildMasterRows(records, invitedIndex);
+      // Fold in the team's manual funnel sheet (FUNNEL_I) exports, if this
+      // machine has them: ~27k people the Connections DB has never seen, plus
+      // the invites they recorded by hand. Best-effort — a bad export must not
+      // cost us the whole build.
+      let seedStats = { added: 0, enriched: 0, stamped: 0 };
+      try {
+        const seeds = readSeedDir(dataPath('funnel-i'));
+        if (seeds.length) {
+          seedStats = mergeFunnelSeeds(rows, seeds);
+          campaignLog(`[FG-master] manual funnel sheet: +${seedStats.added} new people, ${seedStats.enriched} enriched, ${seedStats.stamped} invites stamped`);
+        }
+      } catch (e) {
+        campaignLog(`[FG-master] could not read the manual funnel export (${e.message}) — building without it`);
+      }
+      const count = rows.length;
+      _fgMaster = { ..._fgMaster, phase: 'writing', total: count, droppedNoUrl, fromFunnelSheet: seedStats.added, backfilled: _fgMaster.backfilled + seedStats.stamped };
       campaignLog(`[FG-master] writing ${count} row(s) (${droppedNoUrl} dropped for no LinkedIn URL)`);
       const out = await writeFgMaster(rows, { onProgress: ({ done, total }) => { _fgMaster.done = done; _fgMaster.total = total; } });
       _fgMaster = { ..._fgMaster, running: false, phase: 'done', written: out.written, finishedAt: new Date().toISOString() };
@@ -3928,6 +3946,33 @@ app.post('/api/campaign/login-done', (_req, res) => {
 // SCRAPER_ENGINE_URL is unset every call returns { error } (never throws), so
 // the UI can show "engine not configured" instead of failing.
 // ---------------------------------------------------------------------------
+// Who is doing this, for the audit line. `admin` mirrors the board's own
+// admin set so a line reads the same way the board labels the actor.
+function scrapeActor(req) {
+  const actor = getOperatorEmail() || (req && req.user) || 'unknown';
+  return { actor, admin: String(actor).toLowerCase() === 'antonio@ortusclub.com' };
+}
+
+/** Best-effort audit line. A logging failure must never fail the operation. */
+async function logScrape(campaignId, message, { level, actor } = {}) {
+  if (!campaignId) return;
+  try { await appendScrapeLog(campaignId, { message, level, actor }); }
+  catch (e) { console.error('scrape log write failed:', campaignId, e.message); }
+}
+
+/**
+ * The board id a launch WILL land on, computed from the same triple the board
+ * groups by. Lets the dispatch path log against the strip before the strip (and
+ * its engine jobs) exist.
+ */
+function boardIdForLaunch({ sheetUrl, tabName, campaignName }) {
+  return scrapeCampaignId({
+    userId: getOperatorId(),
+    sheetUrl: sheetUrl || '',
+    base: (campaignName || baseTabName(tabName) || '').trim(),
+  });
+}
+
 app.post('/api/scrape/start', async (req, res) => {
   const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName } = req.body || {};
   // Stamp the owner server-side (the authoritative "Operating as" email) so the
@@ -3936,6 +3981,23 @@ app.post('/api/scrape/start', async (req, res) => {
     searchUrls, sheetUrl, tabName, profileId, slowMode,
     ownerEmail: getOperatorEmail() || '', campaignName: campaignName || '',
   });
+  // Dispatch was the single biggest blind spot: WHAT was asked for (search URL,
+  // GoLogin profile, destination sheet + tab) was never written down anywhere,
+  // so results landing in the wrong tab left no record of the request.
+  const { actor } = scrapeActor(req);
+  const cid = boardIdForLaunch({ sheetUrl, tabName, campaignName });
+  const urls = (Array.isArray(searchUrls) ? searchUrls : [searchUrls]).filter(Boolean);
+  if (result && result.error) {
+    await logScrape(cid, `✗  Dispatch failed — ${urls.length} search(es) on ${profileId || 'no profile'}: ${result.error}`, { level: 'err', actor });
+  } else {
+    await logScrape(
+      cid,
+      `▶  Dispatched ${urls.length} search(es) · account ${profileId || '?'} · → tab "${tabName || 'Results'}"${slowMode ? ' · slow mode' : ''} by ${actor}`,
+      { actor },
+    );
+    for (const u of urls) await logScrape(cid, `  → ${u}`, { actor });
+    if (sheetUrl) await logScrape(cid, `  → sheet ${sheetUrl}`, { actor });
+  }
   res.status(result && result.error ? 400 : 200).json(result);
 });
 
@@ -3957,17 +4019,30 @@ app.get('/api/scrape/extract-urls', async (req, res) => {
   }
 });
 
-app.post('/api/scrape/pause', async (req, res) => {
-  res.json(await pauseScrape((req.body || {}).profileId));
-});
-
-app.post('/api/scrape/resume', async (req, res) => {
-  res.json(await resumeScrape((req.body || {}).profileId));
-});
-
-app.post('/api/scrape/stop', async (req, res) => {
-  res.json(await stopScrape((req.body || {}).profileId));
-});
+// Pause/Resume/Stop are keyed by profileId on the engine, but the board's own
+// toggle route was the only control path that logged anything — and the strip's
+// buttons call THESE routes directly, so a stop (the most audit-worthy action on
+// a shared board) left no trace at all. The client passes the strip's id so the
+// line lands on the right campaign; without it the control still works, unlogged.
+function scrapeControlRoute(path, run, verb, level) {
+  app.post(path, async (req, res) => {
+    const { profileId, campaignId } = req.body || {};
+    const result = await run(profileId);
+    const { actor, admin } = scrapeActor(req);
+    const failed = result && result.error;
+    await logScrape(
+      campaignId,
+      failed
+        ? `✗  ${verb} failed on account ${profileId || '?'}: ${result.error}`
+        : `${verb} — account ${profileId || '?'} by ${admin ? `${actor} (admin)` : actor}`,
+      { level: failed ? 'err' : level, actor },
+    );
+    res.json(result);
+  });
+}
+scrapeControlRoute('/api/scrape/pause', pauseScrape, '⏸  Paused', 'warn');
+scrapeControlRoute('/api/scrape/resume', resumeScrape, '▶  Resumed', 'info');
+scrapeControlRoute('/api/scrape/stop', stopScrape, '⏹  STOPPED', 'warn');
 
 app.get('/api/scrape/jobs', async (_req, res) => {
   res.json(await getScrapeJobs());
@@ -3987,6 +4062,8 @@ app.post('/api/scrape/campaigns', async (req, res) => {
       profileIds: Array.isArray(profileIds) ? profileIds : [],
       searchUrls: Array.isArray(searchUrls) ? searchUrls : [],
     });
+    const { actor } = scrapeActor(req);
+    await logScrape(rec.id, `✎  Scrape created — "${rec.name}" · ${(rec.searchUrls || []).length} search(es) · → tab "${rec.tabName || ''}" by ${actor}`, { actor });
     res.json({ ok: true, campaign: rec });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4033,6 +4110,15 @@ async function refreshScrapeBoard() {
       c._edited = true;
     }
   }
+  // Turn this poll into the log stream the scrape never had. Per-job state
+  // transitions, lead progress and final totals are observable ONLY here, and
+  // were being rendered and discarded. Best-effort: a log write must never take
+  // down the board.
+  try {
+    const events = diffBoardEvents((_scrapeBoard && _scrapeBoard.campaigns) || [], campaigns);
+    for (const ev of events) await logScrape(ev.campaignId, ev.message, { level: ev.level });
+  } catch (e) { console.error('scrape board log diff failed:', e.message); }
+
   _scrapeBoard = { at: Date.now(), campaigns, me };
   return _scrapeBoard;
 }
@@ -4085,7 +4171,22 @@ app.get('/api/scrape/campaigns/:id', async (req, res) => {
 app.post('/api/scrape/campaigns/:id/config', async (req, res) => {
   try {
     const { searchUrls, sheetUrl, tabName, name, profileIds } = req.body || {};
+    const before = (await getScrapeOverride(req.params.id)) || {};
     const saved = await saveScrapeOverride(req.params.id, { searchUrls, sheetUrl, tabName, name, profileIds });
+    // A saved override silently changes what a RE-RUN will do. The campaign side
+    // logs every live config edit; this one logged nothing, so a strip could
+    // quietly start pointing at a different sheet or tab with no record of when.
+    const { actor } = scrapeActor(req);
+    const changed = [];
+    const fmt = (v) => (Array.isArray(v) ? `${v.length} item(s)` : String(v ?? ''));
+    for (const k of ['name', 'sheetUrl', 'tabName', 'searchUrls', 'profileIds']) {
+      const a = before[k]; const b = saved && saved[k];
+      if (b === undefined) continue;
+      if (JSON.stringify(a) !== JSON.stringify(b)) changed.push(`${k}: ${fmt(a) || '—'} → ${fmt(b)}`);
+    }
+    if (changed.length) {
+      await logScrape(req.params.id, `✎  Config edited by ${actor} — ${changed.join(' · ')}`, { level: 'warn', actor });
+    }
     res.json({ ok: true, config: saved });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4108,12 +4209,16 @@ app.post('/api/scrape/campaigns/:id/toggle', async (req, res) => {
       if (rec) await updateScrapeCampaign(rec.id, { enabled: on });
     }
     if (!profileIds.length) return res.status(400).json({ error: 'no profiles to toggle' });
+    const { actor, admin } = scrapeActor(req);
     for (const pid of profileIds) {
       try { on ? await resumeScrape(pid) : await pauseScrape(pid); }
-      catch (e) { console.error('toggle scrape profile failed:', pid, e.message); }
+      catch (e) {
+        // Was console-only: a toggle could half-apply and the operator would see
+        // a success response with no record of which account didn't move.
+        console.error('toggle scrape profile failed:', pid, e.message);
+        await logScrape(req.params.id, `✗  Toggle ${on ? 'ON' : 'OFF'} failed on account ${pid}: ${e.message}`, { level: 'err', actor });
+      }
     }
-    const actor = getOperatorEmail() || req.user || 'unknown';
-    const admin = actor.toLowerCase() === 'antonio@ortusclub.com';
     try { await appendAction(req.params.id, { actor, admin, action: `toggled ${on ? 'ON' : 'OFF'}` }); } catch { /* audit best-effort */ }
     res.json({ ok: true, enabled: on });
   } catch (err) {
@@ -4121,19 +4226,36 @@ app.post('/api/scrape/campaigns/:id/toggle', async (req, res) => {
   }
 });
 
+// Engine run-history is fetched per runId, and an OPEN log pane re-polls every
+// 2.5s — cache it so the pane doesn't hammer the engine with the same request.
+const SCRAPE_HISTORY_TTL = 30000;
+const _scrapeHistory = new Map(); // campaignId → { at, lines }
+
 app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
   // Engine-derived strips have no local record; the board passes the strip's
   // base tab name so we can filter the shared engine log to this campaign.
   const rec = await getScrapeCampaign(req.params.id);
   const tabName = String(req.query.tabName || (rec && rec.tabName) || '').trim();
-  const persisted = rec ? await readScrapeLog(rec.id, { limit: 300 }) : [];
+  // Read by the REQUESTED id as well as the local record's. Every app-written
+  // line is keyed on the board id (an `eng_...` for engine-derived strips), but
+  // this only ever read `rec.id` — which exists solely for local `sc_...`
+  // records. Result: every audit line written so far was unreachable by the UI.
+  const ids = [...new Set([req.params.id, rec && rec.id].filter(Boolean))];
+  const persistedSets = await Promise.all(ids.map((id) => readScrapeLog(id, { limit: 300 })));
+  const persisted = persistedSets.flat();
   let live = [];
+  let engineDown = '';
   try {
     const l = await getScrapeLogs(req.query.since);
+    if (l && l.error) throw new Error(l.error);
     const lines = Array.isArray(l) ? l : (l && l.logs) || [];
     live = lines.filter((ln) => !tabName || String(ln.tabName || '').startsWith(tabName))
-                .map((ln) => ({ ts: ln.ts, message: ln.message }));
-  } catch { /* engine offline — persisted still shows */ }
+                .map((ln) => ({ ts: ln.ts, message: ln.message, jobId: ln.jobId, tabName: ln.tabName }));
+  } catch (e) {
+    // Was swallowed: an unreachable engine rendered as an empty log box, which
+    // reads identically to "this scrape did nothing".
+    engineDown = e && e.message ? e.message : 'engine unreachable';
+  }
   // The two sources above only cover a scrape that is still running on this
   // machine: `persisted` needs a LOCAL record (engine-derived strips have none),
   // and `live` is the engine's global LIVE buffer, which drops a scrape's lines
@@ -4141,18 +4263,32 @@ app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
   //
   // The engine does persist per-run history; nothing was ever asking for it.
   // Fall back to it when the live sources came up empty.
+  //
+  // Fetch history whenever the LIVE buffer is empty — not, as before, only when
+  // persisted was empty too. Now that the app writes its own lines, keying off
+  // `persisted` would have permanently suppressed the engine's side of the story
+  // for every scrape that has an audit line.
   let history = [];
-  if (!persisted.length && !live.length) {
-    try {
-      const board = await getScrapeBoard();
-      const rec2 = (board.campaigns || []).find((c) => c.id === req.params.id);
-      const runIds = [...new Set((rec2 && rec2.jobs || []).map((j) => j && j.runId).filter(Boolean))];
-      const sets = await Promise.all(runIds.map((rid) => getScrapeRunLogs(rid).catch(() => null)));
-      history = sets.flatMap((s) => (s && Array.isArray(s.logs) ? s.logs : []))
-        .map((ln) => ({ ts: ln.ts, message: ln.message }));
-    } catch { /* no history — the empty-state message below still shows */ }
+  if (!live.length) {
+    const cached = _scrapeHistory.get(req.params.id);
+    if (cached && Date.now() - cached.at < SCRAPE_HISTORY_TTL) {
+      history = cached.lines;
+    } else {
+      try {
+        const board = await getScrapeBoard();
+        const rec2 = (board.campaigns || []).find((c) => c.id === req.params.id);
+        const runIds = [...new Set((rec2 && rec2.jobs || []).map((j) => j && j.runId).filter(Boolean))];
+        const sets = await Promise.all(runIds.map((rid) => getScrapeRunLogs(rid).catch(() => null)));
+        history = sets.flatMap((s) => (s && Array.isArray(s.logs) ? s.logs : []))
+          .map((ln) => ({ ts: ln.ts, message: ln.message, jobId: ln.jobId, tabName: ln.tabName }));
+        _scrapeHistory.set(req.params.id, { at: Date.now(), lines: history });
+      } catch { /* no history — the empty-state message below still shows */ }
+    }
   }
   const merged = [...persisted, ...live, ...history].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  if (engineDown) {
+    merged.push({ ts: Date.now(), level: 'err', message: `⚠️  Can't reach the scraper engine (${engineDown}) — this log may be incomplete. A running scrape is not affected.` });
+  }
   res.json({ lines: merged });
 });
 

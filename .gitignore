@@ -47,3 +47,4 @@ data/connections-cache.json
 out/
 k8s/fg-roster/secret.yaml
 .claude/worktrees/
+data/funnel-i/

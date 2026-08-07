@@ -1,0 +1,83 @@
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  body{background:var(--bg);}
+  .wrap{max-width:1000px;margin:0 auto;padding:26px 24px 120px;}
+  .note{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;line-height:1.55;color:#5a5a5a;border-left:2px solid var(--gold);padding:9px 13px;margin:0 0 22px;background:#fff;}
+  h3.vh{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);margin:34px 0 12px;}
+
+  /* ── the card ─────────────────────────────────────────────────── */
+  .fgm{border:1px solid var(--hairline);background:#fff;padding:20px 22px;margin-bottom:10px;}
+  .fgm-top{display:flex;align-items:flex-start;gap:16px;}
+  .fgm-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);}
+  .fgm-title{font-family:'Hanken Grotesk',sans-serif;font-size:21px;letter-spacing:-.01em;color:var(--ink);margin:3px 0 0;}
+  .fgm-sub{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;color:#6a6a6a;margin:6px 0 0;max-width:56ch;line-height:1.5;}
+  .fgm-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none;}
+  .fgm-btn{background:transparent;color:var(--ink);border:1px solid var(--hairline);border-radius:9999px;padding:8px 16px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
+  .fgm-btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);}
+
+  .fgm-stats{display:flex;gap:34px;margin:18px 0 0;padding:15px 0 0;border-top:1px solid var(--hairline);}
+  .fgm-stat b{display:block;font-family:'Hanken Grotesk',sans-serif;font-size:23px;letter-spacing:-.02em;color:var(--ink);line-height:1.1;}
+  .fgm-stat span{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray);}
+  .fgm-foot{display:flex;align-items:center;gap:8px;margin-top:14px;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);}
+  .fgm-dot{width:6px;height:6px;border-radius:9999px;background:var(--green,#2e7d32);display:inline-block;}
+  .fgm-dot.stale{background:#c9a84a;}
+
+  /* building state */
+  .fgm.building .fgm-stats{opacity:.35;}
+  .fgm-bar{height:2px;background:#ececec;margin-top:16px;position:relative;overflow:hidden;}
+  .fgm-bar i{position:absolute;left:0;top:0;bottom:0;width:38%;background:var(--ink);}
+  .fgm-prog{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);margin-top:8px;}
+</style>
+
+<div class="wrap">
+  <p class="note"><b>Variant A — hero card, top of the Follower Growth section.</b> The database stops being a hidden action and becomes a thing with a size, a freshness and two obvious verbs. Sits above Step 1; the wizard below is untouched. Three states shown: fresh, never built, building.</p>
+
+  <h3 class="vh">State 1 · built</h3>
+  <div class="fgm">
+    <div class="fgm-top">
+      <div>
+        <div class="fgm-eyebrow">Follower Growth database</div>
+        <div class="fgm-title">Everyone we can reach</div>
+        <p class="fgm-sub">One row per person in the <b>FG Master</b> tab of the FG Sheet — name, title, company, geo, and every Ortus account connected to them. Stamped <b>Invited</b> the moment the bot sends.</p>
+      </div>
+      <div class="fgm-actions">
+        <button class="fgm-btn primary">Open the sheet ↗</button>
+        <button class="fgm-btn">Rebuild</button>
+      </div>
+    </div>
+    <div class="fgm-stats">
+      <div class="fgm-stat"><b>294,639</b><span>people</span></div>
+      <div class="fgm-stat"><b>53,787</b><span>reachable 2+ ways</span></div>
+      <div class="fgm-stat"><b>6,088</b><span>already invited</span></div>
+      <div class="fgm-stat"><b>15,660</b><span>from the funnel sheet</span></div>
+    </div>
+    <div class="fgm-foot"><span class="fgm-dot"></span> Built today, 17:22 · from the Connections DB + the team’s manual funnel sheet</div>
+  </div>
+
+  <h3 class="vh">State 2 · never built</h3>
+  <div class="fgm">
+    <div class="fgm-top">
+      <div>
+        <div class="fgm-eyebrow">Follower Growth database</div>
+        <div class="fgm-title">Not built yet</div>
+        <p class="fgm-sub">Build it once and the FG Sheet gains an <b>FG Master</b> tab with everyone we can reach — ~294,000 people, every past invite already stamped. Takes a few minutes.</p>
+      </div>
+      <div class="fgm-actions"><button class="fgm-btn primary">Build it now</button></div>
+    </div>
+    <div class="fgm-foot"><span class="fgm-dot stale"></span> Nothing in the sheet until this runs</div>
+  </div>
+
+  <h3 class="vh">State 3 · building</h3>
+  <div class="fgm building">
+    <div class="fgm-top">
+      <div>
+        <div class="fgm-eyebrow">Follower Growth database</div>
+        <div class="fgm-title">Building…</div>
+        <p class="fgm-sub">Writing the <b>FG Master</b> tab. Leave this running — don’t start a campaign reconcile until it finishes.</p>
+      </div>
+      <div class="fgm-actions"><button class="fgm-btn">Stop</button></div>
+    </div>
+    <div class="fgm-bar"><i></i></div>
+    <div class="fgm-prog"><span>112,000 / 294,639 rows</span><span>~3 min left</span></div>
+  </div>
+</div>

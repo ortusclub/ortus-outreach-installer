@@ -1,0 +1,62 @@
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  body{background:var(--bg);}
+  .wrap{max-width:1000px;margin:0 auto;padding:26px 24px 120px;}
+  .note{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;line-height:1.55;color:#5a5a5a;border-left:2px solid var(--gold);padding:9px 13px;margin:0 0 22px;background:#fff;}
+  h3.vh{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);margin:34px 0 12px;}
+
+  /* Reuses the wizard's own step chrome so it reads as part of the flow. */
+  .st{border:1px solid var(--hairline);background:#fff;padding:20px 22px;margin-bottom:12px;}
+  .st-head{display:flex;align-items:center;gap:10px;}
+  .st-num{width:20px;height:20px;border-radius:9999px;border:1px solid var(--ink);color:var(--ink);font-family:var(--mono);font-size:10px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .st-num.done{background:var(--ink);color:#fff;}
+  .st-title{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);}
+  .st-when{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);}
+  .st-lead{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;line-height:1.55;color:#5a5a5a;margin:10px 0 0;max-width:70ch;}
+  .st-lead b{color:var(--ink);font-weight:500;}
+
+  .st-row{display:flex;align-items:center;gap:22px;margin-top:15px;padding-top:14px;border-top:1px solid var(--hairline);}
+  .st-fig b{font-family:'Hanken Grotesk',sans-serif;font-size:17px;color:var(--ink);display:block;line-height:1.15;}
+  .st-fig span{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray);}
+  .st-btns{margin-left:auto;display:flex;gap:8px;}
+  .b{background:transparent;color:var(--ink);border:1px solid var(--hairline);border-radius:9999px;padding:8px 16px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
+  .b.dark{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .ghost{opacity:.45;}
+  .warn{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;color:var(--gray);margin-top:10px;}
+</style>
+
+<div class="wrap">
+  <p class="note"><b>Variant B — “step 0” of the wizard.</b> Same numbered-step chrome as Build your invite list / Schedule / Live status, so it reads as the thing that comes <i>before</i> a run rather than a separate feature. Collapses to one line once it's fresh, expands when it's stale or never built.</p>
+
+  <h3 class="vh">Fresh — collapsed to a single line</h3>
+  <div class="st">
+    <div class="st-head">
+      <span class="st-num done">✓</span><span class="st-title">The database · 294,639 people</span>
+      <span class="st-when">built today 17:22 · <a href="#" style="color:var(--ink)">open sheet ↗</a> · <a href="#" style="color:var(--gray)">rebuild</a></span>
+    </div>
+  </div>
+
+  <h3 class="vh">Stale or never built — expanded</h3>
+  <div class="st">
+    <div class="st-head"><span class="st-num">0</span><span class="st-title">The database</span><span class="st-when">never built</span></div>
+    <p class="st-lead">Everyone we can reach, in one <b>FG Master</b> tab of the FG Sheet: name, title, company, geo, LinkedIn URL and <b>every account connected to them</b>. Past invites are stamped in on build — from our own runs and from the team’s manual funnel sheet.</p>
+    <div class="st-row">
+      <div class="st-fig"><b>278,979</b><span>from the connections DB</span></div>
+      <div class="st-fig"><b>15,660</b><span>from the funnel sheet</span></div>
+      <div class="st-fig"><b>6,088</b><span>invites carried over</span></div>
+      <div class="st-btns"><button class="b dark">Build it</button></div>
+    </div>
+    <p class="warn">Takes a few minutes · don’t run it while a campaign is reconciling</p>
+  </div>
+
+  <h3 class="vh">Building</h3>
+  <div class="st">
+    <div class="st-head"><span class="st-num">0</span><span class="st-title">The database · building</span><span class="st-when">112,000 / 294,639</span></div>
+    <p class="st-lead">Writing the <b>FG Master</b> tab…</p>
+  </div>
+
+  <h3 class="vh">For context — the steps it sits above</h3>
+  <div class="st ghost"><div class="st-head"><span class="st-num">1</span><span class="st-title">Build your invite list</span></div></div>
+  <div class="st ghost"><div class="st-head"><span class="st-num">2</span><span class="st-title">Schedule</span></div></div>
+  <div class="st ghost"><div class="st-head"><span class="st-num">3</span><span class="st-title">Live status</span></div></div>
+</div>
