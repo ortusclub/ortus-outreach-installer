@@ -378,6 +378,10 @@
     color: var(--blue); display: inline-block; animation: vj-live-spin 1.1s linear infinite;
   }
   body[data-dashboard='v3'] .vj-live.is-paused .vj-live-ico { color: var(--gray); }
+  /* Finished-but-short: same slot, same shape as the live line — it answers the
+     same question ("what happened?"), just in the past tense. */
+  body[data-dashboard='v3'] .vj-live.is-outcome .vj-live-ico { color: var(--gray); animation: none; }
+  body[data-dashboard='v3'] .vj-live.is-outcome .vj-live-l1 { color: var(--gray); font-weight: 500; }
   @keyframes vj-live-spin { to { transform: rotate(360deg); } }
   body[data-dashboard='v3'] .vj-live-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   body[data-dashboard='v3'] .vj-live-l1 { font-size: 1.12rem; font-weight: 600; color: var(--ink); line-height: 1.25; }

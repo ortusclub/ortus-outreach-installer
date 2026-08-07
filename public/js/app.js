@@ -7450,6 +7450,44 @@ function _cloudCurrentAction(d) {
     account: acct, lead: who, sub: '' };
 }
 
+// A finished FG run that sent 258 of 1567 says nothing about WHY the other 1309
+// never went — and the answer is almost always "LinkedIn had no free invites
+// left", not a bug. Read it off the same per-account bench reasons the pills
+// use, in the same voice as the live line, so a done card explains itself.
+// Returns null when there is nothing to explain (everything sent).
+function _fgFinishedNote(status) {
+  if (!status || !status.isFG || status.bucket !== 'done') return null;
+  const left = Math.max(0, Number(status.total || 0) - Number(status.sent || 0));
+  if (!left) return null;
+  const accounts = Array.isArray(status.benchAccounts) ? status.benchAccounts : [];
+  let credits = 0, login = 0, errored = 0, refill = '';
+  for (const a of accounts) {
+    const r = String((a && a.bench) || '').toLowerCase();
+    if (r.includes('credit')) {
+      credits += 1;
+      const m = /refills?\s+([^·)]+)/i.exec(String(a.bench || ''));
+      if (m && !refill) refill = m[1].trim();
+    } else if ((a && a.needsLogin) || r.includes('logged out') || r.includes('login')) login += 1;
+    else if (r) errored += 1;
+  }
+  const nf = (n) => n.toLocaleString('en-GB');
+  const bits = [];
+  if (credits) bits.push(`${credits} of ${accounts.length} accounts out of invite credits`);
+  if (login) bits.push(`${login} logged out`);
+  if (errored) bits.push(`${errored} errored`);
+  // No per-account detail to stand on — say only what we actually know.
+  if (!bits.length) {
+    return { icon: '•', l1: `${nf(left)} of ${nf(status.total || 0)} never sent`,
+      l2: 'Reason not recorded for this run — the log has the per-account lines.' };
+  }
+  const l1 = credits >= Math.max(login, errored)
+    ? 'Stopped — the accounts ran out of LinkedIn invite credits'
+    : login >= errored ? 'Stopped — accounts needed re-login' : 'Stopped — account errors';
+  const tail = refill ? ` · credits refill ${refill}` : '';
+  return { icon: '🚫', l1,
+    l2: `${bits.join(' · ')} · ${nf(left)} people left for the next run${tail}` };
+}
+
 async function _refreshCloudActiveStatus(id) {
   try {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
@@ -8642,6 +8680,15 @@ function fillVjCard(root, status) {
     }
     const staged = renderLiveStage(root, status);
     if (live && staged) live.hidden = true;
+    // A finished FG run explains itself in the same slot the live line uses —
+    // it's the one place the operator already looks for "what is going on".
+    const note = _fgFinishedNote(status);
+    if (live && note) {
+      live.hidden = false;
+      live.classList.remove('is-checking', 'is-waking', 'is-paused');
+      live.classList.add('is-outcome');
+      set('activeLiveIco', note.icon); set('activeLiveL1', note.l1); set('activeLiveL2', note.l2);
+    } else if (live) live.classList.remove('is-outcome');
   } catch (_) { /* live line best-effort */ }
 
   if (f.isMonitor) _fillVjMonitorHero(root, status);
@@ -9533,7 +9580,12 @@ async function _refreshCloudItems() {
       // healthy running campaign showed no per-account breakdown at all — you
       // could see 88 of 1567 sent but not which of the 66 accounts sent them.
       const _live = ((d && d.campaign) || c).status === 'running';
-      if (((_ca && _ca.phase === 'waiting') || _live) && _acctAge > 30000) {
+      // A FINISHED FG run needs them exactly once, to say why it stopped short.
+      // Once fetched the run is over and the answer can't change, so this never
+      // repeats — `has()` is the whole gate.
+      const _fgDone = ((d && d.campaign) || c).mode === 'follower_growth'
+        && !_live && !_cloudAccountsById.has(c.id);
+      if (((_ca && _ca.phase === 'waiting') || _live || _fgDone) && _acctAge > 30000) {
         _cloudAccountsAt.set(c.id, Date.now());
         try {
           const ar = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/accounts`)).json();
@@ -9655,6 +9707,8 @@ async function _renderCampaignsBoardInner() {
         bucket, sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)),
         total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - Number(lc._preActioned || 0),
         accounts: (c.profile_ids || []).length, profileIds: c.profile_ids || [], mine,
+        // Per-account states — feeds _fgFinishedNote's "why it stopped short".
+        benchAccounts: _cloudAccountsById.get(c.id) || null,
         // When the VM will start it — the engine reads this off the pending
         // start_campaign task itself, so it can't drift from the real timer.
         scheduledAt: c.scheduled_start_at || null,
