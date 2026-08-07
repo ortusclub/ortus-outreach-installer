@@ -7385,6 +7385,19 @@ function _cloudWaitingReason(monitorLog) {
   return tail.replace(/\s*·\s*retrying automatically\s*$/i, '').trim();
 }
 
+// The most recent invite the engine actually sent: which account, and when.
+// A follower campaign publishes no liveProgress, so this is the only evidence of
+// what it is doing right now.
+function _fgLastActivity(leads) {
+  let best = null;
+  for (const l of leads || []) {
+    if (l.status !== 'sent' || !l.sentAt) continue;
+    const t = Number(new Date(l.sentAt)) || 0;
+    if (!best || t > best.t) best = { t, account: String(l.account || ''), name: l.fullName || '' };
+  }
+  return best;
+}
+
 function _cloudCurrentAction(d) {
   const lp = d && d.liveProgress;
   if (!lp || !lp.phase) {
@@ -7404,6 +7417,18 @@ function _cloudCurrentAction(d) {
       return { phase: 'waiting', label: 'Waiting for a free account',
         account: '', lead: 'No account free',
         sub: `${why || 'every account is at a limit or benched'} · the VM stands down until ${when} to save cost, then picks itself back up` };
+    }
+    // A follower campaign never publishes liveProgress, so without this it fell
+    // through to the generic "Working…" with no account, no lead and no time —
+    // the exact blankness a CC campaign's stage was built to avoid. The last
+    // sent invite tells us which account is up and how long ago it moved.
+    if (c.mode === 'follower_growth' && d && d._fgLast) {
+      const who = _acctLabel({ profileId: d._fgLast.account, email: '' });
+      const secs = Math.max(0, Math.round((Date.now() - d._fgLast.t) / 1000));
+      const ago = secs < 90 ? `${secs}s ago` : `${Math.round(secs / 60)} min ago`;
+      return { phase: 'sending', label: `Inviting from ${who}`,
+        account: d._fgLast.account, lead: d._fgLast.name || '',
+        sub: `last invite ${ago}` };
     }
     if (!why) return null;
     return { phase: 'waiting', label: 'Waiting for a free account',
@@ -9508,6 +9533,7 @@ async function _refreshCloudItems() {
           if (lr && Array.isArray(lr.leads)) {
             d._logLines = _mergeCloudLog(_cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c), null);
             _cloudAcctCounts.set(c.id, _cloudCountsByAccount(lr.leads));
+            d._fgLast = _fgLastActivity(lr.leads);
           }
         } catch { /* best-effort */ }
       }
