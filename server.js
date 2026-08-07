@@ -91,10 +91,11 @@ import {
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
   isEmailAllowed, deleteUser,
 } from './src/auth.js';
-import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
+import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam, listMasterRecords } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg, writeFgMaster } from './src/connections/fg-sync.js';
+import { buildMasterRows, invitedIndexFromFgInvites } from './src/connections/fg-master.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
 import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
@@ -2887,6 +2888,43 @@ app.get('/api/fg/sheet-url', async (_req, res) => {
   } catch (_) { /* fall through to env */ }
   if (process.env.FG_SHEET_URL) return res.json({ url: process.env.FG_SHEET_URL });
   return res.status(404).json({ error: 'FG sheet URL not available — redeploy the FG Apps Script (getSheetUrl) or set FG_SHEET_URL.' });
+});
+
+// FG Master build progress — polled by the UI, same shape as _fgSend.
+let _fgMaster = { running: false, phase: 'idle', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, error: null, finishedAt: null };
+
+app.get('/api/fg/master/status', (_req, res) => res.json(_fgMaster));
+
+// Rebuild the FG Master tab: every warm contact, with the FG Invites ledger
+// folded in so a rebuild never loses invite history. Fire-and-forget — the build
+// is ~56 chunked POSTs and far outlives an HTTP request.
+app.post('/api/fg/master/build', async (_req, res) => {
+  if (_fgMaster.running) return res.status(409).json({ error: 'A master build is already running.' });
+  res.json({ started: true });
+  _fgMaster = { running: true, phase: 'reading', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, error: null, finishedAt: null };
+  (async () => {
+    try {
+      let invitedIndex = new Map();
+      try {
+        const { invites } = await getFgState();
+        invitedIndex = invitedIndexFromFgInvites(invites);
+      } catch (e) {
+        campaignLog(`[FG-master] could not read FG Invites for backfill (${e.message}) — building without it`);
+      }
+      _fgMaster.backfilled = invitedIndex.size;
+      _fgMaster.phase = 'building';
+      const records = listMasterRecords({});
+      const { rows, count, droppedNoUrl } = buildMasterRows(records, invitedIndex);
+      _fgMaster = { ..._fgMaster, phase: 'writing', total: count, droppedNoUrl };
+      campaignLog(`[FG-master] writing ${count} row(s) (${droppedNoUrl} dropped for no LinkedIn URL)`);
+      const out = await writeFgMaster(rows, { onProgress: ({ done, total }) => { _fgMaster.done = done; _fgMaster.total = total; } });
+      _fgMaster = { ..._fgMaster, running: false, phase: 'done', written: out.written, finishedAt: new Date().toISOString() };
+      campaignLog(`[FG-master] done — ${out.written} row(s) in "${out.tab}"`);
+    } catch (err) {
+      _fgMaster = { ..._fgMaster, running: false, phase: 'error', error: err.message, finishedAt: new Date().toISOString() };
+      campaignLog(`[FG-master] failed: ${err.message}`);
+    }
+  })();
 });
 
 // All tab names in the FG sheet — populates the "bring your own" dropdown.

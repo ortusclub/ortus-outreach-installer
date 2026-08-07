@@ -29,11 +29,16 @@ const OUT_DIR = path.join(REPO, 'out');
 
 const mtimeKey = (p) => { try { return `${p}:${fs.statSync(p).mtimeMs}`; } catch { return `${p}:none`; } };
 
+const EMPTY_INDEX = { index: new Map(), stats: { files: 0, filesNoHeader: 0, rows: 0, withUrl: 0, skippedNoUrl: 0, perColleague: {}, uniqueSlugs: 0 } };
+
 let _idx = null, _idxKey = null;
 function getIndex(dir = DEFAULT_DIR) {
   const key = mtimeKey(dir);
   if (_idx && _idxKey === key) return _idx;
-  _idx = ingestFolder(dir); _idxKey = key; // { index, stats }
+  // A missing connections folder (no local DB / CI) yields an empty index,
+  // matching getCache's :none handling — not a throw.
+  try { _idx = ingestFolder(dir); } catch { _idx = EMPTY_INDEX; }
+  _idxKey = key; // { index, stats }
   return _idx;
 }
 
@@ -274,6 +279,13 @@ export function listFgColleaguesMatched(keywords = [], { dir, cachePath, already
   return [...total.entries()]
     .map(([email, t]) => ({ email, name: colleagues[email]?.name || email, total: t, matched: matched.get(email) || 0 }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// The population behind the FG Master tab: every warm, non-DNC record in the
+// Connections DB. No role filter — the master is the WHOLE network, and the FG
+// builder's keyword chips only ever narrowed a single run's target list.
+export function listMasterRecords({ dir, cachePath } = {}) {
+  return getAnnotated(dir, cachePath).filter((r) => r && !r.dnc && r.hasWarm);
 }
 
 // Parse a comma-separated ?roles= query value into normalized keyword list.
