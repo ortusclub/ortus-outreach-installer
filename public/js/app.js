@@ -258,6 +258,13 @@ function renderSalesNavBoard(campaigns) {
   // and "all scrapes dismissed / in a non-shown status" (previously blank).
   if (!html) html = _scrapeEmptyState();
   host.innerHTML = html;
+  // Fill each expanded strip's cloned card. Only expanded strips have one.
+  const _byId = new Map(campaigns.map((c) => [c.id, c]));
+  host.querySelectorAll('.sn-strip > .vj-card').forEach((root) => {
+    const strip = root.closest('.sn-strip');
+    const c = strip && _byId.get(strip.dataset.cid);
+    if (c) { try { _snFillStripCard(root, c); } catch (_) { /* a broken card must not blank the board */ } }
+  });
   // The rebuild reset every logs pane to its "…" placeholder — refill the ones
   // showing the Logs tab so an open live log survives the 2.5s re-render.
   if (_snLogsTab.size) {
@@ -461,9 +468,18 @@ function renderStrip(c) {
       <div class="sn-pane ${logsActive ? '' : 'on'}" data-p="jobs">${jobsPane}</div>
       <div class="sn-pane ${logsActive ? 'on' : ''}" data-p="logs"><div class="sn-logbox" data-logsfor="${escHtml(c.id)}" data-tab="${escHtml(c.tabName || '')}">…</div></div>
     </div>`;
+  // Expanded strips render the SAME .vj-card as the campaigns board (app.js:8804)
+  // and as Steven's scrape launch card — one shell, no markup drift.
+  //
+  // Unlike the campaigns board this skips COLLAPSED strips too, not just queued
+  // ones. vjCardSkeleton deep-clones #active-card, and this board renders 282
+  // strips every 2.5s; cloning a card nobody can see 282 times per tick is a
+  // measurable freeze for zero pixels. Expanding a strip re-renders it anyway.
+  const richCard = (isQueued || collapsed) ? '' : vjCardSkeleton(c.id);
   return `
   <div class="sn-strip ${c.mine ? 'mine' : ''} ${c.status === 'running' && !isPaused ? 'run' : ''} ${isPaused ? 'paused' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}">
     ${expandBtn}
+    <div class="sn-compact">
     <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span>${c.mine ? '<span class="sn-you">You</span>' : `<span class="sn-owner">· ${escHtml(owner)}</span>`}
       <span class="sn-status">${isPaused ? '<span class="dot paused"></span>' : isBad ? '<span class="dot red"></span>' : _snStatusDot(c.status)} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(c.name || '')}</div>
@@ -474,7 +490,73 @@ function renderStrip(c) {
       <div class="togwrap"><div class="toggle ${toggleOn ? '' : 'off'}" data-owner="${escHtml(owner)}" data-cid="${escHtml(c.id)}" title="${toggleOn ? 'Running — flip to pause' : 'Paused — flip to resume'}"><i></i></div><span class="lbl">${toggleOn ? 'Running' : 'Paused'}</span></div>
       <div class="right">${dismissBtn}${viewBtn}${stopBtn}${openBtn}${rerunBtn}</div>
     </div>
+    </div>
+    ${richCard}
   </div>`;
+}
+
+// Fill one expanded strip's cloned card with THIS scrape's numbers.
+//
+// Deliberately not fillVjCard(): that renders campaign controls, the reply-check
+// panel and campaign live-activity, none of which a scrape has. Fields are set
+// directly, the same way Steven's _setScrapeVjCard fills the launch card, and it
+// reuses his _SCRAPE_VJ label map so the board and the launch console say the
+// same words for the same state ("Collecting", not "Sending").
+function _snFillStripCard(root, c) {
+  if (!root || !c) return;
+  const strip = root.closest('.sn-strip');
+  const isPaused = _snPaused.has(c.id);
+  const isBad = _snStopped.has(c.id) || c.status === 'error';
+  const state = isBad ? 'error'
+    : c.status === 'queued' ? 'queued'
+      : c.status === 'done' ? 'done'
+        : 'running';
+  const V = _SCRAPE_VJ[state] || _SCRAPE_VJ.idle;
+
+  const jobs = c.jobs || [];
+  const total = jobs.length || (c.searchUrls || []).length;
+  const done = Number(c.done) || 0;
+  const leads = Number(c.totalProfiles) || 0;
+  const pages = jobs.reduce((n, j) => n + (Number(j && j.pages) || 0), 0);
+  const accounts = (c.profileIds || []).length;
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+  // Relabel the hero ONCE per clone — the campaign card counts sent/accepted,
+  // a scrape counts searches/pages/leads.
+  if (!root.dataset.snLabelled) {
+    const meta = root.querySelector('.vj-meta');
+    if (meta) meta.innerHTML =
+      '<span><b data-f="activeSent">0</b> of <span data-f="activeTotal">0</span> searches done</span>'
+      + '<span><b data-f="scrapePages">0</b> pages · <b data-f="scrapeLeads">0</b> leads</span>';
+    const stats = root.querySelector('.vj-stats');
+    if (stats) stats.innerHTML =
+      '<span><b data-f="activeAccounts">0</b> accounts</span>'
+      + '<span>· <b data-f="sendingLbl">Idle</b></span>';
+    root.dataset.snLabelled = '1';
+  }
+
+  // Expanding hides .sn-compact — and the strip's Open / Re-run / Stop / View
+  // buttons live in its footer. Mirror them into the card's control slot so an
+  // expanded scrape doesn't lose every action. Copied as markup on purpose: the
+  // board's click handlers are delegated off .sn-strip, and the clone sits
+  // inside the same strip, so they keep resolving.
+  const ctrl = root.querySelector('.vj-controls');
+  const right = strip && strip.querySelector('.sn-compact .sn-foot .right');
+  if (ctrl && right) ctrl.innerHTML = right.innerHTML;
+
+  const setF = (f, v) => { const e = root.querySelector(`[data-f="${f}"]`); if (e) e.textContent = String(v); };
+  setF('activeName', c.name || c.tabName || 'Sales Nav Scrape');
+  setF('activeEyebrow', isPaused ? 'Paused' : V.eyebrow);
+  setF('sendingLbl', isPaused ? 'Paused' : V.state);
+  setF('activeSent', done);
+  setF('activeTotal', total);
+  setF('activePct', pct);
+  setF('scrapePages', pages.toLocaleString());
+  setF('scrapeLeads', leads.toLocaleString());
+  setF('activeAccounts', accounts);
+  const bar = root.querySelector('[data-f="activeBar"]');
+  if (bar) bar.style.width = pct + '%';
+  setF('activeLiveL1', V.l1);
 }
 
 function _snIsAdmin() {
