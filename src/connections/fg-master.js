@@ -49,7 +49,12 @@ export function masterRowFromRecord(record = {}, invitedIndex = null) {
   const memberId = norm(c.linkedin_membership_id);
   const geo = [c.city, c.state, c.country].map(norm).filter(Boolean).join(', ');
   const accounts = (record.warmVia || []).map(norm).filter(Boolean).join(', ');
-  const hit = invitedIndex ? invitedIndex.get(masterKey({ memberId, url })) : null;
+  // The index is dual-keyed (Member ID AND URL of the invite row), but a contact
+  // with a Member ID here whose FG Invites row has none is only findable by URL —
+  // masterKey() alone would return the Member ID and miss. Fall back to the URL.
+  const hit = invitedIndex
+    ? (invitedIndex.get(masterKey({ memberId, url })) || invitedIndex.get(normUrl(url)))
+    : null;
   return [
     norm(c.firstname), norm(c.lastname), norm(c.jobtitle), norm(c.company), geo,
     url, memberId, accounts,

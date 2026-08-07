@@ -102,9 +102,11 @@ lower-cased, scheme/`www`/trailing-slash/query stripped).
 
 To make the URL available at stamp time, `fgMarkInvited` accepts an optional
 `invited: [{ memberId, url }]` alongside the existing `memberIds` array.
-`invitedWritebackFromLeads()` (`src/connections/fg-cloud-launch.js`) and the
-team-launch writeback populate it from the leads they already hold; the local
-send path keeps sending `memberIds` only. `memberIds` stays authoritative for
+`invitedWritebackFromLeads()` (`src/connections/fg-cloud-launch.js`) populates
+it from the leads it already holds, for the cloud reconcile path. The local
+send path and the team-launch writeback keep sending `memberIds` only — the
+Apps Script derives the URL from the matching `FG Invites` row instead, which
+is fine since those rows already carry it. `memberIds` stays authoritative for
 the `FG Invites` flip, so existing behaviour is unchanged.
 
 ### Rebuild without losing the ledger

@@ -155,11 +155,17 @@ export async function observeFgCredits({ account, operator, month, available, al
 
 // Write the FG Master tab in chunks. One setValues (and one POST) cannot carry
 // ~279k rows, so the first chunk REPLACES the tab (clear + header) and every
-// later chunk APPENDS. Re-running rebuilds the tab from scratch, so a failed
-// build is fixed by running it again — there is no partial-repair path.
+// later chunk APPENDS at a POSITIONAL startRow (2 + i*chunkSize — row 1 is the
+// header). postFg retries transient failures, and a lost response replaying a
+// chunk must overwrite the SAME rows, not append a duplicate copy — that's why
+// this is positional rather than "append at getLastRow()+1". `buildId` fences
+// concurrent rebuilds in the Apps Script (see fgWriteMaster_): it defaults to a
+// string derived from the row count + a timestamp, unique enough per build
+// without a dependency.
 export async function writeFgMaster(rows, {
-  tab = 'FG Master', header = FG_MASTER_HEADER, chunkSize = 5000,
+  tab = 'FG Master', header = FG_MASTER_HEADER, chunkSize = 2000,
   post = postFg, onProgress = null,
+  buildId = `${Array.isArray(rows) ? rows.length : 0}-${Date.now()}`,
 } = {}) {
   const all = Array.isArray(rows) ? rows : [];
   const chunks = chunkRows(all, chunkSize);
@@ -168,7 +174,8 @@ export async function writeFgMaster(rows, {
   let done = 0;
   for (let i = 0; i < chunks.length; i++) {
     const mode = i === 0 ? 'replace' : 'append';
-    const r = await post({ action: 'fgWriteMaster', tab, header, rows: chunks[i], mode }, { timeoutMs: 120000 });
+    const startRow = 2 + i * chunkSize;
+    const r = await post({ action: 'fgWriteMaster', tab, header, rows: chunks[i], mode, startRow, buildId }, { timeoutMs: 120000 });
     if (r && r.error) throw new Error(`FG Master chunk ${i + 1}/${chunks.length} failed: ${r.error}`);
     done += chunks[i].length;
     if (onProgress) onProgress({ done, total: all.length });

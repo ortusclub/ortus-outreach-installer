@@ -48,6 +48,7 @@ export function fgListTabName(cycleKey) {
 // Stable identity key for a LinkedIn URL: lower-cased, protocol/host-agnostic,
 // no trailing slash or query/hash. Makes de-dupe and reconcile writeback robust
 // to the format differences a human paste inevitably introduces.
+// KEEP IN SYNC with fgNormUrl_() in fg-apps-script.js.
 export function normUrl(url) {
   let s = lc(url);
   if (!s) return '';

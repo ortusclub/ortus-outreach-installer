@@ -217,13 +217,29 @@ function fgUpdateListLedger_(data) {
 }
 
 // Chunked build of the FG Master tab. mode 'replace' clears the tab and writes
-// the header; mode 'append' adds a chunk at the bottom. The app posts ~5k rows
-// per call because one setValues cannot hold the whole network.
+// the header; mode 'append' adds a chunk. The app posts ~2k rows per call
+// because one setValues cannot hold the whole network AND every doPost holds
+// the 30s script lock, so smaller chunks keep each lock hold short enough that
+// a concurrent operator's FG call doesn't time out.
+//
+// Writes are POSITIONAL (startRow), not append-at-getLastRow()+1: the app's
+// postFg retries transient failures up to 3x on the assumption that every FG
+// action is idempotent, but append-at-lastRow is NOT idempotent — a lost
+// response + replay would duplicate the chunk. A positional write replays onto
+// the SAME rows. `startRow` is optional so an old app build (pre-dating this
+// fix) still works via the old append behaviour.
+//
+// `buildId` fences concurrent rebuilds from two operators: 'replace' stores it
+// in Script Properties; every 'append' after that must match it or the call is
+// rejected as superseded — see the buildId check below.
 function fgWriteMaster_(data) {
   var name = String(data.tab || FG_MASTER_TAB).trim();
   var header = data.header || FG_MASTER_HEADER;
   var rows = data.rows || [];
   var mode = String(data.mode || 'append');
+  var startRow = data.startRow;
+  var buildId = String(data.buildId || '');
+  var props = PropertiesService.getScriptProperties();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(name);
   if (!sh) sh = ss.insertSheet(name);
@@ -231,14 +247,27 @@ function fgWriteMaster_(data) {
     sh.clear();
     sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold');
     sh.setFrozenRows(1);
+    // insertSheet() creates 1000 rows x 26 columns, and row growth keeps all 26
+    // columns — 279k rows x 26 cols is ~7.25M cells against the 10M hard cap.
+    // Trim the grid to the 11 columns we actually use.
+    if (sh.getMaxColumns() > header.length) sh.deleteColumns(header.length + 1, sh.getMaxColumns() - header.length);
+    // Plain-text the whole grid so names/titles/companies starting with "=", "+",
+    // "-", or shaped like "1/2" aren't coerced into formulas or dates.
+    sh.getRange(1, 1, sh.getMaxRows(), header.length).setNumberFormat('@');
+    if (buildId) props.setProperty('fgMasterBuild', buildId);
+  } else if (buildId) {
+    var current = props.getProperty('fgMasterBuild');
+    if (current && current !== buildId) return { error: 'superseded by another build' };
   }
   if (rows.length) {
-    sh.getRange(sh.getLastRow() + 1, 1, rows.length, header.length).setValues(rows);
+    var at = Number(startRow) || sh.getLastRow() + 1;
+    sh.getRange(at, 1, rows.length, header.length).setValues(rows);
   }
   return { tab: name, written: rows.length, mode: mode };
 }
 
 // Normalised LinkedIn URL — mirror of normUrl() in src/connections/fg-list.js.
+// KEEP IN SYNC with normUrl() in src/connections/fg-list.js.
 function fgNormUrl_(url) {
   var s = String(url == null ? '' : url).trim().toLowerCase();
   if (!s) return '';
@@ -296,10 +325,17 @@ function fgMarkInvited_(data) {
   var people = [];  // [{ memberId, url }] for the FG Master stamp
   for (var i = 0; i < r.data.length; i++) {
     var row = r.data[i];
-    if (ids[String(row[iMember])] && row[iStatus] !== 'Invited') {
+    if (!ids[String(row[iMember])]) continue;
+    // Collect for the master stamp on EVERY matching row, Invited already or not —
+    // a retried call (this now does more work and can outrun a 90s client timeout)
+    // finds the rows already flipped, and the local/team-launch paths send no
+    // `invited` array, so this is the only way those paths' retry still stamps
+    // FG Master. Only the Status/Invited At write and the counter are gated on
+    // "not already Invited" so a retry doesn't re-flip or double-count.
+    people.push({ memberId: String(row[iMember] || ''), url: String(row[iUrl] || '') });
+    if (row[iStatus] !== 'Invited') {
       sh.getRange(i + 2, iStatus + 1).setValue('Invited');
       sh.getRange(i + 2, iWhen + 1).setValue(now).setNumberFormat('dd mmm yyyy, HH:mm');
-      people.push({ memberId: String(row[iMember] || ''), url: String(row[iUrl] || '') });
       n++;
     }
   }

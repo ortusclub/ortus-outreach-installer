@@ -64,6 +64,16 @@ test('masterRowFromRecord stamps the ledger columns from the invited index', () 
   assert.deepEqual(row.slice(8), ['Invited', '2026-07-01 09:00 UTC', 'ada@ortus.example']);
 });
 
+test('masterRowFromRecord falls back to the URL key when the DB has a Member ID but the invite row does not', () => {
+  // DB record has a Member ID; the FG Invites row for the same person has a
+  // blank Member ID and only the URL, so it's indexed under the URL key only.
+  const idx = invitedIndexFromFgInvites([
+    { 'Member ID': '', 'LinkedIn URL': 'https://www.linkedin.com/in/ada/', Status: 'Invited', 'Invited At': '2026-07-01 09:00 UTC', Account: 'ada@ortus.example' },
+  ]);
+  const row = masterRowFromRecord(rec(ADA), idx); // ADA.linkedin_membership_id = '12345'
+  assert.deepEqual(row.slice(8), ['Invited', '2026-07-01 09:00 UTC', 'ada@ortus.example']);
+});
+
 test('buildMasterRows drops DNC, no-warm and URL-less records and counts them', () => {
   const out = buildMasterRows([
     rec(ADA),

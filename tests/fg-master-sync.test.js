@@ -36,6 +36,22 @@ test('writeFgMaster reports progress per chunk', async () => {
   assert.deepEqual(seen, [{ done: 2, total: 5 }, { done: 4, total: 5 }, { done: 5, total: 5 }]);
 });
 
+test('writeFgMaster sends a positional startRow per chunk plus a shared buildId', async () => {
+  const calls = [];
+  const post = async (payload) => { calls.push(payload); return { written: payload.rows.length }; };
+  await writeFgMaster(rows(7), { chunkSize: 3, post, buildId: 'build-x' });
+  assert.deepEqual(calls.map((c) => c.startRow), [2, 5, 8]); // header is row 1
+  assert.deepEqual(calls.map((c) => c.buildId), ['build-x', 'build-x', 'build-x']);
+});
+
+test('writeFgMaster defaults chunkSize to 2000 so each Apps Script lock hold is short', async () => {
+  const calls = [];
+  const post = async (payload) => { calls.push(payload); return { written: payload.rows.length }; };
+  await writeFgMaster(rows(2001), { post });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((c) => c.rows.length), [2000, 1]);
+});
+
 test('writeFgMaster throws with the chunk index when a chunk fails', async () => {
   let n = 0;
   const post = async () => { n += 1; return n === 2 ? { error: 'boom' } : { written: 0 }; };
