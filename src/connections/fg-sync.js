@@ -4,6 +4,7 @@
 // FG_WEBAPP_URL. The 302-safe postFg mirrors drive-sync.js's postWebApp
 // (Apps Script answers POST with a 302 that Node's fetch would turn into a GET).
 import { FG_WEBAPP_URL } from '../sheets-webapp-url.js';
+import { FG_MASTER_HEADER, chunkRows } from './fg-master.js';
 
 // LinkedIn's monthly "Invite to follow" credit pool. The live balance is shown
 // in the invite modal ("30/30 credits available · Credit refill <date>") and is
@@ -150,4 +151,27 @@ export async function observeFgCredits({ account, operator, month, available, al
   const r = await postFg({ action: 'fgObserveCredits', account, operator, month, available, allowance, refill }, { timeoutMs: 60000 });
   if (r?.error) throw new Error(r.error);
   return r; // { observed, remaining, allowance }
+}
+
+// Write the FG Master tab in chunks. One setValues (and one POST) cannot carry
+// ~279k rows, so the first chunk REPLACES the tab (clear + header) and every
+// later chunk APPENDS. Re-running rebuilds the tab from scratch, so a failed
+// build is fixed by running it again — there is no partial-repair path.
+export async function writeFgMaster(rows, {
+  tab = 'FG Master', header = FG_MASTER_HEADER, chunkSize = 5000,
+  post = postFg, onProgress = null,
+} = {}) {
+  const all = Array.isArray(rows) ? rows : [];
+  const chunks = chunkRows(all, chunkSize);
+  // No rows still needs one replace so a rebuild that matches nothing empties the tab.
+  if (!chunks.length) chunks.push([]);
+  let done = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    const mode = i === 0 ? 'replace' : 'append';
+    const r = await post({ action: 'fgWriteMaster', tab, header, rows: chunks[i], mode }, { timeoutMs: 120000 });
+    if (r && r.error) throw new Error(`FG Master chunk ${i + 1}/${chunks.length} failed: ${r.error}`);
+    done += chunks[i].length;
+    if (onProgress) onProgress({ done, total: all.length });
+  }
+  return { tab, written: all.length, chunks: chunks.length };
 }
