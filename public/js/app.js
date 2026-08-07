@@ -20091,7 +20091,28 @@ window.startCampaignWithCreatedSheet = startCampaignWithCreatedSheet;
 // central FG sheet, then mark it sent (manual LinkedIn invite). All wired to
 // /api/fg/*. Mirrors the Connections chip-input + monochrome table conventions.
 // ─────────────────────────────────────────────────────────────────────────────
-const FG_DEFAULT_CHIPS = ['marketing', 'brand', 'growth', 'content', 'demand', 'comms', 'cmo'];
+// Job-title keywords are matched as plain lower-case SUBSTRINGS (match.js →
+// matchesCriteria), which is why every entry here is a stem, not a word:
+// "advertis" catches advertising/advertiser, "communication" catches
+// communications. Measured against the 278k-person connections DB: the old
+// 7-chip list caught 29,929 people, this one catches 36,625 (+22%).
+//
+// Deliberately NOT here, measured and rejected — each looked big but was mostly
+// the wrong department: "digital" alone (+7.6k, nearly all IT/transformation),
+// "acquisition" (+1.7k, nearly all talent acquisition and M&A), "engagement"
+// (+958, mostly consulting engagement managers), "insight" alone (+765, mostly
+// data/analytics). Their marketing halves are covered by the precise phrases below.
+const FG_DEFAULT_CHIPS = [
+  'marketing', 'brand', 'growth', 'content', 'demand', 'communication', 'cmo',
+  'social media', 'paid media', 'media relations', 'earned media', 'owned media',
+  'advertis', 'campaign', 'seo', 'sem', 'ppc', 'martech', 'crm',
+  'public relations', 'publicist', 'copywrit',
+  'creative director', 'creative lead', 'head of creative',
+  'ecommerce', 'e-commerce', 'go-to-market', 'gtm',
+  'consumer insight', 'customer insight', 'market insight',
+  'influencer', 'community manager', 'audience development',
+  'digital strategy', 'chief digital',
+];
 let fgChips = [];
 let _fgBuilt = null;     // last /api/fg/build response { rows, count, eligible, budget, account, month, ... }
 let _fgDb = null;        // last /api/fg/db response { invites, budgets, funnel }
@@ -20104,7 +20125,9 @@ let fgtlPicked = {};      // email -> { profile, pq, changing }
 let fgtlChips = [];       // active role keyword chips
 const FGTL_LOCAL = { id: 'local-browser', name: 'Local Browser' };
 let _fgtlRefreshTimer = null;
-const FGTL_ALL_PRESETS = ['marketing','brand','growth','content','demand','comms','cmo','sales','product','events','partnerships'];
+// Quick-add: the adjacent departments the marketing default deliberately leaves
+// out. Same substring rule as FG_DEFAULT_CHIPS, so these are stems too.
+const FGTL_ALL_PRESETS = ['sales', 'business development', 'product', 'events', 'partnerships', 'customer experience', 'digital', 'strategy', 'founder', 'chief executive'];
 
 function renderFgChips() {
   const wrap = document.getElementById('fg-fn-chips');
