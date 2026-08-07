@@ -535,12 +535,19 @@ function _snFillStripCard(root, c) {
     root.dataset.snLabelled = '1';
   }
 
-  // The card's own control slot stays empty: the strip's real .sn-foot now sits
-  // OUTSIDE .sn-compact, so it survives expanding and keeps its styling. An
-  // earlier attempt copied those buttons into .vj-controls and they rendered
-  // unstyled — every rule for them is a `.sn-foot .mini…` descendant selector.
+  // Put the footer INSIDE the card. It renders as a sibling of .vj-card (so it
+  // survives expanding, which hides .sn-compact), then moves in here.
+  //
+  // The whole .sn-foot NODE moves — not its innerHTML. Every rule for these
+  // buttons is a `.sn-foot .mini…` descendant selector, so keeping .sn-foot as
+  // their ancestor is what preserves the styling; an earlier attempt copied the
+  // markup into .vj-controls and they rendered as bare boxes. Moving the live
+  // node also keeps the board's delegated handlers working, since it stays
+  // inside the same .sn-strip.
   const ctrl = root.querySelector('.vj-controls');
   if (ctrl) ctrl.innerHTML = '';
+  const foot = strip && strip.querySelector(':scope > .sn-foot');
+  if (foot) { foot.classList.add('sn-foot-incard'); root.appendChild(foot); }
 
   // Fill the card's live log. The strip's log used to live in the Jobs/Logs pane
   // inside .sn-compact, which expanding hides — so the card showed "No events
