@@ -3110,7 +3110,17 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       let rows;
       try { rows = await readFgList(tab); }
       catch (e) { return res.status(502).json({ error: `Could not read the list tab "${tab}": ${e.message}` }); }
-      if (!rows || rows.length < 2) return res.status(400).json({ error: `No invite list in tab "${tab}" — generate the list first.` });
+      // An empty read is ambiguous: the tab may genuinely be empty, or the Apps
+      // Script may have handed back nothing on a slow call. Say which, so a
+      // transient sheet hiccup doesn't read as "you forgot to generate the list".
+      if (!rows || rows.length < 2) {
+        const n = Array.isArray(rows) ? rows.length : 0;
+        return res.status(400).json({
+          error: n === 0
+            ? `The sheet returned nothing for tab "${tab}". If you just generated it, try Run it now again — the read sometimes times out.`
+            : `Tab "${tab}" has a header but no people in it — generate the list again.`,
+        });
+      }
       const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
       const out = await dispatchFromRows(rows, {
         accountEmails,
