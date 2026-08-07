@@ -502,6 +502,58 @@ function renderStrip(c) {
 // directly, the same way Steven's _setScrapeVjCard fills the launch card, and it
 // reuses his _SCRAPE_VJ label map so the board and the launch console say the
 // same words for the same state ("Collecting", not "Sending").
+// The scrape card's action dock, mirroring the campaign card's: an Open pill
+// then an icon toolbar. Every button maps to an action the strip footer already
+// had — nothing new is invented, and the same ownership gates apply.
+//
+// Pause/resume keeps the `.toggle` class and its data-cid/data-owner, because
+// that button is driven by a DELEGATED handler that matches `.toggle` and reads
+// the `off` class to decide direction. Restyling it as a dock-btn changes how it
+// looks, not how it works — including the "this isn't your scrape" confirm.
+function _snCardControlsHtml(c) {
+  const cid = escHtml(c.id);
+  const isQueued = c.status === 'queued';
+  const isDone = c.status === 'done' || c.status === 'error';
+  const isPaused = _snPaused.has(c.id);
+  const canControl = _snCanControl(c);
+  const owner = c.owner || '';
+  const dib = (svg, tip, onclick, cls = '') =>
+    `<button type="button" class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
+
+  let dock = '';
+  if (!isDone && !isQueued) {
+    const on = (c.enabled !== false) && !isPaused;
+    dock += `<button type="button" class="dock-btn toggle ${on ? '' : 'off'}" data-cid="${cid}" data-owner="${escHtml(owner)}"`
+      + ` data-tip="${on ? 'Pause' : 'Resume'}" aria-label="${on ? 'Pause' : 'Resume'}">${on ? V3_SVG_PAUSE : V3_SVG_PLAY}</button>`;
+  }
+
+  let actions = '';
+  const runningJob = (c.jobs || []).find((j) => j.state === 'running' && j.id);
+  if (runningJob) {
+    actions += `<button type="button" class="dock-btn" data-tip="Show" aria-label="Show"`
+      + ` onclick="openScrapeJobView('${escHtml(runningJob.id)}','${escHtml(c.name || c.tabName || 'scrape')}')">👁</button>`;
+  }
+  if (c.status === 'running' || isQueued) {
+    actions += dib(V3_SVG_STOP, 'Stop', `stopScrapeCampaign('${cid}')`, 'danger');
+  }
+  if (isDone && canControl) {
+    // A stopped scrape reads Continue, a finished one Re-run — same call either
+    // way; the engine restarts from page 1 and sheet dedup skips captured rows.
+    const stopped = _snStopped.has(c.id) || c.status === 'error';
+    actions += dib(stopped ? V3_SVG_PLAY : V3_SVG_RESTART,
+      stopped ? 'Continue where it left off' : 'Re-run', `rerunScrape('${cid}',this)`);
+  }
+  if (isDone) {
+    actions += `<button type="button" class="dock-btn sn-dismiss" data-cid="${cid}"`
+      + ` data-tip="Hide from your board" aria-label="Hide from your board">${V3_SVG_TRASH}</button>`;
+  }
+
+  const openHtml = canControl
+    ? `<button class="btn-pill" onclick="openScrapeSetupFor('${cid}')">Open</button>`
+    : `<button class="btn-pill" disabled title="Only ${escHtml(owner)} can open this">Open 🔒</button>`;
+  return `${openHtml}<div class="dock" role="toolbar" aria-label="Scrape actions">${dock}<div class="dock-actions">${actions}</div></div>`;
+}
+
 function _snFillStripCard(root, c) {
   if (!root || !c) return;
   const strip = root.closest('.sn-strip');
@@ -535,19 +587,13 @@ function _snFillStripCard(root, c) {
     root.dataset.snLabelled = '1';
   }
 
-  // Put the footer INSIDE the card. It renders as a sibling of .vj-card (so it
-  // survives expanding, which hides .sn-compact), then moves in here.
-  //
-  // The whole .sn-foot NODE moves — not its innerHTML. Every rule for these
-  // buttons is a `.sn-foot .mini…` descendant selector, so keeping .sn-foot as
-  // their ancestor is what preserves the styling; an earlier attempt copied the
-  // markup into .vj-controls and they rendered as bare boxes. Moving the live
-  // node also keeps the board's delegated handlers working, since it stays
-  // inside the same .sn-strip.
+  // The card gets the campaign card's control dock — an Open pill plus an icon
+  // toolbar — instead of the strip's text buttons and paused ticker. Same
+  // .btn-pill / .dock / .dock-btn markup _vjControlsHtml builds, so the two
+  // cards are visually identical; only the actions differ, and every action
+  // here is one the strip footer already had.
   const ctrl = root.querySelector('.vj-controls');
-  if (ctrl) ctrl.innerHTML = '';
-  const foot = strip && strip.querySelector(':scope > .sn-foot');
-  if (foot) { foot.classList.add('sn-foot-incard'); root.appendChild(foot); }
+  if (ctrl) ctrl.innerHTML = _snCardControlsHtml(c);
 
   // Fill the card's live log. The strip's log used to live in the Jobs/Logs pane
   // inside .sn-compact, which expanding hides — so the card showed "No events

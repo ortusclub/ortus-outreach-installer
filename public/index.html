@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.145" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.145" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.146" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.146" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1631,11 +1631,10 @@
   .sn-strip:not(.sn-collapsed){border-color:transparent;background:transparent;padding:0;overflow:visible;box-shadow:none;}
   .sn-strip:not(.sn-collapsed)::before{display:none;}
   body[data-dashboard='v3'] .sn-vjcard.vj-card{margin:0;}
-  /* The scrape strip's footer (toggle + Open/Re-run/Stop) is MOVED into the
-     expanded card by _snFillStripCard, so it needs to read as the card's own
-     footer rather than a row that happens to sit inside it: full-bleed against
-     the card's 22px/26px padding, with a hairline separating it from the body. */
-  .sn-vjcard .sn-foot-incard{margin:18px -26px -22px;padding:14px 26px;border-top:1px solid var(--hairline-soft);}
+  /* Expanded scrapes take their actions from the card's own control dock
+     (_snCardControlsHtml), so the strip's text-button footer is hidden — it
+     sits outside .sn-compact and would otherwise render below the card. */
+  .sn-strip:not(.sn-collapsed) > .sn-foot{display:none;}
   /* ── Skipped-leads panel ── */
   .skipped-mini{border-top:1px solid var(--hairline-soft);padding-top:12px;margin-top:14px;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:0.7rem;color:var(--gray);}
   .skip-pill{border:1px solid var(--hairline);border-radius:9999px;padding:3px 12px;font-size:0.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);}
@@ -3742,7 +3741,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.145"></script>
+  <script type="module" src="/js/app.js?v=2.160.146"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
