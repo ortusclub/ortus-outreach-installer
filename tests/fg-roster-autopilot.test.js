@@ -203,3 +203,77 @@ test('read error (Apps Script down) → failed record + alert', async () => {
   assert.match(r.error, /fg script 500/);
   assert.equal(alerts, 1);
 });
+
+// ── Pre-generate: the tab exists before the run day, without a human ──────────
+// The whole point is that a scheduled run never depends on someone remembering
+// to press Generate. It must also never overwrite a list a person has edited.
+
+const NOT_RUN_DAY = new Date('2026-08-13T06:00:00+01:00'); // 2 days before the 15th
+
+test('pre-generate: within the lead window and no tab → builds it and alerts', async () => {
+  let wrote = null; let alert = null;
+  const h = makeAutopilotHandler(base({
+    readList: async () => [FG_LIST_HEADER],       // header only = no people = missing
+    generateList: async (tab, args) => { wrote = { tab, ...args }; return { count: 42 }; },
+    sendAlert: async (s, b) => { alert = { s, b }; return { sent: true }; },
+  }));
+  const r = await h.run({ nowDate: NOT_RUN_DAY });
+  assert.equal(r.skipped, true);                   // the 13th is not a run day
+  assert.equal(r.pregen.generated, true);
+  assert.equal(wrote.tab, 'FG 2026-08-15');        // named for the NEXT run day
+  assert.equal(wrote.month, '2026-08');
+  assert.deepEqual(wrote.keywords, ['marketing']);
+  assert.match(alert.s, /FG list ready for 2026-08-15 — 42 people/);
+});
+
+test('pre-generate: a tab with people is never overwritten', async () => {
+  let called = false;
+  const h = makeAutopilotHandler(base({
+    readList: async () => listRows(),              // already has 2 people
+    generateList: async () => { called = true; return { count: 1 }; },
+  }));
+  const r = await h.run({ nowDate: NOT_RUN_DAY });
+  assert.equal(r.pregen.reason, 'already-generated');
+  assert.equal(called, false);
+});
+
+test('pre-generate: a sheet READ failure never triggers a rebuild', async () => {
+  let called = false;
+  const h = makeAutopilotHandler(base({
+    readList: async () => { throw new Error('fg script 500'); },
+    generateList: async () => { called = true; return { count: 1 }; },
+  }));
+  const r = await h.run({ nowDate: NOT_RUN_DAY });
+  assert.equal(r.pregen.reason, 'read-failed');
+  assert.equal(called, false);                     // would have wiped a reviewed list
+});
+
+test('pre-generate: too far from the run day → nothing built', async () => {
+  let called = false;
+  const h = makeAutopilotHandler(base({
+    readList: async () => [FG_LIST_HEADER],
+    generateList: async () => { called = true; return { count: 1 }; },
+  }));
+  const r = await h.run({ nowDate: new Date('2026-08-05T06:00:00+01:00') }); // 10 days out
+  assert.equal(r.pregen.reason, 'too-early');
+  assert.equal(called, false);
+});
+
+test('pre-generate: Auto-Pilot off → builds nothing', async () => {
+  let called = false;
+  const h = makeAutopilotHandler(base({
+    loadConfig: () => ({ ...cfg(), enabled: false }),
+    readList: async () => [FG_LIST_HEADER],
+    generateList: async () => { called = true; return { count: 1 }; },
+  }));
+  const r = await h.run({ nowDate: NOT_RUN_DAY });
+  assert.equal(r.pregen.reason, 'disabled');
+  assert.equal(called, false);
+});
+
+test('campaign name carries the run DAY, not just the month', async () => {
+  let payload = null;
+  const h = makeAutopilotHandler(base({ startCloud: async (p) => { payload = p; return { id: 'c1' }; } }));
+  await h.run({ nowDate: RUN_DAY });
+  assert.equal(payload.name, 'Team Follower Growth · 2026-08-01 · auto');
+});

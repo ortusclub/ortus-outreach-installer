@@ -102,6 +102,7 @@ import { readSeedDir, mergeFunnelSeeds } from './src/connections/fg-funnel-seed.
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
 import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
+import { generateListRows } from './src/connections/fg-list-generate.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -3060,29 +3061,15 @@ app.post('/api/fg/list/generate', async (req, res) => {
   // step-1 headline promised the capped number, and a 25k-row tab is not
   // something a human reviews. fgRemaining() is the same per-account allowance
   // the headline counts.
-  const targetsByProfile = new Map();
+  let built;
   try {
-    for (const pair of pairs) {
-      const out = await dbCall('buildFgTargets', [criteria, {
-        operator: pair.operator, operatorName: pair.operatorName, account: pair.account,
-        month, alreadyInvited, budget: fgRemaining(snap.budgets, pair.account, month),
-      }]);
-      let reason = '';
-      if (!out || !out.count) reason = (out && out.matched === 0) ? 'no connections match these roles' : 'all matching connections already invited';
-      targetsByProfile.set(pair.profileId, { rows: (out && out.rows) || [], count: (out && out.count) || 0, reason });
-    }
+    built = await generateListRows(pairs, {
+      criteria, month, alreadyInvited,
+      budget: fgRemaining(snap.budgets, '', month),
+    }, { buildTargets: (c, o) => dbCall('buildFgTargets', [c, o]) });
   } catch (e) {
     // Never let a build failure (e.g. roster service not deployed) become an
     // unhandled rejection — that would take the whole app down.
-    return res.status(502).json({ error: `Could not build the list: ${e.message}` });
-  }
-
-  const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
-  const buildTargets = (pair) => targetsByProfile.get(pair.profileId) || { rows: [], count: 0, reason: 'no targets for this account' };
-  let built;
-  try {
-    built = buildListRows(pairs, { accountEmails }, { buildTargets });
-  } catch (e) {
     return res.status(502).json({ error: `Could not build the list: ${e.message}` });
   }
   const { header, rows, perAccount, skipped } = built;
@@ -3106,7 +3093,8 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
     // profileId). No tab yet → tell the operator to generate it first.
     if (b.source === 'list') {
       const owner = getOperatorEmail() || req.user || '';
-      const tab = String(b.tab || '').trim() || fgListTabName(b.cycleKey || fgNextRunCycleKey(b.days));
+      const runKey = b.cycleKey || fgNextRunCycleKey(b.days);
+      const tab = String(b.tab || '').trim() || fgListTabName(runKey);
       let rows;
       try { rows = await readFgList(tab); }
       catch (e) { return res.status(502).json({ error: `Could not read the list tab "${tab}": ${e.message}` }); }
@@ -3124,7 +3112,9 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
       const out = await dispatchFromRows(rows, {
         accountEmails,
-        campaign: { name: `Team Follower Growth · ${month}`, owner, config: { inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
+        // Name it for the RUN DAY, not the month: two fires in one month were
+        // both called "· 2026-08" and were indistinguishable on the board.
+        campaign: { name: `Team Follower Growth · ${runKey}`, owner, config: { inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
       }, { startCloud: (payload) => startCloudCampaign(payload) });
       if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
       // Register this run so the reconcile loop stamps the ledger (Status /

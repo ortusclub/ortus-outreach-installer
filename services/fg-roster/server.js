@@ -14,7 +14,8 @@ import { reconcileAll } from './reconcile.js';
 // Same FG-sheet I/O the manual /api/fg/team-launch/start path uses (Apps Script
 // over FG_WEBAPP_URL — no service-account creds needed), so an auto run behaves
 // identically: skips already-invited + writes "Queued" proof back to the sheet.
-import { getFgState, queueFgInvites, updateFgListLedger, markFgInvited, observeFgCredits } from '../../src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, updateFgListLedger, markFgInvited, observeFgCredits, writeFgList, invitedKeysFromState } from '../../src/connections/fg-sync.js';
+import { generateListRows } from '../../src/connections/fg-list-generate.js';
 // The Ortus page "Invite to follow" URL — SAME constant the manual/local FG path
 // hardcodes (server.js:2469/2515). Without it the engine's FG primitive skips
 // openModal entirely (follower-invite.js `if (inviteUrl)` guard) and sends 0.
@@ -48,6 +49,22 @@ const autopilot = makeAutopilotHandler({
   log: (m) => console.log(`[fg-autopilot] ${m}`),
   inviteUrl: process.env.ORTUS_PAGE_INVITE_URL || ORTUS_PAGE_INVITE_URL,
   monthlyBudget: Number(process.env.FG_DEFAULT_MONTHLY_ALLOWANCE || 30),
+  // Pre-generate the upcoming run's invite-list tab so a scheduled run never
+  // depends on someone remembering to press Generate. Same builder + same writer
+  // the desktop app's Generate button uses (generateListRows), so the tab a
+  // human would have made and the one the cloud makes are identical.
+  leadDays: Number(process.env.FG_PREGENERATE_LEAD_DAYS || 3),
+  generateList: async (tab, { pairs, keywords, month }) => {
+    const snap = await getFgState();
+    const built = await generateListRows(pairs, {
+      criteria: { jobTitles: keywords, companies: [], geo: [] },
+      month,
+      alreadyInvited: invitedKeysFromState(snap.invites),
+      budget: Number(process.env.FG_DEFAULT_MONTHLY_ALLOWANCE || 30),
+    }, { buildTargets: async (c, o) => searchService.buildFgTargets(c, o) });
+    await writeFgList(tab, built.rows, { header: built.header });
+    return { count: built.rows.length, perAccount: built.perAccount };
+  },
 });
 
 const reconcileDeps = {
