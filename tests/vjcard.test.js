@@ -55,9 +55,12 @@ test('controls: running local → pause/stop/restart/copy + bulk run-check, open
   assert.ok(c.pause && c.stop && c.restart && c.copy);
   assert.match(c.bulk.onclick, /dashRunCheck/);
 });
-test('controls: running cloud → stop + Show, no pause, no bulk, open=openRunningCampaignEditor', () => {
+// The expanded strip's OPEN must use the SAME handler as the collapsed strip's
+// footer (openRunningCampaignReadOnly) — it is the only one that binds card #2's
+// Live Status to the campaign and sets the Cloud VM run target.
+test('controls: running cloud → stop + Show, no pause, no bulk, open=openRunningCampaignReadOnly', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'c1', bucket: 'running' }));
-  assert.match(c.open.onclick, /openRunningCampaignEditor\('c1'\)/);
+  assert.match(c.open.onclick, /openRunningCampaignReadOnly\('c1'\)/);
   assert.equal(c.pause, null);
   assert.equal(c.bulk, null);
   assert.match(c.stop.onclick, /stopCloudCampaignUI\('c1'\)/);
@@ -65,6 +68,9 @@ test('controls: running cloud → stop + Show, no pause, no bulk, open=openRunni
 });
 test('controls: monitoring cloud → check-now bulk + auto toggle + stop monitoring', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'c9', bucket: 'running', monitoring: true, autoChecksEnabled: true }));
+  // Same OPEN handler as a sending cloud campaign — monitoring is still live, so
+  // it must bind card #2, not drop into the cockpit view.
+  assert.match(c.open.onclick, /openRunningCampaignReadOnly\('c9'\)/);
   assert.match(c.bulk.onclick, /cloudCheckNow\('c9'\)/);
   assert.ok(c.monAuto && c.monAuto.checked === true);
   assert.match(c.monAuto.onclick, /setCloudAutoChecks\('c9'/);

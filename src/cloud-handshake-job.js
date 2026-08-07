@@ -7,7 +7,16 @@
 
 import { runCloudPreflightHandshake } from './cloud-preflight-handshake.js';
 
-let _job = null; // { senders:Map<id,{profileId,state,name}>, done, summary, error }
+let _job = null; // { senders:Map<id,{profileId,state,name}>, done, summary, error, lines }
+
+// Keep the handshake's own narration. runCloudPreflightHandshake takes a `log`
+// and this module never passed one, so it defaulted to `() => {}` — the entire
+// Path A handshake ran SILENTLY: nothing in the console, nothing in the campaign
+// log, nothing in the wizard. When an operator asked "did all four senders
+// actually send a request to the primary?" there was no record to answer from
+// (2026-08-06); the only trace was data/primary-status.json, written at the end.
+// Mirror every line to the console AND keep the last N for the status endpoint.
+const MAX_LINES = 200;
 
 // Overall watchdog: even if a browser primitive hangs and run() never settles,
 // the job must eventually flip `done` — otherwise startHandshakeJob's single-
@@ -28,7 +37,7 @@ export function getHandshakeJob() {
     }
     senders = [...byId.values()];
   }
-  return { active: true, done: _job.done, error: _job.error, summary: _job.summary, senders };
+  return { active: true, done: _job.done, error: _job.error, summary: _job.summary, senders, lines: _job.lines.slice() };
 }
 
 /** Reset (tests / after the client consumes a finished job). */
@@ -47,16 +56,29 @@ export function startHandshakeJob(body = {}, { run = runCloudPreflightHandshake 
   if (_job && !_job.done) return { ok: false, status: 409, error: 'a handshake is already running' };
 
   const senders = new Map(senderProfileIds.map((id) => [id, { profileId: id, state: 'pending', name: '' }]));
-  _job = { senders, done: false, summary: null, error: null };
+  _job = { senders, done: false, summary: null, error: null, lines: [] };
+
+  const log = (msg) => {
+    const line = `[handshake] ${msg}`;
+    try { console.log(line); } catch { /* */ }
+    if (_job && _job.lines) {
+      _job.lines.push(line);
+      if (_job.lines.length > MAX_LINES) _job.lines.splice(0, _job.lines.length - MAX_LINES);
+    }
+  };
+  log(`starting — ${senderProfileIds.length} sender(s) → ${body.primaryUrl}${body.autoAcceptAllPending ? ' (accept-all sweep on)' : ''}`);
 
   const onProgress = (evt) => {
     if (!evt || !evt.profileId) return;
     const cur = _job.senders.get(evt.profileId) || { profileId: evt.profileId, state: 'pending', name: '' };
-    _job.senders.set(evt.profileId, {
+    const next = {
       profileId: evt.profileId,
       state: evt.state || cur.state,
       name: evt.name || cur.name,
-    });
+    };
+    // Log only real transitions — onProgress can re-emit the same state.
+    if (next.state !== cur.state) log(`  ${next.name || next.profileId}: ${next.state}`);
+    _job.senders.set(evt.profileId, next);
   };
 
   // Capture THIS job so a late-settling run() can't clobber a newer job that
@@ -70,14 +92,22 @@ export function startHandshakeJob(body = {}, { run = runCloudPreflightHandshake 
     primarySource: body.primarySource || 'local-browser',
     autoAcceptAllPending: !!body.autoAcceptAllPending,
     onProgress,
+    log,
   }));
   const timeoutP = new Promise((_res, rej) => {
     const h = setTimeout(() => rej(new Error('handshake timed out — the local browsers may be stuck; dispatch anyway or retry')), MAX_MS);
     if (h && typeof h.unref === 'function') h.unref();
   });
   Promise.race([runP, timeoutP])
-    .then((summary) => settle({ summary: summary || null, done: true }))
-    .catch((e) => settle({ error: String((e && e.message) || e), done: true }));
+    .then((summary) => {
+      const s = summary || {};
+      log(`done — ${s.connected || 0} connected, ${s.accepted || 0} accepted, ${s.pending || 0} still pending`);
+      settle({ summary: summary || null, done: true });
+    })
+    .catch((e) => {
+      log(`FAILED — ${String((e && e.message) || e)}`);
+      settle({ error: String((e && e.message) || e), done: true });
+    });
 
   return { ok: true, status: 200, started: true, senderProfileIds };
 }

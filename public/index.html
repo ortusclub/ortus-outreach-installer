@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.133" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.133" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.140" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.140" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -837,12 +837,11 @@
       <div class="mode-grid" id="mode-grid"></div>
       <select id="campaign-mode" onchange="onModeChange()" style="display:none">
         <option value="connect_only">Connect Only</option>
-        <option value="check_status">Check Status (verify acceptances)</option>
         <option value="connect_and_introduce">Connect + Introduce Back</option>
         <option value="connect_and_message">Connect + DM</option>
-        <option value="message_only">Direct Messages</option>
+        <!-- message_only (Direct Messages) + inmail_only (InMail Only) retired
+             2026-08-06 — see RETIRED_MODES in /js/campaign-modes.mjs. -->
         <option value="introduce_back">Introduction Campaign (3-way intro DM)</option>
-        <option value="inmail_only">InMail Only</option>
         <option value="open_profile_only">Message Campaign</option>
         <option value="follower_growth">Follower Growth</option>
         <option value="check_dms">Check DMs (scan inboxes for replies)</option>
@@ -3713,7 +3712,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.133"></script>
+  <script type="module" src="/js/app.js?v=2.160.140"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

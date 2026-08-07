@@ -18,6 +18,35 @@ export function usesMonitoringCadence(mode) {
   return MONITORING_CADENCE_MODES.has(mode);
 }
 
+// RETIRED modes — removed from the product, local AND cloud (operator decision,
+// 2026-08-06). They had been greyed "Unavailable" in the picker for a while;
+// this makes it structural instead of cosmetic.
+//
+// Why these two: docs/HANDOFF-message-modes-on-vm.md lists six gaps across the
+// message-sending modes. Steven's engine PR #4 closed gaps 1-3 for
+// `open_profile_only` (Message Campaign) ONLY and explicitly left these two
+// alone — so on the VM they still have no re-send guard: a re-launch on a sheet
+// where rows already read "DM Sent" would message every one of them again.
+//
+// NOT deleted from the engine or from src/linkedin/*: `connect_and_message` and
+// `introduce_back` reuse the same send primitives, so ripping them out would
+// break two modes that are very much alive. Retiring is a launch-path decision,
+// not a code deletion. Existing history/board rows keep their labels.
+// `check_status` is retired as a standalone CAMPAIGN TYPE only. The acceptance
+// sweep itself is untouched and still runs everywhere it mattered: the idle
+// bulk-check inside CC+IC / CC+DM, the "Run check now" button (dashBulkCheck →
+// /api/bulk-check-*, which never launched a check_status campaign), and the
+// cloud monitor sweep. Only the wizard card goes.
+export const RETIRED_MODES = new Set([
+  'message_only',   // wizard: "Direct Messages"
+  'inmail_only',    // wizard: "InMail Only"
+  'check_status',   // wizard: "Check Status" — the sweep lives on, the card doesn't
+]);
+
+export function isRetiredMode(mode) {
+  return RETIRED_MODES.has(String(mode || ''));
+}
+
 // Cadence bounds — single source of truth for the wizard dropdown, the server
 // intake clamp, and the engine backstop. The dropdown's smallest/largest
 // options MUST equal these (see public/index.html #check-cadence-select).

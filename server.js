@@ -55,9 +55,10 @@ import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile } from './src/gologin-launcher.js';
+import { accountForEmail, canOperatorUseProfile, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
-import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
+import { clampCadenceMinutes, isRetiredMode } from './public/js/campaign-modes.mjs';
 import { validatePrimaryUrl } from './public/js/primary-url-validation.mjs';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
@@ -278,7 +279,72 @@ function isAdminEmail(email) {
 // actually here" (antonio@ / antoniov@ / …); fall back to the login only when
 // no operator email is set.
 function viewerIsAdmin(req) {
-  return isAdminEmail(getOperatorEmail() || (req && req.user) || '');
+  return isAdminEmail(viewerEmail(req));
+}
+
+// Who is actually sitting at this install. Same precedence as viewerIsAdmin and
+// for the same reason: the dashboard login is shared across installs, so only
+// the per-machine operator identity distinguishes people. This is the email the
+// GoLogin-account rule reads — an @linkedvelocity.com operator gets the Linked
+// Velocity workspace, everyone else gets Ortus.
+function viewerEmail(req) {
+  return getOperatorEmail() || (req && req.user) || '';
+}
+
+// The GoLogin account this viewer may drive.
+function viewerAccount(req) {
+  return accountForEmail(viewerEmail(req));
+}
+
+/**
+ * Refuse a launch that includes profiles from a GoLogin account this operator
+ * doesn't belong to. Responds and returns true when it rejects.
+ *
+ * The picker already greys those tiles, but the picker is not the only way a
+ * profileId reaches a launch: saved drafts, presets, the queue and re-launched
+ * history all carry raw ids. Without this the request would reach GoLogin with
+ * the wrong workspace's token and fail as an opaque 404 mid-campaign.
+ *
+ * Fail-open on purpose. A single-account install and an unlistable GoLogin API
+ * both mean "we cannot prove this profile is foreign" — and blocking every
+ * launch on that would turn a second-account outage into a total outage.
+ */
+async function rejectIfForeignProfiles(req, res, profileIds, mode) {
+  const ids = (profileIds || []).filter((id) => id && id !== 'local-browser');
+  if (!ids.length) return false;
+  if (configuredAccounts().length < 2) return false;
+  try { await getProfiles(); } catch { return false; }
+
+  const email = viewerEmail(req);
+
+  // Two independent reasons an account can be refused, reported separately —
+  // "wrong workspace" and "this workspace doesn't do that" are different
+  // problems and a merged message would send the operator looking in the wrong
+  // place. Wrong-workspace is checked first because it is the harder block:
+  // switching campaign type cannot fix it.
+  const foreign = ids.filter((id) => !canOperatorUseProfile(email, accountOfProfile(id)));
+  if (foreign.length) {
+    const theirs = accountLabel(viewerAccount(req));
+    res.status(403).json({
+      error: `${foreign.length} selected account(s) belong to a different GoLogin workspace. `
+        + `You are signed in as ${email || 'an unknown operator'}, which can only run ${theirs} accounts.`,
+    });
+    return true;
+  }
+
+  const wrongMode = ids.filter((id) => !accountAllowsMode(accountOfProfile(id), mode));
+  if (wrongMode.length) {
+    const label = accountLabel(accountOfProfile(wrongMode[0]));
+    const allowed = (accountModes(accountOfProfile(wrongMode[0])) || [])
+      .map((m) => (m === POST_AMPLIFICATION_MODE ? 'Post Amplification' : 'Follower Growth'))
+      .join(' and ');
+    res.status(403).json({
+      error: `${wrongMode.length} selected account(s) are ${label} accounts, which can only run ${allowed}.`,
+    });
+    return true;
+  }
+
+  return false;
 }
 
 app.get('/api/me', (req, res) => {
@@ -545,10 +611,25 @@ app.delete('/api/server-log', (_req, res) => {
 // ---------------------------------------------------------------------------
 // GoLogin profiles
 // ---------------------------------------------------------------------------
-app.get('/api/profiles', async (_req, res) => {
+// v2.160.138 — the list now spans every configured GoLogin account (Ortus +
+// Linked Velocity). Each profile carries `account` (who owns it) and
+// `available` (whether THIS operator may use it). Profiles from the other
+// account are still returned, not filtered out: the operator decision was to
+// keep the whole roster legible and mark the rest unavailable, so nobody
+// wonders where an account went.
+app.get('/api/profiles', async (req, res) => {
   try {
-    const profiles = await getProfiles(process.env.GOLOGIN_API_TOKEN);
-    res.json(profiles);
+    const profiles = await getProfiles();
+    const email = viewerEmail(req);
+    res.json(profiles.map((p) => ({
+      ...p,
+      available: canOperatorUseProfile(email, p.account),
+      accountLabel: accountLabel(p.account),
+      // null = runs anything. An array means the picker must re-check on every
+      // campaign-type change, which is why this ships with the list rather than
+      // being resolved server-side: the server doesn't know the selected mode.
+      allowedModes: accountModes(p.account),
+    })));
   } catch (err) {
     console.error('Error fetching profiles:', err.message);
     res.status(500).json({ error: err.message });
@@ -1145,6 +1226,7 @@ async function handleStartCloud(req, res) {
     if (!isCloudMode(mode)) return res.status(400).json({ error: `Mode "${mode}" can't run in the cloud yet.` });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (rejectIfNoOperatorEmail(res)) return;
+    if (await rejectIfForeignProfiles(req, res, profileIds, mode)) return;
 
     // ── Pre-flight gate: same ack/blocklist check as /api/campaign/start ─────
     if (!await runPreflightGate(req, res)) return;
@@ -1331,6 +1413,12 @@ async function handleStartCloud(req, res) {
       accountEmails,
       sooSheetId: SOO_SHEET_ID,
       sooGid: SOO_SHEET_GID,
+      // Which GoLogin workspace owns these profiles. The engine holds a token
+      // per account and picks by this id; absent (older app build) it falls
+      // back to its default account, which is exactly the pre-2026-08-07
+      // behaviour. Sent as an ID, never a token — secrets stay in the engine's
+      // k8s secret, not in a campaign document.
+      glAccount: viewerAccount(req),
     };
     // Operator timezone → engine → GAS stamps "Date/Time of Last Action" in the
     // operator's local clock (parity with local runs, where sheets-writer attaches
@@ -2071,6 +2159,13 @@ app.post('/api/campaign/start', async (req, res) => {
     const body = req.body || {};
     const { profileIds, sheetUrl, dailyLimit, mode } = body;
 
+    // Retired modes (2026-08-06) — the picker no longer offers them, but a saved
+    // draft, a schedule or an old queued row can still carry one, and those all
+    // arrive here. Reject at the door so a retired mode can't run locally either.
+    if (isRetiredMode(mode)) {
+      return res.status(400).json({ error: `"${mode}" campaigns have been retired and can no longer be launched.` });
+    }
+
     // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
     // the sheet's Account Used column inside campaign.js (only the original
     // sender can check / message a given lead), so empty profileIds is valid.
@@ -2080,6 +2175,9 @@ app.post('/api/campaign/start', async (req, res) => {
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
     if (rejectIfNoOperatorEmail(res)) return;
+    // A foreign-workspace profile — or one whose workspace doesn't run this
+    // mode — is rejected at the door, not at launch time.
+    if (await rejectIfForeignProfiles(req, res, profileIds, mode)) return;
     if (rejectIfBadPrimaryUrl(body, res)) return;
 
     // Fix A Task 4 — fast intake check: reject if the frontend signals a
@@ -3283,12 +3381,20 @@ app.post('/api/campaign/queue-only', async (req, res) => {
     const body = req.body || {};
     const { profileIds, sheetUrl, dailyLimit, mode } = body;
 
+    // Retired modes — same gate as /api/campaign/start. Queueing one would just
+    // defer the rejection to drain time, where nobody is watching for the error.
+    if (isRetiredMode(mode)) {
+      return res.status(400).json({ error: `"${mode}" campaigns have been retired and can no longer be queued.` });
+    }
     if (mode !== 'check_status' && mode !== 'message_only' && mode !== 'introduce_back' && !profileIds?.length) {
       return res.status(400).json({ error: 'profileIds required' });
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
     if (rejectIfNoOperatorEmail(res)) return;
+    // A foreign-workspace profile — or one whose workspace doesn't run this
+    // mode — is rejected at the door, not at launch time.
+    if (await rejectIfForeignProfiles(req, res, profileIds, mode)) return;
     if (rejectIfBadPrimaryUrl(body, res)) return;
 
     // Fix A Task 4 — intake guard (mirrors /api/campaign/start).
@@ -5294,6 +5400,11 @@ app.post('/api/post-amplification/start', async (req, res) => {
     if (actionable.length === 0) {
       return res.status(400).json({ error: 'No accounts have Like or a non-empty Comment configured.' });
     }
+    // Same workspace + mode gate the campaign endpoints use. Post Amplification
+    // is one of the two modes the marketing workspace exists for, so this pass
+    // is what LETS marketing accounts through here while still refusing another
+    // team's accounts.
+    if (await rejectIfForeignProfiles(req, res, actionable.map((c) => c.profileId), POST_AMPLIFICATION_MODE)) return;
 
     // Reset state for this run.
     postAmp.running = true;

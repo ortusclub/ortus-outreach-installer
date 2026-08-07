@@ -123,3 +123,31 @@ test('the value survives the engine gate expression it is fed into', async () =>
   assert.equal(asEngineReadsIt(undefined), true,
     'and the absent key really did mean ON — which is why it had to be sent');
 });
+
+// The local runner's read of this pref was refactored to call the shared helper
+// (src/campaign.js:1879). That refactor must be behaviour-identical — the LOCAL
+// campaign loop is not what was broken, and must not change. This pins the new
+// helper against the EXACT expression it replaced, across every prefs shape
+// getPrefs can return.
+test('the helper is byte-for-byte equivalent to the expression it replaced in src/campaign.js', async () => {
+  const OLD = (prefs) => (prefs ? prefs.identityGate === true : false);
+  const shapes = [
+    null, undefined,
+    {}, { tz: '' }, { tz: 'Europe/Zurich' },
+    { identityGate: true }, { identityGate: false },
+    { identityGate: 'true' }, { identityGate: 1 }, { identityGate: 0 },
+    { identityGate: null }, { identityGate: undefined },
+    { identityGate: true, tz: 'Asia/Manila' },
+    await getPrefs(''), // the real DEFAULTS object
+  ];
+  for (const s of shapes) {
+    assert.equal(identityGateEnabled(s), OLD(s), `diverged on ${JSON.stringify(s)}`);
+  }
+});
+
+test('the local catch-branch fallback is still OFF', async () => {
+  // src/campaign.js:1880 — a prefs read that throws used to assign a literal
+  // `false`; it now calls identityGateEnabled(null). Same value, or the gate
+  // would silently switch on for every local campaign after a bad prefs read.
+  assert.equal(identityGateEnabled(null), false);
+});

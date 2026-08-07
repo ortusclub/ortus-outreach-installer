@@ -105,13 +105,21 @@ export function vjCardControlsFor(status = {}) {
   const queued = s.state === 'queued';
   const running = !monitor && !done && !queued;
 
-  // Running cloud → pause-to-edit wizard; STOPPED/cancelled cloud → the setup
-  // wizard prefilled + fully editable (edit & re-launch); cleanly-done cloud →
-  // the live cockpit. Both editors fall back to openCloudLive when no launch
-  // config was snapshotted (pre-2.133 campaigns).
+  // Running cloud → read-only wizard WITH the campaign's Live Status card #2
+  // bound and open; STOPPED/cancelled cloud → the setup wizard prefilled + fully
+  // editable (edit & re-launch); cleanly-done cloud → the live cockpit. Both
+  // editors fall back to openCloudLive when no launch config was snapshotted
+  // (pre-2.133 campaigns).
+  //
+  // v2.160.134: running cloud used to call openRunningCampaignEditor, which is
+  // the pre-2.160.46 path — it prefills the wizard but never binds the live card
+  // (_bindLiveStatusToCampaign) or flips the run target to Cloud VM. So OPEN from
+  // an EXPANDED strip landed on a "Runs on this Mac" wizard with NO Live Status
+  // section, while OPEN from the COLLAPSED strip footer (which already called
+  // openRunningCampaignReadOnly) showed it. Same button, two paths. One now.
   const openOnclick = cloud
     ? (queued ? `viewCloudCampaign('${id}')`
-      : running ? `openRunningCampaignEditor('${id}')`
+      : (running || monitor) ? `openRunningCampaignReadOnly('${id}')`
         : s.bad ? `openCampaignForEdit('${id}')`
           : `openCloudLive('${id}')`)
     : (queued ? `window.editQueuedCampaign && window.editQueuedCampaign('${rawId}')` : 'viewRunningCampaign()');

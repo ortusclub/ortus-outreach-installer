@@ -1,0 +1,55 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+// Password-locked campaign types. app.js is a browser bundle with no exports,
+// so these are source assertions — the same approach retired-modes.test.js uses.
+// They exist because the lock went from one mode to two on 2026-08-07, and the
+// single-flag design silently grants the wrong mode once there are two.
+
+const APP = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
+
+test('both locked modes have their own password', () => {
+  assert.match(APP, /const MODE_PASSWORDS = \{/);
+  assert.match(APP, /follower_growth: 'OP_FUNNEL_ORTUS\.APP'/);
+  assert.match(APP, /post_amplification: 'Ortus_PostAMP'/);
+});
+
+test('the unlock flag is per mode, not global', () => {
+  // The bug this prevents: with one shared `fg_unlocked` flag, typing the
+  // Follower Growth password would also unlock Post Amplification — a mode
+  // whose password the operator never entered.
+  assert.match(APP, /const modeUnlockKey = \(value\) => `mode_unlocked:\$\{value\}`/);
+  assert.match(APP, /function modeIsLocked\(m\) \{\s*return !!\(m && m\.lock\) && !modeUnlocked\(m\.value\);/);
+  // The old global helpers must be gone, not merely unused — a leftover
+  // fgUnlocked() call site would reintroduce exactly the shared-flag bug.
+  assert.equal(APP.includes('function fgUnlocked('), false, 'global unlock helper still present');
+  assert.equal(APP.includes('setFgUnlocked('), false, 'global unlock setter still present');
+  assert.equal(APP.includes('const FG_PASSWORD'), false, 'single-password constant still present');
+});
+
+test('the entered password is checked against the mode being unlocked', () => {
+  // Not against any password in the map — that would let the FG password open
+  // Post Amp and vice versa.
+  assert.match(APP, /if \(entry !== MODE_PASSWORDS\[mode\.value\]\) \{/);
+  assert.match(APP, /setModeUnlocked\(mode\.value\);/);
+});
+
+test('an existing Follower Growth unlock survives the storage change', () => {
+  // Operators who already typed the FG password must not be re-prompted just
+  // because the key scheme changed — but the legacy key grants FG only.
+  assert.match(APP, /LEGACY_FG_UNLOCK_KEY = 'fg_unlocked'/);
+  assert.match(APP, /value === 'follower_growth' && localStorage\.getItem\(LEGACY_FG_UNLOCK_KEY\)/);
+});
+
+test('Post Amplification is live and locked, not coming soon', () => {
+  const card = APP.slice(APP.indexOf("value: 'post_amplification',"));
+  const head = card.slice(0, 260);
+  assert.ok(head.includes('lock: true'), 'Post Amp card must be password-locked');
+  assert.equal(head.includes('comingSoon'), false, 'Post Amp is no longer coming soon');
+});
+
+test('Follower Growth stays locked', () => {
+  const card = APP.slice(APP.indexOf("value: 'follower_growth',"));
+  assert.ok(card.slice(0, 260).includes('lock: true'), 'FG must stay password-locked');
+});

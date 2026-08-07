@@ -2,6 +2,7 @@ import GoLogin from 'gologin';
 import puppeteer from 'puppeteer-core';
 import { hideByPid } from './mac-window.js';
 import { checkDiskFree, formatBytes } from './disk-check.js';
+import { configuredAccounts, tokenForAccount, DEFAULT_ACCOUNT_ID } from './gologin-accounts.js';
 
 const activeProfiles = new Map();
 const spawnedPids = new Map(); // profileId → Orbita pid (every spawn, even failed launches)
@@ -22,10 +23,19 @@ export function selectOrphanPids({ spawned, activePids, isAlive }) {
   return out;
 }
 
-// Profile list cache — loaded once, reused across the entire campaign
-let profileCache = null;
-let profileCacheTime = 0;
+// Profile list cache — loaded once per GoLogin account, reused across the
+// entire campaign. Keyed by account id since v2.160.138: the app lists more
+// than one GoLogin workspace and a single shared cache would let whichever
+// account refreshed last stand in for both.
+const profileCaches = new Map(); // accountId → { list, time }
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// profileId → accountId, the answer to "whose token launches this profile".
+// Populated as a side effect of every getProfiles() call and read by
+// tokenForProfile(). It is a cache, not a store: a cold process that resumes a
+// campaign has an empty map, which is why tokenForProfile() is async and
+// re-lists on a miss rather than guessing.
+const profileAccount = new Map();
 
 /**
  * v2.14.x: Force a Puppeteer page to report itself as focused/active
@@ -71,12 +81,7 @@ export async function applyFocusEmulation(page, profileId = 'unknown') {
   }
 }
 
-export async function getProfiles(token) {
-  // Return cache if fresh
-  if (profileCache && Date.now() - profileCacheTime < CACHE_TTL) {
-    return profileCache;
-  }
-
+async function fetchAccountProfiles(accountId, token) {
   const allProfiles = [];
   let page = 1;
   let totalCount = Infinity;
@@ -93,29 +98,106 @@ export async function getProfiles(token) {
     if (!profiles.length) break;
 
     for (const p of profiles) {
-      allProfiles.push({ id: p.id, name: p.name, notes: p.notes || '' });
+      allProfiles.push({ id: p.id, name: p.name, notes: p.notes || '', account: accountId });
     }
 
-    console.log(`[gologin] Page ${page}: ${allProfiles.length}/${totalCount}`);
+    console.log(`[gologin] ${accountId} page ${page}: ${allProfiles.length}/${totalCount}`);
     page++;
   }
 
-  console.log(`[gologin] Total: ${allProfiles.length} profiles`);
-  profileCache = allProfiles;
-  profileCacheTime = Date.now();
   return allProfiles;
 }
 
+/**
+ * Every profile the app can see, across every configured GoLogin account,
+ * each tagged with the `account` that owns it.
+ *
+ * The parameter is ignored and kept only so the ~15 legacy
+ * `getProfiles(process.env.GOLOGIN_API_TOKEN)` call sites keep compiling and
+ * transparently gain the second account. Tokens now come from the registry,
+ * per account — passing one here cannot mean anything sensible once there is
+ * more than one.
+ */
+export async function getProfiles(_ignoredLegacyToken) {
+  const out = [];
+
+  for (const acc of configuredAccounts()) {
+    const cached = profileCaches.get(acc.id);
+    let list;
+
+    if (cached && Date.now() - cached.time < CACHE_TTL) {
+      list = cached.list;
+    } else {
+      try {
+        list = await fetchAccountProfiles(acc.id, tokenForAccount(acc.id));
+        profileCaches.set(acc.id, { list, time: Date.now() });
+      } catch (err) {
+        // A secondary account being down must never blank the primary roster —
+        // that would empty the picker for operators who have nothing to do with
+        // it. Serve its last known list (or nothing) and carry on. The default
+        // account still throws: an empty picker there is a real outage and has
+        // always surfaced as one.
+        if (acc.id === DEFAULT_ACCOUNT_ID) throw err;
+        console.warn(`[gologin] ${acc.id} profile list failed (${err.message}) — using ${cached ? 'stale cache' : 'no profiles'} for it`);
+        list = cached ? cached.list : [];
+      }
+    }
+
+    for (const p of list) {
+      profileAccount.set(p.id, acc.id);
+      out.push(p);
+    }
+  }
+
+  console.log(`[gologin] Total: ${out.length} profiles across ${configuredAccounts().length} account(s)`);
+  return out;
+}
+
+/**
+ * Which account owns a profile, or null when we have not listed it yet.
+ * Synchronous and cache-only — callers that need an answer use
+ * tokenForProfile().
+ */
+export function accountOfProfile(profileId) {
+  return profileAccount.get(profileId) || null;
+}
+
+/**
+ * The API token that can drive this profile.
+ *
+ * Async because the mapping is a cache: a freshly restarted process resuming a
+ * campaign has never listed anything, and silently falling back to the default
+ * account's token there would launch-fail every second-account profile with an
+ * opaque GoLogin 404. On a miss we list once (which populates the map) and try
+ * again; only then do we fall back.
+ */
+export async function tokenForProfile(profileId) {
+  if (!profileAccount.has(profileId)) {
+    try { await getProfiles(); } catch { /* fall through to the default token */ }
+  }
+  return tokenForAccount(profileAccount.get(profileId) || DEFAULT_ACCOUNT_ID);
+}
+
 export function clearProfileCache() {
-  profileCache = null;
-  profileCacheTime = 0;
+  profileCaches.clear();
+  profileAccount.clear();
 }
 
 /**
  * Launch a GoLogin browser profile.
  * The browser window is positioned off-screen to avoid stealing focus.
+ *
+ * `_ignoredLegacyToken` exists only so the ~15 existing
+ * `launchProfile(pid, process.env.GOLOGIN_API_TOKEN)` call sites keep working.
+ * The token is resolved HERE, from the profile itself, because the caller
+ * cannot know which GoLogin account owns the profile it was handed — and every
+ * one of those call sites was passing the default account's token
+ * unconditionally, which is a 404 for any Linked Velocity profile.
+ * Resolving in the one place they all funnel through is why adding a second
+ * account did not need 22 edits.
  */
-export async function launchProfile(profileId, token) {
+export async function launchProfile(profileId, _ignoredLegacyToken) {
+  const token = await tokenForProfile(profileId);
   // Phase 2.8.20 (W3-C2): refuse to launch when free disk is below threshold.
   // Profile downloads + screenshots + logs accumulate; a full disk silently
   // corrupts state (writes return ENOSPC and the campaign limps on).

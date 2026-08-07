@@ -1543,19 +1543,45 @@ async function loadSoOStatus() {
 // "two of this guy, only one in SoO"). Keep the first profile per email, hide
 // the rest from the picker, and tag the survivor with how many we hid so the
 // card can flag it — auto-hidden, but not silently (clean up in GoLogin).
+// Keyed by workspace + email, not email alone: the list now spans two GoLogin
+// accounts, and the same person can legitimately exist in both. On a bare email
+// key the Ortus copy (listed first) would silently hide the Linked Velocity one
+// and its owner would lose their account from the picker. A duplicate is only a
+// duplicate inside one workspace anyway — that is where the operator goes to
+// delete it.
+// "Follower Growth and Post Amplification" from the raw mode ids the server
+// ships. Only the marketing workspace has a list today; the fallback keeps this
+// honest if another restricted workspace is ever added.
+const MODE_DISPLAY_NAMES = {
+  follower_growth: 'Follower Growth',
+  post_amplification: 'Post Amplification',
+};
+function modeNames(modes) {
+  if (!Array.isArray(modes) || !modes.length) return 'nothing';
+  const names = modes.map((m) => MODE_DISPLAY_NAMES[m] || m);
+  if (names.length === 1) return names[0];
+  return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+}
+
+function dedupeKey(p) {
+  const email = ((p && p.name) || '').toLowerCase().trim();
+  if (!email) return '';
+  return ((p && p.account) || '') + '|' + email;
+}
+
 function dedupeProfilesByEmail(profiles) {
-  const seen = new Map();   // emailKey -> kept profile
-  const hidden = new Map(); // emailKey -> count hidden
+  const seen = new Map();   // key -> kept profile
+  const hidden = new Map(); // key -> count hidden
   const out = [];
   for (const p of (profiles || [])) {
-    const key = ((p && p.name) || '').toLowerCase().trim();
+    const key = dedupeKey(p);
     if (!key) { out.push(p); continue; }                 // unnamed → never dedupe away
     if (seen.has(key)) { hidden.set(key, (hidden.get(key) || 0) + 1); continue; }
     seen.set(key, p);
     out.push(p);
   }
   for (const p of out) {
-    const key = ((p && p.name) || '').toLowerCase().trim();
+    const key = dedupeKey(p);
     if (hidden.has(key)) p._dupHidden = hidden.get(key);
   }
   return out;
@@ -1894,16 +1920,25 @@ function renderProfiles(profiles) {
   // SoO loads after the first render, so pre-SoO these can't be identified yet;
   // the post-SoO re-render (loadProfiles) drops them once their section is known.
   const _visible = profiles.filter((p) => !isHiddenSection(findSoOForProfile(p.name)));
+  // v2.160.138: `available === false` means the profile belongs to a GoLogin
+  // workspace this operator isn't in (Linked Velocity vs Ortus — see
+  // src/gologin-accounts.js). Those tiles stay in the roster so the account list
+  // reads the same for everyone, but they sort below everything usable and can
+  // never be picked. The server re-checks on launch; this is only the UI half.
   const _ordered = _visible
     .map((p, i) => {
       const soo = findSoOForProfile(p.name);
+      // Unusable-here tiles sink below everything selectable. Wrong-mode sorts
+      // above wrong-workspace because switching campaign type brings it back.
+      const foreignBump = p.available === false ? 10
+        : (Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode)) ? 5 : 0;
       if (_breakdown) {
         const br = classifyAccountChannels(soo);
         // free-first: usable (0) → has-status-but-none-free (1) → blocked (2).
-        return { p, i, soo, br, rank: br.blocked ? 2 : (br.anyFree ? 0 : 1) };
+        return { p, i, soo, br, rank: (br.blocked ? 2 : (br.anyFree ? 0 : 1)) + foreignBump };
       }
       const st = classifyAccountState(soo, _meId, _mode, _passover);
-      return { p, i, soo, st, rank: (_RANK[st.state] ?? 9) };
+      return { p, i, soo, st, rank: (_RANK[st.state] ?? 9) + foreignBump };
     })
     .sort((a, b) => (a.rank - b.rank) || (a.i - b.i)); // stable within rank
 
@@ -1912,7 +1947,15 @@ function renderProfiles(profiles) {
     // modes: blocked when classifyAccountState says so (restricted, or the CC/credit
     // column is NA/Used/etc.). Breakdown modes: blocked when restricted OR no channel
     // is Available (nothing usable for this campaign right now).
-    const _locked = _breakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked');
+    // Another GoLogin workspace's account — visible, never selectable, and
+    // locked for a reason SoO knows nothing about, so it's OR'd in separately.
+    const _foreign = p.available === false;
+    // Right workspace, wrong job: the marketing accounts run Follower Growth
+    // and Post Amplification only. Tracked apart from _foreign because it is
+    // fixable — switching campaign type unlocks the tile — and the copy has to
+    // say so rather than implying the operator lacks access.
+    const _wrongMode = !_foreign && Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode);
+    const _locked = _foreign || _wrongMode || (_breakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked'));
     // Defensive: a restored preset/schedule must not keep a now-unusable account
     // selected — drop it (before building the tile so `checked` reflects reality).
     if (_locked && selectedProfileIds.includes(p.id)) {
@@ -1923,6 +1966,13 @@ function renderProfiles(profiles) {
     const _checked = selectedProfileIds.includes(p.id) ? 'checked' : '';
     const _disabled = _locked ? 'disabled' : '';
     const _dup = p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : '';
+    // Name the owning workspace on foreign tiles only. On your own accounts the
+    // pill would be noise — every tile would carry it.
+    const _wsPill = (_foreign || _wrongMode)
+      ? ` <span class="ws-flag" title="${escHtml(_foreign
+          ? `This account lives in the ${p.accountLabel || 'other'} GoLogin workspace. Sign in with a ${p.accountLabel || 'matching'} email to use it.`
+          : `${p.accountLabel || 'This'} accounts run ${modeNames(p.allowedModes)} only.`)}">${escHtml(p.accountLabel || 'other workspace')}</span>`
+      : '';
 
     let _classes, _inner;
     if (_breakdown) {
@@ -1960,7 +2010,7 @@ function renderProfiles(profiles) {
       <div class="jt-det">
         <div class="jt-top">
           <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
-          <span class="jt-email">${escHtml(p.name)}${_dup}</span>${_asgPill}
+          <span class="jt-email">${escHtml(p.name)}${_dup}${_wsPill}</span>${_asgPill}
         </div>
         <div class="brk-grid">${_cells}</div>
       </div>`;
@@ -1984,7 +2034,12 @@ function renderProfiles(profiles) {
       //   restricted → LinkedIn block · na → CC/credit = NA · unavailable → Used/-/Partial.
       const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
       const _label = escHtml(_state.label || '');
-      const _word = _noSoo ? _sm.word : ((_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word);
+      // A foreign-workspace account reads OTHER TEAM, never FREE — its SoO row
+      // may well say Available, but not to this operator.
+      const _word = _foreign ? 'OTHER TEAM'
+        : _wrongMode ? 'WRONG MODE'
+          : (_noSoo ? _sm.word : ((_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word));
+      const _statCls = (_foreign || _wrongMode) ? 'stop' : _sm.cls;
       let _sub;
       if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
       else
@@ -1997,8 +2052,12 @@ function renderProfiles(profiles) {
         else if (_reason === 'unavailable') _sub = _label ? `Not available — <b>${_label}</b>.` : 'Not available for this campaign.';
         else _sub = 'Restricted by LinkedIn.';
       } else _sub = 'Anyone can use.';
+      // Workspace beats every SoO verdict: an account you cannot drive at all is
+      // not "free", whatever its credits say.
+      if (_foreign) _sub = `${escHtml(p.accountLabel || 'Another')} workspace — sign in with a ${escHtml(p.accountLabel || 'matching')} email to use it.`;
+      else if (_wrongMode) _sub = `${escHtml(p.accountLabel || 'These')} accounts run ${escHtml(modeNames(p.allowedModes))} only.`;
       const _statZone = `
-      <div class="jt-stat s-${_sm.cls}">
+      <div class="jt-stat s-${_statCls}">
         <span class="jt-dot"></span>
         <span class="jt-word">${_word}</span>
       </div>`;
@@ -2011,7 +2070,7 @@ function renderProfiles(profiles) {
       <div class="jt-det">
         <div class="jt-top">
           <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
-          <span class="jt-email">${escHtml(p.name)}${_dup}</span>
+          <span class="jt-email">${escHtml(p.name)}${_dup}${_wsPill}</span>
         </div>
         <div class="jt-sub">${_sub}</div>
       </div>`;
@@ -4435,22 +4494,42 @@ function restoreLastMode() {
 // Coming Soon per operator request. Card markup + the existing comingSoon
 // flag + setModeByIndex's toast handle the grey-out + click-to-toast flow.
 
-// ── Follower Growth password lock ──────────────────────────────────────────
-// FG is gated behind a password so only people who have it can use it.
-// Client-side check (this is a low-stakes internal app, ~3 operators). To
-// change the password, edit FG_PASSWORD below. Unlock is remembered on this
-// machine (localStorage) so the password is entered once per laptop.
-const FG_PASSWORD = 'OP_FUNNEL_ORTUS.APP';
-const FG_UNLOCK_KEY = 'fg_unlocked';
-function fgUnlocked() {
-  try { return localStorage.getItem(FG_UNLOCK_KEY) === '1'; } catch { return false; }
+// ── Password-locked campaign types ─────────────────────────────────────────
+// Some modes are gated behind a password so only people who have it can use
+// them. Client-side check — this is a low-stakes internal app and the gate is
+// about keeping the wrong person from casually launching, not about secrecy.
+// Anyone with devtools can read these; treat them as a speed bump, not auth.
+//
+// PER MODE since 2026-08-07. It used to be one global `fg_unlocked` flag shared
+// by every locked card, which was fine with exactly one locked mode and wrong
+// the moment there were two: unlocking Follower Growth would also have unlocked
+// Post Amplification, with a password that isn't Post Amplification's.
+//
+// Unlock is remembered per machine, per mode, so each password is typed once
+// per laptop. To change one, edit it here.
+const MODE_PASSWORDS = {
+  follower_growth: 'OP_FUNNEL_ORTUS.APP',
+  post_amplification: 'Ortus_PostAMP',
+};
+// The pre-2026-08-07 key. Read-only compatibility: operators who already
+// unlocked FG on this machine must not be asked again just because the storage
+// scheme changed. It grants FG and nothing else.
+const LEGACY_FG_UNLOCK_KEY = 'fg_unlocked';
+const modeUnlockKey = (value) => `mode_unlocked:${value}`;
+
+function modeUnlocked(value) {
+  try {
+    if (localStorage.getItem(modeUnlockKey(value)) === '1') return true;
+    if (value === 'follower_growth' && localStorage.getItem(LEGACY_FG_UNLOCK_KEY) === '1') return true;
+  } catch { /* private mode / disabled storage → stay locked */ }
+  return false;
 }
-function setFgUnlocked() {
-  try { localStorage.setItem(FG_UNLOCK_KEY, '1'); } catch {}
+function setModeUnlocked(value) {
+  try { localStorage.setItem(modeUnlockKey(value), '1'); } catch {}
 }
 // True when a mode card should currently render in its locked state.
 function modeIsLocked(m) {
-  return !!(m && m.lock) && !fgUnlocked();
+  return !!(m && m.lock) && !modeUnlocked(m.value);
 }
 // Electron's BrowserWindow does NOT implement window.prompt(), so we use a
 // small in-app modal. Resolves to the typed string, or null if cancelled.
@@ -4535,46 +4614,17 @@ const MODE_LIST = [
       'End-to-end cold-lead → direct outreach pipeline',
     ],
   },
-  {
-    value: 'check_status',
-    name: 'Check Status',
-    bullets: [
-      'Verify which pending requests were accepted',
-      'Updates the lead sheet automatically',
-      'Read-only — no messages sent',
-    ],
-  },
-  {
-    // v2.61: Renamed display "Message Only" → "Direct Messages" and
-    // refactored to mirror introduce_back semantics (workflow A — full
-    // IC symmetry). Internal value stays 'message_only' so existing
-    // saved drafts/schedules/history rows keep working.
-    value: 'message_only',
-    name: 'Direct Messages',
-    // Parked per operator request — greyed + non-clickable like Post Amplification.
-    disabled: true,
-    disabledReason: 'Direct Messages is unavailable.',
-    // v2.86.1 (port): re-enabled for operator testing. (Was greyed in v2.72 when
-    // folded into Message Campaign.)
-    bullets: [
-      '1:1 direct messages to your connections',
-      'Adds no intro person — sender messages the lead directly',
-      'Runs on a sheet of already-connected leads',
-    ],
-  },
-  {
-    value: 'inmail_only',
-    name: 'InMail Only',
-    // Parked per operator request — greyed + non-clickable like Post Amplification.
-    disabled: true,
-    disabledReason: 'InMail Only is unavailable.',
-    // v2.86.1 (port): re-enabled for operator testing. (Was greyed in v2.72.)
-    bullets: [
-      'Premium InMail to non-connected targets',
-      'Consumes InMail credits per send',
-      'Experimental — limited automated test coverage',
-    ],
-  },
+  // 'check_status' (Check Status) retired 2026-08-06 as a standalone campaign
+  // type. The sweep is NOT gone: CC+IC / CC+DM still run it on their cadence,
+  // "Run check now" still fires it, and the cloud monitor still sweeps. What is
+  // gone is launching a whole campaign whose only job is that sweep.
+  //
+  // 'message_only' (Direct Messages) and 'inmail_only' (InMail Only) were
+  // RETIRED on 2026-08-06 — see RETIRED_MODES in /js/campaign-modes.mjs for why.
+  // They had been greyed "Unavailable" here since v2.85; now they're gone from
+  // the picker entirely, and both launch paths reject them server-side. Their
+  // display labels stay in the history/board label maps so old rows still read
+  // as "Direct Messages" rather than a raw mode string.
   {
     value: 'open_profile_only',
     name: 'Message Campaign',
@@ -4599,7 +4649,7 @@ const MODE_LIST = [
   {
     value: 'follower_growth',
     name: 'Follower Growth',
-    lock: true, // password-gated — see FG_PASSWORD / modeIsLocked
+    lock: true, // password-gated — see MODE_PASSWORDS / modeIsLocked
     bullets: [
       'Invite your 1st-degree connections to follow the Ortus Club page',
       'Targets from the Connections DB — function-filtered, DNC-safe, budget-capped',
@@ -4609,7 +4659,7 @@ const MODE_LIST = [
   {
     value: 'post_amplification',
     name: 'Post Amplification',
-    comingSoon: true,
+    lock: true, // unlocked 2026-08-07 — password-gated, see MODE_PASSWORDS
     bullets: [
       'Paste a LinkedIn post URL',
       'Per-account: Like + optional Comment',
@@ -4758,11 +4808,11 @@ async function setModeByIndex(i) {
   if (modeIsLocked(mode)) {
     const entry = await fgPasswordPrompt(`${mode.name} is locked`);
     if (entry == null) return; // cancelled
-    if (entry !== FG_PASSWORD) {
+    if (entry !== MODE_PASSWORDS[mode.value]) {
       showCampaignToast('Incorrect password.', 3000);
       return;
     }
-    setFgUnlocked();
+    setModeUnlocked(mode.value);
     showCampaignToast(`${mode.name} unlocked.`, 2500);
     // fall through and select the now-unlocked mode
   }
@@ -8337,6 +8387,10 @@ function renderUnifiedStrip(it) {
   // both stay undefined and this never fires (graceful degradation).
   const hsAwaiting = cloud && it.state === 'awaiting_primary_accept' && Array.isArray(it.senders);
   if (hsAwaiting) statusTxt = '🔒 Primary handshake';
+  // A launch still running on THIS Mac (handshake → dispatch). Reuses the same
+  // handshake panel, but says where it actually is — "Primary handshake" would be
+  // a lie once the handshake is done and we're reading the sheet.
+  if (it.launching) statusTxt = it.launchPhase === 'dispatching' ? '☁︎ Handing over to the VM…' : '🤝 Connecting to primary';
 
   // Primary needs-login (Task 9) — only fires when the engine's
   // c.primarySession.state is 'needs_login' (see /js/primary-session-render.mjs).
@@ -8427,12 +8481,20 @@ function renderUnifiedStrip(it) {
         + `<span class="who">${escHtml((s && s.name) || 'account')}</span>`
         + `<span class="st">${done ? 'Accepted' : 'Waiting'}</span></div>`;
     }).join('');
+    const _launching = !!it.launching;
+    const _dispatching = _launching && it.launchPhase === 'dispatching';
     handshakeBlock = `
       <div class="hs-panel">
-        <div class="hs-eyebrow"><span class="lk">🔒</span> Phase 0 · Primary handshake — locked <span class="cnt"><span class="hs-count">${accepted}</span> / ${total}</span></div>
-        <div class="hs-head">Your Mac is accepting the primary's invitations</div>
+        <div class="hs-eyebrow"><span class="lk">🔒</span> Phase 0 · Primary handshake${_launching ? '' : ' — locked'} <span class="cnt"><span class="hs-count">${accepted}</span> / ${total}</span></div>
+        <div class="hs-head">${_dispatching
+          ? 'Handshake done — reading your lead sheet and handing the campaign to the VM'
+          : _launching
+            ? 'Sending connection requests to the primary account, then accepting them here'
+            : "Your Mac is accepting the primary's invitations"}</div>
         <div class="hs-bar"><i style="width:${pct}%"></i></div>
-        <div class="hs-expl">Each account sent <b>${pname}</b> a connection request from the VM. Accepting them in <b>your local browser</b> is the only step that runs on this machine — then the campaign continues entirely on the VM.</div>
+        <div class="hs-expl">${_launching
+          ? `Your Mac opens each sender in turn, sends <b>${pname}</b> a connection request, then accepts them in your local browser. This is the only step that runs on this machine — the campaign then moves entirely to the VM. It takes a couple of minutes.`
+          : `Each account sent <b>${pname}</b> a connection request from the VM. Accepting them in <b>your local browser</b> is the only step that runs on this machine — then the campaign continues entirely on the VM.`}</div>
         <div class="hs-list">${rows}</div>
         <div class="hs-keep">◈ Keep this app open — it's the only local step this campaign needs.</div>
       </div>`;
@@ -8451,7 +8513,12 @@ function renderUnifiedStrip(it) {
   // Campaign wizard). openCloudLive() focuses the campaign's live strip instead.
   const _cloudOpen = `<button class="mini solid" onclick="openCloudLive('${escHtml(it.id)}')">Open</button>`;
   let foot = '';
-  if (running && it.where === 'local') {
+  if (it.launching) {
+    // No controls: there is nothing on the VM yet to stop, pause, watch or open,
+    // and every cloud control here would be called with a placeholder id. The
+    // handshake modal owns Cancel / Dispatch anyway while it's up.
+    foot = '';
+  } else if (running && it.where === 'local') {
     foot = (it.paused
         ? _dib(V3_SVG_PLAY, 'Resume', 'window.dashPauseActive && window.dashPauseActive()')
         : _dib(V3_SVG_PAUSE, 'Pause', 'window.dashPauseActive && window.dashPauseActive()'))
@@ -8528,7 +8595,9 @@ function renderUnifiedStrip(it) {
   // Expanded (non-queued) strips render card #2 (.sn-vjcard) instead of the
   // compact body. The compact body is wrapped in .sn-compact so CSS can swap the
   // two by collapsed state; collapsed strips are byte-for-byte as before.
-  const richCard = queued ? '' : vjCardSkeleton(it.id);
+  // No card #2 clone for a launch: it has no campaign status to fill, and
+  // _fillVjCards would paint the generic "running" hero over the handshake panel.
+  const richCard = (queued || it.launching) ? '' : vjCardSkeleton(it.id);
   return `
   <div class="sn-strip ${stateCls}" data-cid="${escHtml(it.id)}">
     ${expandBtn}
@@ -9053,6 +9122,14 @@ async function _renderCampaignsBoardInner() {
   // Keep the legacy dashboard hidden on EVERY cycle (defeats route/render races).
   _hideLegacyDashboardSections();
   const items = [];
+
+  // 0) A cloud launch in flight — no row exists in Postgres or the local cockpit
+  // yet, so without this the board shows only the (not-yet-consumed) draft while
+  // the handshake + dispatch run. First, so it sits at the top of "Running".
+  try {
+    const _lit = (typeof cloudLaunchBoardItem === 'function') ? cloudLaunchBoardItem() : null;
+    if (_lit) items.push(_lit);
+  } catch (_) { /* never let the launch strip break the board */ }
 
   // 1) Local running campaign (0 or 1) — from /api/campaign/status.
   // A campaign that ENDED this session still holds its full log in the status
@@ -10289,6 +10366,140 @@ function _icPreflightScrollToColumnPicker() {
 
 // Cloud dispatch: run the campaign on the GKE engine instead of locally. Fully
 // self-contained + returns early, so the local path below is untouched. The
+// ── Launch-in-progress live state (Path A) ──────────────────────────────────
+// Between pressing Start on a cloud CC+IC campaign and the engine acknowledging
+// the dispatch, two slow steps run with NO campaign row existing anywhere: the
+// local primary handshake (minutes — it drives a GoLogin browser per sender) and
+// the start-cloud POST (reads the whole lead sheet, builds leads). The handshake
+// modal covered the first step and nothing covered the second.
+//
+// Operator report 2026-08-06: "that handshake disappeared and it was with nothing
+// for two minutes… I went back to the dashboard and it says it's just still a
+// draft. The hell?" — the draft row is only deleted once start-cloud returns, so
+// the board legitimately still showed a draft while the launch was in flight.
+//
+// Fix: publish the launch as a live state on BOTH surfaces the operator watches —
+// the shared #active-card (card #1 on the dashboard / card #2 in the campaign
+// tab; one element, relocated by placeLiveCard) and a board strip. Neither needs
+// new markup: the card reuses its gold `is-preflight` state (v2.105) and the
+// strip reuses the `awaiting_primary_accept` handshake panel.
+let _cloudLaunch = null;
+
+// handshake sender state → the pf-list vocabulary renderActiveCard already
+// speaks. `error` maps to 'unverified' rather than a hard failure: the operator
+// can still Dispatch anyway, and the row should read as unconfirmed, not dead.
+const _HS_STATE_TO_PF = {
+  pending: 'pending', connecting: 'pending', sent: 'sent',
+  'sent-no-identity': 'sent', accepting: 'accepting', connected: 'connected',
+  error: 'unverified',
+};
+
+// `handshake:false` (every cloud mode except CC+IC-with-local-primary) skips
+// straight to the dispatch phase — those launches have no per-sender step, and
+// claiming a "Primary handshake" that never runs would be a worse lie than the
+// blank screen this replaces.
+function beginCloudLaunch({ name, profileIds, handshake = true } = {}) {
+  _cloudLaunch = {
+    phase: handshake ? 'handshake' : 'dispatching',
+    hasHandshake: !!handshake,
+    name: name || 'New campaign',
+    // 'local-browser' is the primary itself, not a sender — it never appears as
+    // a handshake row (same filter the pf-list renderer applies).
+    profileIds: (profileIds || []).filter((id) => id && id !== 'local-browser'),
+    conn: {},
+    startedAt: Date.now(),
+  };
+  paintCloudLaunch();
+}
+
+// The handshake wizard's poll snapshot → our per-sender map. Same data the modal
+// paints, so the modal and the two cards can never disagree.
+function updateCloudLaunchSenders(senders) {
+  if (!_cloudLaunch || !Array.isArray(senders)) return;
+  for (const s of senders) {
+    if (s && s.profileId) _cloudLaunch.conn[s.profileId] = s.state;
+  }
+  paintCloudLaunch();
+}
+
+// 'handshake' → 'dispatching'. The second phase has no per-sender progress to
+// show (the app is reading the sheet and POSTing), so the rows freeze at their
+// final handshake state and the copy changes instead.
+function setCloudLaunchPhase(phase) {
+  if (!_cloudLaunch) return;
+  _cloudLaunch.phase = phase;
+  paintCloudLaunch();
+}
+
+function endCloudLaunch() {
+  if (!_cloudLaunch) return;
+  _cloudLaunch = null;
+  // Repaint both surfaces once more so the synthetic strip/card are replaced by
+  // the real campaign (or by the idle state if the launch was cancelled).
+  paintCloudLaunch();
+}
+
+// The synthetic status object. Shaped for renderActiveCard's `is-preflight`
+// branch: phase 'preflight' + primaryConn/profileIds/profileNames.
+function cloudLaunchStatus() {
+  const L = _cloudLaunch;
+  if (!L) return null;
+  const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+  const primaryConn = {};
+  for (const id of L.profileIds) primaryConn[id] = _HS_STATE_TO_PF[L.conn[id]] || 'pending';
+  const doneN = L.profileIds.filter((id) => primaryConn[id] === 'connected').length;
+  return {
+    running: true, paused: false, state: 'preflight', phase: 'preflight',
+    mode: 'connect_and_introduce',
+    name: L.name,
+    profileIds: L.profileIds.slice(),
+    profileNames: L.profileIds.map(nameOf),
+    primaryConn,
+    totalTargets: 0, totalProcessed: 0, acceptedCount: '—',
+    logs: [], skippedCount: 0,
+    preflightL1: L.phase === 'handshake'
+      ? 'Sending connections to the primary account'
+      : 'Handing the campaign over to the VM',
+    preflightSub: L.phase !== 'handshake'
+      ? (L.hasHandshake
+        ? 'Handshake done — reading your lead sheet and handing the campaign to the VM…'
+        : 'Reading your lead sheet and dispatching to the VM…')
+      : `${doneN} of ${L.profileIds.length} connected · your Mac is doing this locally, then the campaign moves to the cloud.`,
+    _launching: true,
+  };
+}
+
+// Repaint the card and the board immediately rather than waiting for their 2s /
+// 4s polls — during a launch those polls have nothing new to say anyway.
+function paintCloudLaunch() {
+  try { if (typeof window.renderActiveCard === 'function') window.renderActiveCard(null); } catch (_) { /* */ }
+  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+}
+
+// The board strip for a launch-in-flight. Same normalized item shape the board
+// builds for real campaigns, plus `launching` (suppresses every control — there
+// is nothing on the VM yet to stop, pause or watch) and the `senders` /
+// `awaiting_primary_accept` pair the strip's handshake panel already renders.
+function cloudLaunchBoardItem() {
+  const L = _cloudLaunch;
+  if (!L) return null;
+  const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+  return {
+    where: 'cloud', id: '__launching__', rawId: '__launching__',
+    name: L.name, mode: 'connect_and_introduce', isFG: false,
+    bucket: 'running', sent: 0, total: 0, accounts: L.profileIds.length,
+    mine: true, owner: '', live: false, launching: true,
+    launchPhase: L.phase,
+    // Only a real handshake gets the handshake panel; a plain cloud launch falls
+    // through to the normal strip body with the "handing over" status text.
+    state: L.hasHandshake ? 'awaiting_primary_accept' : '',
+    senders: L.profileIds.map((id) => ({
+      name: nameOf(id),
+      accepted: L.conn[id] === 'connected',
+    })),
+  };
+}
+
 // ── Cloud primary-handshake wizard (Path A) ─────────────────────────────────
 // Before a cloud CC+IC campaign with a LOCAL-ONLY primary is dispatched, the app
 // connects each GoLogin sender to the primary and accepts the invites in the
@@ -10357,6 +10568,10 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
       }
       const cnt = $('.hs-wiz-count'); if (cnt) cnt.textContent = String(connected);
       const bar = $('.hs-wiz-bar'); if (bar) bar.style.width = total ? `${Math.round((connected / total) * 100)}%` : '0%';
+      // Mirror the same per-sender states onto the card + board so the modal is
+      // no longer the ONLY place this is visible — and so closing it (or its
+      // 700ms auto-close on success) doesn't drop the operator into a blank UI.
+      try { updateCloudLaunchSenders(senders); } catch (_) { /* */ }
     };
 
     // On error, reveal Retry. When another handshake is already running (409),
@@ -10425,6 +10640,10 @@ async function _submitCloudCampaign(body) {
       : ('lnch_' + Date.now() + '_' + Math.random().toString(36).slice(2));
   }
   if (typeof showCampaignToast === 'function') showCampaignToast('☁︎ Starting cloud campaign…', 4000);
+  // Publish the launch on the card + board for its WHOLE duration — the
+  // handshake AND the dispatch. Cleared in the finally below, by which point
+  // either a real campaign row exists or the launch was abandoned.
+  beginCloudLaunch({ name: body.name, profileIds: body.profileIds, handshake: needsHandshakeFromBody(body) });
   try {
     // Path A: run the primary handshake locally BEFORE dispatch when this is a
     // cloud CC+IC campaign with auto-accept and a local-only primary. Otherwise
@@ -10440,6 +10659,10 @@ async function _submitCloudCampaign(body) {
       });
       if (!hs.ok && !hs.proceedAnyway) return; // operator cancelled → don't dispatch
     }
+    // Handshake over (or never needed). The next step reads the whole lead sheet
+    // and POSTs — the step that used to be two silent minutes with the modal gone
+    // and the board still showing a draft.
+    setCloudLaunchPhase('dispatching');
     const res = await fetch('/api/campaign/start-cloud', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -10467,6 +10690,9 @@ async function _submitCloudCampaign(body) {
     alert('Could not reach the cloud engine:\n\n' + e.message);
   } finally {
     _cloudSubmitInFlight = false;
+    // Runs on every exit path — success, cancel, and error — so the synthetic
+    // strip/card can never outlive the launch and strand the board.
+    endCloudLaunch();
   }
 }
 
@@ -22590,7 +22816,19 @@ function renderLiveStage(root, status) {
   }
   const subEl = _stgFld(root, 'stageSub');
   if (subEl) {
-    const acct = ca && ca.account && ca.account !== who ? ca.account : '';
+    // The cloud engine reports currentAction.account as the GoLogin PROFILE ID,
+    // not the account label — so this line printed a raw hex id under the lead's
+    // name ("6892f8fa90140e746a0a3f88", operator screenshot 2026-08-06) while the
+    // pills directly below it showed the friendly names. Same data, resolved in
+    // one place and not the other. Resolve it here from the same map the pills
+    // use; fall back to the raw value so a not-yet-loaded account list still
+    // shows something rather than going blank.
+    const _acctList = (cid && _cloudAccountsById.get(cid)) || [];
+    const _label = (id) => {
+      const hit = _acctList.find((a) => a.profileId === id || a.email === id);
+      return (hit && (hit.email || hit.name)) || id;
+    };
+    const acct = ca && ca.account && ca.account !== who ? _label(ca.account) : '';
     const sub = [acct, ca && ca.sub].filter(Boolean).join(' · ');
     if (subEl.textContent !== sub) subEl.textContent = sub;
   }
@@ -22680,6 +22918,13 @@ setInterval(_tickLiveStages, 1000);
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
+  // Launch takeover: a cloud CC+IC launch spends minutes in the local primary
+  // handshake + the start-cloud dispatch, during which NO campaign row exists
+  // anywhere — the 2s local poll would paint "No campaign running" over the top.
+  // The launch is the only live thing on this machine at that moment, so it wins
+  // outright. Cleared by endCloudLaunch(). See cloudLaunchStatus().
+  const _launchStatus = (typeof cloudLaunchStatus === 'function') ? cloudLaunchStatus() : null;
+  if (_launchStatus) status = _launchStatus;
   // Cloud-view takeover (card #2): when the operator opened a VM campaign, render
   // THAT campaign's live status into this same card — unless a LOCAL campaign is
   // genuinely running/monitoring (local always wins, never hijacked). See
@@ -22893,6 +23138,20 @@ window.renderActiveCard = function(status) {
     const staged = renderLiveStage(card, status);
     if (liveEl && staged) liveEl.hidden = true;
   } catch (_) { /* live line is best-effort */ }
+  // Pre-flight owns the live line outright: there is no lead being actioned yet,
+  // so buildLiveActivity has nothing true to say. State what is actually
+  // happening on this Mac — the operator's #1 question during the handshake.
+  if (_isPreflight) {
+    _hideStage(card);
+    const liveEl = document.getElementById('active-live');
+    if (liveEl) {
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-checking', 'is-waking', 'is-paused');
+      v3SetText('activeLiveIco', '🤝');
+      v3SetText('activeLiveL1', status.preflightL1 || 'Sending connections to the primary account');
+      v3SetText('activeLiveL2', status.preflightSub || 'Your Mac is doing this locally — the campaign moves to the cloud the moment it finishes.');
+    }
+  }
   // Bug 14: once a campaign is launched, keep the live log visible through the
   // whole running → monitoring lifecycle. Auto-open the details panel on the
   // transition INTO active/monitoring (not every poll, so a manual collapse via
@@ -22907,7 +23166,8 @@ window.renderActiveCard = function(status) {
   const done = Number(status.totalProcessed) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   v3SetText('activeName', status.name || '(unnamed)');
-  v3SetText('activeEyebrow', isMonitoring ? 'Monitoring' : (status._paused || status.paused ? 'Paused' : 'Running'));
+  v3SetText('activeEyebrow', _isPreflight ? 'Phase 0 · Primary handshake'
+    : isMonitoring ? 'Monitoring' : (status._paused || status.paused ? 'Paused' : 'Running'));
   v3SetText('activePct', String(pct));
   v3SetText('activeSent', String(done));
   v3SetText('activeTotal', String(total));
@@ -22918,9 +23178,10 @@ window.renderActiveCard = function(status) {
   // "Sending" while every account is capped or benched is the same lie the live
   // line used to tell. If the engine says nothing can send, this says so too.
   const _waiting = !!(status.currentAction && status.currentAction.phase === 'waiting');
-  v3SetText('sendingLbl', isMonitoring
-    ? (status.monitoringCheckInProgress ? 'Checking now…' : 'Monitoring')
-    : (isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : (_waiting ? 'Waiting' : 'Sending'))));
+  v3SetText('sendingLbl', _isPreflight ? 'Connecting to primary'
+    : isMonitoring
+      ? (status.monitoringCheckInProgress ? 'Checking now…' : 'Monitoring')
+      : (isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : (_waiting ? 'Waiting' : 'Sending'))));
   const glyph = document.getElementById('activeGlyph');
   if (glyph) glyph.textContent = v3ModeBadge(status.mode);
   const bar = card.querySelector('.vj-hbar > i');

@@ -37,16 +37,22 @@ const REQUEST_TIMEOUT_MS = 20000;
 
 // Modes the cloud engine supports (mirror of campaign-runtime MODE_PLAN). Used
 // to gate the "Run in cloud" toggle so unsupported modes stay local-only.
+// 'message_only', 'inmail_only' and 'check_status' were REMOVED on 2026-08-06
+// (retired product-wide — see RETIRED_MODES in public/js/campaign-modes.mjs).
+// check_status here means the standalone CAMPAIGN; the cloud monitor sweep that
+// checks acceptances for CC+IC / CC+DM is a different path and is untouched.
+// Dropping them here
+// is what makes handleStartCloud 400 them, so the VM half of the retirement
+// needs no engine deploy. The engine still implements both; it just never gets
+// asked. `open_profile_only` (Message Campaign) stays — it is the one the engine
+// PR #4 actually fixed.
 export const CLOUD_MODES = new Set([
   'connect_only',
-  'message_only',
   'introduce_back',
   'connect_and_introduce',
   'connect_and_message',
   'follower_growth',
-  'inmail_only',
   'open_profile_only',
-  'check_status',
 ]);
 
 /** True when the engine URL is configured, so the UI can gate the cloud toggle. */
