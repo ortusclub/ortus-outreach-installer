@@ -23602,19 +23602,37 @@ function _acctLabel(a) {
   return String(a.profileId || 'account').slice(0, 8);
 }
 
+// FG bench reasons arrive as engine prose ("no invite credits · refills August
+// 31, 2026", "logged out — needs re-login", "error: connect ECONNREFUSED …").
+// The pill has room for one word, so name the CAUSE, never the state: "Benched"
+// on its own is what made an operator ask what benched even meant. The full
+// sentence stays in the pill's title and its drawer.
+function _benchWord(reason) {
+  const r = String(reason || '').toLowerCase();
+  if (!r) return '';
+  if (r.includes('credit')) return 'No credits';
+  if (r.includes('logged out') || r.includes('login')) return 'Logged out';
+  if (r.includes('browser') || r.includes('econnrefused') || r.includes('error')) return 'Error';
+  if (r.includes('sent nothing')) return 'Nothing to send';
+  return 'Benched';
+}
+
 function _stageAcctPill(a, isCurrent, counts) {
   const nm = _acctLabel(a);
   const tally = counts && counts.get(String(a.profileId || ''));
   // Invites sent / queued for THIS run when we have it; the daily quota otherwise.
   const count = tally ? `${tally.sent}/${tally.total}` : `${a.dailyCount || 0}/${a.dailyLimit || 0}`;
-  let cls = '', text = count;
-  if (a.needsLogin) { cls = 'bad'; text = 'Needs login'; }
+  const benchWord = _benchWord(a.bench);
+  let cls = '', text = count, tip = '';
+  if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; }
   else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
-  else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Benched'; }
+  else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly cap'; }
+  else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
   else if (a.parked || a.parkReason === 'throttle') { cls = 'warn'; text = 'Throttled'; }
   else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) cls = 'warn';
   else if (isCurrent) cls = 'ok';
-  return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')">`
+  return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')"`
+    + `${tip ? ` title="${escHtml(tip)} — retries next run"` : ''}>`
     + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>`;
 }
 
@@ -23625,6 +23643,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
   const email = escHtml(String(a.email || a.profileId || ''));
   const benched = !!(a.weeklyCap || a.parkReason === 'weekly' || a.parked);
   const st = a.needsLogin ? '<span class="st" style="color:var(--red)">needs login</span>'
+    : a.bench ? `<span class="st" style="color:var(--red)">${escHtml(_benchWord(a.bench).toLowerCase())}</span>`
     : benched ? '<span class="st" style="color:var(--red)">benched</span>'
     : ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) ? '<span class="st" style="color:var(--gold,#d4a24a)">at daily limit</span>'
     : isCurrent ? '<span class="st" style="color:var(--green)">working now</span>'
@@ -23636,6 +23655,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
   const why = a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
+    : a.bench ? ` · ${escHtml(String(a.bench))} — sits out the rest of this run, retries next run`
     : weekly ? ` · LinkedIn weekly invitation cap — resets ${_nextMondayText()}`
     : a.parkReason === 'throttle' ? ' · rate-limited, backing off' : '';
   return `<div class="stg-drawer"><div class="dh"><b>${email}</b>${st}`
