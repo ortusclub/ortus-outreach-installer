@@ -11161,47 +11161,8 @@ function _fmtCloudStartAt(iso) {
 }
 if (typeof window !== 'undefined') window._fmtCloudStartAt = _fmtCloudStartAt;
 
-// Resolver for the capacity modal's two buttons — set while it is open.
-let _cloudCapacityResolve = null;
-function _cloudCapacityChoose(proceed) {
-  const m = document.getElementById('cloud-capacity-modal');
-  if (m) m.classList.add('hidden');
-  const r = _cloudCapacityResolve; _cloudCapacityResolve = null;
-  if (r) r(!!proceed);
-}
-if (typeof window !== 'undefined') window._cloudCapacityChoose = _cloudCapacityChoose;
-
-/**
- * True when it's fine to dispatch. Asks the engine how loaded it is and, ONLY
- * when it reports itself full, puts the choice to the operator. Anything else —
- * room to spare, an old engine with no capacity route, an unreachable one —
- * returns true: a load check may never become a new reason a launch fails.
- */
-async function _cloudCapacityOk() {
-  let cap;
-  try {
-    const res = await fetch('/api/campaign/cloud-capacity');
-    cap = await res.json();
-  } catch (_) { return true; }
-  if (!cap || cap.error || !cap.full) return true;
-
-  const body = document.getElementById('cloud-capacity-body');
-  const modal = document.getElementById('cloud-capacity-modal');
-  if (!body || !modal) return true;
-  body.innerHTML =
-    `<p>All <strong>${cap.ceiling}</strong> cloud campaign slots are in use (${cap.podsBusy} VM${cap.podsBusy === 1 ? '' : 's'} running).</p>` +
-    `<p style="color: var(--gray); font-size: 0.85rem; margin-top: 10px;">` +
-    `Queued is not lost — it starts on its own the moment a slot frees, and the laptop can stay shut. ` +
-    `There's no way to say how long that will be: it depends on when the campaigns ahead of it finish.</p>`;
-  modal.classList.remove('hidden');
-  return new Promise((resolve) => { _cloudCapacityResolve = resolve; });
-}
-
 async function _submitCloudCampaign(body) {
   if (_cloudSubmitInFlight) return; // ignore re-clicks while a start is dispatching
-  // Before the guard and before the handshake: a full engine should cost the
-  // operator one click, not two minutes of handshake and sheet-reading first.
-  if (!(await _cloudCapacityOk())) return;
   _cloudSubmitInFlight = true;
   // Idempotency backstop: a stable id per launch attempt so any duplicated POST
   // (network retry, second app window) collapses to ONE campaign engine-side.
