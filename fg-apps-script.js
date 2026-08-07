@@ -27,9 +27,6 @@ var FG_MASTER_HEADER = [
   'Invited', 'Invited At', 'Invited By'
 ];
 var FG_MASTER_TAB = 'FG Master';
-// Actions that change the sheet, and therefore re-dress it afterwards.
-var FG_WRITE_ACTIONS = ['fgQueue','fgMarkInvited','fgMarkFailed','fgObserveCredits',
-  'fgWriteList','fgUpdateListLedger','fgWriteMaster'];
 
 function doPost(e) {
   var lock = LockService.getScriptLock();
@@ -50,11 +47,14 @@ function doPost(e) {
     else if (data.action === 'getSheetUrl') out = { url: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
     else if (data.action === 'listTabs') { var _sh = SpreadsheetApp.getActiveSpreadsheet().getSheets(); out = { tabs: _sh.map(function (s) { return s.getName(); }), tabGids: _sh.map(function (s) { return { name: s.getName(), gid: s.getSheetId() }; }) }; }
     else out = { error: 'Unknown action: ' + data.action };
-    // Presentation is part of the write: an operator opens these tabs to answer
-    // "did it fire?" / "why did this account send nothing?", and raw values
-    // answer neither. Only after actions that CHANGE the sheet, so a poll never
-    // pays for it, and never able to fail the write it follows.
-    if (FG_WRITE_ACTIONS.indexOf(data.action) >= 0) { try { fgStyleTabs_(); } catch (e) { /* cosmetic */ } }
+    // NOTE: styling is deliberately NOT called here. doPost holds a script lock
+    // for the whole request, and dressing FG Master (~300k rows: conditional
+    // rules + autoResize) takes minutes. Running it per write held the lock long
+    // enough that every other call died on lock.waitLock(30000) — an uncaught
+    // throw, which Apps Script serves as an HTML error page, so the app saw
+    // "Unexpected non-JSON response" for EVERY action. Formatting is idempotent
+    // and belongs on a timer or a manual run, never on the write path.
+    // Run fgFormatAll() from the editor, or install fgInstallDailyFormat() once.
     return json_(out);
   } catch (err) {
     return json_({ error: String(err && err.message || err) });
@@ -597,7 +597,8 @@ function fgDressHeader_(sh, headerRow) {
   sh.getRange(row, 1, 1, cols)
     .setFontWeight('bold').setBackground(FG_HEAD_BG).setVerticalAlignment('middle');
   if (sh.getFrozenRows() < row) sh.setFrozenRows(row);
-  try { sh.autoResizeColumns(1, Math.min(cols, 12)); } catch (e) { /* width is cosmetic */ }
+  // NO autoResizeColumns: it walks every row to measure text, which on the
+  // 300k-row FG Master takes minutes. Column widths are not worth that.
 }
 
 // A conditional rule factory bound to one range.
@@ -632,12 +633,12 @@ function fgStyleBudgets_() {
   var cOb = fgColLetter_(sh, BUDGET_HEADER, 'Observed At');
   var rules = [];
   if (cAv) {
-    var r = sh.getRange(cAv + '2:' + cAv + '5000');
+    var r = sh.getRange(cAv + '2:' + cAv + Math.max(2, sh.getLastRow()));
     rules.push(fgRule_(r, 'eq', 0, FG_BAD_BG, FG_BAD_FG));    // nothing left
     rules.push(fgRule_(r, 'lt', 5, FG_WARN_BG, FG_WARN_FG));  // nearly out
     rules.push(fgRule_(r, 'gte', 5, FG_OK_BG, FG_OK_FG));     // healthy
   }
-  if (cOb) sh.getRange(cOb + '2:' + cOb + '5000').setNumberFormat('dd mmm yyyy, HH:mm');
+  if (cOb) sh.getRange(cOb + '2:' + cOb + Math.max(2, sh.getLastRow())).setNumberFormat('dd mmm yyyy, HH:mm');
   sh.setConditionalFormatRules(rules);
 }
 
@@ -650,7 +651,7 @@ function fgStyleInvites_() {
   var cSt = fgColLetter_(sh, FG_HEADER, 'Status');
   var rules = [];
   if (cSt) {
-    var r = sh.getRange(cSt + '2:' + cSt + '200000');
+    var r = sh.getRange(cSt + '2:' + cSt + Math.max(2, sh.getLastRow()));
     rules.push(fgRule_(r, 'text', 'Invited', FG_OK_BG, FG_OK_FG));
     rules.push(fgRule_(r, 'text', 'Failed', FG_BAD_BG, FG_BAD_FG));
     rules.push(fgRule_(r, 'text', 'Queued', FG_WARN_BG, FG_WARN_FG));
@@ -668,7 +669,7 @@ function fgStyleMaster_() {
   var cIn = fgColLetter_(sh, FG_MASTER_HEADER, 'Invited');
   var rules = [];
   if (cIn) {
-    var r = sh.getRange(cIn + '2:' + cIn + '300000');
+    var r = sh.getRange(cIn + '2:' + cIn + Math.max(2, sh.getLastRow()));
     rules.push(fgRule_(r, 'text', 'Yes', FG_OK_BG, FG_OK_FG));
     rules.push(fgRule_(r, 'text', 'Y', FG_OK_BG, FG_OK_FG));
   }
@@ -697,3 +698,15 @@ function fgStyleTabs_() {
 // Manual entry point — run once from the editor to dress the tabs immediately,
 // without waiting for the next write.
 function fgFormatAll() { fgStyleTabs_(); return 'styled'; }
+
+// Install once from the editor. A daily trigger keeps the tabs dressed without
+// the write path ever paying for it — the mistake that took the whole FG script
+// down was running this inside doPost's lock.
+function fgInstallDailyFormat() {
+  var have = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'fgFormatAll';
+  });
+  if (have) return 'already installed';
+  ScriptApp.newTrigger('fgFormatAll').timeBased().everyDays(1).atHour(5).create();
+  return 'installed';
+}
