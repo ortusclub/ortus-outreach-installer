@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.148" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.148" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.149" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.149" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2303,11 +2303,6 @@
       <div class="fgw-step" id="fgw-step-1">
         <div class="fgw-step-head"><span class="fgw-num">1</span><span class="fgw-title">Build your invite list</span></div>
         <p class="fgw-lead">Your invites come from a tab in the central FG Google Sheet — one you can open, review and edit before it fires. <button type="button" id="fgtl-open-sheet" class="fgw-sheet-link">Open the FG Sheet &#8599;</button></p>
-        <p class="fgw-lead" style="margin-top:6px">
-          <button type="button" id="fg-master-build" class="fgw-sheet-link">Rebuild the FG Master tab</button>
-          <span id="fg-master-status" class="hint"></span>
-          <span class="hint" style="display:block">Rebuilding while a campaign run is reconciling can make that run's sheet writes time out — avoid running both at once.</span>
-        </p>
 
         <div class="fgw-two-up">
           <!-- A · auto-generate: roles → accounts → Generate, all in one box -->
@@ -2464,6 +2459,16 @@
       <div class="fgtl-dbwrap">
         <button class="fgtl-db-toggle" id="fgtl-db-toggle">&#9658; View Follower Growth database (invites &#183; budgets &#183; funnel)</button>
         <div class="fgtl-db-body" id="fgtl-db-body" style="display:none">
+          <!-- FG Master: the whole warm network as one sheet tab. Lives here, not in
+               the invite wizard — it's a reporting artefact, not a step in a run. -->
+          <div class="fg-step fg-master-block">
+            <div class="fg-step-head"><span class="fg-step-num">1</span> FG Master &#183; the whole network in one tab
+              <button type="button" class="fgtl-watch-btn" id="fg-master-build" style="font-size:10px;padding:5px 12px">REBUILD</button>
+            </div>
+            <p class="cx-hint">Every warm contact in one <b>FG Master</b> tab of the FG Sheet &#8212; name, title, company, geo, LinkedIn URL and <b>every account connected to them</b> &#8212; stamped <b>Invited</b> / time / account as the bot sends. Rebuilding replaces the tab and re-stamps the full invite history; it takes a few minutes.</p>
+            <p class="cx-hint" id="fg-master-status"></p>
+            <p class="cx-hint">Don&#8217;t rebuild while a run is reconciling &#8212; that run&#8217;s sheet writes can time out.</p>
+          </div>
           <!-- existing Invites/Budgets/Funnel tabs + tables -->
           <div class="fg-step">
             <div class="fg-step-head"><span class="fg-step-num">2</span> Follower Growth database
@@ -3748,7 +3753,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.148"></script>
+  <script type="module" src="/js/app.js?v=2.160.149"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
