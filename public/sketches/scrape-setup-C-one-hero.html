@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Scrape setup — C · One hero card</title>
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body{background:var(--paper,#fbfbfa);padding:34px 44px 90px;}
+  .sk-note{max-width:1180px;margin:0 auto 26px;font-family:var(--mono);font-size:11px;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--gray);}
+  .sk-wrap{max-width:1180px;margin:0 auto;}
+  .sk-band{border-top:1px solid var(--hairline-soft);margin-top:22px;padding-top:20px;}
+  .sk-band:first-of-type{border-top:0;margin-top:0;padding-top:0;}
+  .sk-bandhead{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--gray);margin-bottom:14px;}
+  .sk-cols{display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sk-note">Sketch C · One hero card — the whole setup as a single card, the way the campaign wizard treats the sheet block</div>
+<div class="sk-wrap">
+
+  <div class="sheet-hero">
+
+    <div class="sk-band">
+      <div class="sk-bandhead">Input · Sales Navigator searches</div>
+      <div class="sheet-hero-top">
+        <div class="sheet-hero-url-block">
+          <label class="sheet-hero-url-label">Search URLs — one per line</label>
+          <textarea class="sheet-hero-url-input" rows="4" style="resize:vertical;font-family:var(--mono);font-size:12px;">https://www.linkedin.com/sales/search/people?query=(recentSearchParam%3A(id%3A5616786932...</textarea>
+          <p class="sheet-tab-hint">4 URLs × 2 accounts → 4 jobs: 2 run in parallel, the rest queue back-to-back per account.</p>
+        </div>
+        <div class="sheet-hero-actions">
+          <button class="btn btn-secondary sheet-hero-btn">From a Sheet</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sk-band">
+      <div class="sk-bandhead">Destination · where results land</div>
+      <div class="sheet-hero-top">
+        <div class="sheet-hero-url-block">
+          <label class="sheet-hero-url-label">Destination Google Sheet URL</label>
+          <input type="text" class="sheet-hero-url-input" value="https://docs.google.com/spreadsheets/d/1c7I2qPA6X5g0R-Da0R3n7jbTjI7VTdy0ITfUahxodVE/edit?gid=694668463" />
+          <p class="sheet-tab-hint">Open the tab inside the sheet and copy the URL from your address bar.</p>
+        </div>
+        <div class="sheet-hero-actions">
+          <button class="btn btn-secondary sheet-hero-btn">Preview Sheet</button>
+          <button class="btn btn-secondary sheet-hero-btn">Open Sheet</button>
+        </div>
+      </div>
+      <div style="margin-top:16px;max-width:420px;">
+        <label class="sheet-hero-url-label">New tab name — we create this tab</label>
+        <input type="text" class="sheet-hero-url-input" value="test" />
+      </div>
+    </div>
+
+    <div class="sk-band">
+      <div class="sk-bandhead">Options</div>
+      <label style="display:flex;align-items:center;gap:10px;font-size:13px;">
+        <input type="checkbox" /> Slow mode — larger delays between pages
+      </label>
+    </div>
+
+  </div>
+
+</div>
+</body>
+</html>

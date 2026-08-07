@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Scrape setup — B · Summary band kept</title>
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body{background:var(--paper,#fbfbfa);padding:34px 44px 90px;}
+  .sk-note{max-width:1180px;margin:0 auto 26px;font-family:var(--mono);font-size:11px;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--gray);}
+  .sk-wrap{max-width:1180px;margin:0 auto;}
+  /* The only new thing in this variant: the three counts rendered as the
+     campaign card's "what happens automatically" summary rather than tiles. */
+  .sk-auto{border:1px solid var(--hairline);border-radius:2px;background:#fff;padding:18px 22px;margin:0 0 22px;}
+  .sk-auto-head{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--gray);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;}
+  .sk-auto-row{display:flex;gap:10px;align-items:baseline;font-size:13px;padding:4px 0;}
+  .sk-auto-row .mk{color:var(--gray);width:14px;flex:none;}
+  .sk-auto-foot{font-size:11px;color:var(--gray);margin-top:10px;}
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sk-note">Sketch B · Summary band — counts become a plain-language recap, like the campaign card's "what happens automatically"</div>
+<div class="sk-wrap">
+
+  <div class="sk-auto">
+    <div class="sk-auto-head">
+      <span>What this scrape will do — 4 jobs</span>
+      <button class="btn-pill">Customize</button>
+    </div>
+    <div class="sk-auto-row"><span class="mk">✓</span><span><b>4 search URLs</b> typed in, one job each</span></div>
+    <div class="sk-auto-row"><span class="mk">✓</span><span><b>2 accounts</b> picked in section 3 — 2 run in parallel, the rest queue back-to-back</span></div>
+    <div class="sk-auto-row"><span class="mk">—</span><span>Results land in tab <b>"test"</b>, created fresh</span></div>
+    <div class="sk-auto-row"><span class="mk">—</span><span>Slow mode off — normal delays between pages</span></div>
+    <div class="sk-auto-foot">Every line above is a setting — hit <b>Customize</b> to change any of them.</div>
+  </div>
+
+  <div class="section collapsible" id="s-input">
+    <h2 class="section-toggle"><span class="caret">▾</span> 1. Sales Navigator searches <span class="section-summary">4 URLs</span></h2>
+    <div class="collapsible-body">
+      <div class="sheet-hero">
+        <div class="sheet-hero-top">
+          <div class="sheet-hero-url-block">
+            <label class="sheet-hero-url-label">Sales Navigator search URLs — one per line</label>
+            <textarea class="sheet-hero-url-input" rows="4" style="resize:vertical;font-family:var(--mono);font-size:12px;">https://www.linkedin.com/sales/search/people?query=(recentSearchParam%3A(id%3A5616786932...</textarea>
+            <p class="sheet-tab-hint">Each URL is scraped by one selected GoLogin account, in parallel.</p>
+          </div>
+          <div class="sheet-hero-actions">
+            <button class="btn btn-secondary sheet-hero-btn">From a Sheet</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section collapsible" id="s-dest">
+    <h2 class="section-toggle"><span class="caret">▾</span> 2. Where results land <span class="section-summary">tab "test"</span></h2>
+    <div class="collapsible-body">
+      <div class="sheet-hero">
+        <div class="sheet-hero-top">
+          <div class="sheet-hero-url-block">
+            <label class="sheet-hero-url-label">Destination Google Sheet URL</label>
+            <input type="text" class="sheet-hero-url-input" value="https://docs.google.com/spreadsheets/d/1c7I2qPA6X5g0R-Da0R3n7jbTjI7VTdy0ITfUahxodVE/edit?gid=694668463" />
+            <p class="sheet-tab-hint">We create this tab for the results.</p>
+          </div>
+          <div class="sheet-hero-actions">
+            <button class="btn btn-secondary sheet-hero-btn">Preview Sheet</button>
+            <button class="btn btn-secondary sheet-hero-btn">Open Sheet</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

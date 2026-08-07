@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Scrape v3 — C · Recap band</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body{background:var(--paper,#fbfbfa);padding:30px 40px 80px;}
+  .wrap{max-width:1180px;margin:0 auto;}
+  .sk-note{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--gray);margin-bottom:24px;}
+  /* Same frame as .scrape-stats, but one sentence instead of three numerals —
+     the counts only ever meant one thing together. */
+  .sk-recap{border:1px solid var(--hairline);border-radius:10px;background:#fff;
+    padding:20px 24px;margin:0 0 18px;font-size:15px;line-height:1.7;}
+  .sk-recap b{font-weight:600;}
+  .sk-recap .gold{color:var(--gold,#b08d3f);font-weight:600;}
+  .sk-recap .sub{display:block;margin-top:6px;font-size:12.5px;color:var(--gray);}
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+<div class="sk-note">v3 · C — the three numerals become one sentence. Same card frame, same type, less arithmetic for the reader.</div>
+
+<div class="sk-recap">
+  <b>4 searches</b> run by <b>2 accounts</b> — <span class="gold">4 runs</span>, 2 at a time.
+  <span class="sub">Results land in <b>test</b>, a new tab we create in your sheet.</span>
+</div>
+
+<div class="scrape-panel">
+  <div class="scrape-panel-head">What to scrape</div>
+
+  <!-- The choice demoted to a text link in the label row — the paste box is the
+       default and the sheet route is one word away, not a component. -->
+  <div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">
+    <label class="scrape-label" style="margin:0;">One Sales Navigator search per line</label>
+    <button type="button" class="scrape-label"
+      style="margin:0;border:0;background:none;cursor:pointer;text-decoration:underline;
+             text-underline-offset:3px;text-decoration-color:var(--hairline);">Use a sheet instead</button>
+  </div>
+  <textarea rows="3" placeholder="https://www.linkedin.com/sales/search/people?..." style="width:100%"></textarea>
+
+  <div class="scrape-hint" style="margin-top:8px;">
+    ↓ Pick which accounts run them in <strong>section 3 · Select GoLogin Accounts</strong> below.
+  </div>
+</div>
+
+<div class="scrape-panel">
+  <div class="scrape-panel-head">Where the leads end up</div>
+  <div style="margin-bottom:16px;">
+    <label class="scrape-label">Name this scrape</label>
+    <input type="text" value="test" style="width:100%" />
+  </div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+    <div>
+      <label class="scrape-label">Google Sheet</label>
+      <input type="text" value="https://docs.google.com/spreadsheets/d/1c7I2qPA6X5g0R-Da0R3n7jbTjI7VTdy0ITfUahxodVE/edit?gid=694668463" style="width:100%" />
+    </div>
+    <div>
+      <label class="scrape-label">New tab we'll create</label>
+      <input type="text" value="test" style="width:100%" />
+    </div>
+  </div>
+</div>
+
+<div class="scrape-panel">
+  <div class="scrape-panel-head">Anything else</div>
+  <label style="display:flex;align-items:center;gap:9px;font-size:13px;">
+    <input type="checkbox" /> Go slower — longer gaps between pages
+  </label>
+</div>
+
+</div>
+</body>
+</html>

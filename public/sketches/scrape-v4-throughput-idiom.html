@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Scrape v4 — Throughput idiom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body{padding:30px 40px 80px;}
+  .wrap{max-width:1180px;margin:0 auto;}
+  .sk-note{font-family:var(--mono);font-size:0.62rem;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--gray);margin-bottom:26px;}
+
+  /* Sketch-local ONLY because these classes don't exist yet. Every value is
+     lifted from a real rule, cited inline — nothing invented. */
+
+  /* = .alpha-knob-label (style.css:4500) — the label treatment from the
+       Throughput card. This is the ceiling: 0.85rem / 0.18em. */
+  .sc-label{font-family:var(--mono);font-size:0.85rem;font-weight:500;color:var(--ink);
+    letter-spacing:0.18em;text-transform:uppercase;margin:0 0 10px;}
+  /* = .alpha-knob-sublabel (style.css:4512) */
+  .sc-sub{color:var(--gray);font-weight:400;letter-spacing:0.14em;opacity:.85;}
+
+  /* = .theme-toggle button (style.css:306) — the DARK/LIGHT control, the app's
+       existing two-choice pattern. Hairline pill, dimmed until active, the
+       active one gets an ink border. No black fill. */
+  .sc-choice{display:inline-grid;grid-template-columns:auto auto;gap:6px;margin-bottom:18px;}
+  .sc-choice button{background:transparent;border:1px solid var(--hairline);cursor:pointer;
+    padding:8px 20px;font-family:var(--mono);font-size:0.65rem;letter-spacing:0.16em;
+    text-transform:uppercase;color:var(--ink);border-radius:9999px;transition:opacity .15s;
+    opacity:.55;font-weight:400;}
+  .sc-choice button:hover{opacity:1;}
+  .sc-choice button.active{opacity:1;border-color:var(--ink);}
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+<div class="sk-note">v4 · built from the Throughput card — .alpha-knob-label for labels, the DARK/LIGHT control for the choice</div>
+
+<!-- Section heading = the real .section-toggle / Bebas display, as "4. Throughput" -->
+<div class="section" style="border:0;padding:0;">
+  <h2 class="section-toggle" style="cursor:default;"><span class="caret">▾</span> Sales Nav Scrape</h2>
+</div>
+
+<div class="scrape-panel">
+  <div class="scrape-panel-head">What to scrape</div>
+
+  <div class="sc-choice">
+    <button type="button" class="active">Paste them</button>
+    <button type="button">From a sheet</button>
+  </div>
+
+  <div class="sc-label">Your searches <span class="sc-sub">· one per line</span></div>
+  <textarea rows="3" placeholder="https://www.linkedin.com/sales/search/people?..." style="width:100%"></textarea>
+
+  <div class="scrape-hint" style="margin-top:12px; padding:12px 14px; background:var(--hairline-soft); border-left:2px solid var(--hairline);">
+    4 searches × 2 accounts — 2 run side by side, the other 2 wait their turn.
+  </div>
+</div>
+
+<div class="scrape-panel">
+  <div class="scrape-panel-head">Where the leads end up</div>
+
+  <div class="sc-label">Name <span class="sc-sub">· shown on the board</span></div>
+  <input type="text" value="test" style="width:100%; margin-bottom:20px;" />
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:22px;">
+    <div>
+      <div class="sc-label">Sheet</div>
+      <input type="text" value="https://docs.google.com/spreadsheets/d/1c7I2qPA6X5g0R-Da0R3n7jbTjI7VTdy0ITfUahxodVE/edit?gid=694668463" style="width:100%" />
+    </div>
+    <div>
+      <div class="sc-label">New tab <span class="sc-sub">· we create it</span></div>
+      <input type="text" value="test" style="width:100%" />
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

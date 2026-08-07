@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Scrape v2 — A · Source first</title>
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body{background:var(--paper,#fbfbfa);padding:40px 44px 90px;}
+  .wrap{max-width:900px;margin:0 auto;}
+  .sk-note{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--gray);margin-bottom:30px;}
+
+  h1{font-size:2.3rem;margin:0 0 6px;}
+  .lede{color:var(--gray);font-size:14px;margin:0 0 34px;}
+
+  /* The one real decision on the screen. */
+  .src{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px;}
+  .src-card{border:1px solid var(--hairline);background:#fff;padding:20px 22px;cursor:pointer;}
+  .src-card.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);}
+  .src-card h3{margin:0 0 5px;font-size:1rem;}
+  .src-card p{margin:0;font-size:12.5px;color:var(--gray);line-height:1.5;}
+
+  .panel{border:1px solid var(--hairline);border-top:0;background:#fff;padding:24px 22px;}
+  textarea,input[type=text]{width:100%;border:0;border-bottom:1px solid var(--hairline);
+    background:transparent;padding:9px 0;font:inherit;font-size:14px;}
+  textarea{font-family:var(--mono);font-size:12.5px;resize:vertical;}
+  textarea:focus,input:focus{outline:0;border-bottom-color:var(--ink);}
+  .fl{font-size:12.5px;color:var(--gray);margin:0 0 4px;}
+
+  .rest{margin-top:34px;display:grid;grid-template-columns:1fr 1fr;gap:30px;}
+  .who{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;}
+  .chip{border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;font-size:12.5px;}
+  .chip.add{color:var(--gray);cursor:pointer;}
+
+  .go{display:flex;justify-content:space-between;align-items:center;margin-top:40px;
+    border-top:1px solid var(--hairline);padding-top:22px;}
+  .recap{font-size:13px;color:var(--gray);}
+  .recap b{color:var(--ink);}
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+  <div class="sk-note">Sketch A · Source first — the two ways in are the screen's first and biggest decision</div>
+
+  <h1>New scrape</h1>
+  <p class="lede">Pull people out of Sales Navigator and into a sheet.</p>
+
+  <div class="src">
+    <div class="src-card on">
+      <h3>Paste the searches</h3>
+      <p>One Sales Navigator search per line. Best when you've just built them.</p>
+    </div>
+    <div class="src-card">
+      <h3>Use a sheet of searches</h3>
+      <p>Point at a sheet where you keep your saved searches. Best when you reuse the same set.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <p class="fl">Your searches</p>
+    <textarea rows="5" placeholder="https://www.linkedin.com/sales/search/people?query=…&#10;https://www.linkedin.com/sales/search/people?query=…"></textarea>
+  </div>
+
+  <div class="rest">
+    <div>
+      <p class="fl">Who runs them</p>
+      <div class="who">
+        <span class="chip">Mary Simon</span>
+        <span class="chip">Udit Pandey</span>
+        <span class="chip add">+ add</span>
+      </div>
+    </div>
+    <div>
+      <p class="fl">Where the leads land</p>
+      <input type="text" value="Growth sheet" />
+      <input type="text" value="test" style="margin-top:12px" />
+    </div>
+  </div>
+
+  <div class="go">
+    <div class="recap"><b>4 searches</b> across <b>2 accounts</b> — about 20 minutes</div>
+    <button class="btn">Start scrape</button>
+  </div>
+</div>
+</body>
+</html>
