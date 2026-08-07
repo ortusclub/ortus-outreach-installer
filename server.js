@@ -3051,15 +3051,21 @@ app.post('/api/fg/list/generate', async (req, res) => {
   // buildFgTargets() ENOENTs — dbCall runs the read locally when the DB is present
   // and otherwise delegates to the central fg-roster /rpc (same match code).
   // buildListRows() is synchronous, so we resolve every pair's targets up front and
-  // hand it a plain sync lookup. NOTE: budget is intentionally omitted — Infinity
-  // serialises to null over JSON/RPC, which would zero out the list; the roster's
-  // buildFgTargets defaults budget to Infinity when the arg is absent.
+  // hand it a plain sync lookup.
+  //
+  // The budget is passed as a NUMBER on purpose. It used to be omitted, which
+  // defaults to Infinity in buildFgTargets (Infinity serialises to null over
+  // JSON/RPC, so it could not be sent literally) — and that wrote the entire
+  // matching pool to the tab: 25,882 rows for a run that can send ~1,000. The
+  // step-1 headline promised the capped number, and a 25k-row tab is not
+  // something a human reviews. fgRemaining() is the same per-account allowance
+  // the headline counts.
   const targetsByProfile = new Map();
   try {
     for (const pair of pairs) {
       const out = await dbCall('buildFgTargets', [criteria, {
         operator: pair.operator, operatorName: pair.operatorName, account: pair.account,
-        month, alreadyInvited,
+        month, alreadyInvited, budget: fgRemaining(snap.budgets, pair.account, month),
       }]);
       let reason = '';
       if (!out || !out.count) reason = (out && out.matched === 0) ? 'no connections match these roles' : 'all matching connections already invited';

@@ -21613,6 +21613,15 @@ function fgReviewRenderGate() {
     b.disabled = !ok;
     b.title = ok ? '' : 'Open the invite-list tab in the sheet first — step 2';
   }
+  // A greyed-out button with the reason hidden behind a hover is not an
+  // explanation — put it where the button is.
+  const tabLab = document.getElementById('fgw-list-tab');
+  if (tabLab && _fgtlListTab) {
+    tabLab.innerHTML = ok
+      ? `Ready to fire: <b>${escHtml(_fgtlListTab)}</b>`
+      : `<b>${escHtml(_fgtlListTab)}</b> — open it in the sheet first (step 2)`;
+    tabLab.style.display = '';
+  }
 }
 
 /** Opening the tab IS the review — record it, then send them to the sheet. */
