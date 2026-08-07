@@ -21574,6 +21574,15 @@ function fgtlCloudPoll() {
       const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json();
       if (lr && Array.isArray(lr.leads)) leads = lr.leads;
     } catch (_) { /* transient — retry */ }
+    // The account pills read _cloudAccountsById, which only the dashboard and
+    // Live Status pollers filled — this screen has its own poller, so its card
+    // rendered without pills while the dashboard's identical card had them.
+    // Same fetch, same map: one card, one source of per-account truth.
+    try {
+      const ar = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/accounts`)).json();
+      if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(id, ar.accounts);
+    } catch (_) { /* pills degrade to absent — never break the poll */ }
+    if (leads.length) _cloudAcctCounts.set(id, _cloudCountsByAccount(leads));
     if (_fgtlCloudId !== id) return; // superseded (new launch / cleared)
     if (!campaign) { _fgtlCloudTimer = setTimeout(tick, 4000); return; }
     // Live signals from the engine detail (top-level): the browser-live flag +
