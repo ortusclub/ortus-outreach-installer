@@ -24102,7 +24102,13 @@ window.renderActiveCard = function(status) {
     if (bar) bar.style.width = pct + '%';
     const liveEl = document.getElementById('active-live');
     if (liveEl) liveEl.hidden = true;
-    _hideStage(card);
+    // A finished run keeps its account pills. They are the only surface carrying
+    // per-account state - sent counts, No credits / Logged out / Weekly cap - and
+    // hiding the stage outright here is what made this card differ from the
+    // dashboard's, which renders through a path with no such line. The stage draws
+    // in its past-tense 'done' phase, and still hides itself when there is genuinely
+    // nothing to show (no live phase AND no accounts).
+    if (!renderLiveStage(card, status)) _hideStage(card);
     const profEl = document.getElementById('active-profiles');
     if (profEl) { profEl.hidden = true; profEl.innerHTML = ''; }
     try { applyCheckSectionMode(status.mode); } catch (_) { /* section relabel best-effort */ }
@@ -26888,3 +26894,4 @@ document.addEventListener('DOMContentLoaded', rsweepBind);
 if (document.readyState !== 'loading') rsweepBind();
 window.rsweepStart = rsweepStart;
 window.rsweepStop = rsweepStop;
+
