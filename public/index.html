@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.179" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.179" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.176" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.176" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -3436,23 +3436,6 @@
     </div>
   </div>
 
-  <!-- Cloud engine at its ceiling. The engine never REFUSES a campaign — a
-       queued one just waits for a pod slot — so this is a heads-up with a
-       choice, not a block. Only ever shown when the engine reports
-       active >= ceiling (6 pods x 5 campaigns); an engine that can't answer
-       launches silently, as before. -->
-  <div id="cloud-capacity-modal" class="modal-backdrop hidden" onclick="if(event.target===this)_cloudCapacityChoose(false)">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="cloud-capacity-title">
-      <span class="ptm-pill modal-pill--alert">NO FREE VM</span>
-      <h3 id="cloud-capacity-title" class="modal-title">Every cloud slot is busy</h3>
-      <div id="cloud-capacity-body" class="modal-body"></div>
-      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
-        <button type="button" class="btn btn-primary" onclick="_cloudCapacityChoose(true)">Queue it anyway</button>
-        <button type="button" class="btn btn-secondary" onclick="_cloudCapacityChoose(false)">Not now</button>
-      </div>
-    </div>
-  </div>
-
   <!-- v2.106.0 — MANDATORY operator-identity gate. Every operator's app logs in
        with the SAME shared dashboard credential, so the app can't tell who's at
        the keyboard. This email is stamped as the reserver in the SoO 'CC User
@@ -3826,7 +3809,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.179"></script>
+  <script type="module" src="/js/app.js?v=2.160.176"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
