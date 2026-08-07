@@ -7463,8 +7463,11 @@ function renderCloudAccountsPanel(id) {
   const accounts = (id && _cloudAccountsById.get(id)) || [];
   if (!accounts.length) { panel.hidden = true; panel.innerHTML = ''; return; }
   const badge = (cls, text) => `<span class="cap-badge ${cls}">${escHtml(text)}</span>`;
+  const counts = _cloudAcctCounts.get(id);
   const rows = accounts.map((a) => {
-    const who = escHtml(a.email || a.profileId || 'account');
+    // Resolve the GoLogin id to a name — the engine omits `email` on follower
+    // campaigns, which left this panel listing raw profile ids.
+    const who = escHtml(a.email || _acctLabel(a) || 'account');
     const badges = [];
     // Blocking status first (most important), then daily usage, then primary link.
     const benched = !!(a.weeklyCap || a.parkReason === 'weekly');
@@ -7476,8 +7479,12 @@ function renderCloudAccountsPanel(id) {
     else if (a.parked || a.parkReason === 'throttle') badges.push(badge('warn', '⏸ Throttled'));
     else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
     else badges.push(badge('ok', '✓ Active'));
-    // Daily usage always shown.
-    badges.push(badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
+    // This run's invites when we have them (the daily quota is meaningless on a
+    // follower campaign — it counts connection requests), else the daily usage.
+    const tally = counts && counts.get(String(a.profileId || ''));
+    badges.push(tally
+      ? badge('muted', `${tally.sent} of ${tally.total} invited`)
+      : badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
     // Primary-connection (CC+IC only; null when N/A).
     if (a.primaryConnected === true) badges.push(badge('ok', '🔗 Connected to primary'));
     else if (a.primaryConnected === false) badges.push(badge('muted', 'Primary not yet connected'));
@@ -9482,7 +9489,12 @@ async function _refreshCloudItems() {
       // telling the operator to fix something they just fixed.
       const _acctAge = Date.now() - (_cloudAccountsAt.get(c.id) || 0);
       const _ca = _cloudCurrentAction(d);
-      if (_ca && _ca.phase === 'waiting' && _acctAge > 30000) {
+      // Also while it is SENDING, not only while stalled. The account pills are
+      // built from this payload, so fetching it only in the waiting phase meant a
+      // healthy running campaign showed no per-account breakdown at all — you
+      // could see 88 of 1567 sent but not which of the 66 accounts sent them.
+      const _live = ((d && d.campaign) || c).status === 'running';
+      if (((_ca && _ca.phase === 'waiting') || _live) && _acctAge > 30000) {
         _cloudAccountsAt.set(c.id, Date.now());
         try {
           const ar = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/accounts`)).json();
@@ -9493,7 +9505,10 @@ async function _refreshCloudItems() {
       if (st === 'running' || _snExpanded.has(c.id)) {
         try {
           const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
-          if (lr && Array.isArray(lr.leads)) d._logLines = _mergeCloudLog(_cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c), null);
+          if (lr && Array.isArray(lr.leads)) {
+            d._logLines = _mergeCloudLog(_cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c), null);
+            _cloudAcctCounts.set(c.id, _cloudCountsByAccount(lr.leads));
+          }
         } catch { /* best-effort */ }
       }
       return d;
@@ -23498,10 +23513,39 @@ function _stageGlyphHtml(phase) {
 
 // One pill per account: [state colour] name  count. A word only where a number
 // can't say it. Data is the engine's /accounts payload — nothing invented.
-function _stageAcctPill(a, isCurrent) {
-  const email = String(a.email || a.profileId || '');
-  const nm = email.includes('@') ? email.split('@')[0] : email;
-  const count = `${a.dailyCount || 0}/${a.dailyLimit || 0}`;
+// Per-campaign, per-account tallies built from the engine's lead rows:
+// { profileId → { sent, total } }. The /accounts payload carries dailyCount
+// against the CONNECTION quota, which is 0/50 for every account on a follower
+// campaign — the lead rows are the only place the invite counts exist.
+const _cloudAcctCounts = new Map();
+function _cloudCountsByAccount(leads) {
+  const m = new Map();
+  for (const l of leads || []) {
+    const k = String(l.account || '');
+    if (!k) continue;
+    const e = m.get(k) || { sent: 0, total: 0 };
+    e.total += 1;
+    if (l.status === 'sent') e.sent += 1;
+    m.set(k, e);
+  }
+  return m;
+}
+
+// A GoLogin profile id is not a name. We hold the profile list locally, so
+// resolve it rather than printing 68a841147a803f7714c0eaef at the operator.
+function _acctLabel(a) {
+  const email = String(a.email || '');
+  if (email) return email.includes('@') ? email.split('@')[0] : email;
+  const p = (allProfilesData || []).find((x) => x && x.id === a.profileId);
+  if (p && p.name) return String(p.name).includes('@') ? String(p.name).split('@')[0] : p.name;
+  return String(a.profileId || 'account').slice(0, 8);
+}
+
+function _stageAcctPill(a, isCurrent, counts) {
+  const nm = _acctLabel(a);
+  const tally = counts && counts.get(String(a.profileId || ''));
+  // Invites sent / queued for THIS run when we have it; the daily quota otherwise.
+  const count = tally ? `${tally.sent}/${tally.total}` : `${a.dailyCount || 0}/${a.dailyLimit || 0}`;
   let cls = '', text = count;
   if (a.needsLogin) { cls = 'bad'; text = 'Needs login'; }
   else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
@@ -23675,12 +23719,14 @@ function renderLiveStage(root, status) {
   const isCur = (a) => !paused && !!cur && (a.profileId === cur || a.email === cur);
   const sel = _stageSel.get(cid) || '';
   const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}`).join(',')
-    + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}`;
+    + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}`
+    + `|${[...((cid && _cloudAcctCounts.get(cid)) || new Map()).entries()].map(([k, v]) => `${k}:${v.sent}/${v.total}`).join(',')}`;
   if (stage.dataset.acctkey !== akey) {
     const pills = _stgFld(root, 'stageAccts');
     if (pills) {
+      const counts = cid && _cloudAcctCounts.get(cid);
       pills.innerHTML = accts.map((a) => {
-        const html = _stageAcctPill(a, isCur(a));
+        const html = _stageAcctPill(a, isCur(a), counts);
         return sel && a.profileId === sel ? html.replace('class="stg-acct"', 'class="stg-acct sel"') : html;
       }).join('');
     }
