@@ -280,6 +280,20 @@ export function getLogs(since) {
   return requestWithRetry('GET', `/api/logs?${params.toString()}`);
 }
 
+/**
+ * Stored log history for ONE launch (runId), merged across its jobs.
+ *
+ * getLogs() above reads the engine's LIVE buffer, which only holds current
+ * activity — so a scrape's log went blank the moment it finished. This endpoint
+ * is the engine's persisted per-run history and survives completion. runId is
+ * echoed on every job in /api/jobs. Single attempt: the board renders without
+ * logs perfectly well, so this must never hold up a strip.
+ */
+export function getRunLogs(runId) {
+  if (!runId) return Promise.resolve({ logs: [] });
+  return requestOnce('GET', `/api/scrape/runs/${encodeURIComponent(runId)}/logs`, undefined, { timeoutMs: 12000 });
+}
+
 /** Engine health probe — single attempt, used to show connectivity in the UI. */
 export function engineHealth() {
   return requestOnce('GET', '/api/health');

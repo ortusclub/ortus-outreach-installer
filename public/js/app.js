@@ -486,12 +486,12 @@ function renderStrip(c) {
     <div class="sn-flow">${flow}</div>
     ${progLine}
     ${switchBlock}
+    </div>
+    ${richCard}
     <div class="sn-foot">
       <div class="togwrap"><div class="toggle ${toggleOn ? '' : 'off'}" data-owner="${escHtml(owner)}" data-cid="${escHtml(c.id)}" title="${toggleOn ? 'Running — flip to pause' : 'Paused — flip to resume'}"><i></i></div><span class="lbl">${toggleOn ? 'Running' : 'Paused'}</span></div>
       <div class="right">${dismissBtn}${viewBtn}${stopBtn}${openBtn}${rerunBtn}</div>
     </div>
-    </div>
-    ${richCard}
   </div>`;
 }
 
@@ -535,14 +535,23 @@ function _snFillStripCard(root, c) {
     root.dataset.snLabelled = '1';
   }
 
-  // Expanding hides .sn-compact — and the strip's Open / Re-run / Stop / View
-  // buttons live in its footer. Mirror them into the card's control slot so an
-  // expanded scrape doesn't lose every action. Copied as markup on purpose: the
-  // board's click handlers are delegated off .sn-strip, and the clone sits
-  // inside the same strip, so they keep resolving.
+  // The card's own control slot stays empty: the strip's real .sn-foot now sits
+  // OUTSIDE .sn-compact, so it survives expanding and keeps its styling. An
+  // earlier attempt copied those buttons into .vj-controls and they rendered
+  // unstyled — every rule for them is a `.sn-foot .mini…` descendant selector.
   const ctrl = root.querySelector('.vj-controls');
-  const right = strip && strip.querySelector('.sn-compact .sn-foot .right');
-  if (ctrl && right) ctrl.innerHTML = right.innerHTML;
+  if (ctrl) ctrl.innerHTML = '';
+
+  // Fill the card's live log. The strip's log used to live in the Jobs/Logs pane
+  // inside .sn-compact, which expanding hides — so the card showed "No events
+  // yet" for every scrape. Reuse the strip log loader against the card's box.
+  const logBox = root.querySelector('[data-f="active-log"], .vj-log');
+  if (logBox && !logBox.dataset.snWired) {
+    logBox.dataset.snWired = '1';
+    logBox.dataset.logsfor = c.id;
+    logBox.dataset.tab = c.tabName || '';
+    try { _snLoadLogs(logBox); } catch (_) { /* a log failure must not break the card */ }
+  }
 
   const setF = (f, v) => { const e = root.querySelector(`[data-f="${f}"]`); if (e) e.textContent = String(v); };
   setF('activeName', c.name || c.tabName || 'Sales Nav Scrape');

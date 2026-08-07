@@ -27,7 +27,7 @@ import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updat
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
-import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getAllJobsFast as getAllScrapeJobsFast, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
+import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getAllJobsFast as getAllScrapeJobsFast, getLogs as getScrapeLogs, getRunLogs as getScrapeRunLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
 import { addScrapeCampaign, listScrapeCampaigns, getScrapeCampaign, updateScrapeCampaign } from './src/scrape-campaigns.js';
 import { getScrapeOverride, saveScrapeOverride } from './src/scrape-config-overrides.js';
 import { appendAction, readScrapeLog } from './src/scrape-campaign-logs.js';
@@ -4085,7 +4085,25 @@ app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
     live = lines.filter((ln) => !tabName || String(ln.tabName || '').startsWith(tabName))
                 .map((ln) => ({ ts: ln.ts, message: ln.message }));
   } catch { /* engine offline — persisted still shows */ }
-  const merged = [...persisted, ...live].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  // The two sources above only cover a scrape that is still running on this
+  // machine: `persisted` needs a LOCAL record (engine-derived strips have none),
+  // and `live` is the engine's global LIVE buffer, which drops a scrape's lines
+  // once it finishes — which is why a done strip's log went blank.
+  //
+  // The engine does persist per-run history; nothing was ever asking for it.
+  // Fall back to it when the live sources came up empty.
+  let history = [];
+  if (!persisted.length && !live.length) {
+    try {
+      const board = await getScrapeBoard();
+      const rec2 = (board.campaigns || []).find((c) => c.id === req.params.id);
+      const runIds = [...new Set((rec2 && rec2.jobs || []).map((j) => j && j.runId).filter(Boolean))];
+      const sets = await Promise.all(runIds.map((rid) => getScrapeRunLogs(rid).catch(() => null)));
+      history = sets.flatMap((s) => (s && Array.isArray(s.logs) ? s.logs : []))
+        .map((ln) => ({ ts: ln.ts, message: ln.message }));
+    } catch { /* no history — the empty-state message below still shows */ }
+  }
+  const merged = [...persisted, ...live, ...history].sort((a, b) => (a.ts || 0) - (b.ts || 0));
   res.json({ lines: merged });
 });
 
