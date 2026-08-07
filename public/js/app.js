@@ -68,7 +68,52 @@ window.goSalesNav = goSalesNav;
 // Route-entry initializer for the board. View visibility is handled by the
 // #/salesnav route (body.route-salesnav in the router + CSS), NOT by toggling
 // section display here.
+// Last good board, persisted. The campaigns dashboard renders from local files
+// and paints instantly; this board has no local state at all — every strip is
+// derived from the engine's /api/jobs, which currently ships ~15MB. So opening
+// the tab meant staring at "Loading scrapes…" for the length of a cold round
+// trip to the VM, every single time.
+//
+// The cache is DISPLAY ONLY: it paints immediately, then the normal 2.5s poll
+// overwrites it with live data. Stored whole (never truncated) because the
+// strips' action handlers read search URLs straight off the rendered data — a
+// shortened URL here would mean a Re-run firing at the wrong search.
+const SN_CACHE_KEY = 'snBoardCache1';
+
+function _snSaveCache(campaigns) {
+  // Shrink on quota failure rather than giving up: a handful of scrapes carry
+  // 80KB search URLs, so the full board can exceed the localStorage budget on
+  // its own. Half the strips cached still beats a cold board.
+  for (const cap of [80, 40, 15, 5]) {
+    try {
+      localStorage.setItem(SN_CACHE_KEY, JSON.stringify({ at: Date.now(), campaigns: campaigns.slice(0, cap) }));
+      return;
+    } catch (_) { /* quota — try a smaller slice */ }
+  }
+  try { localStorage.removeItem(SN_CACHE_KEY); } catch (_) { /* */ }
+}
+
+function _snLoadCache() {
+  try {
+    const raw = localStorage.getItem(SN_CACHE_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return (d && Array.isArray(d.campaigns) && d.campaigns.length) ? d.campaigns : null;
+  } catch (_) { return null; }
+}
+
 async function openSalesNavBoard() {
+  // Paint the cached board BEFORE any await, so the tab is never empty. Guarded
+  // so a corrupt cache can't stop the live load that follows.
+  const cached = _snLoadCache();
+  if (cached && !_snEverLoaded) {
+    try {
+      renderSalesNavBoard(cached);
+      // Don't let cached statuses seed the handover detector — comparing a live
+      // poll against a cache from an hour ago fires phantom "X stopped" toasts.
+      _snPrevStatus = new Map();
+    } catch (_) { /* fall through to the normal cold load */ }
+  }
   await loadOperatorEmail();
   await pollSalesNavBoard();
   clearInterval(_snPollTimer);
@@ -95,6 +140,7 @@ async function pollSalesNavBoard() {
     if (d && d.error) throw new Error(d.error);
     _snEverLoaded = true; _snConsecFail = 0;
     renderSalesNavBoard(d.campaigns || []);
+    _snSaveCache(d.campaigns || []);
   } catch (err) {
     _snConsecFail++;
     // Never blank a board we've already rendered: keep the last render and let the
