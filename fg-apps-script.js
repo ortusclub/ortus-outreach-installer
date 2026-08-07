@@ -687,12 +687,44 @@ function fgStyleRunHealth_() {
   if (sh.getFrozenRows() < 3) sh.setFrozenRows(3);
 }
 
+// The per-run invite list tabs ("FG 2026-08-15"). These are the tabs an operator
+// actually REVIEWS before a run and reads after it, so they get the same colour
+// language as everything else. Header is read off row 1 rather than assumed:
+// the app writes FG_LIST_HEADER, but a human may have re-ordered columns.
+function fgStyleRunLists_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var sh = sheets[i];
+    if (!/^FG \d{4}-\d{2}-\d{2}$/.test(sh.getName())) continue;
+    var lastCol = sh.getLastColumn(), lastRow = Math.max(2, sh.getLastRow());
+    if (lastCol < 1) continue;
+    var header = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    fgDressHeader_(sh, 1);
+    var rules = [];
+    var cSt = fgColLetter_(sh, header, 'Status');
+    if (cSt) {
+      var r = sh.getRange(cSt + '2:' + cSt + lastRow);
+      // "Queued" is the app's proof it dispatched; it is not a finished state,
+      // so it reads amber until the ledger stamps Invited or Failed.
+      rules.push(fgRule_(r, 'text', 'Invited', FG_OK_BG, FG_OK_FG));
+      rules.push(fgRule_(r, 'text', 'Failed', FG_BAD_BG, FG_BAD_FG));
+      rules.push(fgRule_(r, 'text', 'Queued', FG_WARN_BG, FG_WARN_FG));
+      rules.push(fgRule_(r, 'text', 'Skipped', FG_WARN_BG, FG_WARN_FG));
+    }
+    var cAt = fgColLetter_(sh, header, 'Invited At');
+    if (cAt) sh.getRange(cAt + '2:' + cAt + lastRow).setNumberFormat('dd mmm yyyy, HH:mm');
+    sh.setConditionalFormatRules(rules);
+  }
+}
+
 // Style every FG tab. Never throws: presentation must not fail a write.
 function fgStyleTabs_() {
   try { fgStyleBudgets_(); } catch (e) { /* cosmetic */ }
   try { fgStyleInvites_(); } catch (e) { /* cosmetic */ }
   try { fgStyleMaster_(); } catch (e) { /* cosmetic */ }
   try { fgStyleRunHealth_(); } catch (e) { /* cosmetic */ }
+  try { fgStyleRunLists_(); } catch (e) { /* cosmetic */ }
 }
 
 // Manual entry point — run once from the editor to dress the tabs immediately,
