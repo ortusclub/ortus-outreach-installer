@@ -6761,6 +6761,10 @@ async function startCampaign(opts = {}) {
   const _cloudOn = _cloudModeNow && !!document.getElementById('cloud-run-checkbox')?.checked;
   if (_cloudOn && !opts.queueOnly) {
     opts = { ...opts, cloud: true };
+    // Schedule on the VM: same dispatch, one extra field. The engine parks the
+    // campaign in 'scheduled' and starts it itself at this instant — no cron on
+    // this machine, so the app can be closed the whole time.
+    if (opts.startAt) body.startAt = opts.startAt;
     // Follower Growth cloud extras (server defaults the URL to the Ortus page).
     if (document.getElementById('campaign-mode')?.value === 'follower_growth') {
       body.inviteUrl = document.getElementById('fg-invite-url')?.value?.trim() || '';
@@ -6841,16 +6845,23 @@ function refreshRunTarget() {
   if (typeof alphaRecalc === 'function') alphaRecalc();
   if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
 }
-// #btn-queue / #btn-schedule are local-only launch paths (Queue →
-// addToQueueCampaign, Schedule → /api/schedules — neither dispatches cloud);
-// hide them under the VM tab and swap the copy under the launch buttons.
+// #btn-queue is a local-only launch path (Queue → addToQueueCampaign, which
+// never dispatches cloud) — hidden under the VM tab. #btn-schedule works on BOTH
+// targets: locally it writes a node-cron schedule, on the VM it dispatches the
+// campaign with a startAt and the ENGINE holds it until then (launchScheduleIt).
 // #launch-run-note was added (empty) to the launch card in Task 2.2.
 function refreshLaunchForRunTarget() {
   const cloud = getRunTarget() === 'cloud';
   const q = document.getElementById('btn-queue');
   const s = document.getElementById('btn-schedule');
   if (q) q.style.display = cloud ? 'none' : '';
-  if (s) s.style.display = cloud ? 'none' : '';
+  if (s) {
+    s.style.display = '';
+    s.textContent = cloud ? 'Schedule on the VM' : 'Schedule it';
+    s.title = cloud
+      ? 'Pick a date and time — the VM starts it itself, with the app closed'
+      : 'Schedule for a specific date and time';
+  }
   const note = document.getElementById('launch-run-note');
   if (note) note.textContent = cloud
     ? 'Starts on the VM — close the laptop whenever. Watch it live with 👁 Show on the board.'
@@ -8899,7 +8910,10 @@ function renderUnifiedStrip(it) {
       // v2.160.46: a cloud "queued"/warming-up campaign has already been
       // dispatched to the engine, so OPEN behaves like a running one — the
       // read-only wizard (its config, locked), NOT the Google Sheet.
-      foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button><button class="mini solid" onclick="openRunningCampaignReadOnly('${escHtml(it.id)}')">Open</button>`;
+      // A SCHEDULED one hasn't started, so the same engine stop reads as "Cancel"
+      // (it flips the campaign to cancelled; the due start_campaign task then
+      // finds a non-'scheduled' status and declines to start it).
+      foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">${scheduled ? 'Cancel' : 'Stop'}</button><button class="mini solid" onclick="openRunningCampaignReadOnly('${escHtml(it.id)}')">Open</button>`;
     } else if (scheduled) {
       // Local scheduled — Reschedule (edit) / Cancel (remove) / Open (edit).
       foot = `<button class="mini" onclick="window.editQueuedCampaign && window.editQueuedCampaign('${escHtml(it.rawId)}')">Reschedule</button>`
@@ -9530,8 +9544,11 @@ async function _renderCampaignsBoardInner() {
       // 'paused' is a still-ACTIVE state (sending held, resumable) — keep it in
       // NOW RUNNING with the Pause/Resume+Stop cluster, exactly like a paused
       // local campaign (which stays running:true, paused:true).
+      // 'scheduled' — dispatched to the VM with a start time; the engine holds it
+      // and starts it itself. Same bucket as queued, and scheduledAt makes the
+      // strip read "Scheduled · <when>" (the shape the local queue already uses).
       const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused') ? 'running'
-        : (c.status === 'pending' || c.status === 'queued') ? 'queued' : 'done';
+        : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
         paused: c.status === 'paused',
@@ -9547,6 +9564,7 @@ async function _renderCampaignsBoardInner() {
         bucket, sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)),
         total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - Number(lc._preActioned || 0),
         accounts: (c.profile_ids || []).length, profileIds: c.profile_ids || [], mine,
+        scheduledAt: (c.status === 'scheduled' && c.config && c.config.startAt) || null,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Stopped' : 'Error',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
@@ -10975,6 +10993,15 @@ window.runHandshakeWizard = runHandshakeWizard;
 // in "pending" (Sam's 3× "Poop" incident, 2026-07-24). Set synchronously before
 // the first await so JS's single thread makes it airtight against re-clicks.
 let _cloudSubmitInFlight = false;
+// "Fri 8 Aug, 09:00" — the operator's own timezone. The engine speaks UTC ISO
+// everywhere; nothing operator-facing should.
+function _fmtCloudStartAt(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso || '');
+  return d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+if (typeof window !== 'undefined') window._fmtCloudStartAt = _fmtCloudStartAt;
+
 async function _submitCloudCampaign(body) {
   if (_cloudSubmitInFlight) return; // ignore re-clicks while a start is dispatching
   _cloudSubmitInFlight = true;
@@ -11030,6 +11057,16 @@ async function _submitCloudCampaign(body) {
       if (draftId) await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
       clearActiveDraft();
     } catch { /* non-fatal */ }
+    // Scheduled on the VM: the engine holds it in 'scheduled' and wakes itself at
+    // the chosen time. Nothing is live yet, so there's no live card to open —
+    // land back on the dashboard where the campaign shows with its start time.
+    if (data.scheduled) {
+      if (typeof showCampaignToast === 'function') {
+        showCampaignToast(`⏰ Scheduled on the VM for ${_fmtCloudStartAt(data.startAt)} — ${data.leadsAdded} lead(s) loaded. The laptop can stay shut.`, 7000);
+      }
+      if (typeof goDashboard === 'function') goDashboard();
+      return;
+    }
     if (typeof showCampaignToast === 'function') showCampaignToast(`☁︎ Cloud campaign started — ${data.leadsAdded} lead(s) dispatched. It keeps running in the cloud even if you close the app.`, 6000);
     // Parity with a local launch: drop straight onto the live status CAMPAIGN
     // card (card #2) for the new VM campaign. See feedback_two_live_status_cards.
@@ -21245,6 +21282,7 @@ async function fgtlOpenSheet() {
 async function fgMasterBuild() {
   const btn = document.getElementById('fg-master-build');
   const status = document.getElementById('fg-master-status');
+  if (!confirm('This clears and rewrites the entire FG Master tab (~279k rows) in the shared central sheet. Continue?')) return;
   if (btn) btn.disabled = true;
   if (status) status.textContent = 'Starting…';
   try {
@@ -22172,7 +22210,10 @@ window.launchQueueIt = async function() {
 // recurring (weekly on selected days). No backend call here — caller is
 // responsible for gathering the rest of the campaign config and POSTing
 // to /api/schedules.
-function openScheduleModal({ defaultName = '' } = {}) {
+// onceOnly: the VM path. The engine schedules ONE start at an instant, so the
+// weekly-repeat row is hidden and the resolved date+time comes back as `startAt`
+// (a real Date). The local (cron) path is unchanged and still gets `cron`.
+function openScheduleModal({ defaultName = '', onceOnly = false } = {}) {
   return new Promise((resolve) => {
     const modal = document.getElementById('schedule-modal');
     if (!modal) { resolve(null); return; }
@@ -22191,16 +22232,22 @@ function openScheduleModal({ defaultName = '' } = {}) {
     // time = next round hour after now.
     nameInput.value = defaultName || '';
     const soon = new Date(Date.now() + 60 * 60 * 1000);
-    dateInput.value = soon.toISOString().slice(0, 10);
+    // Local date, not toISOString().slice(0,10) — that's the UTC day, which is
+    // yesterday/tomorrow either side of midnight.
+    dateInput.value = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
     timeInput.value = `${String(soon.getHours()).padStart(2, '0')}:00`;
     dayInputs.forEach((d) => { d.checked = false; });
+    const repeatRow = document.getElementById('schedule-modal-repeat');
+    if (repeatRow) repeatRow.style.display = onceOnly ? 'none' : '';
+    const titleEl = document.getElementById('schedule-modal-title');
+    if (titleEl) titleEl.textContent = onceOnly ? 'Schedule this campaign on the VM' : 'Schedule this campaign';
 
     const computeCron = () => {
       const time = timeInput.value || '09:00';
       const parts = time.split(':').map((n) => parseInt(n, 10));
       const h = parts[0]; const m = parts[1];
       if (Number.isNaN(h) || Number.isNaN(m)) return null;
-      const days = dayInputs.filter((d) => d.checked).map((d) => d.value);
+      const days = onceOnly ? [] : dayInputs.filter((d) => d.checked).map((d) => d.value);
       if (days.length > 0) {
         const dayStr = days.length === 7 ? '*' : days.join(',');
         return { cron: `${m} ${h} * * ${dayStr}`, kind: 'weekly', days, time };
@@ -22245,13 +22292,24 @@ function openScheduleModal({ defaultName = '' } = {}) {
       const r = computeCron();
       if (!r) {
         if (typeof showCampaignToast === 'function') {
-          showCampaignToast('Pick a date+time (or at least one repeat day).');
+          showCampaignToast(onceOnly ? 'Pick a date and a time.' : 'Pick a date+time (or at least one repeat day).');
         }
         return;
       }
+      // VM path: resolve the picked date+time to a real instant in the operator's
+      // own timezone (new Date('2026-08-08T09:00') is local, which is what they mean),
+      // and refuse a time that's already gone — the engine would just start it now.
+      let startAt = null;
+      if (onceOnly) {
+        startAt = new Date(`${r.date}T${r.time}`);
+        if (isNaN(startAt.getTime()) || startAt.getTime() <= Date.now()) {
+          if (typeof showCampaignToast === 'function') showCampaignToast('Pick a time in the future.');
+          return;
+        }
+      }
       cleanup();
       const name = (nameInput.value || '').trim() || defaultName || 'Scheduled campaign';
-      resolve({ name, cron: r.cron });
+      resolve({ name, cron: r.cron, startAt });
     };
     const onCancel = () => { cleanup(); resolve(null); };
     saveBtn.addEventListener('click', onSave);
@@ -22269,6 +22327,21 @@ window.launchScheduleIt = async function () {
   if (_existingCampaignBlocksNewDispatch()) return;
   _closeLaunchMenu();
   const nameInput = document.getElementById('campaign-name-input');
+
+  // ── VM tab: schedule ON THE ENGINE ────────────────────────────────────────
+  // Not /api/schedules (node-cron in THIS process — dies with the app, and fires
+  // a LOCAL browser run). The dispatch is the ordinary cloud launch plus a
+  // startAt: the engine parks the campaign in 'scheduled' and wakes itself at
+  // that minute, so the laptop can be shut the whole time. Every wizard
+  // validation, the pre-flight gate and the CC+IC primary handshake run NOW, at
+  // schedule time — the operator finds out about a bad sheet today, not at 6am.
+  if (typeof getRunTarget === 'function' && getRunTarget() === 'cloud') {
+    const picked = await openScheduleModal({ defaultName: (nameInput?.value || '').trim(), onceOnly: true });
+    if (!picked || !picked.startAt) return;
+    if (nameInput && picked.name && !nameInput.value.trim()) nameInput.value = picked.name;
+    return startCampaign({ startAt: picked.startAt.toISOString() });
+  }
+
   const result = await openScheduleModal({ defaultName: (nameInput?.value || '').trim() });
   if (!result) return;
 

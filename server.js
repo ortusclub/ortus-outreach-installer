@@ -1223,9 +1223,17 @@ async function handleStartCloud(req, res) {
   try {
     const body = req.body || {};
     const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
-      delayMin, delayMax, launchId } = body;
+      delayMin, delayMax, launchId, startAt } = body;
     if (!isCloudMode(mode)) return res.status(400).json({ error: `Mode "${mode}" can't run in the cloud yet.` });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+    // "Schedule on the VM": validate the instant HERE so a typo fails at the
+    // click, not silently at 6am. The engine ignores a past startAt (starts now),
+    // which for a scheduled launch is the one outcome the operator can't see.
+    if (startAt !== undefined && startAt !== null && startAt !== '') {
+      const t = new Date(startAt).getTime();
+      if (!Number.isFinite(t)) return res.status(400).json({ error: `startAt is not a date: ${startAt}` });
+      if (t <= Date.now()) return res.status(400).json({ error: 'That start time has already passed — pick a future one.' });
+    }
     if (rejectIfNoOperatorEmail(res)) return;
     if (await rejectIfForeignProfiles(req, res, profileIds, mode)) return;
 
@@ -1488,9 +1496,10 @@ async function handleStartCloud(req, res) {
       // stale gid=Sheet5 in the URL field → all stamps landed on Sheet5).
       dailyLimit: dailyLimit || 50, sheetUrl: cloudSheetUrl,
       primaryConn,
+      startAt: startAt || undefined,
     });
     if (result.error) return res.status(502).json({ error: result.error, cloud: true });
-    cloudLog(`[cloud] campaign ${result.id} (${mode}) dispatched to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
+    cloudLog(`[cloud] campaign ${result.id} (${mode}) ${result.scheduled ? `SCHEDULED for ${result.startAt}` : 'dispatched'} to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
     // Snapshot the wizard config so the campaign can be duplicated later (the
     // engine doesn't return templates/delays). Best-effort — never blocks dispatch.
     saveCloudLaunchConfig(result.id, name || '', body).catch((e) => cloudLog(`[cloud] launch-config save failed: ${e.message}`));
@@ -2908,10 +2917,12 @@ app.post('/api/fg/master/build', async (_req, res) => {
       try {
         const { invites } = await getFgState();
         invitedIndex = invitedIndexFromFgInvites(invites);
+        // invitedIndex is dual-keyed (Member ID AND URL per invited row), so its
+        // .size roughly doubles the true count — report the actual Invited rows.
+        _fgMaster.backfilled = (invites || []).filter((r) => r && r.Status === 'Invited').length;
       } catch (e) {
         campaignLog(`[FG-master] could not read FG Invites for backfill (${e.message}) — building without it`);
       }
-      _fgMaster.backfilled = invitedIndex.size;
       _fgMaster.phase = 'building';
       const records = listMasterRecords({});
       const { rows, count, droppedNoUrl } = buildMasterRows(records, invitedIndex);

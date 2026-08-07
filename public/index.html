@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.147" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.147" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.148" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.148" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1750,20 +1750,20 @@
 
         <!-- INPUT panel -->
         <div class="scrape-panel">
-          <div class="scrape-panel-head">Input · Sales Navigator searches</div>
+          <div class="scrape-panel-head">What to scrape</div>
 
           <div class="scrape-seg" role="tablist">
-            <button type="button" id="scrape-seg-type" class="scrape-seg-btn is-active" onclick="setScrapeInputMode('type')">Type URLs</button>
-            <button type="button" id="scrape-seg-sheet" class="scrape-seg-btn" onclick="setScrapeInputMode('sheet')">From a Sheet</button>
+            <button type="button" id="scrape-seg-type" class="scrape-seg-btn is-active" onclick="setScrapeInputMode('type')">Paste them</button>
+            <button type="button" id="scrape-seg-sheet" class="scrape-seg-btn" onclick="setScrapeInputMode('sheet')">From a sheet</button>
           </div>
 
           <div id="scrape-input-type">
-            <label for="scrape-urls" class="scrape-label">Sales Navigator search URL(s) — one per line. Each URL is scraped by one selected GoLogin account, in parallel.</label>
+            <label for="scrape-urls" class="scrape-label">Your searches <span class="scrape-sublabel">· one per line</span></label>
             <textarea id="scrape-urls" rows="3" placeholder="https://www.linkedin.com/sales/search/people?..." style="width:100%" oninput="updateScrapePairing()"></textarea>
           </div>
 
           <div id="scrape-input-sheet" style="display:none">
-            <label for="scrape-src-sheet" class="scrape-label">Paste a Google Sheet whose cells hold the search URLs — we read it and pull out every Sales Nav search.</label>
+            <label for="scrape-src-sheet" class="scrape-label">Sheet holding your searches <span class="scrape-sublabel">· we read them out of it</span></label>
             <div style="display:flex; gap:10px; align-items:stretch;">
               <input type="text" id="scrape-src-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1" />
               <button type="button" class="btn btn-secondary btn-sm" onclick="loadScrapeUrlsFromSheet()">Load URLs</button>
@@ -1782,18 +1782,18 @@
 
         <!-- DESTINATION panel -->
         <div class="scrape-panel">
-          <div class="scrape-panel-head">Destination · where results land</div>
+          <div class="scrape-panel-head">Where the leads end up</div>
           <div style="margin-bottom:16px;" id="scrape-name-field">
-            <label for="scrape-name" class="scrape-label">Campaign name — editable · shown on the board strip</label>
+            <label for="scrape-name" class="scrape-label">Name <span class="scrape-sublabel">· shown on the board</span></label>
             <input type="text" id="scrape-name" placeholder="tag_city_ee" style="width:100%" />
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
             <div>
-              <label for="scrape-sheet" class="scrape-label">Destination Google Sheet URL</label>
+              <label for="scrape-sheet" class="scrape-label">Sheet</label>
               <input type="text" id="scrape-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%" />
             </div>
             <div>
-              <label for="scrape-tab" class="scrape-label">New tab name — we create this tab for the results</label>
+              <label for="scrape-tab" class="scrape-label">New tab <span class="scrape-sublabel">· we create it</span></label>
               <input type="text" id="scrape-tab" value="Results" style="width:100%" />
             </div>
           </div>
@@ -2306,6 +2306,7 @@
         <p class="fgw-lead" style="margin-top:6px">
           <button type="button" id="fg-master-build" class="fgw-sheet-link">Rebuild the FG Master tab</button>
           <span id="fg-master-status" class="hint"></span>
+          <span class="hint" style="display:block">Rebuilding while a campaign run is reconciling can make that run's sheet writes time out — avoid running both at once.</span>
         </p>
 
         <div class="fgw-two-up">
@@ -3690,7 +3691,9 @@
         </label>
       </div>
 
-      <div class="schedule-modal__field">
+      <!-- Hidden for a VM schedule (openScheduleModal onceOnly): the engine
+           schedules a single start instant, not a recurring cron. -->
+      <div class="schedule-modal__field" id="schedule-modal-repeat">
         <span class="schedule-modal__field-label">Repeat weekly <span class="schedule-modal__optional">(leave blank for one-time)</span></span>
         <div class="schedule-modal__days">
           <label class="schedule-modal__day"><input type="checkbox" class="schedule-modal-day" value="1"/><span>Mon</span></label>
@@ -3745,7 +3748,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.147"></script>
+  <script type="module" src="/js/app.js?v=2.160.148"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

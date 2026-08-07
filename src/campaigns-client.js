@@ -126,6 +126,7 @@ function requestWithRetry(method, path, body) {
  * @param {string}   [c.sheetUrl]   source sheet (for reference/write-back)
  * @param {number}   [c.dailyLimit] per-account daily cap
  * @param {string}   [c.id]         optional stable id (idempotency)
+ * @param {string}   [c.startAt]    ISO instant — engine holds it until then
  */
 export function startCloudCampaign(c = {}) {
   const mode = String(c.mode || '');
@@ -162,6 +163,10 @@ export function startCloudCampaign(c = {}) {
     // CC+IC: accounts this machine already knows are connected to the primary,
     // so the engine's per-campaign table starts with the truth instead of blank.
     ...(c.primaryConn && Object.keys(c.primaryConn).length ? { primaryConn: c.primaryConn } : {}),
+    // Scheduled start (ISO). The engine parks the campaign in 'scheduled' and
+    // fires it itself at that instant — this machine can be off. Omitted (or in
+    // the past) → starts immediately, the pre-existing behaviour.
+    ...(c.startAt ? { startAt: c.startAt } : {}),
   });
 }
 
