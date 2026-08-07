@@ -35,9 +35,11 @@ let _idx = null, _idxKey = null;
 function getIndex(dir = DEFAULT_DIR) {
   const key = mtimeKey(dir);
   if (_idx && _idxKey === key) return _idx;
-  // A missing connections folder (no local DB / CI) yields an empty index,
-  // matching getCache's :none handling — not a throw.
-  try { _idx = ingestFolder(dir); } catch { _idx = EMPTY_INDEX; }
+  // A missing connections folder (no local DB / CI, or a remote operator machine
+  // that never synced one) is a normal state and yields an empty index, matching
+  // getCache's :none handling. Anything else (EACCES, ENOTDIR, EIO, a CSV
+  // disappearing mid-loop) is a real fault — surface it, don't swallow it.
+  try { _idx = ingestFolder(dir); } catch (e) { if (e.code !== 'ENOENT') throw e; _idx = EMPTY_INDEX; }
   _idxKey = key; // { index, stats }
   return _idx;
 }
