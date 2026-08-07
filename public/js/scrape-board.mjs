@@ -62,6 +62,15 @@ function _hash(str) {
 // works even if the engine drops the ride-along fields; ownerEmail/campaignName
 // are then pure display enrichments. `currentEmail`/`currentOperatorId` mark
 // which strips belong to the viewer (email match, or same install id).
+// The board's synthetic strip id, derived from the SAME triple the grouping
+// uses. Exported so the dispatch path can compute a scrape's board id BEFORE
+// its jobs exist — that's what lets a launch write its log lines against the
+// strip the operator will actually open.
+export function scrapeCampaignId({ userId = '', sheetUrl = '', base = '' } = {}) {
+  const name = String(base || '').trim() || 'Sales Nav scrape';
+  return 'eng_' + _hash(`${userId || ''}|${sheetUrl || ''}|${name}`);
+}
+
 export function groupJobsIntoCampaigns(jobs, { currentEmail = '', currentOperatorId = '' } = {}) {
   const curEmail = String(currentEmail || '').trim().toLowerCase();
   const curId = String(currentOperatorId || '').trim();
@@ -80,6 +89,7 @@ export function groupJobsIntoCampaigns(jobs, { currentEmail = '', currentOperato
       });
     }
     const g = groups.get(key);
+    g.key = key;
     g.jobs.push(j);
     if (!g.ownerEmail && j.ownerEmail) g.ownerEmail = String(j.ownerEmail).trim();
     if (j.searchUrl && !g.searchUrls.includes(j.searchUrl)) g.searchUrls.push(j.searchUrl);
@@ -107,6 +117,79 @@ export function groupJobsIntoCampaigns(jobs, { currentEmail = '', currentOperato
       enabled: cjobs.some((j) => j.state === 'running' || j.state === 'queued'),
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Board diff → durable log events.
+//
+// The engine's job list is the ONLY place a scrape's per-job state, page count
+// and lead count are ever observed, and nothing was writing them down: the
+// board rendered them and threw them away, so "when did it stall", "which
+// account errored" and "what did the run finish with" were unanswerable the
+// moment the strip re-rendered. The board already polls; diffing consecutive
+// polls turns that poll into the missing log stream at no extra fetch.
+//
+// Pure: prev/next are campaign arrays, the return is the lines to persist.
+// ---------------------------------------------------------------------------
+const _shortAcct = (pid) => String(pid || '').slice(0, 8) || 'account';
+const _jobLabel = (j) => baseTabName(j.tabName) || _shortAcct(j.profileId);
+
+export function diffBoardEvents(prevCampaigns, nextCampaigns) {
+  const prevById = new Map((prevCampaigns || []).map((c) => [c.id, c]));
+  const out = [];
+  for (const c of nextCampaigns || []) {
+    const prev = prevById.get(c.id);
+    // First sighting of a campaign is not an event — we'd replay the entire
+    // board into every log on the first poll after a restart.
+    if (!prev) continue;
+    const prevJobs = new Map((prev.jobs || []).map((j) => [j.id, j]));
+    const push = (message, level) => out.push({ campaignId: c.id, message, level: level || 'info' });
+
+    for (const j of c.jobs || []) {
+      const p = prevJobs.get(j.id);
+      const acct = `${_jobLabel(j)} · ${_shortAcct(j.profileId)}`;
+      if (!p) {
+        if (j.state === 'queued') push(`⏳  Queued — ${acct}`);
+        continue;
+      }
+      if (p.state === j.state) continue;
+      switch (j.state) {
+        case 'running':
+          push(`▶  Started — ${acct}`);
+          break;
+        case 'done':
+          push(`✓  Finished — ${acct} · ${j.profiles || 0} lead(s) · ${j.pages || 0} page(s)`, 'ok');
+          break;
+        case 'error':
+          push(`✗  Failed — ${acct}: ${j.error || 'no reason reported by the engine'}`, 'err');
+          break;
+        case 'cancelled':
+          push(`⏹  Cancelled — ${acct} · ${j.profiles || 0} lead(s) collected`, 'warn');
+          break;
+        default:
+          push(`${acct} — ${p.state || '?'} → ${j.state}`);
+      }
+    }
+
+    // Progress, only when the lead count actually moved. A running scrape that
+    // stops moving now leaves a visible gap in the log instead of looking the
+    // same as one that is working.
+    const leads = c.totalProfiles || 0;
+    const prevLeads = prev.totalProfiles || 0;
+    if (leads > prevLeads && c.status === 'running') {
+      push(`  → ${leads} lead(s) so far (+${leads - prevLeads})`);
+    }
+
+    // Campaign-level completion: the "Σ Total" line the scrape never had.
+    if (prev.status !== 'done' && c.status === 'done') {
+      const pages = (c.jobs || []).reduce((n, j) => n + (j.pages || 0), 0);
+      push(`Σ  Complete — ${leads} lead(s) · ${pages} page(s) · ${(c.jobs || []).length} account-run(s)`, 'ok');
+    }
+    if (prev.status !== 'error' && c.status === 'error') {
+      push('⛔  This scrape ended with no successful runs — see the failures above.', 'err');
+    }
+  }
+  return out;
 }
 
 export function toggleDecision({ currentEmail, ownerEmail }) {

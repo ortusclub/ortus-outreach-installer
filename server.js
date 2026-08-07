@@ -1917,9 +1917,19 @@ app.post('/api/campaign/cloud/:id/resume', async (req, res) => {
 // record (engine flips terminal status → running; sent leads skipped). Surface
 // the engine's error (incl. 404 until it ships /restart) so the UI degrades.
 app.post('/api/campaign/cloud/:id/restart', async (req, res) => {
+  // startAt → schedule the restart instead of running it now. Validated here for
+  // the same reason as /start-cloud: a past or malformed instant must fail at the
+  // click, not silently restart the campaign immediately.
+  const startAt = req.body && req.body.startAt;
+  if (startAt) {
+    const t = new Date(startAt).getTime();
+    if (!Number.isFinite(t)) return res.status(400).json({ error: `startAt is not a date: ${startAt}` });
+    if (t <= Date.now()) return res.status(400).json({ error: 'That start time has already passed — pick a future one.' });
+  }
   const r = await restartCloudCampaign(req.params.id, {
     fromStart: !!(req.body && req.body.fromStart),
     dailyLimit: req.body && req.body.dailyLimit,
+    startAt: startAt || undefined,
   });
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);

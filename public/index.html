@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.149" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.149" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.150" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.150" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1685,7 +1685,7 @@
   .sn-board .job .js{font-size:11px;color:var(--gray);margin-top:2px;}
   .sn-board .job .jstat{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px;flex:none;}
   .sn-logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:160px;overflow:auto;}
-  .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}.sn-logbox .bl{color:#7fb2e6;}.sn-logbox .wr{color:#e0b060;}
+  .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}.sn-logbox .bl{color:#7fb2e6;}.sn-logbox .wr{color:#e0b060;}.sn-logbox .err{color:#e07a6a;}
 
   /* confirm modal (namespaced) */
   #snm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:50;}
@@ -3753,7 +3753,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.149"></script>
+  <script type="module" src="/js/app.js?v=2.160.150"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

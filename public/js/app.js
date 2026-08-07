@@ -1010,9 +1010,12 @@ function _snDoStop(cid) {
   // the Done section on the next board poll.
   const profileIds = (meta.profileIds || []).filter(Boolean);
   const stops = profileIds.length
+    // cid rides along so the stop is written to THIS strip's log — stopping a
+    // shared board's scrape is the most audit-worthy action there is, and it
+    // used to leave no trace at all.
     ? profileIds.map((pid) => fetch('/api/scrape/stop', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profileId: pid }),
+        body: JSON.stringify({ profileId: pid, campaignId: cid }),
       }).catch(() => {}))
     : [];
   Promise.all(stops).then(() => { try { pollSalesNavBoard(); } catch (_) {} }).catch(() => {});
@@ -1033,6 +1036,20 @@ function stopScrapeCampaign(cid) {
 window.stopScrapeCampaign = stopScrapeCampaign;
 
 function _snFmtLogTime(ts) { try { return new Date(ts).toLocaleTimeString(); } catch (_) { return ''; } }
+// Severity: trust the line's own `level` when the app wrote it; fall back to the
+// same text sniff the launch console already uses, since the engine's lines
+// carry no level (only an emoji prefix).
+function _snLogLevel(l) {
+  if (l && l.level) return l.level === 'ok' ? 'ok' : (l.level === 'info' ? '' : 'err');
+  const m = String((l && l.message) || '');
+  if (/error|✗|⛔|fail|🚫|⚠/i.test(m)) return 'err';
+  if (/done|✓|Σ|success|complete/i.test(m)) return 'ok';
+  return '';
+}
+function _snLogRow(l) {
+  const cls = _snLogLevel(l);
+  return `<div><span class="t">${_snFmtLogTime(l.ts)}</span> <span class="${cls}">${escHtml(l.message)}</span></div>`;
+}
 async function _snLoadLogs(box) {
   const cid = box.dataset.logsfor;
   const meta = _snStrips.get(cid) || {};
@@ -1040,8 +1057,7 @@ async function _snLoadLogs(box) {
   // shows (the in-memory scrapeLogLines) — that log actually works, and the
   // engine has no reliable per-campaign log to fetch.
   if (meta.mine && Array.isArray(scrapeLogLines) && scrapeLogLines.length) {
-    box.innerHTML = scrapeLogLines.map((l) =>
-      `<div><span class="t">${_snFmtLogTime(l.ts)}</span> ${escHtml(l.message)}</div>`).join('');
+    box.innerHTML = scrapeLogLines.map(_snLogRow).join('');
     box.scrollTop = box.scrollHeight;
     return;
   }
@@ -1050,9 +1066,9 @@ async function _snLoadLogs(box) {
     const tab = box.dataset.tab ? `?tabName=${encodeURIComponent(box.dataset.tab)}` : '';
     const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/logs${tab}`);
     const d = await r.json();
-    box.innerHTML = (d.lines || []).map((l) =>
-      `<div><span class="t">${_snFmtLogTime(l.ts)}</span> ${escHtml(l.message)}</div>`).join('')
+    box.innerHTML = (d.lines || []).map(_snLogRow).join('')
       || 'No stored logs for this scrape. The engine keeps a live log only while a scrape is running.';
+    box.scrollTop = box.scrollHeight;
   } catch { box.textContent = 'Logs unavailable.'; }
 }
 // ── /Sales Nav Board ─────────────────────────────────────────────────────────
@@ -10418,7 +10434,10 @@ window.restartLocalFromItem = restartLocalFromItem;
 // are skipped). Both buttons hit the same endpoint; fromStart is passed for
 // parity (the engine skips done leads either way). Degrades gracefully with a
 // clear toast until the engine ships /restart (404).
-async function restartCloudCampaignUI(id, fromStart) {
+// startAt (ISO, optional): schedule the restart instead of running it now. The
+// engine parks the campaign in 'scheduled' behind a durable task and restarts it
+// itself at that instant — this app can be closed.
+async function restartCloudCampaignUI(id, fromStart, startAt) {
   try {
     // Carry the wizard's (possibly edited) daily limit so a change made while the
     // campaign was stopped actually takes effect on the engine when it restarts.
@@ -10426,7 +10445,7 @@ async function restartCloudCampaignUI(id, fromStart) {
     const dailyLimit = Number.isFinite(dlRaw) && dlRaw > 0 ? dlRaw : undefined;
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/restart`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromStart: !!fromStart, ...(dailyLimit ? { dailyLimit } : {}) }),
+      body: JSON.stringify({ fromStart: !!fromStart, ...(dailyLimit ? { dailyLimit } : {}), ...(startAt ? { startAt } : {}) }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
@@ -10435,6 +10454,15 @@ async function restartCloudCampaignUI(id, fromStart) {
     }
     if (d.alreadyRunning) {
       if (typeof showCampaignToast === 'function') showCampaignToast('Already sending — nothing to resume.', 4000);
+      return;
+    }
+    if (d.scheduled) {
+      if (typeof showCampaignToast === 'function') {
+        showCampaignToast(`⏰ Scheduled on the VM for ${_fmtCloudStartAt(d.startAt)} — ${d.pending || 0} lead(s) waiting. The laptop can stay shut.`, 7000);
+      }
+      _pushCloudEvent(id, `⏰ Scheduled to restart ${_fmtCloudStartAt(d.startAt)}`);
+      window.location.hash = '#/'; // back to the dashboard, where it shows as Scheduled
+      if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
       return;
     }
     const left = Number(d.pending) || 0;
@@ -22324,7 +22352,11 @@ if (typeof window !== 'undefined') window.openScheduleModal = openScheduleModal;
 // (profileIds, sheetUrl) and server returned 400.
 window.launchScheduleIt = async function () {
   if (_readOnlyBlocksLaunch()) return;
-  if (_existingCampaignBlocksNewDispatch()) return;
+  // The existing-campaign guard applies to the LOCAL path only. On the VM tab an
+  // opened campaign schedules a restart of itself (below), which is a legitimate
+  // thing to do with a stopped or finished campaign — nothing gets cloned.
+  const _cloudTarget = typeof getRunTarget === 'function' && getRunTarget() === 'cloud';
+  if (!_cloudTarget && _existingCampaignBlocksNewDispatch()) return;
   _closeLaunchMenu();
   const nameInput = document.getElementById('campaign-name-input');
 
@@ -22335,9 +22367,16 @@ window.launchScheduleIt = async function () {
   // that minute, so the laptop can be shut the whole time. Every wizard
   // validation, the pre-flight gate and the CC+IC primary handshake run NOW, at
   // schedule time — the operator finds out about a bad sheet today, not at 6am.
-  if (typeof getRunTarget === 'function' && getRunTarget() === 'cloud') {
+  if (_cloudTarget) {
     const picked = await openScheduleModal({ defaultName: (nameInput?.value || '').trim(), onceOnly: true });
     if (!picked || !picked.startAt) return;
+    // An OPENED existing campaign (stopped / done / monitoring) schedules a
+    // RESTART of that campaign — the same thing Start does in edit mode, just
+    // later. Dispatching a new one would clone it "…_c" → "…_d", which is why
+    // _existingCampaignBlocksNewDispatch guards the fresh-dispatch path.
+    if (_editingCampaignId) {
+      return restartCloudCampaignUI(_editingCampaignId, false, picked.startAt.toISOString());
+    }
     if (nameInput && picked.name && !nameInput.value.trim()) nameInput.value = picked.name;
     return startCampaign({ startAt: picked.startAt.toISOString() });
   }

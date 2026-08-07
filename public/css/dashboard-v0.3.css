@@ -1103,6 +1103,10 @@
   }
   body[data-dashboard='v3'].theme-dark .vj-log { background: rgba(255,255,255,0.03); }
   body[data-dashboard='v3'] .vj-log:empty::after { content: 'No events yet'; color: var(--gray-faint); font-style: italic; }
+  /* Sales Nav strip log severity — matches the launch console's own ok/err. */
+  body[data-dashboard='v3'] .vj-log .t { color: var(--gray-faint); margin-right: 6px; }
+  body[data-dashboard='v3'] .vj-log .ok { color: #2f9e52; }
+  body[data-dashboard='v3'] .vj-log .err { color: var(--red); }
   body[data-dashboard='v3'] .vj-log-line { display: grid; grid-template-columns: 64px 70px 1fr; gap: 12px; padding: 3px 6px; margin: 0 -6px; border-radius: 4px; color: var(--gray); align-items: start; }
   body[data-dashboard='v3'] .vj-log-line:hover { background: var(--hairline-soft); }
   body[data-dashboard='v3'] .vj-log-line .time { color: var(--gray-faint); }
