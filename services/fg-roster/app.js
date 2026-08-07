@@ -4,7 +4,7 @@
 import express from 'express';
 import { rpcDispatch } from '../../src/connections/db-client.js';
 
-export function makeApp({ impl, token, isReady, onRefresh, autopilot, configStore, runStore }) {
+export function makeApp({ impl, token, isReady, onRefresh, autopilot, reconciler, configStore, runStore }) {
   const app = express();
   app.use(express.json({ limit: '4mb' })); // alreadyInvited / urls arrays can be large
   const router = express.Router();
@@ -42,7 +42,22 @@ export function makeApp({ impl, token, isReady, onRefresh, autopilot, configStor
   });
 
   router.post('/admin/autopilot', auth, async (req, res) => {
-    try { res.json(await autopilot.run({ force: !!(req.body && req.body.force) })); }
+    // Reconcile unreconciled runs on every autopilot tick (daily), regardless of
+    // whether today is a dispatch day. This closes Gap 5: write-back no longer
+    // depends on an operator having the desktop app open.
+    let reconcileResult = null;
+    if (reconciler) {
+      try { reconcileResult = await reconciler.run(); }
+      catch (e) { reconcileResult = { error: e.message }; }
+    }
+    try { res.json({ ...(await autopilot.run({ force: !!(req.body && req.body.force) })), reconcile: reconcileResult }); }
+    catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Manual reconcile endpoint — trigger a reconcile pass on demand.
+  router.post('/admin/reconcile', auth, async (_req, res) => {
+    if (!reconciler) return res.status(501).json({ error: 'reconciler not configured' });
+    try { res.json(await reconciler.run()); }
     catch (err) { res.status(500).json({ error: err.message }); }
   });
 

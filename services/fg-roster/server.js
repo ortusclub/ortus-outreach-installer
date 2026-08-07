@@ -6,14 +6,15 @@ import os from 'node:os';
 import { pullDb } from './pull-db.js';
 import { Storage } from '@google-cloud/storage';
 import { makeRunStore } from '../../src/connections/fg-cloud-launch.js';
-import { startCloudCampaign } from '../../src/campaigns-client.js';
+import { startCloudCampaign, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts } from '../../src/campaigns-client.js';
 import { makeConfigStore } from './config-store.js';
 import { makeMailer } from './mailer.js';
 import { makeAutopilotHandler } from './autopilot.js';
+import { reconcileAll } from './reconcile.js';
 // Same FG-sheet I/O the manual /api/fg/team-launch/start path uses (Apps Script
 // over FG_WEBAPP_URL — no service-account creds needed), so an auto run behaves
 // identically: skips already-invited + writes "Queued" proof back to the sheet.
-import { getFgState, queueFgInvites } from '../../src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, updateFgListLedger, markFgInvited, observeFgCredits } from '../../src/connections/fg-sync.js';
 // The Ortus page "Invite to follow" URL — SAME constant the manual/local FG path
 // hardcodes (server.js:2469/2515). Without it the engine's FG primitive skips
 // openModal entirely (follower-invite.js `if (inviteUrl)` guard) and sends 0.
@@ -49,13 +50,28 @@ const autopilot = makeAutopilotHandler({
   monthlyBudget: Number(process.env.FG_DEFAULT_MONTHLY_ALLOWANCE || 30),
 });
 
+const reconcileDeps = {
+  getCampaign: (id) => getCloudCampaign(id),
+  getLeads: (id) => getCloudCampaignLeads(id),
+  getAccounts: (id) => getCloudCampaignAccounts(id),
+  updateLedger: (tab, updates) => updateFgListLedger(tab, updates),
+  markInvited: (args) => markFgInvited(args),
+  observeCredits: (args) => observeFgCredits(args),
+  log: (m) => console.log(`[fg-reconcile] ${m}`),
+};
+const reconciler = {
+  async run() {
+    return reconcileAll(runStore, reconcileDeps);
+  },
+};
+
 let ready = false;
 async function refresh() { await pullDb({ destDir: DEST }); ready = true; }
 
 const TOKEN = process.env.FG_ROSTER_TOKEN || 'ortus2026scraper';
 const PORT = Number(process.env.PORT || 8080);
 
-const app = makeApp({ impl: searchService, token: TOKEN, isReady: () => ready, onRefresh: refresh, autopilot, configStore, runStore });
+const app = makeApp({ impl: searchService, token: TOKEN, isReady: () => ready, onRefresh: refresh, autopilot, reconciler, configStore, runStore });
 app.listen(PORT, () => console.log(`[fg-roster] listening on :${PORT}`));
 
 refresh().catch((e) => console.error('[fg-roster] initial DB pull failed (will 503 until /admin/refresh):', e.message));
