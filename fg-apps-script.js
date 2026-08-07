@@ -27,6 +27,9 @@ var FG_MASTER_HEADER = [
   'Invited', 'Invited At', 'Invited By'
 ];
 var FG_MASTER_TAB = 'FG Master';
+// Actions that change the sheet, and therefore re-dress it afterwards.
+var FG_WRITE_ACTIONS = ['fgQueue','fgMarkInvited','fgMarkFailed','fgObserveCredits',
+  'fgWriteList','fgUpdateListLedger','fgWriteMaster'];
 
 function doPost(e) {
   var lock = LockService.getScriptLock();
@@ -45,8 +48,13 @@ function doPost(e) {
     else if (data.action === 'fgWriteMaster') out = fgWriteMaster_(data);
     else if (data.action === 'fgMasterKeys') out = fgMasterKeys_(data);
     else if (data.action === 'getSheetUrl') out = { url: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
-    else if (data.action === 'listTabs') out = { tabs: SpreadsheetApp.getActiveSpreadsheet().getSheets().map(function (s) { return s.getName(); }) };
+    else if (data.action === 'listTabs') { var _sh = SpreadsheetApp.getActiveSpreadsheet().getSheets(); out = { tabs: _sh.map(function (s) { return s.getName(); }), tabGids: _sh.map(function (s) { return { name: s.getName(), gid: s.getSheetId() }; }) }; }
     else out = { error: 'Unknown action: ' + data.action };
+    // Presentation is part of the write: an operator opens these tabs to answer
+    // "did it fire?" / "why did this account send nothing?", and raw values
+    // answer neither. Only after actions that CHANGE the sheet, so a poll never
+    // pays for it, and never able to fail the write it follows.
+    if (FG_WRITE_ACTIONS.indexOf(data.action) >= 0) { try { fgStyleTabs_(); } catch (e) { /* cosmetic */ } }
     return json_(out);
   } catch (err) {
     return json_({ error: String(err && err.message || err) });
@@ -565,3 +573,127 @@ function fgMigrateRunHealth() { // no trailing "_" — Apps Script hides _-suffi
   rh.setFrozenRows(3);
   return 'migrated';
 }
+
+// ─── Tab presentation ────────────────────────────────────────────────────────
+// The FG tabs are read by people, not just by the app: an operator opens Run
+// Health to ask "did the 1st fire?", FG Budgets to ask "why did this account
+// send nothing?". Raw values answer neither at a glance. These helpers apply ONE
+// colour language across every FG tab — the same green/amber/red the Run Health
+// Result column already uses, so the sheet reads consistently with the other
+// campaigns' tabs.
+//
+// Styling is idempotent and cheap (formats + conditional rules, never values),
+// so it runs after every write instead of being a thing someone must remember.
+
+var FG_OK_BG = '#e6f4ea', FG_OK_FG = '#137333';   // done / healthy
+var FG_WARN_BG = '#fef7e0', FG_WARN_FG = '#b06000'; // partial / running low
+var FG_BAD_BG = '#fce8e6', FG_BAD_FG = '#c5221f';  // failed / empty
+var FG_HEAD_BG = '#f1f3f4';
+
+// Header band + freeze + sane widths. Applied to any FG tab.
+function fgDressHeader_(sh, headerRow) {
+  var row = headerRow || 1;
+  var cols = Math.max(1, sh.getLastColumn());
+  sh.getRange(row, 1, 1, cols)
+    .setFontWeight('bold').setBackground(FG_HEAD_BG).setVerticalAlignment('middle');
+  if (sh.getFrozenRows() < row) sh.setFrozenRows(row);
+  try { sh.autoResizeColumns(1, Math.min(cols, 12)); } catch (e) { /* width is cosmetic */ }
+}
+
+// A conditional rule factory bound to one range.
+function fgRule_(rng, kind, arg, bg, fg) {
+  var b = SpreadsheetApp.newConditionalFormatRule();
+  if (kind === 'text') b = b.whenTextEqualTo(arg);
+  else if (kind === 'contains') b = b.whenTextContains(arg);
+  else if (kind === 'eq') b = b.whenNumberEqualTo(arg);
+  else if (kind === 'lt') b = b.whenNumberLessThan(arg);
+  else b = b.whenNumberGreaterThanOrEqualTo(arg);
+  return b.setBackground(bg).setFontColor(fg).setRanges([rng]).build();
+}
+
+// Column letter for a header name, or '' when the tab lacks it. Header-driven so
+// adding a column upstream never silently colours the wrong one.
+function fgColLetter_(sh, header, name) {
+  var i = header.indexOf(name);
+  if (i < 0) return '';
+  var n = i + 1, s = '';
+  while (n > 0) { var r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+// FG Budgets: the question is "can this account still send?" — so Credits
+// Available carries the colour, and a stale Observed At is worth seeing too.
+function fgStyleBudgets_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('FG Budgets');
+  if (!sh) return;
+  fgDressHeader_(sh, 1);
+  var cAv = fgColLetter_(sh, BUDGET_HEADER, 'Credits Available');
+  var cOb = fgColLetter_(sh, BUDGET_HEADER, 'Observed At');
+  var rules = [];
+  if (cAv) {
+    var r = sh.getRange(cAv + '2:' + cAv + '5000');
+    rules.push(fgRule_(r, 'eq', 0, FG_BAD_BG, FG_BAD_FG));    // nothing left
+    rules.push(fgRule_(r, 'lt', 5, FG_WARN_BG, FG_WARN_FG));  // nearly out
+    rules.push(fgRule_(r, 'gte', 5, FG_OK_BG, FG_OK_FG));     // healthy
+  }
+  if (cOb) sh.getRange(cOb + '2:' + cOb + '5000').setNumberFormat('dd mmm yyyy, HH:mm');
+  sh.setConditionalFormatRules(rules);
+}
+
+// FG Invites: one row per person per run. Status is the whole story.
+function fgStyleInvites_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('FG Invites');
+  if (!sh) return;
+  fgDressHeader_(sh, 1);
+  var cSt = fgColLetter_(sh, FG_HEADER, 'Status');
+  var rules = [];
+  if (cSt) {
+    var r = sh.getRange(cSt + '2:' + cSt + '200000');
+    rules.push(fgRule_(r, 'text', 'Invited', FG_OK_BG, FG_OK_FG));
+    rules.push(fgRule_(r, 'text', 'Failed', FG_BAD_BG, FG_BAD_FG));
+    rules.push(fgRule_(r, 'text', 'Queued', FG_WARN_BG, FG_WARN_FG));
+  }
+  sh.setConditionalFormatRules(rules);
+}
+
+// FG Master: the warm network. "Invited" is the one state worth colouring —
+// everything else is reference data.
+function fgStyleMaster_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(FG_MASTER_TAB);
+  if (!sh) return;
+  fgDressHeader_(sh, 1);
+  var cIn = fgColLetter_(sh, FG_MASTER_HEADER, 'Invited');
+  var rules = [];
+  if (cIn) {
+    var r = sh.getRange(cIn + '2:' + cIn + '300000');
+    rules.push(fgRule_(r, 'text', 'Yes', FG_OK_BG, FG_OK_FG));
+    rules.push(fgRule_(r, 'text', 'Y', FG_OK_BG, FG_OK_FG));
+  }
+  sh.setConditionalFormatRules(rules);
+}
+
+// Run Health keeps the rules fgMigrateRunHealth built; this only re-dresses the
+// header band so it matches the rest after a rebuild.
+function fgStyleRunHealth_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Run Health');
+  if (!sh) return;
+  sh.getRange('A1').setFontWeight('bold');
+  sh.getRange(3, 1, 1, Math.max(1, sh.getLastColumn()))
+    .setFontWeight('bold').setBackground(FG_HEAD_BG);
+  if (sh.getFrozenRows() < 3) sh.setFrozenRows(3);
+}
+
+// Style every FG tab. Never throws: presentation must not fail a write.
+function fgStyleTabs_() {
+  try { fgStyleBudgets_(); } catch (e) { /* cosmetic */ }
+  try { fgStyleInvites_(); } catch (e) { /* cosmetic */ }
+  try { fgStyleMaster_(); } catch (e) { /* cosmetic */ }
+  try { fgStyleRunHealth_(); } catch (e) { /* cosmetic */ }
+}
+
+// Manual entry point — run once from the editor to dress the tabs immediately,
+// without waiting for the next write.
+function fgFormatAll() { fgStyleTabs_(); return 'styled'; }
