@@ -207,7 +207,13 @@ export async function readFgMasterKeys({
   for (;;) {
     const r = await post({ action: 'fgMasterKeys', tab, offset, limit: pageSize }, { timeoutMs: 120000 });
     if (r && r.error) throw new Error(`FG Master key read failed: ${r.error}`);
-    if (!r || !r.exists) return { keys, rows: 0, exists: false };
+    // A malformed reply must NOT read as "there is no tab" — the caller answers
+    // that with a full rebuild, which clears a tab that was there all along.
+    if (!r || typeof r.exists === 'undefined') throw new Error('FG Master key read returned an unreadable response');
+    if (!r.exists) {
+      if (offset === 0) return { keys, rows: 0, exists: false };
+      throw new Error(`FG Master tab disappeared mid-read (after ${offset} rows)`);
+    }
     for (const k of String(r.keys || '').split('\n')) if (k) keys.add(k);
     const read = Number(r.read) || 0;
     offset += read;

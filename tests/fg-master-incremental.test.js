@@ -87,3 +87,22 @@ test('readFgMasterKeys stops when a page reads nothing', async () => {
   assert.equal(n, 1);
   assert.equal(got.keys.size, 0);
 });
+
+test('a malformed key-read reply throws instead of reading as "no tab"', async () => {
+  await assert.rejects(
+    () => readFgMasterKeys({ post: async () => ({ ok: true }) }),
+    /unreadable response/,
+  );
+});
+
+test('exists:false partway through a paged read is an error, not an empty tab', async () => {
+  const pages = [
+    { exists: true, rows: 10, read: 5, keys: '1\n2\n3\n4\n5' },
+    { exists: false, rows: 0, read: 0, keys: '' },
+  ];
+  let n = 0;
+  await assert.rejects(
+    () => readFgMasterKeys({ pageSize: 5, post: async () => pages[n++] }),
+    /disappeared mid-read/,
+  );
+});
