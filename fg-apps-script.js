@@ -251,9 +251,6 @@ function fgWriteMaster_(data) {
     // columns — 279k rows x 26 cols is ~7.25M cells against the 10M hard cap.
     // Trim the grid to the 11 columns we actually use.
     if (sh.getMaxColumns() > header.length) sh.deleteColumns(header.length + 1, sh.getMaxColumns() - header.length);
-    // Plain-text the whole grid so names/titles/companies starting with "=", "+",
-    // "-", or shaped like "1/2" aren't coerced into formulas or dates.
-    sh.getRange(1, 1, sh.getMaxRows(), header.length).setNumberFormat('@');
     if (buildId) props.setProperty('fgMasterBuild', buildId);
   } else if (buildId) {
     var current = props.getProperty('fgMasterBuild');
@@ -261,7 +258,8 @@ function fgWriteMaster_(data) {
   }
   if (rows.length) {
     var at = Number(startRow) || sh.getLastRow() + 1;
-    sh.getRange(at, 1, rows.length, header.length).setValues(rows);
+    var rng = sh.getRange(at, 1, rows.length, header.length);
+    rng.setValues(rows).setNumberFormat('@');
   }
   return { tab: name, written: rows.length, mode: mode };
 }
