@@ -7487,6 +7487,11 @@ function renderCloudAccountsPanel(id) {
   if (!panel) return;
   const accounts = (id && _cloudAccountsById.get(id)) || [];
   if (!accounts.length) { panel.hidden = true; panel.innerHTML = ''; return; }
+  // A follower campaign runs 66 accounts. Listing them as 66 full-width rows —
+  // most of them "0/50 today" because they have not had their turn — buries the
+  // card. The card's pills carry the same per-account state in one line.
+  const _fgCamp = ((_cloudDetailCache.get(id) || {}).campaign || {}).mode === 'follower_growth';
+  if (_fgCamp) { panel.hidden = true; panel.innerHTML = ''; return; }
   const badge = (cls, text) => `<span class="cap-badge ${cls}">${escHtml(text)}</span>`;
   const counts = _cloudAcctCounts.get(id);
   const rows = accounts.map((a) => {
@@ -21173,6 +21178,24 @@ async function fgtlAdoptRunningCloudRun() {
   fgtlCloudPoll();
 }
 
+/**
+ * A cloud run is already drawn in full by the shared campaign card (the same one
+ * the dashboard uses). The FG screen's own surfaces — the black log box, the
+ * per-account board and the bespoke live card — then repeat it in a worse shape,
+ * with raw GoLogin ids for names. Hide them while a cloud run is on screen; a
+ * LOCAL team launch still needs them, so they come back when there is no cloud id.
+ */
+function fgSyncLiveSurfaces() {
+  const cloud = !!_fgtlCloudId;
+  for (const id of ['fgw-log', 'fgtl-acctboard', 'fgtl-card']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (cloud) el.dataset.fgHidden = '1'; else delete el.dataset.fgHidden;
+    el.style.display = cloud ? 'none' : '';
+    if (id === 'fgtl-acctboard' && !cloud) el.style.display = el.hidden ? 'none' : '';
+  }
+}
+
 function fgapShowCloudLaunchCard(cloudId) {
   const manual = document.getElementById('fgap-manual');
   if (manual && manual.hidden) {
@@ -21181,6 +21204,7 @@ function fgapShowCloudLaunchCard(cloudId) {
     if (chev) { chev.classList.add('open'); chev.setAttribute('aria-expanded', 'true'); }
   }
   _fgtlCloudId = cloudId;
+  fgSyncLiveSurfaces();
   _fgtlCloudPairs = {};
   for (const p of fgtlAllPairedPairs()) { if (p && p.profileId) _fgtlCloudPairs[String(p.profileId)] = { account: p.account, operator: p.operator }; }
   const goBtn = document.getElementById('fgtl-go'); if (goBtn) goBtn.style.display = 'none';
@@ -21243,6 +21267,7 @@ async function initFollowerGrowth() {
   fgtlBindBoard();
   fgtlBindLaunch();
   fgReviewRenderGate();
+  fgSyncLiveSurfaces();
 
   // 4b. Ensure SoO is loaded so launch-list eligibility (Company col AQ) is
   // accurate on first render — else every account shows optimistically eligible.
@@ -21482,6 +21507,7 @@ function fgtlCloudPoll() {
       // now. Keep it hidden even after a run ends.
       const goBtn = document.getElementById('fgtl-go'); if (goBtn) goBtn.style.display = 'none';
       _fgtlCloudId = null;
+      fgSyncLiveSurfaces(); // run over — the local surfaces are usable again
       // Reload budgets so the launch list reflects what the cloud run sent.
       fgLoadDb().then(() => fgtlRenderAll()).catch(() => fgtlRenderCart());
     }
