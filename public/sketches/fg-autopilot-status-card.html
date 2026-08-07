@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FG Auto-Pilot · Run it now → live status card (sketch)</title>
+  <!-- 1:1 with the real app: real design tokens + components -->
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    body { padding: 40px 48px 120px; max-width: 1100px; margin: 0 auto; }
+    .sk-note { font-size: .8rem; color: var(--gray); border-left: 2px solid var(--gold); padding: 6px 12px; margin: 8px 0 28px; line-height: 1.5; }
+    .sk-h { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); margin: 34px 0 10px; }
+    /* mimic the real FG Auto-Pilot strip */
+    .fgap-strip-sk { display:flex; align-items:center; gap:16px; border:1px solid var(--hairline); border-radius:14px; padding:18px 22px; }
+    .fgap-dot-sk { width:9px; height:9px; border-radius:9999px; background:#39c26b; flex:none; }
+    .fgap-lead-sk { flex:1; }
+    .fgap-title-sk { font-weight:700; font-size:.82rem; letter-spacing:.02em; }
+    .fgap-next-sk { font-size:.78rem; color:var(--gray); margin-top:2px; }
+    .fgap-run-sk { background:#111; color:#fff; border:none; border-radius:9999px; padding:9px 18px; font-size:.72rem; letter-spacing:.08em; font-weight:600; cursor:pointer; }
+    .fgap-pill-sk { border:1px solid var(--hairline); border-radius:9999px; padding:7px 14px; font-size:.68rem; letter-spacing:.06em; color:var(--gray); }
+    /* card host */
+    #card-host { margin-top:18px; }
+    #card-host[hidden] { display:none; }
+    .sk-caption { text-align:center; font-size:.72rem; color:var(--gray); margin-top:10px; }
+  </style>
+</head>
+<body data-dashboard="v3">
+
+  <div class="app-logo" style="font-weight:800; letter-spacing:.03em; font-size:1.1rem">ORTUS OUTREACH · <span style="color:var(--gray)">sketch</span></div>
+  <h1 style="font-size:1.9rem; font-weight:800; margin:18px 0 4px">Follower Growth</h1>
+  <div class="sk-note">
+    <b>Honest timeline.</b> The card appears the instant you press <b>Run it now</b> — but the invites are minutes away, and the card says so at every step. Three real phases:<br>
+    <b>①&nbsp;Dispatching</b> (~1–2 min) — the roster builds ~1,613 targets across 51 accounts and ships them to the VM.<br>
+    <b>②&nbsp;Queued · warming up</b> (~2 min) — campaign created on the VM, engine spins up the browser.<br>
+    <b>③&nbsp;Live · sending</b> — first profile opens, invites climb.<br>
+    <b>Click Run it now to play the sequence</b> (sped up here; real waits shown in the labels).
+  </div>
+  <!-- honest phase timeline -->
+  <div id="sk-phaseline" style="display:flex; gap:0; margin:14px 0 4px; font-size:.68rem; letter-spacing:.04em;">
+    <div class="sk-phase" data-p="1" style="flex:1; padding:8px 10px; border:1px solid var(--hairline); border-right:none; border-radius:9999px 0 0 9999px; text-align:center; color:var(--gray)">① DISPATCHING · ~1–2 min</div>
+    <div class="sk-phase" data-p="2" style="flex:1; padding:8px 10px; border:1px solid var(--hairline); border-right:none; text-align:center; color:var(--gray)">② WARMING UP · ~2 min</div>
+    <div class="sk-phase" data-p="3" style="flex:1; padding:8px 10px; border:1px solid var(--hairline); border-radius:0 9999px 9999px 0; text-align:center; color:var(--gray)">③ LIVE · SENDING</div>
+  </div>
+
+  <!-- ── The Auto-Pilot strip (mimics the real one) ───────────────────── -->
+  <div class="fgap-strip-sk">
+    <span class="fgap-dot-sk"></span>
+    <div class="fgap-lead-sk">
+      <div class="fgap-title-sk">AUTO-PILOT · ON</div>
+      <div class="fgap-next-sk">Next run <b>Sat, 1 Aug</b> · repeats 1 &amp; 15</div>
+    </div>
+    <button class="fgap-run-sk" id="sk-run">▶ RUN IT NOW</button>
+    <span class="fgap-pill-sk">☁ CLOUD VM</span>
+    <span class="fgap-pill-sk">EDIT SCHEDULE</span>
+  </div>
+
+  <!-- ── The live status card (real #active-card markup) ───────────────── -->
+  <div id="card-host" hidden>
+    <div class="sk-h">Live status — appears right here, on Run it now</div>
+    <section class="vj-card is-detailed is-cloud is-queued" id="sk-card">
+      <div class="vj-eyebrow">
+        <span class="vj-tag"><span class="dot"></span><span id="sk-eyebrow">Launching…</span></span>
+        <span class="vj-when" id="sk-when">just now</span>
+      </div>
+      <div class="vj-glyph-circle" aria-hidden="true">FG</div>
+      <h2 class="vj-name"><span id="sk-name">Team Follower Growth · 2026-07 · auto</span></h2>
+
+      <div class="vj-live" id="sk-live" aria-live="polite">
+        <span class="vj-live-ico">👁</span>
+        <span class="vj-live-txt">
+          <span class="vj-live-l1" id="sk-live-l1">Warming up the VM</span>
+          <span class="vj-live-l2" id="sk-live-l2">first invites go out in ~2 min · you can close the app, it keeps running</span>
+        </span>
+      </div>
+
+      <div class="vj-hbar" role="progressbar"><i id="sk-bar" style="width:0%"></i></div>
+
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span id="sk-pct">0</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b id="sk-sent">0</b> of <span id="sk-total">1613</span> sent</span>
+            <span><b id="sk-sending">Launching</b></span>
+          </div>
+        </div>
+        <div class="vj-stats">
+          <span><b id="sk-accts">51</b> accounts</span>
+          <span><b id="sk-live-acct">—</b> live now</span>
+          <span>· 30 invites / account</span>
+        </div>
+      </div>
+
+      <div class="vj-controls">
+        <button class="btn-pill" id="sk-watch">Watch live</button>
+        <button class="vj-toggle-btn" aria-label="Details">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="vj-details">
+        <div>
+          <div class="vj-log-head">
+            <span class="vj-details-head">Live log · last 6 events</span>
+            <span class="vj-log-acts">
+              <button type="button" class="vj-log-act">Copy all</button>
+              <button type="button" class="vj-log-act">Open sheet</button>
+            </span>
+          </div>
+          <div class="vj-log" id="sk-log"><div class="entry info">⏳ — warming up the VM · invites start shortly (~2 min)</div></div>
+        </div>
+        <div class="vj-bulk">
+          <div class="vj-details-head">Bulk check connection</div>
+          <div class="vj-bulk-status">Last sweep · <b>—</b> · <span>0</span> newly accepted</div>
+          <button class="vj-bulk-btn">Run check now</button>
+        </div>
+      </div>
+    </section>
+    <div class="sk-caption">▲ identical to the card you already get from the dashboard's <b>Open</b> button — just auto-shown on Run it now</div>
+  </div>
+
+  <!-- ── The cloud browser viewer (real openCloudCampaignView markup) ──── -->
+  <div id="sk-viewer" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);flex-direction:column;align-items:center;justify-content:center;padding:24px">
+    <div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1280px;margin-bottom:10px">
+      <span style="color:#fff;font-size:14px">👁 Live · Team Follower Growth · 2026-07 · auto</span>
+      <span style="color:#9aa;font-size:12px" id="sk-cv-status">no browser open</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:#fff" onclick="document.getElementById('sk-viewer').style.display='none'">✕ Close</button>
+    </div>
+    <div style="position:relative;max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:340px;display:flex;align-items:center;justify-content:center">
+      <div style="padding:44px 34px;text-align:center;max-width:560px">
+        <div style="font-size:15px;line-height:1.55;color:#e8eaed;margin-bottom:8px">No browser open right now.</div>
+        <div style="font-size:12.5px;line-height:1.55;color:#9aa">Cloud campaigns open a browser only while working. Leave this viewer open. It connects automatically when frames arrive.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Pure demo: play the intended Launching → Live transition so the card is
+    // testable exactly like the real thing. No app logic, just staged state.
+    const $ = (id) => document.getElementById(id);
+    const card = $('sk-card');
+    const log = $('sk-log');
+    const addLog = (html, cls='info') => { const d=document.createElement('div'); d.className='entry '+cls; d.innerHTML=html; log.prepend(d); };
+
+    const litPhase = (n) => document.querySelectorAll('.sk-phase').forEach((el) => {
+      const on = Number(el.dataset.p) === n;
+      el.style.color = on ? 'var(--ink)' : 'var(--gray)';
+      el.style.background = on ? 'var(--wash, #f2f2f0)' : 'transparent';
+      el.style.fontWeight = on ? '700' : '400';
+    });
+
+    $('sk-run').addEventListener('click', () => {
+      $('card-host').hidden = false;
+      $('card-host').scrollIntoView({ behavior:'smooth', block:'center' });
+
+      // ── Phase ① DISPATCHING (immediate on click, no cloudId yet) ──────────
+      // This is the blocking POST /api/fg/autopilot/run — the roster builds every
+      // account's targets + ships them. Real: up to ~1–2 min. Card is ON SCREEN
+      // the whole time (not a toast), honestly labelled "dispatching".
+      card.classList.add('is-queued');
+      litPhase(1);
+      $('sk-eyebrow').textContent = 'Dispatching…';
+      $('sk-live-l1').textContent = 'Sending the team’s targets to the VM';
+      $('sk-live-l2').textContent = 'building ~1,613 invites across 51 accounts · up to ~1 min';
+      $('sk-sending').textContent = 'Dispatching';
+      $('sk-log').innerHTML = '<div class="entry info">☁ dispatching to the VM · building the team’s targets…</div>';
+
+      // ── Phase ② QUEUED · WARMING UP (cloudId returned, engine spinning up) ──
+      setTimeout(() => {
+        litPhase(2);
+        $('sk-eyebrow').textContent = 'Queued · warming up';
+        $('sk-live-l1').textContent = 'On the VM · warming up the browser';
+        $('sk-live-l2').textContent = 'first invites go out in ~2 min · you can close the app, it keeps running';
+        $('sk-sending').textContent = 'Warming up';
+        addLog('⏳ — warming up the VM · invites start shortly (~2 min)');
+      }, 2200);
+
+      // ── Phase ③ LIVE · SENDING (engine reports live; first profile open) ────
+      setTimeout(() => {
+        card.classList.remove('is-queued');
+        litPhase(3);
+        $('sk-eyebrow').textContent = '● Live · sending';
+        $('sk-live-l1').textContent = 'Inviting on the VM';
+        $('sk-live-l2').textContent = 'anya@ortus.solutions · selecting 12 / 30';
+        $('sk-sending').textContent = 'Sending';
+        $('sk-live-acct').textContent = 'anya@ortus.solutions';
+        addLog('↗ anya@ortus.solutions · selecting 12 / 30');
+        let sent = 0; const bar = $('sk-bar');
+        const t = setInterval(() => {
+          sent += 7; if (sent > 1613) { clearInterval(t); return; }
+          $('sk-sent').textContent = sent;
+          const pct = Math.round(sent / 1613 * 100);
+          $('sk-pct').textContent = pct; bar.style.width = pct + '%';
+          if (sent % 21 === 0) addLog('✓ invite sent · '+sent+' total');
+        }, 500);
+      }, 5200);
+    });
+
+    $('sk-watch').addEventListener('click', () => { $('sk-viewer').style.display = 'flex'; });
+  </script>
+</body>
+</html>

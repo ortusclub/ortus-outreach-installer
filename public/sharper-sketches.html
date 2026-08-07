@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sharper VM actions</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css?v=2.160.127" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.127" />
+<style>
+  .w { max-width: 1500px; margin: 0 auto; padding: 26px 22px 80px; }
+  h1 { font-family:'Bebas Neue',sans-serif; font-size:2.2rem; letter-spacing:.02em; margin:0 0 6px; }
+  .lede { color:var(--gray); font-size:.87rem; margin:0 0 30px; max-width:74ch; line-height:1.5; }
+  .lede em { color:var(--ink); font-style:normal; }
+
+  .act { margin:0 0 46px; }
+  .act > h2 { font-family:'Bebas Neue',sans-serif; font-size:1.3rem; letter-spacing:.07em; margin:0 0 3px; }
+  .act > .sub { font-size:.78rem; color:var(--gray-faint); margin:0 0 16px; }
+
+  /* Filmstrip: 4 frozen moments across one action. */
+  .strip { display:grid; grid-template-columns:78px repeat(4, 1fr); gap:10px; align-items:stretch; }
+  .clock { grid-column:2 / -1; display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:2px; }
+  .clock div { font-family:var(--mono); font-size:.7rem; color:var(--gray-faint); letter-spacing:.1em; }
+  .lane { display:contents; }
+  .lane-lab { display:flex; flex-direction:column; justify-content:center; gap:3px;
+              font-family:var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; }
+  .lane-lab .big { font-size:.78rem; letter-spacing:.06em; }
+  .lane-now .big { color:var(--red); }
+  .lane-new .big { color:var(--green); }
+  .lane-lab .sm { color:var(--gray-faint); text-transform:none; letter-spacing:0; font-size:.66rem; }
+
+  .fr { border:1px solid var(--hairline-soft); border-radius:10px; padding:13px 14px; min-height:112px;
+        display:flex; flex-direction:column; gap:9px; background:var(--card-bg); }
+  .lane-new .fr { border-color:rgba(247,190,104,.34); }
+  .fr.dead { background:transparent; }
+
+  /* Recreated app controls — real class names where they exist. */
+  .btnrow { display:flex; gap:6px; align-items:center; }
+  .fbtn { font-family:var(--body); font-size:.74rem; padding:6px 12px; border-radius:7px;
+          border:1px solid var(--hairline-soft); background:transparent; color:var(--ink); white-space:nowrap; }
+  .fbtn.pend { border-color:var(--gold); color:var(--gold); display:inline-flex; align-items:center; gap:7px;
+               font-family:var(--mono); font-size:.68rem; }
+  .fbtn.ghost { opacity:.4; }
+  .spin { width:10px; height:10px; border-radius:9999px; flex:none; display:inline-block;
+          border:2px solid rgba(247,190,104,.25); border-top-color:var(--gold); animation:rot .8s linear infinite; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+
+  .tag { display:inline-flex; align-items:center; gap:7px; font-family:var(--mono); font-size:.66rem;
+         letter-spacing:.16em; text-transform:uppercase; font-weight:600; color:var(--ink); }
+  .tag .dot { width:6px; height:6px; border-radius:9999px; display:inline-block; background:var(--green); }
+  .tag .dot.gold { background:var(--gold); animation:pulse 1.4s ease-in-out infinite; }
+  .tag .dot.grey { background:var(--gray-faint); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .wait { font-size:.75rem; color:var(--gray); display:flex; align-items:flex-start; gap:7px; line-height:1.35; }
+  .wait b { color:var(--ink); font-weight:500; }
+  .el { font-family:var(--mono); font-size:.66rem; color:var(--gray-faint); }
+  .warn { font-size:.73rem; color:var(--gold); line-height:1.35; }
+  .nothing { font-size:.75rem; color:var(--gray-faint); font-style:italic; margin:auto 0; }
+  .bad { font-size:.75rem; color:var(--red); line-height:1.35; }
+  .okl { font-size:.75rem; color:var(--green); }
+  .toast { font-size:.72rem; border:1px solid var(--hairline-soft); border-radius:7px; padding:7px 9px;
+           color:var(--ink); background:var(--bg-soft); line-height:1.35; }
+
+  .why { margin-top:14px; font-size:.78rem; color:var(--gray); line-height:1.55; border-left:2px solid var(--gold);
+         padding-left:13px; max-width:96ch; }
+  .why b { color:var(--ink); font-weight:500; }
+  .why code { font-family:var(--mono); font-size:.72rem; color:var(--gray-faint); }
+
+  .foot { margin-top:44px; padding-top:20px; border-top:1px solid var(--hairline-soft); font-size:.8rem;
+          color:var(--gray); line-height:1.6; max-width:88ch; }
+  .foot h3 { font-family:'Bebas Neue',sans-serif; font-size:1.05rem; letter-spacing:.07em; margin:0 0 8px; color:var(--ink); }
+  @media (max-width:1200px){ .strip{grid-template-columns:1fr} .clock{display:none} .lane-lab{flex-direction:row;gap:8px;margin-top:16px} }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark">
+<div class="w">
+
+  <h1>Sharper VM actions</h1>
+  <p class="lede">
+    Sam: <em>“if you are waiting around for something to happen, make it obvious that it's loading rather
+    than it's crashed.”</em><br>
+    Each strip below is one action, frozen at four moments on the same clock. Top lane is what the app does
+    today. Bottom lane is the proposal. Nothing to click.
+  </p>
+
+  <!-- ══ STOP ═══════════════════════════════════════════════════════════════ -->
+  <section class="act">
+    <h2>Pressing Stop</h2>
+    <p class="sub">Takes ~46s in reality — the VM finishes the lead it already started before it stops.</p>
+    <div class="strip">
+      <div></div>
+      <div class="clock"><div>0s — CLICK</div><div>3s</div><div>25s</div><div>46s</div></div>
+
+      <div class="lane lane-now">
+        <div class="lane-lab lane-now"><span class="big">Today</span><span class="sm">what you see now</span></div>
+        <div class="fr">
+          <span class="tag"><span class="dot"></span>CLOUD · RUNNING</span>
+          <div class="btnrow"><button class="fbtn">Stop</button></div>
+          <div class="nothing">Button looks exactly the same.</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot"></span>CLOUD · RUNNING</span>
+          <div class="btnrow"><button class="fbtn">Stop</button></div>
+          <div class="nothing">Still nothing. Did it register?</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot"></span>CLOUD · RUNNING</span>
+          <div class="btnrow"><button class="fbtn">Stop</button></div>
+          <div class="bad">Card still says RUNNING.<br>You press Stop again.</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot grey"></span>CLOUD · STOPPED</span>
+          <div class="toast">⏹️ Campaign stopped</div>
+          <div class="nothing">Flips with no warning.</div>
+        </div>
+      </div>
+
+      <div class="lane lane-new">
+        <div class="lane-lab lane-new"><span class="big">Proposed</span><span class="sm">honest pending</span></div>
+        <div class="fr">
+          <span class="tag"><span class="dot gold"></span>CLOUD · STOPPING…</span>
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Stopping… 0s</button></div>
+          <div class="wait"><span><b>Telling the engine to stop</b></span></div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot gold"></span>CLOUD · STOPPING…</span>
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Stopping… 3s</button></div>
+          <div class="wait"><span><b>Finishing the lead already in flight</b></span><span class="el">3s</span></div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot gold"></span>CLOUD · STOPPING…</span>
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Stopping… 25s</button></div>
+          <div class="wait"><span><b>Finishing the lead already in flight</b></span><span class="el">25s</span></div>
+          <div class="warn">The VM finishes the lead it already started before it stops — that’s why this isn’t instant.</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot grey"></span>CLOUD · STOPPED</span>
+          <div class="btnrow"><button class="fbtn">Start</button></div>
+          <div class="okl">✓ Stopped · 12 unsent leads back in the queue</div>
+        </div>
+      </div>
+    </div>
+    <p class="why">
+      <b>The bug this kills:</b> today the Stop button is never disabled, so at 25s you press it again —
+      and again. Each press is another engine call. <code>app.js:9402</code>
+    </p>
+  </section>
+
+  <!-- ══ LAUNCH ═════════════════════════════════════════════════════════════ -->
+  <section class="act">
+    <h2>Pressing Start on a cloud campaign</h2>
+    <p class="sub">Takes ~2 minutes. Six real stages, five of them before the VM even wakes up.</p>
+    <div class="strip">
+      <div></div>
+      <div class="clock"><div>0s — CLICK</div><div>15s</div><div>60s</div><div>2m 05s</div></div>
+
+      <div class="lane lane-now">
+        <div class="lane-lab lane-now"><span class="big">Today</span><span class="sm">what you see now</span></div>
+        <div class="fr">
+          <div class="btnrow"><button class="fbtn">Start campaign</button></div>
+          <div class="nothing">Nothing happens.</div>
+        </div>
+        <div class="fr">
+          <div class="btnrow"><button class="fbtn">Start campaign</button></div>
+          <div class="bad">Looks clickable. Isn’t.<br>Clicks are silently swallowed.</div>
+        </div>
+        <div class="fr">
+          <div class="btnrow"><button class="fbtn">Start campaign</button></div>
+          <div class="bad">A minute of nothing.<br>Crashed? Frozen? Did I click it?</div>
+        </div>
+        <div class="fr">
+          <div class="toast">☁︎ Cloud campaign started — 420 lead(s) dispatched.</div>
+          <div class="nothing">Toast appears from nowhere.</div>
+        </div>
+      </div>
+
+      <div class="lane lane-new">
+        <div class="lane-lab lane-new"><span class="big">Proposed</span><span class="sm">named stages</span></div>
+        <div class="fr">
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Starting… 0s</button></div>
+          <div class="wait" style="flex-direction:column;gap:2px">
+            <span style="color:var(--gold)">● Checking leads against the blocklist</span>
+            <span style="color:var(--gray-faint)">· Provisioning sheet columns</span>
+            <span style="color:var(--gray-faint)">· Flipping 4 accounts to In Use</span>
+          </div>
+        </div>
+        <div class="fr">
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Starting… 15s</button></div>
+          <div class="wait" style="flex-direction:column;gap:2px">
+            <span style="color:var(--green)">✓ Blocklist checked</span>
+            <span style="color:var(--green)">✓ Sheet columns ready</span>
+            <span style="color:var(--gold)">● Flipping 4 accounts to In Use <span class="el">7s</span></span>
+          </div>
+        </div>
+        <div class="fr">
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Starting… 60s</button></div>
+          <div class="wait" style="flex-direction:column;gap:2px">
+            <span style="color:var(--green)">✓ 4 accounts connected to the primary</span>
+            <span style="color:var(--green)">✓ Handed to the engine</span>
+            <span style="color:var(--gold)">● Waking a VM worker <span class="el">28s</span></span>
+          </div>
+          <div class="warn">Waking a cold VM worker takes up to 2 min — nothing has failed.</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot"></span>CLOUD · RUNNING</span>
+          <div class="okl">✓ Started · 420 leads · 4 accounts</div>
+          <div class="wait">First invite going out now.</div>
+        </div>
+      </div>
+    </div>
+    <p class="why">
+      <b>The bug this kills:</b> the re-click guard already exists (<code>_cloudSubmitInFlight</code>,
+      <code>app.js:10306</code>) — it's what stopped the triple-launch bug. But it's invisible, so you keep
+      clicking a button that looks alive and does nothing.
+    </p>
+  </section>
+
+  <!-- ══ PAUSE ══════════════════════════════════════════════════════════════ -->
+  <section class="act">
+    <h2>Pressing Pause</h2>
+    <p class="sub">Same shape, shorter. ~46s.</p>
+    <div class="strip">
+      <div></div>
+      <div class="clock"><div>0s — CLICK</div><div>3s</div><div>25s</div><div>46s</div></div>
+
+      <div class="lane lane-now">
+        <div class="lane-lab lane-now"><span class="big">Today</span><span class="sm">what you see now</span></div>
+        <div class="fr">
+          <span class="tag"><span class="dot"></span>RUNNING</span>
+          <div class="toast">Pausing — sending stops after the current lead.</div>
+          <div class="nothing">One toast, then it's gone.</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot"></span>RUNNING</span>
+          <div class="nothing">Toast faded. Card says RUNNING.</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot"></span>RUNNING</span>
+          <div class="bad">Still RUNNING 25s later.<br>Did the pause work?</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot grey"></span>PAUSED</span>
+          <div class="nothing">Flips silently.</div>
+        </div>
+      </div>
+
+      <div class="lane lane-new">
+        <div class="lane-lab lane-new"><span class="big">Proposed</span><span class="sm">honest pending</span></div>
+        <div class="fr">
+          <span class="tag"><span class="dot gold"></span>PAUSING…</span>
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Pausing… 0s</button></div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot gold"></span>PAUSING…</span>
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Pausing… 3s</button></div>
+          <div class="wait"><span><b>Finishing the lead already in flight</b></span></div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot gold"></span>PAUSING…</span>
+          <div class="btnrow"><button class="fbtn pend"><span class="spin"></span>Pausing… 25s</button></div>
+          <div class="warn">The VM finishes the lead it started before it pauses.</div>
+        </div>
+        <div class="fr">
+          <span class="tag"><span class="dot grey"></span>PAUSED</span>
+          <div class="btnrow"><button class="fbtn">Resume</button></div>
+          <div class="okl">✓ Paused after lead 152</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <h3>The whole change, in one sentence</h3>
+    A button that's working looks like it's working — spinner, ticking seconds, and the name of what it's
+    waiting on — and past ~25 seconds it says <em>why</em> it's slow, so a long wait reads as a long wait
+    instead of a crash.<br><br>
+    Same treatment on all four places you can press these: the wizard's Start button, the campaign-tab card,
+    the dashboard strip, and the board rows. They already share the same handlers, so it's one change, not four.
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FG Invites — clean (sketch)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background:#f6f8fc; color:#202124; padding:26px 32px 90px; }
+  h1 { font-size:1.3rem; font-weight:700; margin-bottom:4px; }
+  .lead { font-size:.83rem; color:#5f6368; max-width:1000px; line-height:1.55; margin-bottom:8px; }
+  .lead b { color:#202124; }
+  .tabbar { display:flex; gap:2px; margin:16px 0 0; font-size:.76rem; }
+  .tab { padding:6px 16px; border:1px solid #c4c7cc; border-bottom:none; border-radius:6px 6px 0 0; background:#e8eaed; color:#5f6368; }
+  .tab.active { background:#fff; color:#188038; font-weight:600; border-bottom:2px solid #fff; margin-bottom:-1px; }
+  h2 { font-size:.9rem; font-weight:700; margin:26px 0 4px; }
+  .sub { font-size:.78rem; color:#5f6368; margin-bottom:10px; max-width:1000px; line-height:1.5; }
+  .gs { border:1px solid #c4c7cc; border-radius:0 2px 2px 2px; overflow:auto; background:#fff; box-shadow:0 1px 3px rgba(60,64,67,.15); }
+  table { border-collapse:collapse; font-size:12.5px; white-space:nowrap; width:100%; }
+  th, td { border:1px solid #e0e2e6; padding:5px 9px; text-align:left; }
+  .col-hd th { background:#f1f3f4; color:#5f6368; font-weight:500; text-align:center; font-size:11px; height:20px; }
+  .rownum { background:#f1f3f4; color:#5f6368; text-align:center; font-weight:500; width:30px; font-size:11px; }
+  thead.data th { background:#f8f9fa; color:#202124; font-weight:600; position:sticky; top:0; }
+  .ok   { background:#e6f4ea; color:#137333; font-weight:600; }
+  .bad  { background:#fce8e6; color:#c5221f; font-weight:600; }
+  .muted { color:#80868b; }
+  a.lnk { color:#1a56db; }
+  .hiddencols { font-size:.78rem; color:#5f6368; margin-top:10px; background:#fff; border:1px solid #c4c7cc; border-left:3px solid #9aa0a6; border-radius:2px; padding:11px 15px; max-width:1000px; line-height:1.6; }
+  .hiddencols b { color:#202124; }
+  .strike { text-decoration:line-through; color:#c5221f; }
+  code { background:#f1f3f4; padding:1px 5px; border-radius:3px; font-size:.9em; }
+</style>
+</head>
+<body>
+
+<h1>OP FUNNEL NEW — <span style="color:#5f6368">FG Invites, cleaned</span></h1>
+<p class="lead">Same real data you have now, but the human view is calm: <b>readable dates</b>, <b>Status coloured</b>, and every machine/helper column <b>hidden</b> (still there for the app + Run Health formulas — just not in your face). Column order is unchanged (the app writes by position); the cleanup is <b>hide + reformat</b>, not reorder.</p>
+
+<div class="tabbar">
+  <div class="tab">Run Health</div>
+  <div class="tab active">FG Invites</div>
+  <div class="tab">FG Budgets</div>
+</div>
+
+<div class="gs">
+<table>
+  <tr class="col-hd"><th></th><th>A</th><th>D</th><th>E</th><th>H</th><th>I</th><th>J</th><th>K</th><th>P</th><th>M</th></tr>
+  <thead class="data"><tr><th class="rownum">1</th><th>Target Name</th><th>Company</th><th>Job Title</th><th>Invited By</th><th>Account</th><th>Status</th><th>Invited At</th><th>Reason</th><th>Month</th></tr></thead>
+  <tbody>
+    <tr><td class="rownum">2</td><td>Riccardo Aragon</td><td>ACBC</td><td>CMO &amp; Alliances</td><td>Antonio</td><td>antonio@ortusclub.com</td><td class="ok">Invited</td><td>23 Jun 2026, 15:37</td><td class="muted"></td><td>2026-06</td></tr>
+    <tr><td class="rownum">3</td><td>Alex Malench</td><td>Agicap</td><td>Global Customer…</td><td>Antonio</td><td>antonio@ortusclub.com</td><td class="ok">Invited</td><td>23 Jun 2026, 15:37</td><td class="muted"></td><td>2026-06</td></tr>
+    <tr><td class="rownum">4</td><td>Paola Iannone</td><td>All4Labels</td><td>VP Marketing…</td><td>Antonio</td><td>antonio@ortusclub.com</td><td class="ok">Invited</td><td>23 Jun 2026, 15:37</td><td class="muted"></td><td>2026-06</td></tr>
+    <tr><td class="rownum">18</td><td>Dani García Sanz</td><td>ENRIQUE TOMÁS</td><td>CMO | Marketing</td><td>Antonio</td><td>antonio@ortusclub.com</td><td class="ok">Invited</td><td>23 Jun 2026, 15:37</td><td class="muted"></td><td>2026-06</td></tr>
+    <tr><td class="rownum">19</td><td>Aileen Stephens</td><td>Ericsson</td><td>Sr. Director Digital</td><td>Antonio</td><td>antonio@ortusclub.com</td><td class="bad">Failed</td><td class="muted">—</td><td>legacy — never confirmed</td><td>2026-06</td></tr>
+    <tr><td class="rownum">20</td><td>Tran Truong An</td><td>EY</td><td>Talent Acquisition</td><td>Antonio</td><td>antonio@ortusclub.com</td><td class="ok">Invited</td><td>23 Jun 2026, 15:37</td><td class="muted"></td><td>2026-06</td></tr>
+    <tr><td class="rownum">32</td><td>Paola Bianchi</td><td>IMA Italia</td><td>Chief Marketing</td><td>Antonio</td><td>antonio@ortusclub.com</td><td class="ok">Invited</td><td>25 Jun 2026, 10:43</td><td class="muted"></td><td>2026-06</td></tr>
+    <tr><td class="rownum">37</td><td>Siva Pachaiappan</td><td>AbbVie</td><td>Head – Brand Team</td><td>Altin</td><td>altini@ortus.solutions</td><td class="ok">Invited</td><td>25 Jun 2026, 11:40</td><td class="muted"></td><td>2026-06</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="hiddencols">
+  <b>Hidden columns</b> (right-click → Hide — still written + read by the app, just off-screen):
+  <code>B LinkedIn URL</code> · <code>C Member ID</code> · <code>F Function Match</code> · <code>G Geo</code> · <code>L FG Note</code> · <code>N Run ID</code> · <code>O Run At</code> · <code>Q Sent1</code> · <code>R Stuck1</code>.<br>
+  <span class="muted">Those are machine keys + the two QUERY helper flags. You never read them — Run Health does.</span>
+</div>
+
+<h2>What changes vs the mess you're looking at now</h2>
+<div class="hiddencols" style="border-left-color:#1a73e8">
+  <b>1 · Invited At becomes a real date.</b> Right now col K shows <span class="strike">2026-06-23T13:37:19.712Z</span> because the old values are stored as <i>text</i> — number-formatting text does nothing. The migration must <b>rewrite each cell to a real Date</b>, then it renders <b>23 Jun 2026, 15:37</b>.<br><br>
+  <b>2 · Run ID / Run At / Sent1 / Stuck1 get hidden.</b> They exist for the app + the Run Health formulas; hiding them removes the <code>legacy</code> spam and the duplicate-looking time column from your view.<br><br>
+  <b>3 · Reason only shows on Failed rows.</b> Invited rows leave it blank (Aileen Stephens = the one Failed, reason in plain words).<br><br>
+  <b>Net visible set:</b> Target Name · Company · Job Title · Invited By · Account · Status · Invited At · Reason · Month. That's it.
+</div>
+
+</body>
+</html>

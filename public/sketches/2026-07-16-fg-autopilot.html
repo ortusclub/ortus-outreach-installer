@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FG Auto-Pilot — sketch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ---- Real app tokens (verbatim from public/css/style.css :root) ---- */
+:root{
+  --bg:#0a0a0a; --bg-soft:rgba(255,255,255,.03); --ink:#fafafa; --gray:#999;
+  --hairline:rgba(255,255,255,.15); --hairline-soft:rgba(255,255,255,.06);
+  --green:#3fb950; --red:#f85149; --blue:#6ea3d4; --gold:#F7BE68;
+  --display:'Bebas Neue','Arial Narrow',sans-serif;
+  --mono:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --body:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --card-bg:rgba(255,255,255,.05); --card-bg-hover:rgba(255,255,255,.08);
+  --card-border:rgba(255,255,255,.18); --card-shadow:0 6px 18px rgba(0,0,0,.4);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--body);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;font-weight:400;line-height:1.5}
+.wrap{max-width:1000px;margin:0 auto;padding:44px 28px 90px}
+h1{font-family:var(--display);font-size:2.9rem;letter-spacing:.01em;line-height:.98;margin-bottom:8px}
+.lede{color:var(--gray);font-size:14px;max-width:620px;margin-bottom:6px}
+.tag-cloud{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--gray);border:1px solid var(--hairline);border-radius:9999px;padding:5px 12px;margin-top:14px}
+
+/* section eyebrow (matches .fgtl-step-eyebrow feel) */
+.eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);margin:44px 0 16px;display:flex;align-items:center;gap:10px}
+.eyebrow::after{content:"";flex:1;height:1px;background:var(--hairline-soft)}
+
+/* panel (matches .section.campaign-name-section) */
+.panel{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:var(--card-shadow);padding:20px 24px}
+
+/* ---- Flow stepper ---- */
+.flow{display:grid;gap:0}
+.step{display:grid;grid-template-columns:34px 1fr;gap:16px;padding:14px 0;border-top:1px solid var(--hairline-soft)}
+.step:first-child{border-top:none}
+.step .n{font-family:var(--display);font-size:1.5rem;line-height:1;color:var(--ink);opacity:.55}
+.step .t{font-family:var(--mono);font-size:12.5px;letter-spacing:.02em;color:var(--ink);margin-bottom:3px;font-weight:600}
+.step .d{font-size:12.5px;color:var(--gray)}
+.step .d b{color:var(--ink);font-weight:600}
+.chip-inline{font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--green);border:1px solid rgba(63,185,80,.4);border-radius:9999px;padding:1px 7px;margin-left:6px}
+
+/* ---- Auto-pilot status strip ---- */
+.ap-strip{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.ap-left{display:flex;align-items:center;gap:12px;flex:1;min-width:280px}
+.ap-dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(63,185,80,.15);flex:none}
+.ap-title{font-family:var(--mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+.ap-next{font-size:12px;color:var(--gray);margin-top:2px}
+.ap-next b{color:var(--ink)}
+/* pill toggle (on) */
+.toggle{width:46px;height:26px;border-radius:9999px;background:var(--green);position:relative;cursor:pointer;flex:none;border:1px solid rgba(63,185,80,.5)}
+.toggle::after{content:"";position:absolute;top:2px;left:22px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.15s}
+.rt-tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--gray);border:1px solid var(--hairline);border-radius:9999px;padding:4px 10px}
+.link{font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--gray);border:1px solid var(--hairline);background:none;border-radius:9999px;padding:6px 12px;cursor:pointer}
+
+/* ---- Eligibility (matches .fgtl-ready + .fgtl-prow) ---- */
+.fgtl-ready{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;border:1px solid var(--hairline);border-radius:12px;margin:16px 0}
+.fgtl-ready .lab{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--gray)}
+.fgtl-ready .rl b{font-family:var(--display);font-size:1.5rem;vertical-align:-2px}
+.fgtl-ready .sub{font-size:11px;color:var(--gray);margin-top:4px}
+.fgtl-prow{display:grid;grid-template-columns:1fr 56px 128px;align-items:center;gap:16px;padding:13px 14px;border:1px solid var(--hairline);border-radius:12px;margin-bottom:9px}
+.fgtl-prow.out{opacity:.42}
+.fgtl-emline{display:flex;align-items:center;gap:9px}
+.fgtl-prow .em{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.fgtl-sub{font-family:var(--mono);font-size:9.5px;color:var(--gray);margin-top:4px;opacity:.85}
+.fgtl-pillst{font-family:var(--mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;padding:2px 9px;border-radius:9999px;border:1px solid var(--hairline);color:var(--gray);white-space:nowrap}
+.fgtl-pillst.ready{color:var(--green);border-color:rgba(63,185,80,.4)}
+.fgtl-pillst.out{color:var(--red);border-color:rgba(248,81,73,.4)}
+.fgtl-pillst.missing{color:var(--blue);border-color:rgba(110,163,212,.4)}
+.fgtl-mbox{text-align:center}
+.fgtl-mbox b{font-family:var(--display);font-size:1.5rem;line-height:1;color:var(--ink)}
+.fgtl-mbox small{display:block;font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin-top:2px}
+.fgtl-mbox.zero b{color:var(--gray);opacity:.5}
+.will{font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;text-align:center;padding:7px 12px;border-radius:9999px;white-space:nowrap}
+.will.go{color:var(--green);border:1px solid rgba(63,185,80,.4)}
+.will.skip{color:var(--gray);border:1px dashed var(--hairline)}
+
+/* ---- History ---- */
+.hist{display:grid;gap:0;margin-top:2px}
+.hrow{display:grid;grid-template-columns:120px 1fr auto;gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--hairline-soft)}
+.hrow:first-child{border-top:none}
+.hrow .hd{font-family:var(--mono);font-size:11px;color:var(--ink)}
+.hrow .hs{font-size:12px;color:var(--gray)}
+.hrow .hs b{color:var(--ink);font-weight:600}
+.hrow .hb{font-family:var(--mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--green);border:1px solid rgba(63,185,80,.35);border-radius:9999px;padding:3px 9px}
+
+/* ---- Live card (matches .vj-card) ---- */
+.vj-card{position:relative;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:var(--card-shadow);padding:22px 26px;overflow:hidden}
+.vj-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green)}
+.vj-eyebrow{display:flex;align-items:center;gap:12px}
+.vj-tag{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--gray)}
+.vj-tag .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.vj-when{font-family:var(--mono);font-size:10px;color:var(--gray);margin-left:auto}
+.vj-name{font-family:var(--display);font-size:2rem;margin:12px 0 4px}
+.vj-hbar{height:6px;border-radius:9999px;background:var(--hairline-soft);overflow:hidden;margin:12px 0}
+.vj-hbar i{display:block;height:100%;width:8%;background:var(--gold)}
+.fgtl-launch-banner{display:flex;gap:12px;align-items:center;background:var(--bg-soft);border:1px solid var(--hairline);border-radius:12px;padding:12px 14px;margin:10px 0}
+.fgtl-lb-ic{font-size:18px}
+.fgtl-lb-txt b{display:block;font-family:var(--mono);font-size:12px;letter-spacing:.03em}
+.fgtl-lb-txt span{font-size:11.5px;color:var(--gray)}
+.vj-stats{display:flex;gap:18px;font-family:var(--mono);font-size:11px;color:var(--gray);margin-top:8px}
+.vj-stats b{color:var(--ink)}
+
+.note{margin-top:34px;padding:16px 18px;border:1px dashed var(--hairline);border-radius:12px;color:var(--gray);font-size:12px}
+.note b{color:var(--ink)}
+.samp{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--gray);opacity:.7;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>FG Auto-Pilot</h1>
+  <div class="lede">Follower Growth runs itself — the cloud VM fires the whole team's invites on the 1st and the 15th, with no one clicking launch. The batch is rebuilt live each time: whoever's eligible that day is in.</div>
+  <div class="tag-cloud"><span class="ap-dot" style="width:7px;height:7px;box-shadow:none"></span> Runs on the Cloud VM · works with the app closed</div>
+
+  <!-- ===== HOW IT WORKS ===== -->
+  <div class="eyebrow">How a run happens</div>
+  <div class="panel">
+    <div class="flow">
+      <div class="step"><div class="n">1</div><div><div class="t">The clock fires — 1st &amp; 15th, 09:00</div><div class="d">A timer <b>on the VM</b> wakes up. Not your laptop — this keeps working when everyone's asleep.</div></div></div>
+      <div class="step"><div class="n">2</div><div><div class="t">Safety check</div><div class="d">Is a team launch already running? If yes, this cycle is <b>skipped</b> and logged — never two at once.</div></div></div>
+      <div class="step"><div class="n">3</div><div><div class="t">Build the eligible roster — live<span class="chip-inline">option 2</span></div><div class="d">Every employee who has a <b>paired GoLogin profile</b>, <b>credits left this month</b>, and <b>isn't logged out</b> is pulled in. The list self-adjusts — no fixed roster to maintain.</div></div></div>
+      <div class="step"><div class="n">4</div><div><div class="t">Match &amp; dedupe their connections</div><div class="d">Each account's matching connections are gathered and de-duplicated across the team, so two accounts never invite the same person.</div></div></div>
+      <div class="step"><div class="n">5</div><div><div class="t">Dispatch to the VM</div><div class="d">Handed off to the same cloud Team-Launch pipeline you use today — one account at a time, capped at each account's monthly budget.</div></div></div>
+      <div class="step"><div class="n">6</div><div><div class="t">Invites go out</div><div class="d">Follow-invites fire sequentially. Logged-out or capped accounts are skipped with a reason.</div></div></div>
+      <div class="step"><div class="n">7</div><div><div class="t">Lands on the board</div><div class="d">Shows up as the <b>same live card</b> you already know, and writes back to the FG sheet — identical to a manual cloud run.</div></div></div>
+    </div>
+  </div>
+
+  <!-- ===== THE NEW PANEL ON THE FG BOARD ===== -->
+  <div class="eyebrow">On the Follower Growth board — the new Auto-Pilot panel</div>
+  <div class="panel">
+    <!-- status strip -->
+    <div class="ap-strip">
+      <div class="ap-left">
+        <span class="ap-dot"></span>
+        <div>
+          <div class="ap-title">Auto-Pilot · On</div>
+          <div class="ap-next">Next run <b>Sat 1 Aug · 09:00</b> · repeats 1st &amp; 15th</div>
+        </div>
+      </div>
+      <span class="rt-tag">☁︎ Cloud VM</span>
+      <button class="link">Edit schedule</button>
+      <div class="toggle" title="Toggle auto-pilot"></div>
+    </div>
+
+    <!-- live eligibility -->
+    <div class="fgtl-ready">
+      <div class="rl">
+        <span class="lab">Eligible right now</span> · <b>14</b> <span class="lab">of 18 accounts</span>
+        <div class="sub">Rebuilt at each run — has a profile + credits left + not logged out. This is who <i>would</i> fire today.</div>
+      </div>
+    </div>
+
+    <!-- roster preview (real .fgtl-prow structure) -->
+    <div class="fgtl-prow">
+      <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">a.rifel@ortusclub.com</span><span class="fgtl-pillst ready">will run</span></div><div class="fgtl-sub">915 connections</div></div>
+      <div class="fgtl-mbox"><b>220</b><small>match</small></div>
+      <div class="will go">Included</div>
+    </div>
+    <div class="fgtl-prow">
+      <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">j.moreno@ortusclub.com</span><span class="fgtl-pillst ready">will run</span></div><div class="fgtl-sub">1,204 connections</div></div>
+      <div class="fgtl-mbox"><b>187</b><small>match</small></div>
+      <div class="will go">Included</div>
+    </div>
+    <div class="fgtl-prow out">
+      <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">t.okafor@ortusclub.com</span><span class="fgtl-pillst out">can't invite</span></div><div class="fgtl-sub">640 connections · 0 credits left</div></div>
+      <div class="fgtl-mbox zero"><b>0</b><small>match</small></div>
+      <div class="will skip">Skipped</div>
+    </div>
+    <div class="fgtl-prow out">
+      <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">s.vance@ortusclub.com</span><span class="fgtl-pillst missing">needs a profile</span></div><div class="fgtl-sub">no paired GoLogin</div></div>
+      <div class="fgtl-mbox zero"><b>—</b><small>match</small></div>
+      <div class="will skip">Skipped</div>
+    </div>
+    <div class="samp">↑ illustrative rows · real fields (email · connections · match · eligibility) · a.rifel row uses live roster numbers</div>
+
+    <!-- history -->
+    <div class="eyebrow" style="margin:28px 0 12px">Recent auto-runs</div>
+    <div class="hist">
+      <div class="hrow"><span class="hd">15 Jul · 09:00</span><span class="hs"><b>9</b> accounts fired · <b>214</b> invites · 2 skipped</span><span class="hb">Done</span></div>
+      <div class="hrow"><span class="hd">01 Jul · 09:00</span><span class="hs"><b>12</b> accounts fired · <b>331</b> invites · 1 skipped</span><span class="hb">Done</span></div>
+      <div class="hrow"><span class="hd">15 Jun · 09:00</span><span class="hs"><b>11</b> accounts fired · <b>298</b> invites</span><span class="hb">Done</span></div>
+    </div>
+  </div>
+
+  <!-- ===== WHAT FIRES ===== -->
+  <div class="eyebrow">When it fires — the same live card you already know</div>
+  <section class="vj-card">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span>Auto-Pilot launch · running on VM</span>
+      <span class="vj-when">started 09:00 · 1 Aug</span>
+    </div>
+    <h2 class="vj-name">Team Follower Growth · 2026-08</h2>
+    <div class="vj-hbar"><i></i></div>
+    <div class="fgtl-launch-banner">
+      <span class="fgtl-lb-ic">⏳</span>
+      <div class="fgtl-lb-txt"><b>Auto-Pilot launched this run</b><span>Warming up the VM · first invites go out in ~2 minutes. Nobody had to click launch.</span></div>
+    </div>
+    <div class="vj-stats"><span><b>14</b> accounts</span><span><b>0</b> invites sent</span><span>· <b>Starting</b></span></div>
+  </section>
+
+  <div class="note">
+    <b>One decision still open (not shown here):</b> where the clock lives. For "runs with the app closed" the timer must be <b>cloud-side</b> (the always-on VM), not the desktop app's scheduler — that only ticks while your laptop's open. That's the next thing to pin down, and it shapes the build. Everything above is the concept + UI; say what to change and I'll redraw.
+  </div>
+
+</div>
+</body>
+</html>

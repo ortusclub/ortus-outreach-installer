@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Op-funnel redesign — run-health sketches</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background:#f6f8fc; color:#202124; padding:28px 34px 90px; }
+  h1 { font-size:1.35rem; font-weight:700; margin-bottom:4px; }
+  .lead { font-size:.85rem; color:#5f6368; max-width:900px; line-height:1.55; margin-bottom:6px; }
+  .lead b { color:#202124; }
+  h2 { font-size:.95rem; font-weight:700; margin:34px 0 4px; }
+  .sub { font-size:.78rem; color:#5f6368; margin-bottom:12px; max-width:900px; line-height:1.5; }
+  /* Google-Sheets look */
+  .gs { border:1px solid #c4c7cc; border-radius:2px; overflow:auto; background:#fff; box-shadow:0 1px 3px rgba(60,64,67,.15); }
+  table { border-collapse:collapse; font-size:12.5px; white-space:nowrap; width:100%; }
+  th, td { border:1px solid #e0e2e6; padding:5px 9px; text-align:left; }
+  /* column-letter + row-number chrome */
+  .col-hd th { background:#f1f3f4; color:#5f6368; font-weight:500; text-align:center; font-size:11px; height:20px; }
+  .rownum { background:#f1f3f4; color:#5f6368; text-align:center; font-weight:500; width:34px; font-size:11px; }
+  thead.data th { background:#f8f9fa; color:#202124; font-weight:600; position:sticky; top:0; }
+  .grp td { background:#eef3ff; font-weight:700; color:#1a3a8f; border-top:2px solid #c4c7cc; }
+  .ok   { background:#e6f4ea; color:#137333; font-weight:600; }
+  .warn { background:#fef7e0; color:#b06000; font-weight:600; }
+  .bad  { background:#fce8e6; color:#c5221f; font-weight:600; }
+  .muted { color:#80868b; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .pick { display:inline-block; font-size:.7rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#1a73e8; border:1px solid #1a73e8; border-radius:9999px; padding:2px 10px; margin-left:8px; vertical-align:middle; }
+  .callout { background:#fff; border:1px solid #c4c7cc; border-left:3px solid #1a73e8; border-radius:2px; padding:12px 16px; font-size:.82rem; line-height:1.6; max-width:900px; margin-top:10px; }
+  .callout b { color:#202124; }
+  .before td { color:#5f6368; }
+  .strike { text-decoration:line-through; color:#c5221f; }
+</style>
+</head>
+<body>
+
+<h1>Op-funnel sheet — run-health redesign</h1>
+<p class="lead">Goal you picked: <b>"Did the last run work?"</b> at a glance. Today it's a flat wall of target rows with raw UTC timestamps (<span class="strike">2026-06-23T13:37:19.712Z</span>) and mystery <b>Queued</b> cells. Below: the two <b>run-unit</b> options as real Sheets layouts. Pick one and I'll build it for real.</p>
+
+<!-- ─────────────── VARIANT A ─────────────── -->
+<h2>Variant A · one row per account, per launch <span class="pick">recommended</span></h2>
+<p class="sub">The unit is <b>account × run</b>. Open the sheet, scan the <b>Result</b> column: all green = clean run; any red = that account failed (and why). Readable date, credits, and the count that was stuck — no ISO strings, no limbo "Queued".</p>
+<div class="gs">
+<table>
+  <tr class="col-hd"><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th><th>I</th></tr>
+  <thead class="data"><tr><th class="rownum">1</th><th>Run</th><th>Account</th><th>Operator</th><th class="num">Targeted</th><th class="num">Sent</th><th class="num">Stuck</th><th>Result</th><th>Credits left</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr class="grp"><td class="rownum">2</td><td colspan="8">▾ 17 Jul 2026 · 12:40 &nbsp;·&nbsp; Run it now (manual) &nbsp;·&nbsp; 51 accounts</td></tr>
+    <tr><td class="rownum">3</td><td>17 Jul, 12:40</td><td>anya@ortus.solutions</td><td>Anya</td><td class="num">30</td><td class="num">30</td><td class="num">0</td><td class="ok">✓ All sent</td><td>0 / 30</td><td class="muted"></td></tr>
+    <tr><td class="rownum">4</td><td>17 Jul, 12:40</td><td>antonio@ortusclub.com</td><td>Antonio</td><td class="num">30</td><td class="num">30</td><td class="num">0</td><td class="ok">✓ All sent</td><td>0 / 30</td><td class="muted"></td></tr>
+    <tr><td class="rownum">5</td><td>17 Jul, 12:40</td><td>altini@ortus.solutions</td><td>Altin</td><td class="num">21</td><td class="num">21</td><td class="num">0</td><td class="warn">◑ Only 21 matched</td><td>9 / 30</td><td class="muted">too few targets in DB</td></tr>
+    <tr><td class="rownum">6</td><td>17 Jul, 12:40</td><td>alecx@ortus.solutions</td><td>Alec</td><td class="num">30</td><td class="num">0</td><td class="num">30</td><td class="bad">✗ Logged out</td><td>30 / 30</td><td class="muted">needs re-login on VM</td></tr>
+    <tr><td class="rownum">7</td><td>17 Jul, 12:40</td><td>anya@virtualroundtable.com</td><td>Anya</td><td class="num">30</td><td class="num">30</td><td class="num">0</td><td class="ok">✓ All sent</td><td>0 / 30</td><td class="muted"></td></tr>
+    <tr class="grp"><td class="rownum">8</td><td colspan="8">▾ 01 Jul 2026 · 06:00 &nbsp;·&nbsp; Auto-Pilot &nbsp;·&nbsp; 51 accounts</td></tr>
+    <tr><td class="rownum">9</td><td>01 Jul, 06:00</td><td>anya@ortus.solutions</td><td>Anya</td><td class="num">30</td><td class="num">30</td><td class="num">0</td><td class="ok">✓ All sent</td><td>0 / 30</td><td class="muted"></td></tr>
+    <tr><td class="rownum">10</td><td>01 Jul, 06:00</td><td>antonio@ortusclub.com</td><td>Antonio</td><td class="num">30</td><td class="num">30</td><td class="num">0</td><td class="ok">✓ All sent</td><td>0 / 30</td><td class="muted"></td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ─────────────── VARIANT B ─────────────── -->
+<h2>Variant B · one row per team launch (rollup)</h2>
+<p class="sub">The unit is <b>the whole Run-it-now</b>. One line tells you if the run was clean; the per-account detail (Variant A) lives on a second tab you open only when a run is red.</p>
+<div class="gs">
+<table>
+  <tr class="col-hd"><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th></tr>
+  <thead class="data"><tr><th class="rownum">1</th><th>Run</th><th>Type</th><th class="num">Accounts</th><th class="num">Targeted</th><th class="num">Sent</th><th class="num">Stuck</th><th class="num">Accts down</th><th>Result</th></tr></thead>
+  <tbody>
+    <tr><td class="rownum">2</td><td>17 Jul 2026, 12:40</td><td>Manual</td><td class="num">51</td><td class="num">1,530</td><td class="num">1,447</td><td class="num">83</td><td class="num">3</td><td class="warn">⚠ 3 accounts need re-login</td></tr>
+    <tr><td class="rownum">3</td><td>01 Jul 2026, 06:00</td><td>Auto-Pilot</td><td class="num">51</td><td class="num">1,530</td><td class="num">1,530</td><td class="num">0</td><td class="num">0</td><td class="ok">✓ Clean run</td></tr>
+    <tr><td class="rownum">4</td><td>15 Jun 2026, 06:00</td><td>Auto-Pilot</td><td class="num">48</td><td class="num">1,440</td><td class="num">1,440</td><td class="num">0</td><td class="num">0</td><td class="ok">✓ Clean run</td></tr>
+    <tr class="before"><td class="rownum">5</td><td>01 Jun 2026, 06:00</td><td>Auto-Pilot</td><td class="num">48</td><td class="num">1,440</td><td class="num">0</td><td class="num">1,440</td><td class="num">48</td><td class="bad">✗ Nothing sent — page invite URL missing</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="sub muted" style="margin-top:8px">Row 5 = exactly the bug you just hit, shown the way this sheet <i>would</i> have made it obvious: one red line, plain reason.</p>
+
+<!-- ─────────────── The two fixes that apply to EITHER variant ─────────────── -->
+<h2>Fixes baked into both</h2>
+<div class="callout">
+  <b>1 · Readable time.</b> <span class="strike">2026-06-23T13:37:19.712Z</span> → <b>17 Jul 2026, 12:40</b> (London time). You can tell when a run happened, sorted newest-first.<br><br>
+  <b>2 · "Queued" is gone.</b> Today a row is written <i>Queued</i> before the send, then flipped to <i>Invited</i> — if the send fails it sits Queued forever, which is what confused you. New model: a target is <b class="ok">✓ Invited</b> (confirmed sent) or <b class="bad">✗ Failed</b> (with a reason). No permanent limbo — and the run summary counts the failures for you.<br><br>
+  <b>3 · Account is always the real account.</b> No more mixing <i>Local Browser</i> with emails — the column shows the LinkedIn account credited, every time.
+</div>
+
+</body>
+</html>

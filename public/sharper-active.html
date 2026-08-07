@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Showing it's working — 3 alternatives</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css?v=2.160.127" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.127" />
+<style>
+  .w { max-width:1240px; margin:0 auto; padding:26px 22px 90px; }
+  h1 { font-family:'Bebas Neue',sans-serif; font-size:2.2rem; letter-spacing:.02em; margin:0 0 6px; }
+  .lede { color:var(--gray); font-size:.86rem; margin:0 0 6px; max-width:78ch; line-height:1.5; }
+  .lede b { color:var(--ink); font-weight:500; }
+  .lede code { font-family:var(--mono); font-size:.74rem; }
+
+  .today { border:1px solid rgba(248,81,73,.3); border-radius:10px; padding:15px 17px; margin:20px 0 34px; }
+  .today .k { font-family:var(--mono); font-size:.64rem; letter-spacing:.16em; text-transform:uppercase; color:var(--red); }
+  .today p { font-size:.79rem; color:var(--gray); margin:7px 0 0; line-height:1.5; max-width:88ch; }
+
+  .alt { margin:0 0 52px; }
+  .alt > .hd { display:flex; align-items:baseline; gap:13px; margin:0 0 4px; }
+  .alt > .hd .lt { font-family:'Bebas Neue',sans-serif; font-size:1.45rem; letter-spacing:.06em; }
+  .alt > .hd .nm { font-family:var(--mono); font-size:.68rem; letter-spacing:.16em; text-transform:uppercase; color:var(--gold); }
+  .alt > .sub { font-size:.79rem; color:var(--gray); margin:0 0 16px; max-width:86ch; line-height:1.5; }
+  .alt > .verdict { font-size:.78rem; color:var(--gray); margin:12px 0 0; border-left:2px solid var(--hairline-soft);
+                    padding-left:12px; line-height:1.55; max-width:92ch; }
+  .alt > .verdict b { color:var(--ink); font-weight:500; }
+
+  .phases { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media (max-width:1100px){ .phases{grid-template-columns:1fr} }
+  .ph { border:1px solid var(--hairline-soft); border-radius:11px; padding:0; overflow:hidden; }
+  .ph > .phhd { font-family:var(--mono); font-size:.63rem; letter-spacing:.15em; text-transform:uppercase;
+                padding:8px 13px; border-bottom:1px solid var(--hairline-soft); color:var(--gray-faint); }
+  .ph > .phbody { padding:15px 16px; }
+  .ph.send > .phhd { color:var(--green); }
+  .ph.intro > .phhd { color:var(--green); }
+  .ph.check > .phhd { color:var(--blue); }
+
+  /* ── shared bits used by the alts (all built from app tokens) ──────────── */
+  .spin { display:inline-block; animation:vj-live-spin 1.1s linear infinite; }
+  .tick { font-family:var(--mono); font-size:.68rem; color:var(--gray-faint); }
+  .nextp { font-size:.73rem; color:var(--gray-faint); margin-top:7px; }
+  .who { font-size:.95rem; color:var(--ink); font-weight:500; line-height:1.25; }
+  .verb { font-family:var(--mono); font-size:.65rem; letter-spacing:.15em; text-transform:uppercase; }
+  .verb.g { color:var(--green); } .verb.b { color:var(--blue); }
+
+  /* Alt B — roll call */
+  .roll { list-style:none; margin:0; padding:0; }
+  .roll li { display:flex; align-items:center; gap:10px; padding:6px 0; font-size:.81rem;
+             border-bottom:1px solid var(--hairline-soft); }
+  .roll li:last-child { border-bottom:0; }
+  .roll li .ic { width:14px; flex:none; text-align:center; font-family:var(--mono); font-size:.74rem; }
+  .roll li .nm2 { flex:1; color:var(--gray); }
+  .roll li.now { padding:9px 8px; margin:0 -8px; border-radius:7px; background:var(--bg-soft); border-bottom:0; }
+  .roll li.now .nm2 { color:var(--ink); font-weight:500; }
+  .roll li.now .ic { color:var(--green); }
+  .roll li.ok .ic { color:var(--green); }
+  .roll li.ok .nm2 { color:var(--gray-faint); }
+
+  /* Alt C — stage */
+  .stage { text-align:left; }
+  .stage .bigverb { font-family:var(--mono); font-size:.66rem; letter-spacing:.2em; text-transform:uppercase; }
+  .stage .bigname { font-family:'Bebas Neue',sans-serif; font-size:1.85rem; letter-spacing:.02em; line-height:1.05;
+                    margin:4px 0 2px; color:var(--ink); }
+  .stage .bigsub { font-size:.76rem; color:var(--gray); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:13px; }
+  .chip { font-family:var(--mono); font-size:.62rem; letter-spacing:.05em; padding:4px 8px; border-radius:6px;
+          border:1px solid var(--hairline-soft); color:var(--gray-faint); display:inline-flex; align-items:center; gap:6px; }
+  .chip .cd { width:5px; height:5px; border-radius:9999px; background:var(--gray-faint); }
+  .chip.on { color:var(--ink); border-color:var(--green); }
+  .chip.on .cd { background:var(--green); animation:vj-queued-pulse 1.4s ease-in-out infinite; }
+  .chip.cap .cd { background:var(--gold); }
+  .chip.off .cd { background:var(--red); }
+  .bar { height:3px; border-radius:2px; background:var(--hairline-soft); margin-top:13px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--green); }
+
+  .foot { margin-top:20px; padding-top:20px; border-top:1px solid var(--hairline-soft); font-size:.8rem;
+          color:var(--gray); line-height:1.6; max-width:90ch; }
+  .foot h3 { font-family:'Bebas Neue',sans-serif; font-size:1.05rem; letter-spacing:.07em; margin:0 0 8px; color:var(--ink); }
+  .foot b { color:var(--ink); font-weight:500; }
+  .foot code { font-family:var(--mono); font-size:.73rem; color:var(--gray-faint); }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark">
+<div class="w">
+
+  <h1>Showing it's working</h1>
+  <p class="lede">
+    Three ways to render the three active phases — <b>sending connections</b>, <b>introducing</b>,
+    <b>checking status</b>. Same data behind all three. Colour isn't a variable here: the app already means
+    <span style="color:var(--green)">green = actively doing outreach</span>,
+    <span style="color:var(--blue)">blue = monitoring/reading</span>,
+    <span style="color:var(--gold)">gold = waiting on something</span>. The alts differ in <b>layout</b>.
+  </p>
+
+  <div class="today">
+    <div class="k">What the card shows today, all three phases</div>
+    <p>
+      <b style="color:var(--ink);font-size:1rem">“Working…”</b> — and an empty second line.<br>
+      <code>live-activity.mjs</code> reads <code>status.currentAction</code>; <code>_buildCloudActiveStatus</code>
+      never sets it, so <code>l1</code> falls through to the literal string <code>'Working…'</code> for 30–60s
+      per lead. Introducing has no state of its own at all — it runs inside the acceptance sweep, so while the
+      VM is writing intro messages to six people the card says <em>“Checking for new acceptances…”</em>.
+    </p>
+  </div>
+
+  <!-- ══ ALT A ══════════════════════════════════════════════════════════════ -->
+  <section class="alt">
+    <div class="hd"><span class="nm">Alt A</span><span class="lt">One line</span></div>
+    <p class="sub">
+      Change nothing but the <code>.vj-live</code> row that already exists. Name, ticking seconds, and what
+      happens next. Smallest possible diff.
+    </p>
+    <div class="phases">
+      <div class="ph send">
+        <div class="phhd">Sending connections</div>
+        <div class="phbody">
+          <div class="vj-live" style="border:0;padding:0">
+            <span class="vj-live-ico" style="color:var(--green)">→</span>
+            <span class="vj-live-txt">
+              <span class="vj-live-l1">Sending to <b>Sarah Whitfield</b></span>
+              <span class="vj-live-l2">matt.adcock@ortus.solutions · 152 of 420 · <span class="tick">12s</span></span>
+            </span>
+          </div>
+          <div class="nextp">next lead in ~45s</div>
+        </div>
+      </div>
+      <div class="ph intro">
+        <div class="phhd">Introducing</div>
+        <div class="phbody">
+          <div class="vj-live" style="border:0;padding:0">
+            <span class="vj-live-ico" style="color:var(--green)">✎</span>
+            <span class="vj-live-txt">
+              <span class="vj-live-l1">Introducing <b>Daniel Okonjo</b></span>
+              <span class="vj-live-l2">via matt.adcock · 2 of 6 accepted today · <span class="tick">8s</span></span>
+            </span>
+          </div>
+          <div class="nextp">4 more intros queued</div>
+        </div>
+      </div>
+      <div class="ph check">
+        <div class="phhd">Checking status</div>
+        <div class="phbody">
+          <div class="vj-live" style="border:0;padding:0">
+            <span class="vj-live-ico spin" style="color:var(--blue)">↻</span>
+            <span class="vj-live-txt">
+              <span class="vj-live-l1">Checking <b>cindy.harper</b> for acceptances</span>
+              <span class="vj-live-l2">account 2 of 4 · <span class="tick">31s</span></span>
+            </span>
+          </div>
+          <div class="nextp">next check 11:06</div>
+        </div>
+      </div>
+    </div>
+    <p class="verdict">
+      <b>Cheapest by far</b> — one row, already in the markup, already styled. But it's a single line of small
+      text: readable when you're looking at it, invisible from across the room. If the complaint is
+      “doesn't fill you with confidence”, this fixes the information and not the feeling.
+    </p>
+  </section>
+
+  <!-- ══ ALT B ══════════════════════════════════════════════════════════════ -->
+  <section class="alt">
+    <div class="hd"><span class="nm">Alt B</span><span class="lt">Roll call</span></div>
+    <p class="sub">
+      A short live list — who just got done, who's happening now, who's next. The current row sits highlighted
+      and the names scroll up past it. Motion proves life without needing a spinner.
+    </p>
+    <div class="phases">
+      <div class="ph send">
+        <div class="phhd">Sending connections</div>
+        <div class="phbody">
+          <ul class="roll">
+            <li class="ok"><span class="ic">✓</span><span class="nm2">Amara Nwosu</span><span class="tick">15:14</span></li>
+            <li class="ok"><span class="ic">✓</span><span class="nm2">Daniel Okonjo</span><span class="tick">15:08</span></li>
+            <li class="now"><span class="ic spin">→</span><span class="nm2">Sarah Whitfield</span><span class="tick">12s</span></li>
+            <li><span class="ic">·</span><span class="nm2" style="color:var(--gray-faint)">Priya Raman</span><span class="tick">next</span></li>
+          </ul>
+          <div class="nextp">matt.adcock · 152 of 420</div>
+        </div>
+      </div>
+      <div class="ph intro">
+        <div class="phhd">Introducing</div>
+        <div class="phbody">
+          <ul class="roll">
+            <li class="ok"><span class="ic">✓</span><span class="nm2">Tom Reidy</span><span class="tick">intro’d</span></li>
+            <li class="now"><span class="ic spin">✎</span><span class="nm2">Daniel Okonjo</span><span class="tick">8s</span></li>
+            <li><span class="ic">·</span><span class="nm2" style="color:var(--gray-faint)">Lena Fischer</span><span class="tick">queued</span></li>
+            <li><span class="ic">·</span><span class="nm2" style="color:var(--gray-faint)">Ivan Petrov</span><span class="tick">queued</span></li>
+          </ul>
+          <div class="nextp">6 accepted today · 2 introduced</div>
+        </div>
+      </div>
+      <div class="ph check">
+        <div class="phhd">Checking status</div>
+        <div class="phbody">
+          <ul class="roll">
+            <li class="ok"><span class="ic">✓</span><span class="nm2">matt.adcock</span><span class="tick">3 new</span></li>
+            <li class="now"><span class="ic spin">↻</span><span class="nm2">cindy.harper</span><span class="tick">31s</span></li>
+            <li><span class="ic">·</span><span class="nm2" style="color:var(--gray-faint)">jeremiah.bell</span><span class="tick">queued</span></li>
+            <li><span class="ic">·</span><span class="nm2" style="color:var(--gray-faint)">trisha.moore</span><span class="tick">queued</span></li>
+          </ul>
+          <div class="nextp">next check 11:06</div>
+        </div>
+      </div>
+    </div>
+    <p class="verdict">
+      <b>The most convincing that work is happening</b>, because you watch names move through it — and it
+      answers “what has it actually done for me” at the same time, which the log currently only answers if you
+      expand it. Costs a new component and ~4 rows of vertical space on the card.
+    </p>
+  </section>
+
+  <!-- ══ ALT C ══════════════════════════════════════════════════════════════ -->
+  <section class="alt">
+    <div class="hd"><span class="nm">Alt C</span><span class="lt">Stage</span></div>
+    <p class="sub">
+      One big statement of what's happening right now, readable across the room, with the account fleet as
+      chips underneath so the whole operation is legible in one glance.
+    </p>
+    <div class="phases">
+      <div class="ph send">
+        <div class="phhd">Sending connections</div>
+        <div class="phbody stage">
+          <div class="bigverb" style="color:var(--green)">→ Sending connection</div>
+          <div class="bigname">SARAH WHITFIELD</div>
+          <div class="bigsub">matt.adcock@ortus.solutions · <span class="tick">12s</span></div>
+          <div class="bar"><i style="width:36%"></i></div>
+          <div class="chips">
+            <span class="chip on"><span class="cd"></span>matt 12/50</span>
+            <span class="chip"><span class="cd"></span>cindy 34/50</span>
+            <span class="chip cap"><span class="cd"></span>jeremiah 50/50</span>
+            <span class="chip off"><span class="cd"></span>trisha benched</span>
+          </div>
+        </div>
+      </div>
+      <div class="ph intro">
+        <div class="phhd">Introducing</div>
+        <div class="phbody stage">
+          <div class="bigverb" style="color:var(--green)">✎ Writing introduction</div>
+          <div class="bigname">DANIEL OKONJO</div>
+          <div class="bigsub">via matt.adcock · 2 of 6 accepted · <span class="tick">8s</span></div>
+          <div class="bar"><i style="width:33%;background:var(--green)"></i></div>
+          <div class="chips">
+            <span class="chip on"><span class="cd"></span>matt · introducing</span>
+            <span class="chip"><span class="cd"></span>cindy · idle</span>
+            <span class="chip"><span class="cd"></span>jeremiah · idle</span>
+          </div>
+        </div>
+      </div>
+      <div class="ph check">
+        <div class="phhd">Checking status</div>
+        <div class="phbody stage">
+          <div class="bigverb" style="color:var(--blue)"><span class="spin" style="display:inline-block">↻</span> Checking acceptances</div>
+          <div class="bigname">CINDY.HARPER</div>
+          <div class="bigsub">account 2 of 4 · <span class="tick">31s</span></div>
+          <div class="bar"><i style="width:50%;background:var(--blue)"></i></div>
+          <div class="chips">
+            <span class="chip"><span class="cd" style="background:var(--green)"></span>matt · 3 new</span>
+            <span class="chip on"><span class="cd"></span>cindy · sweeping</span>
+            <span class="chip"><span class="cd"></span>jeremiah · queued</span>
+            <span class="chip"><span class="cd"></span>trisha · queued</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="verdict">
+      <b>Unmissable</b>, and the chips solve a separate problem — right now nothing on the card tells you the
+      fleet's state without opening the Accounts panel. Biggest layout change of the three, and the big name
+      goes stale-looking on a 60s lead unless the seconds counter is ticking beside it.
+    </p>
+  </section>
+
+  <div class="foot">
+    <h3>What all three need underneath</h3>
+    The same one thing, and it doesn't exist yet: <b>the engine has to say which lead it's on.</b>
+    <code>campaign-live-registry.js:36</code> already exposes <code>progress(campaignId, account, patch)</code>
+    and the API already ships it as <code>liveProgress {selecting, done, total}</code> — but
+    <code>campaign-worker.js</code> only calls <code>register</code> and <code>unregister</code>, nothing in
+    between. Follower Growth is the only caller (<code>campaign-runtime.js:332</code>). One call per lead in
+    the send loop, plus mapping <code>liveProgress</code> → <code>currentAction</code> in
+    <code>_buildCloudActiveStatus</code>, and all three of these light up.<br><br>
+    <b>Introducing needs one more thing:</b> intros fire inside the monitor sweep, so the engine currently has
+    no way to say “introducing” as distinct from “checking”. That's a real phase to add, not just a label.
+  </div>
+
+</div>
+</body>
+</html>

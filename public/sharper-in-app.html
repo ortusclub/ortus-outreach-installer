@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sharper VM actions — in the real card</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css?v=2.160.127" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.127" />
+<style>
+  .w { max-width: 1020px; margin: 0 auto; padding: 26px 22px 90px; }
+  h1 { font-family:'Bebas Neue',sans-serif; font-size:2.2rem; letter-spacing:.02em; margin:0 0 6px; }
+  .lede { color:var(--gray); font-size:.86rem; margin:0 0 28px; max-width:76ch; line-height:1.5; }
+  .cap { display:flex; align-items:baseline; gap:12px; margin:34px 0 10px; }
+  .cap .n { font-family:var(--mono); font-size:.68rem; letter-spacing:.16em; text-transform:uppercase; }
+  .cap .n.now { color:var(--red); }
+  .cap .n.new { color:var(--green); }
+  .cap .t { font-size:.8rem; color:var(--gray); }
+  .note { font-size:.76rem; color:var(--gray-faint); margin:9px 0 0; line-height:1.5; max-width:88ch; }
+  .note code { font-family:var(--mono); font-size:.7rem; }
+  .note b { color:var(--ink); font-weight:500; }
+  .diff { border-left:2px solid var(--gold); padding-left:12px; margin:10px 0 0; font-size:.78rem;
+          color:var(--gray); line-height:1.55; max-width:88ch; }
+  .diff b { color:var(--ink); font-weight:500; }
+  .launchbar { border:1px solid var(--hairline-soft); border-radius:12px; padding:20px 22px; }
+  .foot { margin-top:44px; padding-top:20px; border-top:1px solid var(--hairline-soft); font-size:.8rem;
+          color:var(--gray); line-height:1.6; max-width:88ch; }
+  .foot h3 { font-family:'Bebas Neue',sans-serif; font-size:1.05rem; letter-spacing:.07em; margin:0 0 8px; color:var(--ink); }
+  .foot code { font-family:var(--mono); font-size:.72rem; color:var(--gray-faint); }
+
+  /* ── THE ONLY NEW CSS. Everything else below is the app's own. ─────────── */
+  .vj-live.is-pending .vj-live-ico { color: var(--gold); display:inline-block; animation: vj-live-spin 1.1s linear infinite; }
+  .vj-card.is-pending::before { background: var(--gold) !important; }
+  .vj-card.is-pending .vj-eyebrow .vj-tag .dot { background: var(--gold); animation: vj-queued-pulse 1.4s ease-in-out infinite; }
+  .dock-btn.is-pending { cursor:progress; color:var(--gold); }
+  .dock-btn.is-pending svg { animation: vj-live-spin 1.1s linear infinite; }
+  .vj-live-why { font-size:.76rem; color:var(--gold); margin-top:5px; line-height:1.4; }
+  .btn.is-pending { color:var(--gold) !important; border-color:var(--gold) !important; cursor:progress;
+                    display:inline-flex; align-items:center; gap:9px; }
+  .btn.is-pending::before { content:""; width:11px; height:11px; border-radius:9999px;
+                            border:2px solid rgba(247,190,104,.28); border-top-color:var(--gold);
+                            animation: vj-live-spin .8s linear infinite; }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark">
+<div class="w">
+
+  <h1>How it looks in the real card</h1>
+  <p class="lede">
+    This is <code>#active-card</code> — the actual markup from <code>index.html:286</code>, the app's own
+    stylesheet, nothing redrawn. Same moment in both: <b>25 seconds after pressing Stop</b>.
+  </p>
+
+  <!-- ══ TODAY ══════════════════════════════════════════════════════════════ -->
+  <div class="cap"><span class="n now">Today</span><span class="t">25s after you pressed Stop</span></div>
+
+  <section class="vj-card">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span>Cloud · Running</span></span>
+      <span class="vj-when">started 15:01</span>
+    </div>
+    <h2 class="vj-name"><span>CC+IC MON 5TH AUG</span></h2>
+    <div class="vj-live">
+      <span class="vj-live-ico">●</span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1">Sending via matt.adcock@ortus.solutions</span>
+        <span class="vj-live-l2">Lead 152 of 420</span>
+      </span>
+    </div>
+    <div class="vj-hbar" role="progressbar"><i style="width:36%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span>36</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>151</b> of 420 sent</span>
+          <span>Next batch in <b>3 min</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>4</b> accounts</span>
+        <span><b>7</b> accepted</span>
+        <span>· <b>Sending</b> ·</span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="btn-pill">Open</button>
+      <div class="dock" role="toolbar">
+        <button class="dock-btn" data-tip="Pause" aria-label="Pause">
+          <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <div class="dock-actions">
+          <button class="dock-btn danger" data-tip="Stop" aria-label="Stop">
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>
+          </button>
+          <button class="dock-btn" data-tip="Restart" aria-label="Restart">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="note">
+    <b>Nothing on this card knows you pressed Stop.</b> Green rail, green dot, “Running”, “Sending”,
+    Stop button fully enabled. Identical to the frame before you clicked. So you click it again.
+  </p>
+
+  <!-- ══ PROPOSED ═══════════════════════════════════════════════════════════ -->
+  <div class="cap"><span class="n new">Proposed</span><span class="t">same moment, same card</span></div>
+
+  <section class="vj-card is-pending">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span>Cloud · Stopping…</span></span>
+      <span class="vj-when">started 15:01</span>
+    </div>
+    <h2 class="vj-name"><span>CC+IC MON 5TH AUG</span></h2>
+    <div class="vj-live is-pending">
+      <span class="vj-live-ico">◠</span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1">Stopping — finishing the lead already in flight</span>
+        <span class="vj-live-l2">waiting on the VM · 25s</span>
+        <span class="vj-live-why">The VM finishes the lead it already started before it stops — that’s why this isn’t instant.</span>
+      </span>
+    </div>
+    <div class="vj-hbar" role="progressbar"><i style="width:36%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span>36</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>151</b> of 420 sent</span>
+          <span>Next batch in <b>—</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>4</b> accounts</span>
+        <span><b>7</b> accepted</span>
+        <span>· <b>Stopping</b> ·</span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="btn-pill">Open</button>
+      <div class="dock" role="toolbar">
+        <button class="dock-btn" data-tip="Pause" aria-label="Pause" disabled style="opacity:.35">
+          <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <div class="dock-actions">
+          <button class="dock-btn danger is-pending" data-tip="Stopping… 25s" aria-label="Stopping">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg>
+          </button>
+          <button class="dock-btn" data-tip="Restart" aria-label="Restart" disabled style="opacity:.35">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="diff">
+    <b>Five things changed, all of them existing components:</b>
+    the left rail and the eyebrow dot go gold and pulse (the app's <code>vj-queued-pulse</code>, already used
+    for queued campaigns) · the eyebrow reads <b>Stopping…</b> · the <code>.vj-live</code> line — the card's
+    existing “what's happening right now” row — states the wait and ticks the seconds · past 25s a gold line
+    explains <em>why</em> it's slow · the Stop icon spins and its tooltip becomes the counter, while Pause and
+    Restart grey out so you can't stack conflicting commands.
+  </p>
+
+  <!-- ══ LAUNCH ═════════════════════════════════════════════════════════════ -->
+  <div class="cap"><span class="n new">Proposed</span><span class="t">the wizard's launch bar, 60s into a cloud start</span></div>
+
+  <div class="launchbar">
+    <div class="launch-actions launch-actions--four" style="display:flex;gap:9px;flex-wrap:wrap">
+      <button type="button" class="btn btn-start is-pending">Starting… 60s</button>
+      <button type="button" class="btn btn-secondary" disabled style="opacity:.4">Queue it</button>
+      <button type="button" class="btn btn-secondary" disabled style="opacity:.4">Schedule it</button>
+      <button type="button" class="btn btn-secondary" disabled style="opacity:.4">Save as draft</button>
+    </div>
+    <div class="launch-run-note" style="margin-top:14px">
+      <div class="vj-live is-pending" style="border:0;padding:0">
+        <span class="vj-live-ico">◠</span>
+        <span class="vj-live-txt">
+          <span class="vj-live-l1">Waking a VM worker</span>
+          <span class="vj-live-l2">✓ blocklist · ✓ sheet columns · ✓ 4 accounts In Use · ✓ primary handshake · ✓ handed to the engine</span>
+          <span class="vj-live-why">Waking a cold VM worker takes up to 2 minutes — nothing has failed.</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Today this button looks exactly like it does at rest for the full two minutes</b>, while silently
+    swallowing every click via <code>_cloudSubmitInFlight</code> (<code>app.js:10306</code>). The guard is
+    what stopped the triple-launch bug — it just never told anyone it was working.
+  </p>
+
+  <div class="foot">
+    <h3>Why this is a small change</h3>
+    Every piece already exists in the app. <code>.vj-live</code> is the card's “what's happening now” row.
+    <code>vj-live-spin</code> is the spinner used by <code>.vj-live.is-checking</code>.
+    <code>vj-queued-pulse</code> is the gold pulsing dot used by queued campaigns. <code>.dock-btn</code>
+    already has a disabled style.<br><br>
+    The new CSS is the six rules at the top of this file's <code>&lt;style&gt;</code> block. The rest is
+    wiring the existing handlers — <code>_doStopCloud</code>, <code>pauseCloudCampaignUI</code>,
+    <code>_submitCloudCampaign</code> — to set and clear one <code>is-pending</code> class, and to keep
+    ticking until the engine confirms rather than assuming the click worked.
+  </div>
+
+</div>
+</body>
+</html>

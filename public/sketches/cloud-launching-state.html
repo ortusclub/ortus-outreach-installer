@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cloud card · Launching state (v2.160.9)</title>
+  <link rel="stylesheet" href="/css/style.css?v=2.160.9" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.9" />
+  <style>
+    body { padding: 40px 32px 80px; max-width: 1040px; margin: 0 auto; }
+    .sk-h { font-family: var(--mono); font-size: .78rem; letter-spacing:.18em; text-transform:uppercase; color: var(--gray); margin: 34px 0 12px; }
+    .sk-h b { color: var(--ink); }
+    .sk-lead { color: var(--gray); font-size: .9rem; margin: 0 0 22px; }
+    .sk-grid { display:grid; grid-template-columns: 1fr; gap: 26px; }
+    .sk-tag { display:inline-block; font-family:var(--mono); font-size:.66rem; letter-spacing:.14em; text-transform:uppercase; padding:2px 8px; border-radius:9999px; margin-bottom:10px; }
+    .sk-tag.bad { color:#b3261e; background:rgba(179,38,30,.10); }
+    .sk-tag.good { color:#1f7a34; background:rgba(63,185,80,.12); }
+    /* Force the card visible/expanded exactly as renderActiveCard leaves it */
+    .vj-card { display:block !important; }
+    .vj-card.is-detailed .vj-details { display:grid; }
+    .sk-toggle { position:fixed; top:16px; right:18px; font-family:var(--mono); font-size:.72rem; z-index:9; display:flex; gap:8px; }
+    .sk-toggle button { font:inherit; padding:6px 12px; border:1px solid var(--hairline); background:var(--card-bg); color:var(--ink); border-radius:9999px; cursor:pointer; }
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light theme-dark-off">
+  <div class="sk-toggle">
+    <button onclick="document.documentElement.setAttribute('data-theme','light');document.body.classList.remove('theme-dark');document.body.classList.add('theme-light')">Light</button>
+    <button onclick="document.documentElement.setAttribute('data-theme','dark');document.body.classList.remove('theme-light');document.body.classList.add('theme-dark')">Dark</button>
+  </div>
+
+  <h1 style="font-family:var(--mono);letter-spacing:.04em;font-size:1.15rem;margin:0 0 4px">Live Status card — cloud campaign just launched</h1>
+  <p class="sk-lead">The 2–3 minute window after you press Start, while the VM worker scales up and claims the campaign.</p>
+
+  <div class="sk-h">Before &nbsp;·&nbsp; <b>v2.160.8</b></div>
+  <p class="sk-lead" style="margin-bottom:14px"><span class="sk-tag bad">Bug A</span> reads “FINISHED” (green dot) — looks done, so operators re-press Start. &nbsp; <span class="sk-tag bad">Bug B</span> the roll-up line is painted red “ERR”.</p>
+  <div id="card-before"></div>
+
+  <div class="sk-h" style="margin-top:46px">After &nbsp;·&nbsp; <b>v2.160.9</b></div>
+  <p class="sk-lead" style="margin-bottom:14px"><span class="sk-tag good">Bug A</span> “LAUNCHING…” with a pulsing gold dot + “Starting shortly”. &nbsp; <span class="sk-tag good">Bug B</span> the roll-up line is neutral “SUM”, not red.</p>
+  <div id="card-after"></div>
+
+  <script>
+    // The exact renderActiveCard log-line markup.
+    function logLine(cls, evt, what) {
+      return '<div class="vj-log-line ' + cls + '"><span class="time">18:12</span><span class="evt">' + evt + '</span><span class="what">' + what + '</span></div>';
+    }
+    // 1:1 copy of #active-card's markup (classes drive all styling).
+    function card(opts) {
+      return `
+      <section class="vj-card ${opts.cardClass} is-detailed" aria-label="Active campaign">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span><span>${opts.eyebrow}</span></span>
+          <span class="vj-when"></span>
+        </div>
+        <div class="vj-glyph-circle">C+D</div>
+        <h2 class="vj-name"><span>TEST CC+DM</span></h2>
+        <div class="vj-hbar" role="progressbar"><i style="width:0%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span>0</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b>0</b> of <span>12</span> sent</span>
+              <span>Next batch in <b>${opts.eta}</b></span>
+            </div>
+          </div>
+          <div class="vj-stats">
+            <span><b>2</b> accounts</span>
+            <span><b>—</b> accepted</span>
+            <span>· <b>${opts.sendingLbl}</b> · <a style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px;cursor:pointer">batch settings</a></span>
+          </div>
+        </div>
+        <div class="vj-controls">
+          <button class="btn-pill">Open</button>
+          <button class="vj-toggle-btn" data-tip="Show details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+          <div class="dock" role="toolbar">
+            <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+            <div class="dock-actions">
+              <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div class="vj-details">
+          <div>
+            <div class="vj-log-head">
+              <span class="vj-details-head">Live log · ${opts.logHead}</span>
+              <span class="vj-log-acts">
+                <button type="button" class="vj-log-act">Copy all</button>
+                <button type="button" class="vj-log-act">Open sheet</button>
+              </span>
+            </div>
+            <div class="vj-log">${opts.log}</div>
+          </div>
+          <div class="vj-bulk">
+            <div class="vj-details-head">Bulk check connection</div>
+            <div class="vj-bulk-status">Last sweep · <b>—</b> · <span>0</span> newly accepted</div>
+            <button class="vj-bulk-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg><span>Run check now</span></button>
+            <div class="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
+          </div>
+        </div>
+      </section>`;
+    }
+
+    document.getElementById('card-before').innerHTML = card({
+      cardClass: '', eyebrow: 'Finished', eta: '—', sendingLbl: 'Finished',
+      logHead: '1 event (finished)',
+      log: logLine('is-err', 'err', '— 0 sent · 0 errors · 12 pending'),
+    });
+
+    document.getElementById('card-after').innerHTML = card({
+      cardClass: 'is-queued', eyebrow: 'Launching…', eta: 'starting…', sendingLbl: 'Starting shortly',
+      logHead: '1 event (launching)',
+      log: logLine('', 'sum', '— 0 sent · 0 errors · 12 pending'),
+    });
+  </script>
+</body>
+</html>

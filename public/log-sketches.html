@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cloud log — what's missing</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- THE REAL APP CSS — nothing here is re-styled -->
+<link rel="stylesheet" href="/css/style.css?v=2.160.127" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.127" />
+<style>
+  /* Sketch chrome only. Every .vj-* class below comes from the real stylesheet. */
+  .sk-wrap { max-width: 1600px; margin: 0 auto; padding: 28px 24px 80px; }
+  .sk-h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2.4rem; letter-spacing: 0.02em; margin: 0 0 4px; }
+  .sk-sub { color: var(--gray); font-size: 0.86rem; margin: 0 0 24px; max-width: 78ch; line-height: 1.5; }
+  .sk-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 1200px) { .sk-panes { grid-template-columns: 1fr; } }
+  .sk-pane h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; letter-spacing: 0.08em; margin: 0 0 2px; }
+  .sk-pane .sk-note { font-size: 0.72rem; color: var(--gray-faint); margin: 0 0 10px; }
+  .sk-pane .vj-log { max-height: none; }
+  /* Added lines get a gold spine so the delta reads at a glance. */
+  .vj-log-line.sk-new { border-left: 2px solid var(--gold); padding-left: 8px; margin-left: -8px; }
+  .sk-controls { border: 1px solid var(--hairline-soft); border-radius: 8px; padding: 16px 18px; margin: 0 0 24px; }
+  .sk-controls h3 { font-family: 'Bebas Neue', sans-serif; font-size: 0.95rem; letter-spacing: 0.08em; margin: 0 0 10px; }
+  .sk-group { margin-bottom: 14px; }
+  .sk-group > .sk-glabel { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--gray-faint); margin-bottom: 8px; }
+  .sk-toggles { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px 18px; }
+  .sk-t { display: flex; gap: 9px; align-items: flex-start; cursor: pointer; padding: 5px 7px; border-radius: 5px; }
+  .sk-t:hover { background: var(--hairline-soft); }
+  .sk-t input { margin-top: 3px; accent-color: var(--gold); flex: none; }
+  .sk-t .sk-tl { font-size: 0.78rem; color: var(--ink); line-height: 1.35; }
+  .sk-t .sk-src { display: block; font-family: 'JetBrains Mono', monospace; font-size: 0.63rem; color: var(--gray-faint); margin-top: 2px; }
+  .sk-acts { display: flex; gap: 8px; margin-top: 4px; }
+  .sk-count { font-size: 0.72rem; color: var(--gray); margin-left: 4px; }
+  .sk-legend { font-size: 0.72rem; color: var(--gray-faint); margin: 16px 0 0; }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark">
+<div class="sk-wrap">
+
+  <h1 class="sk-h1">Cloud campaign log — what's missing</h1>
+  <p class="sk-sub">
+    Left is what a VM campaign prints today. Right is the same run with the proposed lines switched on.
+    Tick things on and off to see what each one buys. Every proposed line is built from data the engine
+    <em>already has</em> — the store call it comes from is printed under each toggle. Styling is the app's
+    own <code>vj-log</code> stylesheet, unmodified.
+  </p>
+
+  <div class="sk-controls">
+    <h3>Toggles</h3>
+
+    <div class="sk-group">
+      <div class="sk-glabel">A · Clarity fixes — same events, said properly</div>
+      <div class="sk-toggles">
+        <label class="sk-t"><input type="checkbox" data-p="w" checked><span class="sk-tl">Say the wait and what "/3" means on a 429<span class="sk-src">campaign-worker.js:497</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="r" checked><span class="sk-tl">Stop saying "rests ~3 min" on a parked account<span class="sk-src">campaign-worker.js:607 — reads turnCooldownSec even when parked 30 min</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="n" checked><span class="sk-tl">Name the terminal failures instead of burning 8 leads<span class="sk-src">NOTE_LIMIT / NOTE_TOO_LONG / email_required / SEND_NOT_CONFIRMED</span></span></label>
+      </div>
+    </div>
+
+    <div class="sk-group">
+      <div class="sk-glabel">B · New information — the engine knows this and never says it</div>
+      <div class="sk-toggles">
+        <label class="sk-t"><input type="checkbox" data-p="1" checked><span class="sk-tl"><b>1.</b> Sheet write-back failures<span class="sk-src">getLeadsNeedingSheetSync() — today swallowed by catch (_) {}</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="2" checked><span class="sk-tl"><b>2.</b> Pod + engine version, and worker restarts<span class="sk-src">k8s env + reapOrphanedTasks()</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="3" checked><span class="sk-tl"><b>3.</b> Park expiry and reason<span class="sk-src">parkTtl() · getParkReason()</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="4" checked><span class="sk-tl"><b>4.</b> Queue depth + every account's credits<span class="sk-src">leadStatusCounts() · dailyCount() · invitedCountForMonth()</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="5" checked><span class="sk-tl"><b>5.</b> Durations, seconds, and day breaks<span class="sk-src">formatting only</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="6" checked><span class="sk-tl"><b>6.</b> Why this account was picked<span class="sk-src">accountStatuses() · inTurnCooldown() · isParked()</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="7" checked><span class="sk-tl"><b>7.</b> Real per-lead stream — intent, gate, waits<span class="sk-src">structural: engine emits, app stops rebuilding from lead rows</span></span></label>
+        <label class="sk-t"><input type="checkbox" data-p="8" checked><span class="sk-tl"><b>8.</b> Count repeats instead of hiding them<span class="sk-src">app.js:6827 dedup drops identical consecutive lines</span></span></label>
+      </div>
+    </div>
+
+    <div class="sk-acts">
+      <button type="button" class="vj-log-act" onclick="skAll(true)">All on</button>
+      <button type="button" class="vj-log-act" onclick="skAll(false)">All off</button>
+      <button type="button" class="vj-log-act" onclick="skTheme()">Light / dark</button>
+      <span class="sk-count" id="skCount"></span>
+    </div>
+  </div>
+
+  <div class="sk-panes">
+    <div class="sk-pane">
+      <h2>Today</h2>
+      <p class="sk-note">Exactly what renders now. 4 accounts, CC+IC, 420 leads.</p>
+      <div class="vj-log" id="paneNow"></div>
+    </div>
+    <div class="sk-pane">
+      <h2>Proposed</h2>
+      <p class="sk-note">Same run. Gold spine = a line that doesn't exist today.</p>
+      <div class="vj-log" id="paneNew"></div>
+    </div>
+  </div>
+
+  <p class="sk-legend">
+    Scenario: matt.adcock hits a bare 429 and gets benched; cindy runs out of free custom notes; the Google
+    Sheet write-back starts failing; a deploy restarts the worker mid-turn.
+  </p>
+
+</div>
+
+<script>
+// ── The app's real classifier, copied verbatim from app.js:v3RenderLogLine ──
+function v3RenderLogLine(rawLine) {
+  const safe = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  if (!rawLine) return '';
+  let timeStr = '', evtStr = 'log', restStr = String(rawLine);
+  const isoMatch = restStr.match(/^\[([^\]]+)\]\s*(.*)$/);
+  if (isoMatch) { timeStr = isoMatch[1]; restStr = isoMatch[2]; }
+  let cls = '';
+  if (/^\s*(—|Σ|─)/.test(restStr)) { evtStr = 'sum'; }
+  else if (/✓|connection_sent|message_sent|status_accepted|accepted/i.test(restStr)) { cls = 'is-ok'; evtStr = 'ok'; }
+  else if (/✗|error|fail|FAILED|429/i.test(restStr)) { cls = 'is-err'; evtStr = 'err'; }
+  else if (/⚠|warn|retry|backoff|park|SKIPPED/i.test(restStr)) { cls = 'is-warn'; evtStr = 'warn'; }
+  else if (/===|▶|■|start|finished/i.test(restStr)) { evtStr = 'info'; }
+  return '<div class="vj-log-line ' + cls + '"><span class="time">' + safe(timeStr) +
+         '</span><span class="evt">' + safe(evtStr) + '</span><span class="what">' + safe(restStr) + '</span></div>';
+}
+
+const M = 'matt.adcock@ortus.solutions', C = 'cindy.harper@ortus.solutions', J = 'jeremiah.bell@ortus.solutions';
+
+// p: null = exists today (both panes). Otherwise the toggle that owns it.
+// s: seconds variant, shown when toggle 5 is on.
+const LINES = [
+  { t:'14:58', s:'14:58:02', p:null, x:'📦 Campaign received by the engine — 420 leads imported · 88 already actioned in the sheet (skipped, won\'t be re-sent) · 4 accounts · waiting for a VM worker to pick it up…' },
+  { t:'15:00', s:'15:00:41', p:'2', x:'⏰ Worker pod cold — KEDA scaling from zero, picked up after 1m 39s' },
+  { t:'15:00', s:'15:00:41', p:null, x:'⚙️ VM worker picked the campaign up — preparing the sheet, then selecting the first account…',
+    alt:{ p:'2', x:'⚙️ VM worker picked the campaign up — pod campaign-worker-7d4f9c-x2ktp · engine v125 · preparing the sheet…' } },
+  { t:'15:00', s:'15:00:44', p:'4', x:'📊 Queue: 332 pending · 0 sent · 0 error · 88 pre-actioned' },
+  { t:'15:00', s:'15:00:44', p:'4', x:'💳 Today: matt 0/50 · cindy 0/50 · jeremiah 0/50 · trisha 0/50 — 218 invites sent this month across the 4' },
+  { t:'15:01', s:'15:01:02', p:'6', x:'🎲 Turn 1 → picked matt (longest idle) · cindy, jeremiah, trisha all free' },
+  { t:'15:01', s:'15:01:03', p:null, x:'🖥️ Opening ' + M + '\'s browser on the VM — 0/50 sent today' },
+
+  { t:'15:02', s:'15:02:10', p:'7', x:'→ ' + M + ' · Sarah Whitfield · linkedin.com/in/sarah-whitfield' },
+  { t:'15:02', s:'15:02:19', p:null, x:'✓ Sarah Whitfield · connection_sent sent · via ' + M + ' · linkedin.com/in/sarah-whitfield',
+    alt:{ p:'5', x:'✓ Sarah Whitfield · connection_sent sent in 9s · via ' + M + ' · linkedin.com/in/sarah-whitfield' } },
+  { t:'15:02', s:'15:02:19', p:'7', x:'⏳ 48s before the next lead (ban-safety pacing)' },
+
+  { t:'15:03', s:'15:03:07', p:'7', x:'→ ' + M + ' · Priya Raman · linkedin.com/in/priya-raman' },
+  { t:'15:03', s:'15:03:28', p:'7', x:'  ⟳ 1/5 identity unconfirmed — no-member-number-captured (profile did not load)' },
+  { t:'15:03', s:'15:03:28', p:'7', x:'  ⏳ waiting 20s before retry…' },
+  { t:'15:04', s:'15:04:49', p:'7', x:'  ⟳ 4/5 identity unconfirmed — name-mismatch (loaded: "P. R.")' },
+  { t:'15:05', s:'15:05:31', p:null, x:'✗ Priya Raman · identity_unverified',
+    alt:{ p:'7', x:'✗ Priya Raman · IDENTITY UNVERIFIED after 5 tries — NOT sent · intended "Priya Raman" · loaded "P. R." · 2m 24s spent' } },
+
+  { t:'15:08', s:'15:08:02', p:null, x:'✓ Daniel Okonjo · connection_sent sent · via ' + M + ' · linkedin.com/in/daniel-okonjo' },
+  { t:'15:14', s:'15:14:37', p:null, x:'✓ Amara Nwosu · connection_sent sent · via ' + M + ' · linkedin.com/in/amara-nwosu' },
+
+  { t:'15:23', s:'15:23:11', p:null, x:'⏸ ' + M + ' — rate-limited by LinkedIn (429) · backing off, will retry · strike 1/3',
+    alt:{ p:'w', x:'⏸ ' + M + ' — rate-limited by LinkedIn (429) · cooling down 30 min, will retry automatically · 1st of 3 before we treat it as the weekly cap' } },
+  { t:'15:23', s:'15:23:12', p:null, x:'⏹ ' + M + ' — browser closed · 0 sent this turn (3/50 today) · rests ~3 min before its next turn',
+    alt:{ p:'5', x:'⏹ ' + M + ' — browser closed · 3 sent this turn (3/50 today) · turn took 22m 09s · rests ~3 min before its next turn' } },
+
+  { t:'15:23', s:'15:23:14', p:'6', x:'🎲 Turn 2 → picked cindy · matt cooling 30m (429), jeremiah free, trisha free' },
+  { t:'15:24', s:'15:24:01', p:null, x:'🖥️ Opening ' + C + '\'s browser on the VM — 0/50 sent today' },
+  { t:'15:26', s:'15:26:44', p:null, x:'✓ Tom Reidy · connection_sent sent · via ' + C + ' · linkedin.com/in/tom-reidy' },
+
+  { t:'15:31', s:'15:31:08', p:null, x:'✗ Lena Fischer · NOTE_LIMIT_REACHED',
+    alt:{ p:'n', x:'⚠ ' + C + ' — out of free custom notes · can\'t send noted invites · benched, lead stays retryable for another account' } },
+  { t:'15:33', s:'15:33:20', p:null, x:'✗ Ivan Petrov · NOTE_LIMIT_REACHED' },
+  { t:'15:35', s:'15:35:41', p:null, x:'✗ Chloe Bernard · NOTE_LIMIT_REACHED' },
+  { t:'15:37', s:'15:37:55', p:null, x:'✗ Marco Silva · NOTE_LIMIT_REACHED' },
+  { t:'15:40', s:'15:40:12', p:'8', x:'✗ 4 more leads · NOTE_LIMIT_REACHED (×4) — suppressed, same cause' },
+  { t:'15:42', s:'15:42:30', p:null, x:'⛔ ' + C + ' — 8 leads failed in a row · parked (last error: NOTE_LIMIT_REACHED)',
+    alt:{ p:'3', x:'⛔ ' + C + ' — parked until 16:12 (30 min) · reason: out of note credits' } },
+
+  { t:'15:43', s:'15:43:02', p:'1', x:'⚠ Sheet write-back failing — 34 row(s) stamped in the engine but not yet in your sheet (Google API 429: quota exceeded)' },
+  { t:'15:43', s:'15:43:02', p:'1', x:'   Your sheet is behind the engine. Stamps are safe and will retry — but don\'t trust the sheet until this clears.' },
+
+  { t:'15:44', s:'15:44:19', p:'6', x:'🎲 Turn 3 → picked jeremiah · matt cooling 21m (429), cindy parked (note credits), trisha at cap 50/50' },
+  { t:'15:45', s:'15:45:00', p:null, x:'🖥️ Opening ' + J + '\'s browser on the VM — 0/50 sent today' },
+  { t:'15:52', s:'15:52:31', p:'2', x:'♻️ Worker restarted mid-turn (deploy) — pod campaign-worker-7d4f9c-x2ktp replaced by -m8plq · 6 lead(s) released back to the queue' },
+  { t:'15:52', s:'15:52:31', p:'2', x:'   Nothing was lost. Those 6 leads go out on the next turn — no need to restart the campaign.' },
+
+  { t:'16:12', s:'16:12:00', p:'3', x:'▶ ' + C + ' — park expired, back in rotation' },
+  { t:'16:20', s:'16:20:44', p:'1', x:'✓ Sheet caught up — 34 row(s) written' },
+
+  { t:'—',     s:'—',        p:'5', x:'──────────  Wednesday 6 August  ──────────' },
+
+  { t:'09:02', s:'09:02:15', p:null, x:'⏸ ' + M + ' — rate-limited by LinkedIn (429) · parked 30 min · strike 3/3',
+    alt:{ p:'8', x:'⏸ ' + M + ' — rate-limited by LinkedIn (429) · parked 30 min · strike 3/3 (×7 across 4 turns)' } },
+  { t:'09:02', s:'09:02:16', p:null, x:'🚫 ' + M + ' — 3 rate-limited turns in a row — assuming the weekly invitation limit · benched for the rest of the week (Retry in the Accounts panel to override)' },
+  { t:'09:02', s:'09:02:16', p:'3', x:'   Benched until Monday 00:00 UTC · reason: assumed weekly cap · 47 invites sent by this account in the last 7 days' },
+
+  { t:'09:05', s:'09:05:30', p:'4', x:'📊 Queue: 269 pending · 151 sent · 2 error · 88 pre-actioned' },
+  { t:'09:05', s:'09:05:30', p:'4', x:'💳 Today: matt benched (weekly) · cindy 12/50 · jeremiah 50/50 · trisha 41/50 — 369 invites this month' },
+  { t:'09:05', s:'09:05:31', p:'4', x:'🧭 269 left · ~2 accounts sending · roughly 3 more days at today\'s pace' },
+  { t:'09:06', s:'09:06:00', p:'2', x:'🕰 Next acceptance check armed for 11:06 (2h)' },
+
+  { t:'',      s:'',         p:null, x:'Σ Total · 151 sent · 2 errors · 269 pending' },
+];
+
+function render() {
+  const on = new Set([...document.querySelectorAll('.sk-t input')].filter(i => i.checked).map(i => i.dataset.p));
+  const sec = on.has('5');
+  const now = [], nw = [];
+  let added = 0;
+  for (const L of LINES) {
+    const time = sec ? (L.s || L.t) : L.t;
+    // Today's pane: only lines that exist today (p === null), always the base text.
+    if (L.p === null) now.push(v3RenderLogLine('[' + L.t + '] ' + L.x));
+    // Proposed pane.
+    if (L.p === null) {
+      const useAlt = L.alt && on.has(L.alt.p);
+      const html = v3RenderLogLine('[' + time + '] ' + (useAlt ? L.alt.x : L.x));
+      nw.push(useAlt ? html.replace('vj-log-line ', 'vj-log-line sk-new ') : html);
+      if (useAlt) added++;
+    } else if (on.has(L.p)) {
+      nw.push(v3RenderLogLine('[' + time + '] ' + L.x).replace('vj-log-line ', 'vj-log-line sk-new '));
+      added++;
+    }
+  }
+  document.getElementById('paneNow').innerHTML = now.join('');
+  document.getElementById('paneNew').innerHTML = nw.join('');
+  document.getElementById('skCount').textContent =
+    now.length + ' lines today → ' + nw.length + ' proposed (' + added + ' new or reworded)';
+}
+
+function skAll(v) { document.querySelectorAll('.sk-t input').forEach(i => { i.checked = v; }); render(); }
+function skTheme() { document.body.classList.toggle('theme-dark'); document.body.classList.toggle('theme-light'); }
+document.addEventListener('change', e => { if (e.target.matches('.sk-t input')) render(); });
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Follower Growth — redesign sketches</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fafafa; --bg-soft:#faf9f7; --ink:#0a0a0a; --gray:#8a8a88;
+    --hairline:rgba(0,0,0,.15); --hairline-soft:rgba(0,0,0,.06);
+    --green:#1c7a2e; --red:#c23; --gold:#F7BE68; --gold-tint:rgba(247,190,104,.16);
+    --display:'Bebas Neue','Arial Narrow',sans-serif;
+    --body:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#e9e8e4;color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 80px}
+
+  /* switcher */
+  .switch{position:sticky;top:0;z-index:20;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    background:#e9e8e4;padding:14px 0 16px;margin-bottom:4px;border-bottom:1px solid var(--hairline)}
+  .switch .lab{font-family:var(--display);font-size:1.5rem;letter-spacing:.02em;margin-right:8px}
+  .switch button{font-family:var(--body);font-weight:600;font-size:12.5px;padding:9px 16px;border-radius:9999px;
+    border:1px solid var(--hairline);background:#fff;color:var(--ink);cursor:pointer}
+  .switch button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .switch .hint{margin-left:auto;font-size:11.5px;color:var(--gray)}
+
+  .screen{display:none}
+  .screen.on{display:block}
+  .card{background:#fff;border:1px solid var(--hairline);border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.06)}
+  .pane{background:#fff;border:1px solid var(--hairline);border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.06);padding:22px 24px;margin-top:14px}
+
+  h1.title{font-family:var(--display);font-size:2.1rem;letter-spacing:.02em;margin:6px 0 2px}
+  .eyebrow{font-family:var(--body);font-weight:600;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray)}
+
+  /* chips */
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);
+    background:#fff;font-size:12.5px;font-weight:500}
+  .chip .n{font-family:var(--body);font-weight:700;font-size:11px;color:var(--gray)}
+  .chip .x{color:var(--gray);cursor:pointer}
+  .chip.add{border-style:dashed;color:var(--gray);cursor:pointer}
+  .chip.sum{background:var(--bg-soft);cursor:pointer}
+
+  /* search */
+  .search{display:flex;align-items:center;gap:9px;background:var(--bg-soft);border:1px solid var(--hairline);
+    border-radius:9999px;padding:10px 16px;color:var(--gray);font-size:13px}
+
+  /* people rows */
+  .prow{display:grid;grid-template-columns:22px 1fr 64px 96px;align-items:center;gap:14px;padding:13px 15px;
+    border:1px solid var(--hairline);border-radius:12px;margin-bottom:9px;background:#fff}
+  .prow.sel{border-color:var(--ink);background:#fbfaf6}
+  .prow .em{font-size:13px;font-weight:600}
+  .prow .sub{font-size:10.5px;color:var(--gray);margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .st{font-size:8.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:9999px;border:1px solid var(--hairline);color:var(--gray);white-space:nowrap}
+  .st.sent{color:var(--ink);border-color:var(--ink)}
+  .st.miss{color:var(--red);border-color:var(--red)}
+  .st.new{border-style:dashed}
+  .match{font-family:var(--display);font-size:1.5rem;text-align:right;line-height:1}
+  .match.z{color:var(--gray)}
+  .mlab{font-size:8.5px;color:var(--gray);text-transform:uppercase;letter-spacing:.06em;text-align:right;margin-top:1px}
+  .cbx{width:18px;height:18px;border-radius:6px;border:1.5px solid var(--hairline);display:inline-block}
+  .cbx.on{background:var(--ink);border-color:var(--ink);position:relative}
+  .cbx.on::after{content:'✓';color:#fff;font-size:12px;position:absolute;left:2.5px;top:-1px}
+  .addbtn{border:1px solid var(--hairline);background:#fff;border-radius:9999px;padding:7px 0;width:88px;font-weight:600;font-size:11px;cursor:pointer;text-align:center}
+  .addbtn.in{border-color:var(--ink);background:var(--ink);color:#fff}
+
+  /* gold CTA */
+  .cta{background:var(--gold);color:#111;border:none;border-radius:9999px;padding:12px 22px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--body)}
+  .ghost{background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:11px 20px;font-weight:600;font-size:12.5px;cursor:pointer}
+
+  .muted{color:var(--gray);font-size:12px}
+  .row{display:flex;align-items:center;gap:12px}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:14px}
+
+  /* step rail (variant A) */
+  .rail{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:14px 0 4px}
+  .step{display:flex;align-items:center;gap:9px;padding:9px 15px;border-radius:9999px;border:1px solid var(--hairline);background:#fff;cursor:pointer;font-size:12.5px;font-weight:600}
+  .step .num{width:20px;height:20px;border-radius:50%;border:1px solid var(--hairline);display:grid;place-items:center;font-size:11px;color:var(--gray)}
+  .step.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .step.on .num{border-color:#fff;color:#fff}
+  .step.done .num{background:var(--green);border-color:var(--green);color:#fff}
+  .arr{color:var(--gray)}
+
+  /* cart (variant C) */
+  .twoc{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+  .cart .cline{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--hairline-soft);font-size:12.5px}
+  .cart .cline .n{font-weight:700}
+  .bignum{font-family:var(--display);font-size:2.4rem;line-height:1}
+
+  /* launch bar (variant B) */
+  .launchbar{position:sticky;bottom:0;margin-top:16px;background:#fff;border:1px solid var(--hairline);border-radius:14px;
+    box-shadow:0 -6px 22px rgba(0,0,0,.08);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+
+  /* collapsible drawer */
+  .drawer{border:1px solid var(--hairline);border-radius:12px;margin-top:12px;overflow:hidden}
+  .drawer summary{list-style:none;cursor:pointer;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;font-weight:600;font-size:12.5px;background:var(--bg-soft)}
+  .drawer summary::-webkit-details-marker{display:none}
+  .drawer .body{padding:14px 16px;border-top:1px solid var(--hairline)}
+
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;font-weight:600;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--gray);padding:8px 10px;border-bottom:1px solid var(--hairline)}
+  td{padding:9px 10px;border-bottom:1px solid var(--hairline-soft)}
+
+  /* live status mini */
+  .live{border:1px solid var(--hairline);border-radius:14px;padding:16px 18px;margin-top:14px;background:#fff}
+  .live .lg{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#555;line-height:1.7;max-height:120px;overflow:auto;border:1px solid var(--hairline-soft);border-radius:8px;padding:10px 12px;background:var(--bg-soft)}
+  .bar{height:5px;background:var(--hairline-soft);border-radius:9999px;overflow:hidden;margin:12px 0}
+  .bar>i{display:block;height:100%;width:50%;background:var(--ink)}
+  .note{font-size:11.5px;color:var(--gray);background:var(--gold-tint);border:1px solid var(--gold);border-radius:10px;padding:10px 14px;margin-top:12px}
+  .cap{font-size:11px;color:var(--gray);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="switch">
+    <span class="lab">Follower Growth</span>
+    <button class="on" data-s="A">A · Wizard steps</button>
+    <button data-s="B">B · Single column</button>
+    <button data-s="C">C · Two-pane cart</button>
+    <span class="hint" id="hint">A moves live-status + database off this screen</span>
+  </div>
+
+  <!-- ============ VARIANT A — WIZARD ============ -->
+  <section class="screen on" id="A">
+    <div class="pane">
+      <div class="eyebrow">Team follow-growth · set up &amp; launch</div>
+      <h1 class="title">Follower Growth</h1>
+      <div class="rail">
+        <div class="step done"><span class="num">✓</span> Target roles</div><span class="arr">→</span>
+        <div class="step on"><span class="num">2</span> Pick team</div><span class="arr">→</span>
+        <div class="step"><span class="num">3</span> Review &amp; launch</div><span class="arr">→</span>
+        <div class="step"><span class="num">4</span> Watch</div>
+      </div>
+      <div class="cap">One job per step — the screen only ever shows what you're doing right now. Live status &amp; the database open in step 4 / their own view.</div>
+
+      <div style="margin-top:18px" class="between">
+        <div class="row"><span class="chip sum">🎯 Targeting: <b style="margin:0 4px">Marketing</b> +6 roles ✎</span>
+          <span class="muted">57 people scanned · counts live</span></div>
+      </div>
+
+      <div class="search" style="margin-top:14px">🔎 Search the team by name or email…</div>
+
+      <div class="between" style="margin:6px 0 12px">
+        <div class="muted"><b style="color:var(--ink)">Pick who launches.</b> Sorted by best match to your roles.</div>
+        <button class="ghost">Add all ready</button>
+      </div>
+
+      <div class="prow sel"><span class="cbx on"></span>
+        <div><div class="em">alecx@ortus.solutions</div><div class="sub">7,278 connections <span class="st new">Not run yet</span></div></div>
+        <div><div class="match">767</div><div class="mlab">match</div></div>
+        <button class="addbtn in">Added</button></div>
+
+      <div class="prow sel"><span class="cbx on"></span>
+        <div><div class="em">alecx@virtualroundtable.com</div><div class="sub">3,246 connections <span class="st sent">1 sent</span></div></div>
+        <div><div class="match">484</div><div class="mlab">match</div></div>
+        <button class="addbtn in">Added</button></div>
+
+      <div class="prow"><span class="cbx"></span>
+        <div><div class="em">adriane@ortusclub.com</div><div class="sub">1,262 connections <span class="st miss">Needs a profile</span></div></div>
+        <div><div class="match">104</div><div class="mlab">match</div></div>
+        <button class="addbtn">+ Add</button></div>
+
+      <div class="prow"><span class="cbx"></span>
+        <div><div class="em">adri@ortusclub.com</div><div class="sub">611 connections <span class="st miss">Needs a profile</span></div></div>
+        <div><div class="match">17</div><div class="mlab">match</div></div>
+        <button class="addbtn">+ Add</button></div>
+
+      <div class="prow"><span class="cbx"></span>
+        <div><div class="em">aaron.bagatsolon@ortus.solutions</div><div class="sub">58 connections <span class="st new">Not run yet</span></div></div>
+        <div><div class="match z">0</div><div class="mlab">match</div></div>
+        <button class="addbtn">+ Add</button></div>
+
+      <div class="launchbar">
+        <div class="row"><span class="bignum">2</span>
+          <div><div style="font-weight:700">people selected · 60 invites this run</div>
+          <div class="muted">Each account sends up to its 30 monthly credits</div></div></div>
+        <div class="row"><button class="ghost">Back</button><button class="cta">Review &amp; launch →</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT B — SINGLE COLUMN ============ -->
+  <section class="screen" id="B">
+    <div class="pane">
+      <div class="eyebrow">Team follow-growth</div>
+      <h1 class="title">Follower Growth</h1>
+
+      <details class="drawer" open style="margin-top:16px">
+        <summary><span>🎯 Targeting — Marketing, Brand, Growth <span class="muted">+4 more · counts update live</span></span><span class="muted">edit ▾</span></summary>
+        <div class="body">
+          <div class="chips">
+            <span class="chip">Marketing <span class="x">×</span></span>
+            <span class="chip">Brand <span class="x">×</span></span>
+            <span class="chip">Growth <span class="x">×</span></span>
+            <span class="chip">Content <span class="x">×</span></span>
+            <span class="chip">Demand <span class="x">×</span></span>
+            <span class="chip">Comms <span class="x">×</span></span>
+            <span class="chip">CMO <span class="x">×</span></span>
+            <span class="chip add">+ Sales</span><span class="chip add">+ Product</span><span class="chip add">+ Events</span>
+          </div>
+          <div class="cap">Defaults toward marketers. Applies to everyone in the list below.</div>
+        </div>
+      </details>
+
+      <!-- live status only appears while running -->
+      <div class="live">
+        <div class="between"><div class="row"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span>
+          <b style="font-family:var(--display);font-size:1.3rem">Team Follower Growth · running</b></div>
+          <button class="ghost">👁 Show live</button></div>
+        <div class="bar"><i></i></div>
+        <div class="muted">2 of 4 accounts sent · 56 invites · <b style="color:var(--ink)">↗ selecting Gabriela Zaninetti · 9/30 on jaffersonf</b></div>
+        <div class="lg" style="margin-top:10px">✓ Enrique Antonio Reyes · invited · 14:57<br>✓ Patrick Roach · invited · 14:57<br>✓ Flavia Drummond · invited · 14:57<br>↗ selecting Gabriela Zaninetti…</div>
+      </div>
+
+      <div class="search" style="margin-top:16px">🔎 Search the team by name or email…</div>
+      <div class="cap" style="margin:8px 2px 12px">Tap a row to add it to this run. Sorted by best match.</div>
+
+      <div class="prow sel"><span class="cbx on"></span>
+        <div><div class="em">alecx@ortus.solutions</div><div class="sub">7,278 connections <span class="st new">Not run yet</span></div></div>
+        <div><div class="match">767</div><div class="mlab">match</div></div>
+        <button class="addbtn in">Added</button></div>
+      <div class="prow sel"><span class="cbx on"></span>
+        <div><div class="em">alecx@virtualroundtable.com</div><div class="sub">3,246 connections <span class="st sent">1 sent</span></div></div>
+        <div><div class="match">484</div><div class="mlab">match</div></div>
+        <button class="addbtn in">Added</button></div>
+      <div class="prow"><span class="cbx"></span>
+        <div><div class="em">adriane@ortusclub.com</div><div class="sub">1,262 connections <span class="st miss">Needs a profile</span></div></div>
+        <div><div class="match">104</div><div class="mlab">match</div></div>
+        <button class="addbtn">+ Add</button></div>
+      <div class="prow"><span class="cbx"></span>
+        <div><div class="em">aldline.grude@ortus.solutions</div><div class="sub">145 connections <span class="st miss">Needs a profile</span></div></div>
+        <div><div class="match">3</div><div class="mlab">match</div></div>
+        <button class="addbtn">+ Add</button></div>
+
+      <details class="drawer" style="margin-top:14px">
+        <summary><span>📊 Follower Growth database — 57 records</span><span class="muted">view ▾</span></summary>
+        <div class="body" style="padding:0">
+          <table>
+            <tr><th>Name</th><th>Title</th><th>Account</th><th>Status</th></tr>
+            <tr><td>Riccardo Aragona</td><td>CMO &amp; Alliance</td><td>antonio@ortusclub.com</td><td>Invited</td></tr>
+            <tr><td>Alex Malanch</td><td>Global Customer Marketing Manager</td><td>antonio@ortusclub.com</td><td>Invited</td></tr>
+            <tr><td>Paola Iannone</td><td>VP Marketing and Communication</td><td>antonio@ortusclub.com</td><td>Invited</td></tr>
+          </table>
+        </div>
+      </details>
+
+      <div class="launchbar">
+        <div class="row"><span class="bignum">2</span>
+          <div><div style="font-weight:700">people · 60 invites this run</div>
+          <div class="muted">up to 30 credits each · runs 1 account at a time</div></div></div>
+        <button class="cta">Launch 2 in cloud →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT C — TWO-PANE CART ============ -->
+  <section class="screen" id="C">
+    <div class="pane">
+      <div class="eyebrow">Team follow-growth</div>
+      <h1 class="title">Follower Growth</h1>
+
+      <div class="between" style="margin:14px 0 4px">
+        <span class="chip sum">🎯 Targeting: <b style="margin:0 4px">Marketing</b> +6 roles ✎</span>
+        <div class="row"><span class="muted">Live run &amp; records →</span><button class="ghost">Run status</button></div>
+      </div>
+      <div class="cap">Targeting collapses to one line. Accounts board, live-status card &amp; the database all live behind “Run status”, off this setup screen.</div>
+
+      <div class="twoc" style="margin-top:16px">
+        <div>
+          <div class="search" style="margin-bottom:12px">🔎 Search the team by name or email…</div>
+          <div class="prow sel"><span class="cbx on"></span>
+            <div><div class="em">alecx@ortus.solutions</div><div class="sub">7,278 conn <span class="st new">Not run yet</span></div></div>
+            <div><div class="match">767</div><div class="mlab">match</div></div>
+            <button class="addbtn in">✓</button></div>
+          <div class="prow sel"><span class="cbx on"></span>
+            <div><div class="em">alecx@virtualroundtable.com</div><div class="sub">3,246 conn <span class="st sent">1 sent</span></div></div>
+            <div><div class="match">484</div><div class="mlab">match</div></div>
+            <button class="addbtn in">✓</button></div>
+          <div class="prow"><span class="cbx"></span>
+            <div><div class="em">adriane@ortusclub.com</div><div class="sub">1,262 conn <span class="st miss">Needs a profile</span></div></div>
+            <div><div class="match">104</div><div class="mlab">match</div></div>
+            <button class="addbtn">+ Add</button></div>
+          <div class="prow"><span class="cbx"></span>
+            <div><div class="em">adri@ortusclub.com</div><div class="sub">611 conn <span class="st miss">Needs a profile</span></div></div>
+            <div><div class="match">17</div><div class="mlab">match</div></div>
+            <button class="addbtn">+ Add</button></div>
+          <div class="prow"><span class="cbx"></span>
+            <div><div class="em">aaron.bagatsolon@ortus.solutions</div><div class="sub">58 conn <span class="st new">Not run yet</span></div></div>
+            <div><div class="match z">0</div><div class="mlab">match</div></div>
+            <button class="addbtn">+ Add</button></div>
+        </div>
+
+        <div class="card" style="padding:18px 18px 20px;position:sticky;top:78px">
+          <div class="eyebrow">Your launch list</div>
+          <div class="cart" style="margin-top:8px">
+            <div class="cline"><span class="n">jaffersonf@ortus.solutions</span><span class="muted">30</span></div>
+            <div class="cline"><span class="n">irainc@apexstrategy.io</span><span class="muted">30</span></div>
+            <div class="cline"><span class="n">jeremiah@ortusclub.com</span><span class="muted">30</span></div>
+            <div class="cline"><span class="n">jeriannec@ortus.solutions</span><span class="muted">30</span></div>
+          </div>
+          <div class="between" style="margin-top:16px">
+            <div><div class="bignum">4</div><div class="mlab" style="text-align:left">people</div></div>
+            <div><div class="bignum">120</div><div class="mlab" style="text-align:left">invites this run</div></div>
+          </div>
+          <button class="cta" style="width:100%;margin-top:16px">Launch 4 in cloud</button>
+          <div class="cap" style="text-align:center">Runs sequentially · 1 account at a time</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const hints={A:'A · Wizard: one job per step; live-status + database move to step 4 / their own view.',
+    B:'B · Single column: everything on one page, but only one section is expanded at a time (targeting + database are drawers; live-status appears only while running).',
+    C:'C · Two-pane cart: keeps the list+cart model, strips targeting to one line, moves the run board + live card + database behind “Run status”.'};
+  document.querySelectorAll('.switch button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('.switch button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.screen').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');document.getElementById(b.dataset.s).classList.add('on');
+    document.getElementById('hint').textContent=hints[b.dataset.s];
+  });
+  // toy interactivity: click a row to toggle selection
+  document.querySelectorAll('.prow').forEach(r=>r.onclick=e=>{
+    if(e.target.closest('a'))return;
+    r.classList.toggle('sel');const c=r.querySelector('.cbx');if(c)c.classList.toggle('on');
+    const b=r.querySelector('.addbtn');if(b){const on=r.classList.contains('sel');b.classList.toggle('in',on);b.textContent=on?'Added':'+ Add';}
+  });
+</script>
+</body>
+</html>

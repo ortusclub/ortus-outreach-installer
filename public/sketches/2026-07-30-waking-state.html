@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Sketch — "waking a worker" state</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- the REAL app stylesheets, not a copy -->
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  /* sketch chrome only — nothing here ships */
+  body { padding: 28px 34px 70px; }
+  h1 { font-family: 'Bebas Neue', sans-serif; font-size: 30px; letter-spacing: .5px; margin: 0 0 4px; }
+  .sub { color: var(--text-secondary, #666); font-size: 13px; margin: 0 0 26px; }
+  .grp { margin: 0 0 34px; }
+  .grp > h2 { font-family: 'Bebas Neue', sans-serif; font-size: 19px; letter-spacing: .6px;
+              margin: 0 0 3px; padding-top: 16px; border-top: 1px solid rgba(128,128,128,.22); }
+  .grp > p { color: var(--text-secondary, #666); font-size: 12.5px; margin: 0 0 16px; max-width: 70ch; }
+  .lbl { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .09em;
+         text-transform: uppercase; color: var(--text-secondary, #777); margin: 0 0 7px; }
+  .lbl b { color: var(--gold, #d4a24a); }
+  .box { border: 1px solid rgba(128,128,128,.24); border-radius: 8px; padding: 15px 18px; margin: 0 0 13px; }
+  .box.now { border-color: rgba(128,128,128,.16); opacity: .62; }
+  .box.pick { border-color: var(--gold, #d4a24a); }
+  .note { font-size: 12px; color: var(--text-secondary, #666); margin: 8px 0 0; }
+  /* the ONE new rule this sketch proposes — sized like .is-checking so the
+     three hero states read as one family, but BOLD and static: WAKING is solid
+     gold at 700, CHECKING is lighter and pulses. Weight is the tell. */
+  body[data-dashboard='v3'] .vj-mon-hero.is-waking .vj-mon-count {
+    font-size: 1.5rem; font-weight: 700; color: var(--gold);
+    letter-spacing: 0.07em; opacity: 1;
+  }
+  body[data-dashboard='v3'] .vj-mon-hero.is-waking .vj-mon-cap {
+    color: var(--gold); font-weight: 600; opacity: 1;
+  }
+  /* dashboard strip: same bolder gold on the second line */
+  body[data-dashboard='v3'] .vj-live.is-waking .vj-live-l2 {
+    color: var(--gold); font-weight: 700;
+  }
+</style>
+</head>
+<body data-dashboard="v3">
+
+<h1>The “waking a worker” state</h1>
+<p class="sub">Real <code>style.css</code> + <code>dashboard-v0.3.css</code>, real markup from <code>index.html</code>. Only the gold <code>.is-waking</code> rule is new.</p>
+
+<div class="grp">
+  <h2>Today — the two states that exist</h2>
+  <p>Between them sits a gap. When a check is due but no worker has picked it up, the countdown just reads <code>now</code> — which is what showed for 45 minutes this morning while nothing was actually running.</p>
+
+  <p class="lbl">A · counting down</p>
+  <div class="box now">
+    <div class="vj-monitor" style="display:block">
+      <div class="vj-mon-hero is-dual"><span class="vj-mon-count">12:04</span><span class="vj-mon-cap">until next check</span></div>
+      <div class="vj-mon-line">151 sent · 5 accepted · checks every 1h · ends Wed, 5 Aug</div>
+    </div>
+  </div>
+
+  <p class="lbl">B · sweeping</p>
+  <div class="box now">
+    <div class="vj-monitor" style="display:block">
+      <div class="vj-mon-hero is-dual is-checking"><span class="vj-mon-count">CHECKING</span><span class="vj-mon-cap">now</span></div>
+      <div class="vj-mon-line">151 sent · 5 accepted · checks every 1h · ends Wed, 5 Aug</div>
+    </div>
+  </div>
+</div>
+
+<div class="grp">
+  <h2>Three ways to fill the gap</h2>
+  <p>All three use the same hero slot and the same signal (the monitor task is armed but unclaimed). They differ only in what the operator reads.</p>
+
+  <p class="lbl">1 · <b>WAKING</b> — mirrors CHECKING</p>
+  <div class="box pick">
+    <div class="vj-monitor" style="display:block">
+      <div class="vj-mon-hero is-dual is-waking"><span class="vj-mon-count">WAKING</span><span class="vj-mon-cap">sweeping in ~2 min</span></div>
+      <div class="vj-mon-line">151 sent · 5 accepted · checks every 1h · ends Wed, 5 Aug</div>
+    </div>
+    <p class="note">Same word-shape as CHECKING, so the three states read as one family. No number that can go stale.</p>
+  </div>
+
+  <p class="lbl">2 · <b>~2 min</b> — reads like the countdown</p>
+  <div class="box">
+    <div class="vj-monitor" style="display:block">
+      <div class="vj-mon-hero is-dual is-waking"><span class="vj-mon-count">~2 min</span><span class="vj-mon-cap">until the sweep starts</span></div>
+      <div class="vj-mon-line">151 sent · 5 accepted · checks every 1h · ends Wed, 5 Aug</div>
+    </div>
+    <p class="note">Keeps a duration in the big slot. But it sits still while a real countdown moves — may read as frozen.</p>
+  </div>
+
+  <p class="lbl">3 · <b>STARTING</b> — no duration promised</p>
+  <div class="box">
+    <div class="vj-monitor" style="display:block">
+      <div class="vj-mon-hero is-dual is-waking"><span class="vj-mon-count">STARTING</span><span class="vj-mon-cap">waking a worker…</span></div>
+      <div class="vj-mon-line">151 sent · 5 accepted · checks every 1h · ends Wed, 5 Aug</div>
+    </div>
+    <p class="note">Promises nothing it can miss. Boot measured 65–98s today, so “~2 min” is a real estimate — but an estimate.</p>
+  </div>
+</div>
+
+<div class="grp">
+  <h2>Dashboard strip (card #1)</h2>
+  <p>The narrow always-on strip. Same signal, two lines.</p>
+  <div class="box now">
+    <div class="vj-live" style="display:flex"><span class="vj-live-ico"></span><span class="vj-live-txt">
+      <span class="vj-live-l1">CC+IC · NUSHE 27.07</span><span class="vj-live-l2">Waiting for next check · nothing running right now</span></span></div>
+    <p class="note">today — the line that lies during a wake</p>
+  </div>
+  <div class="box pick">
+    <div class="vj-live is-waking" style="display:flex"><span class="vj-live-ico"></span><span class="vj-live-txt">
+      <span class="vj-live-l1">CC+IC · NUSHE 27.07</span><span class="vj-live-l2">Waking a worker · sweeping in ~2 min</span></span></div>
+    <p class="note">proposed</p>
+  </div>
+</div>
+
+<div class="grp">
+  <h2>Live log</h2>
+  <p>One line when the sweep is armed, so the wake is visible in the history and not only in a transient badge.</p>
+  <div class="box pick">
+    <div class="vj-monitor" style="display:block">
+      <div class="vj-mon-line" style="font-family:'JetBrains Mono',monospace; font-size:12px; line-height:2">
+        ⏰ Check due — waking a worker, sweeping in ~2 min<br>
+        🖥️ Checking cindy.siapno@ortus.solutions…<br>
+        ✓ Check complete — 5 newly accepted across 4 accounts
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

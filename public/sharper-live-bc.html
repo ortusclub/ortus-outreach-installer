@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ortus Outreach — B + C combined</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css?v=2.160.127" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.127" />
+<style>
+  .skbar { position:fixed; right:18px; bottom:18px; z-index:99; display:flex; gap:8px; align-items:center;
+           background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px;
+           padding:10px 13px; box-shadow:0 10px 34px rgba(0,0,0,.34); }
+  .skbar .lab { font-family:var(--mono); font-size:.6rem; letter-spacing:.15em; text-transform:uppercase; color:var(--gray-faint); }
+  .skbar button { font-family:var(--mono); font-size:.68rem; padding:6px 11px; border-radius:6px; cursor:pointer;
+                  border:1px solid var(--hairline-soft); background:transparent; color:var(--gray); }
+  .skbar button.on { border-color:var(--gold); color:var(--ink); }
+  .skbar .sep { width:1px; align-self:stretch; background:var(--hairline-soft); margin:0 3px; }
+  .sknow { position:fixed; left:calc(var(--sidebar-w) + 30px); bottom:18px; z-index:99;
+           font-family:var(--mono); font-size:.63rem; letter-spacing:.14em; text-transform:uppercase;
+           color:var(--gold); border:1px solid rgba(247,190,104,.4); border-radius:8px; padding:8px 12px;
+           background:var(--card-bg); cursor:pointer; }
+  .sknow.today { color:var(--red); border-color:rgba(248,81,73,.32); }
+
+  /* Which surface am I looking at — labels, not part of the proposal. */
+  .surf { display:flex; align-items:baseline; gap:11px; margin:0 0 9px; }
+  .surf .n { font-family:var(--mono); font-size:.62rem; letter-spacing:.18em; text-transform:uppercase; color:var(--gold); }
+  .surf .d { font-size:.75rem; color:var(--gray-faint); }
+  .surfgap { height:34px; }
+
+  /* ═══ THE PROPOSAL ═══════════════════════════════════════════════════════ */
+  .stg { grid-column:1/-1; display:flex; gap:20px; align-items:flex-start;
+         padding:18px 20px; border-radius:12px; background:var(--bg-soft);
+         border:1px solid var(--hairline-soft); }
+
+  .gly { width:78px; height:56px; flex:none; position:relative; display:flex; align-items:center; justify-content:center; }
+  .gly .secs { position:absolute; bottom:-4px; left:0; right:0; text-align:center;
+               font-family:var(--mono); font-size:.68rem; color:var(--gray-faint); }
+
+  .fly { position:relative; width:70px; height:26px; }
+  .fly i { position:absolute; top:4px; left:0; font-size:1.05rem; color:var(--green); opacity:0;
+           animation:fly 1.5s cubic-bezier(.4,0,.6,1) infinite; }
+  .fly i:nth-child(3){animation-delay:.5s} .fly i:nth-child(4){animation-delay:1s}
+  @keyframes fly { 0%{transform:translateX(0) scale(.85);opacity:0} 18%{opacity:1} 72%{opacity:1}
+                   100%{transform:translateX(50px) scale(1);opacity:0} }
+  .fly u { position:absolute; top:12px; left:2px; width:64px; height:1px; display:block;
+           background:repeating-linear-gradient(90deg,var(--hairline-soft) 0 4px,transparent 4px 8px); }
+
+  .typ { display:flex; gap:6px; align-items:center; height:26px; }
+  .typ i { width:8px; height:8px; border-radius:9999px; background:var(--green); opacity:.3;
+           animation:typ 1.25s ease-in-out infinite; }
+  .typ i:nth-child(2){animation-delay:.16s} .typ i:nth-child(3){animation-delay:.32s}
+  @keyframes typ { 0%,60%,100%{opacity:.28;transform:translateY(0)} 30%{opacity:1;transform:translateY(-5px)} }
+
+  .swp { width:30px; height:30px; border-radius:9999px; border:2.5px solid var(--hairline-soft);
+         border-top-color:var(--blue); border-right-color:var(--blue); animation:vj-live-spin 1s linear infinite; }
+
+  .stg.paused .fly i, .stg.paused .typ i, .stg.paused .swp { animation-play-state:paused; opacity:.35; }
+
+  .stgbody { flex:1; min-width:0; }
+  .bigverb { font-family:var(--mono); font-size:.67rem; letter-spacing:.2em; text-transform:uppercase; }
+  .bigname { font-family:'Bebas Neue',sans-serif; font-size:2.15rem; letter-spacing:.02em; line-height:1.04;
+             margin:4px 0 3px; color:var(--ink); }
+  .bigname.swap { animation:nameIn .42s cubic-bezier(.2,.7,.3,1); }
+  @keyframes nameIn { from{opacity:0;transform:translateY(7px)} to{opacity:1;transform:none} }
+  .bigsub { font-size:.79rem; color:var(--gray); }
+
+  /* Account row — one .cap-badge pill per account (index.html:1433), name and
+     count inside the same oval. Colour carries state; a word only where a
+     number can't say it. */
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:15px; align-items:center; }
+  .acct { background:transparent; border:0; padding:0; cursor:pointer; }
+  .cap-badge { display:inline-flex; align-items:center; gap:7px; padding:4px 12px; border-radius:9999px;
+               font-size:11px; letter-spacing:.02em; border:1px solid var(--hairline);
+               white-space:nowrap; color:var(--gray); transition:border-color .18s, color .18s; }
+  .cap-badge .nm3 { font-family:var(--body); font-size:.76rem; color:var(--gray); transition:color .18s; }
+  .cap-badge .n2  { opacity:.72; }
+  .acct:hover .cap-badge { border-color:var(--ink); }
+  .acct:hover .cap-badge .nm3 { color:var(--ink); }
+  .cap-badge.ok   { color:var(--green); border-color:var(--green); }
+  .cap-badge.ok .nm3 { color:var(--green); font-weight:500; }
+  .cap-badge.warn { color:var(--gold,#d4a24a); border-color:var(--gold,#d4a24a); }
+  .cap-badge.warn .nm3 { color:var(--gold,#d4a24a); }
+  .cap-badge.bad  { color:var(--red); border-color:var(--red); }
+  .cap-badge.bad .nm3 { color:var(--red); }
+  .acct.sel .cap-badge { box-shadow:0 0 0 3px rgba(247,190,104,.22); }
+
+  .drawer { grid-column:1/-1; margin-top:11px; border:1px solid var(--hairline-soft); border-radius:10px;
+            padding:14px 16px; background:var(--card-bg); }
+  .drawer.in { animation:rowIn .3s cubic-bezier(.2,.7,.3,1); }
+  .drawer .dh { display:flex; align-items:baseline; gap:11px; margin-bottom:9px; }
+  .drawer .dh b { font-size:.92rem; }
+  .drawer .dh .st { font-family:var(--mono); font-size:.63rem; letter-spacing:.12em; text-transform:uppercase; }
+  .drawer .dl { font-size:.79rem; color:var(--gray); line-height:1.6; }
+  .drawer .acts { display:flex; gap:7px; margin-top:12px; flex-wrap:wrap; }
+  .drawer .acts button { font-size:.72rem; padding:6px 12px; border-radius:6px; cursor:pointer;
+                         border:1px solid var(--hairline-soft); background:transparent; color:var(--ink); }
+  .drawer .acts button:hover { border-color:var(--gold); }
+  .drawer .x { margin-left:auto; cursor:pointer; color:var(--gray-faint); font-size:.8rem; }
+
+  .rollhd { grid-column:1/-1; display:flex; align-items:baseline; justify-content:space-between; margin:16px 0 2px; }
+  .rollhd .h { font-family:var(--mono); font-size:.62rem; letter-spacing:.16em; text-transform:uppercase; color:var(--gray-faint); }
+  .roll { grid-column:1/-1; list-style:none; margin:0; padding:0; }
+  .roll li { display:flex; align-items:center; gap:12px; padding:7px 0; font-size:.85rem;
+             border-bottom:1px solid var(--hairline-soft); }
+  .roll li:last-child { border-bottom:0; }
+  .roll li .ic { width:15px; flex:none; text-align:center; font-family:var(--mono); font-size:.76rem; }
+  .roll li .nm2 { flex:1; color:var(--gray); cursor:pointer; }
+  .roll li .nm2:hover { color:var(--ink); text-decoration:underline; text-underline-offset:3px; text-decoration-color:var(--gold); }
+  .roll li .tick { font-family:var(--mono); font-size:.7rem; color:var(--gray-faint); }
+  .roll li.ok .ic { color:var(--green); }
+  .roll li.ok .nm2 { color:var(--gray-faint); }
+  .roll li.now { padding:11px 10px; margin:0 -10px; border-radius:9px; background:var(--card-bg);
+                 border:1px solid var(--hairline-soft); position:relative; overflow:hidden; }
+  .roll li.now .nm2 { color:var(--ink); font-weight:500; }
+  .roll li.now::after { content:""; position:absolute; left:0; bottom:0; height:2px; width:34%;
+                        background:linear-gradient(90deg,transparent,var(--green),transparent);
+                        animation:shuttle 1.9s ease-in-out infinite; }
+  .roll li.now.check::after { background:linear-gradient(90deg,transparent,var(--blue),transparent); }
+  @keyframes shuttle { 0%{left:-34%} 100%{left:100%} }
+  .roll li.fresh { animation:rowIn .45s cubic-bezier(.2,.7,.3,1); }
+  @keyframes rowIn { from{opacity:0;transform:translateY(-9px)} to{opacity:1;transform:none} }
+
+  .beat { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between;
+          margin-top:14px; padding-top:11px; border-top:1px solid var(--hairline-soft);
+          font-family:var(--mono); font-size:.65rem; color:var(--gray-faint); }
+  .beat .l { display:flex; align-items:center; gap:8px; }
+  .beat .bd { width:6px; height:6px; border-radius:9999px; background:var(--green); opacity:.28; }
+  .beat .bd.hit { animation:beat .9s ease-out; }
+  @keyframes beat { 0%{opacity:1;transform:scale(1.9)} 100%{opacity:.28;transform:scale(1)} }
+  .beat .stale { color:var(--gold); }
+
+
+  /* ── VERBATIM from index.html:1361-1692 (the .sn-* board styles live in an
+     inline <style id="sn-board-styles"> block, not in a .css file). ────── */
+  /* Campaigns | Sales Nav top-level segmented toggle (drawing 1) */
+  .route-seg{display:inline-flex;border:1px solid var(--hairline);border-radius:9999px;padding:3px;margin:8px 0 26px;}
+  .route-seg-btn{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--gray);background:transparent;border:0;border-radius:9999px;padding:9px 20px;cursor:pointer;transition:background .12s,color .12s;}
+  .route-seg-btn.is-active{background:var(--ink);color:var(--bg);}
+  .route-seg-btn:not(.is-active):hover{color:var(--ink);}
+  #salesnav-view > .route-seg{margin-top:14px;}
+
+  /* Composer restyle — scoped to the board's inline setup (#sn-setup) ONLY, so
+     the shared campaign-wizard sections keep their styling everywhere else.
+     Turns the elevated cards into flat, hairline-separated sections. */
+  /* count row — one bordered box, no dividers (matches sketch) */
+  #sn-setup .scrape-stats{gap:0;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;margin:4px 0 0;}
+  #sn-setup .scrape-stat{background:transparent;border:0;border-radius:0;box-shadow:none;padding:16px 24px;}
+  #sn-setup .scrape-panel{background:transparent;border:0;border-top:1px solid var(--hairline);border-radius:0;box-shadow:none;padding:22px 2px 6px;margin-top:14px;}
+  #sn-setup .scrape-panel:first-of-type{border-top:0;}
+  #sn-setup .scrape-statuscard{box-shadow:none;}
+  /* drop the wizard's "2b. Sales Nav Scrape" section heading — the board header labels it */
+  #sn-setup #nav-scrape > h2.section-toggle{display:none;}
+  /* hide the wizard's numbered-section pointers (no numbers on the board) */
+  #sn-setup #scrape-hint-accounts, #sn-setup #scrape-hint-launch{display:none;}
+  /* real bordered fields (the wizard's underline inputs read as empty lines here) */
+  #sn-setup #scrape-urls{border:1px solid var(--hairline);border-radius:10px;padding:12px 14px;min-height:92px;background:var(--card-bg);}
+  #sn-setup input[type=text]{border:1px solid var(--hairline);border-radius:10px;padding:11px 13px;background:var(--card-bg);}
+  #sn-setup .scrape-label{margin-bottom:8px;}
+  /* editable hero campaign name, pulled to the top of the composer (label below) */
+  #sn-setup #scrape-name-field{display:flex;flex-direction:column-reverse;margin:0 0 28px;}
+  #sn-setup #scrape-name-field .scrape-label{margin:12px 0 0;}
+  #sn-setup #scrape-name{font-family:var(--display);font-size:52px;line-height:1;letter-spacing:.02em;text-transform:uppercase;border:0;border-bottom:2px solid var(--hairline);border-radius:0;padding:4px 0 12px;background:transparent;}
+  #sn-setup #scrape-name:focus{border-color:var(--ink);outline:none;}
+  #sn-setup #scrape-name::placeholder{font-family:var(--display);font-size:52px;text-transform:uppercase;color:#d0d0d0;opacity:1;}
+
+  /* Sales Nav board — namespaced (sn-/snm-) so nothing collides with style.css */
+  .sn-boardhead{display:flex;align-items:flex-end;gap:16px;margin:0 0 6px;}
+  .sn-boardhead > div:first-child{margin-right:auto;}
+  .sn-kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .sn-boardtitle{font-family:var(--display);font-weight:400;font-size:40px;line-height:.92;margin:4px 0 0;}
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-empty{font-size:12px;color:var(--gray);padding:18px 0;}
+
+  /* handover banner */
+  .sn-handover{display:none;align-items:center;gap:14px;margin:18px 0 4px;padding:14px 18px;border-radius:12px;border:1px solid var(--hairline);background:var(--hairline-soft);}
+  .sn-handover.show{display:flex;}
+  .sn-handover .spin{width:16px;height:16px;border-radius:9999px;border:2px solid var(--hairline);border-top-color:var(--ink);animation:sn-spin .8s linear infinite;flex:none;}
+  @keyframes sn-spin{to{transform:rotate(360deg);}}
+  .sn-handover .txt{font-size:12.5px;color:var(--gray);}
+  .sn-handover .txt b{color:var(--ink);font-weight:600;}
+  .sn-handover.stopping{border-left:3px solid var(--red);}
+  .sn-handover.launching{border-left:3px solid var(--green);}
+  .sn-handover.launching .spin{border-top-color:var(--green);}
+
+  #sn-setup{margin:32px 0 28px;padding:32px 0 8px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
+  .sn-setup-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 26px;}
+  .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;display:flex;align-items:center;gap:12px;}
+  /* Small spinner shown beside "Loading scrape…" so it's clearly loading, not stalled. */
+  .sn-setup-spinner{width:16px;height:16px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
+  @keyframes sn-spin{to{transform:rotate(360deg);}}
+  .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-clear-cat{margin-left:auto;font:inherit;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);background:none;border:1px solid var(--hairline);border-radius:9999px;padding:3px 10px;cursor:pointer;transition:color .12s,border-color .12s;}
+  .sn-clear-cat:hover{color:var(--ink);border-color:var(--ink);}
+  .sn-railcount{color:#c4c4c4;}
+  .sn-sectionhead{font-family:var(--display);font-size:20px;letter-spacing:.02em;color:var(--ink);margin:30px 0 4px;padding-bottom:8px;border-bottom:1px solid var(--hairline);}
+  .sn-sectionhead:first-child{margin-top:8px;}
+  /* Board loading state — the /api/jobs fetch can take several seconds. */
+  .sn-loading{display:flex;align-items:center;gap:12px;color:var(--gray);font-size:13px;padding:34px 2px;}
+  .sn-loading .sp{width:18px;height:18px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
+  /* ── Per-account status panel (cloud CC+IC), below the Live Status card ── */
+  .cloud-accounts-panel{margin:14px 0 4px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;}
+  .cloud-accounts-panel .cap-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hairline-soft);font-family:var(--display);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .cloud-accounts-panel .cap-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 16px;border-bottom:1px solid var(--hairline-soft);font-size:13px;}
+  .cloud-accounts-panel .cap-row:last-child{border-bottom:0;}
+  .cloud-accounts-panel .cap-acct{font-weight:600;color:var(--ink);word-break:break-all;}
+  .cloud-accounts-panel .cap-status{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;text-align:right;color:var(--gray);}
+  .cloud-accounts-panel .cap-badge{display:inline-block;padding:2px 9px;border-radius:9999px;font-size:11px;letter-spacing:.02em;border:1px solid var(--hairline);white-space:nowrap;}
+  .cloud-accounts-panel .cap-badge.ok{color:var(--green);border-color:var(--green);}
+  .cloud-accounts-panel .cap-badge.warn{color:var(--gold,#d4a24a);border-color:var(--gold,#d4a24a);}
+  .cloud-accounts-panel .cap-badge.bad{color:var(--red);border-color:var(--red);}
+  .cloud-accounts-panel .cap-badge.muted{color:var(--gray);}
+  /* Retry (un-bench) — styled as a clickable pill matching the cap-badges, ink
+     outline so it reads as the actionable one in the row. */
+  .cloud-accounts-panel .cap-retry{display:inline-block;padding:2px 12px;border-radius:9999px;font-size:11px;letter-spacing:.02em;white-space:nowrap;border:1px solid var(--ink,#111);color:var(--ink,#111);background:transparent;cursor:pointer;font-family:inherit;line-height:inherit;transition:background .12s,color .12s;}
+  .cloud-accounts-panel .cap-retry:hover{background:var(--ink,#111);color:var(--paper,#fff);}
+  .cloud-accounts-panel .cap-retry:disabled{opacity:.5;cursor:default;background:transparent;color:var(--ink,#111);}
+  /* Account on/off toggle — shown only while the campaign is paused/stopped, so
+     the operator can drop an account (and add another) before resuming. Reads as
+     the local pause-edit switch: green when the account is in the run. */
+  .cloud-accounts-panel .cap-toggle{position:relative;width:38px;height:22px;flex:0 0 auto;border-radius:9999px;border:1px solid var(--hairline);background:var(--hairline-soft,#eee);cursor:pointer;padding:0;transition:background .14s,border-color .14s;}
+  .cloud-accounts-panel .cap-toggle.on{background:var(--green,#2f9e44);border-color:var(--green,#2f9e44);}
+  .cloud-accounts-panel .cap-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:9999px;background:var(--paper,#fff);transition:transform .14s;}
+  .cloud-accounts-panel .cap-toggle.on::after{transform:translateX(16px);}
+  .cloud-accounts-panel .cap-toggle:disabled{opacity:.5;cursor:default;}
+  .cloud-accounts-panel .cap-add{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--hairline-soft);}
+  .cloud-accounts-panel .cap-add-lbl{font-size:12px;color:var(--gray);white-space:nowrap;}
+  .cloud-accounts-panel .cap-add-sel{flex:1;min-width:0;font-family:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--hairline);border-radius:8px;background:transparent;color:var(--ink,#111);}
+  .cloud-accounts-panel .cap-add-btn{padding:5px 14px;border-radius:9999px;font-size:11px;letter-spacing:.02em;border:1px solid var(--ink,#111);color:var(--ink,#111);background:transparent;cursor:pointer;font-family:inherit;}
+  .cloud-accounts-panel .cap-add-btn:hover{background:var(--ink,#111);color:var(--paper,#fff);}
+  .cloud-accounts-panel .cap-add-btn:disabled{opacity:.5;cursor:default;background:transparent;color:var(--ink,#111);}
+  .cloud-accounts-panel .cap-foot-hint{padding:10px 16px;border-top:1px solid var(--hairline-soft);font-size:11px;color:var(--gray);}
+  /* ── Admin board sections (Your / Other users / Admin) ── */
+  .cb-section{border:1px solid var(--hairline);border-radius:14px;padding:4px 16px 14px;margin:14px 0;}
+  .cb-section.cb-collapsed{padding-bottom:4px;}
+  .cb-sectionhead{display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;padding:12px 2px;margin:0;border-radius:8px;transition:background .12s;}
+  .cb-sectionhead:hover{background:color-mix(in srgb, var(--ink) 4%, transparent);}
+  .cb-caret{display:inline-flex;align-items:center;justify-content:center;color:var(--ink);}
+  .cb-caretsvg{transition:transform .14s ease;}
+  .cb-caretsvg.cl{transform:rotate(-90deg);}      /* collapsed → points right */
+  .cb-sectionhead:hover .cb-caret,.cb-subhead:hover .cb-caret{color:var(--accent, var(--ink));}
+  .cb-sectionhead:hover .cb-caretsvg,.cb-subhead:hover .cb-caretsvg{transform:scale(1.12);}
+  .cb-sectionhead:hover .cb-caretsvg.cl,.cb-subhead:hover .cb-caretsvg.cl{transform:rotate(-90deg) scale(1.12);}
+  .cb-sectitle{font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--ink);text-transform:none;}
+  .cb-secsub{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .cb-seccount{font-family:var(--mono);font-size:11px;color:var(--gray);background:var(--hairline);border-radius:9999px;padding:1px 9px;}
+  .cb-headextra{margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .cb-searchwrap{display:inline-flex;align-items:center;gap:7px;background:var(--surface,#fff);border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;transition:border-color .12s,box-shadow .12s;}
+  .cb-searchwrap:focus-within{border-color:var(--ink);box-shadow:0 0 0 3px color-mix(in srgb, var(--ink) 9%, transparent);}
+  .cb-searchic{color:var(--gray);flex:none;transition:color .12s;}
+  .cb-searchwrap:focus-within .cb-searchic{color:var(--ink);}
+  .cb-searchwrap .cb-usersearch{font-size:12.5px;color:var(--ink);background:transparent;border:0!important;outline:none!important;box-shadow:none!important;padding:1px 0;width:120px;transition:width .14s;-webkit-appearance:none;appearance:none;}
+  .cb-searchwrap .cb-usersearch:focus{width:165px;}
+  .cb-usersearch::placeholder{color:var(--gray);}
+  .cb-usersearch::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;}
+  .cb-secbody{margin-top:2px;}
+  .cb-secbody .sn-railhead:first-child{margin-top:6px;}
+  .cb-secempty{font-size:12px;color:var(--gray);padding:8px 2px 4px;}
+  .cb-subhead{cursor:pointer;user-select:none;}
+  /* Cancelled campaigns are NOT greyed on the admin board (Sam) — full-strength
+     ink/rail, only the gray rail + status distinguish them. */
+  .sn-board.cb-nogrey .sn-strip.cancelled{opacity:1;}
+  .sn-board.cb-nogrey .sn-strip.cancelled .sn-name{color:var(--ink);}
+  .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;transition:color .12s,border-color .12s;}
+  .sn-clear-done:hover{color:var(--ink);border-color:var(--ink);}
+  .sn-foot .mini.sn-dismiss{padding:6px 10px;color:var(--gray);}
+  .sn-foot .mini.sn-dismiss:hover{color:var(--red);border-color:var(--red);}
+
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:var(--card-bg);margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
+  .sn-qpos{display:none;}
+  /* Left accent rail — same pattern as the dashboard campaign card (::before
+     clipped by the strip's overflow:hidden, so it hugs the rounded corners).
+     mine = ink rail; running = green rail (declared last so it wins when both). */
+  .sn-strip.mine::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  .sn-strip.run::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);}
+  /* v2.129 unified board — PINK rail = running on the local machine (vs green = cloud/VM) */
+  .sn-strip.local.run::before{background:#f1a7c9;}
+  .sn-board .dot.runlocal{background:#f1a7c9;}
+  .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
+  .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
+  .sn-where.local{background:#fbe6f0;color:#b23372;}
+  /* empty state (v2.130.2) — centered card when nothing is running */
+  .sn-emptyx{display:flex;flex-direction:column;align-items:center;text-align:center;gap:0;padding:52px 24px 46px;margin:6px 0 0;border:1px solid var(--hairline);border-radius:16px;background:var(--card-bg);}
+  .sn-emptyx-mark{width:60px;height:60px;display:flex;align-items:center;justify-content:center;border-radius:9999px;border:1px solid var(--hairline);color:var(--gray);margin-bottom:16px;}
+  .sn-emptyx-title{font-family:var(--display);font-size:26px;line-height:1;letter-spacing:.02em;color:var(--ink);}
+  .sn-emptyx-sub{font-size:13px;color:var(--gray);margin-top:9px;max-width:360px;line-height:1.5;}
+  .sn-emptyx-cta{margin-top:20px;background:var(--gold,#c9a84a);color:#111;border:none;border-radius:9999px;padding:10px 22px;font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;cursor:pointer;}
+  .sn-emptyx-cta:hover{filter:brightness(1.05);}
+  .sn-emptyx-legend{display:flex;gap:22px;margin-top:24px;font-size:11px;color:var(--gray);}
+  .sn-emptyx-legend .sw{display:inline-block;width:18px;height:5px;border-radius:9999px;vertical-align:middle;margin-right:7px;}
+  .sn-emptyx-legend .sw.green{background:var(--green);}
+  .sn-emptyx-legend .sw.pink{background:#f1a7c9;}
+  /* strip ⋯ overflow menu (v2.132) — Duplicate lives here */
+  .ovf{position:relative;display:inline-block;}
+  .ovf-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);cursor:pointer;font-size:16px;line-height:1;padding:0;}
+  .ovf-btn:hover{border-color:var(--ink);}
+  .ovf-menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:184px;background:var(--card-bg);border:1px solid var(--hairline);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:6px;z-index:35;display:none;}
+  .ovf.open .ovf-menu{display:block;}
+  .ovf-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--gray);background:transparent;border:none;text-align:left;}
+  .ovf-item:hover{background:var(--card-bg-hover);color:var(--ink);}
+  .ovf-item svg{opacity:.7;}
+  /* type filter dropdown (v2.131) — compact control on the header row */
+  .fdrop{position:relative;}
+  .fdrop-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:var(--card-bg);border:1px solid var(--hairline);border-radius:9999px;padding:9px 15px;cursor:pointer;white-space:nowrap;}
+  .fdrop-btn .cur{color:var(--gray);}
+  .fdrop-btn .cur b{color:var(--ink);font-weight:600;}
+  .fdrop-btn svg{opacity:.5;}
+  .fdrop-menu{position:absolute;left:0;top:calc(100% + 8px);min-width:210px;background:var(--card-bg);border:1px solid var(--hairline);border-radius:14px;box-shadow:0 12px 34px rgba(0,0,0,.10);padding:6px;z-index:40;display:none;}
+  .fdrop.open .fdrop-menu{display:block;}
+  .fdrop-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 12px;border-radius:9px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--gray);}
+  .fdrop-item:hover{background:var(--card-bg-hover);color:var(--ink);}
+  .fdrop-item.on{background:var(--ink);color:var(--bg);}
+  .fdrop-item .n{opacity:.5;}
+  .fdrop-item .tick{width:14px;text-align:center;display:inline-block;}
+  /* scheduled — gold rail + gold "Scheduled" pill (v2.130) */
+  .sn-strip.sched::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold);}
+  .sn-board .dot.gold{background:var(--gold);}
+  .sn-when-pill{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;background:#faf3e0;color:#8a6d1f;}
+  /* stopped / error — red border + red rail (overrides mine/run) */
+  .sn-strip.stopped{border-color:var(--red);}
+  .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
+  .sn-strip.stopped .sn-status{color:var(--red);}
+  /* Paused — amber accent + amber status, distinct from running (green) / stopped (red). */
+  .sn-strip.paused::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold,#d4a24a);}
+  .sn-strip.paused .sn-status{color:var(--gold,#d4a24a);}
+  .sn-board .dot.paused{background:var(--gold,#d4a24a);}
+  .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
+  .sn-progtxt b{color:var(--ink);font-weight:600;}
+  /* queued — tidy mini card (solid, smaller title) */
+  .sn-strip.queued .sn-name{font-size:20px;}
+  .sn-strip.queued{padding-top:14px;padding-bottom:14px;}
+  /* done — slim by default (kept fully legible, not faded) */
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done.sn-collapsed .sn-name{font-size:19px;margin-top:6px;}
+  .sn-strip.done.sn-collapsed .sn-flow{display:none;}
+  .sn-strip.done.sn-collapsed .togwrap{display:none;}
+  .sn-strip.done.sn-collapsed .sn-foot{margin-top:10px;padding-top:0;border-top:0;}
+  .sn-strip.stopping{border-color:var(--red);animation:sn-pulse 1s ease-in-out infinite;}
+  .sn-strip.starting{border-color:var(--green);animation:sn-pulse 1s ease-in-out infinite;}
+  @keyframes sn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,0,0,0);}50%{box-shadow:0 0 0 3px var(--hairline-soft);}}
+  .sn-qpos{position:absolute;left:16px;top:18px;width:30px;height:30px;border-radius:9999px;border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:18px;color:var(--gray);transition:all .3s;}
+  .sn-strip.run .sn-qpos{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-top{display:flex;align-items:center;gap:12px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-owner{font-size:12px;color:var(--gray);}
+  .sn-name{font-family:var(--display);font-size:28px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .sn-board .dot.run{background:var(--green);}.sn-board .dot.mon{background:var(--blue);}.sn-board .dot.q{background:var(--gray-faint,#b8b8b6);}.sn-board .dot.red{background:var(--red);}
+  /* v2.160.6 — status colour system (sketch A · muted archive): colour = live +
+     errors only; terminal states go quiet so the live/broken ones stand out.
+     Done = ink rail (black in light / white in dark — confident, complete),
+     Cancelled/Stopped = faded gray (NOT red — red is reserved for real errors),
+     Monitoring = blue rail. Location stays on the VM/LOCAL pill, off the rail. */
+  .sn-board .dot.done{background:var(--ink);}
+  .sn-board .dot.cancel{background:var(--gray);}
+  .sn-strip.done:not(.stopped):not(.cancelled)::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
+  .sn-strip.done:not(.stopped):not(.cancelled) .sn-status{color:var(--gray);}
+  .sn-strip.monitoring::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue);}
+  .sn-strip.cancelled{opacity:.62;}
+  .sn-strip.cancelled::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gray);}
+  .sn-strip.cancelled .sn-status{color:var(--gray);}
+  .sn-strip.cancelled .sn-name{color:var(--gray);}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-prog{height:5px;border-radius:9999px;background:var(--hairline-soft);margin:12px 0 0;overflow:hidden;}
+  .sn-prog i{display:block;height:100%;background:var(--green);transition:width .5s;}
+
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .sn-foot .toggle{width:42px;height:23px;border-radius:9999px;background:var(--green);position:relative;flex:none;cursor:pointer;}
+  .sn-foot .toggle.off{background:var(--gray-faint,#c9c9c7);}
+  .sn-foot .toggle i{position:absolute;top:2px;left:21px;width:19px;height:19px;border-radius:9999px;background:#fff;transition:left .12s;}
+  .sn-foot .toggle.off i{left:2px;}
+  .sn-foot .togwrap{display:flex;align-items:center;gap:9px;}
+  .sn-foot .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-foot .lock{font-size:11px;color:var(--gray-faint,#b8b8b6);}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .sn-foot .mini,.skipped-actions .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-foot .mini.locked{opacity:.4;cursor:not-allowed;}
+  .sn-strip.sn-collapsed .sn-switch{display:none;}
+  /* Expanded-strip card #2 parity: expanded shows the cloned .vj-card, collapsed
+     shows the compact body. (docs/.../2026-07-11-expanded-strip-card2-parity) */
+  .sn-strip:not(.sn-collapsed) .sn-compact{display:none;}
+  .sn-strip.sn-collapsed .sn-vjcard{display:none;}
+  /* Expanded = ONE clean card: the .vj-card is the frame, so strip the outer
+     strip's border / background / padding / left rail — no card-in-a-card. */
+  .sn-strip:not(.sn-collapsed){border-color:transparent;background:transparent;padding:0;overflow:visible;box-shadow:none;}
+  .sn-strip:not(.sn-collapsed)::before{display:none;}
+  body[data-dashboard='v3'] .sn-vjcard.vj-card{margin:0;}
+  /* ── Skipped-leads panel ── */
+  .skipped-mini{border-top:1px solid var(--hairline-soft);padding-top:12px;margin-top:14px;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:0.7rem;color:var(--gray);}
+  .skip-pill{border:1px solid var(--hairline);border-radius:9999px;padding:3px 12px;font-size:0.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);}
+  .skip-view-link{color:var(--ink);text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px;cursor:pointer;background:none;border:none;font:inherit;padding:0;}
+  .skipped{border-top:1px solid var(--hairline-soft);padding-top:14px;margin-top:14px;}
+  .skipped-head{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:0.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .skip-n{color:var(--ink);}
+  .skip-collapse{margin-left:auto;}
+  .skiptab{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:0.7rem;margin-top:12px;}
+  .skiptab th{text-align:left;color:var(--gray);font-weight:500;padding:5px 8px;border-bottom:1px solid var(--hairline);text-transform:uppercase;letter-spacing:.08em;font-size:0.56rem;}
+  .skiptab td{padding:7px 8px;color:var(--ink);border-bottom:1px solid var(--hairline-soft);vertical-align:top;}
+  .skip-rowno{color:var(--gray);white-space:nowrap;}
+  .skip-reason b{font-weight:500;}
+  .skip-empty{font-family:var(--mono);font-size:0.7rem;color:var(--gray);margin:10px 0 0;}
+  .skipped-actions{display:flex;align-items:center;gap:12px;margin-top:14px;}
+  .skipped-note{font-family:var(--mono);font-size:0.62rem;color:var(--gray);}
+  /* expand/collapse chevron — circular button pinned top-right; stays put when
+     the pane opens. Chevron points down when collapsed, flips up when open. */
+  .sn-expand{position:absolute;top:14px;right:16px;width:32px;height:32px;display:flex;
+    align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;
+    background:transparent;color:var(--ink);cursor:pointer;transition:transform .15s, border-color .12s;z-index:2;}
+  .sn-expand:hover{border-color:var(--ink);}
+  /* When expanded, the card clone shows its own 50px mode-glyph at top:18/right:22.
+     Shift the collapse chevron left of it (was overlapping the C+I glyph). */
+  .sn-strip:not(.sn-collapsed) .sn-expand{transform:rotate(180deg);right:84px;top:27px;}
+  /* keep the top row's status clear of the pinned chevron */
+  .sn-top{padding-right:40px;}
+
+  .sn-switch{margin:16px 0 0;border-top:1px solid var(--hairline-soft);padding-top:12px;}
+  .sn-switchtabs{display:flex;gap:20px;margin-bottom:12px;}
+  .sn-st{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);cursor:pointer;padding-bottom:5px;}
+  .sn-st.on{color:var(--ink);border-bottom:2px solid var(--gold);}
+  .sn-pane{display:none;}
+  .sn-pane.on{display:block;position:relative;}
+  /* Copy-log button — solid LIGHT pill in the top-right of the black log box,
+     so it reads clearly against the near-black terminal background. */
+  .sn-logcopy{position:absolute;top:9px;right:9px;z-index:2;display:inline-flex;align-items:center;gap:5px;
+    padding:5px 11px;line-height:1;cursor:pointer;font-family:var(--mono);font-size:10px;font-weight:700;
+    letter-spacing:.09em;text-transform:uppercase;border:0;border-radius:6px;
+    background:#f0f0f0;color:#141414;box-shadow:0 1px 5px rgba(0,0,0,0.45);
+    transition:background .15s,color .15s;}
+  .sn-logcopy:hover{background:#ffffff;}
+  .sn-logcopy svg{flex:none;display:block;}
+  .sn-logcopy.copied{background:#4ec36b;color:#06220f;}
+  .sn-board .job{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hairline-soft);}
+  .sn-board .job:last-child{border-bottom:0;}
+  .sn-board .job .jt{font-size:12.5px;color:var(--ink);font-weight:600;}
+  .sn-board .job .js{font-size:11px;color:var(--gray);margin-top:2px;}
+  .sn-board .job .jstat{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px;flex:none;}
+  .sn-logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:160px;overflow:auto;}
+  .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}.sn-logbox .bl{color:#7fb2e6;}.sn-logbox .wr{color:#e0b060;}
+
+  /* confirm modal (namespaced) */
+  #snm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:50;}
+  #snm-scrim.open{display:flex;}
+  .snm-card{box-sizing:border-box;background:var(--card-bg);border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
+  .snm-title{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 12px;letter-spacing:.02em;line-height:1;}
+  .snm-text{font-size:13px;color:var(--gray);line-height:1.55;margin:0 0 22px;}
+  .snm-text b{color:var(--ink);font-weight:600;}
+  .snm-row{display:flex;gap:10px;justify-content:flex-end;align-items:center;}
+  /* id-scoped so these survive the global `body[data-dashboard='v3'] button { font: inherit }` reset */
+  #snm-scrim .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  #snm-scrim .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+
+  /* one-time handshake modal (Task 3.5) — namespaced like snm, reuses snm-card/title/text/row */
+  #hs-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:none;align-items:center;justify-content:center;z-index:60;}
+  #hs-scrim.open{display:flex;}
+  #hs-scrim .hs-ring{width:64px;height:64px;border-radius:9999px;border:4px solid var(--hairline-soft);border-top-color:var(--gold);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:19px;color:var(--ink);margin:0 auto 6px;animation:sn-spin 2.4s linear infinite;}
+  #hs-scrim .hs-ring span{animation:sn-spin 2.4s linear infinite reverse;}
+  #hs-scrim .hs-modal-sub{text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray);margin:0 0 16px;}
+  #hs-scrim .snm-title{text-align:center;}
+  #hs-scrim .snm-text{text-align:center;}
+  #hs-scrim .snm-row{justify-content:center;}
+  #hs-scrim .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  #hs-scrim .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  #hs-scrim .snm-btn.danger{border-color:var(--red);color:var(--red);}
+
+  @keyframes nudge { 0%,100%{transform:translateX(0);opacity:.65} 50%{transform:translateX(4px);opacity:1} }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · v2.160.127</div>
+    </div>
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+      <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+      <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+      <button type="button" class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+      <button type="button" class="nav-item"><span class="nav-num">V.</span>Launch</button>
+      <button type="button" class="nav-item">Live Status</button>
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item"><span class="nav-num">◆</span>Connection DB</button>
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item">Replies</button>
+      <button type="button" class="nav-item">Open log</button>
+    </nav>
+  </aside>
+
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Good morning</div>
+        <div class="greeting-subtitle">Wednesday, 5 August</div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v">151</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">1,084</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v">2</span></div>
+      </div>
+    </div>
+
+    <div class="sn-board">
+      <div class="sn-railhead" style="display:flex;align-items:center;gap:9px;margin:0 0 10px">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8l8 8 8-8"/></svg>
+        Your campaigns <span class="sn-count">15</span>
+      </div>
+
+      <!-- EXPANDED strip → contains the cloned #active-card (.sn-vjcard) -->
+      <div class="sn-strip mine run" id="liveStrip">
+        <button class="sn-collapse sn-expand" title="Collapse"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4"/></svg></button>
+        <div class="sn-compact" style="display:none"></div>
+
+        <section class="vj-card sn-vjcard is-detailed" id="active-card">
+          <div class="vj-eyebrow">
+            <span class="vj-tag"><span class="dot" id="eDot"></span><span id="activeEyebrow">Cloud · Sending</span></span>
+            <span class="vj-when">started 15:01</span>
+          </div>
+          <h2 class="vj-name"><span>CC+IC MON 5TH AUG</span></h2>
+
+          <div id="stageSlot" style="grid-column:1/-1"></div>
+          <div id="drawerSlot" style="grid-column:1/-1"></div>
+          <div id="rollSlot" style="grid-column:1/-1"></div>
+
+          <div class="vj-details">
+            <div>
+              <div class="vj-log-head">
+                <span class="vj-details-head">Live log · last 6 events</span>
+                <span class="vj-log-acts"><button type="button" class="vj-log-act">Copy all</button></span>
+              </div>
+              <div class="vj-log" id="active-log"></div>
+            </div>
+          </div>
+
+          <div class="vj-hbar" role="progressbar"><i style="width:36%"></i></div>
+          <div class="vj-hero">
+            <div class="vj-hero-row">
+              <div class="num"><span>36</span><span class="sub">%</span></div>
+              <div class="vj-meta">
+                <span><b>151</b> of <span>420</span> sent</span>
+                <span>Next batch in <b>3 min</b></span>
+              </div>
+            </div>
+            <div class="vj-stats">
+              <span><b>4</b> accounts</span><span><b>7</b> accepted</span>
+              <span>· <b id="sendingLbl">Sending</b> · <a style="text-decoration:underline;text-underline-offset:3px;cursor:pointer">batch settings</a></span>
+            </div>
+          </div>
+
+          <div class="vj-controls">
+            <button class="btn-pill">Open</button>
+            <div class="dock" role="toolbar">
+              <button class="dock-btn" data-tip="Pause" onclick="togglePause()"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+              <div class="dock-actions">
+                <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+                <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+                <button class="dock-btn" data-tip="Duplicate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- COLLAPSED strips — the slim rows underneath -->
+      <div class="sn-strip mine done sn-collapsed">
+        <button class="sn-collapse sn-expand" title="Expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+        <div class="sn-compact">
+          <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where">VM</span>
+            <span class="sn-status"><span class="dot cancel"></span> Stopped</span></div>
+          <div class="sn-name">TETS SOO VM</div>
+          <div class="sn-foot"><div class="right"><button class="mini solid">Open</button></div></div>
+        </div>
+      </div>
+
+      <div class="sn-strip mine done sn-collapsed">
+        <button class="sn-collapse sn-expand" title="Expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+        <div class="sn-compact">
+          <div class="sn-top"><span class="sn-type">Campaign · C+I</span><span class="sn-you">You</span><span class="sn-where">VM</span>
+            <span class="sn-status"><span class="dot cancel"></span> Stopped</span></div>
+          <div class="sn-name">CC+IC NUSHE PT 2_A</div>
+          <div class="sn-foot"><div class="right"><button class="mini">Check now</button><button class="mini solid">Open</button></div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </main>
+</div>
+
+<button class="sknow" id="nowBtn" onclick="toggleNow()">Showing: PROPOSED — click for TODAY</button>
+
+<div class="skbar">
+  <span class="lab">Speed</span>
+  <button data-s="1" class="on">1×</button>
+  <button data-s="4">4×</button>
+  <span class="sep"></span>
+  <button onclick="killSignal()">simulate VM going silent</button>
+  <span class="sep"></span>
+  <button onclick="document.body.classList.toggle('theme-dark');document.body.classList.toggle('theme-light')">light</button>
+</div>
+
+<script>
+let SPEED=1, TODAY=false, t=0, timer=null, silent=false, sinceBeat=0, paused=false, sel=null;
+// Render guards — the whole point. Anything that ANIMATES must only be written
+// to the DOM when its content actually changes, or the animation restarts on
+// every tick and the panel strobes.
+let lastIdx=-1, lastPh='', lastSel=null, lastToday=null, lastChipKey='';
+
+document.querySelectorAll('.skbar button[data-s]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.skbar button[data-s]').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); SPEED = Number(b.dataset.s); run();
+});
+function toggleNow(){ TODAY=!TODAY; const b=document.getElementById('nowBtn');
+  b.textContent = TODAY ? 'Showing: TODAY — click for PROPOSED' : 'Showing: PROPOSED — click for TODAY';
+  b.classList.toggle('today',TODAY); sel=null; lastIdx=-1; lastPh=''; lastSel=null; lastToday=null; lastChipKey=''; tick(); }
+function killSignal(){ silent=!silent; sinceBeat=0; }
+function togglePause(){ paused=!paused; }
+function pick(a){ sel=(sel===a)?null:a; tick(); }
+function closeDrawer(){ sel=null; tick(); }
+
+const ACCTS = {
+  'matt.adcock':   { daily:12, limit:50, parked:false, note:'' },
+  'cindy.harper':  { daily:34, limit:50, parked:false, note:'' },
+  'jeremiah.bell': { daily:50, limit:50, parked:false, note:'at today’s limit — resumes after midnight UTC' },
+  'trisha.moore':  { daily:8,  limit:50, parked:true,  until:'8h', note:'out of free custom notes — can’t send noted invites' },
+};
+const TL = [
+  { ph:'send',  d:38, who:'Sarah Whitfield', acct:'matt.adcock',  n:152 },
+  { ph:'send',  d:34, who:'Daniel Okonjo',   acct:'matt.adcock',  n:153 },
+  { ph:'send',  d:30, who:'Amara Nwosu',     acct:'matt.adcock',  n:154 },
+  { ph:'check', d:44, who:'matt.adcock',     idx:1, tot:4 },
+  { ph:'check', d:40, who:'cindy.harper',    idx:2, tot:4 },
+  { ph:'intro', d:26, who:'Daniel Okonjo',   acct:'matt.adcock',  i:1, tot:6 },
+  { ph:'intro', d:24, who:'Tom Reidy',       acct:'matt.adcock',  i:2, tot:6 },
+  { ph:'send',  d:36, who:'Priya Raman',     acct:'cindy.harper', n:155 },
+];
+const TOTAL = TL.reduce((s,x)=>s+x.d,0);
+const PHASE = {
+  send:  { col:'var(--green)', lbl:'Sending',     verb:'Sending connection',   eye:'Cloud · Sending',     ico:'➤' },
+  intro: { col:'var(--green)', lbl:'Introducing', verb:'Writing introduction', eye:'Cloud · Introducing', ico:'✎' },
+  check: { col:'var(--blue)',  lbl:'Checking',    verb:'Checking acceptances', eye:'Cloud · Checking',    ico:'↻' },
+};
+const LOG = [
+  '✓ Amara Nwosu · connection_sent sent · 15:14 · via matt.adcock@ortus.solutions',
+  '✓ Daniel Okonjo · connection accepted · 15:11',
+  '✓ Daniel Okonjo · introduced · 15:12',
+  '✓ Tom Reidy · connection_sent sent · 15:08 · via matt.adcock@ortus.solutions',
+  '⚠ trisha.moore — out of free custom notes · benched for today, lead stays retryable',
+  '✓ matt.adcock — 3 newly accepted, 3 lead rows updated · 11:04',
+];
+function at(s){ let a=0; for(let i=0;i<TL.length;i++){ a+=TL[i].d; if(s<a) return {s:TL[i],el:s-(a-TL[i].d),i}; } return {s:TL[0],el:0,i:0}; }
+function glyph(ph){
+  if (ph==='send')  return `<div class="fly"><u></u><i>➤</i><i>➤</i><i>➤</i></div>`;
+  if (ph==='intro') return `<div class="typ"><i></i><i></i><i></i></div>`;
+  return `<div class="swp"></div>`;
+}
+function sub(s){
+  if (s.ph==='send')  return `${s.acct}@ortus.solutions · ${s.n} of 420`;
+  if (s.ph==='intro') return `via ${s.acct} · ${s.i} of ${s.tot} accepted today`;
+  return `account ${s.idx} of ${s.tot}`;
+}
+function promise(s){
+  if (s.ph==='send')  return 'next lead in ~45s';
+  if (s.ph==='intro') return `${s.tot-s.i} more intros queued`;
+  return 'next check 11:06';
+}
+function past(p){ return p==='check'?'swept':p==='intro'?'introduced':'sent'; }
+
+// Built once.
+function mountStage() {
+  document.getElementById('stageSlot').innerHTML = `
+    <div class="stg" id="stg">
+      <div class="gly" id="gly"></div>
+      <div class="stgbody">
+        <div class="bigverb" id="bverb"></div>
+        <div class="bigname" id="bname"></div>
+        <div class="bigsub"  id="bsub"></div>
+        <div class="bigsub" id="bprom" style="color:var(--gray-faint);margin-top:3px"></div>
+        <div class="chips"   id="chips"></div>
+      </div>
+    </div>`;
+  document.getElementById('rollSlot').innerHTML = `
+    <div class="beat">
+      <span class="l"><span class="bd" id="bd"></span><span id="beattxt"></span></span>
+      <span>4 accounts · 7 accepted today</span>
+    </div>`;
+  document.getElementById('active-log').innerHTML = LOG.map(l => {
+    const cls = /^✓/.test(l) ? 'is-ok' : /^⚠/.test(l) ? 'is-warn' : '';
+    const evt = /^✓/.test(l) ? 'ok' : /^⚠/.test(l) ? 'warn' : 'log';
+    return `<div class="vj-log-line ${cls}"><span class="time">15:14</span><span class="evt">${evt}</span><span class="what">${l}</span></div>`;
+  }).join('');
+}
+
+function tick() {
+  const { s, el, i } = at(t);
+  const P = PHASE[s.ph];
+
+  // ── TODAY mode: swap the whole stage for the current .vj-live row. ──
+  if (TODAY) {
+    if (lastToday !== true) {
+      document.getElementById('stageSlot').innerHTML = `<div class="vj-live" style="grid-column:1/-1">
+        <span class="vj-live-ico">→</span>
+        <span class="vj-live-txt"><span class="vj-live-l1">Working…</span><span class="vj-live-l2"></span></span></div>`;
+      document.getElementById('drawerSlot').innerHTML = '';
+      document.getElementById('activeEyebrow').textContent = 'Cloud · Running';
+      document.getElementById('eDot').style.background = 'var(--green)';
+      document.getElementById('sendingLbl').textContent = 'Sending';
+      lastToday = true;
+    }
+    return;
+  }
+  if (lastToday !== false) { mountStage(); lastToday = false; lastPh = ''; lastIdx = -1; lastChipKey = ''; }
+
+  document.getElementById('activeEyebrow').textContent = paused ? 'Cloud · Paused' : P.eye;
+  document.getElementById('eDot').style.background = paused ? 'var(--gray-faint)' : P.col;
+  document.getElementById('sendingLbl').textContent = paused ? 'Paused' : P.lbl;
+  document.getElementById('stg').classList.toggle('paused', paused);
+
+  // Glyph — rewritten ONLY when the phase changes, so its animation never restarts.
+  if (s.ph !== lastPh) {
+    document.getElementById('gly').innerHTML = glyph(s.ph) + `<span class="secs" id="secs"></span>`;
+    lastPh = s.ph;
+  }
+  document.getElementById('secs').textContent = el + 's';
+
+  document.getElementById('bverb').style.color = paused ? 'var(--gray)' : P.col;
+  document.getElementById('bverb').textContent = paused ? 'Paused — finishing this lead' : P.verb;
+
+  const nameEl = document.getElementById('bname');
+  if (i !== lastIdx) {
+    nameEl.textContent = s.who.toUpperCase();
+    nameEl.classList.remove('swap'); void nameEl.offsetWidth; nameEl.classList.add('swap');
+  }
+  document.getElementById('bsub').textContent = sub(s);
+
+  // Chips — rewritten only when the active account or phase changes (the pulse
+  // on the active chip would otherwise restart every second).
+  const curAcct = s.acct || s.who;
+  const chipKey = `${curAcct}|${paused}|${sel}|${P.lbl}`;
+  if (chipKey !== lastChipKey) {
+    document.getElementById('chips').innerHTML = Object.keys(ACCTS).map(k => {
+      const a = ACCTS[k], on = !paused && curAcct === k;
+      // State pill: what the account IS. Then the count pill: what it's done today.
+      // ONE pill. It carries the count; colour carries the state; a word only
+      // when the state is exceptional enough that a number can't say it.
+      const pill = a.parked           ? ['bad',  'Benched']
+                 : a.daily >= a.limit ? ['warn', `${a.daily}/${a.limit}`]
+                 : on                 ? ['ok',   `${a.daily}/${a.limit}`]
+                 :                      ['',     `${a.daily}/${a.limit}`];
+      return `<button class="acct ${on?'on':''} ${sel===k?'sel':''}" onclick="pick('${k}')">
+        <span class="cap-badge ${pill[0]}"><span class="nm3">${k.split('.')[0]}</span><span class="n2">${pill[1]}</span></span>
+      </button>`;
+    }).join('');
+    lastChipKey = chipKey;
+  }
+
+  // Drawer — written ONLY when the selection changes. This was the seasickness.
+  if (sel !== lastSel) {
+    const d = document.getElementById('drawerSlot');
+    d.innerHTML = sel ? drawer(sel, curAcct) : '';
+    lastSel = sel;
+  }
+
+  if (i !== lastIdx) lastIdx = i;
+
+  document.getElementById('bprom').textContent = promise(s);
+  const bt = document.getElementById('beattxt');
+  if (bt) bt.innerHTML = silent
+    ? `<span class="stale">no signal from the VM · ${sinceBeat}s — it may be waking or wedged</span>`
+    : `updated ${sinceBeat}s ago`;
+  const bd = document.getElementById('bd');
+  if (bd) { bd.classList.remove('hit'); if (!silent && sinceBeat === 0) { void bd.offsetWidth; bd.classList.add('hit'); } }
+}
+
+function drawer(name, cur) {
+  const a = ACCTS[name]; if (!a) return '';
+  const isCur = cur === name;
+  const st = a.parked ? `<span class="st" style="color:var(--red)">benched ${a.until}</span>`
+    : a.daily >= a.limit ? `<span class="st" style="color:var(--gold)">at daily limit</span>`
+    : isCur ? `<span class="st" style="color:var(--green)">working now</span>`
+    : `<span class="st" style="color:var(--gray-faint)">idle</span>`;
+  const acts = [];
+  if (isCur) acts.push('<button>👁 Watch this browser live</button>');
+  if (a.parked) acts.push('<button>Retry — clear the bench</button>');
+  acts.push('<button>Open its sheet rows</button>', '<button>Remove from this campaign</button>');
+  return `<div class="drawer in">
+    <div class="dh"><b>${name}@ortus.solutions</b>${st}<span class="x" onclick="closeDrawer()">✕ close</span></div>
+    <div class="dl">${a.daily}/${a.limit} sent today${a.note ? ' · ' + a.note : ''}<br>
+      ${isCur ? 'Currently driving this campaign on the VM.' : 'Not currently driving anything.'}</div>
+    <div class="acts">${acts.join('')}</div>
+  </div>`;
+}
+
+function run(){
+  if (timer) clearInterval(timer);
+  timer = setInterval(() => {
+    if (!paused) t = (t+1) % TOTAL;
+    if (!silent && t % 5 === 0) sinceBeat = 0; else sinceBeat++;
+    tick();
+  }, 1000/SPEED);
+}
+mountStage(); tick(); run();
+</script>
+</body>
+</html>

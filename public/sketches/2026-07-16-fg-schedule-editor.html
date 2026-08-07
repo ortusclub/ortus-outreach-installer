@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FG schedule editor — 3 alternatives</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Real app tokens — light theme (matches the current modal screenshot) */
+:root{
+  --bg:#fafafa; --ink:#0a0a0a; --gray:#999; --hairline:rgba(0,0,0,.15);
+  --hairline-soft:rgba(0,0,0,.06); --green:#3fb950; --red:#f85149; --gold:#F7BE68;
+  --display:'Bebas Neue','Arial Narrow',sans-serif;
+  --mono:'Hanken Grotesk',-apple-system,sans-serif; --body:'Hanken Grotesk',-apple-system,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--body);background:#6f6f6f;color:var(--ink);padding:40px 20px 80px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto}
+.pagehead{color:#fff;text-align:center;margin-bottom:6px;font-family:var(--display);font-size:2.4rem;letter-spacing:.02em}
+.pagesub{color:rgba(255,255,255,.7);text-align:center;font-size:13px;margin-bottom:34px}
+.opt{margin-bottom:40px}
+.optlabel{color:#fff;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.optlabel .rec{background:var(--green);color:#04220b;font-size:8.5px;padding:2px 7px;border-radius:9999px;letter-spacing:.06em}
+.optdesc{color:rgba(255,255,255,.72);font-size:12.5px;margin-bottom:14px;max-width:560px}
+
+/* Modal card — matches .prompt-modal__card (light) */
+.card{background:var(--bg);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:26px 28px;width:100%;max-width:440px;margin:0 auto}
+.card.wide{max-width:480px}
+.mlabel{font-family:var(--mono);font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);margin-bottom:6px}
+.mtime{font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--gray);margin-bottom:18px;display:flex;align-items:center;gap:6px}
+.mtime b{color:var(--ink);font-weight:600}
+.lock{opacity:.6}
+.actions{display:flex;gap:12px;justify-content:flex-end;margin-top:24px}
+.btn{padding:11px 22px;border:1px solid var(--ink);border-radius:9999px;font-family:var(--mono);font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;background:transparent;color:var(--ink);cursor:pointer}
+.btn.save{background:var(--ink);color:var(--bg)}
+.btn.ghost{border-color:var(--hairline);color:var(--gray)}
+
+/* ---- A: cadence presets ---- */
+.prow{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--hairline);border-radius:12px;margin-bottom:9px;cursor:pointer;transition:.12s}
+.prow.sel{border-color:var(--ink)}
+.prow .radio{width:16px;height:16px;border-radius:50%;border:1px solid var(--hairline);flex:none;position:relative}
+.prow.sel .radio{border-color:var(--green)}
+.prow.sel .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--green)}
+.prow .ptxt{flex:1}
+.prow .pt{font-size:13.5px;font-weight:600}
+.prow .pd{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
+
+/* ---- B: day grid ---- */
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-top:4px}
+.gcell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9px;font-family:var(--mono);font-size:12px;color:var(--ink);cursor:pointer;transition:.1s}
+.gcell.on{background:var(--green);border-color:var(--green);color:#04220b;font-weight:600}
+.gsel{margin-top:16px;font-family:var(--mono);font-size:11px;color:var(--gray)}
+.gsel b{color:var(--ink)}
+
+/* ---- C: sentence + chips ---- */
+.sent{font-size:15px;line-height:2.1;color:var(--ink)}
+.daychip{display:inline-flex;align-items:center;gap:6px;background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.4);color:#1f7a30;border-radius:9999px;padding:4px 6px 4px 11px;font-family:var(--mono);font-size:12px;margin:0 3px}
+.daychip button{border:none;background:none;color:#1f7a30;cursor:pointer;font-size:14px;line-height:1;width:16px;height:16px;border-radius:50%}
+.addday{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--hairline);color:var(--gray);border-radius:9999px;padding:4px 11px;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;cursor:pointer;margin:0 3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pagehead">Edit schedule — 3 ways</div>
+  <div class="pagesub">Replacing the raw "type 1, 15" text box. Time stays fixed at 06:00 London (v1). On/off already lives on the strip toggle.</div>
+
+  <!-- ===== A ===== -->
+  <div class="opt">
+    <div class="optlabel">Option A · Cadence presets <span class="rec">Recommended</span></div>
+    <div class="optdesc">Pick a common rhythm in one tap — no typing, no thinking in day-numbers. "Custom" opens the day grid for the rare bespoke case. Fastest for 90% of choices.</div>
+    <div class="card">
+      <div class="mlabel">Run schedule</div>
+      <div class="mtime"><span class="lock">🔒</span> Runs at <b>06:00 London</b></div>
+      <div class="prow sel"><span class="radio"></span><div class="ptxt"><div class="pt">Twice a month</div><div class="pd">1st &amp; 15th</div></div></div>
+      <div class="prow"><span class="radio"></span><div class="ptxt"><div class="pt">Once a month</div><div class="pd">1st only</div></div></div>
+      <div class="prow"><span class="radio"></span><div class="ptxt"><div class="pt">Weekly</div><div class="pd">1, 8, 15, 22</div></div></div>
+      <div class="prow"><span class="radio"></span><div class="ptxt"><div class="pt">Custom days…</div><div class="pd">pick exact days on a grid</div></div></div>
+      <div class="actions"><button class="btn ghost">Cancel</button><button class="btn save">Save</button></div>
+    </div>
+  </div>
+
+  <!-- ===== B ===== -->
+  <div class="opt">
+    <div class="optlabel">Option B · Day grid</div>
+    <div class="optdesc">Tap the days of the month it should run. Fully visual — you see exactly what's selected, and picking odd combinations (say 1, 10, 20) is trivial. A touch more clicking than presets.</div>
+    <div class="card">
+      <div class="mlabel">Run on these days</div>
+      <div class="mtime"><span class="lock">🔒</span> Runs at <b>06:00 London</b> · tap to toggle</div>
+      <div class="grid" id="grid"></div>
+      <div class="gsel">Selected: <b>1st · 15th</b></div>
+      <div class="actions"><button class="btn ghost">Cancel</button><button class="btn save">Save</button></div>
+    </div>
+  </div>
+
+  <!-- ===== C ===== -->
+  <div class="opt">
+    <div class="optlabel">Option C · Sentence builder</div>
+    <div class="optdesc">Reads like plain English. Each day is a removable chip; "+ add day" drops in another. Nice and legible, best when there are only a couple of days.</div>
+    <div class="card wide">
+      <div class="mlabel">Run schedule</div>
+      <div class="mtime"><span class="lock">🔒</span> Runs at <b>06:00 London</b></div>
+      <div class="sent">
+        Run on the
+        <span class="daychip">1st <button>×</button></span>
+        &amp;
+        <span class="daychip">15th <button>×</button></span>
+        <span class="addday">+ add day</span>
+        of every month.
+      </div>
+      <div class="actions"><button class="btn ghost">Cancel</button><button class="btn save">Save</button></div>
+    </div>
+  </div>
+</div>
+<script>
+  // fill the day grid 1..28 with 1 & 15 pre-selected (illustrative)
+  const g = document.getElementById('grid'); const on = new Set([1,15]);
+  for (let d=1; d<=28; d++){ const c=document.createElement('div'); c.className='gcell'+(on.has(d)?' on':''); c.textContent=d; g.appendChild(c); }
+</script>
+</body>
+</html>

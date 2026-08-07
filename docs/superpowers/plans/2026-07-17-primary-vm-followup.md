@@ -312,7 +312,7 @@ async function handleFollowUp(task) {
 - Test: `test/primary-session-endpoint.test.js` (create)
 
 **Interfaces — Produces:**
-- Status payload gains `primarySession: {state:'live'|'needs_login'|'none', name, parked:number}` — joined via the campaign's primary slug (`slugFromUrl(campaign.primary_url)` → `getPrimaryBySlug`). `parked` = count of this campaign's `follow_up` rows still `pending` with `due_at > now()` (rescheduled, not yet sent). `'none'` when the campaign has no primary URL or nothing has been captured yet. Only meaningful for personal (`local-browser`) primaries; a GoLogin-primary campaign reads `'none'` (its follow-up never parks on a session).
+- Status payload gains `primarySession: {state:'live'|'needs_login'|'none', name, parked:number}` — joined via the campaign's primary slug. NOTE (corrected during build): the `campaigns` table has no `primary_url` column; the URL is `campaign.config.primaryUrl` (config jsonb IS the templates object). Derive slug from that → `getPrimaryBySlug`. Do not require `primary-session.js` from store/api (it loads puppeteer) — inline the slug regex. `parked` = count of this campaign's `follow_up` rows still `pending` with `due_at > now()` (rescheduled, not yet sent). `'none'` when the campaign has no primary URL or nothing has been captured yet. Only meaningful for personal (`local-browser`) primaries; a GoLogin-primary campaign reads `'none'` (its follow-up never parks on a session).
 - `POST /api/primaries/:memberId/session` body `{publicIdentifier, displayName, cookies}` → `upsertPrimarySession(...)` → re-queue this member's parked follow-ups, return `{ok:true, resumed:n}`.
 - `GET /api/primaries/by-slug/:slug` → `{state, name, capturedAt}` | `{state:'none'}` — backs the app wizard hint (Task 8).
 

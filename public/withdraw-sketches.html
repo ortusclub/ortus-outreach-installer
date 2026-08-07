@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Stale-invite withdrawal — sketches</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body { padding: 28px 34px 90px; max-width: 1080px; margin: 0 auto; }
+  .sk-head { margin-bottom: 22px; }
+  .sk-head h1 { font-family: 'Bebas Neue', sans-serif; font-size: 34px; letter-spacing: .5px; margin: 0 0 4px; }
+  .sk-head p { opacity: .72; margin: 0; font-size: 13px; line-height: 1.5; }
+  .sk-tabs { display: flex; gap: 8px; margin: 20px 0 24px; border-bottom: 1px solid var(--line, #2a2a2a); }
+  .sk-tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 9px 14px;
+            font: inherit; font-size: 13px; cursor: pointer; color: inherit; opacity: .55; }
+  .sk-tab.on { opacity: 1; border-bottom-color: var(--gold, #c8a955); font-weight: 600; }
+  .sk-pane { display: none; } .sk-pane.on { display: block; }
+  .sk-note { font-size: 12px; opacity: .6; margin: 14px 0 0; line-height: 1.6; }
+  .sk-note b { opacity: .95; }
+  .real { border-left: 2px solid #4a7; padding-left: 8px; }
+  .fake { border-left: 2px solid #a55; padding-left: 8px; }
+  /* --- only styles the app doesn't already have --- */
+  .inv-strip { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+               padding: 11px 14px; margin: 0 0 16px; border: 1px solid var(--line, #2a2a2a);
+               border-radius: 8px; background: rgba(200,169,85,.05); }
+  .inv-strip-txt { flex: 1; min-width: 260px; font-size: 13px; line-height: 1.45; }
+  .inv-strip-txt b { color: var(--gold, #c8a955); }
+  .sw { position: relative; display: inline-flex; align-items: center; gap: 9px; cursor: pointer; font-size: 12.5px; }
+  .sw input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .sw i { width: 34px; height: 19px; border-radius: 999px; background: #4a4a4a; position: relative; transition: background .15s; flex: none; }
+  .sw i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+                 border-radius: 50%; background: #fff; transition: transform .15s; }
+  .sw input:checked + i { background: #4a7; }
+  .sw input:checked + i::after { transform: translateX(15px); }
+  .jt-inv { font-size: 11.5px; margin-top: 3px; opacity: .82; font-family: 'JetBrains Mono', monospace; }
+  .jt-inv .stale { color: #e0a33c; font-weight: 500; }
+  .jt-inv .unknown { opacity: .45; font-style: italic; font-family: inherit; }
+  .hist { display: grid; grid-template-columns: 92px 1fr 52px; gap: 5px 10px; align-items: center;
+          font-size: 12px; margin: 14px 0 4px; }
+  .hist-bar { height: 15px; border-radius: 3px; background: #3a3a3a; }
+  .hist-bar.in { background: #e0a33c; }
+  .hist-n { text-align: right; font-family: 'JetBrains Mono', monospace; opacity: .8; }
+  .hist-row.out { opacity: .42; }
+  .thr { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px; font-size: 13px; flex-wrap: wrap; }
+  .thr select { padding: 5px 9px; }
+  .danger { border: 1px solid #8a4a4a; background: rgba(160,60,60,.09); border-radius: 8px;
+            padding: 11px 14px; font-size: 12.5px; line-height: 1.55; margin: 16px 0 0; }
+  .danger b { color: #e08c8c; }
+  .rowlist { border: 1px solid var(--line, #2a2a2a); border-radius: 8px; overflow: hidden; margin-top: 14px; }
+  .rowlist-h { padding: 8px 13px; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase;
+               opacity: .6; border-bottom: 1px solid var(--line, #2a2a2a); }
+  .rowl { display: flex; align-items: center; gap: 11px; padding: 9px 13px; font-size: 13px;
+          border-bottom: 1px solid rgba(255,255,255,.05); }
+  .rowl:last-child { border-bottom: 0; }
+  .rowl .who { flex: 1; }
+  .rowl .age { font-family: 'JetBrains Mono', monospace; font-size: 12px; opacity: .7; }
+  .rowl .slug { font-size: 11px; opacity: .42; font-family: 'JetBrains Mono', monospace; }
+  .drawer { border: 1px solid var(--line, #2a2a2a); border-radius: 10px; padding: 18px 20px; margin-top: 4px; }
+  .drawer h3 { font-family: 'Bebas Neue', sans-serif; font-size: 19px; margin: 0 0 3px; letter-spacing: .4px; }
+  .drawer .sub { font-size: 12.5px; opacity: .65; margin-bottom: 6px; }
+  .btnrow { display: flex; gap: 9px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
+  .plan { font-size: 12.5px; opacity: .75; margin-left: 4px; }
+</style>
+</head>
+<body>
+
+<div class="sk-head">
+  <h1>Stale-invite withdrawal</h1>
+  <p>Three ways to put this in Wizard §3. Real app CSS, real tile markup, real measured numbers.
+     Everything green-barred was read off the accounts today; everything red-barred is a placeholder.</p>
+</div>
+
+<div class="sk-tabs">
+  <button class="sk-tab on" onclick="pick(0,this)">A · On the tile</button>
+  <button class="sk-tab" onclick="pick(1,this)">B · Review drawer</button>
+  <button class="sk-tab" onclick="pick(2,this)">C · Advisory only</button>
+</div>
+
+<!-- ─────────────────────────── A ─────────────────────────── -->
+<div class="sk-pane on">
+  <div class="inv-strip">
+    <div class="inv-strip-txt">
+      <b>1,085 invitations</b> are sitting unanswered across these 4 accounts.
+      LinkedIn names this as a restriction cause.
+    </div>
+    <label class="sw"><input type="checkbox" onchange="thrBox(this)" /><i></i> Auto-withdraw older than</label>
+    <select id="thrA" disabled onchange="reHist()">
+      <option>2 weeks</option><option selected>3 weeks</option><option>1 month</option><option>2 months</option>
+    </select>
+    <button class="btn" onclick="alert('Opens sketch B')">Review…</button>
+  </div>
+
+  <div id="profiles-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:11px">
+    <label class="profile-item jt free selected">
+      <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+      <div class="jt-det">
+        <div class="jt-top"><input type="checkbox" checked /><span class="jt-email">cindy.siapno@ortus.solutions</span></div>
+        <div class="jt-sub">Anyone can use.</div>
+        <div class="jt-inv">336 pending · <span class="stale">129 over 3 weeks</span></div>
+      </div>
+    </label>
+    <label class="profile-item jt free">
+      <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+      <div class="jt-det">
+        <div class="jt-top"><input type="checkbox" /><span class="jt-email">jeremiah.lofranco@klabber.co</span></div>
+        <div class="jt-sub">Anyone can use.</div>
+        <div class="jt-inv">484 pending · <span class="unknown">age not scanned</span></div>
+      </div>
+    </label>
+    <label class="profile-item jt free">
+      <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+      <div class="jt-det">
+        <div class="jt-top"><input type="checkbox" /><span class="jt-email">trisha.muana@ortus.solutions</span></div>
+        <div class="jt-sub">Anyone can use.</div>
+        <div class="jt-inv">228 pending · <span class="unknown">age not scanned</span></div>
+      </div>
+    </label>
+    <label class="profile-item jt free">
+      <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+      <div class="jt-det">
+        <div class="jt-top"><input type="checkbox" /><span class="jt-email">catherine.pagcaliwangan@ortus.solutions</span></div>
+        <div class="jt-sub">Anyone can use.</div>
+        <div class="jt-inv">37 pending · <span class="unknown">age not scanned</span></div>
+      </div>
+    </label>
+  </div>
+
+  <p class="sk-note real">All four pending counts measured today. Only cindy has an age breakdown — the others
+    honestly say <b>not scanned</b>, which is also the real product state until the account is enumerated once
+    (~1 min of browser time each).</p>
+  <p class="sk-note">Cheapest to build, always visible, and the number sits exactly where you pick senders.
+    Downside: a fourth line on a tile that already carries three.</p>
+</div>
+
+<!-- ─────────────────────────── B ─────────────────────────── -->
+<div class="sk-pane">
+  <div class="drawer">
+    <h3>Stale invitations · cindy.siapno@ortus.solutions</h3>
+    <div class="sub">335 of 336 read from the account's Sent tab today.</div>
+
+    <div class="thr">
+      Withdraw anything older than
+      <select id="thrB" onchange="reHist()">
+        <option value="14">2 weeks</option>
+        <option value="21" selected>3 weeks</option>
+        <option value="30">1 month</option>
+        <option value="60">2 months</option>
+      </select>
+      <span class="plan" id="planB"></span>
+    </div>
+
+    <div class="hist" id="histB"></div>
+
+    <div class="rowlist">
+      <div class="rowlist-h">Sample of what the scan returns — name, age, profile</div>
+      <div class="rowl"><span class="who">Adam Noon</span><span class="age">5 days</span><span class="slug">adam-noon-73b61398</span></div>
+      <div class="rowl"><span class="who">Hector Garcia, J.D., CHC</span><span class="age">5 days</span><span class="slug">hgalaw</span></div>
+      <div class="rowl"><span class="who">Rodney White</span><span class="age">5 days</span><span class="slug">rodney-white-1524b634</span></div>
+    </div>
+
+    <div class="danger">
+      <b>Withdrawing is permanent.</b> LinkedIn: “You won't be able to send a new invitation to the same member
+      for up to three weeks,” and the action can't be reverted. Anyone withdrawn loses the chance to accept the
+      invite you already sent.
+    </div>
+
+    <div class="btnrow">
+      <button class="btn" onclick="dry()">Dry run</button>
+      <button class="btn btn-primary" onclick="alert('Would need a typed confirmation before doing anything.')">Withdraw <span id="nB">129</span>…</button>
+      <label class="sw" style="margin-left:auto"><input type="checkbox" /><i></i> Repeat weekly</label>
+    </div>
+    <div id="dryout" class="sk-note" style="display:none"></div>
+  </div>
+
+  <p class="sk-note real">The histogram is the real distribution off cindy's account. The three sample rows are
+    real names, real slugs, real ages — they're recent, so the threshold correctly excludes them.</p>
+  <p class="sk-note fake">Nothing else here is real: there is no scan job, no dry run, no withdraw.</p>
+  <p class="sk-note">Picking a <b>threshold</b> rather than ticking 129 checkboxes is the point — nobody audits a
+    129-row list, but everyone understands “older than a month.”</p>
+</div>
+
+<!-- ─────────────────────────── C ─────────────────────────── -->
+<div class="sk-pane">
+  <div class="inv-strip" style="background:rgba(160,60,60,.07);border-color:#8a4a4a">
+    <div class="inv-strip-txt">
+      <b>484 unanswered invitations</b> on jeremiah.lofranco@klabber.co.
+      LinkedIn restricts accounts whose invitations are “ignored, left pending, or marked as spam.”
+    </div>
+    <a class="btn" href="https://www.linkedin.com/mynetwork/invitation-manager/sent/" target="_blank" rel="noopener">Open in LinkedIn ↗</a>
+  </div>
+
+  <div id="profiles-grid2" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:11px">
+    <label class="profile-item jt blocked muted is-restricted">
+      <div class="jt-stat s-stop"><span class="jt-dot"></span><span class="jt-word">BACKLOG</span></div>
+      <div class="jt-det">
+        <div class="jt-top"><input type="checkbox" /><span class="jt-email">jeremiah.lofranco@klabber.co</span></div>
+        <div class="jt-sub">484 unanswered — clear some before sending more.</div>
+      </div>
+    </label>
+    <label class="profile-item jt free selected">
+      <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+      <div class="jt-det">
+        <div class="jt-top"><input type="checkbox" checked /><span class="jt-email">catherine.pagcaliwangan@ortus.solutions</span></div>
+        <div class="jt-sub">37 unanswered — healthy.</div>
+      </div>
+    </label>
+  </div>
+
+  <p class="sk-note real">Both counts measured. catherine has the smallest backlog <b>and</b> produced 2 of the
+    campaign's 7 connections — the only correlation in the data, on 4 accounts, so treat it as a hint not a finding.</p>
+  <p class="sk-note">No automation at all: surface the number, sort senders by it, let the operator clear the pile
+    in LinkedIn. Zero withdrawal risk, zero new browser automation, and it never withdraws the wrong person.
+    Costs you the manual work.</p>
+</div>
+
+<script>
+// Real: read off cindy.siapno's Sent tab, 335 of 336 enumerated.
+const HIST = [
+  { label: '5–6 days', days: 6,  n: 59 },
+  { label: '1 week',   days: 7,  n: 139 },
+  { label: '2 weeks',  days: 14, n: 8 },
+  { label: '3 weeks',  days: 21, n: 13 },
+  { label: '1 month',  days: 30, n: 84 },
+  { label: '2 months', days: 60, n: 16 },
+  { label: '4 months', days: 120, n: 16 },
+];
+
+function pick(i, btn) {
+  document.querySelectorAll('.sk-pane').forEach((p, j) => p.classList.toggle('on', i === j));
+  document.querySelectorAll('.sk-tab').forEach(t => t.classList.toggle('on', t === btn));
+  if (i === 1) reHist();
+}
+function thrBox(cb) { document.getElementById('thrA').disabled = !cb.checked; }
+
+function reHist() {
+  const thr = Number(document.getElementById('thrB').value);
+  const max = Math.max(...HIST.map(h => h.n));
+  let hit = 0;
+  document.getElementById('histB').innerHTML = HIST.map(h => {
+    const inRange = h.days >= thr;
+    if (inRange) hit += h.n;
+    return `<div class="hist-row ${inRange ? '' : 'out'}" style="display:contents">
+        <span>${h.label}</span>
+        <span class="hist-bar ${inRange ? 'in' : ''}" style="width:${Math.round(h.n / max * 100)}%"></span>
+        <span class="hist-n">${h.n}</span>
+      </div>`;
+  }).join('');
+  document.getElementById('nB').textContent = hit;
+  document.getElementById('planB').textContent =
+    `→ ${hit} of 335 eligible · at 25/day that's ${Math.ceil(hit / 25)} day(s)`;
+}
+
+function dry() {
+  const el = document.getElementById('dryout');
+  const n = document.getElementById('nB').textContent;
+  el.style.display = '';
+  el.innerHTML = `<b>Dry run</b> — would withdraw ${n}, oldest first, 25/day, skipping anyone still being
+    monitored by a live campaign. Nothing was clicked.`;
+}
+reHist();
+</script>
+</body>
+</html>

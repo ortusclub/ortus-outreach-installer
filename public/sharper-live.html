@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ortus Outreach — live states</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css?v=2.160.127" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.127" />
+<style>
+  /* ── Sketch chrome: the floating switcher. Not part of the proposal. ────── */
+  .skbar { position:fixed; right:18px; bottom:18px; z-index:99; display:flex; gap:8px; align-items:center;
+           background:var(--card-bg); border:1px solid var(--card-border); border-radius:11px;
+           padding:10px 13px; box-shadow:0 10px 34px rgba(0,0,0,.34); }
+  .skbar .lab { font-family:var(--mono); font-size:.6rem; letter-spacing:.15em; text-transform:uppercase; color:var(--gray-faint); }
+  .skbar button { font-family:var(--mono); font-size:.68rem; padding:6px 11px; border-radius:6px; cursor:pointer;
+                  border:1px solid var(--hairline-soft); background:transparent; color:var(--gray); }
+  .skbar button.on { border-color:var(--gold); color:var(--ink); }
+  .skbar .sep { width:1px; align-self:stretch; background:var(--hairline-soft); margin:0 3px; }
+  .sknow { position:fixed; left:calc(var(--sidebar-w) + 30px); bottom:18px; z-index:99;
+           font-family:var(--mono); font-size:.63rem; letter-spacing:.14em; text-transform:uppercase;
+           color:var(--red); border:1px solid rgba(248,81,73,.32); border-radius:8px; padding:8px 12px;
+           background:var(--card-bg); cursor:pointer; }
+  .sknow.on { color:var(--gold); border-color:rgba(247,190,104,.4); }
+
+  /* ── The proposal's CSS. This is the whole visual addition. ─────────────── */
+  .spin { display:inline-block; animation:vj-live-spin 1.1s linear infinite; }
+  .tick { font-family:var(--mono); font-size:.7rem; color:var(--gray-faint); }
+  .nextp { font-size:.74rem; color:var(--gray-faint); margin-top:6px; }
+
+  /* Alt B — roll call */
+  .roll { list-style:none; margin:10px 0 0; padding:0; max-width:520px; }
+  .roll li { display:flex; align-items:center; gap:11px; padding:6px 0; font-size:.84rem;
+             border-bottom:1px solid var(--hairline-soft); }
+  .roll li:last-child { border-bottom:0; }
+  .roll li .ic { width:15px; flex:none; text-align:center; font-family:var(--mono); font-size:.76rem; }
+  .roll li .nm2 { flex:1; color:var(--gray); }
+  .roll li.now { padding:10px 9px; margin:0 -9px; border-radius:8px; background:var(--bg-soft); border-bottom:0; }
+  .roll li.now .nm2 { color:var(--ink); font-weight:500; }
+  .roll li.ok .nm2 { color:var(--gray-faint); }
+
+  /* Alt C — stage */
+  .stage { margin-top:8px; }
+  .stage .bigverb { font-family:var(--mono); font-size:.67rem; letter-spacing:.2em; text-transform:uppercase; }
+  .stage .bigname { font-family:'Bebas Neue',sans-serif; font-size:2.1rem; letter-spacing:.02em; line-height:1.05;
+                    margin:5px 0 3px; color:var(--ink); }
+  .stage .bigsub { font-size:.79rem; color:var(--gray); }
+  .chips { display:flex; gap:7px; flex-wrap:wrap; margin-top:14px; }
+  .chip { font-family:var(--mono); font-size:.64rem; padding:5px 9px; border-radius:6px;
+          border:1px solid var(--hairline-soft); color:var(--gray-faint); display:inline-flex; align-items:center; gap:7px; }
+  .chip .cd { width:5px; height:5px; border-radius:9999px; background:var(--gray-faint); }
+  .chip.on { color:var(--ink); border-color:var(--green); }
+  .chip.on .cd { background:var(--green); animation:vj-queued-pulse 1.4s ease-in-out infinite; }
+  .chip.cap .cd { background:var(--gold); }
+  .chip.off .cd { background:var(--red); }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark">
+<div class="app">
+
+  <!-- ══ REAL SIDEBAR (index.html:17) ═════════════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · v2.160.127</div>
+    </div>
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+      <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+      <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+      <button type="button" class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+      <button type="button" class="nav-item"><span class="nav-num">V.</span>Launch</button>
+      <button type="button" class="nav-item">Live Status</button>
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item"><span class="nav-num">◆</span>Connection DB</button>
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item">Replies</button>
+      <button type="button" class="nav-item">Open log</button>
+    </nav>
+  </aside>
+
+  <!-- ══ REAL MAIN (index.html:156) ═══════════════════════════════════════ -->
+  <main class="main">
+  <div class="container">
+
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Good morning</div>
+        <div class="greeting-subtitle">Wednesday, 5 August</div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v" id="hToday">151</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">1,084</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v">2</span></div>
+      </div>
+    </div>
+
+    <!-- ══ REAL ACTIVE CARD (index.html:286) ═════════════════════════════ -->
+    <section class="vj-card" id="active-card">
+      <div class="vj-eyebrow">
+        <span class="vj-tag"><span class="dot" id="eDot"></span><span id="activeEyebrow">Cloud · Running</span></span>
+        <span class="vj-when" id="activeWhen">started 15:01</span>
+      </div>
+      <h2 class="vj-name"><span id="activeName">CC+IC MON 5TH AUG</span></h2>
+
+      <!-- The card's existing live row. Alt A writes here. -->
+      <div class="vj-live" id="active-live">
+        <span class="vj-live-ico" id="activeLiveIco">→</span>
+        <span class="vj-live-txt">
+          <span class="vj-live-l1" id="activeLiveL1"></span>
+          <span class="vj-live-l2" id="activeLiveL2"></span>
+        </span>
+      </div>
+
+      <!-- Alts B and C render into this slot. -->
+      <div id="altSlot" style="grid-column:1/-1"></div>
+
+      <div class="vj-hbar" role="progressbar"><i id="activeBar" style="width:36%"></i></div>
+
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span id="activePct">36</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b id="activeSent">151</b> of <span id="activeTotal">420</span> sent</span>
+            <span>Next batch in <b id="batchEta">3 min</b></span>
+          </div>
+        </div>
+        <div class="vj-stats">
+          <span><b id="activeAccounts">4</b> accounts</span>
+          <span><b id="activeAccepted">7</b> accepted</span>
+          <span>· <b id="sendingLbl">Sending</b> ·</span>
+        </div>
+      </div>
+
+      <div class="vj-controls">
+        <button class="btn-pill">Open</button>
+        <button class="vj-toggle-btn" data-tip="Show details">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn" data-tip="Pause">
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          </button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop">
+              <svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>
+            </button>
+            <button class="dock-btn" data-tip="Restart">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+  </main>
+</div>
+
+<button class="sknow" id="nowBtn" onclick="toggleNow()">Showing: PROPOSED — click for TODAY</button>
+
+<div class="skbar">
+  <span class="lab">Alt</span>
+  <button class="on" data-a="a">A · line</button>
+  <button data-a="b">B · roll call</button>
+  <button data-a="c">C · stage</button>
+  <span class="sep"></span>
+  <span class="lab">Speed</span>
+  <button data-s="1" class="on">1×</button>
+  <button data-s="4">4×</button>
+  <span class="sep"></span>
+  <button onclick="document.body.classList.toggle('theme-dark');document.body.classList.toggle('theme-light')">light</button>
+</div>
+
+<script>
+let ALT = 'a', SPEED = 1, SHOW_TODAY = false, t = 0, timer = null;
+
+document.querySelectorAll('.skbar button[data-a]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.skbar button[data-a]').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); ALT = b.dataset.a; paint();
+});
+document.querySelectorAll('.skbar button[data-s]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.skbar button[data-s]').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); SPEED = Number(b.dataset.s); run();
+});
+function toggleNow() {
+  SHOW_TODAY = !SHOW_TODAY;
+  const b = document.getElementById('nowBtn');
+  b.textContent = SHOW_TODAY ? 'Showing: TODAY — click for PROPOSED' : 'Showing: PROPOSED — click for TODAY';
+  b.classList.toggle('on', !SHOW_TODAY);
+  paint();
+}
+
+// A real CC+IC campaign's day, as a timeline. Each entry lasts `d` seconds.
+const LEADS = ['Sarah Whitfield','Daniel Okonjo','Amara Nwosu','Priya Raman','Tom Reidy','Lena Fischer'];
+const ACCTS = ['matt.adcock','cindy.harper','jeremiah.bell','trisha.moore'];
+const TL = [
+  { ph:'send',  d:38, who:'Sarah Whitfield', acct:'matt.adcock',  n:152 },
+  { ph:'send',  d:34, who:'Daniel Okonjo',   acct:'matt.adcock',  n:153 },
+  { ph:'send',  d:30, who:'Amara Nwosu',     acct:'matt.adcock',  n:154 },
+  { ph:'check', d:44, who:'matt.adcock',     idx:1, tot:4, found:3 },
+  { ph:'check', d:40, who:'cindy.harper',    idx:2, tot:4, found:0 },
+  { ph:'intro', d:26, who:'Daniel Okonjo',   acct:'matt.adcock',  i:1, tot:6 },
+  { ph:'intro', d:24, who:'Tom Reidy',       acct:'matt.adcock',  i:2, tot:6 },
+  { ph:'send',  d:36, who:'Priya Raman',     acct:'cindy.harper', n:155 },
+];
+const TOTAL = TL.reduce((s,x)=>s+x.d,0);
+
+function at(sec) {
+  let acc = 0;
+  for (let i=0;i<TL.length;i++){ acc += TL[i].d; if (sec < acc) return { s:TL[i], el: sec - (acc - TL[i].d), i }; }
+  return { s:TL[TL.length-1], el:0, i:TL.length-1 };
+}
+
+const PHASE = {
+  send:  { ico:'→', col:'var(--green)', lbl:'Sending',     eye:'Cloud · Running' },
+  intro: { ico:'✎', col:'var(--green)', lbl:'Introducing', eye:'Cloud · Introducing' },
+  check: { ico:'↻', col:'var(--blue)',  lbl:'Checking',    eye:'Cloud · Checking' },
+};
+
+function paint() {
+  const { s, el, i } = at(t);
+  const P = PHASE[s.ph];
+  const slot = document.getElementById('altSlot');
+  const live = document.getElementById('active-live');
+
+  // ── TODAY: what the card actually renders right now. ──
+  if (SHOW_TODAY) {
+    slot.innerHTML = '';
+    live.hidden = false;
+    document.getElementById('activeLiveIco').textContent = '→';
+    document.getElementById('activeLiveIco').style.color = 'var(--green)';
+    document.getElementById('activeLiveIco').className = 'vj-live-ico';
+    document.getElementById('activeLiveL1').innerHTML = 'Working…';
+    document.getElementById('activeLiveL2').textContent = '';
+    document.getElementById('activeEyebrow').textContent = 'Cloud · Running';
+    document.getElementById('eDot').style.background = 'var(--green)';
+    document.getElementById('sendingLbl').textContent = 'Sending';
+    return;
+  }
+
+  document.getElementById('activeEyebrow').textContent = P.eye;
+  document.getElementById('eDot').style.background = P.col;
+  document.getElementById('sendingLbl').textContent = P.lbl;
+
+  // ── ALT A — the existing .vj-live row, filled in properly. ──
+  if (ALT === 'a') {
+    slot.innerHTML = '';
+    live.hidden = false;
+    const ico = document.getElementById('activeLiveIco');
+    ico.textContent = P.ico; ico.style.color = P.col;
+    ico.className = 'vj-live-ico' + (s.ph === 'check' ? ' spin' : '');
+    const L1 = document.getElementById('activeLiveL1'), L2 = document.getElementById('activeLiveL2');
+    if (s.ph === 'send') {
+      L1.innerHTML = `Sending to <b>${s.who}</b>`;
+      L2.innerHTML = `${s.acct}@ortus.solutions · ${s.n} of 420 · <span class="tick">${el}s</span>`;
+    } else if (s.ph === 'intro') {
+      L1.innerHTML = `Introducing <b>${s.who}</b>`;
+      L2.innerHTML = `via ${s.acct} · ${s.i} of ${s.tot} accepted today · <span class="tick">${el}s</span>`;
+    } else {
+      L1.innerHTML = `Checking <b>${s.who}</b> for acceptances`;
+      L2.innerHTML = `account ${s.idx} of ${s.tot} · <span class="tick">${el}s</span>`;
+    }
+    slot.innerHTML = `<div class="nextp">${nextPromise(s)}</div>`;
+    return;
+  }
+
+  // ── ALT B — roll call. ──
+  live.hidden = true;
+  if (ALT === 'b') {
+    const past = TL.slice(Math.max(0,i-2), i);
+    const next = TL.slice(i+1, i+2);
+    slot.innerHTML = `<ul class="roll">
+      ${past.map(p => `<li class="ok"><span class="ic" style="color:var(--green)">✓</span><span class="nm2">${p.who}</span><span class="tick">${p.ph==='check'?'swept':p.ph==='intro'?'intro’d':'sent'}</span></li>`).join('')}
+      <li class="now"><span class="ic spin" style="color:${P.col}">${P.ico}</span><span class="nm2">${s.who}</span><span class="tick">${el}s</span></li>
+      ${next.map(p => `<li><span class="ic">·</span><span class="nm2" style="color:var(--gray-faint)">${p.who}</span><span class="tick">next</span></li>`).join('')}
+    </ul><div class="nextp">${subline(s)} · ${nextPromise(s)}</div>`;
+    return;
+  }
+
+  // ── ALT C — stage. ──
+  slot.innerHTML = `<div class="stage">
+    <div class="bigverb" style="color:${P.col}">${s.ph==='check'?'<span class="spin">↻</span>':P.ico} ${
+      s.ph==='send' ? 'Sending connection' : s.ph==='intro' ? 'Writing introduction' : 'Checking acceptances'}</div>
+    <div class="bigname">${s.who.toUpperCase()}</div>
+    <div class="bigsub">${subline(s)} · <span class="tick">${el}s</span></div>
+    <div class="chips">${ACCTS.map(a => {
+      const on = (s.acct || s.who) === a;
+      const cap = a === 'jeremiah.bell', off = a === 'trisha.moore';
+      const lbl = off ? 'benched' : cap ? '50/50' : a === 'matt.adcock' ? '12/50' : '34/50';
+      return `<span class="chip ${on?'on':''} ${cap?'cap':''} ${off?'off':''}"><span class="cd"></span>${a.split('.')[0]} ${on?'· '+P.lbl.toLowerCase():lbl}</span>`;
+    }).join('')}</div>
+    <div class="nextp">${nextPromise(s)}</div>
+  </div>`;
+}
+
+function subline(s) {
+  if (s.ph === 'send') return `${s.acct}@ortus.solutions · ${s.n} of 420`;
+  if (s.ph === 'intro') return `via ${s.acct} · ${s.i} of ${s.tot} accepted`;
+  return `account ${s.idx} of ${s.tot}`;
+}
+function nextPromise(s) {
+  if (s.ph === 'send') return 'next lead in ~45s';
+  if (s.ph === 'intro') return `${(s.tot||6) - (s.i||0)} more intros queued`;
+  return 'next check 11:06';
+}
+
+function run() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(() => { t = (t + 1) % TOTAL; paint(); }, 1000 / SPEED);
+}
+paint(); run();
+</script>
+</body>
+</html>
