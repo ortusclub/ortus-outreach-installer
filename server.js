@@ -95,7 +95,7 @@ import { getConnectionsStats, searchConnections, exportConnections, buildLeadRow
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
 import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg } from './src/connections/fg-sync.js';
-import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun } from './src/connections/fg-cloud-launch.js';
+import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
 import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
 import { normMonth } from './src/connections/fg-export.js';
@@ -2727,7 +2727,83 @@ async function reconcileListRun(record) {
     const r = await updateFgListLedger(record.tab, updates);
     try { campaignLog(`[FG-cloud] list ledger "${record.tab}": stamped ${r.updated} row(s)`); } catch (_) {}
   }
+
+  // Gap 1 + Gap 4 fix: write invited AND already-follows members to the central
+  // FG Invites tab so they appear in invitedKeysFromState (the cross-run de-dupe
+  // source). Already-follows cost no credit and must never re-fill a slot — the
+  // local path persists both identically (server.js record callback). Uses
+  // invitedWritebackFromLeads for invited leads, then extends with already-follows
+  // from the same engine leads. Requires perAccount + month stored at dispatch
+  // time. Older records without perAccount are harmless (skipped). Best-effort:
+  // a sheet hiccup must not fail reconcile.
+  if (record.perAccount) {
+    const groups = invitedWritebackFromLeads(leads, record);
+    // Gap 4: also include already-follows leads (status='skipped', error matches
+    // 'already follows'). Group their member IDs by account, same as invited.
+    const byUrl = {};
+    for (const a of record.perAccount) Object.assign(byUrl, a.rowsByUrl || {});
+    const byProfileMeta = new Map(record.perAccount.map((a) => [String(a.profileId), a]));
+    const alreadyFollowsById = new Map(); // profileId → Set(memberId)
+    for (const l of leads) {
+      if (l.status !== 'skipped' || !/already follow/i.test(l.error || '')) continue;
+      const memberId = byUrl[String(l.leadUrl || '').trim()];
+      if (!memberId) continue;
+      const profileId = String(l.account || '');
+      if (!profileId || !byProfileMeta.has(profileId)) continue;
+      if (!alreadyFollowsById.has(profileId)) alreadyFollowsById.set(profileId, new Set());
+      alreadyFollowsById.get(profileId).add(String(memberId));
+    }
+    // Merge already-follows into existing groups or create new ones
+    for (const [profileId, ids] of alreadyFollowsById) {
+      const existing = groups.find((g) => byProfileMeta.get(profileId)?.account === g.account);
+      if (existing) {
+        for (const id of ids) if (!existing.memberIds.includes(id)) existing.memberIds.push(id);
+      } else {
+        const meta = byProfileMeta.get(profileId);
+        groups.push({ account: meta.account, operator: meta.operator, month: meta.month, memberIds: [...ids] });
+      }
+    }
+    for (const g of groups) {
+      try {
+        await markFgInvited({ memberIds: g.memberIds, account: g.account, operator: g.operator, month: g.month });
+        try { campaignLog(`[FG-cloud] list run ${record.cloudId}: marked ${g.memberIds.length} invite(s)/follow(s) for ${g.account} in FG Invites`); } catch (_) {}
+      } catch (e) {
+        try { campaignLog(`[FG-cloud] ⚠ list run ${record.cloudId}: FG Invites writeback failed for ${g.account} (${e.message}) — will retry next reconcile`); } catch (_) {}
+      }
+    }
+  }
+
   const terminal = ['done', 'cancelled', 'error', 'stopped'].includes(status);
+
+  // Gap 3 fix: write the engine's per-account credit snapshot to FG Budgets so
+  // the sheet stays current. The engine reads the exact same live modal numbers
+  // the local path does (available / allowance / refill) and persists them via
+  // store.setCredits — the /accounts endpoint surfaces them. Only at terminal
+  // (final snapshot), and only when we have perAccount metadata for the lookup.
+  if (terminal && record.perAccount) {
+    try {
+      const acctResp = await getCloudCampaignAccounts(record.cloudId);
+      const cloudAccounts = (acctResp && acctResp.accounts) || [];
+      for (const ca of cloudAccounts) {
+        if (!ca.credits || ca.credits.available == null) continue;
+        const meta = record.perAccount.find((a) => a.profileId === ca.profileId);
+        if (!meta) continue;
+        try {
+          await observeFgCredits({
+            account: meta.account, operator: meta.operator, month: meta.month,
+            available: ca.credits.available, allowance: ca.credits.allowance,
+            refill: ca.credits.refill || '',
+          });
+          try { campaignLog(`[FG-cloud] list run ${record.cloudId}: observed credits for ${meta.account} — ${ca.credits.available}/${ca.credits.allowance}`); } catch (_) {}
+        } catch (e) {
+          try { campaignLog(`[FG-cloud] ⚠ list run ${record.cloudId}: credit observation failed for ${meta.account} (${e.message})`); } catch (_) {}
+        }
+      }
+    } catch (e) {
+      try { campaignLog(`[FG-cloud] ⚠ list run ${record.cloudId}: could not read accounts for credit observation (${e.message})`); } catch (_) {}
+    }
+  }
+
   return { reconciled: terminal, updated: updates.length };
 }
 
@@ -2839,6 +2915,23 @@ app.post('/api/fg/list/writeback', async (req, res) => {
   } catch (e) { return res.status(502).json({ error: e.message }); }
 });
 
+// Unreconciled cloud runs — powers the FG board "awaiting reconcile" indicator.
+app.get('/api/fg/cloud-runs/pending', (_req, res) => {
+  const runs = _fgCloudRunStore.load() || [];
+  const pending = runs.filter((r) => r.status !== 'reconciled');
+  return res.json({ pending: pending.length, runs: pending.map((r) => ({ cloudId: r.cloudId, kind: r.kind, tab: r.tab, status: r.status, dispatchedAt: r.dispatchedAt })) });
+});
+
+// Manual "Sync now" — reconcile all unreconciled cloud runs on demand.
+app.post('/api/fg/cloud-runs/reconcile', async (_req, res) => {
+  try {
+    await reconcileFgCloudRuns();
+    const runs = _fgCloudRunStore.load() || [];
+    const pending = runs.filter((r) => r.status !== 'reconciled').length;
+    return res.json({ ok: true, pending });
+  } catch (e) { return res.status(502).json({ error: e.message }); }
+});
+
 // GENERATE (auto option): build the invite list from the role keywords and write
 // it to the per-run tab. No hard monthly cap — list all eligible; LinkedIn's own
 // invite credits are the ceiling. The tab is then reviewable/editable before the
@@ -2921,7 +3014,18 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
       // Register this run so the reconcile loop stamps the ledger (Status /
       // Invited At / Note / Member ID) back into ITS tab as invites go out.
-      try { _fgCloudRunStore.add({ cloudId: out.cloudId, kind: 'list', tab, owner, status: 'dispatched', dispatchedAt: Date.now() }); } catch (_) {}
+      // perAccount + month are stored so the reconcile can also call markFgInvited
+      // to feed the central FG Invites de-dupe tab (Gap 1).
+      const pairsLookup = Object.fromEntries(pairs.map((p) => [p.profileId, p]));
+      try { _fgCloudRunStore.add({
+        cloudId: out.cloudId, kind: 'list', tab, owner, month,
+        status: 'dispatched', dispatchedAt: Date.now(),
+        perAccount: (out.perAccount || []).map((a) => ({
+          profileId: a.profileId, account: a.account,
+          operator: (pairsLookup[a.profileId] || {}).operator || owner,
+          month, rowsByUrl: a.rowsByUrl || {},
+        })),
+      }); } catch (_) {}
       reconcileFgCloudRuns().catch(() => {}); // kick a first poll shortly (non-blocking)
       // Slim per-account plan (profileId → queued count) so the Live-status board
       // can show how many invites each account has lined up. The engine's /leads

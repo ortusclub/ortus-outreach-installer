@@ -15,7 +15,7 @@ spec:
       serviceAccountName: fg-roster   # Workload-Identity-bound to a GSA with storage.objectViewer on the bucket
       containers:
         - name: fg-roster
-          image: asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v4
+          image: asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v5
           ports: [{ name: http, containerPort: 8080 }]
           env:
             - { name: FG_ROSTER_BUCKET, value: ortus-fg-connections-db }

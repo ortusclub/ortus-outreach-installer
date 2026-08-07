@@ -20323,6 +20323,28 @@ async function fgapLoad() {
   } catch (_) { /* offline / service down — strip keeps last-known state */ }
 }
 
+// Reconcile banner — polls for unreconciled cloud runs and shows a warning.
+async function _fgReconcileCheck() {
+  try {
+    const j = await fetch('/api/fg/cloud-runs/pending').then((r) => r.json());
+    const banner = document.getElementById('fg-reconcile-banner');
+    const text = document.getElementById('fg-reconcile-text');
+    if (!banner) return;
+    const n = j.pending || 0;
+    banner.style.display = n > 0 ? '' : 'none';
+    if (text && n > 0) text.textContent = `${n} run${n === 1 ? '' : 's'} awaiting reconcile`;
+  } catch (_) { /* offline */ }
+}
+async function _fgSyncNow() {
+  const btn = document.getElementById('fg-reconcile-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'SYNCING...'; }
+  try {
+    await fetch('/api/fg/cloud-runs/reconcile', { method: 'POST' });
+  } catch (_) { /* best-effort */ }
+  if (btn) { btn.disabled = false; btn.textContent = 'SYNC NOW'; }
+  await _fgReconcileCheck();
+}
+
 function fgapRender() {
   const cfg = (_fgapData && _fgapData.config) || { enabled: true, days: [1, 15] };
   const dot = document.getElementById('fgap-dot');
@@ -20547,6 +20569,7 @@ async function fgapInit() {
   fgapBind();
   await fgapLoad();
   await fgapPublish(); // publish current picks/keywords on every board open — no-ops if the load above failed (state unknown, never clobber)
+  _fgReconcileCheck(); // non-blocking — show banner if runs are awaiting write-back
 }
 
 async function initFollowerGrowth() {

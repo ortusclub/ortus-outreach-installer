@@ -7,7 +7,7 @@ steps:
       - -f
       - services/fg-roster/Dockerfile
       - -t
-      - asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v4
+      - asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v5
       - .
 images:
-  - asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v4
+  - asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/fg-roster:v5

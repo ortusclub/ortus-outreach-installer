@@ -2281,6 +2281,17 @@
         </div>
       </div>
 
+      <!-- Reconcile banner — shows when cloud runs are awaiting write-back -->
+      <div class="fgap" id="fg-reconcile-banner" style="display:none">
+        <div class="fgap-strip" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:14px">&#9888;</span>
+            <span class="fgap-title" id="fg-reconcile-text" style="font-size:11px">0 runs awaiting reconcile</span>
+          </div>
+          <button class="fgtl-watch-btn" id="fg-reconcile-btn" onclick="_fgSyncNow()" style="font-size:10px;padding:5px 12px">SYNC NOW</button>
+        </div>
+      </div>
+
       <!-- Wizard: always visible. Numbered steps take you from list → accounts →
            launch, with the live status streaming at the bottom. -->
       <div id="fgap-manual">
