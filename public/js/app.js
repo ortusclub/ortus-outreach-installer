@@ -21111,6 +21111,27 @@ async function fgapRunNow() {
 //   • expand the FG board first (the card lives in the hidden #fgap-manual).
 //   • label from fgtlAllPairedPairs() — Auto-Pilot dispatches the FULL team, and
 //     fgtlPicked (the manual launch cart) is empty in the Auto-Pilot flow.
+/**
+ * Re-attach to a cloud FG run that is still going after an app restart.
+ * Picks the newest run the store has not reconciled yet and drives the live card
+ * from it, exactly as if this session had launched it.
+ */
+async function fgtlAdoptRunningCloudRun() {
+  const r = await fetch('/api/fg/cloud-runs/pending');
+  if (!r.ok) return;
+  const d = await r.json();
+  const runs = (d && d.runs) || [];
+  if (!runs.length) return;
+  // dispatchedAt has been written both as an ISO string and as a raw epoch —
+  // Number(new Date(x)) reads either, and NaN sorts last.
+  const stamp = (x) => Number(new Date(x)) || Number(x) || 0;
+  const latest = runs.slice().sort((a, b) => stamp(b.dispatchedAt) - stamp(a.dispatchedAt))[0];
+  if (!latest || !latest.cloudId) return;
+  if (latest.tab) { _fgtlListTab = latest.tab; _fgReviewedTab = latest.tab; fgwSetListTab(latest.tab); fgReviewRenderGate(); }
+  fgapShowCloudLaunchCard(latest.cloudId);
+  fgtlCloudPoll();
+}
+
 function fgapShowCloudLaunchCard(cloudId) {
   const manual = document.getElementById('fgap-manual');
   if (manual && manual.hidden) {
@@ -21154,6 +21175,11 @@ async function initFollowerGrowth() {
   // If a cloud FG run is already in flight (operator navigated away and back),
   // resume driving its card from the cloud campaign instead of showing "Idle".
   if (_fgtlCloudId) { try { fgtlCloudPoll(); } catch (_) { /* */ } }
+  // A cloud run outlives this app — it is executing on the VM. _fgtlCloudId is
+  // in-memory, so closing or restarting the app used to lose the live card while
+  // invites carried on landing in the sheet. The dispatch is recorded durably in
+  // fg-cloud-runs.json, so adopt the newest unreconciled one and re-attach to it.
+  else { try { await fgtlAdoptRunningCloudRun(); } catch (_) { /* */ } }
   // 1. Load the FG sheet — NOT awaited. It is a ~17s round trip against a sheet
   // with 15k invite rows, and awaiting it left the whole screen blank until it
   // came back. Budgets only affect the per-account invite numbers, so let them

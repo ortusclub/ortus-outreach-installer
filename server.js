@@ -3134,7 +3134,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       const pairsLookup = Object.fromEntries(pairs.map((p) => [p.profileId, p]));
       try { _fgCloudRunStore.add({
         cloudId: out.cloudId, kind: 'list', tab, owner, month,
-        status: 'dispatched', dispatchedAt: Date.now(),
+        status: 'dispatched', dispatchedAt: new Date().toISOString(),
         perAccount: (out.perAccount || []).map((a) => ({
           profileId: a.profileId, account: a.account,
           operator: (pairsLookup[a.profileId] || {}).operator || owner,
