@@ -39,3 +39,30 @@ test('the field is OMITTED for an immediate launch', async () => {
     assert.equal('startAt' in body, false, `startAt should be absent for ${JSON.stringify(startAt)}`);
   }
 });
+
+// ── scheduled RESTART: an opened stopped/done campaign, scheduled instead of
+// started. Same idea, different route — the engine restarts the SAME campaign
+// rather than creating one (a new dispatch would clone it "…_c" → "…_d").
+const { restartCloudCampaign } = await import('../src/campaigns-client.js');
+
+async function captureRestart(opts) {
+  const origFetch = globalThis.fetch;
+  let body = null;
+  globalThis.fetch = async (_url, o) => {
+    body = o?.body ? JSON.parse(o.body) : null;
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) };
+  };
+  try { await restartCloudCampaign('cmp_1', opts); } finally { globalThis.fetch = origFetch; }
+  return body;
+}
+
+test('restart carries startAt when scheduling', async () => {
+  const when = new Date(Date.now() + 7200e3).toISOString();
+  assert.equal((await captureRestart({ startAt: when })).startAt, when);
+});
+
+test('restart omits startAt for an immediate restart', async () => {
+  const body = await captureRestart({ fromStart: true });
+  assert.equal('startAt' in body, false);
+  assert.equal(body.fromStart, true);
+});

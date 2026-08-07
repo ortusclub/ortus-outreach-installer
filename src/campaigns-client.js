@@ -313,9 +313,12 @@ export function resumeCloudCampaign(id) {
  * control calls; returns { error, status } until the engine ships the route so
  * the UI can degrade gracefully.
  */
-export function restartCloudCampaign(id, { fromStart = false, dailyLimit } = {}) {
+export function restartCloudCampaign(id, { fromStart = false, dailyLimit, startAt } = {}) {
   const body = { fromStart: !!fromStart };
   if (dailyLimit != null && Number(dailyLimit) > 0) body.dailyLimit = Math.floor(Number(dailyLimit));
+  // Scheduled restart: the engine parks the campaign in 'scheduled' and restarts
+  // it itself at this instant instead of going straight back to running.
+  if (startAt) body.startAt = startAt;
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/restart`, body);
 }
 

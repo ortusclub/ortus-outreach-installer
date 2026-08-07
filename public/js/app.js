@@ -9580,7 +9580,9 @@ async function _renderCampaignsBoardInner() {
         bucket, sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)),
         total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - Number(lc._preActioned || 0),
         accounts: (c.profile_ids || []).length, profileIds: c.profile_ids || [], mine,
-        scheduledAt: (c.status === 'scheduled' && c.config && c.config.startAt) || null,
+        // When the VM will start it — the engine reads this off the pending
+        // start_campaign task itself, so it can't drift from the real timer.
+        scheduledAt: c.scheduled_start_at || null,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Stopped' : 'Error',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
