@@ -259,7 +259,8 @@ function fgWriteMaster_(data) {
   if (rows.length) {
     var at = Number(startRow) || sh.getLastRow() + 1;
     var rng = sh.getRange(at, 1, rows.length, header.length);
-    rng.setValues(rows).setNumberFormat('@');
+    rng.setNumberFormat('@');
+    rng.setValues(rows);
   }
   return { tab: name, written: rows.length, mode: mode };
 }
