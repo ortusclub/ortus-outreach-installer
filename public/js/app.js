@@ -21352,6 +21352,7 @@ async function fgMasterPoll() {
   const status = document.getElementById('fg-master-status');
   try {
     const d = await (await fetch('/api/fg/master/status')).json();
+    if (d.phase === 'idle') { if (btn) btn.disabled = false; return; }
     if (status) {
       if (d.phase === 'done') status.textContent = `✓ ${d.written} people written (${d.backfilled} already invited).`;
       else if (d.phase === 'error') status.textContent = 'Failed: ' + (d.error || 'unknown error');
@@ -21742,7 +21743,8 @@ function fgtlBindLaunch() {
   const openSheetBtn = document.getElementById('fgtl-open-sheet');
   if (openSheetBtn && !openSheetBtn._b) { openSheetBtn._b = true; openSheetBtn.addEventListener('click', fgtlOpenSheet); }
   const fgMasterBtn = document.getElementById('fg-master-build');
-  if (fgMasterBtn && !fgMasterBtn._b) { fgMasterBtn._b = true; fgMasterBtn.addEventListener('click', fgMasterBuild); }
+  // The build runs server-side, so a page reload only loses the poller — re-attach it.
+  if (fgMasterBtn && !fgMasterBtn._b) { fgMasterBtn._b = true; fgMasterBtn.addEventListener('click', fgMasterBuild); fgMasterBtn.disabled = true; fgMasterPoll(); }
   const refreshTabsBtn = document.getElementById('fgtl-byo-refresh');
   if (refreshTabsBtn && !refreshTabsBtn._b) { refreshTabsBtn._b = true; refreshTabsBtn.addEventListener('click', fgtlLoadTabs); }
   const editSchedBtn = document.getElementById('fgw-edit-schedule');
