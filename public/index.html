@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.173" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.173" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.174" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.174" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2318,7 +2318,7 @@
         <div class="fgap-strip">
           <span class="fgap-dot" id="fgap-dot"></span>
           <div class="fgap-lead">
-            <div class="fgap-title" id="fgap-title">AUTO-PILOT &#183; ON</div>
+            <div class="fgap-title" id="fgap-title">AUTO-PILOT &#183; &#8230;</div>
             <div class="fgap-next" id="fgap-next">Next run &#8212;</div>
           </div>
         </div>
@@ -2449,7 +2449,11 @@
             <span id="fgw-list-tab" class="fgw-list-tab" style="display:none"></span>
             <button type="button" class="fgap-run" id="fgap-run" title="Fire the invite-list tab you built in step 1 to the cloud VM now, outside the schedule">&#9654; Run it now</button>
             <span class="fgw-toggle-lab">Auto-Pilot</span>
-            <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot on/off"></button>
+            <!-- Starts OFF and stays OFF until the cloud config is actually read.
+                 Painting it green by default told an operator Auto-Pilot was ON
+                 while the service had enabled:false — the scheduled run would
+                 have silently not happened. Never claim a state we haven't read. -->
+            <button type="button" class="fgap-toggle" id="fgap-toggle" role="switch" aria-checked="false" title="Toggle Auto-Pilot on/off"></button>
           </div>
         </div>
         <pre id="fgw-log" class="fgw-log">The campaign log streams here while a run is active.</pre>
@@ -3805,7 +3809,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.173"></script>
+  <script type="module" src="/js/app.js?v=2.160.174"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

@@ -20971,21 +20971,44 @@ async function _fgSyncNow() {
 }
 
 function fgapRender() {
-  const cfg = (_fgapData && _fgapData.config) || { enabled: true, days: [1, 15] };
   const dot = document.getElementById('fgap-dot');
   const title = document.getElementById('fgap-title');
   const next = document.getElementById('fgap-next');
   const toggle = document.getElementById('fgap-toggle');
+  // Three states, not two. "We haven't read the cloud config" is NOT "ON": the
+  // old default painted the switch green over a stored enabled:false, so the
+  // 1st/15th would have quietly not fired while the board said it would.
+  const known = !!(_fgapData && _fgapData.config && !_fgapData.degraded);
+  if (!known) {
+    if (dot) dot.classList.add('off');
+    if (title) title.textContent = `AUTO-PILOT · ${_fgapData ? 'UNKNOWN' : '…'}`;
+    if (toggle) { toggle.classList.remove('on'); toggle.setAttribute('aria-checked', 'false'); }
+    if (next) next.textContent = _fgapData
+      ? 'Can’t reach the scheduler — its real on/off state is unknown'
+      : 'Checking the scheduler…';
+    return;
+  }
+  const cfg = _fgapData.config;
   if (dot) dot.classList.toggle('off', !cfg.enabled);
   if (title) title.textContent = `AUTO-PILOT · ${cfg.enabled ? 'ON' : 'OFF'}`;
   if (toggle) { toggle.classList.toggle('on', !!cfg.enabled); toggle.setAttribute('aria-checked', String(!!cfg.enabled)); }
   if (next) {
-    const label = cfg.enabled && _fgapData && _fgapData.nextRunLabel
+    const label = cfg.enabled && _fgapData.nextRunLabel
       ? new Date(_fgapData.nextRunLabel).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
       : '';
     next.innerHTML = label
       ? `Next run <b>${escHtml(label)}</b> · repeats ${escHtml((cfg.days || [1, 15]).join(' & '))}`
-      : 'Auto-Pilot is off';
+      : 'Auto-Pilot is off — nothing will fire on the 1st or 15th';
+  }
+  // Step 3's sentence promises "Runs automatically on the 1st & 15th". Say the
+  // configured days, and say it out loud when nothing is going to run at all.
+  const ord = (d) => { const s = ['th', 'st', 'nd', 'rd']; const v = d % 100; return d + (s[(v - 20) % 10] || s[v] || s[0]); };
+  const days = document.getElementById('fgw-sched-days');
+  if (days) days.textContent = (cfg.days || [1, 15]).map(ord).join(' & ');
+  const schedNext = document.getElementById('fgw-sched-next');
+  if (schedNext) {
+    schedNext.innerHTML = cfg.enabled ? ''
+      : '<b style="color:var(--red)">Auto-Pilot is OFF — no scheduled run will fire until you switch it on below.</b>';
   }
 }
 
@@ -21034,7 +21057,8 @@ function fgapQueuePublish() {
 }
 
 async function fgapToggle() {
-  if (!_fgapData) return;
+  // Degraded = we never read the real state; flipping would publish a guess.
+  if (!_fgapData || _fgapData.degraded) return;
   _fgapData.config = _fgapData.config || {};
   _fgapData.config.enabled = !_fgapData.config.enabled;
   fgapRender();
