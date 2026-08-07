@@ -49,10 +49,11 @@ test('invitedIndexFromFgInvites indexes only Invited rows, by member id then url
     { 'Member ID': '', 'LinkedIn URL': 'https://www.linkedin.com/in/Bo/', Status: 'Invited', 'Invited At': '2026-07-02 09:00 UTC', Account: 'bo@ortus.example' },
     { 'Member ID': '999', 'LinkedIn URL': 'https://linkedin.com/in/cy', Status: 'Failed', 'Invited At': '', Account: 'cy@ortus.example' },
   ]);
-  assert.equal(idx.size, 2);
   assert.deepEqual(idx.get('12345'), { invitedAt: '2026-07-01 09:00 UTC', invitedBy: 'ada@ortus.example' });
+  assert.deepEqual(idx.get('linkedin.com/in/ada'), { invitedAt: '2026-07-01 09:00 UTC', invitedBy: 'ada@ortus.example' });
   assert.deepEqual(idx.get('linkedin.com/in/bo'), { invitedAt: '2026-07-02 09:00 UTC', invitedBy: 'bo@ortus.example' });
   assert.equal(idx.has('999'), false, 'Failed rows must not count as invited');
+  assert.equal(idx.has('linkedin.com/in/cy'), false, 'Failed rows must not count as invited');
 });
 
 test('masterRowFromRecord stamps the ledger columns from the invited index', () => {

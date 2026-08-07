@@ -24,15 +24,18 @@ export function masterKey({ memberId = '', url = '' } = {}) {
 }
 
 // FG Invites rows → key → { invitedAt, invitedBy } for rows actually Invited.
-// Keyed with masterKey (Member ID, else normalised URL) so a master row keyed
-// the same way finds it.
+// Both the Member ID and the URL of an invited row are indexed, so a master row
+// keyed either way finds it — a contact's master row may key by URL (no member
+// id on the Connections DB side) while its invite row carries a Member ID.
 export function invitedIndexFromFgInvites(invites = []) {
   const idx = new Map();
   for (const r of invites || []) {
     if (!r || String(r.Status || '') !== 'Invited') continue;
-    const key = masterKey({ memberId: r['Member ID'], url: r['LinkedIn URL'] });
-    if (!key) continue;
-    idx.set(key, { invitedAt: norm(r['Invited At']), invitedBy: norm(r.Account) });
+    const entry = { invitedAt: norm(r['Invited At']), invitedBy: norm(r.Account) };
+    const memberId = norm(r['Member ID']);
+    const url = normUrl(r['LinkedIn URL']);
+    if (memberId) idx.set(memberId, entry);
+    if (url) idx.set(url, entry);
   }
   return idx;
 }
