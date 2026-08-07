@@ -23827,16 +23827,25 @@ function renderLiveStage(root, status) {
   let la = null;
   try { la = buildLiveActivity(status); } catch (_) { la = null; }
   const ca = (status && status.currentAction) || null;
-  const phase = la && la.phase;
-  if (!phase) { stage.hidden = true; return false; }
-
   const cid = String((status && status.id) || '');
+  // A finished run has no live phase, and the stage used to vanish with it —
+  // taking the account pills, which are the ONLY place per-account state is
+  // shown. That left a done card reading "258 of 1567 sent" with no way to see
+  // which accounts sent, which were benched, or why. Keep the stage for a
+  // finished run whenever we still have its accounts; it renders in a past-tense
+  // 'done' phase with no spinner.
+  const _doneAccts = (cid && _cloudAccountsById.get(cid)) || [];
+  const phase = (la && la.phase) || (_doneAccts.length ? 'done' : '');
+  if (!phase) { stage.hidden = true; return false; }
+  if (!la) la = { phase, who: '', l1: '', l2: '' };
+
   stage.hidden = false;
   stage.dataset.cid = cid;
   _stageStatus.set(stage, status);
   const paused = !!(status.paused || status._paused);
   stage.classList.toggle('is-checking', phase === 'checking');
   stage.classList.toggle('is-waiting', phase === 'waiting');
+  stage.classList.toggle('is-done', phase === 'done');
   stage.classList.toggle('is-paused', paused);
 
   // Elapsed clock — restarted only when the phase or the person changes, and

@@ -461,6 +461,11 @@
     50% { opacity: 1; transform: scale(1); }
   }
   body[data-dashboard='v3'] .vj-stage.is-waiting { border-color: var(--gold, #d4a24a); }
+  /* Finished run: the stage stays for its account pills, so it must read as a
+     record and not as something still happening — no spinner, muted glyph. */
+  body[data-dashboard='v3'] .vj-stage.is-done .vj-stage-gly,
+  body[data-dashboard='v3'] .vj-stage.is-done .stg-fly i { animation: none; opacity: .45; }
+  body[data-dashboard='v3'] .vj-stage.is-done .vj-stage-secs { display: none; }
   body[data-dashboard='v3'] .vj-stage.is-waiting .vj-stage-verb { color: var(--gold, #d4a24a); }
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-fly i,
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-typ i,
