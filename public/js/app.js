@@ -20409,18 +20409,26 @@ function fgtlProfileNames() {
 }
 
 /** Render keyword chips in #fgtl-chips. */
+let _fgtlChipsOpen = false;
+
 function fgtlRenderChips() {
   const container = document.getElementById('fgtl-chips');
   if (!container) return;
 
-  const input = document.getElementById('fgtl-chip-input');
-  fgtlChips.forEach((k) => {
-    // chips are re-rendered below
-  });
-
-  container.innerHTML = fgtlChips.map((k) =>
-    `<span class="chip-tag fgtl-chip"><b>${escHtml(k)}</b><button class="cx-chip-x fgtl-chip-x" data-fgtlchip="${escHtml(k)}">×</button></span>`,
-  ).join('');
+  // ~50 role keywords is a wall of chips that drowns the rest of the step. Show a
+  // first row and hide the tail behind a count until someone wants to edit it.
+  const CHIP_PEEK = 8;
+  const chip = (k) => `<span class="chip-tag fgtl-chip"><b>${escHtml(k)}</b><button class="cx-chip-x fgtl-chip-x" data-fgtlchip="${escHtml(k)}">×</button></span>`;
+  const hidden = fgtlChips.length - CHIP_PEEK;
+  container.innerHTML = (_fgtlChipsOpen || hidden <= 0
+    ? fgtlChips.map(chip).join('')
+    : fgtlChips.slice(0, CHIP_PEEK).map(chip).join(''))
+    + (hidden > 0
+      ? `<button type="button" class="fgtl-chip-more" id="fgtl-chip-more">${_fgtlChipsOpen ? 'show fewer' : `+${hidden} more`}</button>`
+      : '')
+    // The typing box lives inside this container, so re-adding it is part of the
+    // render — without this, adding a role by hand stops working after the first paint.
+    + '<input id="fgtl-chip-input" placeholder="add a role keyword…" autocomplete="off">';
 
   const presetsEl = document.getElementById('fgtl-presets');
   if (presetsEl) {
@@ -20686,6 +20694,7 @@ function fgtlBindBoard() {
     }
     const rm = e.target.closest('[data-fgrm]'); if (rm) { fgtlExcluded.add(rm.dataset.fgrm); fgtlAutoSelect(); fgtlRenderAll(); return; }
     if (e.target.id === 'fgtl-clear') { for (const p of fgtlPeople) fgtlExcluded.add(p.email); fgtlAutoSelect(); fgtlRenderAll(); return; }
+    if (e.target.id === 'fgtl-chip-more') { _fgtlChipsOpen = !_fgtlChipsOpen; fgtlRenderChips(); return; }
     if (e.target.id === 'fg-who-toggle') {
       const panel = document.getElementById('fg-who-panel');
       if (panel) { const open = panel.style.display !== 'none'; panel.style.display = open ? 'none' : ''; e.target.innerHTML = open ? 'Which accounts? &#9662;' : 'Hide accounts &#9652;'; }
@@ -21035,7 +21044,11 @@ async function fgapRunNow() {
   const tab = _fgtlListTab || '';
   const btn = document.getElementById('fgap-run');
   if (!tab) {
-    showCampaignToast('Build a list first — Generate one (option A) or pick a tab under “Bring your own” (option B). Run it now then fires that tab.', 6000);
+    showCampaignToast('Write a list to the sheet first — step 2. Run it now then fires that tab.', 6000);
+    return;
+  }
+  if (_fgReviewedTab !== tab) {
+    showCampaignToast('Open the invite-list tab in the sheet first — step 2. Nothing fires until the list has been read.', 6000);
     return;
   }
   if (!confirm(`Fire the invite list on tab “${tab}” now? This dispatches those invites to the cloud VM immediately, outside the schedule.`)) return;
