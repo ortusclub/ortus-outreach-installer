@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.153" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.153" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.154" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.154" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2080,6 +2080,17 @@
       #nav-follower-growth .fgtl-spin { display:inline-block; width:11px; height:11px; border:2px solid var(--hairline); border-top-color:var(--gold); border-radius:50%; vertical-align:-1px; margin-left:6px; animation:fgtlSpin .7s linear infinite; }
       @keyframes fgtlSpin { to { transform:rotate(360deg); } }
       #nav-follower-growth .fgtl-loading { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--gray); font-family:var(--mono); font-size:12px; padding:30px 10px; }
+      /* FG Master build progress — a real bar, because the build runs for minutes. */
+      #nav-follower-growth .fgm-prog { margin:12px 0 10px; }
+      #nav-follower-growth .fgm-prog-top { display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink); margin-bottom:7px; }
+      #nav-follower-growth .fgm-prog-top span:last-child { color:var(--gray); }
+      #nav-follower-growth .fgm-bar { height:6px; background:var(--hairline); border-radius:9999px; overflow:hidden; }
+      #nav-follower-growth .fgm-bar i { display:block; height:100%; width:0; background:var(--ink); border-radius:9999px; transition:width .4s ease; }
+      #nav-follower-growth .fgm-bar.indet i { width:35% !important; animation:fgmSlide 1.3s ease-in-out infinite; }
+      @keyframes fgmSlide { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
+      #nav-follower-growth .fgm-bar.done i { background:var(--green); }
+      #nav-follower-growth .fgm-bar.failed i { background:var(--red); width:100% !important; }
+      #nav-follower-growth .fgm-prog-sub { font-family:var(--mono); font-size:10px; color:var(--gray); margin-top:6px; }
       #nav-follower-growth .fgtl-watch-btn { margin-left:auto; display:inline-flex; align-items:center; gap:6px; background:transparent; color:var(--ink); border:1px solid var(--hairline); border-radius:9999px; padding:6px 14px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
       #nav-follower-growth .fgtl-watch-btn.live-on { border-color:var(--green); }
       #nav-follower-growth .fgtl-watch-btn + .fgtl-card-stop { margin-left:8px; }
@@ -2466,6 +2477,11 @@
               <button type="button" class="fgtl-watch-btn" id="fg-master-build" style="font-size:10px;padding:5px 12px">UPDATE</button>
             </div>
             <p class="cx-hint">Every warm contact in one <b>FG Master</b> tab of the FG Sheet &#8212; name, title, company, geo, LinkedIn URL and <b>every account connected to them</b> &#8212; stamped <b>Invited</b> / time / account as the bot sends. <b>Update</b> appends only the people who aren&#8217;t in the tab yet and leaves every existing row alone.</p>
+            <div class="fgm-prog" id="fg-master-prog" style="display:none">
+              <div class="fgm-prog-top"><span id="fg-master-phase">Working&#8230;</span><span id="fg-master-pct">0%</span></div>
+              <div class="fgm-bar"><i id="fg-master-fill" style="width:0%"></i></div>
+              <div class="fgm-prog-sub" id="fg-master-sub"></div>
+            </div>
             <p class="cx-hint" id="fg-master-status"></p>
             <p class="cx-hint">Don&#8217;t update while a run is reconciling &#8212; that run&#8217;s sheet writes can time out. <a href="#" id="fg-master-full" style="color:var(--gray)">Full rebuild</a> wipes the tab and rewrites all ~295k rows from scratch (slow, and it discards anything typed in by hand).</p>
           </div>
@@ -3753,7 +3769,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.153"></script>
+  <script type="module" src="/js/app.js?v=2.160.154"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

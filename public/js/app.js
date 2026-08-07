@@ -21349,22 +21349,70 @@ async function fgMasterBuild(full) {
   }
 }
 
+const FG_MASTER_PHASES = {
+  reading: 'Reading the invite history',
+  building: 'Building the rows from the connections DB',
+  comparing: 'Checking who’s already in the tab',
+  writing: 'Writing to the sheet',
+};
+
+/**
+ * Paint the FG Master progress bar from one status poll. `done`/`total` are
+ * per-phase (the compare phase counts existing rows, the write phase counts new
+ * ones), so the bar restarts at each phase rather than pretending to be one run.
+ * A phase with no total yet gets the indeterminate sweep instead of a stuck 0%.
+ */
+function fgMasterProgress(d) {
+  const box = document.getElementById('fg-master-prog');
+  const bar = box && box.querySelector('.fgm-bar');
+  const fill = document.getElementById('fg-master-fill');
+  const phase = document.getElementById('fg-master-phase');
+  const pct = document.getElementById('fg-master-pct');
+  const sub = document.getElementById('fg-master-sub');
+  if (!box || !bar || !fill) return;
+  if (d.phase === 'idle') { box.style.display = 'none'; return; }
+  box.style.display = '';
+  bar.classList.toggle('done', d.phase === 'done');
+  bar.classList.toggle('failed', d.phase === 'error');
+  if (d.phase === 'done' || d.phase === 'error') {
+    bar.classList.remove('indet');
+    fill.style.width = '100%';
+    if (phase) phase.textContent = d.phase === 'done' ? 'Finished' : 'Failed';
+    if (pct) pct.textContent = d.phase === 'done' ? '100%' : '';
+    if (sub) sub.textContent = '';
+    return;
+  }
+  if (phase) phase.textContent = FG_MASTER_PHASES[d.phase] || d.phase;
+  const total = Number(d.total) || 0;
+  const done = Number(d.done) || 0;
+  if (!total) {
+    bar.classList.add('indet');
+    if (pct) pct.textContent = '';
+    if (sub) sub.textContent = 'this first step takes about a minute';
+    return;
+  }
+  bar.classList.remove('indet');
+  const p = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+  fill.style.width = p + '%';
+  if (pct) pct.textContent = p + '%';
+  if (sub) sub.textContent = `${done.toLocaleString()} of ${total.toLocaleString()} rows`;
+}
+
 /** Poll the master build until it finishes; re-enables the button at the end. */
 async function fgMasterPoll() {
   const btn = document.getElementById('fg-master-build');
   const status = document.getElementById('fg-master-status');
   try {
     const d = await (await fetch('/api/fg/master/status')).json();
+    fgMasterProgress(d);
     if (d.phase === 'idle') { if (btn) btn.disabled = false; return; }
     if (status) {
       if (d.phase === 'done') {
         status.textContent = d.full
           ? `✓ ${d.written} people written (${d.backfilled} already invited).`
           : `✓ ${d.written} new people added · ${d.alreadyThere} already in the tab.`;
-      } else if (d.phase === 'comparing') status.textContent = `checking who's already in the tab… ${d.done}/${d.total || '?'}`;
-      else if (d.phase === 'error') status.textContent = 'Failed: ' + (d.error || 'unknown error');
-      else if (d.total) status.textContent = `${d.phase}… ${d.done}/${d.total}`;
-      else status.textContent = d.phase + '…';
+      } else if (d.phase === 'error') status.textContent = 'Failed: ' + (d.error || 'unknown error');
+      else status.textContent = '';
     }
     if (d.running) { setTimeout(fgMasterPoll, 2000); return; }
   } catch (_) { if (status) status.textContent = 'Lost contact with the build.'; }
