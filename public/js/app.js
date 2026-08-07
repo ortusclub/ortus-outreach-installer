@@ -21547,6 +21547,11 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
   }
   return {
     _cloud: true,
+    // The campaign id is what renderLiveStage keys the account pills on
+    // (_cloudAccountsById.get(status.id)). Without it cid is '', the lookup
+    // misses, and this card renders zero pills while the dashboard's identical
+    // card — whose status object does carry id — shows all 66.
+    id: (campaign && campaign.id) || _fgtlCloudId || '',
     running: !isDone,
     phase,
     totalAccounts: pids.length,
