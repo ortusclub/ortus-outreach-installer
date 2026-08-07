@@ -20583,6 +20583,17 @@ function fgtlAutoSelect() {
   }
 }
 
+// Anything that reads the FG sheet is a multi-second round trip, so the headline
+// says it is working instead of sitting on a confident "0 invites this run".
+let _fgtlLoading = 0;
+function fgtlSetLoading(on) {
+  _fgtlLoading = Math.max(0, _fgtlLoading + (on ? 1 : -1));
+  const box = document.getElementById('fg-answer-load');
+  if (box) box.style.display = _fgtlLoading ? '' : 'none';
+  const n = document.getElementById('fg-answer-n');
+  if (n) n.style.opacity = _fgtlLoading ? '.35' : '';
+}
+
 // The headline is what this run will actually SEND — not the size of the pool.
 // The two differ a lot: each LinkedIn account gets ~30 follow invites a month, so
 // 66 accounts cap the run at ~2k however many connections match. Saying "people
@@ -20628,6 +20639,7 @@ async function fgtlRefreshMatched() {
   const spin = document.getElementById('fgtl-refresh-spin');
   const peopleEl = document.getElementById('fgtl-people');
   if (spin) spin.style.display = 'inline-block';
+  fgtlSetLoading(true);
   if (peopleEl && !peopleEl.children.length) peopleEl.innerHTML = '<div class="fgtl-loading"><span class="fgtl-spin"></span> Loading the team…</div>';
   try {
     const roles = encodeURIComponent(fgtlChips.join(','));
@@ -20640,6 +20652,7 @@ async function fgtlRefreshMatched() {
     if (peopleEl) peopleEl.innerHTML = '<div class="fgtl-loading">Couldn’t load the team — try again.</div>';
   } finally {
     if (spin) spin.style.display = 'none';
+    fgtlSetLoading(false);
   }
 }
 
@@ -21141,8 +21154,12 @@ async function initFollowerGrowth() {
   // If a cloud FG run is already in flight (operator navigated away and back),
   // resume driving its card from the cloud campaign instead of showing "Idle".
   if (_fgtlCloudId) { try { fgtlCloudPoll(); } catch (_) { /* */ } }
-  // 1. Load FG DB (once guard already in fgLoadDb)
-  await fgLoadDb();
+  // 1. Load the FG sheet — NOT awaited. It is a ~17s round trip against a sheet
+  // with 15k invite rows, and awaiting it left the whole screen blank until it
+  // came back. Budgets only affect the per-account invite numbers, so let them
+  // land late and re-render then.
+  fgtlSetLoading(true);
+  fgLoadDb().then(() => { try { fgtlRenderAll(); } catch (_) { /* */ } }).catch(() => {});
 
   // 2. Wait for allProfilesData to be populated (bounded retry)
   let tries = 0;

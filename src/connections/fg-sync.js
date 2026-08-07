@@ -80,7 +80,14 @@ export function invitedKeysFromState(invites) {
 export async function getFgState() {
   const r = await postFg({ action: 'fgState' }, { timeoutMs: 60000 });
   if (r?.error) throw new Error(r.error);
-  return { invites: r.invites || [], budgets: r.budgets || [], funnel: r.funnel || [] };
+  // fgState_ always returns all three arrays, so a missing key means the reply
+  // was not the reply — a 302 body, a truncated read, a timeout page. Defaulting
+  // those to [] used to hand callers an empty invite ledger, which reads as
+  // "nobody has been invited yet" and re-invites the whole list.
+  if (!r || !Array.isArray(r.invites) || !Array.isArray(r.budgets)) {
+    throw new Error('The FG sheet returned an unreadable reply (no invites/budgets) — try again.');
+  }
+  return { invites: r.invites, budgets: r.budgets, funnel: r.funnel || [] };
 }
 
 // Pad each FG_HEADER-order row (13 cells) to 16 by appending the run's id + time

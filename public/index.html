@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.164" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.164" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.165" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.165" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2084,6 +2084,7 @@
       #nav-follower-growth .rv-answer { display:flex; align-items:center; gap:20px; margin-top:22px; padding:18px 20px; border:1px solid var(--ink); }
       #nav-follower-growth .rv-big { font-family:'Hanken Grotesk',sans-serif; font-size:30px; letter-spacing:-.02em; color:var(--ink); line-height:1; }
       #nav-follower-growth .rv-big-lab { font-size:15px; color:#6a6a6a; letter-spacing:0; }
+      #nav-follower-growth .rv-load { margin-left:12px; font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); white-space:nowrap; }
       #nav-follower-growth .rv-sub { font-family:'Hanken Grotesk',sans-serif; font-size:12.5px; color:#6a6a6a; margin-top:7px; }
       #nav-follower-growth .rv-sub b { color:var(--ink); font-weight:500; }
       #nav-follower-growth .rv-sub-out { display:inline-block; margin-top:5px; color:var(--gray); }
@@ -2353,7 +2354,9 @@
         <!-- The answer -->
         <div class="rv-answer">
           <div>
-            <div class="rv-big"><span id="fg-answer-n">0</span> <span class="rv-big-lab">invites this run</span></div>
+            <div class="rv-big"><span id="fg-answer-n">0</span> <span class="rv-big-lab">invites this run</span>
+              <span class="rv-load" id="fg-answer-load" style="display:none"><span class="fgtl-spin"></span> working it out&#8230;</span>
+            </div>
             <div class="rv-sub" id="fg-answer-sub"></div>
           </div>
           <button type="button" class="rv-who" id="fg-who-toggle">Which accounts? &#9662;</button>
@@ -3802,7 +3805,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.164"></script>
+  <script type="module" src="/js/app.js?v=2.160.165"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
