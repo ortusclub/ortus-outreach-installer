@@ -21273,7 +21273,13 @@ async function fgtlAdoptRunningCloudRun() {
  * LOCAL team launch still needs them, so they come back when there is no cloud id.
  */
 function fgSyncLiveSurfaces() {
-  const cloud = !!_fgtlCloudId;
+  // A cloud run ENDING is not a reason to bring the old surfaces back. The
+  // shared card keeps showing the finished run, so resurrecting the black log,
+  // the hex-id account board and the bespoke card the moment it completed made
+  // the screen revert to the pre-v2.160.169 layout — three surfaces for one run.
+  // Once this screen has shown a cloud run, it stays on the shared card.
+  if (_fgtlCloudId) _fgtlCloudSeen = true;
+  const cloud = !!_fgtlCloudId || _fgtlCloudSeen;
   for (const id of ['fgw-log', 'fgtl-acctboard', 'fgtl-card']) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -21440,6 +21446,10 @@ let _fgtlLastStatus = null;
 // the FG workspace and drive its live card from the cloud campaign (not the
 // local /api/fg/team-launch/status, which is empty for a cloud run).
 let _fgtlCloudId = null;         // active cloud FG campaign id (null = local/none)
+// Sticky: this screen has shown a cloud run at least once. Survives the run
+// going terminal, which is when _fgtlCloudId is cleared. Reset only by a LOCAL
+// team launch, the one case that still needs the FG screen's own surfaces.
+let _fgtlCloudSeen = false;
 let _fgtlCloudPairs = {};        // profileId → { account, operator } for friendly labels
 let _fgtlCloudTimer = null;
 let _fgtlPlanned = {};           // profileId → queued invite count for the active run
