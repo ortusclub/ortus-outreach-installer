@@ -21387,6 +21387,26 @@ let _fgtlLastStatus = null;
 // local /api/fg/team-launch/status, which is empty for a cloud run).
 let _fgtlCloudId = null;         // active cloud FG campaign id (null = local/none)
 let _fgtlCloudPairs = {};        // profileId → { account, operator } for friendly labels
+
+// Resolve a GoLogin profile id to a human name for FG rows.
+//
+// The engine only knows an account's email if config.accountEmails rode the
+// dispatch, so every run launched before that shipped reports email:"" and used
+// to render as 6a47757d3e40fce20f5f4acd. The pairs map is also empty whenever
+// the app re-attaches to a cloud run it didn't launch (reload, restart, another
+// machine). Both cases are recoverable locally: we hold the GoLogin profile
+// list. Falling back through it means an old run reads correctly too, with no
+// re-dispatch and nothing for the engine to backfill.
+function _fgAcctName(pid) {
+  const id = String(pid || '');
+  if (!id) return '';
+  const paired = _fgtlCloudPairs[id] && _fgtlCloudPairs[id].account;
+  if (paired) return paired;
+  const p = (allProfilesData || []).find((x) => x && x.id === id);
+  const nm = p && (p.name || p.email);
+  if (nm) return String(nm);
+  return id;
+}
 let _fgtlCloudTimer = null;
 let _fgtlPlanned = {};           // profileId → queued invite count for the active run
 
@@ -21446,7 +21466,7 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
     if (livePid && pid === livePid && !isDone) { status = 'running'; }
     else if (c.pending === 0 && processed > 0) { status = 'done'; doneAccounts++; }
     else if (processed > 0) status = 'running';
-    const label = (_fgtlCloudPairs[pid] && _fgtlCloudPairs[pid].account) || pid;
+    const label = _fgAcctName(pid);
     // planned = how many invites this account had queued at fire time (from the
     // sheet). The engine can't report it (pending leads are unrouted), so fall
     // back to what we can see (processed + any routed pending) when absent.
@@ -21466,7 +21486,7 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
   else if (live) phase = 'sending'; // VM browser actively inviting; first batch mid-selection
   // Friendly label for the account the VM is currently driving.
   const liveAcctLabel = live
-    ? ((_fgtlCloudPairs[String(extra.liveAccount || '')] && _fgtlCloudPairs[String(extra.liveAccount || '')].account) || extra.liveAccount || '')
+    ? _fgAcctName(String(extra.liveAccount || ''))
     : '';
   const logs = (typeof _cloudLeadsToLog === 'function') ? _mergeCloudLog(_cloudLeadsToLog(leads, true, {}), null) : [];
   if (phase === 'launching' && !isDone) {
