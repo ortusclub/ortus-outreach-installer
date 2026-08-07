@@ -43,6 +43,7 @@ function doPost(e) {
     else if (data.action === 'fgReadList') out = fgReadList_(data);
     else if (data.action === 'fgUpdateListLedger') out = fgUpdateListLedger_(data);
     else if (data.action === 'fgWriteMaster') out = fgWriteMaster_(data);
+    else if (data.action === 'fgMasterKeys') out = fgMasterKeys_(data);
     else if (data.action === 'getSheetUrl') out = { url: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
     else if (data.action === 'listTabs') out = { tabs: SpreadsheetApp.getActiveSpreadsheet().getSheets().map(function (s) { return s.getName(); }) };
     else out = { error: 'Unknown action: ' + data.action };
@@ -252,6 +253,10 @@ function fgWriteMaster_(data) {
     // Trim the grid to the 11 columns we actually use.
     if (sh.getMaxColumns() > header.length) sh.deleteColumns(header.length + 1, sh.getMaxColumns() - header.length);
     if (buildId) props.setProperty('fgMasterBuild', buildId);
+  } else if (data.claim) {
+    // Incremental build: no clear, but still claim the fence so a full rebuild
+    // started elsewhere mid-append is not silently interleaved with our rows.
+    if (buildId) props.setProperty('fgMasterBuild', buildId);
   } else if (buildId) {
     var current = props.getProperty('fgMasterBuild');
     if (current && current !== buildId) return { error: 'superseded by another build' };
@@ -263,6 +268,32 @@ function fgWriteMaster_(data) {
     rng.setValues(rows);
   }
   return { tab: name, written: rows.length, mode: mode };
+}
+
+// Identity keys of everyone already in the FG Master tab, so an incremental
+// build can append only the people who are not there yet. Reads ONLY the two key
+// columns, and pages (`offset` / `limit`, both counted in data rows) so a 300k-row
+// tab never has to come back in one response.
+function fgMasterKeys_(data) {
+  var name = String(data.tab || FG_MASTER_TAB).trim();
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  // No tab yet — the caller falls back to a full build.
+  if (!sh) return { exists: false, rows: 0, read: 0, keys: '' };
+  var rows = Math.max(0, sh.getLastRow() - 1);
+  var offset = Math.max(0, Number(data.offset) || 0);
+  var limit = Math.max(1, Number(data.limit) || 100000);
+  var take = Math.min(limit, rows - offset);
+  if (take <= 0) return { exists: true, rows: rows, read: 0, keys: '' };
+  var urlCol = FG_MASTER_HEADER.indexOf('LinkedIn URL') + 1;
+  var midCol = FG_MASTER_HEADER.indexOf('Member ID') + 1;
+  var urls = sh.getRange(2 + offset, urlCol, take, 1).getValues();
+  var mids = sh.getRange(2 + offset, midCol, take, 1).getValues();
+  var keys = [];
+  for (var i = 0; i < take; i++) {
+    var k = String(mids[i][0] || '').trim() || fgNormUrl_(urls[i][0]);
+    if (k) keys.push(k);
+  }
+  return { exists: true, rows: rows, read: take, keys: keys.join('\n') };
 }
 
 // Normalised LinkedIn URL — mirror of normUrl() in src/connections/fg-list.js.

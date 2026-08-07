@@ -96,8 +96,8 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam, listMasterRecords } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg, writeFgMaster } from './src/connections/fg-sync.js';
-import { buildMasterRows, invitedIndexFromFgInvites } from './src/connections/fg-master.js';
+import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg, writeFgMaster, readFgMasterKeys } from './src/connections/fg-sync.js';
+import { buildMasterRows, invitedIndexFromFgInvites, newRowsOnly } from './src/connections/fg-master.js';
 import { readSeedDir, mergeFunnelSeeds } from './src/connections/fg-funnel-seed.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
 import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
@@ -2913,17 +2913,21 @@ app.get('/api/fg/sheet-url', async (_req, res) => {
 });
 
 // FG Master build progress — polled by the UI, same shape as _fgSend.
-let _fgMaster = { running: false, phase: 'idle', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, fromFunnelSheet: 0, error: null, finishedAt: null };
+let _fgMaster = { running: false, phase: 'idle', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, fromFunnelSheet: 0, alreadyThere: 0, full: false, error: null, finishedAt: null };
 
 app.get('/api/fg/master/status', (_req, res) => res.json(_fgMaster));
 
 // Rebuild the FG Master tab: every warm contact, with the FG Invites ledger
 // folded in so a rebuild never loses invite history. Fire-and-forget — the build
 // is ~56 chunked POSTs and far outlives an HTTP request.
-app.post('/api/fg/master/build', async (_req, res) => {
+// Incremental by default: only people not already in the tab are appended, so
+// existing rows (and any invite stamps typed in by hand) are never touched.
+// POST { full: true } clears the tab and rewrites every row from scratch.
+app.post('/api/fg/master/build', async (req, res) => {
   if (_fgMaster.running) return res.status(409).json({ error: 'A master build is already running.' });
-  res.json({ started: true });
-  _fgMaster = { running: true, phase: 'reading', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, fromFunnelSheet: 0, error: null, finishedAt: null };
+  const full = !!(req.body && req.body.full);
+  res.json({ started: true, full });
+  _fgMaster = { running: true, phase: 'reading', done: 0, total: 0, written: 0, droppedNoUrl: 0, backfilled: 0, fromFunnelSheet: 0, alreadyThere: 0, full, error: null, finishedAt: null };
   (async () => {
     try {
       let invitedIndex = new Map();
@@ -2953,12 +2957,30 @@ app.post('/api/fg/master/build', async (_req, res) => {
       } catch (e) {
         campaignLog(`[FG-master] could not read the manual funnel export (${e.message}) — building without it`);
       }
-      const count = rows.length;
-      _fgMaster = { ..._fgMaster, phase: 'writing', total: count, droppedNoUrl, fromFunnelSheet: seedStats.added, backfilled: _fgMaster.backfilled + seedStats.stamped };
+      _fgMaster = { ..._fgMaster, droppedNoUrl, fromFunnelSheet: seedStats.added, backfilled: _fgMaster.backfilled + seedStats.stamped };
+      // Incremental: ask the sheet who is already in the tab and append only the
+      // rest. A missing tab (exists:false) falls back to a full build on its own.
+      let toWrite = rows;
+      let appendAt = 0;
+      if (!full) {
+        _fgMaster.phase = 'comparing';
+        const existing = await readFgMasterKeys({ onProgress: ({ done, total }) => { _fgMaster.done = done; _fgMaster.total = total; } });
+        if (existing.exists) {
+          const fresh = newRowsOnly(rows, existing.keys);
+          toWrite = fresh.rows;
+          appendAt = existing.rows + 2; // row 1 is the header
+          _fgMaster.alreadyThere = fresh.skipped;
+          campaignLog(`[FG-master] incremental — ${existing.rows} already in the tab, ${toWrite.length} new`);
+        } else {
+          campaignLog('[FG-master] no FG Master tab yet — building it in full');
+        }
+      }
+      const count = toWrite.length;
+      _fgMaster = { ..._fgMaster, phase: 'writing', done: 0, total: count };
       campaignLog(`[FG-master] writing ${count} row(s) (${droppedNoUrl} dropped for no LinkedIn URL)`);
-      const out = await writeFgMaster(rows, { onProgress: ({ done, total }) => { _fgMaster.done = done; _fgMaster.total = total; } });
+      const out = await writeFgMaster(toWrite, { appendAt, onProgress: ({ done, total }) => { _fgMaster.done = done; _fgMaster.total = total; } });
       _fgMaster = { ..._fgMaster, running: false, phase: 'done', written: out.written, finishedAt: new Date().toISOString() };
-      campaignLog(`[FG-master] done — ${out.written} row(s) in "${out.tab}"`);
+      campaignLog(`[FG-master] done — ${out.written} row(s) written to "${out.tab}"`);
     } catch (err) {
       _fgMaster = { ..._fgMaster, running: false, phase: 'error', error: err.message, finishedAt: new Date().toISOString() };
       campaignLog(`[FG-master] failed: ${err.message}`);

@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=2.160.152" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.152" />
+  <link rel="stylesheet" href="/css/style.css?v=2.160.153" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=2.160.153" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2463,11 +2463,11 @@
                the invite wizard — it's a reporting artefact, not a step in a run. -->
           <div class="fg-step fg-master-block">
             <div class="fg-step-head"><span class="fg-step-num">1</span> FG Master &#183; the whole network in one tab
-              <button type="button" class="fgtl-watch-btn" id="fg-master-build" style="font-size:10px;padding:5px 12px">REBUILD</button>
+              <button type="button" class="fgtl-watch-btn" id="fg-master-build" style="font-size:10px;padding:5px 12px">UPDATE</button>
             </div>
-            <p class="cx-hint">Every warm contact in one <b>FG Master</b> tab of the FG Sheet &#8212; name, title, company, geo, LinkedIn URL and <b>every account connected to them</b> &#8212; stamped <b>Invited</b> / time / account as the bot sends. Rebuilding replaces the tab and re-stamps the full invite history; it takes a few minutes.</p>
+            <p class="cx-hint">Every warm contact in one <b>FG Master</b> tab of the FG Sheet &#8212; name, title, company, geo, LinkedIn URL and <b>every account connected to them</b> &#8212; stamped <b>Invited</b> / time / account as the bot sends. <b>Update</b> appends only the people who aren&#8217;t in the tab yet and leaves every existing row alone.</p>
             <p class="cx-hint" id="fg-master-status"></p>
-            <p class="cx-hint">Don&#8217;t rebuild while a run is reconciling &#8212; that run&#8217;s sheet writes can time out.</p>
+            <p class="cx-hint">Don&#8217;t update while a run is reconciling &#8212; that run&#8217;s sheet writes can time out. <a href="#" id="fg-master-full" style="color:var(--gray)">Full rebuild</a> wipes the tab and rewrites all ~295k rows from scratch (slow, and it discards anything typed in by hand).</p>
           </div>
           <!-- existing Invites/Budgets/Funnel tabs + tables -->
           <div class="fg-step">
@@ -3753,7 +3753,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.160.152"></script>
+  <script type="module" src="/js/app.js?v=2.160.153"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

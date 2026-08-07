@@ -75,6 +75,24 @@ export function buildMasterRows(annotated = [], invitedIndex = null) {
   return { rows, count: rows.length, droppedNoUrl };
 }
 
+const I_URL = FG_MASTER_HEADER.indexOf('LinkedIn URL');
+const I_MEMBER = FG_MASTER_HEADER.indexOf('Member ID');
+
+// Drop the rows for people already in the tab. An incremental build never
+// rewrites an existing row, so hand-typed Invited stamps and stale-but-harmless
+// job titles both survive — only genuinely new people are appended.
+export function newRowsOnly(rows = [], existingKeys = null) {
+  if (!existingKeys || !existingKeys.size) return { rows: (rows || []).slice(), skipped: 0 };
+  const out = [];
+  let skipped = 0;
+  for (const r of rows || []) {
+    const key = masterKey({ url: r[I_URL], memberId: r[I_MEMBER] });
+    if (key && existingKeys.has(key)) { skipped += 1; continue; }
+    out.push(r);
+  }
+  return { rows: out, skipped };
+}
+
 // Split rows into POST-sized chunks. ~279k rows cannot go over the wire (or into
 // one setValues) in a single call.
 export function chunkRows(rows = [], size = 5000) {

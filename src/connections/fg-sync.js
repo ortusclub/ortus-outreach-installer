@@ -162,23 +162,57 @@ export async function observeFgCredits({ account, operator, month, available, al
 // concurrent rebuilds in the Apps Script (see fgWriteMaster_): it defaults to a
 // string derived from the row count + a timestamp, unique enough per build
 // without a dependency.
+//
+// `appendAt` switches the whole write to incremental: nothing is cleared, the
+// header is left alone, and the chunks land at appendAt, appendAt+chunkSize, …
+// (still positional, so a retried chunk overwrites itself rather than duplicating).
 export async function writeFgMaster(rows, {
   tab = 'FG Master', header = FG_MASTER_HEADER, chunkSize = 2000,
-  post = postFg, onProgress = null,
+  post = postFg, onProgress = null, appendAt = 0,
   buildId = `${Array.isArray(rows) ? rows.length : 0}-${Date.now()}`,
 } = {}) {
   const all = Array.isArray(rows) ? rows : [];
+  const incremental = Number(appendAt) > 1;
+  const base = incremental ? Number(appendAt) : 2;
   const chunks = chunkRows(all, chunkSize);
-  // No rows still needs one replace so a rebuild that matches nothing empties the tab.
-  if (!chunks.length) chunks.push([]);
+  // No rows still needs one replace so a rebuild that matches nothing empties the
+  // tab — but an incremental build with nothing new must not touch the sheet.
+  if (!chunks.length) {
+    if (incremental) return { tab, written: 0, chunks: 0 };
+    chunks.push([]);
+  }
   let done = 0;
   for (let i = 0; i < chunks.length; i++) {
-    const mode = i === 0 ? 'replace' : 'append';
-    const startRow = 2 + i * chunkSize;
-    const r = await post({ action: 'fgWriteMaster', tab, header, rows: chunks[i], mode, startRow, buildId }, { timeoutMs: 120000 });
+    const mode = !incremental && i === 0 ? 'replace' : 'append';
+    // Incremental: the first chunk claims the buildId fence that 'replace' would
+    // normally set, so a full rebuild racing us is rejected rather than interleaved.
+    const claim = incremental && i === 0;
+    const startRow = base + i * chunkSize;
+    const r = await post({ action: 'fgWriteMaster', tab, header, rows: chunks[i], mode, startRow, buildId, claim }, { timeoutMs: 120000 });
     if (r && r.error) throw new Error(`FG Master chunk ${i + 1}/${chunks.length} failed: ${r.error}`);
     done += chunks[i].length;
     if (onProgress) onProgress({ done, total: all.length });
   }
   return { tab, written: all.length, chunks: chunks.length };
+}
+
+// Identity keys of everyone already in the FG Master tab, paged so a 300k-row tab
+// never comes back in one response. Returns { keys:Set, rows, exists } — `exists`
+// false means there is no tab yet and the caller must do a full build.
+export async function readFgMasterKeys({
+  tab = 'FG Master', post = postFg, pageSize = 100000, onProgress = null,
+} = {}) {
+  const keys = new Set();
+  let offset = 0;
+  for (;;) {
+    const r = await post({ action: 'fgMasterKeys', tab, offset, limit: pageSize }, { timeoutMs: 120000 });
+    if (r && r.error) throw new Error(`FG Master key read failed: ${r.error}`);
+    if (!r || !r.exists) return { keys, rows: 0, exists: false };
+    for (const k of String(r.keys || '').split('\n')) if (k) keys.add(k);
+    const read = Number(r.read) || 0;
+    offset += read;
+    if (onProgress) onProgress({ done: offset, total: Number(r.rows) || 0 });
+    // No progress means the tab is exhausted (or shrank mid-read) — stop either way.
+    if (!read || offset >= (Number(r.rows) || 0)) return { keys, rows: Number(r.rows) || offset, exists: true };
+  }
 }

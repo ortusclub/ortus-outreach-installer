@@ -21329,14 +21329,17 @@ async function fgtlOpenSheet() {
 }
 
 /** Rebuild the FG Master tab (whole warm network + invite ledger) and poll progress. */
-async function fgMasterBuild() {
+async function fgMasterBuild(full) {
   const btn = document.getElementById('fg-master-build');
   const status = document.getElementById('fg-master-status');
-  if (!confirm('This clears and rewrites the entire FG Master tab (~279k rows) in the shared central sheet. Continue?')) return;
+  const ask = full
+    ? 'FULL REBUILD: this clears and rewrites the entire FG Master tab (~295k rows) in the shared central sheet, discarding anything typed in by hand. Continue?'
+    : 'Add the people who aren’t in the FG Master tab yet? Existing rows are left untouched.';
+  if (!confirm(ask)) return;
   if (btn) btn.disabled = true;
   if (status) status.textContent = 'Starting…';
   try {
-    const r = await fetch('/api/fg/master/build', { method: 'POST' });
+    const r = await fetch('/api/fg/master/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full: !!full }) });
     const d = await r.json();
     if (!r.ok || d.error) { if (status) status.textContent = d.error || r.statusText; if (btn) btn.disabled = false; return; }
     fgMasterPoll();
@@ -21354,7 +21357,11 @@ async function fgMasterPoll() {
     const d = await (await fetch('/api/fg/master/status')).json();
     if (d.phase === 'idle') { if (btn) btn.disabled = false; return; }
     if (status) {
-      if (d.phase === 'done') status.textContent = `✓ ${d.written} people written (${d.backfilled} already invited).`;
+      if (d.phase === 'done') {
+        status.textContent = d.full
+          ? `✓ ${d.written} people written (${d.backfilled} already invited).`
+          : `✓ ${d.written} new people added · ${d.alreadyThere} already in the tab.`;
+      } else if (d.phase === 'comparing') status.textContent = `checking who's already in the tab… ${d.done}/${d.total || '?'}`;
       else if (d.phase === 'error') status.textContent = 'Failed: ' + (d.error || 'unknown error');
       else if (d.total) status.textContent = `${d.phase}… ${d.done}/${d.total}`;
       else status.textContent = d.phase + '…';
@@ -21744,7 +21751,9 @@ function fgtlBindLaunch() {
   if (openSheetBtn && !openSheetBtn._b) { openSheetBtn._b = true; openSheetBtn.addEventListener('click', fgtlOpenSheet); }
   const fgMasterBtn = document.getElementById('fg-master-build');
   // The build runs server-side, so a page reload only loses the poller — re-attach it.
-  if (fgMasterBtn && !fgMasterBtn._b) { fgMasterBtn._b = true; fgMasterBtn.addEventListener('click', fgMasterBuild); fgMasterBtn.disabled = true; fgMasterPoll(); }
+  if (fgMasterBtn && !fgMasterBtn._b) { fgMasterBtn._b = true; fgMasterBtn.addEventListener('click', () => fgMasterBuild(false)); fgMasterBtn.disabled = true; fgMasterPoll(); }
+  const fgMasterFull = document.getElementById('fg-master-full');
+  if (fgMasterFull && !fgMasterFull._b) { fgMasterFull._b = true; fgMasterFull.addEventListener('click', (e) => { e.preventDefault(); fgMasterBuild(true); }); }
   const refreshTabsBtn = document.getElementById('fgtl-byo-refresh');
   if (refreshTabsBtn && !refreshTabsBtn._b) { refreshTabsBtn._b = true; refreshTabsBtn.addEventListener('click', fgtlLoadTabs); }
   const editSchedBtn = document.getElementById('fgw-edit-schedule');
