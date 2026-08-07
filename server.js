@@ -52,7 +52,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1519,6 +1519,15 @@ app.post('/api/campaign/start-cloud', handleStartCloud);
 // "Cloud Campaigns" panel polls these.
 app.get('/api/campaign/cloud-list', async (req, res) => {
   const r = await listCloudCampaigns(req.query.owner);
+  if (r.error) return res.status(502).json(r);
+  res.json(r);
+});
+// Engine load vs its ceiling, asked before a cloud dispatch. Never fatal: an
+// engine without the route (or an unreachable one) answers { error }, and the
+// wizard reads that as "unknown" and launches anyway — a capacity check must
+// never become a new way to block a launch.
+app.get('/api/campaign/cloud-capacity', async (_req, res) => {
+  const r = await getCloudCapacity();
   if (r.error) return res.status(502).json(r);
   res.json(r);
 });

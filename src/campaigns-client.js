@@ -176,6 +176,18 @@ export function listCloudCampaigns(owner) {
   return requestWithRetry('GET', `/api/campaign/list${q}`);
 }
 
+/**
+ * How loaded the cloud engine is right now: { active, podsBusy, maxPods,
+ * perPod, ceiling, full }. `active` is the KEDA scale metric — the campaigns
+ * drawing a runtime — and `ceiling` is maxPods × campaigns-per-pod (30 today).
+ * Asked once before a cloud dispatch so a full engine is a prompt rather than a
+ * campaign that silently sits queued. Older engines have no such route: they
+ * 404, which surfaces as { error } and the caller treats as "unknown, proceed".
+ */
+export function getCloudCapacity() {
+  return requestWithRetry('GET', '/api/campaign/capacity');
+}
+
 /** One campaign + its live lead-status counts. */
 export function getCloudCampaign(id) {
   return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}`);
