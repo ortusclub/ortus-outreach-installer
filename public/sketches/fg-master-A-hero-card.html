@@ -1,83 +1,618 @@
-<link rel="stylesheet" href="/css/style.css">
-<style>
-  body{background:var(--bg);}
-  .wrap{max-width:1000px;margin:0 auto;padding:26px 24px 120px;}
-  .note{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;line-height:1.55;color:#5a5a5a;border-left:2px solid var(--gold);padding:9px 13px;margin:0 0 22px;background:#fff;}
-  h3.vh{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);margin:34px 0 12px;}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FG Master · A · hero card</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+    <style>
+      /* ── Follower Growth Team Launch (variant A: browse + cart) — scoped under #nav-follower-growth ── */
+      #nav-follower-growth .fgtl-roles { border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; margin-bottom:22px; }
+      #nav-follower-growth .fgtl-step-eyebrow { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin-bottom:12px; }
+      #nav-follower-growth .fgtl-spin { display:inline-block; width:11px; height:11px; border:2px solid var(--hairline); border-top-color:var(--gold); border-radius:50%; vertical-align:-1px; margin-left:6px; animation:fgtlSpin .7s linear infinite; }
+      @keyframes fgtlSpin { to { transform:rotate(360deg); } }
+      #nav-follower-growth .fgtl-loading { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--gray); font-family:var(--mono); font-size:12px; padding:30px 10px; }
+      #nav-follower-growth .fgtl-watch-btn { margin-left:auto; display:inline-flex; align-items:center; gap:6px; background:transparent; color:var(--ink); border:1px solid var(--hairline); border-radius:9999px; padding:6px 14px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-watch-btn.live-on { border-color:var(--green); }
+      #nav-follower-growth .fgtl-watch-btn + .fgtl-card-stop { margin-left:8px; }
+      #nav-follower-growth .fgtl-live-dot { width:7px; height:7px; border-radius:50%; background:var(--green); animation:fgtl-lb-pulse 1.2s ease-in-out infinite; }
+      #nav-follower-growth .fgtl-card-stop { margin-left:auto; background:var(--red); color:#fff; border:none; border-radius:9999px; padding:7px 15px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-card-stop:disabled { opacity:.6; cursor:default; }
+      #nav-follower-growth .fgtl-board2 { display:grid; grid-template-columns:1fr 360px; gap:18px; align-items:start; }
+      #nav-follower-growth .fgtl-search { display:flex; align-items:center; gap:9px; background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:9px 15px; margin-bottom:14px; }
+      #nav-follower-growth .fgtl-search input { flex:1; border:none; background:none; outline:none; color:var(--ink); font-size:13px; font-family:var(--body); }
+      #nav-follower-growth .fgtl-search .clr { background:none; border:none; color:var(--gray); cursor:pointer; font-size:14px; display:none; }
+      #nav-follower-growth .fgtl-search .clr.show { display:block; }
+      #nav-follower-growth .fgtl-people { max-height:520px; overflow-y:auto; padding-right:6px; }
+      /* Fixed-width number + button columns so every row's match count and add
+         button line up exactly across rows (auto columns drifted per-row). */
+      #nav-follower-growth .fgtl-prow { display:grid; grid-template-columns:1fr 56px 112px; align-items:center; gap:16px; padding:13px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:9px; }
+      #nav-follower-growth .fgtl-prow.in { opacity:.45; }
+      #nav-follower-growth .fgtl-rowmain { min-width:0; }
+      #nav-follower-growth .fgtl-emline { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+      #nav-follower-growth .fgtl-prow .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+      #nav-follower-growth .fgtl-sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); margin-top:4px; opacity:.85; }
+      #nav-follower-growth .fgtl-launch-banner { display:flex; gap:12px; align-items:center; margin:10px 0 2px; padding:12px 16px; border:1px solid var(--gold); border-radius:12px; background:rgba(247,190,104,.10); }
+      #nav-follower-growth .fgtl-lb-ic { font-size:20px; line-height:1; animation:fgtl-lb-pulse 1.4s ease-in-out infinite; }
+      #nav-follower-growth .fgtl-lb-txt { display:flex; flex-direction:column; gap:2px; }
+      #nav-follower-growth .fgtl-lb-txt b { font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; }
+      #nav-follower-growth .fgtl-lb-txt span { font-size:12px; color:var(--gray); }
+      @keyframes fgtl-lb-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+      #nav-follower-growth .fgtl-pillst { font-family:var(--mono); font-size:9px; letter-spacing:.04em; text-transform:uppercase; padding:2px 9px; border-radius:9999px; border:1px solid var(--hairline); color:var(--gray); white-space:nowrap; }
+      #nav-follower-growth .fgtl-pillst.sent { color:var(--ink); border-color:var(--ink); }
+      #nav-follower-growth .fgtl-pillst.out { color:#b00020; border-color:#b00020; }
+      #nav-follower-growth .fgtl-pillst.new { color:var(--gray); border-style:dashed; }
+      #nav-follower-growth .fgtl-pillst.ready { color:var(--green); border-color:var(--green); }
+      #nav-follower-growth .fgtl-pillst.missing { color:var(--red); border-color:var(--red); }
+      #nav-follower-growth .fgtl-ready { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--hairline); border-radius:12px; padding:10px 14px; margin:0 0 14px; background:var(--bg-soft); }
+      #nav-follower-growth .fgtl-ready .rl { min-width:0; }
+      #nav-follower-growth .fgtl-ready .rl b { font-family:var(--display); font-size:1.15rem; color:var(--green); }
+      #nav-follower-growth .fgtl-ready .rl .lab { font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgtl-ready .rl .sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); opacity:.85; margin-top:3px; }
+      #nav-follower-growth .fgtl-ready-btn { border:1px solid var(--green); color:var(--green); background:none; border-radius:9999px; padding:8px 16px; font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-ready-btn:hover { background:var(--green); color:#fff; }
+      #nav-follower-growth .fgtl-ready-btn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+      #nav-follower-growth .fgacct-wrap { margin:0 0 18px; }
+      #nav-follower-growth .fgboard-head { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px; }
+      #nav-follower-growth .fgboard-head .h { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgboard-head .c { font-family:var(--mono); font-size:11px; color:var(--ink); }
+      #nav-follower-growth .fgacct-board { display:flex; flex-direction:column; gap:8px; max-height:440px; overflow-y:auto; padding-right:6px; }
+      #nav-follower-growth .fgacct { display:flex; align-items:center; gap:12px; padding:11px 13px; border:1px solid rgba(0,0,0,0.28); border-radius:11px; background:var(--bg-soft); }
+      #nav-follower-growth .fgacct.done { border-left:3px solid var(--green); }
+      #nav-follower-growth .fgacct.skip { border-left:3px solid var(--red); }
+      #nav-follower-growth .fgacct > .ic { flex:none; }
+      #nav-follower-growth .fgacct > .fgacct-mid { flex:1 1 auto; min-width:0; }
+      #nav-follower-growth .fgacct > .right { flex:none; }
+      #nav-follower-growth .fgacct.now { border-color:var(--gold); background:color-mix(in srgb, var(--gold) 7%, transparent); }
+      #nav-follower-growth .fgacct.dim { opacity:.88; }
+      #nav-follower-growth .fgacct .ic { width:22px; height:22px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-size:12px; border:1.5px solid var(--gray); color:var(--gray); }
+      #nav-follower-growth .fgacct .ic.done { color:#fff; background:var(--green); border-color:var(--green); }
+      #nav-follower-growth .fgacct .ic.skip { color:#fff; background:var(--red); border-color:var(--red); }
+      #nav-follower-growth .fgacct .ic.run { color:var(--gold); border-color:var(--gold); animation:fgtlPp 1s infinite; }
+      #nav-follower-growth .fgacct .em { font-family:var(--mono); font-weight:500; font-size:12.5px; color:var(--ink); overflow-wrap:anywhere; }
+      #nav-follower-growth .fgacct .sub { font-family:var(--mono); font-size:10px; color:#555; margin-top:3px; overflow-wrap:anywhere; }
+      #nav-follower-growth .fgacct .right { text-align:right; }
+      #nav-follower-growth .fgtl-mbox { text-align:right; }
+      #nav-follower-growth .fgtl-mbox b { font-family:var(--display); font-size:1.5rem; line-height:1; color:var(--ink); }
+      #nav-follower-growth .fgtl-mbox.zero b { color:var(--gray); }
+      #nav-follower-growth .fgtl-mbox small { display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--gray); margin-top:2px; }
+      #nav-follower-growth .fgtl-addbtn { width:112px; box-sizing:border-box; text-align:center; border:1px solid var(--ink); background:none; color:var(--ink); border-radius:9999px; padding:7px 12px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-addbtn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+      #nav-follower-growth .fgtl-refresh-btn { background:none; border:1px solid var(--hairline); border-radius:9999px; padding:5px 13px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray); cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-refresh-btn:hover { border-color:var(--ink); color:var(--ink); }
+      #nav-follower-growth .fgtl-cart { border:1px solid var(--hairline); border-radius:14px; padding:16px; position:sticky; top:20px; }
+      #nav-follower-growth .fgtl-cart-head { display:flex; align-items:center; justify-content:space-between; margin:0 0 12px; }
+      #nav-follower-growth .fgtl-cart h3 { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0; }
+      #nav-follower-growth .fgtl-clear { background:none; border:1px solid var(--red); color:var(--red); cursor:pointer; font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:9999px; }
+      #nav-follower-growth .fgtl-clear:hover { background:var(--red); color:#fff; }
+      #nav-follower-growth .fgtl-cart-list { max-height:520px; overflow-y:auto; padding-right:6px; }
+      #nav-follower-growth .fgtl-cart .empty { color:var(--gray); font-size:12.5px; text-align:center; padding:30px 10px; border:1px dashed var(--hairline); border-radius:10px; }
+      #nav-follower-growth .fgtl-pick { display:grid; grid-template-columns:1fr auto; gap:4px 10px; padding:11px 0; border-top:1px solid var(--hairline-soft); }
+      #nav-follower-growth .fgtl-pick:first-child { border-top:none; }
+      #nav-follower-growth .fgtl-pick .em { font-family:var(--mono); font-size:11.5px; color:var(--ink); }
+      #nav-follower-growth .fgtl-pick .acct { font-family:var(--mono); font-size:9.5px; color:#1f9c3f; margin-top:3px; cursor:pointer; }
+      #nav-follower-growth .fgtl-pick .acct.gap { color:var(--red); }
+      #nav-follower-growth .fgtl-pick .acct.local { color:var(--gold); }
+      #nav-follower-growth .fgtl-pick .inv { text-align:right; font-family:var(--display); font-size:1.1rem; color:var(--ink); }
+      #nav-follower-growth .fgtl-pick .inv small { display:block; font-family:var(--mono); font-size:8px; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgtl-pick .rm { grid-column:2; justify-self:end; width:20px; height:20px; display:flex; align-items:center; justify-content:center; background:none; border:1px solid var(--hairline); border-radius:9999px; color:var(--gray); cursor:pointer; font-size:13px; line-height:1; font-family:var(--mono); padding:0; }
+      #nav-follower-growth .fgtl-pick .rm:hover { border-color:var(--red); color:var(--red); }
+      #nav-follower-growth .fgtl-acctsel { grid-column:1 / -1; margin-top:8px; border:1px solid var(--gold); border-radius:10px; padding:8px; background:var(--bg-soft); }
+      #nav-follower-growth .fgtl-acctsel .psearch { width:100%; box-sizing:border-box; background:var(--card-bg); border:1px solid var(--hairline); border-radius:9999px; padding:7px 12px; font-family:var(--mono); font-size:11px; color:var(--ink); outline:none; margin-bottom:7px; }
+      #nav-follower-growth .fgtl-acctsel .plist { max-height:168px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+      #nav-follower-growth .fgtl-acctsel .popt { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid var(--hairline); border-radius:8px; cursor:pointer; font-family:var(--mono); font-size:11px; }
+      #nav-follower-growth .fgtl-acctsel .popt:hover, #nav-follower-growth .fgtl-acctsel .popt.sel { border-color:var(--gold); background:var(--card-bg); }
+      #nav-follower-growth .fgtl-acctsel .popt .dot { width:7px; height:7px; border-radius:50%; border:1px solid var(--gray); flex:none; }
+      #nav-follower-growth .fgtl-acctsel .popt.sel .dot { background:var(--gold); border-color:var(--gold); }
+      #nav-follower-growth .fgtl-acctsel .popt.localopt { color:var(--gold); }
+      #nav-follower-growth .fgtl-acctsel .pnone { color:var(--gray); font-family:var(--mono); font-size:10px; padding:8px 10px; }
+      #nav-follower-growth .fgtl-cart-foot { border-top:1px solid var(--hairline); margin-top:14px; padding-top:14px; }
+      #nav-follower-growth .fgtl-cart-foot .tot { display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px; margin-bottom:6px; }
+      #nav-follower-growth .fgtl-cart-foot .tot b { font-family:var(--display); font-size:1.05rem; }
+      #nav-follower-growth .fgtl-go-btn { width:100%; margin-top:10px; background:var(--gold); color:#000; border:none; border-radius:9999px; padding:12px; font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; font-weight:600; }
+      #nav-follower-growth .fgtl-go-btn:disabled { background:var(--hairline); color:var(--gray); cursor:not-allowed; }
+      #nav-follower-growth .fgtl-dbwrap { margin-top:22px; }
+      #nav-follower-growth .fgtl-db-toggle { width:100%; text-align:left; background:none; border:none; color:var(--gray); font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; padding:8px 0; }
+      #nav-follower-growth .chips { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 12px; border:1px solid var(--hairline); border-radius:12px; background:var(--bg-soft); transition:border-color .15s; }
+      #nav-follower-growth .chips:focus-within { border-color:var(--gold); }
+      #nav-follower-growth .chip-tag { display:inline-flex; align-items:center; gap:7px; padding:6px 6px 6px 13px; border-radius:9999px; background:var(--card-bg); border:1px solid var(--hairline); color:var(--ink); font-size:12.5px; font-family:var(--body); animation:fgtlChipIn .16s ease; }
+      #nav-follower-growth .chip-tag b { font-weight:600; }
+      #nav-follower-growth .chip-tag .x { width:17px; height:17px; border-radius:50%; border:none; background:transparent; color:var(--gray); cursor:pointer; font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center; transition:.12s; }
+      #nav-follower-growth .chip-tag .x:hover { background:var(--red); color:#fff; }
+      #nav-follower-growth .chips input { flex:1; min-width:140px; background:transparent; border:none; outline:none; color:var(--ink); font-family:var(--body); font-size:13px; padding:5px 2px; }
+      #nav-follower-growth .chips input::placeholder { color:var(--gray); }
+      @keyframes fgtlChipIn { from{ opacity:0; transform:scale(.85); } to{ opacity:1; transform:scale(1); } }
+      #nav-follower-growth .presets { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:11px; }
+      #nav-follower-growth .presets .lbl { font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .preset { background:none; border:1px dashed var(--hairline); color:var(--gray); border-radius:9999px; padding:4px 11px; font-size:12px; cursor:pointer; transition:.12s; }
+      #nav-follower-growth .preset:hover { border-color:var(--gold); border-style:solid; color:var(--gold); }
+      #nav-follower-growth .preset:disabled { opacity:.3; cursor:default; }
+      #nav-follower-growth .filter-foot { display:flex; align-items:center; justify-content:space-between; margin-top:11px; }
+      #nav-follower-growth .filter-foot .hint { color:var(--gray); font-size:11.5px; }
+      #nav-follower-growth .filter-foot .match { font-family:var(--mono); font-size:11px; color:var(--gold); }
+      #nav-follower-growth .vj-log-empty { color:var(--gray); padding:14px 2px; font-family:var(--mono); font-size:12px; }
+      #nav-follower-growth .vj-log-line .what .who { color:var(--gold); }
+      #nav-follower-growth .fgtl-pill { font-family:var(--mono); font-weight:600; font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:9999px; margin-left:8px; white-space:nowrap; }
+      #nav-follower-growth .fgtl-pill.running { color:#7a5200; background:var(--gold); border:1px solid var(--gold); animation:fgtlPp 1s infinite; }
+      #nav-follower-growth .fgtl-pill.done { color:#fff; background:var(--green); border:1px solid var(--green); }
+      #nav-follower-growth .fgtl-pill.done.maxed { color:#fff; background:#1f9c3f; border-color:#1f9c3f; }
+      #nav-follower-growth .fgtl-pill.skipped { color:#fff; background:var(--red); border:1px solid var(--red); }
+      #nav-follower-growth .fgtl-pill.waiting { color:var(--gray); background:transparent; border:1px solid var(--gray); }
+      @keyframes fgtlPp { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-  /* ── the card ─────────────────────────────────────────────────── */
-  .fgm{border:1px solid var(--hairline);background:#fff;padding:20px 22px;margin-bottom:10px;}
-  .fgm-top{display:flex;align-items:flex-start;gap:16px;}
-  .fgm-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);}
-  .fgm-title{font-family:'Hanken Grotesk',sans-serif;font-size:21px;letter-spacing:-.01em;color:var(--ink);margin:3px 0 0;}
-  .fgm-sub{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;color:#6a6a6a;margin:6px 0 0;max-width:56ch;line-height:1.5;}
-  .fgm-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none;}
-  .fgm-btn{background:transparent;color:var(--ink);border:1px solid var(--hairline);border-radius:9999px;padding:8px 16px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
-  .fgm-btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);}
+      /* ── Auto-Pilot panel (fgap) — collapsed strip + expand body ── */
+      /* .rt-tag isn't defined elsewhere in the app (the global #run-target uses the
+         bigger .rt-tab component) — scoped small pill copied from the sketch. */
+      #nav-follower-growth .rt-tag { display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 10px; }
+      #nav-follower-growth .fgap { border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; margin-bottom:22px; }
+      #nav-follower-growth .fgap-strip { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+      #nav-follower-growth .fgap-dot { width:9px; height:9px; border-radius:50%; background:var(--green); box-shadow:0 0 0 4px rgba(63,185,80,.15); flex:none; }
+      #nav-follower-growth .fgap-dot.off { background:var(--gray); box-shadow:none; }
+      #nav-follower-growth .fgap-lead { flex:1; min-width:220px; }
+      #nav-follower-growth .fgap-title { font-family:var(--mono); font-size:12px; letter-spacing:.05em; text-transform:uppercase; font-weight:600; }
+      #nav-follower-growth .fgap-next { font-size:12px; color:var(--gray); margin-top:2px; }
+      #nav-follower-growth .fgap-next b { color:var(--ink); }
+      #nav-follower-growth .fgap-edit { background:none; border:1px solid var(--hairline); color:var(--gray); border-radius:9999px; padding:6px 12px; font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgap-edit:hover { border-color:var(--ink); color:var(--ink); }
+      #nav-follower-growth .fgap-toggle { width:46px; height:26px; border-radius:9999px; background:var(--hairline); position:relative; cursor:pointer; flex:none; border:1px solid var(--hairline); padding:0; }
+      #nav-follower-growth .fgap-toggle::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; transition:.15s; }
+      #nav-follower-growth .fgap-toggle.on { background:var(--green); border-color:rgba(63,185,80,.5); }
+      #nav-follower-growth .fgap-toggle.on::after { left:22px; }
+      #nav-follower-growth .fgap-expand { background:none; border:1px solid var(--hairline); color:var(--gray); border-radius:9999px; width:28px; height:28px; cursor:pointer; flex:none; font-size:13px; line-height:1; transition:transform .15s; }
+      #nav-follower-growth .fgap-expand:hover { border-color:var(--ink); color:var(--ink); }
+      #nav-follower-growth .fgap-expand.open { transform:rotate(180deg); }
+      #nav-follower-growth .fgap-run { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:7px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; white-space:nowrap; font-weight:600; }
+      #nav-follower-growth .fgap-run:hover { opacity:.82; }
+      #nav-follower-growth .fgap-run:disabled { opacity:.4; cursor:not-allowed; }
+      /* ── Follower Growth wizard ─────────────────────────────────────── */
+      #nav-follower-growth .fgw-step { border:1px solid var(--border,#e2e2e2); border-radius:14px; padding:20px 22px; margin:16px 0; background:var(--bg,#fff); }
+      #nav-follower-growth .fgw-step-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+      #nav-follower-growth .fgw-num { width:26px; height:26px; border-radius:50%; background:var(--ink); color:var(--bg); font-family:var(--mono); font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; flex:none; }
+      #nav-follower-growth .fgw-title { font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; font-weight:600; }
+      #nav-follower-growth .fgw-lead { font-size:13.5px; line-height:1.5; opacity:.85; margin:0 0 16px; }
+      #nav-follower-growth .fgw-sheet-link { background:none; border:none; color:var(--ink); font:inherit; font-weight:700; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px; }
+      #nav-follower-growth .fgw-sheet-link:hover { opacity:.7; }
+      /* Stacked: auto-generate box (tall — roles + accounts + Generate) on top,
+         bring-your-own below it. */
+      #nav-follower-growth .fgw-two-up { display:grid; grid-template-columns:1fr; gap:16px; align-items:start; }
+      #nav-follower-growth .fgw-path { border:1px solid var(--border,#e2e2e2); border-radius:10px; padding:14px 16px; }
+      #nav-follower-growth .fgw-path-auto { border-color:var(--ink,#111); }
+      #nav-follower-growth .fgw-gen-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px solid var(--border,#e2e2e2); }
+      #nav-follower-growth .fgw-gen-note { font-size:12.5px; opacity:.72; max-width:460px; line-height:1.45; }
+      #nav-follower-growth .fgw-btn-primary { padding:11px 22px; font-size:11px; }
+      #nav-follower-growth .fgw-path-head { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; margin-bottom:10px; opacity:.9; }
+      #nav-follower-growth .fgw-path-desc { font-size:13px; opacity:.75; margin:0 0 12px; }
+      #nav-follower-growth .fgw-format { background:rgba(0,0,0,.035); border-radius:8px; padding:10px 12px; margin:0 0 12px; }
+      #nav-follower-growth .fgw-format-h { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; margin-bottom:6px; }
+      #nav-follower-growth .fgw-format-cols { display:block; font-size:12.5px; line-height:1.55; word-break:break-word; }
+      #nav-follower-growth .fgw-format-note { font-size:12px; opacity:.72; margin-top:8px; line-height:1.45; }
+      #nav-follower-growth .fgw-byo-row { display:flex; gap:8px; align-items:center; }
+      #nav-follower-growth .fgw-byo-row input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
+      #nav-follower-growth .fgw-btn { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:9px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; font-weight:600; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgw-btn:hover { opacity:.85; }
+      #nav-follower-growth .fgw-btn:disabled { opacity:.4; cursor:not-allowed; }
+      #nav-follower-growth .fgw-list-status { margin-top:14px; font-size:13px; line-height:1.5; }
+      #nav-follower-growth .fgw-select { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
+      #nav-follower-growth .fgw-icon-btn { border:1px solid var(--border,#ccc); background:var(--bg,#fff); color:var(--ink); border-radius:8px; width:34px; height:34px; cursor:pointer; font-size:15px; flex:none; }
+      #nav-follower-growth .fgw-icon-btn:hover { border-color:var(--ink); }
+      #nav-follower-growth .fgw-live-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+      #nav-follower-growth .fgw-live-controls { display:flex; align-items:center; gap:12px; }
+      #nav-follower-growth .fgw-toggle-lab { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; opacity:.7; }
+      #nav-follower-growth .fgw-list-tab { font-size:12px; opacity:.8; padding:4px 10px; border:1px solid var(--border,#ddd); border-radius:9999px; white-space:nowrap; }
+      #nav-follower-growth .fgw-accounts-note { font-size:13px; opacity:.85; margin:4px 0 10px; line-height:1.5; }
+      #nav-follower-growth .fgw-log { margin:12px 0 0; background:#0d100d; color:#bdf5bd; font-family:var(--mono,monospace); font-size:11.5px; line-height:1.5; padding:12px 14px; border-radius:10px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+    </style>
+  <style>
+    /* sketch-only: the real page needs app.js to lay this out */
+    .sketch-note{position:fixed;right:14px;bottom:14px;z-index:99;max-width:340px;background:#fff;border:1px solid var(--hairline);border-left:2px solid var(--gold);padding:10px 13px;font-family:'Hanken Grotesk',sans-serif;font-size:12px;line-height:1.5;color:#5a5a5a;}
+    .sketch-note b{color:var(--ink);}
+    .right-pane{display:none;}
 
-  .fgm-stats{display:flex;gap:34px;margin:18px 0 0;padding:15px 0 0;border-top:1px solid var(--hairline);}
-  .fgm-stat b{display:block;font-family:'Hanken Grotesk',sans-serif;font-size:23px;letter-spacing:-.02em;color:var(--ink);line-height:1.1;}
-  .fgm-stat span{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray);}
-  .fgm-foot{display:flex;align-items:center;gap:8px;margin-top:14px;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);}
-  .fgm-dot{width:6px;height:6px;border-radius:9999px;background:var(--green,#2e7d32);display:inline-block;}
-  .fgm-dot.stale{background:#c9a84a;}
-
-  /* building state */
-  .fgm.building .fgm-stats{opacity:.35;}
-  .fgm-bar{height:2px;background:#ececec;margin-top:16px;position:relative;overflow:hidden;}
-  .fgm-bar i{position:absolute;left:0;top:0;bottom:0;width:38%;background:var(--ink);}
-  .fgm-prog{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);margin-top:8px;}
-</style>
-
-<div class="wrap">
-  <p class="note"><b>Variant A — hero card, top of the Follower Growth section.</b> The database stops being a hidden action and becomes a thing with a size, a freshness and two obvious verbs. Sits above Step 1; the wizard below is untouched. Three states shown: fresh, never built, building.</p>
-
-  <h3 class="vh">State 1 · built</h3>
-  <div class="fgm">
-    <div class="fgm-top">
-      <div>
-        <div class="fgm-eyebrow">Follower Growth database</div>
-        <div class="fgm-title">Everyone we can reach</div>
-        <p class="fgm-sub">One row per person in the <b>FG Master</b> tab of the FG Sheet — name, title, company, geo, and every Ortus account connected to them. Stamped <b>Invited</b> the moment the bot sends.</p>
+    .fgm{border:1px solid var(--hairline);background:#fff;padding:20px 22px;margin:0 0 18px;}
+    .fgm-top{display:flex;align-items:flex-start;gap:16px;}
+    .fgm-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);}
+    .fgm-title{font-family:'Hanken Grotesk',sans-serif;font-size:21px;letter-spacing:-.01em;color:var(--ink);margin:3px 0 0;}
+    .fgm-sub{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;color:#6a6a6a;margin:6px 0 0;max-width:58ch;line-height:1.5;}
+    .fgm-sub b{color:var(--ink);font-weight:500;}
+    .fgm-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none;}
+    .fgm-btn{background:transparent;color:var(--ink);border:1px solid var(--hairline);border-radius:9999px;padding:8px 16px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
+    .fgm-btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);}
+    .fgm-stats{display:flex;gap:34px;margin:18px 0 0;padding:15px 0 0;border-top:1px solid var(--hairline);}
+    .fgm-stat b{display:block;font-family:'Hanken Grotesk',sans-serif;font-size:23px;letter-spacing:-.02em;color:var(--ink);line-height:1.1;}
+    .fgm-stat span{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray);}
+    .fgm-foot{display:flex;align-items:center;gap:8px;margin-top:14px;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);}
+    .fgm-dot{width:6px;height:6px;border-radius:9999px;background:#2e7d32;display:inline-block;}
+    .fgm-bar{height:2px;background:#ececec;margin-top:16px;position:relative;overflow:hidden;}
+    .fgm-bar i{position:absolute;left:0;top:0;bottom:0;width:38%;background:var(--ink);}
+    .fgm-prog{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);margin-top:8px;}
+    /* variant B */
+    .st0{border:1px solid var(--hairline);background:#fff;padding:16px 22px;margin:0 0 12px;}
+    .st0-head{display:flex;align-items:center;gap:10px;}
+    .st0-num{width:20px;height:20px;border-radius:9999px;background:var(--ink);color:#fff;font-family:var(--mono);font-size:10px;display:flex;align-items:center;justify-content:center;flex:none;}
+    .st0-title{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);}
+    .st0-when{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--gray);}
+    .st0-when a{color:var(--ink);}
+    .st0-lead{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;line-height:1.55;color:#5a5a5a;margin:10px 0 0;max-width:72ch;}
+    .st0-lead b{color:var(--ink);font-weight:500;}
+    .st0-row{display:flex;align-items:center;gap:24px;margin-top:15px;padding-top:14px;border-top:1px solid var(--hairline);}
+    .st0-fig b{font-family:'Hanken Grotesk',sans-serif;font-size:17px;color:var(--ink);display:block;line-height:1.15;}
+    .st0-fig span{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray);}
+    .st0-btns{margin-left:auto;display:flex;gap:8px;}
+  </style>
+</head>
+<body data-dashboard="v3">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar"></span></div>
+        <!-- Shown only when a newer release exists on GitHub (gold pill) or,
+             when up to date, as a subtle "Check for updates" button. Wired by
+             checkForUpdate() / onUpdateClick() in public/js/app.js. -->
+        <button type="button" id="update-pill" class="update-pill hidden" onclick="onUpdateClick(event)"></button>
+        <!-- Download progress, shown under the button while the DMG downloads. -->
+        <div id="update-status" class="update-status hidden">
+          <div class="update-bar"><div id="update-bar-fill" class="update-bar-fill"></div></div>
+          <div id="update-status-text" class="update-status-text"></div>
+        </div>
+        <div id="update-detail" class="update-detail hidden"></div>
       </div>
-      <div class="fgm-actions">
-        <button class="fgm-btn primary">Open the sheet ↗</button>
-        <button class="fgm-btn">Rebuild</button>
+
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item nav-item-back" onclick="goDashboard()"><span class="nav-num">←</span>Dashboard</button>
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph" id="nav-glyph-settings"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph" id="nav-glyph-sheet"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph" id="nav-glyph-accounts"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph" id="nav-glyph-templates"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
+
+        <div class="nav-section-label">Team</div>
+        <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
+
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item" id="nav-replies-btn" onclick="goReplies()">Replies</button>
+        <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
+
+        <div class="nav-section-label">Help</div>
+        <div class="nav-help-wrapper">
+          <button type="button" class="nav-item nav-item-help" id="nav-help-btn" onclick="toggleHelpPopover(event)">
+            <span class="nav-num">?</span>Help
+          </button>
+          <div id="help-popover" class="help-popover hidden">
+            <div class="help-popover-title">HELP</div>
+            <button type="button" class="help-pop-item" onclick="onHelpTakeTour()">
+              <span class="help-pop-icon">📘</span><span>Take the tour</span>
+            </button>
+            <a class="help-pop-item" href="/help.html" target="_blank" rel="noopener">
+              <span class="help-pop-icon">📄</span><span>Open the manual</span>
+            </a>
+            <button type="button" id="help-pop-replay" class="help-pop-item" onclick="onHelpReplayTour()" style="display:none">
+              <span class="help-pop-icon">🔁</span><span>Replay tour</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-section-label">Dev tools</div>
+        <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
+      </nav>
+
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
       </div>
+
+      <!-- Bug 17: Sidebar tightened (Variant A). Same functions/IDs as before —
+           Change becomes an inline ✎, push/SMTP become compact chips, Send test
+           becomes a "Test" link — just less button-heavy. -->
+      <div class="sb-tight">
+        <div class="sb-line">
+          <span class="sb-line-k">Timestamps</span>
+          <span class="sb-line-v">
+            <span id="op-tz-current" class="notif-row-v">—</span>
+            <button type="button" class="sb-icon-btn" title="Change timezone" aria-label="Change timezone" onclick="openOpTzModal()">✎</button>
+          </span>
+        </div>
+
+        <div class="sb-line">
+          <span class="sb-line-k">Notifications</span>
+          <span class="sb-line-v">
+            <button type="button" id="notif-enable-btn" class="sb-link" onclick="requestNotificationPermission()" style="display:none">Enable</button>
+            <button type="button" class="sb-link" onclick="sendTestNotification()">Test</button>
+          </span>
+        </div>
+        <div class="sb-chips" id="notif-state-rows">
+          <span class="sb-chip"><span class="sb-chip-k">Push</span> <span id="notif-push-state" class="notif-row-v">—</span></span>
+          <span class="sb-chip"><span class="sb-chip-k">Email</span> <span id="notif-smtp-state" class="notif-row-v">—</span></span>
+          <span id="notif-last-test" class="notif-row-v sb-lasttest" hidden>never</span>
+        </div>
+
+        <div class="sb-line">
+          <span class="sb-line-k">Check reminders</span>
+          <label class="notif-pref-toggle">
+            <input type="checkbox" id="notif-pref-conn-check" onchange="onNotifPrefChange('connectionCheckReminders', this.checked)">
+            <span class="notif-pref-slider"></span>
+          </label>
+        </div>
+        <div class="sb-line">
+          <span class="sb-line-k">Reply alerts</span>
+          <label class="notif-pref-toggle">
+            <input type="checkbox" id="notif-pref-reply-alerts" onchange="onNotifPrefChange('replyAlerts', this.checked)">
+            <span class="notif-pref-slider"></span>
+          </label>
+        </div>
+
+        <!-- v2.113 — pre-send identity safeguard. Hairline-separated into its
+             own block so it's not mistaken for a notification toggle. ON
+             (default) = confirm each loaded profile matches the sheet row
+             before connecting (blocks wrong-person sends). OFF = send straight
+             to the sheet URL like pre-v2.97; the dead-profile (404) skip stays
+             on either way. Sticky per-operator (stored via /api/operator-prefs). -->
+        <div class="sb-line sb-safeguard" title="ON: before each connection, confirm the open profile matches the sheet row (blocks wrong-person sends). OFF: connect straight to the sheet URL like older versions. The dead-profile (404) skip stays on either way.">
+          <span class="sb-line-k">Identity safeguard</span>
+          <span class="sb-line-v">
+            <span id="op-identity-gate-state" class="notif-row-v bad">Off</span>
+            <label class="notif-pref-toggle">
+              <input type="checkbox" id="op-identity-gate" onchange="onIdentityGateChange(this.checked)">
+              <span class="notif-pref-slider"></span>
+            </label>
+          </span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
+             in the SoO 'CC User App' column; click to set/change. Highlighted
+             gold until set (it's mandatory before a campaign can start). -->
+        <button type="button" class="operator-chip" id="operator-chip" onclick="openOperatorEmailModal({ mandatory:false })" title="The email stamped on every LinkedIn account you reserve. Click to change.">
+          <span class="operator-chip-label">Operating as</span>
+          <strong id="operator-chip-email">—</strong>
+        </button>
+        <div class="user-chip">
+          <strong id="user-chip-email">info@ortus.solutions</strong>
+          <span id="user-chip-date"></span>
+        </div>
+        <button type="button" class="btn btn-sm sidebar-signout" onclick="signOut()">Sign out</button>
+      </div>
+    </aside>
+    <main class="main">
+    <div class="section" id="nav-follower-growth">
+      <h2><span data-edit="h2-fg">Follower Growth</span></h2>
+
+      <!-- Auto-Pilot status panel -->
+      <div class="fgap" id="fgap">
+        <div class="fgap-strip">
+          <span class="fgap-dot" id="fgap-dot"></span>
+          <div class="fgap-lead">
+            <div class="fgap-title" id="fgap-title">AUTO-PILOT &#183; ON</div>
+            <div class="fgap-next" id="fgap-next">Next run &#8212;</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reconcile banner — shows when cloud runs are awaiting write-back -->
+      <div class="fgap" id="fg-reconcile-banner" style="display:none">
+        <div class="fgap-strip" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:14px">&#9888;</span>
+            <span class="fgap-title" id="fg-reconcile-text" style="font-size:11px">0 runs awaiting reconcile</span>
+          </div>
+          <button class="fgtl-watch-btn" id="fg-reconcile-btn" onclick="_fgSyncNow()" style="font-size:10px;padding:5px 12px">SYNC NOW</button>
+        </div>
+      </div>
+
+      <!-- Wizard: always visible. Numbered steps take you from list → accounts →
+           launch, with the live status streaming at the bottom. -->
+      <div id="fgap-manual">
+      <div class="fgm">
+        <div class="fgm-top">
+          <div>
+            <div class="fgm-eyebrow">Follower Growth database</div>
+            <div class="fgm-title">Everyone we can reach</div>
+            <p class="fgm-sub">One row per person in the <b>FG Master</b> tab of the FG Sheet &#8212; name, title, company, geo, and <b>every Ortus account connected to them</b>. Stamped <b>Invited</b> the moment the bot sends.</p>
+          </div>
+          <div class="fgm-actions">
+            <button class="fgm-btn primary">Open the sheet &#8599;</button>
+            <button class="fgm-btn">Rebuild</button>
+          </div>
+        </div>
+        <div class="fgm-stats">
+          <div class="fgm-stat"><b>294,639</b><span>people</span></div>
+          <div class="fgm-stat"><b>53,787</b><span>reachable 2+ ways</span></div>
+          <div class="fgm-stat"><b>6,088</b><span>already invited</span></div>
+          <div class="fgm-stat"><b>15,660</b><span>from the funnel sheet</span></div>
+        </div>
+        <div class="fgm-foot"><span class="fgm-dot"></span> Built today, 17:22 &#183; Connections DB + the team&#8217;s manual funnel sheet</div>
+      </div>
+
+      <!-- ── STEP 1 · BUILD YOUR INVITE LIST ───────────────────────────── -->
+      <div class="fgw-step" id="fgw-step-1">
+        <div class="fgw-step-head"><span class="fgw-num">1</span><span class="fgw-title">Build your invite list</span></div>
+        <p class="fgw-lead">Your invites come from a tab in the central FG Google Sheet — one you can open, review and edit before it fires. <button type="button" id="fgtl-open-sheet" class="fgw-sheet-link">Open the FG Sheet &#8599;</button></p>
+
+        <div class="fgw-two-up">
+          <!-- A · auto-generate: roles → accounts → Generate, all in one box -->
+          <div class="fgw-path fgw-path-auto">
+            <div class="fgw-path-head">A &#183; Auto-generate</div>
+            <div class="fgtl-step-eyebrow">Which roles to invite &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
+            <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
+            <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
+            <div class="filter-foot"><span class="hint">Defaults toward marketers.</span><span class="match" id="fgtl-match"></span></div>
+
+            <!-- accounts picker — nested: whose networks to search -->
+            <div class="fgw-accounts-note">Now pick <b>whose networks</b> to search for people matching the roles above &#8212; each person is invited by the account that found them.</div>
+            <div class="fgtl-board2">
+              <div>
+                <div class="fgtl-search">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                  <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
+                  <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
+                </div>
+                <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
+                <div class="fgtl-ready" id="fgtl-ready" style="margin-top:14px">
+                  <div class="rl">
+                    <span class="lab">Ready</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
+                    <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
+                  </div>
+                  <button type="button" class="fgtl-ready-btn dis" id="fgtl-ready-btn" disabled>+ Add all ready</button>
+                </div>
+                <div class="fgtl-people" id="fgtl-people"></div>
+              </div>
+              <div class="fgtl-cart">
+                <div class="fgtl-cart-head">
+                  <h3>Accounts to search</h3>
+                  <button type="button" id="fgtl-clear" class="fgtl-clear" style="display:none">Clear all</button>
+                </div>
+                <div id="fgtl-cart" class="fgtl-cart-list"></div>
+                <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
+                  <div class="tot"><span>Accounts</span><b id="fgtl-t-people">0</b></div>
+                  <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv" title="Upper bound — already-invited connections are skipped when sending">0</b></div>
+                  <!-- old in-cart Launch button — hidden; launching now happens
+                       from Live status ↓ (Run it now) on the generated tab. -->
+                  <button class="fgtl-go-btn" id="fgtl-go" style="display:none" disabled>Launch</button>
+                  <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Generate CTA — bottom of the auto-generate box -->
+            <div class="fgw-gen-row">
+              <button type="button" id="fgtl-generate" class="fgw-btn fgw-btn-primary" title="Build the list from the roles + accounts above and write it to a tab in the FG sheet">Generate list &#8594; writes a tab to the sheet</button>
+              <span class="fgw-gen-note">Writes the invite list to a new tab in the FG Sheet. You then launch it from <b>Live status</b> &#8595; (Run it now).</span>
+            </div>
+          </div>
+
+          <!-- B · bring your own -->
+          <div class="fgw-path">
+            <div class="fgw-path-head">B &#183; Bring your own</div>
+            <p class="fgw-path-desc">Fill a tab in the FG Sheet yourself, then tell us its name.</p>
+            <div class="fgw-format">
+              <div class="fgw-format-h">Tab format &#8212; put these in row&nbsp;1:</div>
+              <code class="fgw-format-cols">First Name &#183; Last Name &#183; LinkedIn URL &#183; Job Title &#183; Company &#183; Account Email</code>
+              <div class="fgw-format-note"><b>LinkedIn URL</b> and <b>Account Email</b> are required. <b>Account Email</b> = the GoLogin account's login email (that's who sends each invite).</div>
+            </div>
+            <div class="fgw-byo-row">
+              <select id="fgtl-byo-tab" class="fgw-select"><option value="">Loading tabs&#8230;</option></select>
+              <button type="button" id="fgtl-byo-refresh" class="fgw-icon-btn" title="Reload tab list">&#8635;</button>
+              <button type="button" id="fgtl-byo-use" class="fgw-btn" title="Fire from this tab in the FG sheet">Use this tab</button>
+            </div>
+          </div>
+        </div>
+        <div id="fgtl-list-status" class="fgw-list-status"></div>
+      </div>
+
+      <!-- ── STEP 2 · SCHEDULE ─────────────────────────────────────────── -->
+      <div class="fgw-step" id="fgw-step-2">
+        <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Schedule</span></div>
+        <p class="fgw-lead">Runs automatically on the <b id="fgw-sched-days">1st &amp; 15th</b> at 6am London time, in the <b>&#9729;&#65038; cloud VM</b> — so it keeps going after you close your laptop. <span id="fgw-sched-next"></span></p>
+        <button type="button" id="fgw-edit-schedule" class="fgw-btn">Edit schedule</button>
+      </div>
+
+      <!-- ── LIVE STATUS ───────────────────────────────────────────────
+           Bottom of the wizard: Auto-Pilot on/off + Run it now, then the
+           streaming campaign log / per-account board / live card. -->
+      <div class="fgw-step" id="fgw-step-live">
+        <div class="fgw-live-head">
+          <div class="fgw-step-head" style="margin:0"><span class="fgw-num">3</span><span class="fgw-title">Live status</span></div>
+          <div class="fgw-live-controls">
+            <span id="fgw-list-tab" class="fgw-list-tab" style="display:none"></span>
+            <button type="button" class="fgap-run" id="fgap-run" title="Fire the invite-list tab you built in step 1 to the cloud VM now, outside the schedule">&#9654; Run it now</button>
+            <span class="fgw-toggle-lab">Auto-Pilot</span>
+            <button type="button" class="fgap-toggle on" id="fgap-toggle" role="switch" aria-checked="true" title="Toggle Auto-Pilot on/off"></button>
+          </div>
+        </div>
+        <pre id="fgw-log" class="fgw-log">The campaign log streams here while a run is active.</pre>
+      </div>
+
+      <!-- Per-account progress board — sits ABOVE the live card during a run -->
+      <div class="fgacct-wrap" id="fgtl-acctboard" hidden>
+        <div class="fgboard-head"><span class="h">Accounts</span><span class="c" id="fgtl-acct-roll"></span></div>
+        <div class="fgacct-board" id="fgtl-acct-list"></div>
+      </div>
+
+      <!-- Live campaign card (reuses global .vj-* classes) -->
+      <section class="vj-card is-detailed" id="fgtl-card" aria-labelledby="fgtl-card-name">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span><span id="fgtl-eyebrow">Ready to launch</span></span>
+          <span class="vj-when" id="fgtl-when"></span>
+          <button type="button" id="fgtl-watch" class="fgtl-watch-btn" style="display:none" title="Watch the campaign's browser live on the VM"><span id="fgtl-watch-dot" class="fgtl-live-dot" hidden></span>&#128065; Show live</button>
+          <button type="button" id="fgtl-card-stop" class="fgtl-card-stop" style="display:none">Stop now</button>
+        </div>
+        <div class="vj-glyph-circle" aria-hidden="true">&#8961;</div>
+        <h2 class="vj-name" id="fgtl-card-name"><span>Team Follower Growth</span></h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="100" aria-label="Launch progress"><i id="fgtl-bar" style="width:0%"></i></div>
+        <div id="fgtl-launch-banner" class="fgtl-launch-banner" style="display:none">
+          <span class="fgtl-lb-ic" aria-hidden="true">&#9203;</span>
+          <div class="fgtl-lb-txt">
+            <b>The campaign is launching&#8230;</b>
+            <span>Warming up the VM &#183; first invites go out in ~2 minutes. You can close the app &#8212; it keeps running.</span>
+          </div>
+        </div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span id="fgtl-pct">0</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b id="fgtl-sent">0</b> of <span id="fgtl-total">0</span> accounts sent</span>
+              <span>Runs <b>sequentially</b> &#183; 1 account at a time</span>
+            </div>
+          </div>
+          <div class="vj-stats" aria-live="polite">
+            <span><b id="fgtl-accts">0</b> accounts</span>
+            <span><b id="fgtl-inv">0</b> invites sent</span>
+            <span>&#183; <b id="fgtl-seq">Idle</b></span>
+          </div>
+        </div>
+        <div class="vj-details">
+          <div>
+            <div class="vj-log-head">
+              <span class="vj-details-head" id="fgtl-loghead">Live log &#183; last 15 events</span>
+              <span class="vj-log-acts">
+                <button type="button" class="vj-log-act" id="fgtl-copy" title="Copy the full log to your clipboard">Copy all</button>
+                <button type="button" class="vj-log-act" title="Open the Follower Growth sheet">Open sheet</button>
+              </span>
+            </div>
+            <div class="vj-log" id="fgtl-logbody"><div class="vj-log-empty">Waiting to launch &#8212; events stream here, one account at a time.</div></div>
+          </div>
+          <div class="vj-bulk">
+            <div class="vj-details-head">Batch summary</div>
+            <div class="vj-bulk-status">Sent &#183; <b id="fgtl-sum-sent">&#8212;</b> &#183; <span id="fgtl-sum-skip">0</span> skipped</div>
+            <div class="vj-bulk-hint">Each account opens its profiles and sends follow invites to its own connections, then the next account starts. Capped at each account's monthly invite budget.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DB collapsible -->
+      <div class="fgtl-dbwrap">
+        <button class="fgtl-db-toggle" id="fgtl-db-toggle">&#9658; View Follower Growth database (invites &#183; budgets &#183; funnel)</button>
+        <div class="fgtl-db-body" id="fgtl-db-body" style="display:none">
+          <!-- FG Master: the whole warm network as one sheet tab. Lives here, not in
+               the invite wizard — it's a reporting artefact, not a step in a run. -->
+          <!-- existing Invites/Budgets/Funnel tabs + tables -->
+          <div class="fg-step">
+            <div class="fg-step-head"><span class="fg-step-num">2</span> Follower Growth database
+              <span class="fg-db-tabs">
+                <button type="button" class="fg-db-tab active" data-fgtab="invites" onclick="setFgTab('invites')">Invites</button>
+                <button type="button" class="fg-db-tab" data-fgtab="budgets" onclick="setFgTab('budgets')">Budgets</button>
+                <button type="button" class="fg-db-tab" data-fgtab="funnel" onclick="setFgTab('funnel')">Funnel</button>
+              </span>
+              <button type="button" class="fg-refresh" onclick="fgLoadDb()" title="Refresh">&#8635;</button>
+            </div>
+            <div id="fg-db-body"><p class="cx-hint">6,088 invited · 30 accounts · last run 1 Aug</p></div>
+          </div>
+        </div>
+      </div>
+      </div><!-- /#fgap-manual -->
     </div>
-    <div class="fgm-stats">
-      <div class="fgm-stat"><b>294,639</b><span>people</span></div>
-      <div class="fgm-stat"><b>53,787</b><span>reachable 2+ ways</span></div>
-      <div class="fgm-stat"><b>6,088</b><span>already invited</span></div>
-      <div class="fgm-stat"><b>15,660</b><span>from the funnel sheet</span></div>
-    </div>
-    <div class="fgm-foot"><span class="fgm-dot"></span> Built today, 17:22 · from the Connections DB + the team’s manual funnel sheet</div>
+    </main>
   </div>
-
-  <h3 class="vh">State 2 · never built</h3>
-  <div class="fgm">
-    <div class="fgm-top">
-      <div>
-        <div class="fgm-eyebrow">Follower Growth database</div>
-        <div class="fgm-title">Not built yet</div>
-        <p class="fgm-sub">Build it once and the FG Sheet gains an <b>FG Master</b> tab with everyone we can reach — ~294,000 people, every past invite already stamped. Takes a few minutes.</p>
-      </div>
-      <div class="fgm-actions"><button class="fgm-btn primary">Build it now</button></div>
-    </div>
-    <div class="fgm-foot"><span class="fgm-dot stale"></span> Nothing in the sheet until this runs</div>
-  </div>
-
-  <h3 class="vh">State 3 · building</h3>
-  <div class="fgm building">
-    <div class="fgm-top">
-      <div>
-        <div class="fgm-eyebrow">Follower Growth database</div>
-        <div class="fgm-title">Building…</div>
-        <p class="fgm-sub">Writing the <b>FG Master</b> tab. Leave this running — don’t start a campaign reconcile until it finishes.</p>
-      </div>
-      <div class="fgm-actions"><button class="fgm-btn">Stop</button></div>
-    </div>
-    <div class="fgm-bar"><i></i></div>
-    <div class="fgm-prog"><span>112,000 / 294,639 rows</span><span>~3 min left</span></div>
-  </div>
-</div>
+  <div class="sketch-note"><b>Variant A</b> &#8212; a hero card above the wizard. The database gets a size, a freshness and two verbs. Wizard below untouched.</div>
+</body>
+</html>
