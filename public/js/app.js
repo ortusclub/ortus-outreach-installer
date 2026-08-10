@@ -25,6 +25,7 @@ import {
 } from '/js/tour.mjs';
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { fgActiveDoor, fgActivePayload } from '/js/fg-source.mjs';
+import { fgEyebrowWithPage } from '/js/fg-eyebrow.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText } from '/js/live-activity.mjs';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
@@ -21564,6 +21565,11 @@ function _fgtlBuildCloudStatus(campaign, leads, extra = {}) {
     skipped: skipHead,
     perAccount,
     logs,
+    // Which page this run invites to. An FG run pointed at the wrong page is
+    // indistinguishable from a correct one until the invites land, so it is
+    // stated on the card rather than left implicit. Absent on older runs —
+    // fgtlRenderCard treats '' as "say nothing".
+    pageLabel: (campaign && campaign.config && campaign.config.pageLabel) || '',
   };
 }
 
@@ -22217,6 +22223,7 @@ function fgtlRenderCard(status) {
   else if (launching) eyebrow = '● Launching…';
   else if (status.running) eyebrow = '● Sending';
   else if (status.phase === 'done') eyebrow = '✓ Complete';
+  eyebrow = fgEyebrowWithPage(eyebrow, status.pageLabel);
   setTxt('fgtl-eyebrow', eyebrow);
 
   // Prominent "warming up ~2 min" banner + gold pulsing dot during launch, so the

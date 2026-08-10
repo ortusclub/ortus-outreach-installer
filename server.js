@@ -3334,6 +3334,9 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
                               monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
       }, { startCloud: (payload) => startCloudCampaign(payload) });
       if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
+      // Which page this run invites to, stated plainly in the log: a wrong
+      // dropdown pick is invisible until the invites land otherwise.
+      try { campaignLog(`[FG-cloud] inviting ${out.leadCount} people to follow ${page.label} (${page.inviteUrl})`); } catch (_) {}
       // Register this run so the reconcile loop stamps the ledger (Status /
       // Invited At / Note / Member ID) back into ITS tab/sheet as invites go
       // out. perAccount + month are stored so the reconcile can also call
