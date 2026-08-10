@@ -27181,15 +27181,61 @@ function renderMagellanState(s) {
   if (s.error) showMagellanError(s.error);
 }
 
+// The server stores lines as "[iso] <glyph> text". The card's log is the
+// campaign's own three-column grid (time · event · what), so split them the
+// same way rather than dumping the raw string.
+const MG_LOG_EVENTS = [
+  ['▶', 'START', ''],
+  ['■', 'DONE', 'is-ok'],
+  ['◼', 'STOP', 'is-warn'],
+  ['✓', 'READ', 'is-ok'],
+  ['✗', 'FAILED', 'is-err'],
+  ['⚠', 'WARN', 'is-warn'],
+  ['◦', 'OPEN', ''],
+];
+
+export function parseMagellanLogLine(line) {
+  const m = /^\[([^\]]+)\]\s?([\s\S]*)$/.exec(line || '');
+  const rest = m ? m[2] : String(line || '');
+  let time = '';
+  if (m) {
+    const d = new Date(m[1]);
+    time = Number.isNaN(d.getTime()) ? m[1] : d.toTimeString().slice(0, 8);
+  }
+  const hit = MG_LOG_EVENTS.find(([glyph]) => rest.startsWith(glyph));
+  return hit
+    ? { time, evt: hit[1], cls: hit[2], what: rest.slice(hit[0].length).trim() }
+    : { time, evt: 'LOG', cls: '', what: rest };
+}
+
 function renderMagellanLog(lines) {
   const box = document.getElementById('mg-log');
-  if (!box || box.hidden) return;
-  const cls = (l) => (l.includes('✗') ? 'error' : l.includes('⚠') ? 'warn' : l.includes('✓') ? 'success' : 'info');
-  box.innerHTML = lines.length
-    ? lines.map((l) => `<div class="entry ${cls(l)}">${escHtml(l)}</div>`).join('')
-    : '<div class="entry info">Waiting to start…</div>';
-  box.scrollTop = box.scrollHeight;
+  if (!box) return;
+  if (!lines.length) {
+    box.innerHTML = '<div class="vj-log-empty">Waiting to start — events appear here, one account at a time.</div>';
+    return;
+  }
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  box.innerHTML = lines.map((l) => {
+    const p = parseMagellanLogLine(l);
+    return `<div class="vj-log-line ${p.cls}"><span class="time">${escHtml(p.time)}</span>`
+      + `<span class="evt">${escHtml(p.evt)}</span>`
+      + `<span class="what">${escHtml(p.what)}</span></div>`;
+  }).join('');
+  // Only follow the tail when the operator is already at it — otherwise
+  // scrolling back to read a failure yanks you away every poll.
+  if (atBottom) box.scrollTop = box.scrollHeight;
 }
+
+async function copyMagellanLog(btn) {
+  const box = document.getElementById('mg-log');
+  if (!box) return;
+  try {
+    await navigator.clipboard.writeText(box.innerText);
+    if (btn) { const t = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = t; }, 1200); }
+  } catch { /* clipboard blocked — nothing useful to do */ }
+}
+window.copyMagellanLog = copyMagellanLog;
 
 async function stopMagellanCollect() {
   const btn = document.getElementById('mg-stop-btn');
@@ -27205,20 +27251,19 @@ async function stopMagellanCollect() {
 }
 
 function toggleMagellanLog() {
-  const box = document.getElementById('mg-log');
+  const card = document.getElementById('mg-card');
   const btn = document.getElementById('mg-log-btn');
-  if (!box) return;
-  box.hidden = !box.hidden;
-  if (btn) btn.textContent = box.hidden ? 'Show log' : 'Hide log';
-  if (!box.hidden) refreshMagellanState();
+  if (!card) return;
+  const shown = card.classList.toggle('is-detailed');
+  if (btn) btn.textContent = shown ? 'Hide log' : 'Show log';
+  if (shown) refreshMagellanState();
 }
 
 // The run writes three tabs (Magellan Accounts / Log / Import) into the app's
 // own Google Sheet. Same sheet the FG side uses, so the URL comes from there.
 async function openMagellanSheet() {
   try {
-    const r = await fetch('/api/fg/sheet-url');
-    const j = await r.json();
+    const j = await mgFetch('/api/magellan/sheet-url');
     if (j.url) return window.open(j.url, '_blank');
     showMagellanError(j.error || 'Could not find the sheet.');
   } catch (err) {

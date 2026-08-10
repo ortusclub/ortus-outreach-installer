@@ -17,8 +17,11 @@
 // HubSpot property holding the Ortus accounts a person is connected to. It is a
 // multi-value property, so values are semicolon-delimited (and the sheet's
 // existing rows carry a leading ';' — we reproduce that exactly).
+// Read off the live portal, not guessed: internal name `linkedin_1st_connections`,
+// label "Linkedin 1st Connections", type enumeration/checkbox with one option per
+// Ortus account email.
 export const CONNECTIONS_PROP = process.env.HUBSPOT_CONNECTIONS_PROP
-  || 'linkedin_first_connections';
+  || 'linkedin_1st_connections';
 
 export const MEMBER_ID_PROP = 'linkedin_membership_id';
 

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.5" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.6" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.0.1" />
 </head>
 <body data-dashboard="v3">
@@ -708,6 +708,13 @@
            in HubSpot. This is where the database above comes from.
            Deliberately has none of the campaign chrome (credits, passover,
            assignment, in-use): it only reads a connections list. -->
+      <style>
+        /* The card's details panel is a 1fr/260px grid for a campaign's
+           bulk-check column. Magellan has no second column, so the log gets
+           the full width. */
+        body[data-dashboard='v3'] #mg-card.is-detailed .vj-details { grid-template-columns: 1fr; }
+        body[data-dashboard='v3'] #mg-card .vj-log { max-height: 360px; }
+      </style>
       <div id="cx-magellan-pane" hidden>
         <p class="cx-lede">Collect the connections of our LinkedIn accounts and put them in HubSpot. <b>This is where the database comes from</b> — everything the other tab searches was collected here.</p>
 
@@ -801,11 +808,23 @@
               <button class="btn-pill" id="mg-collect-btn" onclick="startMagellanCollect()">Collect connections</button>
               <button class="btn-pill" id="mg-stop-btn" onclick="stopMagellanCollect()" hidden>Stop</button>
               <button class="btn-pill" id="mg-log-btn" onclick="toggleMagellanLog()">Show log</button>
-              <button class="btn-pill" id="mg-sheet-btn" onclick="openMagellanSheet()">Open the sheet</button>
+            </div>
+
+            <!-- Live log, inside the card exactly like a running campaign's.
+                 One column, not two — Magellan has no bulk-check panel. -->
+            <div class="vj-details">
+              <div>
+                <div class="vj-log-head">
+                  <span class="vj-details-head">Live log</span>
+                  <span class="vj-log-acts">
+                    <button type="button" class="vj-log-act" onclick="copyMagellanLog(this)" title="Copy the full log to your clipboard">Copy all</button>
+                    <button type="button" class="vj-log-act" onclick="openMagellanSheet()" title="Open the sheet this run writes to">Open sheet</button>
+                  </span>
+                </div>
+                <div class="vj-log" id="mg-log"></div>
+              </div>
             </div>
           </section>
-
-          <div class="log-panel" id="mg-log" hidden><div class="entry info">Waiting to start…</div></div>
           <div class="conn-error" id="mg-error" hidden></div>
         </section>
 
@@ -3956,7 +3975,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.5"></script>
+  <script type="module" src="/js/app.js?v=3.1.6"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

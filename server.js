@@ -105,6 +105,7 @@ import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launc
 import { generateListRows } from './src/connections/fg-list-generate.js';
 import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected } from './src/connections/magellan-pull.js';
+import { ensureSheet as magellanEnsureSheet, readSheetRef as magellanSheetRef } from './src/connections/magellan-sheet.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -2521,6 +2522,19 @@ app.post('/api/connections/sync', (_req, res) => {
 
 app.get('/api/magellan/state', (_req, res) => {
   res.json(magellan.getState());
+});
+
+// Magellan's own Google Sheet — created on first ask, then reused. Separate
+// from the FG sheet on purpose: that one is locked by the Follower Growth jobs.
+app.get('/api/magellan/sheet-url', async (_req, res) => {
+  const ref = magellanSheetRef();
+  if (ref && ref.url) return res.json({ url: ref.url });
+  try {
+    const made = await magellanEnsureSheet();
+    return res.json({ url: made.url });
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
 });
 
 // The account picker. Every GoLogin profile, joined to whether we already hold

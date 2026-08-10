@@ -1,10 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  accountsRows, logRows, importRows, publish,
-  ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB,
+  accountsRows, logRows, importRows, connectionsRowsForAccount, connectionsRows, publish,
+  CONNECTIONS_HEADER, CONNECTIONS_TAB, ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB,
 } from '../../src/connections/magellan-sheet.js';
 import { diagnose } from '../../src/connections/magellan-diagnose.js';
+
+const ensure = async () => ({ spreadsheetId: 'S1', url: 'https://sheet' });
+
+// The layout is Abygael's cleaned sheet, so the columns are a contract.
+test('the connections tab has exactly the cleaned-sheet columns, in order', () => {
+  assert.deepEqual(CONNECTIONS_HEADER, ['LinkedIn Membership ID', 'Location', 'First Name',
+    'Last Name', 'LinkedIn Bio', 'Company Name', 'Job Title', 'Email',
+    'Linkedin First Connections']);
+});
+
+test('a connection becomes a cleaned-sheet row, keyed by the synthetic email', () => {
+  const rows = connectionsRowsForAccount('karl@ortus.solutions', [
+    { memberId: '14258192', firstName: 'Anand', lastName: 'Choudha', slug: 'anand-choudha',
+      company: 'Hive Pro Inc', jobTitle: 'CEO and Founder' },
+  ]);
+  assert.deepEqual(rows[0], ['14258192', '', 'Anand', 'Choudha',
+    'https://www.linkedin.com/in/anand-choudha', 'Hive Pro Inc', 'CEO and Founder',
+    '14258192@linkedinmembership.id', 'karl@ortus.solutions']);
+});
+
+// No member id means no HubSpot key — a half-row would just be noise.
+test('people without a member id are left out', () => {
+  const rows = connectionsRowsForAccount('a@o.com', [
+    { memberId: '', firstName: 'Hidden', slug: '' },
+    { memberId: '7', firstName: 'Real', slug: 'real' },
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0][2], 'Real');
+});
+
+test('connections come from every collected account, and none of the failed ones', () => {
+  const rows = connectionsRows({
+    perAccount: [{ account: 'a@o.com' }, { account: 'bad@o.com', error: 'Cr24' }],
+  }, { read: (acct) => (acct === 'a@o.com' ? [{ memberId: '1', firstName: 'A', slug: 's' }] : []) });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0][8], 'a@o.com');
+});
 
 test('a failed account carries its cause and its fix, not a stack trace', () => {
   const rows = accountsRows({
@@ -25,8 +62,7 @@ test('a collected account carries its counts', () => {
 // The whole point of the tab: a 7,000-connection account must not look idle.
 test('the account being read right now shows its live count', () => {
   const rows = accountsRows({
-    running: true,
-    perAccount: [],
+    running: true, perAccount: [],
     current: { account: 'nikki@o.com', count: 1240, pages: 31, total: 7213 },
   });
   assert.equal(rows[0][1], 'Reading now');
@@ -62,26 +98,29 @@ test('no import yet means no import tab', () => {
   assert.deepEqual(importRows(null), []);
 });
 
-test('publish writes the accounts and log tabs, and skips import until there is one', async () => {
+test('publish writes accounts, log and connections, and skips import until there is one', async () => {
   const calls = [];
-  const r = await publish({ perAccount: [], log: [] }, { write: async (tab) => calls.push(tab) });
+  const r = await publish({ perAccount: [], log: [] }, {
+    ensure, read: () => [], write: async (_id, tab) => calls.push(tab),
+  });
   assert.equal(r.written, true);
-  assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB]);
+  assert.equal(r.url, 'https://sheet');
+  assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB, CONNECTIONS_TAB]);
 });
 
 test('publish adds the import tab once an import has run', async () => {
   const calls = [];
   await publish(
     { perAccount: [], log: [], imported: { perAccount: [{ account: 'a@o.com', created: 1 }] } },
-    { write: async (tab) => calls.push(tab) },
+    { ensure, read: () => [], write: async (_id, tab) => calls.push(tab) },
   );
-  assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB]);
+  assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB, CONNECTIONS_TAB, IMPORT_TAB]);
 });
 
 // A dead sheet must never stop a sweep.
 test('a Google failure is reported, not thrown', async () => {
   const r = await publish({ perAccount: [], log: [] }, {
-    write: async () => { throw new Error('Timeout di blocco'); },
+    ensure, read: () => [], write: async () => { throw new Error('Timeout di blocco'); },
   });
   assert.equal(r.written, false);
   assert.match(r.error, /Timeout di blocco/);
@@ -90,8 +129,8 @@ test('a Google failure is reported, not thrown', async () => {
 test('a second publish is skipped while the first is still in flight', async () => {
   let release;
   const gate = new Promise((res) => { release = res; });
-  const first = publish({ perAccount: [], log: [] }, { write: () => gate });
-  const second = await publish({ perAccount: [], log: [] }, { write: async () => {} });
+  const first = publish({ perAccount: [], log: [] }, { ensure, read: () => [], write: () => gate });
+  const second = await publish({ perAccount: [], log: [] }, { ensure, read: () => [], write: async () => {} });
   assert.equal(second.written, false);
   assert.match(second.skipped, /already in flight/);
   release();
