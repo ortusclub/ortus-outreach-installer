@@ -26908,6 +26908,26 @@ window.rsweepStop = rsweepStop;
 // are all irrelevant here. The only state a tile carries is whether we already
 // hold that account's connections.
 
+// Every Magellan call goes through this. Without it, a server running older
+// code than the page returns the SPA's HTML for an unknown route and res.json()
+// dies with `Unexpected token '<'` — which tells the operator nothing. This
+// names the actual problem: the app needs restarting.
+async function mgFetch(url, opts) {
+  const res = await fetch(url, opts);
+  const body = await res.text();
+  if (body.trim().startsWith('<')) {
+    throw new Error('This needs a restart — quit The Ortus Outreach and open it again to finish updating.');
+  }
+  let json;
+  try {
+    json = JSON.parse(body);
+  } catch {
+    throw new Error(`The app returned something unreadable (${res.status}).`);
+  }
+  if (!res.ok || json.error) throw new Error(json.error || `Request failed (${res.status})`);
+  return json;
+}
+
 let mgAccounts = [];
 let mgSelected = new Set();
 let mgFilter = 'todo';
@@ -26924,9 +26944,7 @@ function setConnTab(tab) {
 
 async function loadMagellanAccounts() {
   try {
-    const res = await fetch('/api/magellan/accounts');
-    if (!res.ok) throw new Error(`Could not load accounts (${res.status})`);
-    mgAccounts = await res.json();
+    mgAccounts = await mgFetch('/api/magellan/accounts');
     // Default to the backlog — the whole point is the accounts nobody has done.
     mgSelected = new Set(mgAccounts.filter((a) => !a.collected).map((a) => a.profileId));
     renderMagellanAccounts();
@@ -27037,12 +27055,11 @@ async function startMagellanCollect() {
   const btn = document.getElementById('mg-collect-btn');
   if (btn) btn.disabled = true;
   try {
-    const res = await fetch('/api/magellan/collect', {
+    const j = await mgFetch('/api/magellan/collect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accounts }),
     });
-    const j = await res.json();
     if (!j.started) throw new Error(j.reason || 'Could not start');
     startMagellanPolling();
   } catch (err) {
@@ -27178,8 +27195,7 @@ async function stopMagellanCollect() {
   const btn = document.getElementById('mg-stop-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
   try {
-    const res = await fetch('/api/magellan/stop', { method: 'POST' });
-    const j = await res.json();
+    const j = await mgFetch('/api/magellan/stop', { method: 'POST' });
     if (!j.stopped) throw new Error(j.reason || 'Could not stop');
     refreshMagellanState();
   } catch (err) {
@@ -27205,13 +27221,11 @@ async function previewMagellan() {
   const btn = document.getElementById('mg-preview-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
   try {
-    const res = await fetch('/api/magellan/preview', {
+    const j = await mgFetch('/api/magellan/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accounts }),
     });
-    const j = await res.json();
-    if (j.error) throw new Error(j.error);
     const t = j.totals || {};
     document.getElementById('mg-led-new').textContent = (t.created || 0).toLocaleString();
     document.getElementById('mg-led-existing').textContent = (t.updated || 0).toLocaleString();
@@ -27234,13 +27248,12 @@ async function importMagellan() {
   if (!confirm('This adds people to HubSpot for real. Continue?')) return;
   if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
   try {
-    const res = await fetch('/api/magellan/import', {
+    const j = await mgFetch('/api/magellan/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirm: true }),
     });
-    const j = await res.json();
-    if (j.error || j.ok === false) throw new Error(j.error || j.reason);
+    if (j.ok === false) throw new Error(j.reason);
     document.getElementById('mg-confirm-t').innerHTML =
       `<b>Done.</b> ${(j.created || 0).toLocaleString()} added, ${(j.updated || 0).toLocaleString()} updated`
       + (j.errors && j.errors.length ? ` · ${j.errors.length} problems — check the log.` : '.');
