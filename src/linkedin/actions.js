@@ -14,7 +14,7 @@
  *   document.getElementById('interop-outlet').shadowRoot.querySelector(...)
  */
 
-import { randomDelay, clickByAria, clickByText, isNoteOverFreeLimit } from './helpers.js';
+import { randomDelay, clickByAria, clickByText, isNoteOverFreeLimit, MESSAGING_OVERLAY_SELECTOR } from './helpers.js';
 
 // Matches Sales Navigator profile URLs (/sales/people/… or /sales/lead/…).
 // Kept in sync with the identical constant in outreach.js — duplication here
@@ -269,7 +269,11 @@ function attachVoyagerInvitationCapture(page) {
 // Type into message/note field
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function typeIntoField(page, text) {
+// `excludeWithin` (optional CSS selector) makes findField skip any field inside
+// a matching container. Only the connect-note flow passes it, to stay out of
+// LinkedIn's messaging overlay — see MESSAGING_OVERLAY_SELECTOR in helpers.js
+// for the incident this exists for. Omitted ⇒ previous behaviour exactly.
+async function typeIntoField(page, text, { excludeWithin = '' } = {}) {
   // Order matters: most-specific message/note selectors first. Otherwise the
   // generic `div[contenteditable="true"]` can match LinkedIn's top-nav search
   // bar (also contenteditable) and silently type into it.
@@ -304,17 +308,19 @@ async function typeIntoField(page, text) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     // Inject value directly using React's native setter so the synthetic
     // onChange fires and LinkedIn's controlled component accepts it.
-    const injected = await page.evaluate((selectors, pickLastSelectors, value) => {
+    const injected = await page.evaluate((selectors, pickLastSelectors, value, exclude) => {
       const pickLast = new Set(pickLastSelectors);
+      // Mirrors isInMessagingOverlay() in helpers.js (unit-tested there) — the
+      // browser context can't import it. Keep the two in sync.
+      const skip = (el) => {
+        if (!exclude || !el || typeof el.closest !== 'function') return false;
+        try { return !!el.closest(exclude); } catch { return false; }
+      };
       const findField = (root) => {
         for (const sel of selectors) {
-          if (pickLast.has(sel)) {
-            const all = root.querySelectorAll(sel);
-            if (all.length) return all[all.length - 1];
-          } else {
-            const el = root.querySelector(sel);
-            if (el) return el;
-          }
+          const all = Array.from(root.querySelectorAll(sel)).filter((el) => !skip(el));
+          if (!all.length) continue;
+          return pickLast.has(sel) ? all[all.length - 1] : all[0];
         }
         return null;
       };
@@ -417,7 +423,7 @@ async function typeIntoField(page, text) {
 
       const got = isTextarea || isInput ? el.value : (el.textContent || el.innerText || '');
       return { ok: true, got };
-    }, SELECTORS, [...PICK_LAST_SELECTORS], text);
+    }, SELECTORS, [...PICK_LAST_SELECTORS], text, excludeWithin);
 
     if (!injected.ok) {
       console.warn(`[actions] Field not found on attempt ${attempt}: ${injected.reason}`);
@@ -429,17 +435,19 @@ async function typeIntoField(page, text) {
     await new Promise(r => setTimeout(r, 400));
 
     // Read back authoritative content after React re-render
-    const fieldContent = await page.evaluate((selectors, pickLastSelectors) => {
+    const fieldContent = await page.evaluate((selectors, pickLastSelectors, exclude) => {
       const pickLast = new Set(pickLastSelectors);
+      // Same exclusion as the write above — verifying against a different field
+      // than the one written would defeat the whole check.
+      const skip = (el) => {
+        if (!exclude || !el || typeof el.closest !== 'function') return false;
+        try { return !!el.closest(exclude); } catch { return false; }
+      };
       const findField = (root) => {
         for (const sel of selectors) {
-          if (pickLast.has(sel)) {
-            const all = root.querySelectorAll(sel);
-            if (all.length) return all[all.length - 1];
-          } else {
-            const el = root.querySelector(sel);
-            if (el) return el;
-          }
+          const all = Array.from(root.querySelectorAll(sel)).filter((el) => !skip(el));
+          if (!all.length) continue;
+          return pickLast.has(sel) ? all[all.length - 1] : all[0];
         }
         return null;
       };
@@ -460,7 +468,7 @@ async function typeIntoField(page, text) {
       // this the verification below fails on every multi-line template,
       // returning false and leaving the message un-sent in the composer.
       return el.innerText || el.textContent || '';
-    }, SELECTORS, [...PICK_LAST_SELECTORS]);
+    }, SELECTORS, [...PICK_LAST_SELECTORS], excludeWithin);
 
     // Verification: strict equality for textareas (connect-note modal),
     // whitespace-normalized match for contenteditable (Quill message composer,
@@ -1014,7 +1022,11 @@ export async function sendConnectionRequest(page, noteArg) {
           await page.keyboard.press('Escape').catch(() => {});
           throw new Error('NOTE_LIMIT_REACHED: account out of free custom notes — cannot send a noted invite');
         }
-        const noteTyped = await typeIntoField(page, note);
+        // The invite note NEVER goes in the chat composer. If the only field on
+        // screen is the messaging overlay's, this returns false and the existing
+        // fallback below cancels and re-sends without a note — the lead still
+        // gets a clean invite, and nobody else gets their note.
+        const noteTyped = await typeIntoField(page, note, { excludeWithin: MESSAGING_OVERLAY_SELECTOR });
         if (!noteTyped) {
           console.warn('[actions] Note typing failed after 3 attempts. Clearing field and sending without a note.');
           // Clear any half-typed content so it can't possibly leak
@@ -1142,7 +1154,14 @@ export async function sendConnectionRequest(page, noteArg) {
         // instead, but LinkedIn greys Send via a CSS class, so it never tripped.
         // We read the counter, the typed length, AND the Send disabled-state in
         // ALL its forms, and log all of it so a future miss is diagnosable.
-        const noteState = await page.evaluate(() => {
+        const noteState = await page.evaluate((exclude) => {
+          // Same messaging-overlay exclusion as typeIntoField — reading the chat
+          // composer's length here is what let the 2026-08-10 run report a
+          // healthy typedLen=174 while the invite modal held nothing.
+          const skip = (el) => {
+            if (!exclude || !el || typeof el.closest !== 'function') return false;
+            try { return !!el.closest(exclude); } catch { return false; }
+          };
           // The invite modal renders inside a web-component SHADOW ROOT (same as
           // why typeIntoField's findField falls back to shadow hosts). A plain
           // document.querySelector reads all-empty (the v2.112.42 miss), so walk
@@ -1158,7 +1177,7 @@ export async function sendConnectionRequest(page, noteArg) {
           const deepAll = (sel) => {
             const out = [];
             for (const r of roots) { try { out.push(...r.querySelectorAll(sel)); } catch { /* */ } }
-            return out;
+            return out.filter((el) => !skip(el));
           };
           // Character counter — an element whose entire text is "<current>/<max>"
           // (203/200 free, 250/300 Premium). This is the platform-truth signal.
@@ -1188,7 +1207,7 @@ export async function sendConnectionRequest(page, noteArg) {
           );
           const upsell = deepAll('.connect-button-send-invite__premium-upsell-message').length > 0;
           return { counter, counterCurrent, counterMax, typedLen, sendFound: !!send, sendDisabled, upsell, rootCount: roots.length };
-        });
+        }, MESSAGING_OVERLAY_SELECTOR);
         console.log(`[actions] note-limit check → ${JSON.stringify(noteState)}`);
         if (isNoteOverFreeLimit({
           counterCurrent: noteState.counterCurrent,
@@ -1204,31 +1223,40 @@ export async function sendConnectionRequest(page, noteArg) {
       }
 
       // ── Click Send — all via JS ──
+      // Every Send lookup below excludes the messaging overlay: its composer has
+      // a "Send" of its own, and the generic text scan reached it (the
+      // 2026-08-10 `✓ "Send" by text (shadow)` that sent the note into an open
+      // chat thread and never created an invitation).
+      const NO_CHAT = { excludeWithin: MESSAGING_OVERLAY_SELECTOR };
       let sent = false;
 
       if (!sent && modal.hasSendWithout && !note) {
-        const r = await clickByAria(page, 'Send without a note');
+        const r = await clickByAria(page, 'Send without a note', NO_CHAT);
         if (r) { sent = true; console.log(`[actions] ✓ "Send without a note" clicked (${r}).`); }
       }
 
       if (!sent && modal.hasSend) {
-        const r = await clickByAria(page, 'Send');
+        const r = await clickByAria(page, 'Send', NO_CHAT);
         if (r) { sent = true; console.log(`[actions] ✓ "Send" clicked (${r}).`); }
       }
 
       if (!sent) {
-        const r = await clickByAria(page, 'Send without a note');
+        const r = await clickByAria(page, 'Send without a note', NO_CHAT);
         if (r) { sent = true; console.log(`[actions] ✓ "Send without a note" fallback (${r}).`); }
       }
 
       if (!sent) {
-        const r = await clickByText(page, 'Send');
+        const r = await clickByText(page, 'Send', NO_CHAT);
         if (r) { sent = true; console.log(`[actions] ✓ "Send" by text (${r}).`); }
       }
 
       if (!sent) {
         // Last resort: click any primary button in modal that isn't "Add" or "Cancel"
-        sent = await page.evaluate(() => {
+        sent = await page.evaluate((exclude) => {
+          const skip = (el) => {
+            if (!exclude || !el || typeof el.closest !== 'function') return false;
+            try { return !!el.closest(exclude); } catch { return false; }
+          };
           const allBtns = [];
           allBtns.push(...Array.from(document.querySelectorAll('button')));
           const outlet = document.getElementById('interop-outlet');
@@ -1236,6 +1264,7 @@ export async function sendConnectionRequest(page, noteArg) {
             allBtns.push(...Array.from(outlet.shadowRoot.querySelectorAll('button')));
           }
           for (const b of allBtns) {
+            if (skip(b)) continue;
             const cls = b.className?.toLowerCase() || '';
             const text = b.textContent?.trim().toLowerCase() || '';
             if (cls.includes('primary') && !text.includes('add') && !text.includes('cancel') && !text.includes('follow')) {
@@ -1244,7 +1273,7 @@ export async function sendConnectionRequest(page, noteArg) {
             }
           }
           return false;
-        });
+        }, MESSAGING_OVERLAY_SELECTOR);
         if (sent) console.log('[actions] ✓ Primary button fallback clicked.');
       }
 

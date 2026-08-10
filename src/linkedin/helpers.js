@@ -35,13 +35,62 @@ function getAllShadowRootsScript() {
 }
 
 /**
+ * LinkedIn's messaging overlay — the chat bubbles docked bottom-right of every
+ * page, including profile pages.
+ *
+ * WHY THIS EXISTS (2026-08-10, Joyce Wong / Gerardo Salandra incident): the
+ * overlay carries its own contenteditable composer AND its own "Send" button.
+ * The connect-note flow looked for both page-wide, so when an operator left a
+ * conversation open, the invite note was typed into the CHAT BOX and sent into
+ * that thread — the lead's note delivered to whoever the operator happened to
+ * be talking to, with the lead's first name in it, and no invitation ever sent
+ * ("Send clicked but Pending NOT confirmed"). Cloud log 08:06:49-08:08:39
+ * showed the tell: 174 typed chars with NO `x/200` note counter on screen.
+ *
+ * Only the invite path passes this exclusion. The messaging paths (sendMessage,
+ * intro composers) must still find these elements, so it is strictly opt-in.
+ */
+export const MESSAGING_OVERLAY_SELECTOR = [
+  '.msg-overlay-list-bubble',
+  '.msg-overlay-conversation-bubble',
+  '.msg-overlay-container',
+  '.msg-form',
+  '#msg-overlay',
+].join(',');
+
+/**
+ * True when `el` sits inside the messaging overlay. Pure — `el` only needs a
+ * `.closest()`. Mirrored inline inside the page.evaluate callers in actions.js
+ * (browser context can't see this module) — keep the two in sync.
+ */
+export function isInMessagingOverlay(el, selector = MESSAGING_OVERLAY_SELECTOR) {
+  if (!el || typeof el.closest !== 'function') return false;
+  try { return !!el.closest(selector); } catch { return false; }
+}
+
+/**
  * Click a button by aria-label — searches regular DOM AND all Shadow DOM roots.
  * Uses element.click() which works regardless of visibility or viewport.
+ *
+ * `excludeWithin` (optional CSS selector) skips any button inside a matching
+ * container — used by the invite flow to stay out of the messaging overlay.
+ * Omitted/empty ⇒ byte-for-byte the previous behaviour.
  */
-export async function clickByAria(page, ariaLabel) {
-  return page.evaluate((label) => {
+export async function clickByAria(page, ariaLabel, { excludeWithin = '' } = {}) {
+  return page.evaluate((label, exclude) => {
+    const skip = (el) => {
+      if (!exclude || !el || typeof el.closest !== 'function') return false;
+      try { return !!el.closest(exclude); } catch { return false; }
+    };
+    const pick = (root) => {
+      for (const b of root.querySelectorAll(`button[aria-label="${label}"]`)) {
+        if (!skip(b)) return b;
+      }
+      return null;
+    };
+
     // Regular DOM
-    const btn = document.querySelector(`button[aria-label="${label}"]`);
+    const btn = pick(document);
     if (btn) { btn.click(); return 'dom'; }
 
     // All Shadow DOM roots
@@ -52,22 +101,29 @@ export async function clickByAria(page, ariaLabel) {
       if (el.shadowRoot && el.id !== 'interop-outlet') roots.push(el.shadowRoot);
     });
     for (const root of roots) {
-      const sBtn = root.querySelector(`button[aria-label="${label}"]`);
+      const sBtn = pick(root);
       if (sBtn) { sBtn.click(); return 'shadow'; }
     }
 
     return null;
-  }, ariaLabel);
+  }, ariaLabel, excludeWithin);
 }
 
 /**
  * Click a button by its exact text content — searches regular DOM + all Shadow DOMs.
+ * `excludeWithin` behaves exactly as in clickByAria.
  */
-export async function clickByText(page, text) {
-  return page.evaluate((t) => {
+export async function clickByText(page, text, { excludeWithin = '' } = {}) {
+  return page.evaluate((t, exclude) => {
+    const skip = (el) => {
+      if (!exclude || !el || typeof el.closest !== 'function') return false;
+      try { return !!el.closest(exclude); } catch { return false; }
+    };
+    const pick = (root) => Array.from(root.querySelectorAll('button'))
+      .find(b => b.textContent?.trim() === t && !skip(b)) || null;
+
     // Regular DOM
-    const btns = Array.from(document.querySelectorAll('button'));
-    const btn = btns.find(b => b.textContent?.trim() === t);
+    const btn = pick(document);
     if (btn) { btn.click(); return 'dom'; }
 
     // All Shadow DOM roots
@@ -78,13 +134,12 @@ export async function clickByText(page, text) {
       if (el.shadowRoot && el.id !== 'interop-outlet') roots.push(el.shadowRoot);
     });
     for (const root of roots) {
-      const sBtns = Array.from(root.querySelectorAll('button'));
-      const sBtn = sBtns.find(b => b.textContent?.trim() === t);
+      const sBtn = pick(root);
       if (sBtn) { sBtn.click(); return 'shadow'; }
     }
 
     return null;
-  }, text);
+  }, text, excludeWithin);
 }
 
 /**
