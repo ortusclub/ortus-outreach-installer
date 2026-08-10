@@ -27172,23 +27172,33 @@ function renderMagellanState(s) {
       // Within-account progress. A 7,000-connection account is ~175 pages, so
       // without this the card sits still for minutes and looks hung.
       const c = s.current;
+      const ids = c && c.stage === 'ids';
       let sub = `Account ${Math.min((s.done || 0) + 1, s.total)} of ${s.total}`;
       if (c && typeof c.count === 'number') {
-        sub += c.total
-          ? ` · ${c.count.toLocaleString()} of ${c.total.toLocaleString()} connections`
-          : ` · ${c.count.toLocaleString()} connections so far`;
+        if (ids) {
+          // Second half: the list is already in hand, this resolves each
+          // person's LinkedIn ID. Say so, or it looks like the count reset.
+          sub += ` · looking up LinkedIn IDs, ${c.count.toLocaleString()} of ${(c.total || 0).toLocaleString()}`;
+        } else {
+          sub += c.total
+            ? ` · ${c.count.toLocaleString()} of ${c.total.toLocaleString()} connections`
+            : ` · ${c.count.toLocaleString()} connections so far`;
+        }
       }
       set('mg-stage-sub', sub);
       set('mg-stage-fix', '');
       set('mg-beat-txt', 'Reading only — nothing is being sent');
-      set('mg-beat-right', c && c.pages
-        ? `page ${c.pages}`
-        : `${people.toLocaleString()} collected`);
+      set('mg-beat-right', ids
+        ? 'looking up IDs'
+        : (c && c.pages ? `page ${c.pages}` : `${people.toLocaleString()} collected`));
 
       // Blend the in-account fraction into the bar so it moves continuously
       // instead of jumping a whole account at a time.
       if (c && c.total && c.count != null && s.total) {
-        const frac = Math.min(1, c.count / c.total);
+        // The ID lookup is the back half of one account's work, so its
+        // fraction counts for the second half of that account's slice.
+        const raw = Math.min(1, c.count / c.total);
+        const frac = ids ? 0.5 + raw / 2 : raw / 2;
         const blended = Math.round((((s.done || 0) + frac) / s.total) * 100);
         set('mg-pct', blended);
         if (bar) bar.style.width = `${blended}%`;

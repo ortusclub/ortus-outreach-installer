@@ -123,8 +123,8 @@ export function startCollect(accounts, deps = {}) {
           _state.step = 'Reading the connections list';
           log(`◦ ${entry.account}: signed in, reading the connections list…`);
           const r = await collect(launched.page, entry.account, {
-            onProgress: ({ count, pages, total }) => {
-              _state.current = { account: entry.account, count, pages, total };
+            onProgress: ({ count, pages, total, stage }) => {
+              _state.current = { account: entry.account, count, pages, total, stage: stage || 'list' };
             },
           });
           _state.current = null;

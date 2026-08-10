@@ -184,7 +184,7 @@ export async function findButtonByText(page, text) {
  *   default keeps the 6h bulk-check sweep cheap. Operation Magellan passes a
  *   large value to walk the whole network instead of just recent acceptances.
  */
-export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } = {}) {
+export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2, onEnrichProgress = null } = {}) {
   try {
     const result = await page.evaluate(async ({ since, maxPages: pageCap }) => {
       try {
@@ -466,7 +466,7 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
     const needsEnrich = conns.filter((c) => c.urn && ((!c.publicId && !c.firstName) || !c.memberNumber));
     if (needsEnrich.length > 0) {
       try {
-        const enriched = await _enrichProfilesByUrn(page, needsEnrich.map((c) => c.urn));
+        const enriched = await _enrichProfilesByUrn(page, needsEnrich.map((c) => c.urn), onEnrichProgress);
         if (enriched && enriched.size > 0) {
           conns = conns.map((c) => {
             const e = enriched.get(c.urn);
@@ -509,7 +509,7 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
  *
  * Returns a Map keyed by the FULL URN string (e.g. urn:li:fsd_profile:ACoAA…).
  */
-async function _enrichProfilesByUrn(page, urns) {
+async function _enrichProfilesByUrn(page, urns, onProgress = null) {
   const out = new Map();
   if (!Array.isArray(urns) || urns.length === 0) return out;
 
@@ -518,8 +518,12 @@ async function _enrichProfilesByUrn(page, urns) {
   if (unique.length === 0) return out;
 
   const BATCH = 25;
+  // 6,000 connections is ~250 sequential round-trips here. Without a beat the
+  // caller has nothing to show for several minutes and the run reads as hung —
+  // the page walk already publishes progress, so this half must too.
   for (let i = 0; i < unique.length; i += BATCH) {
     const slice = unique.slice(i, i + BATCH);
+    if (onProgress) onProgress({ done: i, total: unique.length });
     const batchOut = await page.evaluate(async (urnBatch) => {
       try {
         const csrf = document.cookie.split(';').map((c) => c.trim())

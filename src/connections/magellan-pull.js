@@ -162,7 +162,15 @@ export async function collectAccount(page, account, { dir = CONNECTIONS_DIR, onP
 
   let live;
   try {
-    live = await getRecentConnections(page, 0, { maxPages: MAX_PAGES });
+    live = await getRecentConnections(page, 0, {
+      maxPages: MAX_PAGES,
+      // Second half of the read: resolving LinkedIn IDs, 25 people per call.
+      // On a 6,000-connection account that is ~250 round-trips, so it needs a
+      // beat of its own or the card freezes on the last page it walked.
+      onEnrichProgress: onProgress
+        ? ({ done, total }) => onProgress({ count: done, total, stage: 'ids' })
+        : null,
+    });
   } finally {
     if (poller) clearInterval(poller);
   }
