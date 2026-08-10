@@ -65,6 +65,14 @@ export const SIGNUP_ALLOWED_EMAILS = ['milee@linkedvelocity.com', 'jhan@apexstra
 // deployed copy without editing the committed default) — mirrors SCRAPER_ENGINE_URL.
 export const FG_WEBAPP_URL = process.env.FG_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzWRtACiWoRrB5mweILTI-eKsLM3p7QBPSTKC7COdkIBwl-AwddMHoO89HMCmnjA4xTyg/exec';
 
+// Operation Magellan. A THIRD Apps Script deployment, bound to its own
+// "Operation Magellan" sheet — deliberately not the outreach sheet and not the
+// FG one (the FG jobs hold that script's lock for minutes at a time). Paste
+// magellan-apps-script.js into a NEW Apps Script project, deploy as a web app
+// ("execute as me", "anyone with the link"), and put its /exec URL here.
+// Until then Magellan still runs; only the sheet write is skipped.
+export const MAGELLAN_WEBAPP_URL = process.env.MAGELLAN_WEBAPP_URL || '';
+
 // Follower Growth Phase 2 — the Ortus Club page "Invite to follow" modal URL.
 // The ?invite=true query opens the invite modal directly; the /posts/ path +
 // feedView=all is the exact URL confirmed to open it for this page (slug ortus-club).

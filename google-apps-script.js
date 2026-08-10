@@ -384,19 +384,6 @@ function doPost(e) {
       return handleCreateLeadTab(data);
     }
 
-    // Operation Magellan writes several tabs into its own spreadsheet. One
-    // generic create-or-replace-a-tab action instead of a named handler per
-    // tab, so new tabs never need another redeploy.
-    if (data.action === 'writeTab') {
-      return handleWriteTab(data);
-    }
-
-    // This script's own spreadsheet — so the app can deep-link to the tabs
-    // writeTab just wrote.
-    if (data.action === 'getScriptSheetUrl') {
-      return jsonResponse({ url: SpreadsheetApp.getActiveSpreadsheet().getUrl() });
-    }
-
     // Validate required field
     if (!data.sheetId) {
       return jsonResponse({ error: 'sheetId is required' });
@@ -560,52 +547,6 @@ function handleGetConnection(data) {
 // and return its URL. Used by the campaign "Build & attach a warm list" flow.
 // Creates a standalone spreadsheet owned by the deployer (no central-workbook id
 // needed); header row bold + frozen. Returns { url, gid, tabName, count }.
-// ═══════════════════════════════════════════════════════════════════════════
-// Action: writeTab — create-or-replace one named tab in any spreadsheet
-// ═══════════════════════════════════════════════════════════════════════════
-// { tab, header: [...], rows: [[...], ...], sheetId?, append?: false }
-// With no sheetId it writes into THIS script's own spreadsheet — the one you
-// pasted this code into. Replaces the tab's contents by default (idempotent:
-// re-writing the same tab never doubles rows); append:true adds rows under
-// what's already there.
-function handleWriteTab(data) {
-  try {
-    var id = (data.sheetId || '').toString().trim();
-    var name = (data.tab || '').toString().trim().substring(0, 95);
-    if (!name) return jsonResponse({ error: 'writeTab: missing tab name' });
-
-    var header = data.header || [];
-    var rows = data.rows || [];
-    var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
-
-    if (!data.append) sheet.clear();
-
-    var width = header.length || (rows.length && rows[0] ? rows[0].length : 0);
-    if (!width) return jsonResponse({ ok: true, tab: name, written: 0 });
-
-    var startRow = data.append ? Math.max(sheet.getLastRow() + 1, 1) : 1;
-    if (!data.append && header.length) {
-      sheet.getRange(1, 1, 1, header.length).setValues([header])
-        .setFontWeight('bold').setBackground('#f1f3f4');
-      sheet.setFrozenRows(1);
-      startRow = 2;
-    }
-    // Pad every row to the full width — setValues rejects ragged arrays.
-    var padded = [];
-    for (var i = 0; i < rows.length; i++) {
-      var r = (rows[i] || []).slice(0, width);
-      while (r.length < width) r.push('');
-      padded.push(r);
-    }
-    if (padded.length) sheet.getRange(startRow, 1, padded.length, width).setValues(padded);
-
-    return jsonResponse({ ok: true, tab: name, written: padded.length, url: ss.getUrl() });
-  } catch (err) {
-    return jsonResponse({ ok: false, error: err.message });
-  }
-}
-
 function handleCreateLeadTab(data) {
   try {
     var name = (data.name || 'Warm ICB list').toString().substring(0, 95);

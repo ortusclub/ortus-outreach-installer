@@ -9,11 +9,11 @@
 //   Log          the same timestamped lines the card shows
 //   Import       what actually went into HubSpot, per account
 //
-// The tabs land in the spreadsheet the central Apps Script is bound to — the
-// same sheet you paste google-apps-script.js into. Not the Follower Growth
-// sheet: that one is locked by the FG jobs, which is what made the first run's
-// tabs come back empty.
-import { SHEETS_WEBAPP_URL } from '../sheets-webapp-url.js';
+// Magellan has its own sheet and its own Apps Script deployment
+// (magellan-apps-script.js, MAGELLAN_WEBAPP_URL) — not the outreach sheet, and
+// not the Follower Growth one, whose script lock is held for minutes by the FG
+// jobs. That contention is what made the first run's tabs come back empty.
+import { MAGELLAN_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { readForPlan } from './magellan-pull.js';
 import { syntheticEmail } from './magellan.js';
 
@@ -39,9 +39,11 @@ const s = (v) => (v == null ? '' : String(v));
 
 /** Mirrors drive-sync's postWebApp: Apps Script answers POST with a 302. */
 async function postWebApp(payload, { timeoutMs = 60000 } = {}) {
-  if (!SHEETS_WEBAPP_URL) return { error: 'SHEETS_WEBAPP_URL not configured' };
+  if (!MAGELLAN_WEBAPP_URL) {
+    return { error: 'The Magellan sheet is not set up yet — deploy magellan-apps-script.js and put its /exec URL in src/sheets-webapp-url.js (MAGELLAN_WEBAPP_URL).' };
+  }
   try {
-    const initial = await fetch(SHEETS_WEBAPP_URL, {
+    const initial = await fetch(MAGELLAN_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -66,7 +68,7 @@ async function postWebApp(payload, { timeoutMs = 60000 } = {}) {
 
 /** The Apps Script's own spreadsheet — the one the tabs land in. */
 export async function sheetUrl({ post = postWebApp } = {}) {
-  const r = await post({ action: 'getScriptSheetUrl' }, { timeoutMs: 30000 });
+  const r = await post({ action: 'getSheetUrl' }, { timeoutMs: 30000 });
   if (!r || r.error || !r.url) {
     throw new Error((r && r.error) || 'The Apps Script did not return its sheet URL — redeploy it.');
   }
