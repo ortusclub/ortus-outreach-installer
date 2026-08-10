@@ -100,61 +100,76 @@ export function startCollect(accounts, deps = {}) {
         break;
       }
       _state.account = entry.account;
-      let launched = null;
-      // Which half of the account we are in, so a failure is explained by the
-      // rules that can actually apply to it.
-      let phase = 'launch';
-      _state.step = 'Waiting for a free browser slot';
-      await semaphore.acquire();
-      try {
-        _state.step = 'Opening the browser';
-        log(`◦ ${entry.account}: opening the browser…`);
-        launched = await launchProfile(entry.profileId);
-
-        phase = 'read';
-        _state.step = 'Reading the connections list';
-        log(`◦ ${entry.account}: signed in, reading the connections list…`);
-        const r = await collect(launched.page, entry.account, {
-          onProgress: ({ count, pages, total }) => {
-            _state.current = { account: entry.account, count, pages, total };
-          },
-        });
-        _state.current = null;
-
-        _state.perAccount.push({
-          account: entry.account,
-          total: r.total,
-          withMemberId: r.withMemberId,
-          hidden: r.hidden,
-          partial: r.partial || null,
-          collectedAt: new Date().toISOString(),
-        });
-        const noId = r.total - r.withMemberId;
-        log(`✓ ${entry.account}: ${r.total} connections`
-          + (noId ? `, ${noId} without a LinkedIn ID` : '')
-          + (r.hidden ? `, ${r.hidden} hidden by LinkedIn` : ''));
-        // Kept, but said out loud: a short account is worse than a failed one
-        // if nobody notices it was cut off.
-        if (r.partial) log(`⚠ ${entry.account}: the list was cut short — ${r.partial}`);
-      } catch (err) {
-        // One dead account must not end the sweep. Record WHY, in words the
-        // operator can act on, not the raw stack.
-        _state.current = null;
-        const d = diagnose(err, { phase });
-        _state.perAccount.push({ account: entry.account, error: err.message, diagnosis: d });
-        log(logLine(entry.account, d));
-      } finally {
-        _state.step = 'Closing the browser';
+      // Two goes at an account whose failure is worth retrying. bulk-check
+      // effectively gets this for free — a failed sweep is simply retried on
+      // the next tick — but Magellan only visits an account once, so without
+      // it a single cold launch or slow page loses the whole account.
+      let attempt = 0;
+      let done = false;
+      while (!done) {
+        attempt += 1;
+        let launched = null;
+        // Which half of the account we are in, so a failure is explained by the
+        // rules that can actually apply to it.
+        let phase = 'launch';
+        _state.step = 'Waiting for a free browser slot';
+        await semaphore.acquire();
         try {
-          if (launched) await closeProfile(entry.profileId);
+          _state.step = 'Opening the browser';
+          log(`◦ ${entry.account}: opening the browser…${attempt > 1 ? ' (second try)' : ''}`);
+          launched = await launchProfile(entry.profileId);
+
+          phase = 'read';
+          _state.step = 'Reading the connections list';
+          log(`◦ ${entry.account}: signed in, reading the connections list…`);
+          const r = await collect(launched.page, entry.account, {
+            onProgress: ({ count, pages, total }) => {
+              _state.current = { account: entry.account, count, pages, total };
+            },
+          });
+          _state.current = null;
+
+          _state.perAccount.push({
+            account: entry.account,
+            total: r.total,
+            withMemberId: r.withMemberId,
+            hidden: r.hidden,
+            partial: r.partial || null,
+            collectedAt: new Date().toISOString(),
+          });
+          const noId = r.total - r.withMemberId;
+          log(`✓ ${entry.account}: ${r.total} connections`
+            + (noId ? `, ${noId} without a LinkedIn ID` : '')
+            + (r.hidden ? `, ${r.hidden} hidden by LinkedIn` : ''));
+          // Kept, but said out loud: a short account is worse than a failed one
+          // if nobody notices it was cut off.
+          if (r.partial) log(`⚠ ${entry.account}: the list was cut short — ${r.partial}`);
+          done = true;
         } catch (err) {
-          log(`⚠ ${entry.account}: the browser did not close cleanly — ${err.message}`);
+          // One dead account must not end the sweep. Record WHY, in words the
+          // operator can act on, not the raw stack.
+          _state.current = null;
+          const d = diagnose(err, { phase });
+          if (d.retryable && attempt < 2 && !_stopRequested) {
+            log(`⚠ ${entry.account}: ${d.what} — trying once more. [${d.raw}]`);
+          } else {
+            _state.perAccount.push({ account: entry.account, error: err.message, diagnosis: d });
+            log(logLine(entry.account, d));
+            done = true;
+          }
+        } finally {
+          _state.step = 'Closing the browser';
+          try {
+            if (launched) await closeProfile(entry.profileId);
+          } catch (err) {
+            log(`⚠ ${entry.account}: the browser did not close cleanly — ${err.message}`);
+          }
+          semaphore.release();
         }
-        semaphore.release();
-        _state.done += 1;
-        _state.failures = summarise(_state.perAccount);
-        toSheet();
       }
+      _state.done += 1;
+      _state.failures = summarise(_state.perAccount);
+      toSheet();
     }
     const ok = _state.perAccount.filter((a) => !a.error);
     const people = ok.reduce((n, a) => n + (a.total || 0), 0);

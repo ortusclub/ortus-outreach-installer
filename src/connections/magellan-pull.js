@@ -123,13 +123,22 @@ export async function collectAccount(page, account, { dir = CONNECTIONS_DIR, onP
   // the page LinkedIn's own UI hits, and it puts a fresh JSESSIONID in the page
   // context. We do NOT navigate to /login; LinkedIn redirects there itself when
   // the profile's session has expired.
+  // Two attempts. bulk-check does one, but it gets another go on the next
+  // sweep tick; Magellan visits an account once, so a cold Orbita that needs
+  // 31 seconds to reach domcontentloaded would cost the whole account.
   let postNavUrl = '';
-  try {
-    await page.goto(CONNECTIONS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    postNavUrl = page.url() || '';
-  } catch (err) {
-    throw new Error(`navigation-failed: ${err.message}`);
+  let navErr = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      navErr = null;
+      await page.goto(CONNECTIONS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      postNavUrl = page.url() || '';
+      break;
+    } catch (err) {
+      navErr = err;
+    }
   }
+  if (navErr) throw new Error(`navigation-failed: ${navErr.message}`);
   // Catch the redirect immediately. Without this we'd keep going and fail later
   // with a vague Voyager error, leaving the operator staring at a login page
   // with no idea why.

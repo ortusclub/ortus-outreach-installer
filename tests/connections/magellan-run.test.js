@@ -49,7 +49,9 @@ test('one failing account does not abandon the rest of the sweep', async () => {
     [{ account: 'bad@o.com', profileId: 'p1' }, { account: 'good@o.com', profileId: 'p2' }],
     {
       semaphore: sem,
-      launchProfile: async () => { n += 1; if (n === 1) throw new Error('LinkedIn is blocking this account'); return { page: {} }; },
+      // Fails on every attempt, so the retry can't rescue it — the point here
+      // is that the NEXT account still runs.
+      launchProfile: async (id) => { n += 1; if (id === 'p1') throw new Error('LinkedIn is blocking this account'); return { page: {} }; },
       closeProfile: async () => {},
       collect: async () => ({ total: 5, withMemberId: 5, hidden: 0 }),
       sheet: noSheet,
@@ -181,4 +183,61 @@ test('stop on an idle runner reports that nothing is running', async () => {
   reset();
   const { stopCollect } = await import('../../src/connections/magellan-run.js');
   assert.deepEqual(stopCollect(), { stopped: false, reason: 'Nothing is running' });
+});
+
+// bulk-check gets a free retry — a failed sweep is simply run again next tick.
+// Magellan visits an account once, so it has to retry inside the run.
+test('a retryable failure gets a second attempt', async () => {
+  reset();
+  let tries = 0;
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }], {
+    semaphore: { async acquire() {}, release() {} },
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    collect: async () => {
+      tries += 1;
+      if (tries === 1) throw new Error('navigation-failed: Navigation timeout of 30000 ms exceeded');
+      return { total: 3, withMemberId: 3, hidden: 0 };
+    },
+    sheet: noSheet,
+  });
+  await settle();
+  const st = getState();
+  assert.equal(tries, 2);
+  assert.equal(st.perAccount.length, 1, 'the failed attempt is not also recorded');
+  assert.equal(st.perAccount[0].total, 3);
+  assert.equal(st.done, 1, 'one account, counted once');
+});
+
+// A signed-out account will not sign itself in on a second try.
+test('a failure that cannot be retried is not retried', async () => {
+  reset();
+  let tries = 0;
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }], {
+    semaphore: { async acquire() {}, release() {} },
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    collect: async () => { tries += 1; throw new Error('Could not read connections: no-csrf'); },
+    sheet: noSheet,
+  });
+  await settle();
+  assert.equal(tries, 1);
+  assert.equal(getState().perAccount[0].diagnosis.code, 'not_logged_in');
+});
+
+test('a retryable failure twice gives up and records it once', async () => {
+  reset();
+  let tries = 0;
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }], {
+    semaphore: { async acquire() {}, release() {} },
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    collect: async () => { tries += 1; throw new Error('navigation-failed: Navigation timeout of 30000 ms exceeded'); },
+    sheet: noSheet,
+  });
+  await settle();
+  const st = getState();
+  assert.equal(tries, 2);
+  assert.equal(st.perAccount.length, 1);
+  assert.equal(st.done, 1);
 });
