@@ -3264,6 +3264,14 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
           // sheet is the operator's ONLY record of who got invited. A run that
           // cannot be recorded is worse than a run that never started, so this
           // aborts rather than warning-and-continuing the way campaign.js does.
+          //
+          // prepareSheet() returns ok:false both when SHEETS_WEBAPP_URL is
+          // unset (silent, by design — sheets-writer.js) and when the bridge
+          // call genuinely failed. Treating both as abort-worthy is only safe
+          // because SHEETS_WEBAPP_URL (sheets-webapp-url.js) is a hardcoded
+          // constant, never unset. If it's ever made env-gated like this
+          // file's FG_WEBAPP_URL, this needs to distinguish "unconfigured" from
+          // "failed" instead of refusing on both.
           campaignLog(`[FG-cloud] ✗ prepareSheet did not confirm for ${src.sheetUrl} — refusing to launch`);
           return res.status(502).json({
             error: `Could not prepare "${src.sheetUrl}" for tracking (FG Status / Invited At / Note / Member ID columns). Fix sheet access and try again — nothing was launched.`,
