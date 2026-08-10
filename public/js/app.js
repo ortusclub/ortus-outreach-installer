@@ -27075,34 +27075,80 @@ async function refreshMagellanState() {
 }
 
 function renderMagellanState(s) {
-  const prog = document.getElementById('mg-progress');
-  if (prog) {
-    prog.hidden = !s.running;
-    if (s.running) {
-      const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-      document.getElementById('mg-progress-label').textContent =
-        `${s.account || ''} — account ${s.done + 1} of ${s.total}`;
-      document.getElementById('mg-progress-pct').textContent = `${pct}%`;
-      document.getElementById('mg-progress-fill').style.width = `${pct}%`;
+  const el = (id) => document.getElementById(id);
+  const set = (id, v) => { const e = el(id); if (e) e.textContent = v; };
+
+  const ok = (s.perAccount || []).filter((a) => !a.error);
+  const failed = (s.perAccount || []).length - ok.length;
+  const people = ok.reduce((n, a) => n + (a.total || 0), 0);
+  const matched = ok.reduce((n, a) => n + (a.withMemberId || 0), 0);
+  const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+
+  set('mg-eyebrow', s.running ? 'Collecting' : (s.perAccount || []).length ? 'Finished' : 'Not running');
+  set('mg-when', s.startedAt ? new Date(s.startedAt).toLocaleTimeString() : '');
+  set('mg-pct', pct);
+  set('mg-done', s.done || 0);
+  set('mg-total', s.total || 0);
+  set('mg-people', people.toLocaleString());
+  set('mg-matched', matched.toLocaleString());
+  set('mg-failed', failed);
+  set('mg-phase-lbl', s.running ? 'Working' : 'Idle');
+  const bar = el('mg-bar');
+  if (bar) bar.style.width = `${pct}%`;
+  el('mg-card')?.classList.toggle('is-live', !!s.running);
+
+  // Stage block — the account being worked on and what is happening to it.
+  const stage = el('mg-stage');
+  if (stage) {
+    stage.hidden = !s.running && !s.account;
+    if (s.account) {
+      set('mg-stage-verb', s.step || 'Working');
+      set('mg-stage-name', s.account);
+      set('mg-stage-sub', `Account ${Math.min((s.done || 0) + 1, s.total)} of ${s.total}`);
+      set('mg-stage-fix', '');
+      set('mg-beat-txt', 'Reading only — nothing is being sent');
+      set('mg-beat-right', `${people.toLocaleString()} collected`);
     }
   }
 
-  const ok = (s.perAccount || []).filter((a) => !a.error);
-  const people = ok.reduce((n, a) => n + (a.total || 0), 0);
-  const matched = ok.reduce((n, a) => n + (a.withMemberId || 0), 0);
-  const failed = (s.perAccount || []).length - ok.length;
-
-  const setR = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-  if (s.perAccount && s.perAccount.length) {
-    setR('mg-step-export-r', `${ok.length} of ${s.total} accounts<br>${people.toLocaleString()} people`
-      + (failed ? `<br>${failed} couldn't be opened` : ''));
-    setR('mg-step-clean-r', `${matched.toLocaleString()} matched<br>${(people - matched).toLocaleString()} couldn't be`);
+  // Failures grouped by cause, each with what / why / what to do.
+  const fbox = el('mg-failures');
+  if (fbox) {
+    const groups = s.failures || [];
+    fbox.hidden = groups.length === 0;
+    fbox.innerHTML = groups.map((g) => `
+      <div class="mg-fail">
+        <div class="mg-fail-h">${g.count} account${g.count === 1 ? '' : 's'} — ${escHtml(g.what || 'failed')}</div>
+        <div class="mg-fail-why">${escHtml(g.why || '')}</div>
+        <div class="mg-fail-fix">${escHtml(g.fix || '')}</div>
+        <div class="mg-fail-who">${g.accounts.map(escHtml).join(', ')}${g.count > g.accounts.length ? ` and ${g.count - g.accounts.length} more` : ''}</div>
+      </div>`).join('');
   }
+
+  renderMagellanLog(s.log || []);
   if (s.imported) {
-    setR('mg-step-import-r', `${(s.imported.created || 0).toLocaleString()} added<br>${(s.imported.updated || 0).toLocaleString()} updated`);
-    document.getElementById('mg-step-import')?.classList.remove('idle');
+    set('mg-phase-lbl', `${(s.imported.created || 0).toLocaleString()} added`);
   }
   if (s.error) showMagellanError(s.error);
+}
+
+function renderMagellanLog(lines) {
+  const box = document.getElementById('mg-log');
+  if (!box || box.hidden) return;
+  const cls = (l) => (l.includes('✗') ? 'error' : l.includes('⚠') ? 'warn' : l.includes('✓') ? 'success' : 'info');
+  box.innerHTML = lines.length
+    ? lines.map((l) => `<div class="entry ${cls(l)}">${escHtml(l)}</div>`).join('')
+    : '<div class="entry info">Waiting to start…</div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+function toggleMagellanLog() {
+  const box = document.getElementById('mg-log');
+  const btn = document.getElementById('mg-log-btn');
+  if (!box) return;
+  box.hidden = !box.hidden;
+  if (btn) btn.textContent = box.hidden ? 'Show log' : 'Hide log';
+  if (!box.hidden) refreshMagellanState();
 }
 
 async function previewMagellan() {
@@ -27170,3 +27216,4 @@ window.magellanDeselectAll = magellanDeselectAll;
 window.startMagellanCollect = startMagellanCollect;
 window.previewMagellan = previewMagellan;
 window.importMagellan = importMagellan;
+window.toggleMagellanLog = toggleMagellanLog;

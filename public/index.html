@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.0" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.1" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.0.1" />
 </head>
 <body data-dashboard="v3">
@@ -751,43 +751,59 @@
             <span class="mg-selbar-n" id="mg-sel-count">0</span>
             <span class="mg-selbar-t" id="mg-sel-sub">accounts selected</span>
           </div>
-          <div class="mg-steps">
-            <div class="mg-step" id="mg-step-export">
-              <span>
-                <div class="mg-step-h">Exported</div>
-                <div class="mg-step-s">Opens each account and reads its connections list. Nothing is sent — no requests, no messages.</div>
-              </span>
-              <span class="mg-step-r" id="mg-step-export-r">not started</span>
+          <!-- Same live card as a running campaign (.vj-card), tuned for
+               Magellan: the stage block names the account and what it is doing
+               right now, and failures explain themselves instead of dying in
+               the console. -->
+          <section class="vj-card" id="mg-card">
+            <div class="vj-eyebrow">
+              <span class="vj-tag"><span class="dot"></span><span id="mg-eyebrow">Not running</span></span>
+              <span class="vj-when" id="mg-when"></span>
             </div>
-            <div class="mg-step" id="mg-step-clean">
-              <span>
-                <div class="mg-step-h">Cleaned</div>
-                <div class="mg-step-s">Fills in company and job title, and matches every person to their LinkedIn ID.</div>
-              </span>
-              <span class="mg-step-r" id="mg-step-clean-r">not started</span>
-            </div>
-            <div class="mg-step idle" id="mg-step-import">
-              <span>
-                <div class="mg-step-h">Imported</div>
-                <div class="mg-step-s">Adds them to HubSpot and the database. Waiting for you to confirm below.</div>
-              </span>
-              <span class="mg-step-r" id="mg-step-import-r">not started</span>
-            </div>
-          </div>
+            <h2 class="vj-name"><span id="mg-name">Operation Magellan</span></h2>
 
-          <div class="conn-progress" id="mg-progress" hidden aria-live="polite">
-            <div class="conn-progress-head">
-              <span class="conn-progress-dot" aria-hidden="true"></span>
-              <span class="conn-progress-label" id="mg-progress-label">Working…</span>
-              <span class="conn-progress-pct" id="mg-progress-pct"></span>
+            <div class="vj-stage" id="mg-stage" hidden aria-live="polite">
+              <div class="vj-stage-gly" id="mg-stage-gly"></div>
+              <div class="vj-stage-body">
+                <div class="vj-stage-verb" id="mg-stage-verb"></div>
+                <div class="vj-stage-name" id="mg-stage-name"></div>
+                <div class="vj-stage-sub" id="mg-stage-sub"></div>
+                <div class="vj-stage-fix" id="mg-stage-fix"></div>
+                <div class="vj-stage-beat">
+                  <span class="l"><span class="bd" id="mg-beat-dot"></span><span id="mg-beat-txt"></span></span>
+                  <span id="mg-beat-right"></span>
+                </div>
+              </div>
             </div>
-            <div class="conn-progress-track"><div class="conn-progress-fill" id="mg-progress-fill"></div></div>
-            <div class="conn-progress-quip">You can close this — it keeps going.</div>
-          </div>
 
-          <div class="cx-find-row" style="margin-top:16px;">
-            <button type="button" class="btn" id="mg-collect-btn" onclick="startMagellanCollect()">Collect connections</button>
-          </div>
+            <div class="vj-hbar" role="progressbar" aria-label="Collection progress"><i id="mg-bar" style="width:0%"></i></div>
+
+            <div class="vj-hero">
+              <div class="vj-hero-row">
+                <div class="num"><span id="mg-pct">0</span><span class="sub">%</span></div>
+                <div class="vj-meta">
+                  <span><b id="mg-done">0</b> of <span id="mg-total">0</span> accounts</span>
+                  <span><b id="mg-people">0</b> people so far</span>
+                </div>
+              </div>
+              <div class="vj-stats" aria-live="polite">
+                <span><b id="mg-matched">0</b> with a LinkedIn ID</span>
+                <span><b id="mg-failed">0</b> failed</span>
+                <span>· <b id="mg-phase-lbl">Idle</b></span>
+              </div>
+            </div>
+
+            <!-- Failures grouped by cause: 300 accounts failing for two reasons
+                 must read as two problems, not three hundred lines. -->
+            <div id="mg-failures" hidden></div>
+
+            <div class="vj-controls">
+              <button class="btn-pill" id="mg-collect-btn" onclick="startMagellanCollect()">Collect connections</button>
+              <button class="btn-pill" id="mg-log-btn" onclick="toggleMagellanLog()">Show log</button>
+            </div>
+          </section>
+
+          <div class="log-panel" id="mg-log" hidden><div class="entry info">Waiting to start…</div></div>
           <div class="conn-error" id="mg-error" hidden></div>
         </section>
 
@@ -3938,7 +3954,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.0"></script>
+  <script type="module" src="/js/app.js?v=3.1.1"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

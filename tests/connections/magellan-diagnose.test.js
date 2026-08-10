@@ -1,0 +1,76 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { diagnose, logLine, summarise } from '../../src/connections/magellan-diagnose.js';
+
+// The real error from the first live run. It has to produce an instruction,
+// not a stack trace.
+test('the GoLogin extension-cache crash is explained in plain words', () => {
+  const d = diagnose(new Error('Invalid header: Does not start with Cr24'));
+  assert.equal(d.code, 'gologin_extension_cache');
+  assert.equal(d.what, 'The browser never opened');
+  assert.match(d.fix, /extensions cache/i);
+  assert.equal(d.retryable, true);
+});
+
+test('a stack trace still matches on the frame that names the cause', () => {
+  const d = diagnose(new Error('at crxToZip (extensions-manager.js:324:11)'));
+  assert.equal(d.code, 'gologin_extension_cache');
+});
+
+test('an expired session is flagged as not-retryable — a human has to sign in', () => {
+  const d = diagnose('Could not read connections: no-csrf');
+  assert.equal(d.code, 'not_logged_in');
+  assert.equal(d.retryable, false);
+  assert.match(d.fix, /sign in/i);
+});
+
+test('throttling and hard blocks are told apart', () => {
+  assert.equal(diagnose('Could not read connections: http-429').code, 'rate_limited');
+  assert.equal(diagnose('Could not read connections: http-429').retryable, true);
+  assert.equal(diagnose('Could not read connections: http-999').code, 'linkedin_blocked');
+  assert.equal(diagnose('Could not read connections: http-999').retryable, false);
+});
+
+test('an empty list points at the account before blaming the code', () => {
+  const d = diagnose('Could not read connections: empty-after-3-strategies (keys: data, included.len: 0)');
+  assert.equal(d.code, 'endpoint_changed');
+  assert.match(d.fix, /check it has connections/i);
+});
+
+test('closing the browser mid-run is named as such', () => {
+  assert.equal(diagnose(new Error('Protocol error: Target closed')).code, 'browser_closed');
+});
+
+test('an unrecognised error still yields something actionable, keeping the raw text', () => {
+  const d = diagnose(new Error('something nobody predicted'));
+  assert.equal(d.code, 'unknown');
+  assert.equal(d.raw, 'something nobody predicted');
+  assert.match(d.why, /something nobody predicted/);
+});
+
+test('the log line names the account, the cause and the fix', () => {
+  const line = logLine('antonio@ortusclub.com', diagnose(new Error('Cr24')));
+  assert.match(line, /antonio@ortusclub\.com/);
+  assert.match(line, /never opened/);
+  assert.match(line, /extensions cache/i);
+});
+
+// 300 accounts failing for 2 reasons should read as 2 problems, not 300.
+test('failures collapse to their causes, biggest first', () => {
+  const per = [
+    { account: 'a@o.com', total: 10 },
+    { account: 'b@o.com', error: 'Cr24', diagnosis: diagnose('Cr24') },
+    { account: 'c@o.com', error: 'Cr24', diagnosis: diagnose('Cr24') },
+    { account: 'd@o.com', error: 'no-csrf', diagnosis: diagnose('no-csrf') },
+  ];
+  const s = summarise(per);
+  assert.equal(s.length, 2);
+  assert.equal(s[0].code, 'gologin_extension_cache');
+  assert.equal(s[0].count, 2);
+  assert.deepEqual(s[0].accounts, ['b@o.com', 'c@o.com']);
+  assert.equal(s[1].code, 'not_logged_in');
+});
+
+test('successful accounts never appear in the failure summary', () => {
+  assert.deepEqual(summarise([{ account: 'a@o.com', total: 10 }]), []);
+});

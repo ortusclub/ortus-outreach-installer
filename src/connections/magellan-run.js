@@ -9,6 +9,7 @@ import * as launcher from '../gologin-launcher.js';
 import * as browserSemaphore from '../browser-semaphore.js';
 import { collectAccount, readForPlan } from './magellan-pull.js';
 import { planAccount } from './magellan.js';
+import { diagnose, logLine, summarise } from './magellan-diagnose.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
   checkMagellanProperties,
@@ -18,15 +19,27 @@ const idle = () => ({
   running: false,
   phase: 'idle',           // idle | collecting | previewing | importing | done | error
   account: null,
+  step: null,              // what the current account is doing right now
   done: 0,
   total: 0,
   startedAt: null,
   finishedAt: null,
-  perAccount: [],          // [{ account, total, withMemberId, hidden, error }]
+  perAccount: [],          // [{ account, total, withMemberId, hidden, error, diagnosis }]
+  log: [],                 // campaign-style ring buffer, newest last
+  failures: [],            // failures grouped by cause
   preview: null,           // aggregate counts + the plan to import
   imported: null,
   error: null,
 });
+
+// Same shape the campaign log uses: timestamped lines, capped so a 300-account
+// sweep can't grow without bound.
+const LOG_CAP = 2000;
+function log(line) {
+  _state.log.push(`[${new Date().toISOString()}] ${line}`);
+  if (_state.log.length > LOG_CAP) _state.log.splice(0, _state.log.length - LOG_CAP);
+  console.log(`[magellan] ${line}`);
+}
 
 let _state = idle();
 // The plan can hold hundreds of thousands of rows, so it stays here and only
@@ -56,14 +69,23 @@ export function startCollect(accounts, deps = {}) {
 
   _state = { ...idle(), running: true, phase: 'collecting', total: list.length, startedAt: new Date().toISOString() };
 
+  log(`▶ Collecting ${list.length} account${list.length === 1 ? '' : 's'}.`);
+
   (async () => {
     for (const entry of list) {
       _state.account = entry.account;
       let launched = null;
+      _state.step = 'Waiting for a free browser slot';
       await semaphore.acquire();
       try {
+        _state.step = 'Opening the browser';
+        log(`◦ ${entry.account}: opening the browser…`);
         launched = await launchProfile(entry.profileId);
+
+        _state.step = 'Reading the connections list';
+        log(`◦ ${entry.account}: signed in, reading the connections list…`);
         const r = await collect(launched.page, entry.account);
+
         _state.perAccount.push({
           account: entry.account,
           total: r.total,
@@ -71,20 +93,39 @@ export function startCollect(accounts, deps = {}) {
           hidden: r.hidden,
           collectedAt: new Date().toISOString(),
         });
+        const noId = r.total - r.withMemberId;
+        log(`✓ ${entry.account}: ${r.total} connections`
+          + (noId ? `, ${noId} without a LinkedIn ID` : '')
+          + (r.hidden ? `, ${r.hidden} hidden by LinkedIn` : ''));
       } catch (err) {
-        // One dead account must not end the sweep — record and carry on.
-        _state.perAccount.push({ account: entry.account, error: err.message });
+        // One dead account must not end the sweep. Record WHY, in words the
+        // operator can act on, not the raw stack.
+        const d = diagnose(err);
+        _state.perAccount.push({ account: entry.account, error: err.message, diagnosis: d });
+        log(logLine(entry.account, d));
       } finally {
-        try { if (launched) await closeProfile(entry.profileId); } catch { /* already gone */ }
+        _state.step = 'Closing the browser';
+        try {
+          if (launched) await closeProfile(entry.profileId);
+        } catch (err) {
+          log(`⚠ ${entry.account}: the browser did not close cleanly — ${err.message}`);
+        }
         semaphore.release();
         _state.done += 1;
+        _state.failures = summarise(_state.perAccount);
       }
     }
+    const ok = _state.perAccount.filter((a) => !a.error);
+    const people = ok.reduce((n, a) => n + (a.total || 0), 0);
+    log(`■ Finished. ${ok.length} of ${list.length} accounts, ${people} people`
+      + (ok.length < list.length ? `, ${list.length - ok.length} failed.` : '.'));
     _state.phase = 'done';
     _state.running = false;
     _state.account = null;
+    _state.step = null;
     _state.finishedAt = new Date().toISOString();
   })().catch((err) => {
+    log(`✗ The collection stopped unexpectedly — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';
     _state.running = false;
