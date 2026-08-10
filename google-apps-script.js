@@ -112,7 +112,10 @@ var MODE_COLUMNS_V2 = {
   // back to the normal 'Connected' stamp.
   connect_and_message:   ['Connection Request Status',
                           'Connection Accepted Status',
-                          'DM Status']
+                          'DM Status'],
+  // Follower Growth: the four ledger columns stamped back into the operator's
+  // own invite-list sheet.
+  follower_growth: ['Status', 'Invited At', 'Note', 'Member ID']
 };
 
 // Every per-mode column across every mode — used to compute the "hide
@@ -124,7 +127,8 @@ var MODE_COLUMNS_V2 = {
 var ALL_MODE_COLUMNS_V2 = [
   'Connection Request Status', 'DM Status', 'OP Status',
   'InM Status', 'Intro Status', 'Connection Accepted Status',
-  'Open Profile', 'Introduction Status'
+  'Open Profile', 'Introduction Status',
+  'Status', 'Invited At', 'Note', 'Member ID'
 ];
 
 // Column widths applied on every prepareSheet call. Universal map: any
@@ -338,7 +342,17 @@ var FIELD_MAP = {
   // Phase 11.3 — Check DMs writeback
   Reply:           'Reply',
   ReplyAt:         'Reply At',
-  ReplyPreview:    'Reply Preview'
+  ReplyPreview:    'Reply Preview',
+  // ── Follower Growth ledger (2026-08-10) ──
+  // FG now fires from the operator's OWN sheet rather than a tab in the central
+  // FG spreadsheet (fg-apps-script.js is container-bound and cannot reach it),
+  // so its writeback comes through this deployment's updateRow action.
+  // Prefixed `fg*` on purpose: bare `status` is already Connection Request
+  // Status, and FG's `Member ID` is NOT LinkedIn Membership ID.
+  fgStatus:        'Status',
+  fgInvitedAt:     'Invited At',
+  fgNote:          'Note',
+  fgMemberId:      'Member ID'
 };
 
 // Header aliases — a sheet may carry an older/variant header for the same
