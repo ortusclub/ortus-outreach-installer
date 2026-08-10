@@ -24,6 +24,7 @@ import {
   isTourCompleted,
 } from '/js/tour.mjs';
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
+import { fgActiveDoor, fgActivePayload } from '/js/fg-source.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText } from '/js/live-activity.mjs';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
@@ -21673,15 +21674,8 @@ async function fgLoadPages() {
 
 // Storage keeps BOTH doors' content (sheetUrl, tab) plus which one is live
 // (activeDoor). Selecting a door never destroys the other door's value — it
-// only changes which one is sent at launch. Default 'have' so a fresh install
-// and every already-stored value (written before activeDoor existed) behave
-// exactly as they do today.
-function fgActiveDoor(saved) { return saved.activeDoor === 'build' ? 'build' : 'have'; }
-function fgActivePayload(saved) {
-  return fgActiveDoor(saved) === 'build'
-    ? { sheetUrl: '', tab: saved.tab || '' }
-    : { sheetUrl: saved.sheetUrl || '', tab: '' };
-}
+// only changes which one is sent at launch. fgActiveDoor/fgActivePayload live
+// in /js/fg-source.mjs (imported at the top) so tests can exercise them.
 
 /** Highlight whichever door is active. */
 function fgSelectDoor(which) {
