@@ -27159,3 +27159,14 @@ async function importMagellan() {
     if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
   }
 }
+
+// Inline onclick handlers need these on window — app.js is a module, so
+// function declarations alone are not global (see the block above at ~19501).
+window.setConnTab = setConnTab;
+window.renderMagellanAccounts = renderMagellanAccounts;
+window.setMagellanFilter = setMagellanFilter;
+window.magellanSelectAllVisible = magellanSelectAllVisible;
+window.magellanDeselectAll = magellanDeselectAll;
+window.startMagellanCollect = startMagellanCollect;
+window.previewMagellan = previewMagellan;
+window.importMagellan = importMagellan;
