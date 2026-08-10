@@ -21209,7 +21209,13 @@ async function fgapRunNow() {
     showCampaignToast('Open the FG board first so the team roster loads, then Run it now.', 4500);
     return;
   }
-  if (!confirm(`Invite ${pairs.length} people to follow ${pageLabel}? This dispatches to the cloud VM immediately.`)) return;
+  // Name the SOURCE, never a count: `pairs` is the account roster (~24), not
+  // the people being invited (the sheet's rows — possibly hundreds), and the
+  // source was persisted in localStorage, possibly weeks ago. Derived from
+  // `active` — the exact same object the POST body sends — so the dialog and
+  // what fires can never disagree. The true count comes back as r.leadCount.
+  const what = active.sheetUrl ? `the list in your sheet\n${active.sheetUrl}` : `tab “${active.tab}”`;
+  if (!confirm(`Invite everyone in ${what} to follow ${pageLabel}?\nThis dispatches to the cloud VM immediately.`)) return;
   if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
   try {
     // Building targets + dispatch can take up to a minute; keep the operator informed.
@@ -21262,7 +21268,9 @@ async function fgtlAdoptRunningCloudRun() {
   const stamp = (x) => Number(new Date(x)) || Number(x) || 0;
   const latest = runs.slice().sort((a, b) => stamp(b.dispatchedAt) - stamp(a.dispatchedAt))[0];
   if (!latest || !latest.cloudId) return;
-  if (latest.tab) { _fgtlListTab = latest.tab; _fgReviewedTab = latest.tab; fgwSetListTab(latest.tab); fgReviewRenderGate(); }
+  // Adopting a run does NOT touch the step-2 source. The pill next to "Run it
+  // now" describes what the NEXT launch will fire, which is whatever door is
+  // active — not the tab of a run already in flight.
   fgapShowCloudLaunchCard(latest.cloudId);
   fgtlCloudPoll();
 }
@@ -21361,9 +21369,8 @@ async function initFollowerGrowth() {
   fgtlRenderChips();
   fgtlBindBoard();
   fgtlBindLaunch();
-  fgReviewRenderGate();
   fgSyncLiveSurfaces();
-  fgBindListSource();
+  fgBindListSource(); // ends in fgRenderSource() — paints both doors AND the live-status pill
   fgLoadPages().catch(() => {});
 
   // 4b. Ensure SoO is loaded so launch-list eligibility (Company col AQ) is
@@ -21635,11 +21642,7 @@ function fgtlCloudPoll() {
   tick();
 }
 
-// The invite-list tab this launch should fire from — set by "Generate list from
-// roles" or "Use this tab". Empty → legacy build-and-dispatch flow.
-let _fgtlListTab = '';
-
-// The chosen sheet + page survive a reload. _fgtlListTab was in-memory only,
+// The chosen sheet + page survive a reload. The tab used to be in-memory only,
 // so a restart silently reverted a bring-your-own list to the roles builder —
 // the single most confusing thing about the old flow.
 const FG_STORE_KEY = 'fg.launch.source.v1';
@@ -21713,6 +21716,14 @@ function fgRenderSource() {
     status.innerHTML = (door === 'build' && saved.tab)
       ? `Currently using tab <b>${escHtml(saved.tab)}</b> as the launch source.`
       : '';
+  }
+  // The Live-status pill next to "Run it now". Sole writer, and it names the
+  // ACTIVE door's source — never a tab that is only remembered, not armed.
+  const pill = document.getElementById('fgw-list-tab');
+  if (pill) {
+    const src = door === 'build' ? saved.tab : saved.sheetUrl;
+    if (src) { pill.innerHTML = `Ready to fire: <b>${escHtml(door === 'build' ? src : 'your sheet')}</b>`; pill.title = src; pill.style.display = ''; }
+    else { pill.textContent = ''; pill.title = ''; pill.style.display = 'none'; }
   }
 }
 
@@ -21908,73 +21919,12 @@ async function fgtlGenerateList() {
   }
 }
 
-// ── Review gate ────────────────────────────────────────────────────────────
-// A list can be fired only once someone has opened it in the sheet. The lock is
-// UI-level and deliberately so: it exists to make the review habitual, not to
-// stop a determined operator (Auto-Pilot's scheduled runs are unaffected).
-let _fgReviewedTab = '';
-
-function fgReviewSetList(tab, count, skips) {
-  const box = document.getElementById('fg-review-state');
-  const line = document.getElementById('fg-review-line');
-  if (line) line.innerHTML = `Written to <b>${escHtml(tab)}</b> · ${Number(count || 0).toLocaleString()} people${skips || ''}`;
-  if (box) box.style.display = '';
-  _fgReviewedTab = '';
-  fgReviewRenderGate();
-}
-
-function fgReviewRenderGate() {
-  const gate = document.getElementById('fg-gate');
-  const title = gate && gate.querySelector('.rv-gate-title');
-  const body = gate && gate.querySelector('.rv-gate-body');
-  const meta = document.getElementById('fg-review-meta');
-  const ok = !!_fgtlListTab && _fgReviewedTab === _fgtlListTab;
-  if (gate) gate.classList.toggle('unlocked', ok);
-  if (title) title.textContent = ok ? 'Ready to launch' : 'Launch is locked';
-  if (body) {
-    body.textContent = ok
-      ? 'You have opened the tab. Fire it from Live status ↓ (Run it now).'
-      : _fgtlListTab
-        ? 'until the tab has been opened at least once'
-        : 'write a list to the sheet first';
-  }
-  if (meta) meta.textContent = ok ? 'Reviewed — whatever is left in that tab is what gets invited.' : '';
-  // Gate the two ways to fire this list. Never leave a button disabled with no
-  // explanation — the title says why.
-  for (const id of ['fgap-run', 'fgtl-go']) {
-    const b = document.getElementById(id);
-    if (!b) continue;
-    if (!_fgtlListTab) continue; // nothing generated yet — leave the button as it was
-    b.disabled = !ok;
-    b.title = ok ? '' : 'Open the invite-list tab in the sheet first — step 2';
-  }
-  // A greyed-out button with the reason hidden behind a hover is not an
-  // explanation — put it where the button is.
-  const tabLab = document.getElementById('fgw-list-tab');
-  if (tabLab && _fgtlListTab) {
-    tabLab.innerHTML = ok
-      ? `Ready to fire: <b>${escHtml(_fgtlListTab)}</b>`
-      : `<b>${escHtml(_fgtlListTab)}</b> — open it in the sheet first (step 2)`;
-    tabLab.style.display = '';
-  }
-}
-
-/** Opening the tab IS the review — record it, then send them to the sheet. */
-async function fgReviewOpenTab(e) {
-  if (e) e.preventDefault();
-  _fgReviewedTab = _fgtlListTab;
-  fgReviewRenderGate();
-  await fgtlOpenSheet();
-}
-
-/** Reflect the currently-selected invite-list tab into the Live Status head so
- *  the operator can see exactly what "Run it now" will fire. */
-function fgwSetListTab(tab) {
-  const el = document.getElementById('fgw-list-tab');
-  if (!el) return;
-  if (tab) { el.innerHTML = `Ready to fire: <b>${escHtml(tab)}</b>`; el.style.display = ''; }
-  else { el.textContent = ''; el.style.display = 'none'; }
-}
+// The old review gate (fgReviewSetList / fgReviewRenderGate / fgReviewOpenTab,
+// _fgReviewedTab, _fgtlListTab) lived here. Its DOM (#fg-gate, #fg-review-state,
+// #fg-open-tab) is gone, and it kept a second, stale writer of #fgw-list-tab
+// that could announce "Ready to fire: <tab>" while door 1's pasted sheet was
+// what actually fired. fgRenderSource() is now the ONLY writer of that pill,
+// and it paints the ACTIVE door's source.
 
 /** POST to /api/fg/team-launch/start, then begin polling. */
 async function fgtlLaunch() {
@@ -22315,10 +22265,11 @@ function fgtlBindLaunch() {
   }
   const genBtn = document.getElementById('fgtl-generate');
   if (genBtn && !genBtn._b) { genBtn._b = true; genBtn.addEventListener('click', fgtlGenerateList); }
-  const openSheetBtn = document.getElementById('fgtl-open-sheet');
+  // Door 2's "Open sheet" — opens the central FG spreadsheet the generated tab
+  // lives in, so the operator can read the list before firing it. (Replaces the
+  // binding to #fgtl-open-sheet / #fg-open-tab, both long gone from the markup.)
+  const openSheetBtn = document.getElementById('fg-build-open');
   if (openSheetBtn && !openSheetBtn._b) { openSheetBtn._b = true; openSheetBtn.addEventListener('click', fgtlOpenSheet); }
-  const openTabBtn = document.getElementById('fg-open-tab');
-  if (openTabBtn && !openTabBtn._b) { openTabBtn._b = true; openTabBtn.addEventListener('click', fgReviewOpenTab); }
   const fgMasterBtn = document.getElementById('fg-master-build');
   // The build runs server-side, so a page reload only loses the poller — re-attach it.
   if (fgMasterBtn && !fgMasterBtn._b) { fgMasterBtn._b = true; fgMasterBtn.addEventListener('click', () => fgMasterBuild(false)); fgMasterBtn.disabled = true; fgMasterPoll(); }

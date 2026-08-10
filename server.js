@@ -2874,23 +2874,29 @@ async function reconcileListRun(record) {
   let sheetStampTotal = 0;
   if (updates.length) {
     if (record.sheetUrl) {
-      // The operator's own sheet — one updateRow per changed row through the
-      // MAIN Apps Script (openById, so it can reach any spreadsheet). The FG
-      // script cannot: it is container-bound to the central FG spreadsheet.
-      // Sequential on purpose — Apps Script serialises writes to one sheet
-      // anyway, and a burst just earns 429s.
-      const { updateSheetRow } = await import('./src/sheets-writer.js');
-      sheetStampTotal = updates.length;
-      for (const u of updates) {
-        try {
-          if (await updateSheetRow(record.sheetUrl, u.url, fgLedgerTracking(u), '')) sheetStampOk += 1;
-        } catch (e) {
-          // updateSheetRow does not actually throw (it swallows its own
-          // errors and returns false) — this catch is defence in depth only.
-          try { campaignLog(`[FG-cloud] ledger row failed (${u.url}): ${e.message}`); } catch (_) {}
-        }
-      }
+      // The operator's own sheet — through the MAIN Apps Script (openById, so
+      // it can reach any spreadsheet). The FG script cannot: it is
+      // container-bound to the central FG spreadsheet.
+      //
+      // BATCHED on purpose. ledgerUpdatesFromLeads re-emits every actioned lead
+      // on EVERY tick (it is not a delta) and doPost holds a script lock for the
+      // whole request, shared with every live connection campaign on the same
+      // deployment — so one POST per row meant a 700-row run re-issuing 700
+      // locked POSTs every 30 seconds. updateSheetRows chunks internally.
+      const { updateSheetRows } = await import('./src/sheets-writer.js');
+      const stamp = await updateSheetRows(record.sheetUrl, updates.map((u) => ({ linkedinUrl: u.url, ...fgLedgerTracking(u) })), '');
+      sheetStampOk = stamp.ok;
+      sheetStampTotal = stamp.total;
       try { campaignLog(`[FG-cloud] list ledger → operator sheet: stamped ${sheetStampOk}/${sheetStampTotal} row(s)`); } catch (_) {}
+      // Per-row visibility is the point: the operator needs to know WHICH rows
+      // did not stamp, not just how many. Capped so a whole-batch failure
+      // cannot flood the log every 30s.
+      for (const f of stamp.failures.slice(0, 20)) {
+        try { campaignLog(`[FG-cloud] ledger row not stamped (${f.linkedinUrl}): ${f.error}`); } catch (_) {}
+      }
+      if (stamp.failures.length > 20) {
+        try { campaignLog(`[FG-cloud] …and ${stamp.failures.length - 20} more unstamped row(s)`); } catch (_) {}
+      }
     } else {
       const r = await updateFgListLedger(record.tab, updates);
       try { campaignLog(`[FG-cloud] list ledger "${record.tab}": stamped ${r.updated} row(s)`); } catch (_) {}
@@ -3250,6 +3256,14 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
   const pairs = Array.isArray(b.pairs) ? b.pairs.filter((p) => p && p.operator && p.account && p.profileId) : [];
   if (!pairs.length) return res.status(400).json({ error: 'At least one paired account is required.' });
 
+  // A list source is required on EVERY path, cloud or local. This refusal sits
+  // ABOVE the target branch on purpose: the local branch below still contains
+  // the old build-a-list-from-the-connections-DB code, so without this a launch
+  // with no source (or with a pasted sheet it ignores) would quietly generate a
+  // list nobody asked for — the deleted silent fallback, one display:none away.
+  const src = resolveListSource(b);
+  if (!src.ok) return res.status(400).json({ error: src.error });
+
   if ((b.target || 'local') === 'cloud') {
     const month = b.month || fgMonth();
 
@@ -3260,9 +3274,6 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       const owner = getOperatorEmail() || req.user || '';
       const runKey = b.cycleKey || fgNextRunCycleKey(b.days);
       const page = pageById(b.pageId);
-
-      const src = resolveListSource(b);
-      if (!src.ok) return res.status(400).json({ error: src.error });
 
       // The operator's OWN sheet (src.kind === 'sheet') is read straight over
       // the public CSV endpoint — no Apps Script involved, so it works on any
@@ -3284,8 +3295,8 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
         const n = Array.isArray(rows) ? rows.length : 0;
         return res.status(400).json({
           error: n === 0
-            ? `Nothing came back from ${label}. If the sheet is private, share it "anyone with the link can view" and try again.`
-            : `${label} has a header but no people in it.`,
+            ? `Nothing came back from ${label}. Three things do this: the tab is empty, the link's #gid points at a different (empty) tab, or the sheet is not shared "anyone with the link can view".`
+            : `${label} has a header but no people under it — check the link's #gid is on the tab that holds the rows.`,
         });
       }
 
@@ -3391,6 +3402,14 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
     if (result.error) return res.status(502).json({ error: result.error });
     reconcileFgCloudRuns().catch(() => {}); // kick a first poll shortly (non-blocking)
     return res.json({ started: true, cloudId: result.cloudId });
+  }
+
+  // Local target. This branch still builds its own list from the connections DB
+  // and hardcodes ORTUS_PAGE_INVITE_URL — it cannot honour a pasted sheet or the
+  // chosen page. Refuse rather than silently invite a different list to a
+  // different page.
+  if (src.kind === 'sheet') {
+    return res.status(400).json({ error: 'A pasted Google Sheet list can only run on the cloud VM. Switch the run target to the cloud, or build the list from the team\'s connections.' });
   }
 
   const month = b.month || fgMonth();

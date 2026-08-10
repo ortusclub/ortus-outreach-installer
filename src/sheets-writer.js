@@ -248,6 +248,67 @@ export async function updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinCo
   return false;
 }
 
+// One updateRows POST carries at most this many rows. The POST aborts at 15s
+// (_postOnce) and the Apps Script rescans the URL column per row, so a single
+// 700-row request would time out and lose the whole batch.
+// ponytail: fixed size, no adaptive tuning — raise it if real batches finish fast.
+const UPDATE_ROWS_CHUNK = 100;
+
+/**
+ * Batched sibling of updateSheetRow: stamps many rows through ONE Apps Script
+ * call per chunk (`action:'updateRows'` → handleUpdateRows), instead of one
+ * lock-holding POST per row. handleUpdateRows replies
+ * `{ success, results:[ {ok:true,row,…} | {error} ] }` index-aligned with the
+ * rows sent, so one missing lead never fails the rest of the batch.
+ *
+ * @param {string} sheetUrl - The Google Sheet URL (any sheet)
+ * @param {Array<{linkedinUrl:string}>} rows - one entry per row: the URL plus its tracking fields
+ * @param {string} linkedinColumn - name of the URL column ('' → auto-detect)
+ * @returns {Promise<{ok:number, total:number, failures:Array<{linkedinUrl:string,error:string}>}>}
+ *          `failures` keeps per-row visibility: which rows did not stamp, and why.
+ */
+export async function updateSheetRows(sheetUrl, rows, linkedinColumn) {
+  const list = (Array.isArray(rows) ? rows : []).filter((r) => r && r.linkedinUrl);
+  const failures = [];
+  if (!list.length) return { ok: 0, total: 0, failures };
+
+  if (!getWebAppUrl()) {
+    console.log('[sheets-writer] No SHEETS_WEBAPP_URL configured — skipping');
+    return { ok: 0, total: list.length, failures: list.map((r) => ({ linkedinUrl: r.linkedinUrl, error: 'no SHEETS_WEBAPP_URL configured' })) };
+  }
+
+  const sheetId = extractSheetId(sheetUrl);
+  const gid = extractSheetGid(sheetUrl);
+  let ok = 0;
+
+  for (let i = 0; i < list.length; i += UPDATE_ROWS_CHUNK) {
+    const chunk = list.slice(i, i + UPDATE_ROWS_CHUNK);
+    const result = await postToWebApp({
+      action: 'updateRows',
+      sheetId,
+      gid: gid || '',
+      urlColumnName: linkedinColumn || '',
+      rows: chunk,
+    });
+    const results = (result && Array.isArray(result.results)) ? result.results : null;
+    if (!results) {
+      // Whole-chunk failure (network, auth, no URL column) — every row in it is unstamped.
+      const error = (result && result.error) || 'no results returned by the sheets bridge';
+      console.warn(`[sheets-writer] updateRows failed for ${chunk.length} row(s): ${error}`);
+      for (const r of chunk) failures.push({ linkedinUrl: r.linkedinUrl, error });
+      continue;
+    }
+    chunk.forEach((r, j) => {
+      const res = results[j];
+      if (res && res.ok) ok += 1;
+      else failures.push({ linkedinUrl: r.linkedinUrl, error: (res && res.error) || 'no result returned for this row' });
+    });
+  }
+
+  console.log(`[sheets-writer] updateRows stamped ${ok}/${list.length} row(s) in sheet ${sheetId}`);
+  return { ok, total: list.length, failures };
+}
+
 /**
  * Phase 11.3 — reads the Reply tracking columns for a single row.
  * Used by check-dms.js's non-destructive writeback: if the row already has

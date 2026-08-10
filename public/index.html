@@ -2558,14 +2558,13 @@
           <div class="sk-body">
             <input class="sk-url" id="fg-sheet-url" placeholder="Paste your Google Sheet link&#8230;" autocomplete="off">
             <div class="sk-row">
-              <button type="button" class="fgw-btn" id="fg-sheet-preview">Preview</button>
               <button type="button" class="fgw-btn" id="fg-sheet-open">Open sheet &#8599;</button>
               <span class="fgw-list-tab" id="fg-sheet-echo" style="display:none"></span>
             </div>
             <div class="fgw-format" style="margin-top:13px">
               <div class="fgw-format-h">Your tab needs two columns:</div>
               <code class="fgw-format-cols">LinkedIn URL &#183; Account Email</code>
-              <div class="fgw-format-note"><b>Account Email</b> = the GoLogin login that sends that invite. Everything else in your sheet is left alone &#8212; the app only <b>adds</b> Status / Invited At columns, exactly like a CC campaign.</div>
+              <div class="fgw-format-note"><b>Account Email</b> = the GoLogin login that sends that invite. Nothing in your sheet is ever deleted. The app <b>adds</b> its own tracking columns (FG Status, FG Invited At and a few others) and may <b>hide</b> a handful of columns it recognises by name, exactly like a CC campaign.</div>
             </div>
           </div>
         </div>
@@ -2580,6 +2579,7 @@
             <div class="filter-foot"><span class="hint">Defaults toward marketers.</span><span class="match" id="fgtl-match"></span></div>
             <div class="sk-row">
               <button type="button" id="fgtl-generate" class="fgw-btn fgw-btn-primary" title="Build the list from the roles above and write it to a tab in the FG sheet">Write the list to the sheet</button>
+              <button type="button" id="fg-build-open" class="fgw-btn" title="Open the central FG sheet to read the generated tab">Open sheet &#8599;</button>
             </div>
             <div id="fgtl-list-status" class="fgw-list-status"></div>
           </div>
