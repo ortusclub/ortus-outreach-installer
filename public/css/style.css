@@ -8347,11 +8347,13 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 
 .mg-steps { border: 1px solid var(--hairline); }
 /* Failures grouped by cause — what happened, why, what to do about it. */
-.mg-fail { border-top: 1px solid var(--hairline); padding: 13px 0; }
-.mg-fail-h { font-family: var(--body); font-size: 0.82rem; color: var(--ink); }
-.mg-fail-why { font-family: var(--body); font-size: 0.75rem; color: var(--gray); margin-top: 3px; line-height: 1.5; }
-.mg-fail-fix { font-family: var(--body); font-size: 0.75rem; color: var(--ink); margin-top: 5px; line-height: 1.5; }
-.mg-fail-who { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top: 6px; word-break: break-all; line-height: 1.6; }
+/* Detail under the account pills — what one selected account did, or why it
+   failed. The raw error is the last line and is always present. */
+#mg-acct-detail { border-top: 1px solid var(--hairline); margin-top: 12px; padding: 12px 0 2px; }
+.mg-det-h { font-family: var(--body); font-size: 0.82rem; color: var(--ink); }
+.mg-det-why { font-family: var(--body); font-size: 0.75rem; color: var(--gray); margin-top: 3px; line-height: 1.5; }
+.mg-det-fix { font-family: var(--body); font-size: 0.75rem; color: var(--ink); margin-top: 5px; line-height: 1.5; }
+.mg-det-raw { font-family: var(--mono); font-size: 0.58rem; color: var(--gray-faint, var(--gray)); margin-top: 8px; word-break: break-all; line-height: 1.6; }
 #mg-log { max-height: 260px; overflow-y: auto; margin-top: 14px; }
 .mg-step { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; padding: 15px 17px; border-top: 1px solid var(--hairline); }
 .mg-step:first-child { border-top: none; }

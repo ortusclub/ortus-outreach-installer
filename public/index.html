@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.11" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.12" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.0.1" />
 </head>
 <body data-dashboard="v3">
@@ -802,7 +802,10 @@
 
             <!-- Failures grouped by cause: 300 accounts failing for two reasons
                  must read as two problems, not three hundred lines. -->
-            <div id="mg-failures" hidden></div>
+            <!-- One pill per account, same row a campaign uses. Click one for
+                 its numbers, or for why it failed — raw error included. -->
+            <div class="vj-stage-accts" id="mg-accts" hidden></div>
+            <div id="mg-acct-detail" hidden></div>
 
             <div class="vj-controls">
               <button class="btn-pill" id="mg-collect-btn" onclick="startMagellanCollect()">Collect connections</button>
@@ -3975,7 +3978,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.11"></script>
+  <script type="module" src="/js/app.js?v=3.1.12"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

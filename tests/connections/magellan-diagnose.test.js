@@ -100,3 +100,16 @@ test('the raw error is not repeated when it is already in the words', () => {
   const line = logLine('a@o.com', diagnose(new Error('something nobody predicted')));
   assert.equal((line.match(/something nobody predicted/g) || []).length, 1);
 });
+
+// The port in "ECONNREFUSED 127.0.0.1:38657" is the browser's own debugging
+// port on this machine, so GoLogin was plainly reachable — it answered.
+test('a refused loopback port is the browser dying, not GoLogin being unreachable', () => {
+  const d = diagnose(new Error('connect ECONNREFUSED 127.0.0.1:38657'), { phase: 'launch' });
+  assert.equal(d.code, 'browser_died_on_start');
+  assert.match(d.why, /different GoLogin account/);
+});
+
+test('a refused remote host is still GoLogin being unreachable', () => {
+  const d = diagnose(new Error('connect ECONNREFUSED 104.18.2.1:443'), { phase: 'launch' });
+  assert.equal(d.code, 'gologin_unreachable');
+});

@@ -27091,6 +27091,42 @@ async function refreshMagellanState() {
   } catch { /* transient — the next tick retries */ }
 }
 
+// The account pills and which one is expanded. Kept out of renderMagellanState
+// so the 5-second poll can redraw without collapsing what you are reading.
+let mgPerAccount = [];
+let mgOpenAccount = null;
+
+function showMagellanAccount(i) {
+  mgOpenAccount = (mgOpenAccount === i) ? null : i;
+  document.querySelectorAll('#mg-accts .stg-acct').forEach((b, n) => b.classList.toggle('sel', n === mgOpenAccount));
+  renderMagellanAccountDetail();
+}
+window.showMagellanAccount = showMagellanAccount;
+
+function renderMagellanAccountDetail() {
+  const box = document.getElementById('mg-acct-detail');
+  if (!box) return;
+  const a = mgOpenAccount == null ? null : mgPerAccount[mgOpenAccount];
+  if (!a) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  document.querySelectorAll('#mg-accts .stg-acct').forEach((b, n) => b.classList.toggle('sel', n === mgOpenAccount));
+
+  if (!a.error) {
+    box.innerHTML = `<div class="mg-det-h">${escHtml(a.account)}</div>`
+      + `<div class="mg-det-why">${(a.total || 0).toLocaleString()} connections · `
+      + `${(a.withMemberId || 0).toLocaleString()} with a LinkedIn ID`
+      + `${a.hidden ? ` · ${a.hidden} hidden by LinkedIn` : ''}</div>`;
+    return;
+  }
+  const d = a.diagnosis || {};
+  // The raw error is shown, always. When the explanation above it is wrong,
+  // this line is the only thing that says so.
+  box.innerHTML = `<div class="mg-det-h">${escHtml(a.account)} — ${escHtml(d.what || 'failed')}</div>`
+    + `<div class="mg-det-why">${escHtml(d.why || '')}</div>`
+    + `<div class="mg-det-fix">${escHtml(d.fix || '')}</div>`
+    + `<div class="mg-det-raw">${escHtml(d.raw || a.error || '')}</div>`;
+}
+
 function renderMagellanState(s) {
   const el = (id) => document.getElementById(id);
   const set = (id, v) => { const e = el(id); if (e) e.textContent = v; };
@@ -27160,18 +27196,25 @@ function renderMagellanState(s) {
     }
   }
 
-  // Failures grouped by cause, each with what / why / what to do.
-  const fbox = el('mg-failures');
-  if (fbox) {
-    const groups = s.failures || [];
-    fbox.hidden = groups.length === 0;
-    fbox.innerHTML = groups.map((g) => `
-      <div class="mg-fail">
-        <div class="mg-fail-h">${g.count} account${g.count === 1 ? '' : 's'} — ${escHtml(g.what || 'failed')}</div>
-        <div class="mg-fail-why">${escHtml(g.why || '')}</div>
-        <div class="mg-fail-fix">${escHtml(g.fix || '')}</div>
-        <div class="mg-fail-who">${g.accounts.map(escHtml).join(', ')}${g.count > g.accounts.length ? ` and ${g.count - g.accounts.length} more` : ''}</div>
-      </div>`).join('');
+  // One pill per account — the same .stg-acct / .cap-badge row a campaign uses.
+  // Green with a count when it worked, red when it didn't; click a red one and
+  // its reason appears under the row.
+  const pbox = el('mg-accts');
+  if (pbox) {
+    const list = s.perAccount || [];
+    pbox.hidden = list.length === 0;
+    pbox.innerHTML = list.map((a, i) => {
+      const cls = a.error ? 'bad' : 'ok';
+      const n = a.error ? 'failed' : (a.total || 0).toLocaleString();
+      return `<button type="button" class="stg-acct" onclick="showMagellanAccount(${i})">`
+        + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(a.account)}</span>`
+        + `<span class="n">${escHtml(n)}</span></span></button>`;
+    }).join('');
+    mgPerAccount = list;
+    // Keep an open reason in step with the poll, and open the first failure
+    // automatically — a red pill nobody clicks explains nothing.
+    if (mgOpenAccount == null) mgOpenAccount = list.findIndex((a) => a.error);
+    renderMagellanAccountDetail();
   }
 
   renderMagellanLog(s.log || []);

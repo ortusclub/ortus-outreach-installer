@@ -35,6 +35,19 @@ const RULES = [
     retryable: false,
   },
   {
+    // ECONNREFUSED on a loopback port is NOT "GoLogin is unreachable" — that
+    // port is the browser's own debugging port on this machine. GoLogin
+    // answered; the browser it started refused the connection or was gone by
+    // the time we knocked.
+    code: 'browser_died_on_start',
+    phases: ['launch'],
+    match: /ECONNREFUSED\s+(127\.0\.0\.1|localhost|::1)/i,
+    what: 'The browser started and died immediately',
+    why: 'GoLogin answered, but the browser it launched was already gone when we connected to it. Usually the profile belongs to a different GoLogin account than the one this app is signed in with, or it is already open somewhere else.',
+    fix: 'Open this profile in GoLogin by hand. If it is not in the same GoLogin account as the app, it cannot be collected from here. If it opens fine, close it and retry.',
+    retryable: true,
+  },
+  {
     code: 'gologin_unreachable',
     phases: ['launch'],
     match: /ECONNREFUSED|ENOTFOUND|socket hang up|network|fetch failed/i,

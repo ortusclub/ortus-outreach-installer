@@ -126,12 +126,16 @@ export function startCollect(accounts, deps = {}) {
           total: r.total,
           withMemberId: r.withMemberId,
           hidden: r.hidden,
+          partial: r.partial || null,
           collectedAt: new Date().toISOString(),
         });
         const noId = r.total - r.withMemberId;
         log(`✓ ${entry.account}: ${r.total} connections`
           + (noId ? `, ${noId} without a LinkedIn ID` : '')
           + (r.hidden ? `, ${r.hidden} hidden by LinkedIn` : ''));
+        // Kept, but said out loud: a short account is worse than a failed one
+        // if nobody notices it was cut off.
+        if (r.partial) log(`⚠ ${entry.account}: the list was cut short — ${r.partial}`);
       } catch (err) {
         // One dead account must not end the sweep. Record WHY, in words the
         // operator can act on, not the raw stack.

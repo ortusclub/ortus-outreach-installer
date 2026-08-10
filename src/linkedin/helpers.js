@@ -247,6 +247,9 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
         let stoppedEarly = false;
         let firstPageKeys = '';
         let totalHint = null;
+        // Set when the walk ended early on a network failure past page 1. The
+        // connections collected before it are still good.
+        let partial = null;
         // Progress beacon. The whole walk happens inside this one evaluate(), so
         // without it a 7,000-connection account looks frozen for minutes. Node
         // polls window.__ortusConnProgress; callers that don't care just ignore it.
@@ -260,7 +263,31 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
 
         for (let p = 0; p < MAX_PAGES && !stoppedEarly; p++) {
           const start = p * PAGE_SIZE;
-          const resp = await fetch(chosenFactory(start), { headers, credentials: 'include' });
+          // A page-context fetch throws a bare "Failed to fetch" for anything
+          // network-level: the tab navigating away, LinkedIn dropping the
+          // connection, the browser going down. One retry rides out a blip
+          // rather than throwing away everything collected so far, and the
+          // error we do report says where it happened and where the tab was —
+          // "Failed to fetch" on its own is unactionable.
+          let resp = null;
+          let fetchErr = null;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              fetchErr = null;
+              resp = await fetch(chosenFactory(start), { headers, credentials: 'include' });
+              break;
+            } catch (e) {
+              fetchErr = e;
+              if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
+            }
+          }
+          if (fetchErr) {
+            const where = `${fetchErr.message} (page ${p + 1}, ${out.length} collected, tab at ${location.pathname})`;
+            if (p === 0) return { error: where };
+            // Past the first page: keep what we have and say so upstream.
+            partial = where;
+            break;
+          }
           if (!resp.ok) {
             if (p === 0) return { error: `http-${resp.status}` };
             break;
@@ -410,7 +437,7 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
           if (pageOut < PAGE_SIZE) break;
         }
 
-        return { connections: out, firstPageKeys, total: totalHint };
+        return { connections: out, firstPageKeys, total: totalHint, partial };
       } catch (err) {
         return { error: err.message };
       }
@@ -425,6 +452,7 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
       return empty;
     }
     let conns = result?.connections || [];
+    if (result?.partial) console.warn(`[helpers] getRecentConnections stopped early: ${result.partial}`);
     console.log(`[helpers] Voyager bulk: ${conns.length} recent connections fetched (keys: ${result?.firstPageKeys || ''})`);
 
     // Enrichment pass — when the connections list returns URNs only (no
@@ -461,6 +489,9 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
       }
     }
 
+    // Same array-with-a-property convention as `.error`: existing callers keep
+    // treating it as a plain array, Magellan reads the note.
+    if (result?.partial) conns.partial = result.partial;
     return conns;
   } catch (err) {
     console.log(`[helpers] getRecentConnections threw: ${err.message}`);

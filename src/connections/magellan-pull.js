@@ -165,6 +165,9 @@ export async function collectAccount(page, account, { dir = CONNECTIONS_DIR, onP
 
   return {
     rows,
+    // Set when the walk stopped early on a network failure. Everything before
+    // it is real, so this is a warning on a success, not a failure.
+    partial: live.partial || null,
     total: rows.length,
     withUrl: rows.filter((r) => r.url).length,
     withMemberId: rows.filter((r) => r.memberId).length,
