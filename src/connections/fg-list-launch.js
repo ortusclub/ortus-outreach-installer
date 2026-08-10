@@ -10,6 +10,39 @@
 import {
   FG_LIST_HEADER, listRowFromFgRow, parseListRows, invertAccountEmails, inviteIdentity,
 } from './fg-list.js';
+import { spreadsheetIdFromUrl } from '../utils.js';
+
+/**
+ * Decide where a launch's invite list comes from.
+ *
+ * Two doors, and NO third: an absent source is an error, never a licence to
+ * build one. Before 2026-08-10 a request with no `source` fell through to the
+ * roles builder, which is why an operator who had prepared a list offline kept
+ * getting a freshly generated one instead.
+ *
+ * @param {object} body  the launch request body
+ * @returns {{ ok: true, kind: 'sheet', sheetUrl: string }
+ *          |{ ok: true, kind: 'tab', tab: string }
+ *          |{ ok: false, error: string }}
+ */
+export function resolveListSource(body) {
+  const b = body || {};
+  const sheetUrl = String(b.sheetUrl || '').trim();
+  const tab = String(b.tab || '').trim();
+
+  if (sheetUrl) {
+    if (!spreadsheetIdFromUrl(sheetUrl)) {
+      return { ok: false, error: `That does not look like a Google Sheet link: ${sheetUrl}` };
+    }
+    return { ok: true, kind: 'sheet', sheetUrl };
+  }
+  if (tab) return { ok: true, kind: 'tab', tab };
+
+  return {
+    ok: false,
+    error: 'Choose where the list comes from — paste a Google Sheet link, or build one from the team\'s connections.',
+  };
+}
 
 // FG_HEADER indices (mirror fg-export.js) for reading buildTargets() output.
 const F_URL = 1, F_MEMBER = 2;

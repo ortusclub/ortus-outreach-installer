@@ -100,9 +100,10 @@ import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredi
 import { buildMasterRows, invitedIndexFromFgInvites, newRowsOnly } from './src/connections/fg-master.js';
 import { readSeedDir, mergeFunnelSeeds } from './src/connections/fg-funnel-seed.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
-import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
-import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
+import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows } from './src/connections/fg-list.js';
+import { buildListRows, dispatchFromRows, resolveListSource } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
+import { pageById } from './src/fg-pages.js';
 import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
@@ -3214,36 +3215,82 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
     if (b.source === 'list') {
       const owner = getOperatorEmail() || req.user || '';
       const runKey = b.cycleKey || fgNextRunCycleKey(b.days);
-      const tab = String(b.tab || '').trim() || fgListTabName(runKey);
+      const page = pageById(b.pageId);
+
+      const src = resolveListSource(b);
+      if (!src.ok) return res.status(400).json({ error: src.error });
+
+      // The operator's OWN sheet (src.kind === 'sheet') is read straight over
+      // the public CSV endpoint — no Apps Script involved, so it works on any
+      // spreadsheet. The legacy tab path still goes through the container-bound
+      // FG script, which can only ever see the central FG spreadsheet.
       let rows;
-      try { rows = await readFgList(tab); }
-      catch (e) { return res.status(502).json({ error: `Could not read the list tab "${tab}": ${e.message}` }); }
-      // An empty read is ambiguous: the tab may genuinely be empty, or the Apps
-      // Script may have handed back nothing on a slow call. Say which, so a
-      // transient sheet hiccup doesn't read as "you forgot to generate the list".
+      const label = src.kind === 'sheet' ? src.sheetUrl : `tab "${src.tab}"`;
+      try {
+        rows = src.kind === 'sheet'
+          ? gridFromSheetRows(await fetchSheet(src.sheetUrl))
+          : await readFgList(src.tab);
+      } catch (e) {
+        return res.status(502).json({ error: `Could not read ${label}: ${e.message}` });
+      }
+      // An empty read is ambiguous: the source may genuinely be empty, or the
+      // read may have handed back nothing on a slow call. Say which, so a
+      // transient hiccup doesn't read as "you forgot to generate the list".
       if (!rows || rows.length < 2) {
         const n = Array.isArray(rows) ? rows.length : 0;
         return res.status(400).json({
           error: n === 0
-            ? `The sheet returned nothing for tab "${tab}". If you just generated it, try Run it now again — the read sometimes times out.`
-            : `Tab "${tab}" has a header but no people in it — generate the list again.`,
+            ? `Nothing came back from ${label}. If the sheet is private, share it "anyone with the link can view" and try again.`
+            : `${label} has a header but no people in it.`,
         });
       }
+
+      // A BYO sheet only ever has the columns the operator typed — no ledger
+      // columns. Without provisioning them here, the reconcile writeback
+      // (Task 5) will find no "FG Status" etc. column, skip every write, and
+      // report success anyway: the exact silent failure this plan exists to
+      // remove. The legacy tab path is exempt: it writes through the
+      // container-bound FG Apps Script against the central spreadsheet, which
+      // already has these columns and isn't touched by prepareSheet.
+      if (src.kind === 'sheet') {
+        const { prepareSheet } = await import('./src/sheets-writer.js');
+        const prep = await prepareSheet(src.sheetUrl, 'follower_growth').catch((e) => {
+          campaignLog(`[FG-cloud] ⚠ prepareSheet failed for ${src.sheetUrl}: ${e.message}`);
+          return { ok: false };
+        });
+        if (!prep.ok) {
+          // Unlike a connection campaign (run locally, watched, with SoO as a
+          // fallback record), an FG sheet run is fired at a remote VM and this
+          // sheet is the operator's ONLY record of who got invited. A run that
+          // cannot be recorded is worse than a run that never started, so this
+          // aborts rather than warning-and-continuing the way campaign.js does.
+          campaignLog(`[FG-cloud] ✗ prepareSheet did not confirm for ${src.sheetUrl} — refusing to launch`);
+          return res.status(502).json({
+            error: `Could not prepare "${src.sheetUrl}" for tracking (FG Status / Invited At / Note / Member ID columns). Fix sheet access and try again — nothing was launched.`,
+          });
+        }
+        campaignLog(`[FG-cloud] ✓ prepareSheet ready on ${src.sheetUrl}${prep.added?.length ? ` — added: ${prep.added.join(', ')}` : ''}`);
+      }
+
       const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
       const out = await dispatchFromRows(rows, {
         accountEmails,
         // Name it for the RUN DAY, not the month: two fires in one month were
         // both called "· 2026-08" and were indistinguishable on the board.
-        campaign: { name: `Team Follower Growth · ${runKey}`, owner, config: { inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
+        campaign: { name: `Team Follower Growth · ${runKey}`, owner,
+                    config: { inviteUrl: page.inviteUrl, pageId: page.id, pageLabel: page.label,
+                              monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
       }, { startCloud: (payload) => startCloudCampaign(payload) });
       if (out.error) return res.status(502).json({ error: out.error, skipped: out.skipped });
       // Register this run so the reconcile loop stamps the ledger (Status /
-      // Invited At / Note / Member ID) back into ITS tab as invites go out.
-      // perAccount + month are stored so the reconcile can also call markFgInvited
-      // to feed the central FG Invites de-dupe tab (Gap 1).
+      // Invited At / Note / Member ID) back into ITS tab/sheet as invites go
+      // out. perAccount + month are stored so the reconcile can also call
+      // markFgInvited to feed the central FG Invites de-dupe tab (Gap 1).
       const pairsLookup = Object.fromEntries(pairs.map((p) => [p.profileId, p]));
       try { _fgCloudRunStore.add({
-        cloudId: out.cloudId, kind: 'list', tab, owner, month,
+        cloudId: out.cloudId, kind: 'list', tab: src.tab || '', owner, month,
+        sheetUrl: src.kind === 'sheet' ? src.sheetUrl : '',
+        pageId: page.id, pageLabel: page.label,
         status: 'dispatched', dispatchedAt: new Date().toISOString(),
         perAccount: (out.perAccount || []).map((a) => ({
           profileId: a.profileId, account: a.account,
@@ -3257,7 +3304,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       // reports pending leads as unrouted (account:null), so this fire-time plan is
       // the only source of the per-account queued totals.
       const plan = (out.perAccount || []).map((a) => ({ profileId: a.profileId, account: a.account, count: a.count }));
-      return res.json({ started: true, cloudId: out.cloudId, leadCount: out.leadCount, skipped: out.skipped, tab, perAccount: plan });
+      return res.json({ started: true, cloudId: out.cloudId, leadCount: out.leadCount, skipped: out.skipped, tab: src.tab || '', sheetUrl: src.kind === 'sheet' ? src.sheetUrl : '', perAccount: plan });
     }
 
     const keywords = Array.isArray(b.keywords) ? b.keywords : [];
