@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FG · B — page dropdown + two doors</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+</head>
+<body data-dashboard="v3">
+<div class="sk-bar"><b>Sketch B</b> <span class="sk-t">&#183; page dropdown + two doors &#183; real app chrome &#183; Live status card untouched</span></div>
+<div class="app">
+    <!-- ── Sidebar ── -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar"></span></div>
+        <!-- Shown only when a newer release exists on GitHub (gold pill) or,
+             when up to date, as a subtle "Check for updates" button. Wired by
+             checkForUpdate() / onUpdateClick() in public/js/app.js. -->
+        <button type="button" id="update-pill" class="update-pill hidden" onclick="onUpdateClick(event)"></button>
+        <!-- Download progress, shown under the button while the DMG downloads. -->
+        <div id="update-status" class="update-status hidden">
+          <div class="update-bar"><div id="update-bar-fill" class="update-bar-fill"></div></div>
+          <div id="update-status-text" class="update-status-text"></div>
+        </div>
+        <div id="update-detail" class="update-detail hidden"></div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item nav-item-back" onclick="goDashboard()"><span class="nav-num">←</span>Dashboard</button>
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph" id="nav-glyph-settings"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph" id="nav-glyph-sheet"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph" id="nav-glyph-accounts"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph" id="nav-glyph-templates"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
+
+        <div class="nav-section-label">Team</div>
+        <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
+
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item" id="nav-replies-btn" onclick="goReplies()">Replies</button>
+        <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
+
+        <div class="nav-section-label">Help</div>
+        <div class="nav-help-wrapper">
+          <button type="button" class="nav-item nav-item-help" id="nav-help-btn" onclick="toggleHelpPopover(event)">
+            <span class="nav-num">?</span>Help
+          </button>
+          <div id="help-popover" class="help-popover hidden">
+            <div class="help-popover-title">HELP</div>
+            <button type="button" class="help-pop-item" onclick="onHelpTakeTour()">
+              <span class="help-pop-icon">📘</span><span>Take the tour</span>
+            </button>
+            <a class="help-pop-item" href="/help.html" target="_blank" rel="noopener">
+              <span class="help-pop-icon">📄</span><span>Open the manual</span>
+            </a>
+            <button type="button" id="help-pop-replay" class="help-pop-item" onclick="onHelpReplayTour()" style="display:none">
+              <span class="help-pop-icon">🔁</span><span>Replay tour</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-section-label">Dev tools</div>
+        <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
+      </nav>
+
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+
+      <!-- Bug 17: Sidebar tightened (Variant A). Same functions/IDs as before —
+           Change becomes an inline ✎, push/SMTP become compact chips, Send test
+           becomes a "Test" link — just less button-heavy. -->
+      <div class="sb-tight">
+        <div class="sb-line">
+          <span class="sb-line-k">Timestamps</span>
+          <span class="sb-line-v">
+            <span id="op-tz-current" class="notif-row-v">—</span>
+            <button type="button" class="sb-icon-btn" title="Change timezone" aria-label="Change timezone" onclick="openOpTzModal()">✎</button>
+          </span>
+        </div>
+
+        <div class="sb-line">
+          <span class="sb-line-k">Notifications</span>
+          <span class="sb-line-v">
+            <button type="button" id="notif-enable-btn" class="sb-link" onclick="requestNotificationPermission()" style="display:none">Enable</button>
+            <button type="button" class="sb-link" onclick="sendTestNotification()">Test</button>
+          </span>
+        </div>
+        <div class="sb-chips" id="notif-state-rows">
+          <span class="sb-chip"><span class="sb-chip-k">Push</span> <span id="notif-push-state" class="notif-row-v">—</span></span>
+          <span class="sb-chip"><span class="sb-chip-k">Email</span> <span id="notif-smtp-state" class="notif-row-v">—</span></span>
+          <span id="notif-last-test" class="notif-row-v sb-lasttest" hidden>never</span>
+        </div>
+
+        <div class="sb-line">
+          <span class="sb-line-k">Check reminders</span>
+          <label class="notif-pref-toggle">
+            <input type="checkbox" id="notif-pref-conn-check" onchange="onNotifPrefChange('connectionCheckReminders', this.checked)">
+            <span class="notif-pref-slider"></span>
+          </label>
+        </div>
+        <div class="sb-line">
+          <span class="sb-line-k">Reply alerts</span>
+          <label class="notif-pref-toggle">
+            <input type="checkbox" id="notif-pref-reply-alerts" onchange="onNotifPrefChange('replyAlerts', this.checked)">
+            <span class="notif-pref-slider"></span>
+          </label>
+        </div>
+
+        <!-- v2.113 — pre-send identity safeguard. Hairline-separated into its
+             own block so it's not mistaken for a notification toggle. ON
+             (default) = confirm each loaded profile matches the sheet row
+             before connecting (blocks wrong-person sends). OFF = send straight
+             to the sheet URL like pre-v2.97; the dead-profile (404) skip stays
+             on either way. Sticky per-operator (stored via /api/operator-prefs). -->
+        <div class="sb-line sb-safeguard" title="ON: before each connection, confirm the open profile matches the sheet row (blocks wrong-person sends). OFF: connect straight to the sheet URL like older versions. The dead-profile (404) skip stays on either way.">
+          <span class="sb-line-k">Identity safeguard</span>
+          <span class="sb-line-v">
+            <span id="op-identity-gate-state" class="notif-row-v bad">Off</span>
+            <label class="notif-pref-toggle">
+              <input type="checkbox" id="op-identity-gate" onchange="onIdentityGateChange(this.checked)">
+              <span class="notif-pref-slider"></span>
+            </label>
+          </span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
+             in the SoO 'CC User App' column; click to set/change. Highlighted
+             gold until set (it's mandatory before a campaign can start). -->
+        <button type="button" class="operator-chip" id="operator-chip" onclick="openOperatorEmailModal({ mandatory:false })" title="The email stamped on every LinkedIn account you reserve. Click to change.">
+          <span class="operator-chip-label">Operating as</span>
+          <strong id="operator-chip-email">—</strong>
+        </button>
+        <div class="user-chip">
+          <strong id="user-chip-email">info@ortus.solutions</strong>
+          <span id="user-chip-date"></span>
+        </div>
+        <button type="button" class="btn btn-sm sidebar-signout" onclick="signOut()">Sign out</button>
+      </div>
+    </aside>
+    <main class="main">
+    <div class="container">
+    <style>
+      /* ── Follower Growth Team Launch (variant A: browse + cart) — scoped under #nav-follower-growth ── */
+      #nav-follower-growth .fgtl-roles { border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; margin-bottom:22px; }
+      #nav-follower-growth .fgtl-step-eyebrow { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin-bottom:12px; }
+      #nav-follower-growth .fgtl-spin { display:inline-block; width:11px; height:11px; border:2px solid var(--hairline); border-top-color:var(--gold); border-radius:50%; vertical-align:-1px; margin-left:6px; animation:fgtlSpin .7s linear infinite; }
+      @keyframes fgtlSpin { to { transform:rotate(360deg); } }
+      #nav-follower-growth .fgtl-loading { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--gray); font-family:var(--mono); font-size:12px; padding:30px 10px; }
+      /* ── Step 1 "the answer" + step 2 "review before it fires" ── */
+      #nav-follower-growth .rv-answer { display:flex; align-items:center; gap:20px; margin-top:22px; padding:18px 20px; border:1px solid var(--ink); }
+      #nav-follower-growth .rv-big { font-family:'Hanken Grotesk',sans-serif; font-size:30px; letter-spacing:-.02em; color:var(--ink); line-height:1; }
+      #nav-follower-growth .rv-big-lab { font-size:15px; color:#6a6a6a; letter-spacing:0; }
+      #nav-follower-growth .rv-load { margin-left:12px; font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); white-space:nowrap; }
+      #nav-follower-growth .rv-sub { font-family:'Hanken Grotesk',sans-serif; font-size:12.5px; color:#6a6a6a; margin-top:7px; }
+      #nav-follower-growth .rv-sub b { color:var(--ink); font-weight:500; }
+      #nav-follower-growth .rv-sub-out { display:inline-block; margin-top:5px; color:var(--gray); }
+      #nav-follower-growth .fgtl-chip-more { background:transparent; border:1px dashed var(--hairline); border-radius:9999px; padding:5px 12px; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); cursor:pointer; }
+      #nav-follower-growth .fgtl-chip-more:hover { color:var(--ink); border-color:var(--ink); }
+      #nav-follower-growth .rv-who { margin-left:auto; background:transparent; border:1px solid var(--hairline); border-radius:9999px; padding:8px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; color:var(--ink); white-space:nowrap; }
+      #nav-follower-growth .rv-pop { border:1px solid var(--hairline); border-top:none; padding:14px 18px 16px; background:#fcfcfc; }
+      #nav-follower-growth .rv-pop-bar { display:flex; gap:12px; align-items:center; }
+      #nav-follower-growth .rv-pop-bar .fgtl-search { flex:1; }
+      #nav-follower-growth .rv-byo-line { margin-top:18px; }
+      #nav-follower-growth .rv-byo { color:var(--ink); }
+      #nav-follower-growth .rv-step-review { border-color:var(--ink); }
+      #nav-follower-growth .rv-review { display:flex; gap:22px; align-items:stretch; margin-top:16px; }
+      #nav-follower-growth .rv-rev-left { flex:1; }
+      #nav-follower-growth .rv-rev-state { margin-top:14px; font-family:'Hanken Grotesk',sans-serif; font-size:13px; color:var(--ink); display:flex; align-items:center; gap:9px; }
+      #nav-follower-growth .rv-tick { color:var(--green); font-size:15px; }
+      #nav-follower-growth .rv-open { color:var(--ink); }
+      #nav-follower-growth .rv-rev-meta { margin-top:7px; font-family:'Hanken Grotesk',sans-serif; font-size:12px; color:#6a6a6a; }
+      #nav-follower-growth .rv-rev-meta b { color:var(--ink); font-weight:500; }
+      #nav-follower-growth .rv-rev-gate { width:250px; border:1px dashed var(--hairline); padding:16px 18px; display:flex; flex-direction:column; justify-content:center; }
+      #nav-follower-growth .rv-rev-gate.unlocked { border-style:solid; border-color:var(--green); }
+      #nav-follower-growth .rv-gate-title { font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .rv-rev-gate.unlocked .rv-gate-title { color:var(--green); }
+      #nav-follower-growth .rv-gate-body { font-family:'Hanken Grotesk',sans-serif; font-size:12.5px; color:#6a6a6a; margin-top:6px; line-height:1.45; }
+      /* FG Master build progress — a real bar, because the build runs for minutes. */
+      #nav-follower-growth .fgm-prog { margin:12px 0 10px; }
+      #nav-follower-growth .fgm-prog-top { display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink); margin-bottom:7px; }
+      #nav-follower-growth .fgm-prog-top span:last-child { color:var(--gray); }
+      #nav-follower-growth .fgm-bar { height:6px; background:var(--hairline); border-radius:9999px; overflow:hidden; }
+      #nav-follower-growth .fgm-bar i { display:block; height:100%; width:0; background:var(--ink); border-radius:9999px; transition:width .4s ease; }
+      #nav-follower-growth .fgm-bar.indet i { width:35% !important; animation:fgmSlide 1.3s ease-in-out infinite; }
+      @keyframes fgmSlide { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
+      #nav-follower-growth .fgm-bar.done i { background:var(--green); }
+      #nav-follower-growth .fgm-bar.failed i { background:var(--red); width:100% !important; }
+      #nav-follower-growth .fgm-prog-sub { font-family:var(--mono); font-size:10px; color:var(--gray); margin-top:6px; }
+      #nav-follower-growth .fgtl-watch-btn { margin-left:auto; display:inline-flex; align-items:center; gap:6px; background:transparent; color:var(--ink); border:1px solid var(--hairline); border-radius:9999px; padding:6px 14px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-watch-btn.live-on { border-color:var(--green); }
+      #nav-follower-growth .fgtl-watch-btn + .fgtl-card-stop { margin-left:8px; }
+      #nav-follower-growth .fgtl-live-dot { width:7px; height:7px; border-radius:50%; background:var(--green); animation:fgtl-lb-pulse 1.2s ease-in-out infinite; }
+      #nav-follower-growth .fgtl-card-stop { margin-left:auto; background:var(--red); color:#fff; border:none; border-radius:9999px; padding:7px 15px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-card-stop:disabled { opacity:.6; cursor:default; }
+      #nav-follower-growth .fgtl-board2 { display:grid; grid-template-columns:1fr 360px; gap:18px; align-items:start; }
+      #nav-follower-growth .fgtl-search { display:flex; align-items:center; gap:9px; background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:9px 15px; margin-bottom:14px; }
+      #nav-follower-growth .fgtl-search input { flex:1; border:none; background:none; outline:none; color:var(--ink); font-size:13px; font-family:var(--body); }
+      #nav-follower-growth .fgtl-search .clr { background:none; border:none; color:var(--gray); cursor:pointer; font-size:14px; display:none; }
+      #nav-follower-growth .fgtl-search .clr.show { display:block; }
+      #nav-follower-growth .fgtl-people { max-height:520px; overflow-y:auto; padding-right:6px; }
+      /* Fixed-width number + button columns so every row's match count and add
+         button line up exactly across rows (auto columns drifted per-row). */
+      #nav-follower-growth .fgtl-prow { display:grid; grid-template-columns:1fr 56px 112px; align-items:center; gap:16px; padding:13px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:9px; }
+      #nav-follower-growth .fgtl-prow.in { opacity:.45; }
+      #nav-follower-growth .fgtl-rowmain { min-width:0; }
+      #nav-follower-growth .fgtl-emline { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+      #nav-follower-growth .fgtl-prow .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+      #nav-follower-growth .fgtl-sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); margin-top:4px; opacity:.85; }
+      #nav-follower-growth .fgtl-launch-banner { display:flex; gap:12px; align-items:center; margin:10px 0 2px; padding:12px 16px; border:1px solid var(--gold); border-radius:12px; background:rgba(247,190,104,.10); }
+      #nav-follower-growth .fgtl-lb-ic { font-size:20px; line-height:1; animation:fgtl-lb-pulse 1.4s ease-in-out infinite; }
+      #nav-follower-growth .fgtl-lb-txt { display:flex; flex-direction:column; gap:2px; }
+      #nav-follower-growth .fgtl-lb-txt b { font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; }
+      #nav-follower-growth .fgtl-lb-txt span { font-size:12px; color:var(--gray); }
+      @keyframes fgtl-lb-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+      #nav-follower-growth .fgtl-pillst { font-family:var(--mono); font-size:9px; letter-spacing:.04em; text-transform:uppercase; padding:2px 9px; border-radius:9999px; border:1px solid var(--hairline); color:var(--gray); white-space:nowrap; }
+      #nav-follower-growth .fgtl-pillst.sent { color:var(--ink); border-color:var(--ink); }
+      #nav-follower-growth .fgtl-pillst.out { color:#b00020; border-color:#b00020; }
+      #nav-follower-growth .fgtl-pillst.new { color:var(--gray); border-style:dashed; }
+      #nav-follower-growth .fgtl-pillst.ready { color:var(--green); border-color:var(--green); }
+      #nav-follower-growth .fgtl-pillst.missing { color:var(--red); border-color:var(--red); }
+      #nav-follower-growth .fgtl-ready { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--hairline); border-radius:12px; padding:10px 14px; margin:0 0 14px; background:var(--bg-soft); }
+      #nav-follower-growth .fgtl-ready .rl { min-width:0; }
+      #nav-follower-growth .fgtl-ready .rl b { font-family:var(--display); font-size:1.15rem; color:var(--green); }
+      #nav-follower-growth .fgtl-ready .rl .lab { font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgtl-ready .rl .sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); opacity:.85; margin-top:3px; }
+      #nav-follower-growth .fgtl-ready-btn { border:1px solid var(--green); color:var(--green); background:none; border-radius:9999px; padding:8px 16px; font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-ready-btn:hover { background:var(--green); color:#fff; }
+      #nav-follower-growth .fgtl-ready-btn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+      #nav-follower-growth .fgacct-wrap { margin:0 0 18px; }
+      #nav-follower-growth .fgboard-head { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px; }
+      #nav-follower-growth .fgboard-head .h { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgboard-head .c { font-family:var(--mono); font-size:11px; color:var(--ink); }
+      #nav-follower-growth .fgacct-board { display:flex; flex-direction:column; gap:8px; max-height:440px; overflow-y:auto; padding-right:6px; }
+      #nav-follower-growth .fgacct { display:flex; align-items:center; gap:12px; padding:11px 13px; border:1px solid rgba(0,0,0,0.28); border-radius:11px; background:var(--bg-soft); }
+      #nav-follower-growth .fgacct.done { border-left:3px solid var(--green); }
+      #nav-follower-growth .fgacct.skip { border-left:3px solid var(--red); }
+      #nav-follower-growth .fgacct > .ic { flex:none; }
+      #nav-follower-growth .fgacct > .fgacct-mid { flex:1 1 auto; min-width:0; }
+      #nav-follower-growth .fgacct > .right { flex:none; }
+      #nav-follower-growth .fgacct.now { border-color:var(--gold); background:color-mix(in srgb, var(--gold) 7%, transparent); }
+      #nav-follower-growth .fgacct.dim { opacity:.88; }
+      #nav-follower-growth .fgacct .ic { width:22px; height:22px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-size:12px; border:1.5px solid var(--gray); color:var(--gray); }
+      #nav-follower-growth .fgacct .ic.done { color:#fff; background:var(--green); border-color:var(--green); }
+      #nav-follower-growth .fgacct .ic.skip { color:#fff; background:var(--red); border-color:var(--red); }
+      #nav-follower-growth .fgacct .ic.run { color:var(--gold); border-color:var(--gold); animation:fgtlPp 1s infinite; }
+      #nav-follower-growth .fgacct .em { font-family:var(--mono); font-weight:500; font-size:12.5px; color:var(--ink); overflow-wrap:anywhere; }
+      #nav-follower-growth .fgacct .sub { font-family:var(--mono); font-size:10px; color:#555; margin-top:3px; overflow-wrap:anywhere; }
+      #nav-follower-growth .fgacct .right { text-align:right; }
+      #nav-follower-growth .fgtl-mbox { text-align:right; }
+      #nav-follower-growth .fgtl-mbox b { font-family:var(--display); font-size:1.5rem; line-height:1; color:var(--ink); }
+      #nav-follower-growth .fgtl-mbox.zero b { color:var(--gray); }
+      #nav-follower-growth .fgtl-mbox small { display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--gray); margin-top:2px; }
+      #nav-follower-growth .fgtl-addbtn { width:112px; box-sizing:border-box; text-align:center; border:1px solid var(--ink); background:none; color:var(--ink); border-radius:9999px; padding:7px 12px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-addbtn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+      #nav-follower-growth .fgtl-refresh-btn { background:none; border:1px solid var(--hairline); border-radius:9999px; padding:5px 13px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray); cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-refresh-btn:hover { border-color:var(--ink); color:var(--ink); }
+      #nav-follower-growth .fgtl-cart { border:1px solid var(--hairline); border-radius:14px; padding:16px; position:sticky; top:20px; }
+      #nav-follower-growth .fgtl-cart-head { display:flex; align-items:center; justify-content:space-between; margin:0 0 12px; }
+      #nav-follower-growth .fgtl-cart h3 { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0; }
+      #nav-follower-growth .fgtl-clear { background:none; border:1px solid var(--red); color:var(--red); cursor:pointer; font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:9999px; }
+      #nav-follower-growth .fgtl-clear:hover { background:var(--red); color:#fff; }
+      #nav-follower-growth .fgtl-cart-list { max-height:520px; overflow-y:auto; padding-right:6px; }
+      #nav-follower-growth .fgtl-cart .empty { color:var(--gray); font-size:12.5px; text-align:center; padding:30px 10px; border:1px dashed var(--hairline); border-radius:10px; }
+      #nav-follower-growth .fgtl-pick { display:grid; grid-template-columns:1fr auto; gap:4px 10px; padding:11px 0; border-top:1px solid var(--hairline-soft); }
+      #nav-follower-growth .fgtl-pick:first-child { border-top:none; }
+      #nav-follower-growth .fgtl-pick .em { font-family:var(--mono); font-size:11.5px; color:var(--ink); }
+      #nav-follower-growth .fgtl-pick .acct { font-family:var(--mono); font-size:9.5px; color:#1f9c3f; margin-top:3px; cursor:pointer; }
+      #nav-follower-growth .fgtl-pick .acct.gap { color:var(--red); }
+      #nav-follower-growth .fgtl-pick .acct.local { color:var(--gold); }
+      #nav-follower-growth .fgtl-pick .inv { text-align:right; font-family:var(--display); font-size:1.1rem; color:var(--ink); }
+      #nav-follower-growth .fgtl-pick .inv small { display:block; font-family:var(--mono); font-size:8px; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgtl-pick .rm { grid-column:2; justify-self:end; width:20px; height:20px; display:flex; align-items:center; justify-content:center; background:none; border:1px solid var(--hairline); border-radius:9999px; color:var(--gray); cursor:pointer; font-size:13px; line-height:1; font-family:var(--mono); padding:0; }
+      #nav-follower-growth .fgtl-pick .rm:hover { border-color:var(--red); color:var(--red); }
+      #nav-follower-growth .fgtl-acctsel { grid-column:1 / -1; margin-top:8px; border:1px solid var(--gold); border-radius:10px; padding:8px; background:var(--bg-soft); }
+      #nav-follower-growth .fgtl-acctsel .psearch { width:100%; box-sizing:border-box; background:var(--card-bg); border:1px solid var(--hairline); border-radius:9999px; padding:7px 12px; font-family:var(--mono); font-size:11px; color:var(--ink); outline:none; margin-bottom:7px; }
+      #nav-follower-growth .fgtl-acctsel .plist { max-height:168px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+      #nav-follower-growth .fgtl-acctsel .popt { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid var(--hairline); border-radius:8px; cursor:pointer; font-family:var(--mono); font-size:11px; }
+      #nav-follower-growth .fgtl-acctsel .popt:hover, #nav-follower-growth .fgtl-acctsel .popt.sel { border-color:var(--gold); background:var(--card-bg); }
+      #nav-follower-growth .fgtl-acctsel .popt .dot { width:7px; height:7px; border-radius:50%; border:1px solid var(--gray); flex:none; }
+      #nav-follower-growth .fgtl-acctsel .popt.sel .dot { background:var(--gold); border-color:var(--gold); }
+      #nav-follower-growth .fgtl-acctsel .popt.localopt { color:var(--gold); }
+      #nav-follower-growth .fgtl-acctsel .pnone { color:var(--gray); font-family:var(--mono); font-size:10px; padding:8px 10px; }
+      #nav-follower-growth .fgtl-cart-foot { border-top:1px solid var(--hairline); margin-top:14px; padding-top:14px; }
+      #nav-follower-growth .fgtl-cart-foot .tot { display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px; margin-bottom:6px; }
+      #nav-follower-growth .fgtl-cart-foot .tot b { font-family:var(--display); font-size:1.05rem; }
+      #nav-follower-growth .fgtl-go-btn { width:100%; margin-top:10px; background:var(--gold); color:#000; border:none; border-radius:9999px; padding:12px; font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; font-weight:600; }
+      #nav-follower-growth .fgtl-go-btn:disabled { background:var(--hairline); color:var(--gray); cursor:not-allowed; }
+      #nav-follower-growth .fgtl-dbwrap { margin-top:22px; }
+      #nav-follower-growth .fgtl-db-toggle { width:100%; text-align:left; background:none; border:none; color:var(--gray); font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; padding:8px 0; }
+      #nav-follower-growth .chips { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 12px; border:1px solid var(--hairline); border-radius:12px; background:var(--bg-soft); transition:border-color .15s; }
+      #nav-follower-growth .chips:focus-within { border-color:var(--gold); }
+      #nav-follower-growth .chip-tag { display:inline-flex; align-items:center; gap:7px; padding:6px 6px 6px 13px; border-radius:9999px; background:var(--card-bg); border:1px solid var(--hairline); color:var(--ink); font-size:12.5px; font-family:var(--body); animation:fgtlChipIn .16s ease; }
+      #nav-follower-growth .chip-tag b { font-weight:600; }
+      #nav-follower-growth .chip-tag .x { width:17px; height:17px; border-radius:50%; border:none; background:transparent; color:var(--gray); cursor:pointer; font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center; transition:.12s; }
+      #nav-follower-growth .chip-tag .x:hover { background:var(--red); color:#fff; }
+      #nav-follower-growth .chips input { flex:1; min-width:140px; background:transparent; border:none; outline:none; color:var(--ink); font-family:var(--body); font-size:13px; padding:5px 2px; }
+      #nav-follower-growth .chips input::placeholder { color:var(--gray); }
+      @keyframes fgtlChipIn { from{ opacity:0; transform:scale(.85); } to{ opacity:1; transform:scale(1); } }
+      #nav-follower-growth .presets { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:11px; }
+      #nav-follower-growth .presets .lbl { font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .preset { background:none; border:1px dashed var(--hairline); color:var(--gray); border-radius:9999px; padding:4px 11px; font-size:12px; cursor:pointer; transition:.12s; }
+      #nav-follower-growth .preset:hover { border-color:var(--gold); border-style:solid; color:var(--gold); }
+      #nav-follower-growth .preset:disabled { opacity:.3; cursor:default; }
+      #nav-follower-growth .filter-foot { display:flex; align-items:center; justify-content:space-between; margin-top:11px; }
+      #nav-follower-growth .filter-foot .hint { color:var(--gray); font-size:11.5px; }
+      #nav-follower-growth .filter-foot .match { font-family:var(--mono); font-size:11px; color:var(--gold); }
+      #nav-follower-growth .vj-log-empty { color:var(--gray); padding:14px 2px; font-family:var(--mono); font-size:12px; }
+      #nav-follower-growth .vj-log-line .what .who { color:var(--gold); }
+      #nav-follower-growth .fgtl-pill { font-family:var(--mono); font-weight:600; font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:9999px; margin-left:8px; white-space:nowrap; }
+      #nav-follower-growth .fgtl-pill.running { color:#7a5200; background:var(--gold); border:1px solid var(--gold); animation:fgtlPp 1s infinite; }
+      #nav-follower-growth .fgtl-pill.done { color:#fff; background:var(--green); border:1px solid var(--green); }
+      #nav-follower-growth .fgtl-pill.done.maxed { color:#fff; background:#1f9c3f; border-color:#1f9c3f; }
+      #nav-follower-growth .fgtl-pill.skipped { color:#fff; background:var(--red); border:1px solid var(--red); }
+      #nav-follower-growth .fgtl-pill.waiting { color:var(--gray); background:transparent; border:1px solid var(--gray); }
+      @keyframes fgtlPp { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+      /* ── Auto-Pilot panel (fgap) — collapsed strip + expand body ── */
+      /* .rt-tag isn't defined elsewhere in the app (the global #run-target uses the
+         bigger .rt-tab component) — scoped small pill copied from the sketch. */
+      #nav-follower-growth .rt-tag { display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 10px; }
+      #nav-follower-growth .fgap { border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; margin-bottom:22px; }
+      #nav-follower-growth .fgap-strip { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+      #nav-follower-growth .fgap-dot { width:9px; height:9px; border-radius:50%; background:var(--green); box-shadow:0 0 0 4px rgba(63,185,80,.15); flex:none; }
+      #nav-follower-growth .fgap-dot.off { background:var(--gray); box-shadow:none; }
+      #nav-follower-growth .fgap-lead { flex:1; min-width:220px; }
+      #nav-follower-growth .fgap-title { font-family:var(--mono); font-size:12px; letter-spacing:.05em; text-transform:uppercase; font-weight:600; }
+      #nav-follower-growth .fgap-next { font-size:12px; color:var(--gray); margin-top:2px; }
+      #nav-follower-growth .fgap-next b { color:var(--ink); }
+      #nav-follower-growth .fgap-edit { background:none; border:1px solid var(--hairline); color:var(--gray); border-radius:9999px; padding:6px 12px; font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgap-edit:hover { border-color:var(--ink); color:var(--ink); }
+      #nav-follower-growth .fgap-toggle { width:46px; height:26px; border-radius:9999px; background:var(--hairline); position:relative; cursor:pointer; flex:none; border:1px solid var(--hairline); padding:0; }
+      #nav-follower-growth .fgap-toggle::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; transition:.15s; }
+      #nav-follower-growth .fgap-toggle.on { background:var(--green); border-color:rgba(63,185,80,.5); }
+      #nav-follower-growth .fgap-toggle.on::after { left:22px; }
+      #nav-follower-growth .fgap-expand { background:none; border:1px solid var(--hairline); color:var(--gray); border-radius:9999px; width:28px; height:28px; cursor:pointer; flex:none; font-size:13px; line-height:1; transition:transform .15s; }
+      #nav-follower-growth .fgap-expand:hover { border-color:var(--ink); color:var(--ink); }
+      #nav-follower-growth .fgap-expand.open { transform:rotate(180deg); }
+      #nav-follower-growth .fgap-run { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:7px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; white-space:nowrap; font-weight:600; }
+      #nav-follower-growth .fgap-run:hover { opacity:.82; }
+      #nav-follower-growth .fgap-run:disabled { opacity:.4; cursor:not-allowed; }
+      /* ── Follower Growth wizard ─────────────────────────────────────── */
+      #nav-follower-growth .fgw-step { border:1px solid var(--border,#e2e2e2); border-radius:14px; padding:20px 22px; margin:16px 0; background:var(--bg,#fff); }
+      #nav-follower-growth .fgw-step-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+      #nav-follower-growth .fgw-num { width:26px; height:26px; border-radius:50%; background:var(--ink); color:var(--bg); font-family:var(--mono); font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; flex:none; }
+      #nav-follower-growth .fgw-title { font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; font-weight:600; }
+      #nav-follower-growth .fgw-lead { font-size:13.5px; line-height:1.5; opacity:.85; margin:0 0 16px; }
+      #nav-follower-growth .fgw-sheet-link { background:none; border:none; color:var(--ink); font:inherit; font-weight:700; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px; }
+      #nav-follower-growth .fgw-sheet-link:hover { opacity:.7; }
+      /* Stacked: auto-generate box (tall — roles + accounts + Generate) on top,
+         bring-your-own below it. */
+      #nav-follower-growth .fgw-two-up { display:grid; grid-template-columns:1fr; gap:16px; align-items:start; }
+      #nav-follower-growth .fgw-path { border:1px solid var(--border,#e2e2e2); border-radius:10px; padding:14px 16px; }
+      #nav-follower-growth .fgw-path-auto { border-color:var(--ink,#111); }
+      #nav-follower-growth .fgw-gen-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px solid var(--border,#e2e2e2); }
+      #nav-follower-growth .fgw-gen-note { font-size:12.5px; opacity:.72; max-width:460px; line-height:1.45; }
+      #nav-follower-growth .fgw-btn-primary { padding:11px 22px; font-size:11px; }
+      #nav-follower-growth .fgw-path-head { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; margin-bottom:10px; opacity:.9; }
+      #nav-follower-growth .fgw-path-desc { font-size:13px; opacity:.75; margin:0 0 12px; }
+      #nav-follower-growth .fgw-format { background:rgba(0,0,0,.035); border-radius:8px; padding:10px 12px; margin:0 0 12px; }
+      #nav-follower-growth .fgw-format-h { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; margin-bottom:6px; }
+      #nav-follower-growth .fgw-format-cols { display:block; font-size:12.5px; line-height:1.55; word-break:break-word; }
+      #nav-follower-growth .fgw-format-note { font-size:12px; opacity:.72; margin-top:8px; line-height:1.45; }
+      #nav-follower-growth .fgw-byo-row { display:flex; gap:8px; align-items:center; }
+      #nav-follower-growth .fgw-byo-row input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
+      #nav-follower-growth .fgw-btn { background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:9999px; padding:9px 16px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; font-weight:600; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgw-btn:hover { opacity:.85; }
+      #nav-follower-growth .fgw-btn:disabled { opacity:.4; cursor:not-allowed; }
+      #nav-follower-growth .fgw-list-status { margin-top:14px; font-size:13px; line-height:1.5; }
+      #nav-follower-growth .fgw-select { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
+      #nav-follower-growth .fgw-icon-btn { border:1px solid var(--border,#ccc); background:var(--bg,#fff); color:var(--ink); border-radius:8px; width:34px; height:34px; cursor:pointer; font-size:15px; flex:none; }
+      #nav-follower-growth .fgw-icon-btn:hover { border-color:var(--ink); }
+      #nav-follower-growth .fgw-live-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+      #nav-follower-growth .fgw-live-controls { display:flex; align-items:center; gap:12px; }
+      #nav-follower-growth .fgw-toggle-lab { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; opacity:.7; }
+      #nav-follower-growth .fgw-list-tab { font-size:12px; opacity:.8; padding:4px 10px; border:1px solid var(--border,#ddd); border-radius:9999px; white-space:nowrap; }
+      #nav-follower-growth .fgw-accounts-note { font-size:13px; opacity:.85; margin:4px 0 10px; line-height:1.5; }
+      #nav-follower-growth .fgw-log { margin:12px 0 0; background:#0d100d; color:#bdf5bd; font-family:var(--mono,monospace); font-size:11.5px; line-height:1.5; padding:12px 14px; border-radius:10px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+    
+  .sk-bar { position:sticky; top:0; z-index:200; display:flex; gap:8px; align-items:center;
+            padding:10px 22px; border-bottom:1px solid var(--hairline,#ddd); background:var(--bg,#fff); }
+  .sk-bar b { font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; opacity:.55; }
+  .sk-bar .sk-t { font-size:12px; opacity:.7; }
+  .sk-note { border-left:3px solid var(--ink,#111); padding:9px 0 9px 13px; margin:0 0 22px;
+             font-size:12.5px; line-height:1.6; opacity:.85; }
+  .sk-dead { border:1px dashed var(--hairline,#ccc); border-radius:12px; padding:12px 15px; margin:20px 0 0;
+             font-size:11.5px; opacity:.5; font-family:var(--mono); letter-spacing:.03em; line-height:1.7; }
+  #nav-follower-growth .sk-door { border:1px solid var(--hairline,#ddd); border-radius:14px; padding:16px 18px; margin-bottom:12px; cursor:pointer; }
+  #nav-follower-growth .sk-door.on { border-color:var(--ink,#111); box-shadow:inset 0 0 0 1px var(--ink,#111); }
+  #nav-follower-growth .sk-door.off { opacity:.5; }
+  #nav-follower-growth .sk-door-h { font-family:var(--mono); font-size:11px; letter-spacing:.08em;
+            text-transform:uppercase; display:flex; align-items:center; gap:9px; margin-bottom:5px; }
+  #nav-follower-growth .sk-radio { width:13px; height:13px; border-radius:50%; border:1.5px solid currentColor; display:inline-block; position:relative; flex:none; }
+  #nav-follower-growth .sk-door.on .sk-radio::after { content:''; position:absolute; inset:2.5px; border-radius:50%; background:currentColor; }
+  #nav-follower-growth .sk-door-s { font-size:13px; opacity:.75; line-height:1.55; }
+  #nav-follower-growth .sk-body { margin-top:13px; }
+  #nav-follower-growth .sk-url { width:100%; box-sizing:border-box; padding:11px 13px; border:1px solid var(--hairline,#ddd);
+            border-radius:9px; font-family:var(--mono); font-size:12px; background:transparent; color:inherit; }
+  #nav-follower-growth .sk-row { display:flex; gap:9px; align-items:center; margin-top:9px; flex-wrap:wrap; }
+  /* company-page picker */
+  #nav-follower-growth .sk-page { border:1px solid var(--hairline,#ddd); border-radius:14px; padding:15px 18px; margin-bottom:18px;
+            display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  #nav-follower-growth .sk-page-l { flex:1; min-width:230px; }
+  #nav-follower-growth .sk-page-h { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:4px; }
+  #nav-follower-growth .sk-page-s { font-size:12.5px; opacity:.7; line-height:1.5; }
+  #nav-follower-growth .sk-page select { padding:10px 13px; border:1px solid var(--ink,#111); border-radius:9px;
+            font-size:13px; background:transparent; color:inherit; min-width:250px; }
+
+</style>
+    <div class="section" id="nav-follower-growth">
+      <h2><span data-edit="h2-fg">Follower Growth</span></h2>
+
+      <!-- Auto-Pilot status panel -->
+      <div class="fgap" id="fgap">
+        <div class="fgap-strip">
+          <span class="fgap-dot" id="fgap-dot"></span>
+          <div class="fgap-lead">
+            <div class="fgap-title" id="fgap-title">AUTO-PILOT &#183; &#8230;</div>
+            <div class="fgap-next" id="fgap-next">Next run &#8212;</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reconcile banner — shows when cloud runs are awaiting write-back -->
+      <div class="fgap" id="fg-reconcile-banner" style="display:none">
+        <div class="fgap-strip" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:14px">&#9888;</span>
+            <span class="fgap-title" id="fg-reconcile-text" style="font-size:11px">0 runs awaiting reconcile</span>
+          </div>
+          <button class="fgtl-watch-btn" id="fg-reconcile-btn" onclick="_fgSyncNow()" style="font-size:10px;padding:5px 12px">SYNC NOW</button>
+        </div>
+      </div>
+
+      <!-- Wizard: always visible. Numbered steps take you from list → accounts →
+           launch, with the live status streaming at the bottom. -->
+      <div id="fgap-manual">
+      <p class="sk-note"><b>What changed:</b> the company page is a dropdown in setup. The list is a choice, not a builder &#8212; roles chips, &#8220;Write the list to the sheet&#8221; and the review gate are gone. <b>Live status is the card you have today, verbatim.</b></p>
+
+      <!-- ── STEP 1 · THE PAGE + THE LIST ──────────────────────────────
+           The page is an explicit choice in setup (Sam), never inferred from
+           who is logged in. Then two doors for the list, so the app can never
+           quietly build one when you meant to use your own. -->
+      <div class="fgw-step" id="fgw-step-1">
+        <div class="fgw-step-head"><span class="fgw-num">1</span><span class="fgw-title">Which page are we growing?</span></div>
+        <div class="sk-page">
+          <div class="sk-page-l">
+            <div class="sk-page-h">Company page</div>
+            <div class="sk-page-s">Everyone on the team sees every page. Whoever runs it picks the page here &#8212; it is never guessed from the login.</div>
+          </div>
+          <select id="sk-page-select">
+            <option>Ortus Club</option>
+            <option>Apex Guesting Partner</option>
+          </select>
+        </div>
+        <p class="fgw-lead" style="margin-top:-6px">Invites go to <b id="sk-page-echo">Ortus Club</b> &#8212; and the run is stamped with that page, so the board never mixes two pages up.</p>
+      </div>
+
+      <div class="fgw-step" id="fgw-step-list">
+        <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Where does the list come from?</span></div>
+
+        <div class="sk-door on" id="door-have">
+          <div class="sk-door-h"><span class="sk-radio"></span> I already have the list</div>
+          <div class="sk-door-s">You built it offline in your own Google Sheet. Paste the link &#8212; the app works down that tab and stamps its results back into it.</div>
+          <div class="sk-body">
+            <input class="sk-url" value="https://docs.google.com/spreadsheets/d/1aB7&#8230;/edit#gid=884213">
+            <div class="sk-row">
+              <button type="button" class="fgw-btn">Preview</button>
+              <button type="button" class="fgw-btn">Open sheet &#8599;</button>
+              <span class="fgw-list-tab">&#10003; <b>August invites</b> &#183; 412 people &#183; 9 accounts</span>
+            </div>
+            <div class="fgw-format" style="margin-top:13px">
+              <div class="fgw-format-h">Your tab needs two columns:</div>
+              <code class="fgw-format-cols">LinkedIn URL &#183; Account Email</code>
+              <div class="fgw-format-note"><b>Account Email</b> = the GoLogin login that sends that invite. Everything else in your sheet is left alone &#8212; the app only <b>adds</b> Status / Invited At columns, exactly like a CC campaign.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sk-door off" id="door-build">
+          <div class="sk-door-h"><span class="sk-radio"></span> Build one for me</div>
+          <div class="sk-door-s">Search the team&#8217;s connections by job title. Writes the result to a new sheet, then hands it back to the box above.</div>
+        </div>
+      </div>
+
+      <!-- ── STEP 3 · ACCOUNTS ─────────────────────────────────────────
+           Unchanged. An audit, not a step: the sheet already names the sender
+           on every row; this panel just shows who can send and why not. -->
+      <div class="fgw-step" id="fgw-step-accounts">
+        <div class="fgw-step-head"><span class="fgw-num">3</span><span class="fgw-title">Accounts</span></div>
+        <p class="fgw-lead">Each row&#8217;s <b>Account Email</b> decides who sends it. This is here so you can see which accounts are blocked, and why.</p>
+        <!-- The answer -->
+        <div class="rv-answer">
+          <div>
+            <div class="rv-big"><span id="fg-answer-n">0</span> <span class="rv-big-lab">invites this run</span>
+              <span class="rv-load" id="fg-answer-load" style="display:none"><span class="fgtl-spin"></span> working it out&#8230;</span>
+            </div>
+            <div class="rv-sub" id="fg-answer-sub"></div>
+          </div>
+          <button type="button" class="rv-who" id="fg-who-toggle">Which accounts? &#9662;</button>
+        </div>
+
+        <!-- The account list, collapsed. Same data as before — now an audit, not a step. -->
+        <div class="rv-pop" id="fg-who-panel" style="display:none">
+          <div class="rv-pop-bar">
+            <div class="fgtl-search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+              <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
+              <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
+            </div>
+            <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
+          </div>
+          <div class="fgtl-ready" id="fgtl-ready">
+            <div class="rl">
+              <span class="lab">Sending from</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
+              <div class="sub">every account with a profile and matching connections — excluded ones are listed below with a reason</div>
+            </div>
+            <button type="button" class="fgtl-ready-btn" id="fgtl-ready-btn">Include all</button>
+          </div>
+          <div class="fgtl-people" id="fgtl-people"></div>
+        </div>
+
+        <!-- Kept in the DOM (hidden) so the launch/cart plumbing below is untouched. -->
+        <div class="fgtl-cart" style="display:none">
+          <button type="button" id="fgtl-clear" class="fgtl-clear"></button>
+          <div id="fgtl-cart" class="fgtl-cart-list"></div>
+          <div class="fgtl-cart-foot" id="fgtl-foot">
+            <b id="fgtl-t-people">0</b><b id="fgtl-t-inv">0</b>
+            <button class="fgtl-go-btn" id="fgtl-go" disabled>Launch</button>
+            <button class="fgtl-go-btn" id="fgtl-stop">Stop now</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── STEP 4 · SCHEDULE ─────────────────────────────────────── -->
+      <div class="fgw-step" id="fgw-step-2">
+        <div class="fgw-step-head"><span class="fgw-num">4</span><span class="fgw-title">Schedule</span></div>
+        <p class="fgw-lead">Runs automatically on the <b>1st &amp; 15th</b> at 6am London time, in the <b>&#9729;&#65038; cloud VM</b> &#8212; so it keeps going after you close your laptop.</p>
+        <button type="button" class="fgw-btn">Edit schedule</button>
+      </div>
+      <!-- ── LIVE STATUS ───────────────────────────────────────────────
+           Bottom of the wizard: Auto-Pilot on/off + Run it now, then the
+           streaming campaign log / per-account board / live card. -->
+      <div class="fgw-step" id="fgw-step-live">
+        <div class="fgw-live-head">
+          <div class="fgw-step-head" style="margin:0"><span class="fgw-num">5</span><span class="fgw-title">Live status</span></div>
+          <div class="fgw-live-controls">
+            <span id="fgw-list-tab" class="fgw-list-tab" style="display:none"></span>
+            <button type="button" class="fgap-run" id="fgap-run" title="Fire the invite-list tab you built in step 1 to the cloud VM now, outside the schedule">&#9654; Run it now</button>
+            <span class="fgw-toggle-lab">Auto-Pilot</span>
+            <!-- Starts OFF and stays OFF until the cloud config is actually read.
+                 Painting it green by default told an operator Auto-Pilot was ON
+                 while the service had enabled:false — the scheduled run would
+                 have silently not happened. Never claim a state we haven't read. -->
+            <button type="button" class="fgap-toggle" id="fgap-toggle" role="switch" aria-checked="false" title="Toggle Auto-Pilot on/off"></button>
+          </div>
+        </div>
+        <pre id="fgw-log" class="fgw-log">The campaign log streams here while a run is active.</pre>
+      </div>
+
+      <!-- Per-account progress board — sits ABOVE the live card during a run -->
+      <div class="fgacct-wrap" id="fgtl-acctboard" hidden>
+        <div class="fgboard-head"><span class="h">Accounts</span><span class="c" id="fgtl-acct-roll"></span></div>
+        <div class="fgacct-board" id="fgtl-acct-list"></div>
+      </div>
+
+      <!-- Live campaign card (reuses global .vj-* classes) -->
+      <section class="vj-card is-detailed" id="fgtl-card" aria-labelledby="fgtl-card-name">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span><span id="fgtl-eyebrow">Ready to launch</span></span>
+          <span class="vj-when" id="fgtl-when"></span>
+          <button type="button" id="fgtl-watch" class="fgtl-watch-btn" style="display:none" title="Watch the campaign's browser live on the VM"><span id="fgtl-watch-dot" class="fgtl-live-dot" hidden></span>&#128065; Show live</button>
+          <button type="button" id="fgtl-card-stop" class="fgtl-card-stop" style="display:none">Stop now</button>
+        </div>
+        <div class="vj-glyph-circle" aria-hidden="true">&#8961;</div>
+        <h2 class="vj-name" id="fgtl-card-name"><span>Team Follower Growth</span></h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="100" aria-label="Launch progress"><i id="fgtl-bar" style="width:0%"></i></div>
+        <div id="fgtl-launch-banner" class="fgtl-launch-banner" style="display:none">
+          <span class="fgtl-lb-ic" aria-hidden="true">&#9203;</span>
+          <div class="fgtl-lb-txt">
+            <b>The campaign is launching&#8230;</b>
+            <span>Warming up the VM &#183; first invites go out in ~2 minutes. You can close the app &#8212; it keeps running.</span>
+          </div>
+        </div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span id="fgtl-pct">0</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b id="fgtl-sent">0</b> of <span id="fgtl-total">0</span> accounts sent</span>
+              <span>Runs <b>sequentially</b> &#183; 1 account at a time</span>
+            </div>
+          </div>
+          <div class="vj-stats" aria-live="polite">
+            <span><b id="fgtl-accts">0</b> accounts</span>
+            <span><b id="fgtl-inv">0</b> invites sent</span>
+            <span>&#183; <b id="fgtl-seq">Idle</b></span>
+          </div>
+        </div>
+        <div class="vj-details">
+          <div>
+            <div class="vj-log-head">
+              <span class="vj-details-head" id="fgtl-loghead">Live log &#183; last 15 events</span>
+              <span class="vj-log-acts">
+                <button type="button" class="vj-log-act" id="fgtl-copy" title="Copy the full log to your clipboard">Copy all</button>
+                <button type="button" class="vj-log-act" title="Open the Follower Growth sheet">Open sheet</button>
+              </span>
+            </div>
+            <div class="vj-log" id="fgtl-logbody"><div class="vj-log-empty">Waiting to launch &#8212; events stream here, one account at a time.</div></div>
+          </div>
+          <div class="vj-bulk">
+            <div class="vj-details-head">Batch summary</div>
+            <div class="vj-bulk-status">Sent &#183; <b id="fgtl-sum-sent">&#8212;</b> &#183; <span id="fgtl-sum-skip">0</span> skipped</div>
+            <div class="vj-bulk-hint">Each account opens its profiles and sends follow invites to its own connections, then the next account starts. Capped at each account's monthly invite budget.</div>
+          </div>
+        </div>
+      </section>
+      <div class="fgtl-dbwrap">
+        <button class="fgtl-db-toggle" id="fgtl-db-toggle">&#9658; The Follower Growth database (one sheet tab &#183; everyone we can reach)</button>
+        <div class="fgtl-db-body" id="fgtl-db-body" style="display:none">
+          <!-- FG Master: the whole warm network as one sheet tab. The old in-app
+               Invites/Budgets/Funnel tables lived here too — dropped in v2.160.157:
+               FG Master carries every invite with more context, in a sheet you can
+               sort and filter, so the in-app copy was strictly worse. -->
+          <div class="fg-step fg-master-block">
+            <div class="fg-step-head">FG Master &#183; the whole network in one tab
+              <button type="button" class="fgtl-watch-btn" id="fg-master-build" style="font-size:10px;padding:5px 12px">UPDATE</button>
+            </div>
+            <p class="cx-hint">Every warm contact in one <b>FG Master</b> tab of the FG Sheet &#8212; name, title, company, geo, LinkedIn URL and <b>every account connected to them</b> &#8212; stamped <b>Invited</b> / time / account as the bot sends. <b>Update</b> appends only the people who aren&#8217;t in the tab yet and leaves every existing row alone.</p>
+            <div class="fgm-prog" id="fg-master-prog" style="display:none">
+              <div class="fgm-prog-top"><span id="fg-master-phase">Working&#8230;</span><span id="fg-master-pct">0%</span></div>
+              <div class="fgm-bar"><i id="fg-master-fill" style="width:0%"></i></div>
+              <div class="fgm-prog-sub" id="fg-master-sub"></div>
+            </div>
+            <p class="cx-hint" id="fg-master-status"></p>
+            <p class="cx-hint">Don&#8217;t update while a run is reconciling &#8212; that run&#8217;s sheet writes can time out. <a href="#" id="fg-master-full" style="color:var(--gray)">Full rebuild</a> wipes the tab and rewrites all ~295k rows from scratch (slow, and it discards anything typed in by hand).</p>
+          </div>
+        </div>
+      </div>
+      </div><!-- /#fgap-manual -->
+      <div class="sk-dead">GONE &#183; roles chips + live counts &#183; &#8220;Write the list to the sheet&#8221; &#183; the review-gate lock &#183; the central-FG-sheet tab dropdown &#183; silent fallback to build-a-list &#183; guessing the company from the login email<br>KEPT &#183; Auto-Pilot strip &#183; Accounts panel &#183; Schedule &#183; Live status + log + per-account board + FG Master</div>
+    </div>
+    </div>
+    </main>
+</div>
+<script>
+document.querySelectorAll('.sk-door').forEach(function (d) {
+  d.addEventListener('click', function () {
+    document.querySelectorAll('.sk-door').forEach(function (x) { x.classList.remove('on'); x.classList.add('off'); });
+    d.classList.add('on'); d.classList.remove('off');
+  });
+});
+var sel = document.getElementById('sk-page-select');
+sel.addEventListener('change', function () { document.getElementById('sk-page-echo').textContent = sel.value; });
+</script>
+</body></html>

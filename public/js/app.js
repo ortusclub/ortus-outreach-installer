@@ -27213,6 +27213,20 @@ function toggleMagellanLog() {
   if (!box.hidden) refreshMagellanState();
 }
 
+// The run writes three tabs (Magellan Accounts / Log / Import) into the app's
+// own Google Sheet. Same sheet the FG side uses, so the URL comes from there.
+async function openMagellanSheet() {
+  try {
+    const r = await fetch('/api/fg/sheet-url');
+    const j = await r.json();
+    if (j.url) return window.open(j.url, '_blank');
+    showMagellanError(j.error || 'Could not find the sheet.');
+  } catch (err) {
+    showMagellanError(`Could not find the sheet — ${err.message}`);
+  }
+}
+window.openMagellanSheet = openMagellanSheet;
+
 async function previewMagellan() {
   showMagellanError('');
   const accounts = mgAccounts.filter((a) => mgSelected.has(a.profileId)).map((a) => a.account);

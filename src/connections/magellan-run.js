@@ -10,6 +10,7 @@ import * as browserSemaphore from '../browser-semaphore.js';
 import { collectAccount, readForPlan } from './magellan-pull.js';
 import { planAccount } from './magellan.js';
 import { diagnose, logLine, summarise } from './magellan-diagnose.js';
+import { publish as publishSheet } from './magellan-sheet.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
   checkMagellanProperties,
@@ -74,7 +75,13 @@ export function reset() { _state = idle(); _plans = null; _stopRequested = false
  */
 export function startCollect(accounts, deps = {}) {
   const { launchProfile = launcher.launchProfile, closeProfile = launcher.closeProfile,
-    semaphore = browserSemaphore, collect = collectAccount } = deps;
+    semaphore = browserSemaphore, collect = collectAccount, sheet = publishSheet } = deps;
+
+  // The sheet is a record, never a dependency — a Google failure must not stop
+  // the sweep, so this swallows everything and only notes it in the log.
+  const toSheet = (force = false) => sheet(_state, { force })
+    .then((r) => { if (r && r.error) log(`⚠ Could not update the sheet — ${r.error}`); })
+    .catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
 
   if (_state.running) return { started: false, reason: 'Magellan is already running' };
   const list = (accounts || []).filter((a) => a && a.profileId && a.account);
@@ -137,6 +144,7 @@ export function startCollect(accounts, deps = {}) {
         semaphore.release();
         _state.done += 1;
         _state.failures = summarise(_state.perAccount);
+        toSheet();
       }
     }
     const ok = _state.perAccount.filter((a) => !a.error);
@@ -149,11 +157,15 @@ export function startCollect(accounts, deps = {}) {
     _state.account = null;
     _state.step = null;
     _state.finishedAt = new Date().toISOString();
-  })().catch((err) => {
+    // force: the final picture must land even if a per-account write is still
+    // in flight, otherwise the tab freezes one account short of the truth.
+    await toSheet(true);
+  })().catch(async (err) => {
     log(`✗ The collection stopped unexpectedly — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';
     _state.running = false;
+    await toSheet(true);
   });
 
   return { started: true };
@@ -196,31 +208,43 @@ export async function buildPreview(accounts, deps = {}) {
  * no automatic path from collect to import.
  */
 export async function runImport(plans = _plans, deps = {}) {
-  const { create = batchCreate, update = batchUpdate, attach = attachSyntheticEmail } = deps;
+  const { create = batchCreate, update = batchUpdate, attach = attachSyntheticEmail,
+    sheet = publishSheet } = deps;
 
   if (_state.running) return { ok: false, reason: 'Magellan is already running' };
   if (!plans) return { ok: false, reason: 'Nothing to import — build a preview first' };
   _state = { ..._state, running: true, phase: 'importing', error: null };
 
-  const result = { created: 0, updated: 0, extraEmails: 0, errors: [] };
+  // perAccount so the sheet can show which account contributed what, rather
+  // than one aggregate number nobody can trace back.
+  const result = { created: 0, updated: 0, extraEmails: 0, errors: [], perAccount: [] };
   try {
     for (const { account, plan } of plans || []) {
+      const row = { account, created: 0, updated: 0, extraEmails: 0, errors: [] };
+      result.perAccount.push(row);
+
       const c = await create(plan.creates);
-      result.created += c.created;
-      result.errors.push(...c.errors.map((e) => ({ account, stage: 'create', ...e })));
+      row.created = c.created;
+      row.errors.push(...c.errors.map((e) => ({ stage: 'create', ...e })));
 
       const u = await update(plan.updates);
-      result.updated += u.updated;
-      result.errors.push(...u.errors.map((e) => ({ account, stage: 'update', ...e })));
+      row.updated = u.updated;
+      row.errors.push(...u.errors.map((e) => ({ stage: 'update', ...e })));
 
       // One call each — no batch endpoint exists for secondary emails.
       for (const item of plan.additionalEmails) {
-        try { await attach(item); result.extraEmails += 1; } catch (err) {
-          result.errors.push({ account, stage: 'email', id: item.id, error: err.message });
+        try { await attach(item); row.extraEmails += 1; } catch (err) {
+          row.errors.push({ stage: 'email', id: item.id, error: err.message });
         }
       }
+
+      result.created += row.created;
+      result.updated += row.updated;
+      result.extraEmails += row.extraEmails;
+      result.errors.push(...row.errors.map((e) => ({ account, ...e })));
     }
     _state.imported = { ...result, at: new Date().toISOString() };
+    await sheet(_state, { force: true }).catch(() => {});
     _state.phase = 'done';
     return { ok: true, ...result };
   } catch (err) {

@@ -4,6 +4,10 @@ import { startCollect, buildPreview, runImport, getState, reset } from '../../sr
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
+// The sheet write is best-effort and lives behind the network; stub it so the
+// unit tests never touch Google.
+const noSheet = async () => ({ written: true });
+
 function fakeSemaphore() {
   const s = { held: 0, peak: 0 };
   return {
@@ -24,6 +28,7 @@ test('collect walks every account and always releases the browser slot', async (
       launchProfile: async () => ({ page: {} }),
       closeProfile: async (id) => { closed.push(id); },
       collect: async () => ({ total: 10, withMemberId: 9, hidden: 1 }),
+      sheet: noSheet,
     },
   );
   await settle();
@@ -47,6 +52,7 @@ test('one failing account does not abandon the rest of the sweep', async () => {
       launchProfile: async () => { n += 1; if (n === 1) throw new Error('LinkedIn is blocking this account'); return { page: {} }; },
       closeProfile: async () => {},
       collect: async () => ({ total: 5, withMemberId: 5, hidden: 0 }),
+      sheet: noSheet,
     },
   );
   await settle();
@@ -65,6 +71,7 @@ test('a second collect is refused while one is running', async () => {
     launchProfile: async () => ({ page: {} }),
     closeProfile: async () => {},
     collect: async () => ({ total: 1, withMemberId: 1, hidden: 0 }),
+    sheet: noSheet,
   });
   const second = startCollect([{ account: 'b@o.com', profileId: 'p2' }], {});
   assert.equal(second.started, false);
@@ -120,6 +127,7 @@ test('import reports per-stage errors instead of throwing them away', async () =
     create: async () => ({ created: 1, errors: [] }),
     update: async () => ({ updated: 1, errors: [{ size: 1, error: 'HubSpot 400' }] }),
     attach: async () => { throw new Error('secondary-email failed'); },
+    sheet: noSheet,
   });
   assert.equal(r.ok, true);
   assert.equal(r.created, 1);
@@ -157,6 +165,7 @@ test('stop lets the current account finish, then skips the rest', async () => {
         if (account === 'a@o.com') stopCollect();   // stop mid-first-account
         return { total: 1, withMemberId: 1, hidden: 0 };
       },
+      sheet: noSheet,
     },
   );
   await new Promise((r) => setTimeout(r, 40));

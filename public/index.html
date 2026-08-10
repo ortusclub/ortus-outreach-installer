@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.4" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.5" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.0.1" />
 </head>
 <body data-dashboard="v3">
@@ -801,6 +801,7 @@
               <button class="btn-pill" id="mg-collect-btn" onclick="startMagellanCollect()">Collect connections</button>
               <button class="btn-pill" id="mg-stop-btn" onclick="stopMagellanCollect()" hidden>Stop</button>
               <button class="btn-pill" id="mg-log-btn" onclick="toggleMagellanLog()">Show log</button>
+              <button class="btn-pill" id="mg-sheet-btn" onclick="openMagellanSheet()">Open the sheet</button>
             </div>
           </section>
 
@@ -3955,7 +3956,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.4"></script>
+  <script type="module" src="/js/app.js?v=3.1.5"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
