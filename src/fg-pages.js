@@ -37,5 +37,9 @@ export const FG_PAGE_LIST = Object.values(FG_PAGES);
  */
 export function pageById(id) {
   const key = String(id == null ? '' : id).toLowerCase();
-  return FG_PAGES[key] || FG_PAGES.ortus;
+  // Guard: check own properties only. Inherited Object.prototype members
+  // (constructor, __proto__, toString, etc.) must fall back to Ortus, not
+  // become the URL for FG sends. The id arrives from JSON request bodies,
+  // so these keys are reachable.
+  return Object.hasOwn(FG_PAGES, key) ? FG_PAGES[key] : FG_PAGES.ortus;
 }

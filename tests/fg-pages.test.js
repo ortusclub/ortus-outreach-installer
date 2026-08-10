@@ -16,7 +16,7 @@ test('Ortus is the default and its URL is today\'s constant, verbatim', () => {
 });
 
 test('anything unrecognised falls back to Ortus', () => {
-  for (const bad of ['', null, undefined, 'nonsense', 'APEX ', 42, {}]) {
+  for (const bad of ['', null, undefined, 'nonsense', 'APEX ', 42, {}, 'constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
     assert.equal(pageById(bad).id, 'ortus', String(bad));
     assert.equal(pageById(bad).inviteUrl, ORTUS_PAGE_INVITE_URL, String(bad));
   }
