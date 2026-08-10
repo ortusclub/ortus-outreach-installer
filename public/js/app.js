@@ -20827,12 +20827,6 @@ function fgtlBindBoard() {
       if (panel) { const open = panel.style.display !== 'none'; panel.style.display = open ? 'none' : ''; e.target.innerHTML = open ? 'Which accounts? &#9662;' : 'Hide accounts &#9652;'; }
       return;
     }
-    if (e.target.id === 'fg-byo-toggle') {
-      e.preventDefault();
-      const panel = document.getElementById('fg-byo-panel');
-      if (panel) panel.style.display = panel.style.display === 'none' ? '' : 'none';
-      return;
-    }
     const ch = e.target.closest('[data-fgchange]'); if (ch) { (fgtlPicked[ch.dataset.fgchange] ||= {}).changing = true; fgtlRenderCart(); return; }
     const opt = e.target.closest('[data-fgopt]'); if (opt) { const em = opt.dataset.fgopt; fgtlPicked[em].profile = opt.dataset.name; fgtlPicked[em].changing = false; fgtlPicked[em].pq = ''; fgtlRenderCart(); return; }
     if (e.target.id === 'fgtl-db-toggle') { const b = document.getElementById('fgtl-db-body'); if (b) b.style.display = b.style.display === 'none' ? 'block' : 'none'; return; }
@@ -21701,13 +21695,13 @@ function fgBindListSource() {
     if (saved.sheetUrl) url.value = saved.sheetUrl;
     const persist = () => {
       const v = url.value.trim();
-      // Choosing door 1 clears door 2's stored tab — resolveListSource() gives
-      // sheetUrl precedence, so a stale tab left behind would never actually fire.
-      const patch = { sheetUrl: v };
-      if (v) patch.tab = '';
-      fgSaveSource(patch);
+      // Typing here IS choosing door 1 — always clear door 2's stored tab, even
+      // when the field is emptied. Otherwise backspacing a mistaken paste would
+      // silently re-arm whatever tab was generated earlier: resolveListSource()
+      // gives sheetUrl precedence, but sheetUrl='' + a leftover tab still fires.
+      fgSaveSource({ sheetUrl: v, tab: '' });
       if (urlEcho) { urlEcho.textContent = v ? '✓ saved' : ''; urlEcho.style.display = v ? '' : 'none'; }
-      if (v) fgSelectDoor('have');
+      fgSelectDoor('have');
     };
     url.addEventListener('change', persist);
     url.addEventListener('blur', persist);
@@ -21721,14 +21715,19 @@ function fgBindListSource() {
       if (v) window.open(v, '_blank', 'noopener'); else alert('Paste your Google Sheet link first.');
     });
   }
-  // Visual door toggle — click either door to look at it. Which one actually
-  // fires is decided by the stored source (sheetUrl vs tab), reflected below.
+  // Selecting a door is authoritative: it clears the OTHER door's stored value
+  // and becomes the live source. fgSelectDoor is the only place that touches
+  // the .on/.off classes, so the visible door and the one resolveListSource()
+  // will actually fire can never disagree. If the selected door has no value
+  // of its own, the source is now empty and launching refuses — honest, rather
+  // than silently firing whatever the other door had.
   document.querySelectorAll('#nav-follower-growth .sk-door').forEach((d) => {
     if (d._fgBound) return; d._fgBound = true;
     d.addEventListener('click', (e) => {
       if (e.target.closest('.sk-body')) return; // don't hijack clicks on the input/buttons inside
-      document.querySelectorAll('#nav-follower-growth .sk-door').forEach((x) => { x.classList.remove('on'); x.classList.add('off'); });
-      d.classList.add('on'); d.classList.remove('off');
+      if (d.id === 'door-have') fgSaveSource({ tab: '' });
+      else if (d.id === 'door-build') fgSaveSource({ sheetUrl: '' });
+      fgSelectDoor(d.id === 'door-have' ? 'have' : 'build');
     });
   });
   // Reflect the actually-chosen source (e.g. after a reload) rather than
@@ -21738,7 +21737,7 @@ function fgBindListSource() {
     fgSelectDoor('build');
     const status = document.getElementById('fgtl-list-status');
     if (status && !status.textContent) status.innerHTML = `Currently using tab <b>${escHtml(saved.tab)}</b> as the launch source.`;
-  } else if (saved.sheetUrl) {
+  } else {
     fgSelectDoor('have');
   }
 }
