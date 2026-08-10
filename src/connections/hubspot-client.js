@@ -201,3 +201,21 @@ export async function checkMagellanProperties({ fetchImpl = fetch, token = proce
   }
   return { ok: missing.length === 0, missing };
 }
+
+/**
+ * The values `linkedin_1st_connections` will accept. It is an enumeration
+ * (checkbox) with one option per Ortus account email, so an account whose name
+ * is not on this list cannot be written at all — HubSpot rejects the value.
+ * Worth knowing BEFORE an import rather than after.
+ *
+ * @returns {Promise<Set<string>>} lowercased option values
+ */
+export async function connectionsPropOptions({ fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  const res = await fetchImpl(`${BASE}/crm/v3/properties/contacts/${encodeURIComponent(CONNECTIONS_PROP)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`HubSpot ${res.status} reading ${CONNECTIONS_PROP}`);
+  const j = await res.json();
+  return new Set((j.options || []).map((o) => String(o.value || '').trim().toLowerCase()));
+}

@@ -2579,8 +2579,8 @@ app.post('/api/magellan/stop', (_req, res) => {
 
 app.post('/api/magellan/preview', async (req, res) => {
   try {
-    const { totals } = await magellan.buildPreview((req.body || {}).accounts || []);
-    res.json({ totals });
+    const { totals, blocked } = await magellan.buildPreview((req.body || {}).accounts || []);
+    res.json({ totals, blocked });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

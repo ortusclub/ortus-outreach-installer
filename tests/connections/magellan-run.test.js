@@ -92,6 +92,7 @@ test('preview refuses to run when HubSpot lacks the properties', async () => {
   await assert.rejects(
     () => buildPreview(['a@o.com'], {
       checkProps: async () => ({ ok: false, missing: ['linkedin_membership_id'] }),
+      options: async () => new Set(['a@o.com']),
       read: () => [],
       lookup: async () => new Map(),
     }),
@@ -107,6 +108,7 @@ test('preview totals up new vs existing across accounts, writing nothing', async
   };
   const { totals } = await buildPreview(['a@o.com', 'b@o.com'], {
     checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com', 'b@o.com']),
     read: (acct) => rows[acct],
     lookup: async () => new Map([['2', { id: '900', properties: { email: 'real@x.com' } }]]),
   });
@@ -143,6 +145,7 @@ test('nothing is written until runImport is called', async () => {
   let wrote = false;
   await buildPreview(['a@o.com'], {
     checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
     read: () => [{ slug: 's', memberId: '1' }],
     lookup: async () => new Map(),
     create: async () => { wrote = true; },
@@ -240,4 +243,31 @@ test('a retryable failure twice gives up and records it once', async () => {
   assert.equal(tries, 2);
   assert.equal(st.perAccount.length, 1);
   assert.equal(st.done, 1);
+});
+
+// The blocker behind "why can't we import it": HubSpot's Linkedin 1st
+// Connections field is a fixed list of Ortus emails. Four accounts collected as
+// GoLogin profile NAMES had nowhere to write to, and would have failed at
+// import time, thousands of rows in.
+test('an account HubSpot cannot accept is held back and named', async () => {
+  reset();
+  const { totals, blocked } = await buildPreview(['nushe@o.com', 'Jovana'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['nushe@o.com']),
+    read: () => [{ slug: 's', memberId: '1' }],
+    lookup: async () => new Map(),
+  });
+  assert.deepEqual(blocked, ['Jovana']);
+  assert.equal(totals.created, 1, 'only the account that can be written is counted');
+});
+
+test('the option check is case-insensitive — HubSpot options are emails either way', async () => {
+  reset();
+  const { blocked } = await buildPreview(['Nushe@O.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['nushe@o.com']),
+    read: () => [],
+    lookup: async () => new Map(),
+  });
+  assert.deepEqual(blocked, []);
 });

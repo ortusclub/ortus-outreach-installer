@@ -13,7 +13,7 @@ import { diagnose, logLine, summarise } from './magellan-diagnose.js';
 import { publish as publishSheet, resetPublished } from './magellan-sheet.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
-  checkMagellanProperties,
+  checkMagellanProperties, connectionsPropOptions,
 } from './hubspot-client.js';
 
 const idle = () => ({
@@ -201,7 +201,8 @@ export function startCollect(accounts, deps = {}) {
  * Writes nothing.
  */
 export async function buildPreview(accounts, deps = {}) {
-  const { lookup = lookupByMemberIds, read = readForPlan, checkProps = checkMagellanProperties } = deps;
+  const { lookup = lookupByMemberIds, read = readForPlan, checkProps = checkMagellanProperties,
+    options = connectionsPropOptions } = deps;
 
   // Fail before doing any work if the portal is missing the properties we write
   // — otherwise every single create silently drops the fields that matter.
@@ -210,10 +211,21 @@ export async function buildPreview(accounts, deps = {}) {
     throw new Error(`HubSpot is missing ${props.missing.join(' and ')} — add the properties before importing.`);
   }
 
+  // "Linkedin 1st Connections" is a fixed list of Ortus account emails. An
+  // account that isn't on it cannot be written — HubSpot rejects the value —
+  // so it is held back here, named, instead of failing 7,000 rows at a time
+  // during the import.
+  const allowed = await options();
+  const blocked = [];
+  const usable = [];
+  for (const a of accounts || []) {
+    (allowed.has(String(a).trim().toLowerCase()) ? usable : blocked).push(a);
+  }
+
   const plans = [];
   const totals = { created: 0, updated: 0, extraEmails: 0, hidden: 0, unresolved: 0, total: 0 };
 
-  for (const account of accounts || []) {
+  for (const account of usable) {
     const rows = read(account);
     const memberIds = rows.map((r) => r.memberId).filter(Boolean);
     const existing = await lookup(memberIds);
@@ -223,8 +235,14 @@ export async function buildPreview(accounts, deps = {}) {
   }
 
   _plans = plans;
-  _state.preview = { totals, builtAt: new Date().toISOString(), accounts: accounts || [] };
-  return { totals, plans };
+  _state.preview = {
+    totals, blocked, builtAt: new Date().toISOString(), accounts: usable,
+  };
+  if (blocked.length) {
+    log(`⚠ ${blocked.length} account${blocked.length === 1 ? '' : 's'} cannot go into HubSpot — `
+      + `not on the "Linkedin 1st Connections" list: ${blocked.join(', ')}`);
+  }
+  return { totals, plans, blocked };
 }
 
 /**

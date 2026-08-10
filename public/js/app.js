@@ -27327,7 +27327,10 @@ window.openMagellanSheet = openMagellanSheet;
 
 async function previewMagellan() {
   showMagellanError('');
-  const accounts = mgAccounts.filter((a) => mgSelected.has(a.profileId)).map((a) => a.account);
+  // Default to the accounts this run just collected. After a sweep that is
+  // what the operator means, and a reload clears the tick boxes.
+  let accounts = mgAccounts.filter((a) => mgSelected.has(a.profileId)).map((a) => a.account);
+  if (!accounts.length) accounts = mgPerAccount.filter((a) => !a.error).map((a) => a.account);
   if (!accounts.length) return showMagellanError('Pick at least one account first.');
 
   const btn = document.getElementById('mg-preview-btn');
@@ -27348,6 +27351,23 @@ async function previewMagellan() {
     const imp = document.getElementById('mg-import-btn');
     imp.hidden = false;
     imp.textContent = `Import ${(t.created || 0).toLocaleString()} people`;
+
+    // Accounts HubSpot will not accept. "Linkedin 1st Connections" is a fixed
+    // list of Ortus emails; anything else — a GoLogin profile NAME, a typo —
+    // has no option to write to, so its people cannot be imported at all.
+    const bbox = document.getElementById('mg-blocked');
+    const blocked = j.blocked || [];
+    if (bbox) {
+      bbox.hidden = blocked.length === 0;
+      bbox.innerHTML = blocked.length
+        ? `<div class="mg-det-h">${blocked.length} account${blocked.length === 1 ? '' : 's'} cannot be imported</div>`
+          + '<div class="mg-det-why">HubSpot\'s "Linkedin 1st Connections" field is a fixed list of Ortus account '
+          + 'emails. These names are not on it, so there is nothing to write their connections to.</div>'
+          + '<div class="mg-det-fix">Rename them to the account\'s email address and collect again, or ask for the '
+          + 'email to be added as an option in HubSpot.</div>'
+          + `<div class="mg-det-raw">${blocked.map(escHtml).join(', ')}</div>`
+        : '';
+    }
   } catch (err) {
     showMagellanError(err.message);
   } finally {

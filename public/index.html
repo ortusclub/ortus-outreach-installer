@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.14" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.15" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.0.1" />
 </head>
 <body data-dashboard="v3">
@@ -850,6 +850,9 @@
               <div class="mg-led-s">LinkedIn gave us no name and no profile link for these — just a date. Nothing we can do with them.</div>
             </div>
           </div>
+
+          <!-- Accounts HubSpot will not accept, and what to do about them. -->
+          <div id="mg-blocked" hidden></div>
 
           <div class="mg-confirm">
             <div class="mg-confirm-t" id="mg-confirm-t"><b>Nothing has gone into HubSpot yet.</b> Check first to see what would happen.</div>
@@ -3978,7 +3981,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.14"></script>
+  <script type="module" src="/js/app.js?v=3.1.15"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

@@ -8349,7 +8349,8 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 /* Failures grouped by cause — what happened, why, what to do about it. */
 /* Detail under the account pills — what one selected account did, or why it
    failed. The raw error is the last line and is always present. */
-#mg-acct-detail { border-top: 1px solid var(--hairline); margin-top: 12px; padding: 12px 0 2px; }
+#mg-acct-detail, #mg-blocked { border-top: 1px solid var(--hairline); margin-top: 12px; padding: 12px 0 2px; }
+#mg-blocked .mg-det-h { color: var(--red); }
 .mg-det-h { font-family: var(--body); font-size: 0.82rem; color: var(--ink); }
 .mg-det-why { font-family: var(--body); font-size: 0.75rem; color: var(--gray); margin-top: 3px; line-height: 1.5; }
 .mg-det-fix { font-family: var(--body); font-size: 0.75rem; color: var(--ink); margin-top: 5px; line-height: 1.5; }
