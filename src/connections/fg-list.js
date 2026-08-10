@@ -267,3 +267,24 @@ export function gridFromSheetRows(rows) {
   const cell = (v) => (v === null || v === undefined ? '' : String(v));
   return [header, ...list.map((r) => header.map((h) => cell((r || {})[h])))];
 }
+
+/**
+ * Translate one ledgerUpdatesFromLeads() entry into the tracking object the
+ * main Apps Script's `updateRow` action understands.
+ *
+ * Every key is always present, as a string. An absent key would be dropped
+ * from the JSON body and leave whatever a previous run wrote in the cell —
+ * which reads as "this row was never touched" when in fact it was.
+ *
+ * @param {{status?:string, invitedAt?:string, note?:string, memberId?:string}} u
+ * @returns {{fgStatus:string, fgInvitedAt:string, fgNote:string, fgMemberId:string}}
+ */
+export function fgLedgerTracking(u) {
+  const s = (v) => (v === null || v === undefined ? '' : String(v));
+  return {
+    fgStatus:    s((u || {}).status),
+    fgInvitedAt: s((u || {}).invitedAt),
+    fgNote:      s((u || {}).note),
+    fgMemberId:  s((u || {}).memberId),
+  };
+}

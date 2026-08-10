@@ -100,7 +100,7 @@ import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredi
 import { buildMasterRows, invitedIndexFromFgInvites, newRowsOnly } from './src/connections/fg-master.js';
 import { readSeedDir, mergeFunnelSeeds } from './src/connections/fg-funnel-seed.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
-import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows } from './src/connections/fg-list.js';
+import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows, fgLedgerTracking } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows, resolveListSource } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
 import { pageById } from './src/fg-pages.js';
@@ -2869,8 +2869,26 @@ async function reconcileListRun(record) {
   catch (e) { throw new Error(`could not read cloud leads: ${e.message}`); }
   const updates = ledgerUpdatesFromLeads(leads);
   if (updates.length) {
-    const r = await updateFgListLedger(record.tab, updates);
-    try { campaignLog(`[FG-cloud] list ledger "${record.tab}": stamped ${r.updated} row(s)`); } catch (_) {}
+    if (record.sheetUrl) {
+      // The operator's own sheet — one updateRow per changed row through the
+      // MAIN Apps Script (openById, so it can reach any spreadsheet). The FG
+      // script cannot: it is container-bound to the central FG spreadsheet.
+      // Sequential on purpose — Apps Script serialises writes to one sheet
+      // anyway, and a burst just earns 429s.
+      const { updateSheetRow } = await import('./src/sheets-writer.js');
+      let ok = 0;
+      for (const u of updates) {
+        try {
+          if (await updateSheetRow(record.sheetUrl, u.url, fgLedgerTracking(u), '')) ok += 1;
+        } catch (e) {
+          try { campaignLog(`[FG-cloud] ledger row failed (${u.url}): ${e.message}`); } catch (_) {}
+        }
+      }
+      try { campaignLog(`[FG-cloud] list ledger → operator sheet: stamped ${ok}/${updates.length} row(s)`); } catch (_) {}
+    } else {
+      const r = await updateFgListLedger(record.tab, updates);
+      try { campaignLog(`[FG-cloud] list ledger "${record.tab}": stamped ${r.updated} row(s)`); } catch (_) {}
+    }
   }
 
   // Gap 1 + Gap 4 fix: write invited AND already-follows members to the central
