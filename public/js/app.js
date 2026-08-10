@@ -21190,22 +21190,19 @@ function fgapToggleExpand() {
 // "Run it now" — dispatch the whole team's Follower Growth batch to the cloud VM
 // immediately, outside the schedule (force). Needs the roster service deployed.
 async function fgapRunNow() {
-  // Sheet-driven model: Run it now fires the invite-list TAB you generated (auto)
-  // or chose (bring-your-own) up in step 1 — naming it so there's no ambiguity.
-  const tab = _fgtlListTab || '';
+  // No source → refuse here, and let the server refuse too. There is no third
+  // branch: the app must never build a list nobody asked for.
+  const saved = fgLoadSource();
   const btn = document.getElementById('fgap-run');
-  if (!tab) {
-    showCampaignToast('Write a list to the sheet first — step 2. Run it now then fires that tab.', 6000);
+  if (!saved.sheetUrl && !saved.tab) {
+    showCampaignToast('Choose where the list comes from first — paste a Google Sheet link, or build one from the team\'s connections.', 6000);
     return;
   }
-  if (_fgReviewedTab !== tab) {
-    showCampaignToast('Open the invite-list tab in the sheet first — step 2. Nothing fires until the list has been read.', 6000);
-    return;
-  }
-  if (!confirm(`Fire the invite list on tab “${tab}” now? This dispatches those invites to the cloud VM immediately, outside the schedule.`)) return;
+  const pageId = saved.pageId || 'ortus';
+  const pageLabel = fgPageLabel(pageId);
   // Resolve accounts from the launch cart AND the full paired team (deduped by
-  // profileId): a bring-your-own tab sets the account per row, so every Account
-  // Email in the sheet must map to a profileId even if the cart is empty.
+  // profileId): a bring-your-own sheet sets the account per row, so every
+  // Account Email in the sheet must map to a profileId even if the cart is empty.
   const byId = {};
   for (const p of [...fgtlAllPairedPairs(), ...fgtlPairs()]) { if (p && p.profileId) byId[p.profileId] = p; }
   const pairs = Object.values(byId);
@@ -21213,19 +21210,20 @@ async function fgapRunNow() {
     showCampaignToast('Open the FG board first so the team roster loads, then Run it now.', 4500);
     return;
   }
+  if (!confirm(`Invite ${pairs.length} people to follow ${pageLabel}? This dispatches to the cloud VM immediately.`)) return;
   if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
   try {
     // Building targets + dispatch can take up to a minute; keep the operator informed.
-    showCampaignToast(`Dispatching “${tab}” to the cloud — this can take a minute…`, 6000);
+    showCampaignToast(`Dispatching to the cloud — this can take a minute…`, 6000);
     const r = await fetch('/api/fg/team-launch/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'list', tab, pairs, target: 'cloud', month: new Date().toISOString().slice(0, 7) }),
+      body: JSON.stringify({ source: 'list', sheetUrl: saved.sheetUrl || '', tab: saved.tab || '', pageId, pairs, target: 'cloud', month: new Date().toISOString().slice(0, 7) }),
     }).then((x) => x.json());
     if (r.error) showCampaignToast(`Couldn’t run — ${r.error}`, 5000);
-    else if (r.skipped && !r.cloudId) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible invites in that tab'}`, 4500);
+    else if (r.skipped && !r.cloudId) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible invites in that list'}`, 4500);
     else {
       const n = (r.leadCount != null) ? `${r.leadCount} invites ` : '';
-      showCampaignToast(`Follower Growth dispatched from “${tab}” — ${n}running in the cloud.`, 5000);
+      showCampaignToast(`Follower Growth dispatched to ${pageLabel} — ${n}running in the cloud.`, 5000);
       // Capture the per-account queued plan (profileId → count) so the Live-status
       // board can show how many invites each account has lined up. Persist by
       // cloudId so a page reload mid-run can restore it (the engine can't supply
@@ -21366,6 +21364,8 @@ async function initFollowerGrowth() {
   fgtlBindLaunch();
   fgReviewRenderGate();
   fgSyncLiveSurfaces();
+  fgBindListSource();
+  fgLoadPages().catch(() => {});
 
   // 4b. Ensure SoO is loaded so launch-list eligibility (Company col AQ) is
   // accurate on first render — else every account shows optimistically eligible.
@@ -21635,6 +21635,92 @@ function fgtlCloudPoll() {
 // roles" or "Use this tab". Empty → legacy build-and-dispatch flow.
 let _fgtlListTab = '';
 
+// The chosen sheet + page survive a reload. _fgtlListTab was in-memory only,
+// so a restart silently reverted a bring-your-own list to the roles builder —
+// the single most confusing thing about the old flow.
+const FG_STORE_KEY = 'fg.launch.source.v1';
+
+function fgLoadSource() {
+  try { return JSON.parse(localStorage.getItem(FG_STORE_KEY) || '{}') || {}; }
+  catch (_) { return {}; }
+}
+function fgSaveSource(patch) {
+  const next = { ...fgLoadSource(), ...patch };
+  try { localStorage.setItem(FG_STORE_KEY, JSON.stringify(next)); } catch (_) {}
+  return next;
+}
+
+// Company pages, loaded from /api/fg/pages. Ortus-only default so the
+// dropdown and any confirm dialog have something sane before that fetch lands.
+let _fgPagesList = [{ id: 'ortus', label: 'Ortus Club' }];
+function fgPageLabel(id) {
+  const p = _fgPagesList.find((x) => x.id === (id || 'ortus'));
+  return (p || _fgPagesList[0] || { label: 'Ortus Club' }).label;
+}
+
+/** Populate the page <select>, selecting the stored page or Ortus. */
+async function fgLoadPages() {
+  const sel = document.getElementById('fg-page-select');
+  const echo = document.getElementById('fg-page-echo');
+  try {
+    const r = await fetch('/api/fg/pages');
+    const d = await r.json();
+    if (Array.isArray(d.pages) && d.pages.length) _fgPagesList = d.pages;
+  } catch (_) { /* keep the Ortus-only default */ }
+  const saved = fgLoadSource();
+  const chosen = _fgPagesList.some((p) => p.id === saved.pageId) ? saved.pageId : 'ortus';
+  if (sel) sel.innerHTML = _fgPagesList.map((p) => `<option value="${escHtml(p.id)}"${p.id === chosen ? ' selected' : ''}>${escHtml(p.label)}</option>`).join('');
+  if (echo) echo.textContent = fgPageLabel(chosen);
+  if (!saved.pageId) fgSaveSource({ pageId: chosen }); // first load — pin the default so it's explicit, not implicit
+}
+
+/** Bind the page dropdown, the sheet-URL door, and the (cosmetic) door toggle. */
+function fgBindListSource() {
+  const sel = document.getElementById('fg-page-select');
+  if (sel && !sel._fgBound) {
+    sel._fgBound = true;
+    sel.addEventListener('change', () => {
+      fgSaveSource({ pageId: sel.value });
+      const echo = document.getElementById('fg-page-echo');
+      if (echo) echo.textContent = fgPageLabel(sel.value);
+    });
+  }
+  const url = document.getElementById('fg-sheet-url');
+  const urlEcho = document.getElementById('fg-sheet-echo');
+  if (url && !url._fgBound) {
+    url._fgBound = true;
+    const saved = fgLoadSource();
+    if (saved.sheetUrl) url.value = saved.sheetUrl;
+    const persist = () => {
+      const v = url.value.trim();
+      fgSaveSource({ sheetUrl: v });
+      if (urlEcho) { urlEcho.textContent = v ? '✓ saved' : ''; urlEcho.style.display = v ? '' : 'none'; }
+    };
+    url.addEventListener('change', persist);
+    url.addEventListener('blur', persist);
+    if (saved.sheetUrl && urlEcho) { urlEcho.textContent = '✓ saved'; urlEcho.style.display = ''; }
+  }
+  const openBtn = document.getElementById('fg-sheet-open');
+  if (openBtn && !openBtn._fgBound) {
+    openBtn._fgBound = true;
+    openBtn.addEventListener('click', () => {
+      const v = (fgLoadSource().sheetUrl || '').trim();
+      if (v) window.open(v, '_blank', 'noopener'); else alert('Paste your Google Sheet link first.');
+    });
+  }
+  // Visual only, matching the approved sketch's own tiny script — only the
+  // "I already have the list" door is wired to anything; "Build one for me"
+  // is a placeholder.
+  document.querySelectorAll('#nav-follower-growth .sk-door').forEach((d) => {
+    if (d._fgBound) return; d._fgBound = true;
+    d.addEventListener('click', (e) => {
+      if (e.target.closest('.sk-body')) return; // don't hijack clicks on the input/buttons inside
+      document.querySelectorAll('#nav-follower-growth .sk-door').forEach((x) => { x.classList.remove('on'); x.classList.add('off'); });
+      d.classList.add('on'); d.classList.remove('off');
+    });
+  });
+}
+
 /** Stream the campaign log into the Live Status section's log box. */
 function fgwStartLog() {
   const box = document.getElementById('fgw-log');
@@ -21888,8 +21974,15 @@ async function fgtlLaunch() {
   const isCloud = (typeof getRunTarget === 'function' && getRunTarget() === 'cloud');
   const goBtn = document.getElementById('fgtl-go');
   if (goBtn) goBtn.disabled = true;
-  // Sheet-driven flow when a list tab has been generated/chosen; else legacy.
-  const listPayload = _fgtlListTab ? { source: 'list', tab: _fgtlListTab } : {};
+  // No source → refuse here, and let the server refuse too. There is no third
+  // branch: the app must never build a list nobody asked for.
+  const saved = fgLoadSource();
+  if (!saved.sheetUrl && !saved.tab) {
+    alert('Choose where the list comes from first — paste a Google Sheet link, or build one from the team\'s connections.');
+    if (goBtn) goBtn.disabled = false;
+    return;
+  }
+  const listPayload = { source: 'list', sheetUrl: saved.sheetUrl || '', tab: saved.tab || '', pageId: saved.pageId || 'ortus' };
   let res;
   try {
     res = await fetch('/api/fg/team-launch/start', {

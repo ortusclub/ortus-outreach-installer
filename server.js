@@ -103,7 +103,7 @@ import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWriteback
 import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows, fgLedgerTracking, listRunShouldRetire } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows, resolveListSource } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
-import { pageById } from './src/fg-pages.js';
+import { pageById, FG_PAGE_LIST } from './src/fg-pages.js';
 import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
@@ -3146,6 +3146,12 @@ app.post('/api/fg/master/build', async (req, res) => {
       campaignLog(`[FG-master] failed: ${err.message}`);
     }
   })();
+});
+
+// The company pages FG can grow. Static, but served so the dropdown and the
+// launch path can never disagree about the ids.
+app.get('/api/fg/pages', (_req, res) => {
+  res.json({ pages: FG_PAGE_LIST.map((p) => ({ id: p.id, label: p.label })) });
 });
 
 // All tab names in the FG sheet — populates the "bring your own" dropdown.

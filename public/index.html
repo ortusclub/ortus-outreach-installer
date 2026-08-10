@@ -2475,6 +2475,27 @@
       #nav-follower-growth .fgw-select { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--border,#ccc); border-radius:8px; font:inherit; background:var(--bg,#fff); color:var(--ink); }
       #nav-follower-growth .fgw-icon-btn { border:1px solid var(--border,#ccc); background:var(--bg,#fff); color:var(--ink); border-radius:8px; width:34px; height:34px; cursor:pointer; font-size:15px; flex:none; }
       #nav-follower-growth .fgw-icon-btn:hover { border-color:var(--ink); }
+      /* ── Sketch B: page dropdown + two doors ───────────────────────── */
+      #nav-follower-growth .sk-door { border:1px solid var(--hairline,#ddd); border-radius:14px; padding:16px 18px; margin-bottom:12px; cursor:pointer; }
+      #nav-follower-growth .sk-door.on { border-color:var(--ink,#111); box-shadow:inset 0 0 0 1px var(--ink,#111); }
+      #nav-follower-growth .sk-door.off { opacity:.5; }
+      #nav-follower-growth .sk-door-h { font-family:var(--mono); font-size:11px; letter-spacing:.08em;
+                text-transform:uppercase; display:flex; align-items:center; gap:9px; margin-bottom:5px; }
+      #nav-follower-growth .sk-radio { width:13px; height:13px; border-radius:50%; border:1.5px solid currentColor; display:inline-block; position:relative; flex:none; }
+      #nav-follower-growth .sk-door.on .sk-radio::after { content:''; position:absolute; inset:2.5px; border-radius:50%; background:currentColor; }
+      #nav-follower-growth .sk-door-s { font-size:13px; opacity:.75; line-height:1.55; }
+      #nav-follower-growth .sk-body { margin-top:13px; }
+      #nav-follower-growth .sk-url { width:100%; box-sizing:border-box; padding:11px 13px; border:1px solid var(--hairline,#ddd);
+                border-radius:9px; font-family:var(--mono); font-size:12px; background:transparent; color:inherit; }
+      #nav-follower-growth .sk-row { display:flex; gap:9px; align-items:center; margin-top:9px; flex-wrap:wrap; }
+      /* company-page picker */
+      #nav-follower-growth .sk-page { border:1px solid var(--hairline,#ddd); border-radius:14px; padding:15px 18px; margin-bottom:18px;
+                display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+      #nav-follower-growth .sk-page-l { flex:1; min-width:230px; }
+      #nav-follower-growth .sk-page-h { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:4px; }
+      #nav-follower-growth .sk-page-s { font-size:12.5px; opacity:.7; line-height:1.5; }
+      #nav-follower-growth .sk-page select { padding:10px 13px; border:1px solid var(--ink,#111); border-radius:9px;
+                font-size:13px; background:transparent; color:inherit; min-width:250px; }
       #nav-follower-growth .fgw-live-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
       #nav-follower-growth .fgw-live-controls { display:flex; align-items:center; gap:12px; }
       #nav-follower-growth .fgw-toggle-lab { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; opacity:.7; }
@@ -2511,17 +2532,58 @@
            launch, with the live status streaming at the bottom. -->
       <div id="fgap-manual">
 
-      <!-- ── STEP 1 · WHO TO INVITE ────────────────────────────────────────
-           You choose roles. Whose network each person sits in is an ANSWER the
-           app already has — not a second question. The account list is one click
-           away, with a reason beside every account being skipped. -->
+      <!-- ── STEP 1 · THE PAGE ─────────────────────────────────────────────
+           The page is an explicit choice in setup (Sam), never inferred from
+           who is logged in. -->
       <div class="fgw-step" id="fgw-step-1">
-        <div class="fgw-step-head"><span class="fgw-num">1</span><span class="fgw-title">Who to invite</span></div>
+        <div class="fgw-step-head"><span class="fgw-num">1</span><span class="fgw-title">Which page are we growing?</span></div>
+        <div class="sk-page">
+          <div class="sk-page-l">
+            <div class="sk-page-h">Company page</div>
+            <div class="sk-page-s">Everyone on the team sees every page. Whoever runs it picks the page here &#8212; it is never guessed from the login.</div>
+          </div>
+          <select id="fg-page-select"></select>
+        </div>
+        <p class="fgw-lead" style="margin-top:-6px">Invites go to <b id="fg-page-echo">Ortus Club</b> &#8212; and the run is stamped with that page, so the board never mixes two pages up.</p>
+      </div>
 
-        <div class="fgtl-step-eyebrow">Roles &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
-        <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
-        <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
-        <div class="filter-foot"><span class="hint">Defaults toward marketers.</span><span class="match" id="fgtl-match"></span></div>
+      <!-- ── STEP 2 · THE LIST ─────────────────────────────────────────────
+           Two doors, so the app can never quietly build a list when nobody
+           asked it to (Sam's complaint). Only "I already have the list" is
+           wired up; "Build one for me" is a placeholder for future work. -->
+      <div class="fgw-step" id="fgw-step-list">
+        <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Where does the list come from?</span></div>
+
+        <div class="sk-door on" id="door-have">
+          <div class="sk-door-h"><span class="sk-radio"></span> I already have the list</div>
+          <div class="sk-door-s">You built it offline in your own Google Sheet. Paste the link &#8212; the app works down that tab and stamps its results back into it.</div>
+          <div class="sk-body">
+            <input class="sk-url" id="fg-sheet-url" placeholder="Paste your Google Sheet link&#8230;" autocomplete="off">
+            <div class="sk-row">
+              <button type="button" class="fgw-btn" id="fg-sheet-preview">Preview</button>
+              <button type="button" class="fgw-btn" id="fg-sheet-open">Open sheet &#8599;</button>
+              <span class="fgw-list-tab" id="fg-sheet-echo" style="display:none"></span>
+            </div>
+            <div class="fgw-format" style="margin-top:13px">
+              <div class="fgw-format-h">Your tab needs two columns:</div>
+              <code class="fgw-format-cols">LinkedIn URL &#183; Account Email</code>
+              <div class="fgw-format-note"><b>Account Email</b> = the GoLogin login that sends that invite. Everything else in your sheet is left alone &#8212; the app only <b>adds</b> Status / Invited At columns, exactly like a CC campaign.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sk-door off" id="door-build">
+          <div class="sk-door-h"><span class="sk-radio"></span> Build one for me</div>
+          <div class="sk-door-s">Search the team&#8217;s connections by job title. Writes the result to a new sheet, then hands it back to the box above.</div>
+        </div>
+      </div>
+
+      <!-- ── STEP 3 · ACCOUNTS ─────────────────────────────────────────────
+           Unchanged. An audit, not a step: the sheet already names the sender
+           on every row; this panel just shows who can send and why not. -->
+      <div class="fgw-step" id="fgw-step-accounts">
+        <div class="fgw-step-head"><span class="fgw-num">3</span><span class="fgw-title">Accounts</span></div>
+        <p class="fgw-lead">Each row&#8217;s <b>Account Email</b> decides who sends it. This is here so you can see which accounts are blocked, and why.</p>
 
         <!-- The answer -->
         <div class="rv-answer">
@@ -2564,49 +2626,11 @@
             <button class="fgtl-go-btn" id="fgtl-stop">Stop now</button>
           </div>
         </div>
-
-        <p class="fgw-lead rv-byo-line">Or skip the search and <a href="#" id="fg-byo-toggle" class="rv-byo">use a tab you filled in yourself &#8595;</a></p>
-        <div id="fg-byo-panel" style="display:none">
-          <div class="fgw-format">
-            <div class="fgw-format-h">Tab format &#8212; put these in row&nbsp;1:</div>
-            <code class="fgw-format-cols">First Name &#183; Last Name &#183; LinkedIn URL &#183; Job Title &#183; Company &#183; Account Email</code>
-            <div class="fgw-format-note"><b>LinkedIn URL</b> and <b>Account Email</b> are required. <b>Account Email</b> = the GoLogin account's login email (that's who sends each invite).</div>
-          </div>
-          <div class="fgw-byo-row">
-            <select id="fgtl-byo-tab" class="fgw-select"><option value="">Loading tabs&#8230;</option></select>
-            <button type="button" id="fgtl-byo-refresh" class="fgw-icon-btn" title="Reload tab list">&#8635;</button>
-            <button type="button" id="fgtl-byo-use" class="fgw-btn" title="Fire from this tab in the FG sheet">Use this tab</button>
-          </div>
-        </div>
       </div>
 
-      <!-- ── STEP 2 · REVIEW ───────────────────────────────────────────────
-           The trust step. The list is written to its own tab and NOTHING fires
-           until someone has opened it. -->
-      <div class="fgw-step rv-step-review" id="fgw-step-review">
-        <div class="fgw-step-head"><span class="fgw-num">2</span><span class="fgw-title">Review the list in the sheet</span></div>
-        <p class="fgw-lead">Nothing sends until someone has opened it. The list goes to its own tab in the central FG Google Sheet &#8212; every name, their job title, and the account that will invite them. Delete anyone you don&#8217;t want; the run uses whatever is left. <button type="button" id="fgtl-open-sheet" class="fgw-sheet-link">Open the FG Sheet &#8599;</button></p>
-
-        <div class="rv-review">
-          <div class="rv-rev-left">
-            <button type="button" id="fgtl-generate" class="fgw-btn fgw-btn-primary" title="Build the list from the roles above and write it to a tab in the FG sheet">Write the list to the sheet</button>
-            <div class="rv-rev-state" id="fg-review-state" style="display:none">
-              <span class="rv-tick">&#10003;</span> <span id="fg-review-line"></span>
-              <a href="#" class="rv-open" id="fg-open-tab">Open the tab &#8599;</a>
-            </div>
-            <div class="rv-rev-meta" id="fg-review-meta"></div>
-            <div id="fgtl-list-status" class="fgw-list-status"></div>
-          </div>
-          <div class="rv-rev-gate" id="fg-gate">
-            <div class="rv-gate-title">Launch is locked</div>
-            <div class="rv-gate-body">until the tab has been opened at least once</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── STEP 2 · SCHEDULE ─────────────────────────────────────────── -->
+      <!-- ── STEP 4 · SCHEDULE ─────────────────────────────────────────── -->
       <div class="fgw-step" id="fgw-step-2">
-        <div class="fgw-step-head"><span class="fgw-num">3</span><span class="fgw-title">Schedule</span></div>
+        <div class="fgw-step-head"><span class="fgw-num">4</span><span class="fgw-title">Schedule</span></div>
         <p class="fgw-lead">Runs automatically on the <b id="fgw-sched-days">1st &amp; 15th</b> at 6am London time, in the <b>&#9729;&#65038; cloud VM</b> — so it keeps going after you close your laptop. <span id="fgw-sched-next"></span></p>
         <button type="button" id="fgw-edit-schedule" class="fgw-btn">Edit schedule</button>
       </div>
@@ -2616,7 +2640,7 @@
            streaming campaign log / per-account board / live card. -->
       <div class="fgw-step" id="fgw-step-live">
         <div class="fgw-live-head">
-          <div class="fgw-step-head" style="margin:0"><span class="fgw-num">4</span><span class="fgw-title">Live status</span></div>
+          <div class="fgw-step-head" style="margin:0"><span class="fgw-num">5</span><span class="fgw-title">Live status</span></div>
           <div class="fgw-live-controls">
             <span id="fgw-list-tab" class="fgw-list-tab" style="display:none"></span>
             <button type="button" class="fgap-run" id="fgap-run" title="Fire the invite-list tab you built in step 1 to the cloud VM now, outside the schedule">&#9654; Run it now</button>
