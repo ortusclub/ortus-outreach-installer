@@ -288,3 +288,35 @@ export function fgLedgerTracking(u) {
     fgMemberId:  s((u || {}).memberId),
   };
 }
+
+/**
+ * Decide whether a sheet-driven (list) run can be retired this reconcile tick.
+ *
+ * Terminal campaign status alone is not enough for a sheet-sourced record:
+ * `updateSheetRow` never throws (network/timeout/Apps-Script/sharing errors
+ * are all swallowed internally and it just returns false), so `stampedOk`
+ * vs `stampedTotal` is the ONLY signal that the write-back actually landed.
+ * Retiring on `terminal` alone would permanently drop the "what was sent"
+ * record for a real terminal run whose stamping happened to fail — no later
+ * tick would ever retry it, because a reconciled record is short-circuited
+ * out of every future pass.
+ *
+ * This mirrors the legacy central-tab path on purpose: `updateFgListLedger`
+ * THROWS on failure, so the exception propagates out of the caller before
+ * `terminal` is ever returned, and the un-reconciled record retries every
+ * tick until the write lands. Do not delete this gate to "simplify" the
+ * return — that would make the new sheet path strictly less robust than the
+ * path right beside it.
+ *
+ * A record with nothing to stamp (stampedTotal === 0 — no updates this tick,
+ * or not sheet-sourced at all) is never held back by this rule; only an
+ * actually-incomplete stamp is.
+ *
+ * @param {{terminal:boolean, sheetSourced:boolean, stampedOk:number, stampedTotal:number}} args
+ * @returns {boolean}
+ */
+export function listRunShouldRetire({ terminal, sheetSourced, stampedOk, stampedTotal }) {
+  if (!terminal) return false;
+  if (!sheetSourced) return true;
+  return stampedOk === stampedTotal;
+}
