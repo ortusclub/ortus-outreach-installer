@@ -6,8 +6,6 @@ import {
 } from '../../src/connections/magellan-sheet.js';
 import { diagnose } from '../../src/connections/magellan-diagnose.js';
 
-const ensure = async () => ({ spreadsheetId: 'S1', url: 'https://sheet' });
-
 // The layout is Abygael's cleaned sheet, so the columns are a contract.
 test('the connections tab has exactly the cleaned-sheet columns, in order', () => {
   assert.deepEqual(CONNECTIONS_HEADER, ['LinkedIn Membership ID', 'Location', 'First Name',
@@ -101,7 +99,7 @@ test('no import yet means no import tab', () => {
 test('publish writes accounts, log and connections, and skips import until there is one', async () => {
   const calls = [];
   const r = await publish({ perAccount: [], log: [] }, {
-    ensure, read: () => [], write: async (_id, tab) => calls.push(tab),
+    read: () => [], write: async (tab) => { calls.push(tab); return { url: 'https://sheet' }; },
   });
   assert.equal(r.written, true);
   assert.equal(r.url, 'https://sheet');
@@ -112,7 +110,7 @@ test('publish adds the import tab once an import has run', async () => {
   const calls = [];
   await publish(
     { perAccount: [], log: [], imported: { perAccount: [{ account: 'a@o.com', created: 1 }] } },
-    { ensure, read: () => [], write: async (_id, tab) => calls.push(tab) },
+    { read: () => [], write: async (tab) => calls.push(tab) },
   );
   assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB, CONNECTIONS_TAB, IMPORT_TAB]);
 });
@@ -120,7 +118,7 @@ test('publish adds the import tab once an import has run', async () => {
 // A dead sheet must never stop a sweep.
 test('a Google failure is reported, not thrown', async () => {
   const r = await publish({ perAccount: [], log: [] }, {
-    ensure, read: () => [], write: async () => { throw new Error('Timeout di blocco'); },
+    read: () => [], write: async () => { throw new Error('Timeout di blocco'); },
   });
   assert.equal(r.written, false);
   assert.match(r.error, /Timeout di blocco/);
@@ -129,8 +127,8 @@ test('a Google failure is reported, not thrown', async () => {
 test('a second publish is skipped while the first is still in flight', async () => {
   let release;
   const gate = new Promise((res) => { release = res; });
-  const first = publish({ perAccount: [], log: [] }, { ensure, read: () => [], write: () => gate });
-  const second = await publish({ perAccount: [], log: [] }, { ensure, read: () => [], write: async () => {} });
+  const first = publish({ perAccount: [], log: [] }, { read: () => [], write: () => gate });
+  const second = await publish({ perAccount: [], log: [] }, { read: () => [], write: async () => {} });
   assert.equal(second.written, false);
   assert.match(second.skipped, /already in flight/);
   release();

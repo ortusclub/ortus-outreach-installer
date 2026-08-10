@@ -9,19 +9,13 @@
 //   Log          the same timestamped lines the card shows
 //   Import       what actually went into HubSpot, per account
 //
-// Magellan gets its OWN spreadsheet, created on first use and remembered in
-// data/magellan-sheet.json. It is not the FG sheet: that one is locked by the
-// Follower Growth jobs, and a 400,000-row connections tab has no business in it.
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// The tabs land in the spreadsheet the central Apps Script is bound to — the
+// same sheet you paste google-apps-script.js into. Not the Follower Growth
+// sheet: that one is locked by the FG jobs, which is what made the first run's
+// tabs come back empty.
 import { SHEETS_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { readForPlan } from './magellan-pull.js';
 import { syntheticEmail } from './magellan.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.join(__dirname, '../..');
-const SHEET_REF = path.join(REPO, 'data/magellan-sheet.json');
 
 export const CONNECTIONS_TAB = 'Connections';
 export const ACCOUNTS_TAB = 'Accounts';
@@ -70,36 +64,18 @@ async function postWebApp(payload, { timeoutMs = 60000 } = {}) {
   }
 }
 
-export function readSheetRef() {
-  try { return JSON.parse(fs.readFileSync(SHEET_REF, 'utf8')); } catch { return null; }
-}
-function writeSheetRef(ref) {
-  fs.mkdirSync(path.dirname(SHEET_REF), { recursive: true });
-  fs.writeFileSync(`${SHEET_REF}.tmp`, JSON.stringify(ref, null, 2));
-  fs.renameSync(`${SHEET_REF}.tmp`, SHEET_REF);
-}
-
-/**
- * The Magellan spreadsheet, created once and reused. createLeadTab makes it,
- * shares it anyone-with-link, and gives back its id.
- */
-export async function ensureSheet({ post = postWebApp } = {}) {
-  const ref = readSheetRef();
-  if (ref && ref.spreadsheetId) return ref;
-  const r = await post({
-    action: 'createLeadTab', name: 'Operation Magellan',
-    header: CONNECTIONS_HEADER, rows: [],
-  }, { timeoutMs: 90000 });
-  if (!r || r.error || !r.spreadsheetId) {
-    throw new Error(`Could not create the Magellan sheet — ${(r && r.error) || 'no id came back'}`);
+/** The Apps Script's own spreadsheet — the one the tabs land in. */
+export async function sheetUrl({ post = postWebApp } = {}) {
+  const r = await post({ action: 'getScriptSheetUrl' }, { timeoutMs: 30000 });
+  if (!r || r.error || !r.url) {
+    throw new Error((r && r.error) || 'The Apps Script did not return its sheet URL — redeploy it.');
   }
-  const made = { spreadsheetId: r.spreadsheetId, url: r.url, createdAt: new Date().toISOString() };
-  writeSheetRef(made);
-  return made;
+  return r.url;
 }
 
-async function writeTab(sheetId, tab, header, rows, { post = postWebApp } = {}) {
-  const r = await post({ action: 'writeTab', sheetId, tab, header, rows }, { timeoutMs: 120000 });
+// No sheetId: the Apps Script writes into the spreadsheet it is bound to.
+async function writeTab(tab, header, rows, { post = postWebApp } = {}) {
+  const r = await post({ action: 'writeTab', tab, header, rows }, { timeoutMs: 120000 });
   if (!r || r.error) throw new Error((r && r.error) || 'no reply');
   return r;
 }
@@ -201,20 +177,18 @@ let _inFlight = false;
  * @returns {Promise<{written:boolean, url?:string, skipped?:string, error?:string}>}
  */
 export async function publish(state = {}, deps = {}) {
-  const { write = writeTab, ensure = ensureSheet, read = readForPlan, force = false } = deps;
+  const { write = writeTab, read = readForPlan, force = false } = deps;
   if (_inFlight && !force) return { written: false, skipped: 'a write is already in flight' };
   _inFlight = true;
   try {
-    const ref = await ensure(deps);
-    const id = ref.spreadsheetId;
     // Accounts and Log first: on a long run those are what someone watching
     // actually needs, and the Connections tab is the slow one.
-    await write(id, ACCOUNTS_TAB, ACCOUNTS_HEADER, accountsRows(state), deps);
-    await write(id, LOG_TAB, LOG_HEADER, logRows(state), deps);
-    await write(id, CONNECTIONS_TAB, CONNECTIONS_HEADER, connectionsRows(state, { read }), deps);
+    await write(ACCOUNTS_TAB, ACCOUNTS_HEADER, accountsRows(state), deps);
+    await write(LOG_TAB, LOG_HEADER, logRows(state), deps);
+    const last = await write(CONNECTIONS_TAB, CONNECTIONS_HEADER, connectionsRows(state, { read }), deps);
     const imp = importRows(state.imported);
-    if (imp.length) await write(id, IMPORT_TAB, IMPORT_HEADER, imp, deps);
-    return { written: true, url: ref.url };
+    if (imp.length) await write(IMPORT_TAB, IMPORT_HEADER, imp, deps);
+    return { written: true, url: (last && last.url) || '' };
   } catch (err) {
     return { written: false, error: err.message };
   } finally {

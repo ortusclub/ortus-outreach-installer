@@ -391,6 +391,12 @@ function doPost(e) {
       return handleWriteTab(data);
     }
 
+    // This script's own spreadsheet — so the app can deep-link to the tabs
+    // writeTab just wrote.
+    if (data.action === 'getScriptSheetUrl') {
+      return jsonResponse({ url: SpreadsheetApp.getActiveSpreadsheet().getUrl() });
+    }
+
     // Validate required field
     if (!data.sheetId) {
       return jsonResponse({ error: 'sheetId is required' });
@@ -557,20 +563,20 @@ function handleGetConnection(data) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Action: writeTab — create-or-replace one named tab in any spreadsheet
 // ═══════════════════════════════════════════════════════════════════════════
-// { sheetId, tab, header: [...], rows: [[...], ...], append: false }
-// Replaces the tab's contents by default (idempotent: re-writing the same tab
-// never doubles rows). append:true adds rows under what's already there, which
-// is how a long run streams without re-sending everything it has already sent.
+// { tab, header: [...], rows: [[...], ...], sheetId?, append?: false }
+// With no sheetId it writes into THIS script's own spreadsheet — the one you
+// pasted this code into. Replaces the tab's contents by default (idempotent:
+// re-writing the same tab never doubles rows); append:true adds rows under
+// what's already there.
 function handleWriteTab(data) {
   try {
     var id = (data.sheetId || '').toString().trim();
-    if (!id) return jsonResponse({ error: 'writeTab: missing sheetId' });
     var name = (data.tab || '').toString().trim().substring(0, 95);
     if (!name) return jsonResponse({ error: 'writeTab: missing tab name' });
 
     var header = data.header || [];
     var rows = data.rows || [];
-    var ss = SpreadsheetApp.openById(id);
+    var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
 
     if (!data.append) sheet.clear();
@@ -594,7 +600,7 @@ function handleWriteTab(data) {
     }
     if (padded.length) sheet.getRange(startRow, 1, padded.length, width).setValues(padded);
 
-    return jsonResponse({ ok: true, tab: name, written: padded.length });
+    return jsonResponse({ ok: true, tab: name, written: padded.length, url: ss.getUrl() });
   } catch (err) {
     return jsonResponse({ ok: false, error: err.message });
   }
