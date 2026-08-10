@@ -22,10 +22,10 @@ function load() {
 
 test('the four FG ledger fields map to their own columns', () => {
   const { FIELD_MAP } = load();
-  assert.equal(FIELD_MAP.fgStatus, 'Status');
-  assert.equal(FIELD_MAP.fgInvitedAt, 'Invited At');
-  assert.equal(FIELD_MAP.fgNote, 'Note');
-  assert.equal(FIELD_MAP.fgMemberId, 'Member ID');
+  assert.equal(FIELD_MAP.fgStatus, 'FG Status');
+  assert.equal(FIELD_MAP.fgInvitedAt, 'FG Invited At');
+  assert.equal(FIELD_MAP.fgNote, 'FG Note');
+  assert.equal(FIELD_MAP.fgMemberId, 'FG Member ID');
 });
 
 test('FG fields do not collide with the CC fields that already exist', () => {
@@ -44,9 +44,26 @@ test('the FG columns are provisioned for the follower_growth mode only', () => {
   // Spread the vm-realm array into a plain one first — Node's strict
   // deepEqual treats an Array from a different vm context as a different
   // realm and refuses reference-equality on its elements otherwise.
-  assert.deepEqual([...MODE_COLUMNS_V2.follower_growth], ['Status', 'Invited At', 'Note', 'Member ID']);
-  for (const col of ['Status', 'Invited At', 'Note', 'Member ID']) {
+  assert.deepEqual([...MODE_COLUMNS_V2.follower_growth], ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID']);
+  for (const col of ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID']) {
     assert.ok(ALL_MODE_COLUMNS_V2.includes(col), `${col} must be in ALL_MODE_COLUMNS_V2`);
+  }
+});
+
+test('no FG column collides with the legacy column-migration lists', () => {
+  // Regression test for fix round 1: a bare 'Status' header was migrated by
+  // COLUMN_RENAMES into 'Connection Request Status' and then deleted by
+  // OLD_COLUMNS_TO_REMOVE the first time handleEnsureColumns ran against an
+  // operator's sheet — both lists run unconditionally, not gated on mode.
+  // FG's ledger silently lost its Status column and every later write no-oped.
+  // Driven off MODE_COLUMNS_V2.follower_growth so this still holds if a fifth
+  // FG column is added later.
+  const { MODE_COLUMNS_V2, COLUMN_RENAMES, OLD_COLUMNS_TO_REMOVE } = load();
+  for (const col of MODE_COLUMNS_V2.follower_growth) {
+    assert.ok(!COLUMN_RENAMES.some((r) => r.from === col),
+      `${col} must not appear as a COLUMN_RENAMES source — it would be migrated away`);
+    assert.ok(!OLD_COLUMNS_TO_REMOVE.includes(col),
+      `${col} must not appear in OLD_COLUMNS_TO_REMOVE — it would be deleted`);
   }
 });
 

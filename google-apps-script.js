@@ -115,7 +115,7 @@ var MODE_COLUMNS_V2 = {
                           'DM Status'],
   // Follower Growth: the four ledger columns stamped back into the operator's
   // own invite-list sheet.
-  follower_growth: ['Status', 'Invited At', 'Note', 'Member ID']
+  follower_growth: ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID']
 };
 
 // Every per-mode column across every mode — used to compute the "hide
@@ -128,7 +128,7 @@ var ALL_MODE_COLUMNS_V2 = [
   'Connection Request Status', 'DM Status', 'OP Status',
   'InM Status', 'Intro Status', 'Connection Accepted Status',
   'Open Profile', 'Introduction Status',
-  'Status', 'Invited At', 'Note', 'Member ID'
+  'FG Status', 'FG Invited At', 'FG Note', 'FG Member ID'
 ];
 
 // Column widths applied on every prepareSheet call. Universal map: any
@@ -346,13 +346,20 @@ var FIELD_MAP = {
   // ── Follower Growth ledger (2026-08-10) ──
   // FG now fires from the operator's OWN sheet rather than a tab in the central
   // FG spreadsheet (fg-apps-script.js is container-bound and cannot reach it),
-  // so its writeback comes through this deployment's updateRow action.
-  // Prefixed `fg*` on purpose: bare `status` is already Connection Request
-  // Status, and FG's `Member ID` is NOT LinkedIn Membership ID.
-  fgStatus:        'Status',
-  fgInvitedAt:     'Invited At',
-  fgNote:          'Note',
-  fgMemberId:      'Member ID'
+  // so its writeback comes through this deployment's updateRow action. These
+  // headers live in the operator's own sheet alongside connection-campaign
+  // columns, so every one of the four is prefixed `FG ` — not just to avoid
+  // the `status`/`Member ID` collisions above, but because a bare 'Status'
+  // header collides with COLUMN_RENAMES/OLD_COLUMNS_TO_REMOVE (legacy v1
+  // migration lists handleEnsureColumns runs unconditionally on every sheet):
+  // it would get silently migrated into 'Connection Request Status' and then
+  // deleted the first time ensureColumns ran, breaking FG's writeback with no
+  // error. Prefixing all four keeps the set consistent and fences off any
+  // future addition to those migration lists from repeating the collision.
+  fgStatus:        'FG Status',
+  fgInvitedAt:     'FG Invited At',
+  fgNote:          'FG Note',
+  fgMemberId:      'FG Member ID'
 };
 
 // Header aliases — a sheet may carry an older/variant header for the same

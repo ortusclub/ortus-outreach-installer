@@ -30,10 +30,10 @@ const HEADER_ALIASES = {
   title: ['job title', 'title', 'role', 'position'],
   company: ['company', 'company name', 'organisation', 'organization', 'employer'],
   accountEmail: ['account email', 'account', 'email', 'gologin account', 'gologin', 'sender', 'sending account', 'invited by'],
-  status: ['status'],
-  invitedAt: ['invited at', 'invited', 'invited on'],
+  status: ['status', 'fg status'],
+  invitedAt: ['invited at', 'invited', 'invited on', 'fg invited at'],
   note: ['note', 'fg note', 'reason', 'notes'],
-  memberId: ['member id', 'memberid', 'member', 'linkedin id', 'urn'],
+  memberId: ['member id', 'memberid', 'member', 'linkedin id', 'urn', 'fg member id'],
 };
 
 const norm = (v) => String(v == null ? '' : v).trim();
