@@ -21185,10 +21185,13 @@ function fgapToggleExpand() {
 // immediately, outside the schedule (force). Needs the roster service deployed.
 async function fgapRunNow() {
   // No source → refuse here, and let the server refuse too. There is no third
-  // branch: the app must never build a list nobody asked for.
+  // branch: the app must never build a list nobody asked for. Only the ACTIVE
+  // door's value is ever sent (see fgActivePayload) — the other door's
+  // remembered value, if any, stays inert.
   const saved = fgLoadSource();
+  const active = fgActivePayload(saved);
   const btn = document.getElementById('fgap-run');
-  if (!saved.sheetUrl && !saved.tab) {
+  if (!active.sheetUrl && !active.tab) {
     showCampaignToast('Choose where the list comes from first — paste a Google Sheet link, or build one from the team\'s connections.', 6000);
     return;
   }
@@ -21211,7 +21214,7 @@ async function fgapRunNow() {
     showCampaignToast(`Dispatching to the cloud — this can take a minute…`, 6000);
     const r = await fetch('/api/fg/team-launch/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'list', sheetUrl: saved.sheetUrl || '', tab: saved.tab || '', pageId, pairs, target: 'cloud', month: new Date().toISOString().slice(0, 7) }),
+      body: JSON.stringify({ source: 'list', sheetUrl: active.sheetUrl, tab: active.tab, pageId, pairs, target: 'cloud', month: new Date().toISOString().slice(0, 7) }),
     }).then((x) => x.json());
     if (r.error) showCampaignToast(`Couldn’t run — ${r.error}`, 5000);
     else if (r.skipped && !r.cloudId) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible invites in that list'}`, 4500);
@@ -21668,12 +21671,49 @@ async function fgLoadPages() {
   if (!saved.pageId) fgSaveSource({ pageId: chosen }); // first load — pin the default so it's explicit, not implicit
 }
 
-/** Highlight whichever door is the actual chosen source ('have' or 'build'). */
+// Storage keeps BOTH doors' content (sheetUrl, tab) plus which one is live
+// (activeDoor). Selecting a door never destroys the other door's value — it
+// only changes which one is sent at launch. Default 'have' so a fresh install
+// and every already-stored value (written before activeDoor existed) behave
+// exactly as they do today.
+function fgActiveDoor(saved) { return saved.activeDoor === 'build' ? 'build' : 'have'; }
+function fgActivePayload(saved) {
+  return fgActiveDoor(saved) === 'build'
+    ? { sheetUrl: '', tab: saved.tab || '' }
+    : { sheetUrl: saved.sheetUrl || '', tab: '' };
+}
+
+/** Highlight whichever door is active. */
 function fgSelectDoor(which) {
   const have = document.getElementById('door-have');
   const build = document.getElementById('door-build');
   if (have) { have.classList.toggle('on', which === 'have'); have.classList.toggle('off', which !== 'have'); }
   if (build) { build.classList.toggle('on', which === 'build'); build.classList.toggle('off', which !== 'build'); }
+}
+
+/** Single writer for every piece of door-visible state — the active door's
+ *  highlight, the sheet-URL field + "✓ saved" echo, and the list-status line.
+ *  Paints purely from fgLoadSource(); call after every mutation (door click,
+ *  URL persist, generate, page load). Never call this on an 'input' keystroke
+ *  — it would stomp whatever the operator is mid-typing into the URL field. */
+function fgRenderSource() {
+  const saved = fgLoadSource();
+  const door = fgActiveDoor(saved);
+  fgSelectDoor(door);
+  const urlInput = document.getElementById('fg-sheet-url');
+  const urlEcho = document.getElementById('fg-sheet-echo');
+  if (urlInput) urlInput.value = saved.sheetUrl || '';
+  if (urlEcho) {
+    const show = !!saved.sheetUrl;
+    urlEcho.textContent = show ? '✓ saved' : '';
+    urlEcho.style.display = show ? '' : 'none';
+  }
+  const status = document.getElementById('fgtl-list-status');
+  if (status) {
+    status.innerHTML = (door === 'build' && saved.tab)
+      ? `Currently using tab <b>${escHtml(saved.tab)}</b> as the launch source.`
+      : '';
+  }
 }
 
 /** Bind the page dropdown and both list-source doors. */
@@ -21688,24 +21728,17 @@ function fgBindListSource() {
     });
   }
   const url = document.getElementById('fg-sheet-url');
-  const urlEcho = document.getElementById('fg-sheet-echo');
   if (url && !url._fgBound) {
     url._fgBound = true;
-    const saved = fgLoadSource();
-    if (saved.sheetUrl) url.value = saved.sheetUrl;
+    // Typing here IS choosing door 1 — but the value itself is only ever
+    // saved on change/blur, never on every keystroke (fgRenderSource() writes
+    // .value back from storage, so doing that mid-type would fight the cursor).
     const persist = () => {
-      const v = url.value.trim();
-      // Typing here IS choosing door 1 — always clear door 2's stored tab, even
-      // when the field is emptied. Otherwise backspacing a mistaken paste would
-      // silently re-arm whatever tab was generated earlier: resolveListSource()
-      // gives sheetUrl precedence, but sheetUrl='' + a leftover tab still fires.
-      fgSaveSource({ sheetUrl: v, tab: '' });
-      if (urlEcho) { urlEcho.textContent = v ? '✓ saved' : ''; urlEcho.style.display = v ? '' : 'none'; }
-      fgSelectDoor('have');
+      fgSaveSource({ sheetUrl: url.value.trim(), activeDoor: 'have' });
+      fgRenderSource();
     };
     url.addEventListener('change', persist);
     url.addEventListener('blur', persist);
-    if (saved.sheetUrl && urlEcho) { urlEcho.textContent = '✓ saved'; urlEcho.style.display = ''; }
   }
   const openBtn = document.getElementById('fg-sheet-open');
   if (openBtn && !openBtn._fgBound) {
@@ -21715,31 +21748,20 @@ function fgBindListSource() {
       if (v) window.open(v, '_blank', 'noopener'); else alert('Paste your Google Sheet link first.');
     });
   }
-  // Selecting a door is authoritative: it clears the OTHER door's stored value
-  // and becomes the live source. fgSelectDoor is the only place that touches
-  // the .on/.off classes, so the visible door and the one resolveListSource()
-  // will actually fire can never disagree. If the selected door has no value
-  // of its own, the source is now empty and launching refuses — honest, rather
-  // than silently firing whatever the other door had.
+  // Selecting a door only changes which one is active — it never touches the
+  // other door's remembered value, so glancing at door 2 can't throw away a
+  // pasted URL. fgRenderSource() is the only writer of what's visible, so the
+  // highlighted door, the URL field, the tab status, and what actually fires
+  // can never disagree.
   document.querySelectorAll('#nav-follower-growth .sk-door').forEach((d) => {
     if (d._fgBound) return; d._fgBound = true;
     d.addEventListener('click', (e) => {
       if (e.target.closest('.sk-body')) return; // don't hijack clicks on the input/buttons inside
-      if (d.id === 'door-have') fgSaveSource({ tab: '' });
-      else if (d.id === 'door-build') fgSaveSource({ sheetUrl: '' });
-      fgSelectDoor(d.id === 'door-have' ? 'have' : 'build');
+      fgSaveSource({ activeDoor: d.id === 'door-build' ? 'build' : 'have' });
+      fgRenderSource();
     });
   });
-  // Reflect the actually-chosen source (e.g. after a reload) rather than
-  // leaving whichever door happens to render "on" by default.
-  const saved = fgLoadSource();
-  if (saved.tab && !saved.sheetUrl) {
-    fgSelectDoor('build');
-    const status = document.getElementById('fgtl-list-status');
-    if (status && !status.textContent) status.innerHTML = `Currently using tab <b>${escHtml(saved.tab)}</b> as the launch source.`;
-  } else {
-    fgSelectDoor('have');
-  }
+  fgRenderSource();
 }
 
 /** Stream the campaign log into the Live Status section's log box. */
@@ -21872,15 +21894,11 @@ async function fgtlGenerateList() {
     });
     const d = await r.json();
     if (!r.ok || d.error) { if (status) status.textContent = 'Could not generate: ' + (d.error || r.statusText); return; }
-    // A generated tab IS the chosen source now. Clear any pasted sheet URL —
-    // resolveListSource() gives sheetUrl precedence, so a stale door 1 value
-    // would otherwise silently win over this freshly-built tab.
-    fgSaveSource({ tab: d.tab || '', sheetUrl: '' });
-    const urlInput = document.getElementById('fg-sheet-url');
-    const urlEcho = document.getElementById('fg-sheet-echo');
-    if (urlInput) urlInput.value = '';
-    if (urlEcho) { urlEcho.textContent = ''; urlEcho.style.display = 'none'; }
-    fgSelectDoor('build');
+    // Generating a tab chooses door 2 as the active source. Door 1's pasted
+    // URL (if any) is left exactly where it is — just no longer the one that
+    // fires — so switching back to door 1 later still finds it.
+    fgSaveSource({ tab: d.tab || '', activeDoor: 'build' });
+    fgRenderSource();
     const skips = (d.skipped && d.skipped.length) ? ` · ${d.skipped.length} account(s) skipped` : '';
     if (status) status.innerHTML = `&#10003; Written to <b>${escHtml(d.tab || '')}</b> &#183; ${Number(d.count || 0).toLocaleString()} people${skips} &#8212; this is now the launch source.`;
   } catch (err) {
@@ -21966,14 +21984,17 @@ async function fgtlLaunch() {
   const goBtn = document.getElementById('fgtl-go');
   if (goBtn) goBtn.disabled = true;
   // No source → refuse here, and let the server refuse too. There is no third
-  // branch: the app must never build a list nobody asked for.
+  // branch: the app must never build a list nobody asked for. Only the ACTIVE
+  // door's value is ever sent — the other door's remembered value, if any,
+  // stays inert, so what's visible and what fires can't disagree.
   const saved = fgLoadSource();
-  if (!saved.sheetUrl && !saved.tab) {
+  const active = fgActivePayload(saved);
+  if (!active.sheetUrl && !active.tab) {
     alert('Choose where the list comes from first — paste a Google Sheet link, or build one from the team\'s connections.');
     if (goBtn) goBtn.disabled = false;
     return;
   }
-  const listPayload = { source: 'list', sheetUrl: saved.sheetUrl || '', tab: saved.tab || '', pageId: saved.pageId || 'ortus' };
+  const listPayload = { source: 'list', sheetUrl: active.sheetUrl, tab: active.tab, pageId: saved.pageId || 'ortus' };
   let res;
   try {
     res = await fetch('/api/fg/team-launch/start', {
