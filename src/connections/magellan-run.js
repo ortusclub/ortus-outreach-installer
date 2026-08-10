@@ -101,6 +101,9 @@ export function startCollect(accounts, deps = {}) {
       }
       _state.account = entry.account;
       let launched = null;
+      // Which half of the account we are in, so a failure is explained by the
+      // rules that can actually apply to it.
+      let phase = 'launch';
       _state.step = 'Waiting for a free browser slot';
       await semaphore.acquire();
       try {
@@ -108,6 +111,7 @@ export function startCollect(accounts, deps = {}) {
         log(`◦ ${entry.account}: opening the browser…`);
         launched = await launchProfile(entry.profileId);
 
+        phase = 'read';
         _state.step = 'Reading the connections list';
         log(`◦ ${entry.account}: signed in, reading the connections list…`);
         const r = await collect(launched.page, entry.account, {
@@ -132,7 +136,7 @@ export function startCollect(accounts, deps = {}) {
         // One dead account must not end the sweep. Record WHY, in words the
         // operator can act on, not the raw stack.
         _state.current = null;
-        const d = diagnose(err);
+        const d = diagnose(err, { phase });
         _state.perAccount.push({ account: entry.account, error: err.message, diagnosis: d });
         log(logLine(entry.account, d));
       } finally {

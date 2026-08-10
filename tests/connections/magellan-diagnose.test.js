@@ -74,3 +74,29 @@ test('failures collapse to their causes, biggest first', () => {
 test('successful accounts never appear in the failure summary', () => {
   assert.deepEqual(summarise([{ account: 'a@o.com', total: 10 }]), []);
 });
+
+// The real bug: a Voyager error containing a network-ish word matched the
+// GoLogin-unreachable rule, so the operator was told "The browser never opened"
+// one line after being told the account had signed in.
+test('launch-only causes are never blamed for a failure while reading', () => {
+  const d = diagnose(new Error('Could not read connections: network error'), { phase: 'read' });
+  assert.notEqual(d.code, 'gologin_unreachable');
+  assert.equal(d.what, 'The connections list could not be read');
+  assert.match(d.why, /network error/);
+});
+
+test('the same error while launching still names GoLogin', () => {
+  const d = diagnose(new Error('network error'), { phase: 'launch' });
+  assert.equal(d.code, 'gologin_unreachable');
+});
+
+// When the explanation is wrong, the raw text is the only thing that says so.
+test('the log line always carries the raw error', () => {
+  const line = logLine('a@o.com', diagnose(new Error('Cr24 boom'), { phase: 'launch' }));
+  assert.match(line, /\[Cr24 boom\]$/);
+});
+
+test('the raw error is not repeated when it is already in the words', () => {
+  const line = logLine('a@o.com', diagnose(new Error('something nobody predicted')));
+  assert.equal((line.match(/something nobody predicted/g) || []).length, 1);
+});
