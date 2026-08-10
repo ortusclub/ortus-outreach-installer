@@ -2556,6 +2556,16 @@ app.post('/api/magellan/collect', (req, res) => {
 
 // Works out what the import would do. Writes nothing. The plan itself can be
 // hundreds of thousands of rows, so it stays on the server — only totals go out.
+// Stop after the current account. The one in flight finishes and closes its
+// browser cleanly rather than being killed mid-read.
+app.post('/api/magellan/stop', (_req, res) => {
+  try {
+    res.json(magellan.stopCollect());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/magellan/preview', async (req, res) => {
   try {
     const { totals } = await magellan.buildPreview((req.body || {}).accounts || []);

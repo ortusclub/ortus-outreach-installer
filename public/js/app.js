@@ -27096,6 +27096,17 @@ function renderMagellanState(s) {
   const bar = el('mg-bar');
   if (bar) bar.style.width = `${pct}%`;
   el('mg-card')?.classList.toggle('is-live', !!s.running);
+  const stopBtn = el('mg-stop-btn');
+  if (stopBtn) {
+    stopBtn.hidden = !s.running;
+    if (s.running && s.step !== 'Stopping after this account') {
+      stopBtn.disabled = false;
+      stopBtn.textContent = 'Stop';
+    }
+  }
+  const collectBtn = el('mg-collect-btn');
+  if (collectBtn) collectBtn.disabled = !!s.running;
+  if (s.stopped) set('mg-eyebrow', 'Stopped');
 
   // Stage block — the account being worked on and what is happening to it.
   const stage = el('mg-stage');
@@ -27140,6 +27151,20 @@ function renderMagellanLog(lines) {
     ? lines.map((l) => `<div class="entry ${cls(l)}">${escHtml(l)}</div>`).join('')
     : '<div class="entry info">Waiting to start…</div>';
   box.scrollTop = box.scrollHeight;
+}
+
+async function stopMagellanCollect() {
+  const btn = document.getElementById('mg-stop-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
+  try {
+    const res = await fetch('/api/magellan/stop', { method: 'POST' });
+    const j = await res.json();
+    if (!j.stopped) throw new Error(j.reason || 'Could not stop');
+    refreshMagellanState();
+  } catch (err) {
+    showMagellanError(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Stop'; }
+  }
 }
 
 function toggleMagellanLog() {
@@ -27217,3 +27242,4 @@ window.startMagellanCollect = startMagellanCollect;
 window.previewMagellan = previewMagellan;
 window.importMagellan = importMagellan;
 window.toggleMagellanLog = toggleMagellanLog;
+window.stopMagellanCollect = stopMagellanCollect;

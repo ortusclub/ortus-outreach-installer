@@ -119,7 +119,24 @@ export function writeAccountCsv(account, rows, { dir = CONNECTIONS_DIR } = {}) {
  * @returns {{rows:Array, total:number, withUrl:number, withMemberId:number, hidden:number, file:string}}
  */
 export async function collectAccount(page, account, { dir = CONNECTIONS_DIR } = {}) {
-  await page.goto(CONNECTIONS_URL, { waitUntil: 'domcontentloaded' });
+  // Same navigation bulk-check uses (bulk-check-connections.js:650) — this is
+  // the page LinkedIn's own UI hits, and it puts a fresh JSESSIONID in the page
+  // context. We do NOT navigate to /login; LinkedIn redirects there itself when
+  // the profile's session has expired.
+  let postNavUrl = '';
+  try {
+    await page.goto(CONNECTIONS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    postNavUrl = page.url() || '';
+  } catch (err) {
+    throw new Error(`navigation-failed: ${err.message}`);
+  }
+  // Catch the redirect immediately. Without this we'd keep going and fail later
+  // with a vague Voyager error, leaving the operator staring at a login page
+  // with no idea why.
+  if (/\/login|\/uas\/|\/checkpoint/.test(postNavUrl)) {
+    throw new Error(`session-expired (redirected to ${postNavUrl})`);
+  }
+
   const live = await getRecentConnections(page, 0, { maxPages: MAX_PAGES });
   if (live.error) throw new Error(`Could not read connections: ${live.error}`);
 

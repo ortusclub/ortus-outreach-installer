@@ -54,7 +54,7 @@ export const SIGNUP_ALLOWED_DOMAINS = ['ortusclub.com', 'ortus.solutions'];
 
 // Per-email signup allowlist — individual external collaborators granted access
 // WITHOUT opening their whole domain. Kept lowercase; matched exactly.
-export const SIGNUP_ALLOWED_EMAILS = ['milee@linkedvelocity.com'];
+export const SIGNUP_ALLOWED_EMAILS = ['milee@linkedvelocity.com', 'jhan@apexstrategy.io'];
 
 // v2.113 — Follower Growth campaign. SEPARATE Apps Script deployment from the
 // master outreach script: it owns the central FG sheet (FG Invites / FG Budgets

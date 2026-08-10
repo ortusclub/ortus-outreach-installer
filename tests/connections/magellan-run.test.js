@@ -140,3 +140,36 @@ test('nothing is written until runImport is called', async () => {
   assert.equal(wrote, false);
   assert.equal(getState().imported, null);
 });
+
+test('stop lets the current account finish, then skips the rest', async () => {
+  reset();
+  const { stopCollect } = await import('../../src/connections/magellan-run.js');
+  const collected = [];
+  let closed = 0;
+  startCollect(
+    [{ account: 'a@o.com', profileId: 'p1' }, { account: 'b@o.com', profileId: 'p2' }, { account: 'c@o.com', profileId: 'p3' }],
+    {
+      semaphore: { async acquire() {}, release() {} },
+      launchProfile: async () => ({ page: {} }),
+      closeProfile: async () => { closed += 1; },
+      collect: async (_page, account) => {
+        collected.push(account);
+        if (account === 'a@o.com') stopCollect();   // stop mid-first-account
+        return { total: 1, withMemberId: 1, hidden: 0 };
+      },
+    },
+  );
+  await new Promise((r) => setTimeout(r, 40));
+  const st = getState();
+  assert.deepEqual(collected, ['a@o.com'], 'the account in flight finished; the rest never started');
+  assert.equal(closed, 1, 'its browser was still closed cleanly');
+  assert.equal(st.stopped, true);
+  assert.equal(st.phase, 'stopped');
+  assert.equal(st.running, false);
+});
+
+test('stop on an idle runner reports that nothing is running', async () => {
+  reset();
+  const { stopCollect } = await import('../../src/connections/magellan-run.js');
+  assert.deepEqual(stopCollect(), { stopped: false, reason: 'Nothing is running' });
+});

@@ -46,10 +46,22 @@ let _state = idle();
 // the totals cross the wire. Import replays what preview actually saw rather
 // than trusting a payload the browser round-tripped.
 let _plans = null;
+// Set by stopCollect(). Checked between accounts — the one in flight is allowed
+// to finish and close its browser cleanly rather than being killed mid-read.
+let _stopRequested = false;
 
 export function getState() { return { ..._state }; }
+
+/** Ask the sweep to stop after the current account. */
+export function stopCollect() {
+  if (!_state.running) return { stopped: false, reason: 'Nothing is running' };
+  _stopRequested = true;
+  _state.step = 'Stopping after this account';
+  log('◼ Stop requested — finishing the current account, then stopping.');
+  return { stopped: true };
+}
 export function getPlans() { return _plans; }
-export function reset() { _state = idle(); _plans = null; }
+export function reset() { _state = idle(); _plans = null; _stopRequested = false; }
 
 /**
  * Phase 1 — collect. Opens each account in turn and writes its connections to
@@ -67,12 +79,17 @@ export function startCollect(accounts, deps = {}) {
   const list = (accounts || []).filter((a) => a && a.profileId && a.account);
   if (!list.length) return { started: false, reason: 'No accounts selected' };
 
+  _stopRequested = false;
   _state = { ...idle(), running: true, phase: 'collecting', total: list.length, startedAt: new Date().toISOString() };
 
   log(`▶ Collecting ${list.length} account${list.length === 1 ? '' : 's'}.`);
 
   (async () => {
     for (const entry of list) {
+      if (_stopRequested) {
+        log(`◼ Stopped. ${_state.done} of ${list.length} accounts done; the rest were not started.`);
+        break;
+      }
       _state.account = entry.account;
       let launched = null;
       _state.step = 'Waiting for a free browser slot';
@@ -119,7 +136,8 @@ export function startCollect(accounts, deps = {}) {
     const people = ok.reduce((n, a) => n + (a.total || 0), 0);
     log(`■ Finished. ${ok.length} of ${list.length} accounts, ${people} people`
       + (ok.length < list.length ? `, ${list.length - ok.length} failed.` : '.'));
-    _state.phase = 'done';
+    _state.phase = _stopRequested ? 'stopped' : 'done';
+    _state.stopped = _stopRequested;
     _state.running = false;
     _state.account = null;
     _state.step = null;
