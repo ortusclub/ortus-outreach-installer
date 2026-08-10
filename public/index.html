@@ -2574,7 +2574,17 @@
 
         <div class="sk-door off" id="door-build">
           <div class="sk-door-h"><span class="sk-radio"></span> Build one for me</div>
-          <div class="sk-door-s">Search the team&#8217;s connections by job title. Writes the result to a new sheet, then hands it back to the box above.</div>
+          <div class="sk-door-s">Search the team&#8217;s connections by job title. Writes the result to its own tab inside the central FG sheet &#8212; the same sheet Auto-Pilot&#8217;s scheduled runs use.</div>
+          <div class="sk-body">
+            <div class="fgtl-step-eyebrow">Roles &#8212; counts update live <span class="fgtl-spin" id="fgtl-refresh-spin" style="display:none" aria-label="Updating counts"></span></div>
+            <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
+            <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
+            <div class="filter-foot"><span class="hint">Defaults toward marketers.</span><span class="match" id="fgtl-match"></span></div>
+            <div class="sk-row">
+              <button type="button" id="fgtl-generate" class="fgw-btn fgw-btn-primary" title="Build the list from the roles above and write it to a tab in the FG sheet">Write the list to the sheet</button>
+            </div>
+            <div id="fgtl-list-status" class="fgw-list-status"></div>
+          </div>
         </div>
       </div>
 

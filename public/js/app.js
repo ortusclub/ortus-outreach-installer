@@ -21674,7 +21674,15 @@ async function fgLoadPages() {
   if (!saved.pageId) fgSaveSource({ pageId: chosen }); // first load — pin the default so it's explicit, not implicit
 }
 
-/** Bind the page dropdown, the sheet-URL door, and the (cosmetic) door toggle. */
+/** Highlight whichever door is the actual chosen source ('have' or 'build'). */
+function fgSelectDoor(which) {
+  const have = document.getElementById('door-have');
+  const build = document.getElementById('door-build');
+  if (have) { have.classList.toggle('on', which === 'have'); have.classList.toggle('off', which !== 'have'); }
+  if (build) { build.classList.toggle('on', which === 'build'); build.classList.toggle('off', which !== 'build'); }
+}
+
+/** Bind the page dropdown and both list-source doors. */
 function fgBindListSource() {
   const sel = document.getElementById('fg-page-select');
   if (sel && !sel._fgBound) {
@@ -21693,8 +21701,13 @@ function fgBindListSource() {
     if (saved.sheetUrl) url.value = saved.sheetUrl;
     const persist = () => {
       const v = url.value.trim();
-      fgSaveSource({ sheetUrl: v });
+      // Choosing door 1 clears door 2's stored tab — resolveListSource() gives
+      // sheetUrl precedence, so a stale tab left behind would never actually fire.
+      const patch = { sheetUrl: v };
+      if (v) patch.tab = '';
+      fgSaveSource(patch);
       if (urlEcho) { urlEcho.textContent = v ? '✓ saved' : ''; urlEcho.style.display = v ? '' : 'none'; }
+      if (v) fgSelectDoor('have');
     };
     url.addEventListener('change', persist);
     url.addEventListener('blur', persist);
@@ -21708,9 +21721,8 @@ function fgBindListSource() {
       if (v) window.open(v, '_blank', 'noopener'); else alert('Paste your Google Sheet link first.');
     });
   }
-  // Visual only, matching the approved sketch's own tiny script — only the
-  // "I already have the list" door is wired to anything; "Build one for me"
-  // is a placeholder.
+  // Visual door toggle — click either door to look at it. Which one actually
+  // fires is decided by the stored source (sheetUrl vs tab), reflected below.
   document.querySelectorAll('#nav-follower-growth .sk-door').forEach((d) => {
     if (d._fgBound) return; d._fgBound = true;
     d.addEventListener('click', (e) => {
@@ -21719,6 +21731,16 @@ function fgBindListSource() {
       d.classList.add('on'); d.classList.remove('off');
     });
   });
+  // Reflect the actually-chosen source (e.g. after a reload) rather than
+  // leaving whichever door happens to render "on" by default.
+  const saved = fgLoadSource();
+  if (saved.tab && !saved.sheetUrl) {
+    fgSelectDoor('build');
+    const status = document.getElementById('fgtl-list-status');
+    if (status && !status.textContent) status.innerHTML = `Currently using tab <b>${escHtml(saved.tab)}</b> as the launch source.`;
+  } else if (saved.sheetUrl) {
+    fgSelectDoor('have');
+  }
 }
 
 /** Stream the campaign log into the Live Status section's log box. */
@@ -21732,29 +21754,6 @@ function fgwStartLog() {
       if (logs.length) { box.textContent = logs.slice(-60).join('\n'); box.scrollTop = box.scrollHeight; }
     } catch (_) { /* transient */ }
   }, 4000);
-}
-
-/** Populate the "bring your own" dropdown with the FG sheet's tab names. */
-async function fgtlLoadTabs() {
-  const sel = document.getElementById('fgtl-byo-tab');
-  if (!sel) return;
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">Loading tabs…</option>';
-  try {
-    const r = await fetch('/api/fg/tabs');
-    const d = await r.json().catch(() => ({}));
-    const tabs = Array.isArray(d.tabs) ? d.tabs : [];
-    // A 502 (or explicit error) means the FG Apps Script call failed — say so and
-    // let the ↻ button retry, rather than showing an empty "— pick a tab —" that
-    // looks like the sheet simply has no tabs.
-    if (!r.ok || d.error) {
-      sel.innerHTML = `<option value="">(couldn’t reach the FG sheet — hit ↻ to retry)</option>`;
-      return;
-    }
-    if (!tabs.length) { sel.innerHTML = '<option value="">(no tabs found — hit ↻ to retry)</option>'; return; }
-    sel.innerHTML = '<option value="">— pick a tab —</option>' + tabs.map((t) => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
-    if (cur && tabs.includes(cur)) sel.value = cur;
-  } catch (_) { sel.innerHTML = '<option value="">(couldn’t load tabs — hit ↻ to retry)</option>'; }
 }
 
 /** Open the central FG Google Sheet in the browser (asks the server for its URL). */
@@ -21858,12 +21857,13 @@ async function fgMasterPoll() {
   if (btn) btn.disabled = false;
 }
 
-/** Generate the invite list from the current roles + cart and write it to a tab. */
+/** Generate the invite list from the current roles + team accounts, and write it
+ *  to its own tab in the central FG sheet — door 2 of "where's the list from". */
 async function fgtlGenerateList() {
   const pairs = fgtlPairs();
   const status = document.getElementById('fgtl-list-status');
   const btn = document.getElementById('fgtl-generate');
-  if (!pairs.length) { if (status) status.textContent = 'No account can send right now — open “Which accounts?” above to see why.'; return; }
+  if (!pairs.length) { if (status) status.textContent = 'No account can send right now — open “Which accounts?” below to see why.'; return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
   if (status) status.textContent = 'Building the list from roles + connections…';
   try {
@@ -21873,11 +21873,17 @@ async function fgtlGenerateList() {
     });
     const d = await r.json();
     if (!r.ok || d.error) { if (status) status.textContent = 'Could not generate: ' + (d.error || r.statusText); return; }
-    _fgtlListTab = d.tab || '';
+    // A generated tab IS the chosen source now. Clear any pasted sheet URL —
+    // resolveListSource() gives sheetUrl precedence, so a stale door 1 value
+    // would otherwise silently win over this freshly-built tab.
+    fgSaveSource({ tab: d.tab || '', sheetUrl: '' });
+    const urlInput = document.getElementById('fg-sheet-url');
+    const urlEcho = document.getElementById('fg-sheet-echo');
+    if (urlInput) urlInput.value = '';
+    if (urlEcho) { urlEcho.textContent = ''; urlEcho.style.display = 'none'; }
+    fgSelectDoor('build');
     const skips = (d.skipped && d.skipped.length) ? ` · ${d.skipped.length} account(s) skipped` : '';
-    if (status) status.textContent = '';
-    fgReviewSetList(d.tab, d.count, skips);
-    fgwSetListTab(_fgtlListTab);
+    if (status) status.innerHTML = `&#10003; Written to <b>${escHtml(d.tab || '')}</b> &#183; ${Number(d.count || 0).toLocaleString()} people${skips} &#8212; this is now the launch source.`;
   } catch (err) {
     if (status) status.textContent = 'Could not generate: ' + (err && err.message ? err.message : String(err));
   } finally {
@@ -21951,20 +21957,6 @@ function fgwSetListTab(tab) {
   if (!el) return;
   if (tab) { el.innerHTML = `Ready to fire: <b>${escHtml(tab)}</b>`; el.style.display = ''; }
   else { el.textContent = ''; el.style.display = 'none'; }
-}
-
-/** Point the launch at an existing FG tab (bring-your-own list). */
-function fgtlUseByoTab() {
-  const input = document.getElementById('fgtl-byo-tab');
-  const status = document.getElementById('fgtl-list-status');
-  const tab = (input && input.value || '').trim();
-  if (!tab) { if (status) status.textContent = 'Type the name of an existing tab in the FG sheet.'; return; }
-  _fgtlListTab = tab;
-  if (status) status.innerHTML = `✓ Will fire from your tab <b>${escHtml(tab)}</b> — go to <b>Live status</b> ↓ and hit Run it now.`;
-  // You filled this tab in yourself, so it is reviewed by definition.
-  _fgReviewedTab = tab;
-  fgReviewRenderGate();
-  fgwSetListTab(tab);
 }
 
 /** POST to /api/fg/team-launch/start, then begin polling. */
@@ -22302,8 +22294,6 @@ function fgtlBindLaunch() {
   }
   const genBtn = document.getElementById('fgtl-generate');
   if (genBtn && !genBtn._b) { genBtn._b = true; genBtn.addEventListener('click', fgtlGenerateList); }
-  const byoBtn = document.getElementById('fgtl-byo-use');
-  if (byoBtn && !byoBtn._b) { byoBtn._b = true; byoBtn.addEventListener('click', fgtlUseByoTab); }
   const openSheetBtn = document.getElementById('fgtl-open-sheet');
   if (openSheetBtn && !openSheetBtn._b) { openSheetBtn._b = true; openSheetBtn.addEventListener('click', fgtlOpenSheet); }
   const openTabBtn = document.getElementById('fg-open-tab');
@@ -22313,12 +22303,8 @@ function fgtlBindLaunch() {
   if (fgMasterBtn && !fgMasterBtn._b) { fgMasterBtn._b = true; fgMasterBtn.addEventListener('click', () => fgMasterBuild(false)); fgMasterBtn.disabled = true; fgMasterPoll(); }
   const fgMasterFull = document.getElementById('fg-master-full');
   if (fgMasterFull && !fgMasterFull._b) { fgMasterFull._b = true; fgMasterFull.addEventListener('click', (e) => { e.preventDefault(); fgMasterBuild(true); }); }
-  const refreshTabsBtn = document.getElementById('fgtl-byo-refresh');
-  if (refreshTabsBtn && !refreshTabsBtn._b) { refreshTabsBtn._b = true; refreshTabsBtn.addEventListener('click', fgtlLoadTabs); }
   const editSchedBtn = document.getElementById('fgw-edit-schedule');
   if (editSchedBtn && !editSchedBtn._b) { editSchedBtn._b = true; editSchedBtn.addEventListener('click', fgapEditSchedule); }
-  const byoSel = document.getElementById('fgtl-byo-tab');
-  if (byoSel && !byoSel._loaded) { byoSel._loaded = true; fgtlLoadTabs(); }
   fgwStartLog();
   const doStop = async (btn) => {
     // Cloud FG run → stop the VM campaign; the cloud poll then resets the card.
