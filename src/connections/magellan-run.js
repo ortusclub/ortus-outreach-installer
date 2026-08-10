@@ -20,6 +20,7 @@ const idle = () => ({
   phase: 'idle',           // idle | collecting | previewing | importing | done | error
   account: null,
   step: null,              // what the current account is doing right now
+  current: null,           // live count within the account being read
   done: 0,
   total: 0,
   startedAt: null,
@@ -101,7 +102,12 @@ export function startCollect(accounts, deps = {}) {
 
         _state.step = 'Reading the connections list';
         log(`◦ ${entry.account}: signed in, reading the connections list…`);
-        const r = await collect(launched.page, entry.account);
+        const r = await collect(launched.page, entry.account, {
+          onProgress: ({ count, pages, total }) => {
+            _state.current = { account: entry.account, count, pages, total };
+          },
+        });
+        _state.current = null;
 
         _state.perAccount.push({
           account: entry.account,
@@ -117,6 +123,7 @@ export function startCollect(accounts, deps = {}) {
       } catch (err) {
         // One dead account must not end the sweep. Record WHY, in words the
         // operator can act on, not the raw stack.
+        _state.current = null;
         const d = diagnose(err);
         _state.perAccount.push({ account: entry.account, error: err.message, diagnosis: d });
         log(logLine(entry.account, d));

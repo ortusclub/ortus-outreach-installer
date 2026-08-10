@@ -246,6 +246,17 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
         const out = [];
         let stoppedEarly = false;
         let firstPageKeys = '';
+        let totalHint = null;
+        // Progress beacon. The whole walk happens inside this one evaluate(), so
+        // without it a 7,000-connection account looks frozen for minutes. Node
+        // polls window.__ortusConnProgress; callers that don't care just ignore it.
+        const _beat = (pagesDone) => {
+          try {
+            window.__ortusConnProgress = {
+              pages: pagesDone, count: out.length, total: totalHint, at: Date.now(),
+            };
+          } catch { /* progress must never break the walk */ }
+        };
 
         for (let p = 0; p < MAX_PAGES && !stoppedEarly; p++) {
           const start = p * PAGE_SIZE;
@@ -256,7 +267,13 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
           }
 
           const data = await resp.json();
-          if (p === 0) firstPageKeys = Object.keys(data || {}).join(',');
+          if (p === 0) {
+            firstPageKeys = Object.keys(data || {}).join(',');
+            // LinkedIn reports the network size on the first page. Used to show
+            // "1,240 of 7,213" instead of a counter with no end in sight.
+            const t = data?.paging?.total ?? data?.data?.paging?.total ?? null;
+            if (typeof t === 'number' && t > 0) totalHint = t;
+          }
 
           // Build a urn → entity map from `included` once per page so any
           // strategy can resolve member references in O(1).
@@ -384,6 +401,8 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
             }
           }
 
+          _beat(p + 1);
+
           if (pageOut === 0) {
             if (p === 0) return { error: `empty-after-3-strategies (keys: ${firstPageKeys}, included.len: ${(data.included || []).length})` };
             break;
@@ -391,7 +410,7 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } =
           if (pageOut < PAGE_SIZE) break;
         }
 
-        return { connections: out, firstPageKeys };
+        return { connections: out, firstPageKeys, total: totalHint };
       } catch (err) {
         return { error: err.message };
       }

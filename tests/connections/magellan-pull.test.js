@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   formatConnectedOn, readExistingBySlug, mergeRows, toCsv, writeAccountCsv,
-  readForPlan, CSV_HEADER,
+  readForPlan, collectAccount, CSV_HEADER,
 } from '../../src/connections/magellan-pull.js';
 import { ingestFolder } from '../../src/connections/csv-ingest.js';
 
@@ -112,4 +112,49 @@ test('readForPlan handles a Drive-synced file with no Member ID column', () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].memberId, '');
   assert.equal(rows[0].company, 'NTT DATA');
+});
+
+// A 7,000-connection account is ~175 pages inside one page.evaluate(). Without
+// the beacon the card shows nothing for minutes and looks hung.
+test('collectAccount reports progress while the walk is still running', async () => {
+  const dir = tmpdir();
+  const seen = [];
+  let beacon = { count: 0, pages: 0, total: 7213 };
+  const page = {
+    url: () => 'https://www.linkedin.com/mynetwork/invite-connect/connections/',
+    goto: async () => {},
+    evaluate: async (fn) => {
+      // The poller reads with a zero-arg fn; the walk is called with an argument.
+      if (fn.length === 0) return beacon;
+      // The real walk takes minutes on a big account — that is the whole point.
+      await new Promise((r) => setTimeout(r, 3200));
+      return { connections: [], firstPageKeys: '' };
+    },
+  };
+  const p = collectAccount(page, 'nikki@ortusclub.com', {
+    dir,
+    onProgress: (x) => seen.push(x),
+  });
+  // Let a couple of poll ticks land while the "walk" is in flight.
+  await new Promise((r) => setTimeout(r, 1700));
+  beacon = { count: 480, pages: 12, total: 7213 };
+  await new Promise((r) => setTimeout(r, 1600));
+  await p;
+
+  assert.ok(seen.length >= 1, 'progress was reported before the walk finished');
+  const last = seen[seen.length - 1];
+  assert.equal(last.total, 7213, 'the network size is passed through for "N of M"');
+  assert.ok(last.pages >= 1);
+});
+
+test('no progress callback means no polling — bulk-check behaviour is unchanged', async () => {
+  const dir = tmpdir();
+  let evaluates = 0;
+  const page = {
+    url: () => 'https://www.linkedin.com/mynetwork/invite-connect/connections/',
+    goto: async () => {},
+    evaluate: async () => { evaluates += 1; return { connections: [], firstPageKeys: '' }; },
+  };
+  await collectAccount(page, 'x@y.com', { dir });
+  assert.equal(evaluates, 1, 'only the walk itself — no beacon reads');
 });

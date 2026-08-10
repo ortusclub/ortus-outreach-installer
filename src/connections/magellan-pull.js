@@ -118,7 +118,7 @@ export function writeAccountCsv(account, rows, { dir = CONNECTIONS_DIR } = {}) {
  *
  * @returns {{rows:Array, total:number, withUrl:number, withMemberId:number, hidden:number, file:string}}
  */
-export async function collectAccount(page, account, { dir = CONNECTIONS_DIR } = {}) {
+export async function collectAccount(page, account, { dir = CONNECTIONS_DIR, onProgress = null } = {}) {
   // Same navigation bulk-check uses (bulk-check-connections.js:650) — this is
   // the page LinkedIn's own UI hits, and it puts a fresh JSESSIONID in the page
   // context. We do NOT navigate to /login; LinkedIn redirects there itself when
@@ -137,7 +137,26 @@ export async function collectAccount(page, account, { dir = CONNECTIONS_DIR } = 
     throw new Error(`session-expired (redirected to ${postNavUrl})`);
   }
 
-  const live = await getRecentConnections(page, 0, { maxPages: MAX_PAGES });
+  // getRecentConnections walks every page inside a single page.evaluate(), so it
+  // returns nothing until it is completely done. On a 7,000-connection account
+  // that is minutes of apparent silence. It publishes a beacon after each page;
+  // poll it so the card can show real movement.
+  let poller = null;
+  if (onProgress) {
+    poller = setInterval(async () => {
+      try {
+        const p = await page.evaluate(() => window.__ortusConnProgress || null);
+        if (p) onProgress({ count: p.count, pages: p.pages, total: p.total });
+      } catch { /* page busy or navigating — just skip this tick */ }
+    }, 1500);
+  }
+
+  let live;
+  try {
+    live = await getRecentConnections(page, 0, { maxPages: MAX_PAGES });
+  } finally {
+    if (poller) clearInterval(poller);
+  }
   if (live.error) throw new Error(`Could not read connections: ${live.error}`);
 
   const filePath = path.join(dir, `${account}.csv`);
