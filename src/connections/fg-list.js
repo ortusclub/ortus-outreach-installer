@@ -246,3 +246,24 @@ export function parseListRows(rows, { emailToProfileId = {}, defaultStatus = 'Qu
 
   return { leads, perAccount: [...byProfile.values()], skipped };
 }
+
+/**
+ * Adapt fetchSheet()'s output to the grid parseListRows() reads.
+ *
+ * fetchSheet returns one object per row keyed by column header; parseListRows
+ * (and the whole FG list path) works on a 2-D grid whose row 0 is the header.
+ * The first record fixes the column order — object key order is not guaranteed
+ * to be identical across records, and a ragged grid would make parseListRows
+ * read values out of the wrong column rather than fail loudly.
+ *
+ * @param {Array<Record<string, unknown>>} rows
+ * @returns {string[][]} header row first; [] when there is nothing to convert
+ */
+export function gridFromSheetRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return [];
+  const header = Object.keys(list[0] || {});
+  if (!header.length) return [];
+  const cell = (v) => (v === null || v === undefined ? '' : String(v));
+  return [header, ...list.map((r) => header.map((h) => cell((r || {})[h])))];
+}
