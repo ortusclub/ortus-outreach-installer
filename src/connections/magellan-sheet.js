@@ -1,10 +1,12 @@
 // Operation Magellan — the paper trail.
 //
 // The live card shows what is happening now; this writes what happened, to a
-// Google Sheet anyone can open without the app running. Four tabs:
+// Google Sheet anyone can open without the app running.
 //
-//   Connections  the collected people in the cleaned LinkedHelper layout —
-//                the columns that go straight into HubSpot
+// One tab per Ortus account, named after the account's email, holding that
+// account's people in the cleaned LinkedHelper layout — collect Nikki, Antonio
+// and Milee and you get three tabs. Plus three tabs about the run itself:
+//
 //   Accounts     one row per Ortus account: counts, or the failure and its fix
 //   Log          the same timestamped lines the card shows
 //   Import       what actually went into HubSpot, per account
@@ -17,7 +19,6 @@ import { MAGELLAN_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { readForPlan } from './magellan-pull.js';
 import { syntheticEmail } from './magellan.js';
 
-export const CONNECTIONS_TAB = 'Connections';
 export const ACCOUNTS_TAB = 'Accounts';
 export const LOG_TAB = 'Log';
 export const IMPORT_TAB = 'Import';
@@ -110,14 +111,10 @@ export function connectionsRowsForAccount(account, rows) {
     ]);
 }
 
-/** Every collected account's rows, in the order they were collected. */
-export function connectionsRows(state = {}, { read = readForPlan } = {}) {
-  const out = [];
-  for (const a of state.perAccount || []) {
-    if (a.error) continue;
-    try { out.push(...connectionsRowsForAccount(a.account, read(a.account))); } catch { /* unreadable file */ }
-  }
-  return out;
+// Google Sheets rejects these in a tab name. Emails never contain them, but a
+// malformed account name on disk ("Andoela Sadikaj - Connections, …") might.
+export function tabNameFor(account) {
+  return String(account || 'unknown').replace(/[[\]*?/\\:]/g, '-').slice(0, 95);
 }
 
 /**
@@ -172,6 +169,13 @@ export function importRows(imported = null) {
 // One publish at a time. Callers fire this after every account; the guard means
 // a slow Google round-trip throttles us naturally instead of queueing 300 writes.
 let _inFlight = false;
+// account → the row count last written for it. An account's tab is only
+// rewritten when its numbers changed, so a 300-account sweep sends each
+// account's people once instead of resending all of them every publish.
+const _written = new Map();
+
+/** Forget what has been written — a fresh sweep rewrites every tab. */
+export function resetPublished() { _written.clear(); }
 
 /**
  * Push the current state to the sheet. Best-effort by design: the sheet is a
@@ -184,10 +188,19 @@ export async function publish(state = {}, deps = {}) {
   _inFlight = true;
   try {
     // Accounts and Log first: on a long run those are what someone watching
-    // actually needs, and the Connections tab is the slow one.
-    await write(ACCOUNTS_TAB, ACCOUNTS_HEADER, accountsRows(state), deps);
+    // actually needs, and the per-account tabs are the slow part.
+    let last = await write(ACCOUNTS_TAB, ACCOUNTS_HEADER, accountsRows(state), deps);
     await write(LOG_TAB, LOG_HEADER, logRows(state), deps);
-    const last = await write(CONNECTIONS_TAB, CONNECTIONS_HEADER, connectionsRows(state, { read }), deps);
+
+    for (const a of state.perAccount || []) {
+      if (a.error) continue;
+      let rows;
+      try { rows = connectionsRowsForAccount(a.account, read(a.account)); } catch { continue; }
+      if (_written.get(a.account) === rows.length) continue;   // unchanged since last time
+      last = await write(tabNameFor(a.account), CONNECTIONS_HEADER, rows, deps);
+      _written.set(a.account, rows.length);
+    }
+
     const imp = importRows(state.imported);
     if (imp.length) await write(IMPORT_TAB, IMPORT_HEADER, imp, deps);
     return { written: true, url: (last && last.url) || '' };

@@ -10,7 +10,7 @@ import * as browserSemaphore from '../browser-semaphore.js';
 import { collectAccount, readForPlan } from './magellan-pull.js';
 import { planAccount } from './magellan.js';
 import { diagnose, logLine, summarise } from './magellan-diagnose.js';
-import { publish as publishSheet } from './magellan-sheet.js';
+import { publish as publishSheet, resetPublished } from './magellan-sheet.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
   checkMagellanProperties,
@@ -88,6 +88,7 @@ export function startCollect(accounts, deps = {}) {
   if (!list.length) return { started: false, reason: 'No accounts selected' };
 
   _stopRequested = false;
+  resetPublished();   // a new sweep rewrites every account tab it touches
   _state = { ...idle(), running: true, phase: 'collecting', total: list.length, startedAt: new Date().toISOString() };
 
   log(`▶ Collecting ${list.length} account${list.length === 1 ? '' : 's'}.`);

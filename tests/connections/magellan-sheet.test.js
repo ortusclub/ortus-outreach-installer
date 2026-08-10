@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  accountsRows, logRows, importRows, connectionsRowsForAccount, connectionsRows, publish,
-  CONNECTIONS_HEADER, CONNECTIONS_TAB, ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB,
+  accountsRows, logRows, importRows, connectionsRowsForAccount, tabNameFor,
+  publish, resetPublished,
+  CONNECTIONS_HEADER, ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB,
 } from '../../src/connections/magellan-sheet.js';
 import { diagnose } from '../../src/connections/magellan-diagnose.js';
 
@@ -33,12 +34,9 @@ test('people without a member id are left out', () => {
   assert.equal(rows[0][2], 'Real');
 });
 
-test('connections come from every collected account, and none of the failed ones', () => {
-  const rows = connectionsRows({
-    perAccount: [{ account: 'a@o.com' }, { account: 'bad@o.com', error: 'Cr24' }],
-  }, { read: (acct) => (acct === 'a@o.com' ? [{ memberId: '1', firstName: 'A', slug: 's' }] : []) });
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0][8], 'a@o.com');
+test('a tab is named after the account, with the characters Sheets rejects swapped out', () => {
+  assert.equal(tabNameFor('nikki@ortus.solutions'), 'nikki@ortus.solutions');
+  assert.equal(tabNameFor('a/b[c]*d?e:f'), 'a-b-c--d-e-f');
 });
 
 test('a failed account carries its cause and its fix, not a stack trace', () => {
@@ -96,23 +94,44 @@ test('no import yet means no import tab', () => {
   assert.deepEqual(importRows(null), []);
 });
 
-test('publish writes accounts, log and connections, and skips import until there is one', async () => {
+// Collect Nikki, Antonio and Milee and you get three tabs, one per email.
+test('every collected account gets its own tab, named after it', async () => {
+  resetPublished();
   const calls = [];
-  const r = await publish({ perAccount: [], log: [] }, {
-    read: () => [], write: async (tab) => { calls.push(tab); return { url: 'https://sheet' }; },
-  });
+  const r = await publish(
+    { perAccount: [{ account: 'nikki@o.com' }, { account: 'antonio@o.com' }, { account: 'bad@o.com', error: 'Cr24' }], log: [] },
+    {
+      read: () => [{ memberId: '1', firstName: 'A', slug: 's' }],
+      write: async (tab) => { calls.push(tab); return { url: 'https://sheet' }; },
+    },
+  );
   assert.equal(r.written, true);
   assert.equal(r.url, 'https://sheet');
-  assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB, CONNECTIONS_TAB]);
+  assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB, 'nikki@o.com', 'antonio@o.com']);
+});
+
+// A 300-account sweep publishes after every account; resending all 300 tabs
+// each time would take longer than the collection itself.
+test('an account tab is not rewritten when its numbers have not changed', async () => {
+  resetPublished();
+  const state = { perAccount: [{ account: 'a@o.com' }], log: [] };
+  const deps = { read: () => [{ memberId: '1', slug: 's' }] };
+  const first = [];
+  await publish(state, { ...deps, write: async (tab) => first.push(tab) });
+  const second = [];
+  await publish(state, { ...deps, write: async (tab) => second.push(tab) });
+  assert.ok(first.includes('a@o.com'));
+  assert.deepEqual(second, [ACCOUNTS_TAB, LOG_TAB], 'only the run tabs were refreshed');
 });
 
 test('publish adds the import tab once an import has run', async () => {
+  resetPublished();
   const calls = [];
   await publish(
     { perAccount: [], log: [], imported: { perAccount: [{ account: 'a@o.com', created: 1 }] } },
     { read: () => [], write: async (tab) => calls.push(tab) },
   );
-  assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB, CONNECTIONS_TAB, IMPORT_TAB]);
+  assert.deepEqual(calls, [ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB]);
 });
 
 // A dead sheet must never stop a sweep.
