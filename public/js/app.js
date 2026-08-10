@@ -26900,3 +26900,262 @@ if (document.readyState !== 'loading') rsweepBind();
 window.rsweepStart = rsweepStart;
 window.rsweepStop = rsweepStop;
 
+
+// ── Operation Magellan ───────────────────────────────────────────────────────
+// Collect the team's LinkedIn connections and put them in HubSpot. The picker
+// reuses the campaign account grid's markup, but none of its state: Magellan
+// only reads a connections list, so credits, passover, assignment and in-use
+// are all irrelevant here. The only state a tile carries is whether we already
+// hold that account's connections.
+
+let mgAccounts = [];
+let mgSelected = new Set();
+let mgFilter = 'todo';
+let mgPoll = null;
+
+function setConnTab(tab) {
+  const warm = tab !== 'magellan';
+  document.getElementById('cx-warm-pane').hidden = !warm;
+  document.getElementById('cx-magellan-pane').hidden = warm;
+  document.getElementById('cx-tab-warm').classList.toggle('is-active', warm);
+  document.getElementById('cx-tab-magellan').classList.toggle('is-active', !warm);
+  if (!warm && !mgAccounts.length) loadMagellanAccounts();
+}
+
+async function loadMagellanAccounts() {
+  try {
+    const res = await fetch('/api/magellan/accounts');
+    if (!res.ok) throw new Error(`Could not load accounts (${res.status})`);
+    mgAccounts = await res.json();
+    // Default to the backlog — the whole point is the accounts nobody has done.
+    mgSelected = new Set(mgAccounts.filter((a) => !a.collected).map((a) => a.profileId));
+    renderMagellanAccounts();
+    refreshMagellanState();
+  } catch (err) {
+    showMagellanError(err.message);
+  }
+}
+
+function magellanVisible() {
+  const q = (document.getElementById('mg-search')?.value || '').trim().toLowerCase();
+  return mgAccounts.filter((a) => {
+    if (q && !a.account.toLowerCase().includes(q)) return false;
+    if (mgFilter === 'todo') return !a.collected;
+    if (mgFilter === 'done') return a.collected;
+    if (mgFilter === 'selected') return mgSelected.has(a.profileId);
+    return true;
+  });
+}
+
+function renderMagellanAccounts() {
+  const grid = document.getElementById('mg-grid');
+  if (!grid) return;
+  const rows = magellanVisible();
+  grid.innerHTML = '';
+
+  for (const a of rows) {
+    const on = mgSelected.has(a.profileId);
+    const item = document.createElement('label');
+    item.className = 'profile-item jt ' + (a.collected ? 'is-done' : 'free') + (on ? ' selected' : '');
+    const when = a.collectedAt ? new Date(a.collectedAt).toLocaleDateString() : '';
+    const sub = a.collected
+      ? `${(a.count || 0).toLocaleString()} collected on ${when}. Tick to collect again.`
+      : 'Never collected.';
+    item.innerHTML = `
+      <div class="jt-stat ${a.collected ? '' : 's-free'}">
+        <span class="jt-dot"></span>
+        <span class="jt-word ${a.collected ? 'w-done' : 'w-todo'}">${a.collected ? 'DONE' : 'TO DO'}</span>
+      </div>
+      <div class="jt-det">
+        <div class="jt-top">
+          <input type="checkbox" ${on ? 'checked' : ''} />
+          <span class="jt-email">${escHtml(a.account)}</span>
+        </div>
+        <div class="jt-sub">${sub}</div>
+      </div>`;
+    item.querySelector('input').addEventListener('change', (e) => {
+      if (e.target.checked) mgSelected.add(a.profileId); else mgSelected.delete(a.profileId);
+      item.classList.toggle('selected', e.target.checked);
+      updateMagellanCounts();
+    });
+    grid.appendChild(item);
+  }
+  updateMagellanCounts();
+}
+
+function updateMagellanCounts() {
+  const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
+  const done = mgAccounts.filter((a) => a.collected).length;
+  set('mg-count-todo', mgAccounts.length - done);
+  set('mg-count-done', done);
+  set('mg-count-all', mgAccounts.length);
+  set('mg-count-selected', mgSelected.size);
+  set('mg-stat-accounts', mgAccounts.length);
+  set('mg-stat-collected', done);
+  set('mg-stat-todo', mgAccounts.length - done);
+  set('mg-sel-count', mgSelected.size);
+  const sub = document.getElementById('mg-sel-sub');
+  if (sub) {
+    sub.textContent = mgSelected.size === 1
+      ? 'account selected · about a minute'
+      : 'accounts selected · one at a time, roughly a minute each';
+  }
+}
+
+function setMagellanFilter(f) {
+  mgFilter = f;
+  document.querySelectorAll('#mg-chips .chip').forEach((c) => {
+    c.classList.toggle('active', c.dataset.filter === f);
+  });
+  renderMagellanAccounts();
+}
+
+function magellanSelectAllVisible() {
+  magellanVisible().forEach((a) => mgSelected.add(a.profileId));
+  renderMagellanAccounts();
+}
+
+function magellanDeselectAll() {
+  mgSelected.clear();
+  renderMagellanAccounts();
+}
+
+function showMagellanError(msg) {
+  const el = document.getElementById('mg-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.hidden = !msg;
+}
+
+async function startMagellanCollect() {
+  showMagellanError('');
+  const accounts = mgAccounts
+    .filter((a) => mgSelected.has(a.profileId))
+    .map((a) => ({ profileId: a.profileId, account: a.account }));
+  if (!accounts.length) return showMagellanError('Pick at least one account first.');
+
+  const btn = document.getElementById('mg-collect-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/magellan/collect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts }),
+    });
+    const j = await res.json();
+    if (!j.started) throw new Error(j.reason || 'Could not start');
+    startMagellanPolling();
+  } catch (err) {
+    showMagellanError(err.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+function startMagellanPolling() {
+  if (mgPoll) clearInterval(mgPoll);
+  mgPoll = setInterval(refreshMagellanState, 2000);
+  refreshMagellanState();
+}
+
+async function refreshMagellanState() {
+  try {
+    const res = await fetch('/api/magellan/state');
+    if (!res.ok) return;
+    const s = await res.json();
+    renderMagellanState(s);
+    if (!s.running && mgPoll) {
+      clearInterval(mgPoll);
+      mgPoll = null;
+      const btn = document.getElementById('mg-collect-btn');
+      if (btn) btn.disabled = false;
+      // Counts and DONE badges change once a sweep lands.
+      loadMagellanAccounts();
+    }
+  } catch { /* transient — the next tick retries */ }
+}
+
+function renderMagellanState(s) {
+  const prog = document.getElementById('mg-progress');
+  if (prog) {
+    prog.hidden = !s.running;
+    if (s.running) {
+      const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+      document.getElementById('mg-progress-label').textContent =
+        `${s.account || ''} — account ${s.done + 1} of ${s.total}`;
+      document.getElementById('mg-progress-pct').textContent = `${pct}%`;
+      document.getElementById('mg-progress-fill').style.width = `${pct}%`;
+    }
+  }
+
+  const ok = (s.perAccount || []).filter((a) => !a.error);
+  const people = ok.reduce((n, a) => n + (a.total || 0), 0);
+  const matched = ok.reduce((n, a) => n + (a.withMemberId || 0), 0);
+  const failed = (s.perAccount || []).length - ok.length;
+
+  const setR = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  if (s.perAccount && s.perAccount.length) {
+    setR('mg-step-export-r', `${ok.length} of ${s.total} accounts<br>${people.toLocaleString()} people`
+      + (failed ? `<br>${failed} couldn't be opened` : ''));
+    setR('mg-step-clean-r', `${matched.toLocaleString()} matched<br>${(people - matched).toLocaleString()} couldn't be`);
+  }
+  if (s.imported) {
+    setR('mg-step-import-r', `${(s.imported.created || 0).toLocaleString()} added<br>${(s.imported.updated || 0).toLocaleString()} updated`);
+    document.getElementById('mg-step-import')?.classList.remove('idle');
+  }
+  if (s.error) showMagellanError(s.error);
+}
+
+async function previewMagellan() {
+  showMagellanError('');
+  const accounts = mgAccounts.filter((a) => mgSelected.has(a.profileId)).map((a) => a.account);
+  if (!accounts.length) return showMagellanError('Pick at least one account first.');
+
+  const btn = document.getElementById('mg-preview-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    const res = await fetch('/api/magellan/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts }),
+    });
+    const j = await res.json();
+    if (j.error) throw new Error(j.error);
+    const t = j.totals || {};
+    document.getElementById('mg-led-new').textContent = (t.created || 0).toLocaleString();
+    document.getElementById('mg-led-existing').textContent = (t.updated || 0).toLocaleString();
+    document.getElementById('mg-led-hidden').textContent = (t.hidden || 0).toLocaleString();
+    document.getElementById('mg-ledger').hidden = false;
+    document.getElementById('mg-confirm-t').innerHTML =
+      '<b>Nothing has gone into HubSpot yet.</b> The numbers above are what will happen when you press Import.';
+    const imp = document.getElementById('mg-import-btn');
+    imp.hidden = false;
+    imp.textContent = `Import ${(t.created || 0).toLocaleString()} people`;
+  } catch (err) {
+    showMagellanError(err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Check what would happen'; }
+  }
+}
+
+async function importMagellan() {
+  const btn = document.getElementById('mg-import-btn');
+  if (!confirm('This adds people to HubSpot for real. Continue?')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+  try {
+    const res = await fetch('/api/magellan/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    });
+    const j = await res.json();
+    if (j.error || j.ok === false) throw new Error(j.error || j.reason);
+    document.getElementById('mg-confirm-t').innerHTML =
+      `<b>Done.</b> ${(j.created || 0).toLocaleString()} added, ${(j.updated || 0).toLocaleString()} updated`
+      + (j.errors && j.errors.length ? ` · ${j.errors.length} problems — check the log.` : '.');
+    if (btn) btn.hidden = true;
+    refreshMagellanState();
+  } catch (err) {
+    showMagellanError(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
+  }
+}

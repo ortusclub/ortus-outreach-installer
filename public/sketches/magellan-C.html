@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connection DB — Operation Magellan (C)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Grid, search, bulk pills and tile shape are the app's real selector
+       (.browse-card / .chip-row / .bulk-pill / .profile-grid / .profile-item.jt).
+       Campaign-only chrome — passover, assignment, in-use, match name — is gone:
+       Magellan only reads a list, so none of it applies. */
+    body { padding: 34px 40px 90px; max-width: 1180px; margin: 0 auto; }
+    .mg-lede { font-family: var(--body); color: var(--gray); font-size: 0.86rem; max-width: 780px; line-height: 1.65; margin: 6px 0 4px; }
+    .mg-lede b { color: var(--ink); }
+    .mg-flow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.06em; color: var(--gray); margin: 14px 0 26px; }
+    .mg-flow b { color: var(--ink); }
+
+    /* Tile state words repurposed: collection state, not campaign state. */
+    .jt-word.w-new  { color: var(--green); }
+    .jt-word.w-done { color: var(--gray); }
+    .profile-item.jt.is-done { opacity: 0.62; }
+
+    .mg-steps { border: 1px solid var(--hairline); }
+    .mg-step { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; padding: 15px 17px; border-top: 1px solid var(--hairline); }
+    .mg-step:first-child { border-top: none; }
+    .mg-step-h { font-family: var(--body); font-size: 0.85rem; color: var(--ink); }
+    .mg-step.idle .mg-step-h { color: var(--gray); }
+    .mg-step-s { font-family: var(--body); font-size: 0.74rem; color: var(--gray); margin-top: 4px; line-height: 1.5; }
+    .mg-step-r { font-family: var(--mono); font-size: 0.66rem; color: var(--ink); text-align: right; white-space: nowrap; line-height: 1.6; }
+    .mg-step.idle .mg-step-r { color: var(--gray); }
+    .mg-tick { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); margin-right: 8px; }
+
+    .mg-ledger { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--hairline); }
+    .mg-led { padding: 16px 17px; border-left: 1px solid var(--hairline); }
+    .mg-led:first-child { border-left: none; }
+    .mg-led-n { font-family: var(--display); font-size: 2.2rem; line-height: 0.9; color: var(--ink); }
+    .mg-led-t { font-family: var(--body); font-size: 0.8rem; color: var(--ink); margin-top: 6px; }
+    .mg-led-s { font-family: var(--body); font-size: 0.72rem; color: var(--gray); margin-top: 3px; line-height: 1.45; }
+
+    /* Confirm row — stacked so the buttons can't collide (the v2 bug). */
+    .mg-confirm { border: 1px solid var(--hairline); padding: 18px; margin-top: 18px; }
+    .mg-confirm-t { font-family: var(--body); font-size: 0.8rem; color: var(--gray); line-height: 1.55; }
+    .mg-confirm-t b { color: var(--ink); }
+    .mg-confirm-btns { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 15px; }
+
+    .mg-foot { font-family: var(--body); font-size: 0.74rem; color: var(--gray); margin-top: 14px; line-height: 1.65; max-width: 820px; }
+    .mg-foot b { color: var(--ink); }
+    .mg-selbar { display: flex; align-items: baseline; gap: 12px; margin: 0 0 14px; }
+    .mg-selbar-n { font-family: var(--display); font-size: 1.7rem; color: var(--ink); line-height: 1; }
+    .mg-selbar-t { font-family: var(--body); font-size: 0.8rem; color: var(--gray); }
+  </style>
+</head>
+<body>
+
+  <div class="route-seg" role="tablist" aria-label="Connection DB mode">
+    <button type="button" class="route-seg-btn">Find warm leads</button>
+    <button type="button" class="route-seg-btn is-active">Operation Magellan</button>
+  </div>
+
+  <div class="dashboard-header" style="margin-top:18px;">
+    <h1 class="dashboard-title">Connection DB</h1>
+  </div>
+  <p class="mg-lede">
+    Collect the connections of our LinkedIn accounts and put them in HubSpot.
+    <b>This is where the database comes from</b> — everything the other tab searches was
+    collected here.
+  </p>
+  <p class="mg-flow">
+    Ortus LinkedIn accounts → <b>Magellan</b> → HubSpot + Connection DB → <b>Find warm leads</b>
+  </p>
+
+  <section class="dashboard-section">
+    <div class="conn-stats">
+      <div class="conn-stat"><span class="conn-stat-num">481</span><span class="conn-stat-lbl">Accounts</span></div>
+      <div class="conn-stat"><span class="conn-stat-num">176</span><span class="conn-stat-lbl">Collected</span></div>
+      <div class="conn-stat"><span class="conn-stat-num">305</span><span class="conn-stat-lbl">Still to do</span></div>
+    </div>
+  </section>
+
+  <!-- 1 · Pick accounts -->
+  <section class="dashboard-section cx-section">
+    <h2 class="cx-h2"><span class="cx-num">1</span> Pick accounts</h2>
+
+    <div class="accounts-browser browse-card collapsible">
+      <h3 class="section-toggle browse-card-head accounts-browser-toggle"><span class="caret">▾</span> Browse accounts</h3>
+      <div class="collapsible-body browse-card-body">
+        <div class="browse-toolbar">
+          <div class="browse-search">
+            <input type="text" placeholder="Search by name or email…" />
+          </div>
+          <div class="chip-row">
+            <button type="button" class="chip active">Still to do <span class="count">305</span></button>
+            <button type="button" class="chip">Collected <span class="count">176</span></button>
+            <button type="button" class="chip">All <span class="count">481</span></button>
+            <button type="button" class="chip">Selected <span class="count">305</span></button>
+          </div>
+        </div>
+
+        <div class="browse-secondary">
+          <div class="browse-bulk-row">
+            <button class="bulk-pill" onclick="selAll(true)">Select all visible</button>
+            <button class="bulk-pill" onclick="selAll(false)">Deselect all</button>
+          </div>
+        </div>
+
+        <div id="profiles-grid" class="profile-grid">
+
+          <label class="profile-item jt free selected">
+            <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word w-new">TO DO</span></div>
+            <div class="jt-det">
+              <div class="jt-top"><input type="checkbox" checked /><span class="jt-email">antonio@ortusclub.com</span></div>
+              <div class="jt-sub">Never collected.</div>
+            </div>
+          </label>
+
+          <label class="profile-item jt free selected">
+            <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word w-new">TO DO</span></div>
+            <div class="jt-det">
+              <div class="jt-top"><input type="checkbox" checked /><span class="jt-email">ishat.khandelwal@ortus.solutions</span></div>
+              <div class="jt-sub">Never collected.</div>
+            </div>
+          </label>
+
+          <label class="profile-item jt free selected">
+            <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word w-new">TO DO</span></div>
+            <div class="jt-det">
+              <div class="jt-top"><input type="checkbox" checked /><span class="jt-email">bea.talusan@ortus.solutions</span></div>
+              <div class="jt-sub">Never collected.</div>
+            </div>
+          </label>
+
+          <label class="profile-item jt free selected">
+            <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word w-new">TO DO</span></div>
+            <div class="jt-det">
+              <div class="jt-top"><input type="checkbox" checked /><span class="jt-email">meizi.a@ortus.solutions</span></div>
+              <div class="jt-sub">Never collected.</div>
+            </div>
+          </label>
+
+          <label class="profile-item jt is-done">
+            <div class="jt-stat"><span class="jt-dot"></span><span class="jt-word w-done">DONE</span></div>
+            <div class="jt-det">
+              <div class="jt-top"><input type="checkbox" /><span class="jt-email">soleil@ortusclub.com</span></div>
+              <div class="jt-sub">734 collected on 10 Aug 2026. Tick to collect again.</div>
+            </div>
+          </label>
+
+          <label class="profile-item jt stop muted is-restricted">
+            <div class="jt-stat s-stop"><span class="jt-dot"></span><span class="jt-word">CAN'T SIGN IN</span></div>
+            <div class="jt-det">
+              <div class="jt-top"><input type="checkbox" disabled /><span class="jt-email">kenya5@ortus.solutions</span></div>
+              <div class="jt-sub">LinkedIn is blocking this account.</div>
+            </div>
+          </label>
+
+        </div>
+      </div>
+    </div>
+    <p class="mg-foot">
+      Connection counts aren't shown until an account has been opened — we don't know how many
+      someone has until we look.
+    </p>
+  </section>
+
+  <!-- 2 · Collect -->
+  <section class="dashboard-section cx-section">
+    <h2 class="cx-h2"><span class="cx-num">2</span> Collect</h2>
+
+    <div class="mg-selbar">
+      <span class="mg-selbar-n">305</span>
+      <span class="mg-selbar-t">accounts selected · one at a time, roughly a minute each</span>
+    </div>
+
+    <div class="mg-steps">
+      <div class="mg-step">
+        <span>
+          <div class="mg-step-h"><span class="mg-tick">✓</span>Exported</div>
+          <div class="mg-step-s">Opens each account and reads its connections list. Nothing is sent — no requests, no messages.</div>
+        </span>
+        <span class="mg-step-r">214 of 305 accounts<br>287,412 people</span>
+      </div>
+
+      <div class="mg-step">
+        <span>
+          <div class="mg-step-h"><span class="mg-tick">✓</span>Cleaned</div>
+          <div class="mg-step-s">Fills in company and job title, and matches every person to their LinkedIn ID.</div>
+        </span>
+        <span class="mg-step-r">285,398 matched<br>2,014 couldn't be</span>
+      </div>
+
+      <div class="mg-step idle">
+        <span>
+          <div class="mg-step-h">Imported</div>
+          <div class="mg-step-s">Adds them to HubSpot and the database. Waiting for you to confirm below.</div>
+        </span>
+        <span class="mg-step-r">not started</span>
+      </div>
+    </div>
+
+    <div class="conn-progress" style="margin-top:16px;">
+      <div class="conn-progress-head">
+        <span class="conn-progress-dot" aria-hidden="true"></span>
+        <span class="conn-progress-label">bea.talusan@ortus.solutions — account 214 of 305</span>
+        <span class="conn-progress-pct">70%</span>
+      </div>
+      <div class="conn-progress-track"><div class="conn-progress-fill" style="width:70%"></div></div>
+      <div class="conn-progress-quip">You can close this — it keeps going.</div>
+    </div>
+  </section>
+
+  <!-- 3 · Import -->
+  <section class="dashboard-section cx-section">
+    <h2 class="cx-h2"><span class="cx-num">3</span> Import to HubSpot</h2>
+
+    <div class="mg-ledger">
+      <div class="mg-led">
+        <div class="mg-led-n">231,240</div>
+        <div class="mg-led-t">New people</div>
+        <div class="mg-led-s">Not in HubSpot yet — will be added</div>
+      </div>
+      <div class="mg-led">
+        <div class="mg-led-n">54,158</div>
+        <div class="mg-led-t">Already there</div>
+        <div class="mg-led-s">We'll note the extra connection on their record. Nothing else changes.</div>
+      </div>
+      <div class="mg-led">
+        <div class="mg-led-n">2,014</div>
+        <div class="mg-led-t">Hidden by LinkedIn</div>
+        <div class="mg-led-s">LinkedIn gave us no name and no profile link for these — just a date. Nothing we can do with them.</div>
+      </div>
+    </div>
+
+    <div class="mg-confirm">
+      <div class="mg-confirm-t">
+        <b>Nothing has gone into HubSpot yet.</b> The numbers above are what will happen when you press Import.
+      </div>
+      <div class="mg-confirm-btns">
+        <button type="button" class="btn">Import 231,240 people</button>
+      </div>
+    </div>
+
+    <p class="mg-foot">
+      Everyone is matched on their <b>LinkedIn ID</b>, so the same person collected from five
+      different Ortus accounts stays one record in HubSpot with five connections listed —
+      no duplicates. If someone already has an email address on their record, we leave it alone.
+    </p>
+  </section>
+
+  <script>
+    function selAll(on) {
+      document.querySelectorAll('#profiles-grid .profile-item:not(.is-restricted)').forEach(el => {
+        el.classList.toggle('selected', on);
+        const cb = el.querySelector('input'); if (cb) cb.checked = on;
+      });
+    }
+    document.querySelectorAll('#profiles-grid input:not([disabled])').forEach(cb => {
+      cb.addEventListener('change', () => cb.closest('.profile-item').classList.toggle('selected', cb.checked));
+    });
+  </script>
+</body>
+</html>

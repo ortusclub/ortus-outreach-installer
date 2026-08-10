@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.0.0" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.0.0" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.0" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.0.1" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -584,6 +584,15 @@
       <div class="dashboard-header">
         <h1 class="dashboard-title">Connection DB</h1>
       </div>
+
+      <!-- Two halves of one pipeline: Magellan collects the networks, Warm
+           Reach searches them. -->
+      <div class="route-seg" role="tablist" aria-label="Find leads or collect connections">
+        <button type="button" class="route-seg-btn is-active" id="cx-tab-warm" onclick="setConnTab('warm')">Find warm leads</button>
+        <button type="button" class="route-seg-btn" id="cx-tab-magellan" onclick="setConnTab('magellan')">Operation Magellan</button>
+      </div>
+
+      <div id="cx-warm-pane">
       <p class="cx-lede" id="cx-lede">Build a warm ICB lead list — search HubSpot, join it to the team's LinkedIn networks, pick who's warmly reachable, export.</p>
 
       <!-- Stats / cache / Drive sync -->
@@ -693,6 +702,126 @@
         <div class="gs" id="cx-sheet-preview"></div>
         <p class="gs-note">Columns are the real lead-sheet schema (<b>First Name + LinkedIn URL</b> required), plus a <b>Primary</b> column = the colleague who can warmly reach each person. <b>Stage</b> is left blank for the campaign to fill.</p>
       </section>
+      </div><!-- /cx-warm-pane -->
+
+      <!-- ── Operation Magellan — collect the team's connections and put them
+           in HubSpot. This is where the database above comes from.
+           Deliberately has none of the campaign chrome (credits, passover,
+           assignment, in-use): it only reads a connections list. -->
+      <div id="cx-magellan-pane" hidden>
+        <p class="cx-lede">Collect the connections of our LinkedIn accounts and put them in HubSpot. <b>This is where the database comes from</b> — everything the other tab searches was collected here.</p>
+
+        <section class="dashboard-section">
+          <div class="conn-stats">
+            <div class="conn-stat"><span class="conn-stat-num" id="mg-stat-accounts">—</span><span class="conn-stat-lbl">Accounts</span></div>
+            <div class="conn-stat"><span class="conn-stat-num" id="mg-stat-collected">—</span><span class="conn-stat-lbl">Collected</span></div>
+            <div class="conn-stat"><span class="conn-stat-num" id="mg-stat-todo">—</span><span class="conn-stat-lbl">Still to do</span></div>
+          </div>
+        </section>
+
+        <section class="dashboard-section cx-section">
+          <h2 class="cx-h2"><span class="cx-num">1</span> Pick accounts</h2>
+          <div class="accounts-browser browse-card">
+            <div class="browse-card-body">
+              <div class="browse-toolbar">
+                <div class="browse-search">
+                  <input type="text" id="mg-search" placeholder="Search by name or email…" oninput="renderMagellanAccounts()" />
+                </div>
+                <div class="chip-row" id="mg-chips">
+                  <button type="button" class="chip active" data-filter="todo" onclick="setMagellanFilter('todo')">Still to do <span class="count" id="mg-count-todo">0</span></button>
+                  <button type="button" class="chip" data-filter="done" onclick="setMagellanFilter('done')">Collected <span class="count" id="mg-count-done">0</span></button>
+                  <button type="button" class="chip" data-filter="all" onclick="setMagellanFilter('all')">All <span class="count" id="mg-count-all">0</span></button>
+                  <button type="button" class="chip" data-filter="selected" onclick="setMagellanFilter('selected')">Selected <span class="count" id="mg-count-selected">0</span></button>
+                </div>
+              </div>
+              <div class="browse-secondary">
+                <div class="browse-bulk-row">
+                  <button class="bulk-pill" onclick="magellanSelectAllVisible()">Select all visible</button>
+                  <button class="bulk-pill" onclick="magellanDeselectAll()">Deselect all</button>
+                </div>
+              </div>
+              <div id="mg-grid" class="profile-grid"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="dashboard-section cx-section">
+          <h2 class="cx-h2"><span class="cx-num">2</span> Collect</h2>
+          <div class="mg-selbar">
+            <span class="mg-selbar-n" id="mg-sel-count">0</span>
+            <span class="mg-selbar-t" id="mg-sel-sub">accounts selected</span>
+          </div>
+          <div class="mg-steps">
+            <div class="mg-step" id="mg-step-export">
+              <span>
+                <div class="mg-step-h">Exported</div>
+                <div class="mg-step-s">Opens each account and reads its connections list. Nothing is sent — no requests, no messages.</div>
+              </span>
+              <span class="mg-step-r" id="mg-step-export-r">not started</span>
+            </div>
+            <div class="mg-step" id="mg-step-clean">
+              <span>
+                <div class="mg-step-h">Cleaned</div>
+                <div class="mg-step-s">Fills in company and job title, and matches every person to their LinkedIn ID.</div>
+              </span>
+              <span class="mg-step-r" id="mg-step-clean-r">not started</span>
+            </div>
+            <div class="mg-step idle" id="mg-step-import">
+              <span>
+                <div class="mg-step-h">Imported</div>
+                <div class="mg-step-s">Adds them to HubSpot and the database. Waiting for you to confirm below.</div>
+              </span>
+              <span class="mg-step-r" id="mg-step-import-r">not started</span>
+            </div>
+          </div>
+
+          <div class="conn-progress" id="mg-progress" hidden aria-live="polite">
+            <div class="conn-progress-head">
+              <span class="conn-progress-dot" aria-hidden="true"></span>
+              <span class="conn-progress-label" id="mg-progress-label">Working…</span>
+              <span class="conn-progress-pct" id="mg-progress-pct"></span>
+            </div>
+            <div class="conn-progress-track"><div class="conn-progress-fill" id="mg-progress-fill"></div></div>
+            <div class="conn-progress-quip">You can close this — it keeps going.</div>
+          </div>
+
+          <div class="cx-find-row" style="margin-top:16px;">
+            <button type="button" class="btn" id="mg-collect-btn" onclick="startMagellanCollect()">Collect connections</button>
+          </div>
+          <div class="conn-error" id="mg-error" hidden></div>
+        </section>
+
+        <section class="dashboard-section cx-section">
+          <h2 class="cx-h2"><span class="cx-num">3</span> Import to HubSpot</h2>
+          <div class="mg-ledger" id="mg-ledger" hidden>
+            <div class="mg-led">
+              <div class="mg-led-n" id="mg-led-new">—</div>
+              <div class="mg-led-t">New people</div>
+              <div class="mg-led-s">Not in HubSpot yet — will be added</div>
+            </div>
+            <div class="mg-led">
+              <div class="mg-led-n" id="mg-led-existing">—</div>
+              <div class="mg-led-t">Already there</div>
+              <div class="mg-led-s">We'll note the extra connection on their record. Nothing else changes.</div>
+            </div>
+            <div class="mg-led">
+              <div class="mg-led-n" id="mg-led-hidden">—</div>
+              <div class="mg-led-t">Hidden by LinkedIn</div>
+              <div class="mg-led-s">LinkedIn gave us no name and no profile link for these — just a date. Nothing we can do with them.</div>
+            </div>
+          </div>
+
+          <div class="mg-confirm">
+            <div class="mg-confirm-t" id="mg-confirm-t"><b>Nothing has gone into HubSpot yet.</b> Check first to see what would happen.</div>
+            <div class="mg-confirm-btns">
+              <button type="button" class="btn btn-secondary" id="mg-preview-btn" onclick="previewMagellan()">Check what would happen</button>
+              <button type="button" class="btn" id="mg-import-btn" onclick="importMagellan()" hidden>Import</button>
+            </div>
+          </div>
+
+          <p class="mg-foot">Everyone is matched on their <b>LinkedIn ID</b>, so the same person collected from several Ortus accounts stays one record in HubSpot with each connection listed — no duplicates. If someone already has an email address on their record, we leave it alone.</p>
+        </section>
+      </div><!-- /cx-magellan-pane -->
     </div>
 
     <!-- ── Sales Nav board view (route #/salesnav) — top-level queue board. ── -->
@@ -3809,7 +3938,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.0.0"></script>
+  <script type="module" src="/js/app.js?v=3.1.0"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

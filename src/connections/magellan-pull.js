@@ -1,0 +1,207 @@
+// Operation Magellan — the collect half. Reads an Ortus account's connections
+// straight off LinkedIn and writes them to data/connections/<email>.csv, the
+// same file the Drive sync produces and csv-ingest already reads. So collecting
+// an account also refreshes the warm-reach database: one pipeline, two uses.
+//
+// Why live instead of the downloadable archive: the archive has no LinkedIn
+// member id, which is the only key HubSpot can dedupe on — that gap is the
+// entire reason the manual process needs LinkedHelper. The connections API
+// returns profile URNs, so getRecentConnections' enrichment pass resolves
+// member ids 25 per call instead of one profile visit each.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getRecentConnections } from '../linkedin/helpers.js';
+import { parseCsv } from './csv-ingest.js';
+import { normalizeSlug } from './slug.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.join(__dirname, '../..');
+export const CONNECTIONS_DIR = path.join(REPO, 'data/connections');
+
+// 40 rows a page. 500 pages is 20k connections — past any real Ortus account,
+// and the walk stops early on the first short page anyway.
+const MAX_PAGES = 500;
+
+export const CSV_HEADER = ['First Name', 'Last Name', 'URL', 'Email Address',
+  'Company', 'Position', 'Connected On', 'Member ID'];
+
+const CONNECTIONS_URL = 'https://www.linkedin.com/mynetwork/invite-connect/connections/';
+
+function csvCell(v) {
+  const s = v == null ? '' : String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** LinkedIn writes "15 Jun 2026"; match it so re-reads look native. */
+export function formatConnectedOn(ms) {
+  if (!ms) return '';
+  const d = new Date(Number(ms));
+  if (Number.isNaN(d.getTime())) return '';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${String(d.getUTCDate()).padStart(2, '0')} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/**
+ * Read whatever is already on disk for this account, keyed by slug. The archive
+ * export carries Company and Position on ~95% of rows; the connections API
+ * carries neither. Merging keeps that detail instead of blanking it on the
+ * first live collection.
+ */
+export function readExistingBySlug(filePath) {
+  const bySlug = new Map();
+  if (!fs.existsSync(filePath)) return bySlug;
+  const rows = parseCsv(fs.readFileSync(filePath, 'utf8'));
+  const h = rows.findIndex((r) => r[0] && r[0].trim() === 'First Name');
+  if (h === -1) return bySlug;
+  const header = rows[h].map((x) => x.trim());
+  const col = (name) => header.indexOf(name);
+  for (let i = h + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r.length) continue;
+    const slug = normalizeSlug(r[col('URL')]);
+    if (!slug) continue;
+    bySlug.set(slug, {
+      company: col('Company') >= 0 ? (r[col('Company')] || '').trim() : '',
+      position: col('Position') >= 0 ? (r[col('Position')] || '').trim() : '',
+      email: col('Email Address') >= 0 ? (r[col('Email Address')] || '').trim() : '',
+      connectedOn: col('Connected On') >= 0 ? (r[col('Connected On')] || '').trim() : '',
+      memberId: col('Member ID') >= 0 ? (r[col('Member ID')] || '').trim() : '',
+    });
+  }
+  return bySlug;
+}
+
+/**
+ * Merge a live pull with what's already on disk. Live wins on identity
+ * (name, member id); disk wins on company/position, which only it has.
+ */
+export function mergeRows(live, existingBySlug) {
+  return (live || []).map((c) => {
+    const slug = c.publicId || '';
+    const prev = (slug && existingBySlug.get(slug)) || {};
+    return {
+      firstName: c.firstName || '',
+      lastName: c.lastName || '',
+      url: slug ? `https://www.linkedin.com/in/${slug}` : '',
+      email: prev.email || '',
+      company: prev.company || '',
+      position: prev.position || '',
+      connectedOn: formatConnectedOn(c.connectedAt) || prev.connectedOn || '',
+      memberId: c.memberNumber || prev.memberId || '',
+      slug,
+    };
+  });
+}
+
+export function toCsv(rows) {
+  const lines = [CSV_HEADER.join(',')];
+  for (const r of rows) {
+    lines.push([r.firstName, r.lastName, r.url, r.email, r.company, r.position,
+      r.connectedOn, r.memberId].map(csvCell).join(','));
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/** Atomic write — tmp + rename, per the repo convention. */
+export function writeAccountCsv(account, rows, { dir = CONNECTIONS_DIR } = {}) {
+  fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, `${account}.csv`);
+  fs.writeFileSync(`${filePath}.tmp`, toCsv(rows));
+  fs.renameSync(`${filePath}.tmp`, filePath);
+  return filePath;
+}
+
+/**
+ * Collect one account. `page` must be a live puppeteer page on that account's
+ * session; the caller owns launching and closing it.
+ *
+ * @returns {{rows:Array, total:number, withUrl:number, withMemberId:number, hidden:number, file:string}}
+ */
+export async function collectAccount(page, account, { dir = CONNECTIONS_DIR } = {}) {
+  await page.goto(CONNECTIONS_URL, { waitUntil: 'domcontentloaded' });
+  const live = await getRecentConnections(page, 0, { maxPages: MAX_PAGES });
+  if (live.error) throw new Error(`Could not read connections: ${live.error}`);
+
+  const filePath = path.join(dir, `${account}.csv`);
+  const rows = mergeRows(live, readExistingBySlug(filePath));
+  writeAccountCsv(account, rows, { dir });
+
+  return {
+    rows,
+    total: rows.length,
+    withUrl: rows.filter((r) => r.url).length,
+    withMemberId: rows.filter((r) => r.memberId).length,
+    // Same category the UI calls "Hidden by LinkedIn" — no link, so unusable.
+    hidden: rows.filter((r) => !r.url && !r.memberId).length,
+    file: filePath,
+  };
+}
+
+/**
+ * What has already been collected, keyed by account email. Derived from the
+ * files on disk rather than a separate ledger — the CSV is the fact, so the two
+ * can never disagree. Drive-synced accounts show up here too, which is correct:
+ * we have their connections, however they arrived.
+ */
+export function listCollected({ dir = CONNECTIONS_DIR } = {}) {
+  const out = new Map();
+  if (!fs.existsSync(dir)) return out;
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.toLowerCase().endsWith('.csv')) continue;
+    const full = path.join(dir, f);
+    let count = 0;
+    try {
+      const bySlug = readExistingBySlug(full);
+      count = bySlug.size;
+      out.set(f.replace(/\.csv$/i, ''), {
+        count,
+        withMemberId: [...bySlug.values()].filter((v) => v.memberId).length,
+        at: fs.statSync(full).mtime.toISOString(),
+      });
+    } catch { /* unreadable file — treat as not collected */ }
+  }
+  return out;
+}
+
+/**
+ * Read a collected account back as plan input for magellan.js.
+ * Works for Drive-synced files too — they simply have no Member ID column,
+ * and those rows come back unresolved for the push stage to skip.
+ */
+export function readForPlan(account, { dir = CONNECTIONS_DIR } = {}) {
+  const filePath = path.join(dir, `${account}.csv`);
+  const bySlug = readExistingBySlug(filePath);
+  const out = [];
+  for (const [slug, v] of bySlug) {
+    out.push({
+      slug,
+      memberId: v.memberId || '',
+      firstName: '',
+      lastName: '',
+      company: v.company,
+      jobTitle: v.position,
+    });
+  }
+  // Names live in the file too — re-read them positionally rather than
+  // widening readExistingBySlug's shape for one caller.
+  if (fs.existsSync(filePath)) {
+    const rows = parseCsv(fs.readFileSync(filePath, 'utf8'));
+    const h = rows.findIndex((r) => r[0] && r[0].trim() === 'First Name');
+    if (h !== -1) {
+      const header = rows[h].map((x) => x.trim());
+      const iU = header.indexOf('URL');
+      const iF = header.indexOf('First Name');
+      const iL = header.indexOf('Last Name');
+      const byS = new Map(out.map((o) => [o.slug, o]));
+      for (let i = h + 1; i < rows.length; i++) {
+        const slug = normalizeSlug(rows[i][iU]);
+        const rec = slug && byS.get(slug);
+        if (!rec) continue;
+        rec.firstName = (rows[i][iF] || '').trim();
+        rec.lastName = (rows[i][iL] || '').trim();
+      }
+    }
+  }
+  return out;
+}

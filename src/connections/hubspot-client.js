@@ -70,3 +70,134 @@ export async function lookupBySlugs(slugs, { fetchImpl = fetch, token = process.
   }
   return out;
 }
+
+// ── Operation Magellan — the write side ──────────────────────────────────────
+// The read helpers above feed the warm-reach search. Everything below pushes
+// collected connections INTO HubSpot. Kept separate so the warm-reach cache
+// keeps requesting its own narrow PROPS set (it stores 152MB as it is).
+
+import { CONNECTIONS_PROP, MEMBER_ID_PROP } from './magellan.js';
+
+// What we need back to decide create-vs-update and whether a real email exists.
+export const MAGELLAN_PROPS = ['firstname', 'lastname', 'company', 'jobtitle',
+  'linkedinbio', 'email', 'hs_additional_emails', MEMBER_ID_PROP, CONNECTIONS_PROP];
+
+// HubSpot caps batch endpoints at 100 objects per call.
+const BATCH_LIMIT = 100;
+
+function chunk(arr, size = BATCH_LIMIT) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Find existing contacts by LinkedIn member id — the key Magellan writes.
+ * Returns a Map memberId → { id, properties }.
+ */
+export async function lookupByMemberIds(memberIds, { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  const out = new Map();
+  const ids = [...new Set((memberIds || []).filter(Boolean).map(String))];
+  for (const batch of chunk(ids, BATCH_LIMIT)) {
+    const body = {
+      filterGroups: [{ filters: [{ propertyName: MEMBER_ID_PROP, operator: 'IN', values: batch }] }],
+      properties: MAGELLAN_PROPS,
+      limit: BATCH_LIMIT,
+    };
+    let after;
+    do {
+      const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/search`, token,
+        after ? { ...body, after } : body);
+      const json = await res.json();
+      for (const r of json.results || []) {
+        const mid = r.properties?.[MEMBER_ID_PROP];
+        if (mid) out.set(String(mid), { id: r.id, properties: r.properties || {} });
+      }
+      after = json.paging && json.paging.next && json.paging.next.after;
+    } while (after);
+  }
+  return out;
+}
+
+/**
+ * Create contacts in batches. `inputs` is [{ properties }] straight off the plan.
+ * Returns { created, errors[] }. A failed batch is reported, not thrown — one
+ * bad row must not abandon the other 300k.
+ */
+export async function batchCreate(inputs, { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN, onProgress } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  let created = 0;
+  const errors = [];
+  for (const batch of chunk(inputs)) {
+    try {
+      const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/batch/create`, token,
+        { inputs: batch.map((b) => ({ properties: b.properties })) });
+      const json = await res.json();
+      created += (json.results || []).length;
+    } catch (err) {
+      errors.push({ size: batch.length, error: err.message });
+    }
+    onProgress?.({ created, errors: errors.length });
+  }
+  return { created, errors };
+}
+
+/** Update contacts in batches. `inputs` is [{ id, properties }]. */
+export async function batchUpdate(inputs, { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN, onProgress } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  let updated = 0;
+  const errors = [];
+  for (const batch of chunk(inputs)) {
+    try {
+      const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/batch/update`, token,
+        { inputs: batch.map((b) => ({ id: b.id, properties: b.properties })) });
+      const json = await res.json();
+      updated += (json.results || []).length;
+    } catch (err) {
+      errors.push({ size: batch.length, error: err.message });
+    }
+    onProgress?.({ updated, errors: errors.length });
+  }
+  return { updated, errors };
+}
+
+/**
+ * Attach the synthetic key to a contact that already exists.
+ * No batch endpoint exists for secondary emails, so this is one call each —
+ * which is why the plan only ever lists contacts genuinely missing the key.
+ */
+export async function attachSyntheticEmail({ id, email, asPrimary },
+  { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  if (asPrimary) {
+    const res = await fetchImpl(`${BASE}/crm/v3/objects/contacts/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ properties: { email } }),
+    });
+    if (!res.ok) throw new Error(`HubSpot ${res.status}: ${await res.text()}`);
+    return { id, email, action: 'primary_added' };
+  }
+  // Legacy endpoint — the only way to write hs_additional_emails. Same call the
+  // HS Extension uses (hubspotClient.js addAdditionalEmail).
+  const res = await fetchImpl(
+    `${BASE}/contacts/v1/secondary-email/${encodeURIComponent(id)}/email/${encodeURIComponent(email)}`,
+    { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`HubSpot ${res.status}: ${await res.text()}`);
+  return { id, email, action: 'additional_added' };
+}
+
+/** Does the portal actually have the properties Magellan writes? */
+export async function checkMagellanProperties({ fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  const missing = [];
+  for (const name of [MEMBER_ID_PROP, CONNECTIONS_PROP]) {
+    const res = await fetchImpl(`${BASE}/crm/v3/properties/contacts/${encodeURIComponent(name)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 404) missing.push(name);
+    else if (!res.ok) throw new Error(`HubSpot ${res.status} checking ${name}`);
+  }
+  return { ok: missing.length === 0, missing };
+}

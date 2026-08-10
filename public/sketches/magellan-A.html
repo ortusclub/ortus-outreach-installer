@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connection DB — Operation Magellan (A)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Sketch-only additions. Everything else is the app's real chrome:
+       .route-seg / .dashboard-section / .cx-h2 / .cx-num / .conn-stat /
+       .acct-card / .conn-progress / .gs — all from public/css/style.css. */
+    body { padding: 34px 40px 90px; max-width: 1180px; margin: 0 auto; }
+    .mg-lede { font-family: var(--body); color: var(--gray); font-size: 0.86rem; max-width: 760px; line-height: 1.6; margin: 6px 0 24px; }
+
+    /* Account picker — mirrors the J3 two-zone tile */
+    .mg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 12px; }
+    .mg-acct { border: 1px solid var(--hairline); background: var(--card-bg); display: flex; flex-direction: column; cursor: pointer; }
+    .mg-acct.is-on { border-color: var(--ink); }
+    .mg-acct-top { padding: 13px 15px 11px; display: flex; align-items: flex-start; gap: 10px; }
+    .mg-acct-tick { width: 14px; height: 14px; border: 1px solid var(--hairline); flex: none; margin-top: 2px; position: relative; }
+    .mg-acct.is-on .mg-acct-tick { background: var(--ink); border-color: var(--ink); }
+    .mg-acct.is-on .mg-acct-tick::after { content: "✓"; position: absolute; inset: 0; color: var(--card-bg); font-size: 10px; line-height: 14px; text-align: center; }
+    .mg-acct-em { font-family: var(--mono); font-size: 0.72rem; color: var(--ink); word-break: break-all; line-height: 1.35; }
+    .mg-acct-src { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray); margin-top: 4px; }
+    .mg-acct-bot { display: flex; border-top: 1px solid var(--hairline); }
+    .mg-cell { flex: 1; padding: 9px 12px; border-left: 1px solid var(--hairline); }
+    .mg-cell:first-child { border-left: none; }
+    .mg-cell-n { font-family: var(--display); font-size: 1.5rem; line-height: 0.95; color: var(--ink); }
+    .mg-cell-n.zero { color: var(--gray); }
+    .mg-cell-t { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray); margin-top: 3px; }
+    .mg-acct-foot { padding: 7px 15px; border-top: 1px solid var(--hairline); font-family: var(--mono); font-size: 0.56rem; color: var(--gray); }
+
+    /* Stage rail */
+    .mg-stages { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--hairline); }
+    .mg-stage { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 14px; padding: 14px 16px; border-top: 1px solid var(--hairline); }
+    .mg-stage:first-child { border-top: none; }
+    .mg-stage-i { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); border: 1px solid var(--hairline); width: 26px; height: 26px; border-radius: 9999px; display: grid; place-items: center; }
+    .mg-stage.done .mg-stage-i { border-color: var(--ink); color: var(--ink); }
+    .mg-stage.live .mg-stage-i { border-color: var(--ink); background: var(--ink); color: var(--card-bg); }
+    .mg-stage-h { font-family: var(--body); font-size: 0.82rem; color: var(--ink); }
+    .mg-stage.idle .mg-stage-h { color: var(--gray); }
+    .mg-stage-s { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top: 3px; line-height: 1.5; }
+    .mg-stage-r { font-family: var(--mono); font-size: 0.62rem; color: var(--ink); text-align: right; white-space: nowrap; }
+    .mg-stage.idle .mg-stage-r { color: var(--gray); }
+
+    /* Dry-run banner + result ledger */
+    .mg-dry { display: flex; align-items: center; gap: 14px; border: 1px solid var(--hairline); padding: 13px 16px; margin-bottom: 16px; }
+    .mg-dry-txt { flex: 1; font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.6; }
+    .mg-dry-txt b { color: var(--ink); }
+    .mg-sw { width: 42px; height: 22px; border: 1px solid var(--hairline); border-radius: 9999px; position: relative; cursor: pointer; flex: none; background: var(--card-bg); }
+    .mg-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 9999px; background: var(--gray); transition: .15s; }
+    .mg-sw.on { border-color: var(--ink); }
+    .mg-sw.on::after { left: 22px; background: var(--ink); }
+
+    .mg-ledger { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--hairline); }
+    .mg-led { padding: 15px 16px; border-left: 1px solid var(--hairline); }
+    .mg-led:first-child { border-left: none; }
+    .mg-led-n { font-family: var(--display); font-size: 2.1rem; line-height: 0.9; color: var(--ink); }
+    .mg-led-t { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray); margin-top: 5px; }
+    .mg-led-s { font-family: var(--body); font-size: 0.7rem; color: var(--gray); margin-top: 4px; line-height: 1.45; }
+
+    .mg-run-row { display: flex; align-items: center; gap: 16px; margin-top: 18px; }
+    .mg-note { font-family: var(--mono); font-size: 0.56rem; color: var(--gray); line-height: 1.7; margin-top: 12px; max-width: 800px; }
+    .mg-note b { color: var(--ink); }
+    .mg-skip { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); border-top: 1px solid var(--hairline); margin-top: 14px; padding-top: 12px; line-height: 1.8; }
+    .mg-skip b { color: var(--ink); }
+  </style>
+</head>
+<body>
+
+  <div class="route-seg" role="tablist" aria-label="Connection DB mode">
+    <button type="button" class="route-seg-btn">Warm Reach</button>
+    <button type="button" class="route-seg-btn is-active">Operation Magellan</button>
+  </div>
+
+  <div class="dashboard-header" style="margin-top:18px;">
+    <h1 class="dashboard-title">Connection DB</h1>
+  </div>
+  <p class="mg-lede">
+    Pull each Ortus account's LinkedIn connections and push them into HubSpot, keyed on the
+    LinkedIn membership ID. Same networks Warm Reach searches — this is the side that fills them.
+  </p>
+
+  <!-- Stats -->
+  <section class="dashboard-section">
+    <div class="conn-stats">
+      <div class="conn-stat"><span class="conn-stat-num">442</span><span class="conn-stat-lbl">Accounts known</span></div>
+      <div class="conn-stat"><span class="conn-stat-num">176</span><span class="conn-stat-lbl">In HubSpot</span></div>
+      <div class="conn-stat"><span class="conn-stat-num">266</span><span class="conn-stat-lbl">Never pushed</span></div>
+      <div class="conn-stat"><span class="conn-stat-num">—</span><span class="conn-stat-lbl">Last run</span></div>
+    </div>
+  </section>
+
+  <!-- 1 · Pick accounts -->
+  <section class="dashboard-section cx-section">
+    <h2 class="cx-h2"><span class="cx-num">1</span> Pick accounts</h2>
+    <div class="mg-grid">
+
+      <div class="mg-acct is-on" onclick="this.classList.toggle('is-on')">
+        <div class="mg-acct-top">
+          <span class="mg-acct-tick"></span>
+          <span>
+            <span class="mg-acct-em">antonio@ortusclub.com</span>
+            <span class="mg-acct-src">GoLogin · profile ready</span>
+          </span>
+        </div>
+        <div class="mg-acct-bot">
+          <div class="mg-cell"><div class="mg-cell-n">1,259</div><div class="mg-cell-t">Connections</div></div>
+          <div class="mg-cell"><div class="mg-cell-n zero">0</div><div class="mg-cell-t">In HubSpot</div></div>
+        </div>
+        <div class="mg-acct-foot">Export 6 Aug 2026 · never pushed</div>
+      </div>
+
+      <div class="mg-acct" onclick="this.classList.toggle('is-on')">
+        <div class="mg-acct-top">
+          <span class="mg-acct-tick"></span>
+          <span>
+            <span class="mg-acct-em">soleil@ortusclub.com</span>
+            <span class="mg-acct-src">GoLogin · profile ready</span>
+          </span>
+        </div>
+        <div class="mg-acct-bot">
+          <div class="mg-cell"><div class="mg-cell-n">734</div><div class="mg-cell-t">Connections</div></div>
+          <div class="mg-cell"><div class="mg-cell-n">275</div><div class="mg-cell-t">In HubSpot</div></div>
+        </div>
+        <div class="mg-acct-foot">Pushed 10 Aug 2026 · 459 outstanding</div>
+      </div>
+
+      <div class="mg-acct" onclick="this.classList.toggle('is-on')">
+        <div class="mg-acct-top">
+          <span class="mg-acct-tick"></span>
+          <span>
+            <span class="mg-acct-em">ishat.khandelwal@ortus.solutions</span>
+            <span class="mg-acct-src">Drive export only · no profile</span>
+          </span>
+        </div>
+        <div class="mg-acct-bot">
+          <div class="mg-cell"><div class="mg-cell-n">734</div><div class="mg-cell-t">Connections</div></div>
+          <div class="mg-cell"><div class="mg-cell-n zero">0</div><div class="mg-cell-t">In HubSpot</div></div>
+        </div>
+        <div class="mg-acct-foot">Slug fallback · 1 call per profile</div>
+      </div>
+
+    </div>
+    <p class="mg-note">
+      Accounts with a <b>GoLogin profile</b> use the live Voyager pull — member IDs come back
+      25 per call. Accounts with only a <b>Drive export</b> fall back to slug-by-slug resolution,
+      which is ~25× more calls. Both end up in the same place.
+    </p>
+  </section>
+
+  <!-- 2 · Run -->
+  <section class="dashboard-section cx-section">
+    <h2 class="cx-h2"><span class="cx-num">2</span> Run</h2>
+
+    <div class="mg-stages">
+      <div class="mg-stage done">
+        <span class="mg-stage-i">✓</span>
+        <span>
+          <div class="mg-stage-h">Collect connections</div>
+          <div class="mg-stage-s">Voyager connections list, 40 per page · writes data/connections/antonio@ortusclub.com.csv</div>
+        </span>
+        <span class="mg-stage-r">1,259 found<br>1,241 with a URL</span>
+      </div>
+
+      <div class="mg-stage done">
+        <span class="mg-stage-i">✓</span>
+        <span>
+          <div class="mg-stage-h">Resolve membership IDs</div>
+          <div class="mg-stage-s">Batched 25 per call · 50 calls</div>
+        </span>
+        <span class="mg-stage-r">1,233 resolved<br>8 unresolved</span>
+      </div>
+
+      <div class="mg-stage live">
+        <span class="mg-stage-i">3</span>
+        <span>
+          <div class="mg-stage-h">Check against HubSpot</div>
+          <div class="mg-stage-s">Batched lookup on linkedinbio + membership ID</div>
+        </span>
+        <span class="mg-stage-r">812 / 1,233</span>
+      </div>
+
+      <div class="mg-stage idle">
+        <span class="mg-stage-i">4</span>
+        <span>
+          <div class="mg-stage-h">Write to HubSpot</div>
+          <div class="mg-stage-s">Creates carry the synthetic email · updates never overwrite a real one</div>
+        </span>
+        <span class="mg-stage-r">waiting</span>
+      </div>
+    </div>
+
+    <div class="conn-progress" style="margin-top:16px;">
+      <div class="conn-progress-head">
+        <span class="conn-progress-dot" aria-hidden="true"></span>
+        <span class="conn-progress-label">Checking against HubSpot — antonio@ortusclub.com</span>
+        <span class="conn-progress-pct">66%</span>
+      </div>
+      <div class="conn-progress-track"><div class="conn-progress-fill" style="width:66%"></div></div>
+      <div class="conn-progress-quip">Nothing has been written yet — this is a dry run.</div>
+    </div>
+  </section>
+
+  <!-- 3 · What would be written -->
+  <section class="dashboard-section cx-section">
+    <h2 class="cx-h2"><span class="cx-num">3</span> What would be written</h2>
+
+    <div class="mg-dry">
+      <div class="mg-dry-txt">
+        <b>Dry run.</b> Nothing is sent to HubSpot. Turn this off to write for real —
+        it stays off every time the app restarts.
+      </div>
+      <span class="mg-sw" onclick="this.classList.toggle('on')"></span>
+    </div>
+
+    <div class="mg-ledger">
+      <div class="mg-led">
+        <div class="mg-led-n">1,019</div>
+        <div class="mg-led-t">Create</div>
+        <div class="mg-led-s">New contact, synthetic email as primary</div>
+      </div>
+      <div class="mg-led">
+        <div class="mg-led-n">214</div>
+        <div class="mg-led-t">Update</div>
+        <div class="mg-led-s">Already in HubSpot — stamps the membership ID and the connection</div>
+      </div>
+      <div class="mg-led">
+        <div class="mg-led-n">37</div>
+        <div class="mg-led-t">Extra email</div>
+        <div class="mg-led-s">Has a real address — synthetic goes in as additional</div>
+      </div>
+      <div class="mg-led">
+        <div class="mg-led-n">26</div>
+        <div class="mg-led-t">Skipped</div>
+        <div class="mg-led-s">No usable URL or no membership ID</div>
+      </div>
+    </div>
+
+    <div class="gs-title" style="margin-top:22px;">First 5 of 1,019 creates — <b>antonio@ortusclub.com</b></div>
+    <div class="gs">
+      <table>
+        <thead>
+          <tr>
+            <th>linkedin_membership_id</th><th>email</th><th>firstname</th><th>lastname</th>
+            <th>company</th><th>jobtitle</th><th>linkedinbio</th><th>connections</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>29418762</td><td>29418762@linkedinmembership.id</td><td>Alessandra</td><td>Brambilla</td>
+            <td>NTT DATA</td><td>Executive Managing Director, Growth &amp; GTM, Europe</td>
+            <td class="url">https://www.linkedin.com/in/alebrambi</td><td class="primary">;antonio@ortusclub.com</td>
+          </tr>
+          <tr>
+            <td>417986156</td><td>417986156@linkedinmembership.id</td><td>Daniela</td><td>Jürgens</td>
+            <td>Cornerstone OnDemand</td><td>Senior Field Marketing Manager DACH</td>
+            <td class="url">https://www.linkedin.com/in/daniela-juergens</td><td class="primary">;antonio@ortusclub.com</td>
+          </tr>
+          <tr>
+            <td>8278546</td><td>8278546@linkedinmembership.id</td><td>Yogesh</td><td>Sangle</td>
+            <td>Nium</td><td>EVP – Global Marketing and APAC Sales</td>
+            <td class="url">https://www.linkedin.com/in/yogesh-sangle</td><td class="primary">;antonio@ortusclub.com</td>
+          </tr>
+          <tr>
+            <td>253453751</td><td>253453751@linkedinmembership.id</td><td>Emily</td><td>Lai</td>
+            <td>Hex Trust</td><td>Head of Partnerships</td>
+            <td class="url">https://www.linkedin.com/in/ycemilylai</td><td class="primary">;antonio@ortusclub.com</td>
+          </tr>
+          <tr>
+            <td>44715903</td><td>44715903@linkedinmembership.id</td><td>Champee</td><td>Roy</td>
+            <td class="empty">—</td><td class="empty">—</td>
+            <td class="url">https://www.linkedin.com/in/champeeroy</td><td class="primary">;antonio@ortusclub.com</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="gs-note">
+      <b>email</b> is always <b>&lt;membership id&gt;@linkedinmembership.id</b> — the same key the HS
+      Extension writes, so a contact created here and one created from the extension are the same
+      contact. <b>connections</b> is semicolon-prefixed so a person reachable through several Ortus
+      accounts accumulates them on one record instead of duplicating.
+      Blank company/title stay blank rather than guessing.
+    </p>
+
+    <div class="mg-skip">
+      <b>26 skipped</b> — 18 with no <b>/in/</b> URL in the export (LinkedIn redacts these),
+      8 where no membership ID could be resolved. Downloadable as CSV, retried next run.
+    </div>
+
+    <div class="mg-run-row">
+      <button type="button" class="btn">Run dry pass</button>
+      <button type="button" class="btn btn-secondary">Download the 26 skipped ↓</button>
+    </div>
+  </section>
+
+</body>
+</html>

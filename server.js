@@ -103,6 +103,8 @@ import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWriteback
 import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
+import * as magellan from './src/connections/magellan-run.js';
+import { listCollected as magellanListCollected } from './src/connections/magellan-pull.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -2507,6 +2509,69 @@ app.get('/api/connections/stats', async (_req, res) => {
 app.post('/api/connections/sync', (_req, res) => {
   try {
     res.json(startConnectionsSync({}));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Operation Magellan ───────────────────────────────────────────────────────
+// Collect the team's LinkedIn connections and push them into HubSpot. The
+// collect phase only reads a connections list — it sends no invites and no
+// messages, so it deliberately ignores credits, assignment and in-use state.
+
+app.get('/api/magellan/state', (_req, res) => {
+  res.json(magellan.getState());
+});
+
+// The account picker. Every GoLogin profile, joined to whether we already hold
+// its connections. "Collected" is derived from the file on disk rather than a
+// separate ledger, so the two can't drift apart.
+app.get('/api/magellan/accounts', async (_req, res) => {
+  try {
+    const collected = magellanListCollected();
+    const profiles = await getProfiles();
+    res.json(profiles.map((p) => {
+      const c = collected.get(p.name) || null;
+      return {
+        profileId: p.id,
+        account: p.name,
+        collected: Boolean(c),
+        count: c ? c.count : null,
+        withMemberId: c ? c.withMemberId : null,
+        collectedAt: c ? c.at : null,
+      };
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/magellan/collect', (req, res) => {
+  try {
+    res.json(magellan.startCollect((req.body || {}).accounts || []));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Works out what the import would do. Writes nothing. The plan itself can be
+// hundreds of thousands of rows, so it stays on the server — only totals go out.
+app.post('/api/magellan/preview', async (req, res) => {
+  try {
+    const { totals } = await magellan.buildPreview((req.body || {}).accounts || []);
+    res.json({ totals });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// The only path that writes to HubSpot, and only from an explicit click.
+app.post('/api/magellan/import', async (req, res) => {
+  try {
+    if (!(req.body || {}).confirm) {
+      return res.status(400).json({ error: 'Import must be confirmed' });
+    }
+    res.json(await magellan.runImport());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

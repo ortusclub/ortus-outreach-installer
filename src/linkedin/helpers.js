@@ -178,11 +178,15 @@ export async function findButtonByText(page, text) {
  *
  * @param {puppeteer.Page} page
  * @param {number} sinceMs - Only return connections with connectedAt >= this
- *   (epoch ms). Pass 0 to fetch all pages up to MAX_PAGES.
+ *   (epoch ms). Pass 0 to fetch all pages up to maxPages.
+ * @param {Object} [opts]
+ * @param {number} [opts.maxPages=2] - How many 40-row pages to walk. The
+ *   default keeps the 6h bulk-check sweep cheap. Operation Magellan passes a
+ *   large value to walk the whole network instead of just recent acceptances.
  */
-export async function getRecentConnections(page, sinceMs = 0) {
+export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2 } = {}) {
   try {
-    const result = await page.evaluate(async (since) => {
+    const result = await page.evaluate(async ({ since, maxPages: pageCap }) => {
       try {
         const csrf = document.cookie.split(';').map((c) => c.trim())
           .find((c) => c.startsWith('JSESSIONID='));
@@ -196,11 +200,12 @@ export async function getRecentConnections(page, sinceMs = 0) {
         };
 
         const PAGE_SIZE = 40;
-        // Cap at the 80 most-recent connections — covers ~2-3 days of
+        // Default caps at the 80 most-recent connections — covers ~2-3 days of
         // acceptances at the steady-state pace, plenty for the 6h
         // bulk-check cadence. Old caps (8 pages × 40 = 320) pulled too
         // much history each sweep and made the sidecar tab churn a lot.
-        const MAX_PAGES = 2;
+        // Magellan overrides this to walk the whole network.
+        const MAX_PAGES = pageCap;
 
         // Try endpoints in priority order. LinkedIn has shipped multiple
         // connection-list endpoints over the years; the /relationshipsDash/
@@ -390,7 +395,7 @@ export async function getRecentConnections(page, sinceMs = 0) {
       } catch (err) {
         return { error: err.message };
       }
-    }, sinceMs);
+    }, { since: sinceMs, maxPages });
 
     if (result?.error) {
       console.log(`[helpers] getRecentConnections error: ${result.error}`);
