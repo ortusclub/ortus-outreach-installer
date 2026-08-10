@@ -84,7 +84,17 @@ export function startCollect(accounts, deps = {}) {
     .catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
 
   if (_state.running) return { started: false, reason: 'Magellan is already running' };
-  const list = (accounts || []).filter((a) => a && a.profileId && a.account);
+  // Two profiles can resolve to the same SoO address, and the picker has let
+  // the same one through twice. Collecting an account twice in one run just
+  // fights itself over the same file.
+  const seen = new Set();
+  const list = (accounts || []).filter((a) => {
+    if (!a || !a.profileId || !a.account) return false;
+    const key = String(a.account).trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   if (!list.length) return { started: false, reason: 'No accounts selected' };
 
   _stopRequested = false;

@@ -26976,9 +26976,19 @@ function renderMagellanAccounts() {
     const item = document.createElement('label');
     item.className = 'profile-item jt ' + (a.collected ? 'is-done' : 'free') + (on ? ' selected' : '');
     const when = a.collectedAt ? new Date(a.collectedAt).toLocaleDateString() : '';
-    const sub = a.collected
+    let sub = a.collected
       ? `${(a.count || 0).toLocaleString()} collected on ${when}. Tick to collect again.`
       : 'Never collected.';
+    // The label on the GoLogin profile, when it isn't the address itself —
+    // that's how the operator recognises the account.
+    if (a.resolved && a.profile && a.profile !== a.account) sub = `${a.profile} · ${sub}`;
+    // No SoO address means nothing to write in HubSpot's Linkedin 1st
+    // Connections field, so say so here rather than at import time.
+    if (!a.resolved) {
+      sub = a.ambiguous
+        ? `Two SoO accounts match this name — can't tell which. ${sub}`
+        : `No email found in the SoO for this profile — it can be collected, but not imported. ${sub}`;
+    }
     item.innerHTML = `
       <div class="jt-stat ${a.collected ? '' : 's-free'}">
         <span class="jt-dot"></span>

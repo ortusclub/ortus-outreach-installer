@@ -271,3 +271,24 @@ test('the option check is case-insensitive — HubSpot options are emails either
   });
   assert.deepEqual(blocked, []);
 });
+
+// Two GoLogin profiles can resolve to the same SoO address, and the picker has
+// let the same one through twice — two runs then fight over one CSV.
+test('the same account twice in one selection is collected once', async () => {
+  reset();
+  const seen = [];
+  startCollect([
+    { account: 'a@o.com', profileId: 'p1' },
+    { account: 'A@O.com', profileId: 'p2' },
+    { account: 'b@o.com', profileId: 'p3' },
+  ], {
+    semaphore: { async acquire() {}, release() {} },
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    collect: async (_p, acct) => { seen.push(acct); return { total: 1, withMemberId: 1, hidden: 0 }; },
+    sheet: noSheet,
+  });
+  await settle();
+  assert.deepEqual(seen, ['a@o.com', 'b@o.com']);
+  assert.equal(getState().total, 2);
+});

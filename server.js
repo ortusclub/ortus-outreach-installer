@@ -2537,15 +2537,49 @@ app.get('/api/magellan/sheet-url', async (_req, res) => {
 // The account picker. Every GoLogin profile, joined to whether we already hold
 // its connections. "Collected" is derived from the file on disk rather than a
 // separate ledger, so the two can't drift apart.
+// The SoO is a slow, heavily-contended read and the picker reloads often, so
+// hold the email list for a few minutes. Only the addresses are kept.
+let _magellanSoo = { at: 0, emails: [] };
+async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000 } = {}) {
+  if (_magellanSoo.emails.length && Date.now() - _magellanSoo.at < maxAgeMs) return _magellanSoo.emails;
+  const soo = await fetchSoOData();
+  const emails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
+  if (emails.length) _magellanSoo = { at: Date.now(), emails };
+  return emails;
+}
+
 app.get('/api/magellan/accounts', async (_req, res) => {
   try {
     const collected = magellanListCollected();
     const profiles = await getProfiles();
+
+    // A GoLogin profile is labelled however someone typed it — sometimes the
+    // account's email, sometimes just "Nikki". HubSpot's Linkedin 1st
+    // Connections field only accepts the EMAIL, so resolve the label to its SoO
+    // address with the same exact-first, ambiguity-refusing matcher the SoO
+    // write-back uses. Unresolved profiles keep their label and are marked, so
+    // they can be seen rather than silently collected under a name nothing can
+    // be imported against.
+    let sooEmails = [];
+    try {
+      const soo = await magellanSooEmails();
+      sooEmails = soo;
+    } catch (err) {
+      console.warn(`[magellan] could not read the SoO — falling back to profile names: ${err.message}`);
+    }
+
     res.json(profiles.map((p) => {
-      const c = collected.get(p.name) || null;
+      const hit = sooEmails.length ? resolveSoOEmail(p.name, sooEmails) : null;
+      const email = hit && hit.email ? hit.email : '';
+      const account = email || p.name;
+      // Older files were written under the profile label; keep finding them.
+      const c = collected.get(account) || collected.get(p.name) || null;
       return {
         profileId: p.id,
-        account: p.name,
+        account,
+        profile: p.name,
+        resolved: Boolean(email),
+        ambiguous: Boolean(hit && hit.ambiguous),
         collected: Boolean(c),
         count: c ? c.count : null,
         withMemberId: c ? c.withMemberId : null,
