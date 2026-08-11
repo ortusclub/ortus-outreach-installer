@@ -244,8 +244,10 @@ export function planBanner(state = {}) {
     ? new Date(pv.builtAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
     : 'an unknown time';
   const n = (pv.accounts || []).length;
-  const msg = `This plan was built ${built} and covers ${n} account${n === 1 ? '' : 's'}. `
-    + 'If a Check or an Import ran since, the rows below may no longer be accurate.';
+  const coverage = `This plan was built ${built} and covers ${n} account${n === 1 ? '' : 's'}.`;
+  const msg = state.imported
+    ? `${coverage} An Import has already run. The rows below show what it was going to do, not what will happen if you press Import now.`
+    : `${coverage} If a Check or an Import ran since, the rows below may no longer be accurate.`;
   return [msg, '', '', '', ''];
 }
 

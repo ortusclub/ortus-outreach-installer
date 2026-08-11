@@ -297,6 +297,19 @@ test('planBanner does not crash or invent a date when there is no preview yet', 
   assert.match(row[0], /0 accounts/);
 });
 
+// runImport sets state.imported before it re-publishes, so the banner can
+// stop hedging on a timestamp and just say an import already happened.
+test('planBanner says an import already ran once state.imported is set', () => {
+  const row = planBanner({
+    preview: { builtAt: '2026-08-11T14:30:00.000Z', accounts: ['a@o.com', 'b@o.com'] },
+    imported: { created: 2, updated: 0, at: '2026-08-11T15:00:00.000Z' },
+  });
+  assert.match(row[0], /built/i);
+  assert.match(row[0], /2 accounts/);
+  assert.match(row[0], /import has already run/i);
+  assert.doesNotMatch(row[0], /may no longer be accurate/);
+});
+
 test('the banner rides in front of the plan rows a publish() write actually sends', async () => {
   resetPublished();
   const calls = [];
