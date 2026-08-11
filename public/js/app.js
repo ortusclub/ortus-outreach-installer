@@ -38,7 +38,7 @@ import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, cam
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
-import { magellanPct } from '/js/magellan-view.mjs';
+import { magellanPct, selectionSummary } from '/js/magellan-view.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -27058,6 +27058,24 @@ function updateMagellanCounts() {
     sub.textContent = mgSelected.size === 1
       ? 'account selected · about a minute'
       : 'accounts selected · one at a time, roughly a minute each';
+  }
+
+  // What pressing Check would actually run. The HubSpot allowlist drops accounts
+  // it has no option for; that used to surface only as a log line after the run.
+  const chosen = mgAccounts.filter((a) => mgSelected.has(a.profileId));
+  const sel = selectionSummary(chosen);
+  const split = document.getElementById('mg-sel-split');
+  if (split) {
+    // Unknown (the portal could not be asked) or nothing to say — stay quiet
+    // rather than guess which colleague's account is about to be skipped.
+    const show = sel.known && sel.total > 0 && sel.blocked.length > 0;
+    split.hidden = !show;
+    split.innerHTML = show
+      ? `<b>${sel.usable}</b> can go into HubSpot · `
+        + `<b>${sel.blocked.length} need${sel.blocked.length === 1 ? 's' : ''} adding</b> to the `
+        + '"Linkedin 1st Connections" list first: '
+        + `<span class="blk">${sel.blocked.map(escHtml).join(', ')}</span>`
+      : '';
   }
 }
 

@@ -721,6 +721,15 @@
         body[data-dashboard='v3'] #mg-card .vj-stage-accts { margin-top: 26px; margin-bottom: 4px; }
         body[data-dashboard='v3'] #mg-card #mg-acct-detail { margin-top: 14px; }
 
+        /* The allowlist split. Quiet by default; the blocked names are the
+           part worth reading, so only they carry weight. */
+        body[data-dashboard='v3'] .mg-selbar-split {
+          display: block; width: 100%; margin-top: 7px;
+          font-size: 12.5px; line-height: 1.6; color: var(--gray);
+        }
+        body[data-dashboard='v3'] .mg-selbar-split b { color: var(--ink); font-weight: 600; }
+        body[data-dashboard='v3'] .mg-selbar-split .blk { font-family: ui-monospace, monospace; font-size: 12px; }
+
         /* Duplicate people. One card per person, every record listed, the one
            we keep outlined. No contact ID is ever shown: a person is a name,
            an email and the date they joined — the id means nothing to anyone
@@ -812,6 +821,10 @@
           <div class="mg-selbar">
             <span class="mg-selbar-n" id="mg-sel-count">0</span>
             <span class="mg-selbar-t" id="mg-sel-sub">accounts selected</span>
+            <!-- Which of them HubSpot will actually take. Said here, before
+                 Check runs — it used to be a log line after the run, which is
+                 why "13 accounts selected" sat above a run of "11 of 12". -->
+            <span class="mg-selbar-split" id="mg-sel-split" hidden></span>
           </div>
           <!-- Same live card as a running campaign (.vj-card), tuned for
                Magellan: the stage block names the account and what it is doing
