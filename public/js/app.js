@@ -7562,6 +7562,10 @@ function renderCloudAccountsPanel(id) {
     badges.push(tally
       ? badge('muted', `${tally.sent} of ${tally.total} invited`)
       : badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
+    // Still sending, but bare: LinkedIn's free personalised-invite allowance is
+    // spent. Not a blocker, so it sits after the tally rather than replacing the
+    // status badge — the campaign is running, the note just isn't attached.
+    if (a.noteExhausted) badges.push(badge('warn', '✉ No note — free personalised invites used up'));
     // Primary-connection (CC+IC only; null when N/A).
     if (a.primaryConnected === true) badges.push(badge('ok', '🔗 Connected to primary'));
     else if (a.primaryConnected === false) badges.push(badge('muted', 'Primary not yet connected'));
@@ -23741,8 +23745,19 @@ function _stageAcctPill(a, isCurrent, counts) {
   else if (a.parked || a.parkReason === 'throttle') { cls = 'warn'; text = 'Throttled'; }
   else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) cls = 'warn';
   else if (isCurrent) cls = 'ok';
+  // Out of free personalised invites — the account IS still sending, so this is
+  // never the pill's headline (a blocking state always wins above). It rides as a
+  // suffix on the count so the operator can see the campaign has gone bare
+  // without it looking like the account has stopped. 2026-08-10: twelve invites
+  // went out noteless and every pill still read a clean "5/5".
+  let noteTip = '';
+  if (a.noteExhausted && !['bad', 'warn'].includes(cls)) {
+    text = `${text} · no note`;
+    noteTip = 'Out of LinkedIn\'s free personalised invites — invites are still going out, without the note. Refills monthly.';
+  }
+  const title = tip ? `${tip} — retries next run` : noteTip;
   return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')"`
-    + `${tip ? ` title="${escHtml(tip)} — retries next run"` : ''}>`
+    + `${title ? ` title="${escHtml(title)}"` : ''}>`
     + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>`;
 }
 
@@ -23756,6 +23771,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
     : a.bench ? `<span class="st" style="color:var(--red)">${escHtml(_benchWord(a.bench).toLowerCase())}</span>`
     : benched ? '<span class="st" style="color:var(--red)">benched</span>'
     : ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) ? '<span class="st" style="color:var(--gold,#d4a24a)">at daily limit</span>'
+    : a.noteExhausted ? '<span class="st" style="color:var(--gold,#d4a24a)" title="Invites still go out — without the note. Refills monthly.">sending without notes</span>'
     : isCurrent ? '<span class="st" style="color:var(--green)">working now</span>'
     : '<span class="st" style="color:var(--gray)">idle</span>';
   const weekly = !!(a.weeklyCap || a.parkReason === 'weekly');

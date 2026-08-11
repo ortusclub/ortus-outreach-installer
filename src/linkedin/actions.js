@@ -269,6 +269,102 @@ function attachVoyagerInvitationCapture(page) {
 // Type into message/note field
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-session note-credit state (2026-08-11)
+// ─────────────────────────────────────────────────────────────────────────────
+// LinkedIn gives non-Premium accounts a small MONTHLY allowance of personalised
+// invites. When it runs out, "Add a note" still renders — so detectModal still
+// reports hasAddNote:true — but clicking it produces no text box.
+//
+// On 2026-08-10 that state was never recognised: stanley.o burned its 5 notes
+// (07:47–07:53) and robert.junio its remaining 3 (08:00–08:03), and every lead
+// after that hit "field not found". Twelve leads then went out as bare invites
+// reported to the operator as clean sends, and five had their note typed into an
+// open chat window instead. Keyed by `page` so each account's browser carries its
+// own state; a fresh browser re-detects once and costs one probe, not one per lead.
+const _noteState = new WeakMap(); // page → { used, exhausted, detectedAt }
+
+function noteStateFor(page) {
+  let s = _noteState.get(page);
+  if (!s) { s = { used: 0, exhausted: false, detectedAt: null }; _noteState.set(page, s); }
+  return s;
+}
+
+/**
+ * The note state for a browser session, for callers that report to the operator.
+ * `page` is what the campaign layer already holds, so this needs no plumbing
+ * through outreach.js.
+ */
+export function getNoteState(page) {
+  const s = _noteState.get(page);
+  return s ? { ...s } : { used: 0, exhausted: false, detectedAt: null };
+}
+
+/**
+ * What is ACTUALLY on screen after clicking "Add a note".
+ *
+ * The old NOTE-FIELD DEBUG dump walked the light DOM only, so it reported
+ * `dialogs: []` for a modal that was demonstrably present and told us nothing.
+ * This walks every shadow root recursively (same `collect()` the note-limit check
+ * uses) and reports the iframes, so "no note box" can be told apart from "note box
+ * somewhere we didn't look".
+ */
+async function probeNoteSurface(page) {
+  return page.evaluate((exclude) => {
+    const skip = (el) => {
+      if (!exclude || !el || typeof el.closest !== 'function') return false;
+      try { return !!el.closest(exclude); } catch { return false; }
+    };
+    const roots = [];
+    const collect = (root) => {
+      roots.push(root);
+      let hosts; try { hosts = root.querySelectorAll('*'); } catch { return; }
+      for (const el of hosts) if (el.shadowRoot) collect(el.shadowRoot);
+    };
+    collect(document);
+    const deepAll = (sel) => {
+      const out = [];
+      for (const r of roots) { try { out.push(...r.querySelectorAll(sel)); } catch { /* */ } }
+      return out.filter((el) => !skip(el));
+    };
+    const visible = (el) => {
+      try { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; } catch { return false; }
+    };
+    // A note box is a textarea/contenteditable that is NOT the chat composer.
+    const fields = deepAll('textarea, div[contenteditable="true"], div[role="textbox"]')
+      .filter(visible)
+      .map((el) => ({
+        tag: el.tagName,
+        name: el.getAttribute('name') || '',
+        id: (el.id || '').slice(0, 24),
+        aria: (el.getAttribute('aria-label') || '').slice(0, 40),
+      }));
+    let counter = '';
+    for (const el of deepAll('*')) {
+      const t = (el.textContent || '').replace(/\s+/g, '');
+      const m = t.match(/^(\d{2,4})\/(\d{2,4})$/);
+      if (m) counter = m[0];
+    }
+    // Upsell wording, deep — the light-DOM-only scan is what missed this.
+    let deepText = '';
+    for (const r of roots) { try { deepText += ' ' + ((r.body ? r.body.innerText : r.textContent) || ''); } catch { /* */ } }
+    deepText = deepText.toLowerCase();
+    const upsellPhrases = [
+      'out of free custom notes', 'send unlimited personalized invites',
+      'no free personalized invites', 'personalized invites left',
+      'upgrade to premium', 'try premium', 'retry with premium',
+    ].filter((p) => deepText.includes(p));
+    return {
+      noteFields: fields,
+      hasNoteField: fields.length > 0,
+      counter,
+      upsellPhrases,
+      iframes: document.querySelectorAll('iframe').length,
+      shadowRoots: roots.length,
+    };
+  }, MESSAGING_OVERLAY_SELECTOR);
+}
+
 // `excludeWithin` (optional CSS selector) makes findField skip any field inside
 // a matching container. Only the connect-note flow passes it, to stay out of
 // LinkedIn's messaging overlay — see MESSAGING_OVERLAY_SELECTOR in helpers.js
@@ -661,6 +757,14 @@ export async function sendConnectionRequest(page, noteArg) {
   await randomDelay(300, 500);
 
   let connectClicked = false;
+  // Did THIS invite actually carry the note? Starts as "yes if a note was asked
+  // for" and is set false the moment we degrade. Returned to the caller so the
+  // operator log and the sheet can say so — before 2026-08-11 a noteless invite
+  // was indistinguishable from a noted one all the way up the stack.
+  let noteWasIncluded = !!noteArg;
+  // Mirror onto the session so the campaign layer can read it without changing
+  // performOutreach's return shape (src/linkedin/outreach.js is off-limits).
+  noteStateFor(page).lastNoteIncluded = noteWasIncluded;
 
   // Retry loop: keep looking for Connect button for up to 30 seconds
   // Accounts for slow page loads and lazy-rendered elements
@@ -884,7 +988,7 @@ export async function sendConnectionRequest(page, noteArg) {
     });
     if (successToast) {
       console.log(`[actions] ✓ Success toast: "${successToast}"`);
-      return { invitationUrn: null };
+      return { invitationUrn: null, noteIncluded: noteWasIncluded };
     }
 
     // IMPORTANT: Check modal FIRST — if a modal is open, we MUST handle it.
@@ -897,7 +1001,7 @@ export async function sendConnectionRequest(page, noteArg) {
       // No modal — safe to check Pending
       if (await isPending(page)) {
         console.log('[actions] ✓ Connection sent (Pending detected).');
-        return { invitationUrn: null };
+        return { invitationUrn: null, noteIncluded: noteWasIncluded };
       }
     }
 
@@ -978,7 +1082,7 @@ export async function sendConnectionRequest(page, noteArg) {
       if (modal.hasWithdraw) {
         await clickByText(page, 'cancel');
         console.log('[actions] Already pending (withdraw).');
-        return { invitationUrn: null };
+        return { invitationUrn: null, noteIncluded: noteWasIncluded };
       }
 
       // Weekly/invitation limit → abort this profile
@@ -1007,28 +1111,82 @@ export async function sendConnectionRequest(page, noteArg) {
       }
 
       // "Add a note" flow
-      if (note && modal.hasAddNote) {
+      //
+      // v2026-08-11: once this session is known to be out of free custom notes we
+      // do NOT click "Add a note" again. The button still renders when the
+      // allowance is spent, so clicking it costs ~20s per lead (open, probe, fail,
+      // cancel, re-open Connect) and is the ONLY way the note can reach a chat
+      // composer. Skipping it outright is faster and removes that surface.
+      const _ns = noteStateFor(page);
+      if (note && modal.hasAddNote && _ns.exhausted) {
+        // Already known to be dry. The modal is still in its INITIAL state, which
+        // offers "Send without a note" — clearing `note` routes the send section
+        // straight there. Saves the ~20s cancel/re-open dance per lead, and the
+        // note never goes near a chat composer because it is never typed at all.
+        console.log(`[actions] No free custom notes left (${_ns.used} used this session) — sending WITHOUT a note; note box not opened.`);
+        noteWasIncluded = false;
+        _ns.lastNoteIncluded = false;
+        note = '';
+      } else if (note && modal.hasAddNote) {
         console.log('[actions] Clicking "Add a note"…');
         await clickByAria(page, 'Add a note');
         await new Promise(r => setTimeout(r, 5000));
-        // v2.112.32 — out of free custom notes? Clicking "Add a note" then shows
-        // LinkedIn's Premium upsell instead of the note field. Operator rule: do
-        // NOT silently send without a note — bench the account (caller handles it)
-        // and leave the lead retryable for an account that still has note credits.
+        // What is actually on screen now? Logged EVERY time — the 2026-08-10
+        // investigation stalled because this result was computed and discarded.
         const afterAddNote = await detectModal(page);
-        if (afterAddNote.hasNoteLimit) {
-          console.warn('[actions] Out of free custom notes — Premium upsell shown. Cannot send a noted invite; benching account.');
-          await clickByAria(page, 'Dismiss').catch(() => {});
-          await page.keyboard.press('Escape').catch(() => {});
-          throw new Error('NOTE_LIMIT_REACHED: account out of free custom notes — cannot send a noted invite');
+        const surface = await probeNoteSurface(page);
+        console.log(`[actions] Add-a-note surface → ${JSON.stringify({
+          hasNoteField: surface.hasNoteField,
+          counter: surface.counter,
+          upsell: surface.upsellPhrases,
+          noteFields: surface.noteFields,
+          iframes: surface.iframes,
+          shadowRoots: surface.shadowRoots,
+          detectModalNoteLimit: afterAddNote.hasNoteLimit,
+          notesUsedThisSession: _ns.used,
+        })}`);
+        // Out of free custom notes. Two independent signals, either is enough:
+        // LinkedIn's upsell wording (detectModal's strings, or the deeper set the
+        // probe carries), or the plain fact that the note box isn't there after
+        // the button was clicked.
+        //
+        // OPERATOR DECISION 2026-08-11 — this used to throw NOTE_LIMIT_REACHED and
+        // bench the account. It no longer does: send the invite WITHOUT the note
+        // and keep going. Sending noteless still spends the weekly invite
+        // allowance, so benching bought nothing; what it cost was a stalled
+        // campaign. The drop is recorded on the lead, the log and the sheet so it
+        // is never silent.
+        if (afterAddNote.hasNoteLimit || surface.upsellPhrases.length || !surface.hasNoteField) {
+          _ns.exhausted = true;
+          _ns.detectedAt = _ns.detectedAt || new Date().toISOString();
+          const why = afterAddNote.hasNoteLimit || surface.upsellPhrases.length
+            ? `LinkedIn says: ${(surface.upsellPhrases[0] || 'out of free custom notes')}`
+            : 'the note box never appeared after clicking "Add a note"';
+          console.warn(`[actions] ⚠ Out of free custom notes after ${_ns.used} this session (${why}) — sending WITHOUT a note from here on.`);
+          noteWasIncluded = false;
+          _ns.lastNoteIncluded = false;
+          // Do NOT dismiss here. We are sitting in the note view, so the way out
+          // is the recovery below (Cancel → re-open Connect → Send without a
+          // note) — the exact path that sent 12 clean invites on 2026-08-10.
+          // Dismissing would leave no modal for the send step to act on.
         }
+      }
+      if (note && modal.hasAddNote) {
         // The invite note NEVER goes in the chat composer. If the only field on
         // screen is the messaging overlay's, this returns false and the existing
         // fallback below cancels and re-sends without a note — the lead still
         // gets a clean invite, and nobody else gets their note.
-        const noteTyped = await typeIntoField(page, note, { excludeWithin: MESSAGING_OVERLAY_SELECTOR });
+        // Dry sessions never type: fall straight into the recovery below.
+        const noteTyped = _ns.exhausted
+          ? false
+          : await typeIntoField(page, note, { excludeWithin: MESSAGING_OVERLAY_SELECTOR });
         if (!noteTyped) {
-          console.warn('[actions] Note typing failed after 3 attempts. Clearing field and sending without a note.');
+          console.warn(_ns.exhausted
+            ? '[actions] No free custom notes left — re-opening Connect to send without a note.'
+            : '[actions] Note typing failed after 3 attempts. Clearing field and sending without a note.');
+          // The note is being dropped — say so up the stack, not just in this log.
+          noteWasIncluded = false;
+          _ns.lastNoteIncluded = false;
           // Clear any half-typed content so it can't possibly leak
           await page.evaluate(() => {
             const sels = ['textarea[name="message"]', 'textarea', 'div[contenteditable="true"]', 'div[role="textbox"]'];
@@ -1105,7 +1263,7 @@ export async function sendConnectionRequest(page, noteArg) {
           if (voyagerA) {
             if (voyagerA.ok) {
               console.log(`[actions] ✓ Voyager confirmed (fallback): HTTP ${voyagerA.status}, urn=${voyagerA.urn || 'n/a'}`);
-              return { invitationUrn: voyagerA.urn };
+              return { invitationUrn: voyagerA.urn, noteIncluded: noteWasIncluded };
             }
             console.error(`[actions] ✗ Voyager rejected (fallback): HTTP ${voyagerA.status} — ${voyagerA.errorMessage || ''}`);
             throw new Error(`VOYAGER_REJECTED: HTTP ${voyagerA.status} — ${voyagerA.errorMessage || 'unknown reason'}`);
@@ -1123,7 +1281,7 @@ export async function sendConnectionRequest(page, noteArg) {
           await page.evaluate(() => { document.body.style.zoom = '75%'; });
           if (await isPending(page)) {
             console.log('[actions] ✓ Verified: Pending (fallback send).');
-            return { invitationUrn: null };
+            return { invitationUrn: null, noteIncluded: noteWasIncluded };
           }
           console.log('[actions] Not Pending yet. Waiting another 30s...');
           await new Promise(r => setTimeout(r, 30000));
@@ -1134,7 +1292,7 @@ export async function sendConnectionRequest(page, noteArg) {
           await page.evaluate(() => { document.body.style.zoom = '75%'; });
           if (await isPending(page)) {
             console.log('[actions] ✓ Verified: Pending (fallback send, 2nd check).');
-            return { invitationUrn: null };
+            return { invitationUrn: null, noteIncluded: noteWasIncluded };
           }
           throw new Error('SEND_NOT_CONFIRMED: fallback send without note did not land as Pending');
         }
@@ -1209,6 +1367,14 @@ export async function sendConnectionRequest(page, noteArg) {
           return { counter, counterCurrent, counterMax, typedLen, sendFound: !!send, sendDisabled, upsell, rootCount: roots.length };
         }, MESSAGING_OVERLAY_SELECTOR);
         console.log(`[actions] note-limit check → ${JSON.stringify(noteState)}`);
+        // A real character counter ("174/200") is LinkedIn confirming the note is
+        // in ITS box, not something else on the page — the 2026-08-10 hijacked
+        // sends all read counter:"". Count those, so the log can say how many of
+        // the monthly allowance this session has spent before it runs dry.
+        if (noteState.counter) {
+          _ns.used += 1;
+          console.log(`[actions] Personalised note ${_ns.used} of this session's allowance (counter ${noteState.counter}).`);
+        }
         if (isNoteOverFreeLimit({
           counterCurrent: noteState.counterCurrent,
           counterMax: noteState.counterMax,
@@ -1229,6 +1395,14 @@ export async function sendConnectionRequest(page, noteArg) {
       // chat thread and never created an invitation).
       const NO_CHAT = { excludeWithin: MESSAGING_OVERLAY_SELECTOR };
       let sent = false;
+
+      // Degraded (no free notes left) → take "Send without a note" explicitly.
+      // Without this the noted-invite branch below would look for a plain "Send"
+      // that the un-noted modal may not offer.
+      if (!sent && !noteWasIncluded && modal.hasSendWithout) {
+        const r = await clickByAria(page, 'Send without a note', NO_CHAT);
+        if (r) { sent = true; console.log(`[actions] ✓ Sent WITHOUT a note — no free custom notes left (${r}).`); }
+      }
 
       if (!sent && modal.hasSendWithout && !note) {
         const r = await clickByAria(page, 'Send without a note', NO_CHAT);
@@ -1300,7 +1474,7 @@ export async function sendConnectionRequest(page, noteArg) {
       if (voyagerMain) {
         if (voyagerMain.ok) {
           console.log(`[actions] ✓ Voyager confirmed: HTTP ${voyagerMain.status}, urn=${voyagerMain.urn || 'n/a'}`);
-          return { invitationUrn: voyagerMain.urn };
+          return { invitationUrn: voyagerMain.urn, noteIncluded: noteWasIncluded };
         }
         console.error(`[actions] ✗ Voyager rejected: HTTP ${voyagerMain.status} — ${voyagerMain.errorMessage || ''}`);
         throw new Error(`VOYAGER_REJECTED: HTTP ${voyagerMain.status} — ${voyagerMain.errorMessage || 'unknown reason'}`);
@@ -1319,7 +1493,7 @@ export async function sendConnectionRequest(page, noteArg) {
       });
       if (sentToast) {
         console.log(`[actions] ✓ Verified via toast: "${sentToast}"`);
-        return { invitationUrn: null };
+        return { invitationUrn: null, noteIncluded: noteWasIncluded };
       }
       const errorToast = await page.evaluate(() => {
         const toast = document.querySelector(
@@ -1362,7 +1536,7 @@ export async function sendConnectionRequest(page, noteArg) {
 
       if (await isPending(page)) {
         console.log('[actions] ✓ Verified: Pending.');
-        return { invitationUrn: null };
+        return { invitationUrn: null, noteIncluded: noteWasIncluded };
       }
 
       console.log('[actions] Not Pending yet. Waiting another 30s...');
@@ -1375,7 +1549,7 @@ export async function sendConnectionRequest(page, noteArg) {
 
       if (await isPending(page)) {
         console.log('[actions] ✓ Verified: Pending (2nd check).');
-        return { invitationUrn: null };
+        return { invitationUrn: null, noteIncluded: noteWasIncluded };
       }
 
       console.warn('[actions] ⚠ Send clicked but Pending NOT confirmed after 60s + 2 page reloads.');

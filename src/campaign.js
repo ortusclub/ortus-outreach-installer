@@ -36,6 +36,8 @@ import { emptyTally, applyOutcome } from './campaign-tally.js';
 import { summariseCampaign } from './campaign-summary.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta, waitForProfileRender } from './linkedin/helpers.js';
+// Note-credit state for the sending session — see the WeakMap in actions.js.
+import { getNoteState } from './linkedin/actions.js';
 import { verifyConnectIdentity, readSourceMemberId, is404Url } from './profile-identity.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros, _shouldQueueAutoAccept } from './linkedin/auto-intro.js';
@@ -4096,6 +4098,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               profilesThatSentAtLeastOne.add(profileId);
             }
             if (result.action === 'connection_sent') {
+              // Did the invite carry its note? Read off the browser session —
+              // performOutreach's return shape lives in an off-limits file, and
+              // before 2026-08-11 a noteless invite looked identical to a noted
+              // one here, so twelve bare sends were logged as clean successes.
+              try {
+                const _note = getNoteState(page);
+                if (_note.lastNoteIncluded === false) {
+                  log(`  ✉ ${pName}: invite sent WITHOUT the note — this account has used LinkedIn's free personalised invites${_note.used ? ` (${_note.used} this run)` : ''}. Invites keep going out; the note doesn't.`);
+                  campaign.noteExhaustedProfiles = campaign.noteExhaustedProfiles || {};
+                  if (_note.exhausted) campaign.noteExhaustedProfiles[profileId] = true;
+                }
+              } catch { /* reporting only — never fail a good send over it */ }
               try {
                 const meta = await captureProfileMeta(page);
                 // v2.86.9 — only stamp the captured URN when it provably belongs
