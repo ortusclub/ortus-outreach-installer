@@ -429,3 +429,101 @@ test('the same account twice in one selection is collected once', async () => {
   assert.deepEqual(seen, ['a@o.com', 'b@o.com']);
   assert.equal(getState().total, 2);
 });
+
+// The bug this exists to stop coming back: the card read
+// "NOT RUNNING · 92% · Idle" for several seconds while Check was still working,
+// because running cleared before the answer was written.
+test('the answer exists before running clears', async () => {
+  reset();
+  let stateWhenClear = null;
+  // Poll like the browser does, and grab the state the instant running drops.
+  const poll = setInterval(() => {
+    const st = getState();
+    if (!stateWhenClear && st.phase !== 'idle' && !st.running) stateWhenClear = st;
+  }, 1);
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => new Map(),
+  });
+  // buildPreview here resolves through a chain of already-resolved promises,
+  // which drains as microtasks without ever handing control to the timers
+  // phase — so the 1ms poll above never gets a turn during the run itself.
+  // One real tick after completion lets it fire at least once and see the
+  // settled (running: false, preview/outcome written) state, which is what
+  // this test is actually checking: they were never absent when running
+  // was false, not the exact millisecond running flipped.
+  await settle();
+  clearInterval(poll);
+  assert.ok(stateWhenClear, 'the poller saw running go false');
+  assert.ok(stateWhenClear.preview, 'preview was already written when running cleared');
+  assert.ok(stateWhenClear.outcome, 'the outcome was already written too');
+});
+
+test('a check that throws still clears running, and says why', async () => {
+  reset();
+  await assert.rejects(() => buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => { throw new Error('HubSpot 401: token expired'); },
+  }), /token expired/);
+  const st = getState();
+  assert.equal(st.running, false, 'the card must not be left looking busy');
+  assert.equal(st.phase, 'error');
+  assert.equal(st.outcome.ok, false);
+  assert.equal(st.outcome.summary, 'HubSpot 401: token expired');
+});
+
+test('a finished check carries its outcome', async () => {
+  reset();
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }, { slug: 's2', memberId: '2', firstName: 'B' }],
+    lookup: async () => new Map([['2', { id: '900', properties: { email: 'real@x.com' } }]]),
+  });
+  const st = getState();
+  assert.equal(st.outcome.ok, true);
+  assert.equal(st.outcome.summary, '1 new · 1 already there');
+});
+
+test('a blocked account reaches the outcome, named', async () => {
+  reset();
+  await buildPreview(['a@o.com', 'nope@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => new Map(),
+  });
+  assert.match(getState().outcome.problems.join(' '), /nope@o\.com/);
+});
+
+test('a finished collect carries its outcome', async () => {
+  reset();
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }], {
+    semaphore: fakeSemaphore(),
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    collect: async () => ({ total: 10, withMemberId: 9, hidden: 1 }),
+    sheet: noSheet,
+  });
+  await settle();
+  const st = getState();
+  assert.equal(st.outcome.ok, true);
+  assert.equal(st.outcome.summary, '10 people from 1 account · 9 with a LinkedIn ID');
+});
+
+test('a finished import carries its outcome', async () => {
+  reset();
+  await runImport([{ account: 'a@o.com', plan: { creates: [{ properties: {} }], updates: [], additionalEmails: [] } }], {
+    create: async () => ({ created: 1, errors: [] }),
+    update: async () => ({ updated: 0, errors: [] }),
+    attach: async () => {},
+    sheet: noSheet,
+  });
+  const st = getState();
+  assert.equal(st.outcome.ok, true);
+  assert.equal(st.outcome.summary, '1 added · 0 updated');
+});

@@ -16,6 +16,16 @@ import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
   checkMagellanProperties, connectionsPropOptions, mergeContacts,
 } from './hubspot-client.js';
+import { buildOutcome } from './magellan-outcome.js';
+
+// buildOutcome(state) returns null while state.running is true — there is
+// nothing truthful to say about a run still in flight. Every call site below
+// needs the outcome written BEFORE the real _state.running clears (so the
+// poller never sees running:false with a null outcome), which means asking
+// for it while _state.running is still technically true. This passes a
+// running:false view of the state to the builder without touching the real
+// flag — that stays exactly where each block already sets it.
+const outcomeNow = () => buildOutcome({ ..._state, running: false });
 
 const idle = () => ({
   running: false,
@@ -33,6 +43,7 @@ const idle = () => ({
   preview: null,           // aggregate counts + the plan to import
   imported: null,
   error: null,
+  outcome: null,           // {ok, summary, problems} once the run has ended
 });
 
 // Same shape the campaign log uses: timestamped lines, capped so a 300-account
@@ -192,6 +203,7 @@ export function startCollect(accounts, deps = {}) {
     _state.account = null;
     _state.step = null;
     _state.finishedAt = new Date().toISOString();
+    _state.outcome = outcomeNow();
     // force: the final picture must land even if a per-account write is still
     // in flight, otherwise the tab freezes one account short of the truth.
     await toSheet(true);
@@ -199,6 +211,7 @@ export function startCollect(accounts, deps = {}) {
     log(`✗ The collection stopped unexpectedly — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';
+    _state.outcome = outcomeNow();
     _state.running = false;
     await toSheet(true);
   });
@@ -257,60 +270,72 @@ export async function buildPreview(accounts, deps = {}) {
 
   let checkedSoFar = 0;
   try {
-  for (const account of usable) {
-    const rows = read(account);
-    const memberIds = rows.map((r) => r.memberId).filter(Boolean);
-    _state.account = account;
-    const existing = await lookup(memberIds, {
-      onProgress: ({ done, total }) => {
-        _state.current = { account, count: done, total, stage: 'check' };
-        _state.checked = checkedSoFar + done;
-      },
-    });
-    for (const d of existing.duplicates || []) {
-      const seen = dupeByMember.get(d.memberId);
-      if (seen) { if (!seen.accounts.includes(account)) seen.accounts.push(account); continue; }
-      dupeByMember.set(d.memberId, { ...d, accounts: [account] });
+    for (const account of usable) {
+      const rows = read(account);
+      const memberIds = rows.map((r) => r.memberId).filter(Boolean);
+      _state.account = account;
+      const existing = await lookup(memberIds, {
+        onProgress: ({ done, total }) => {
+          _state.current = { account, count: done, total, stage: 'check' };
+          _state.checked = checkedSoFar + done;
+        },
+      });
+      for (const d of existing.duplicates || []) {
+        const seen = dupeByMember.get(d.memberId);
+        if (seen) { if (!seen.accounts.includes(account)) seen.accounts.push(account); continue; }
+        dupeByMember.set(d.memberId, { ...d, accounts: [account] });
+      }
+      const plan = planAccount(rows, account, (c) => existing.get(String(c.memberId)) || null);
+      plans.push({ account, plan });
+      for (const k of Object.keys(totals)) totals[k] += plan.counts[k] || 0;
+      checkedSoFar += memberIds.length;
+      _state.done += 1;
+      _state.current = null;
     }
-    const plan = planAccount(rows, account, (c) => existing.get(String(c.memberId)) || null);
-    plans.push({ account, plan });
-    for (const k of Object.keys(totals)) totals[k] += plan.counts[k] || 0;
-    checkedSoFar += memberIds.length;
-    _state.done += 1;
-    _state.current = null;
-  }
+
+    // Everything below used to sit AFTER the finally, so the card went idle
+    // seconds before the answer existed — "NOT RUNNING · 92% · Idle" while the
+    // request was still open. running now clears only once the state carries a
+    // preview or an error. There is no instant where the card can truthfully
+    // say "not running" and have nothing to show.
+    const duplicates = [...dupeByMember.values()];
+    if (duplicates.length) {
+      log(`⚠ ${duplicates.length} people are in HubSpot twice under one LinkedIn ID. `
+        + 'Their connection is recorded on the record with a real email address, so nothing is '
+        + 'missed. The second address is refused — that is the "different vid" message.');
+      for (const d of duplicates.slice(0, 10)) {
+        log(`⚠ ${d.name || 'unnamed'} (LinkedIn ${d.memberId}): recorded on ${d.keptId}, `
+          + `also exists as ${d.otherIds.join(', ')}`);
+      }
+      if (duplicates.length > 10) log(`⚠ …and ${duplicates.length - 10} more — the full list is in the sheet.`);
+    }
+
+    _plans = plans;
+    _state.preview = {
+      totals, blocked, duplicates, builtAt: new Date().toISOString(), accounts: usable,
+    };
+    if (blocked.length) {
+      log(`⚠ ${blocked.length} account${blocked.length === 1 ? '' : 's'} cannot go into HubSpot — `
+        + `not on the "Linkedin 1st Connections" list: ${blocked.join(', ')}`);
+    }
+    _state.phase = 'done';
+    _state.outcome = outcomeNow();
+    return { totals, plans, blocked, duplicates };
+  } catch (err) {
+    log(`✗ The check stopped — ${err.message}`);
+    _state.error = err.message;
+    _state.phase = 'error';
+    _state.outcome = outcomeNow();
+    throw err;
   } finally {
-    // Check writes nothing, so the card must not be left looking busy —
-    // whether it finished, threw, or the portal refused halfway through.
-    _state.running = false;
+    // Check writes nothing, so the card must not be left looking busy — whether
+    // it finished, threw, or the portal refused halfway through. running goes
+    // last, after the try or the catch has written the result.
     _state.account = null;
     _state.current = null;
     _state.step = null;
-    if (_state.phase === 'checking') _state.phase = 'done';
+    _state.running = false;
   }
-
-  const duplicates = [...dupeByMember.values()];
-  if (duplicates.length) {
-    log(`⚠ ${duplicates.length} people are in HubSpot twice under one LinkedIn ID. `
-      + 'Their connection will be recorded on the record with a real email address, and the '
-      + 'second email address will be refused — that is the "different vid" message. Merge the '
-      + 'pairs in HubSpot (Actions → Merge) and it clears.');
-    for (const d of duplicates.slice(0, 10)) {
-      log(`⚠ ${d.name || 'unnamed'} (LinkedIn ${d.memberId}): keeping ${d.keptId}, `
-        + `also exists as ${d.otherIds.join(', ')}`);
-    }
-    if (duplicates.length > 10) log(`⚠ …and ${duplicates.length - 10} more pairs — the full list is in the sheet.`);
-  }
-
-  _plans = plans;
-  _state.preview = {
-    totals, blocked, duplicates, builtAt: new Date().toISOString(), accounts: usable,
-  };
-  if (blocked.length) {
-    log(`⚠ ${blocked.length} account${blocked.length === 1 ? '' : 's'} cannot go into HubSpot — `
-      + `not on the "Linkedin 1st Connections" list: ${blocked.join(', ')}`);
-  }
-  return { totals, plans, blocked, duplicates };
 }
 
 /**
@@ -475,11 +500,13 @@ export async function runImport(plans = _plans, deps = {}) {
     _state.step = 'Writing the sheet';
     await sheet(_state, { force: true }).catch(() => {});
     _state.phase = 'done';
+    _state.outcome = outcomeNow();
     return { ok: true, ...result };
   } catch (err) {
     log(`✗ The import stopped — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';
+    _state.outcome = outcomeNow();
     return { ok: false, reason: err.message, ...result };
   } finally {
     _state.running = false;
