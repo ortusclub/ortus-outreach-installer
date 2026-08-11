@@ -38,6 +38,7 @@ import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, cam
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
+import { magellanPct } from '/js/magellan-view.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -27208,7 +27209,10 @@ function renderMagellanState(s) {
   const failed = (s.perAccount || []).length - ok.length;
   const people = ok.reduce((n, a) => n + (a.total || 0), 0);
   const matched = ok.reduce((n, a) => n + (a.withMemberId || 0), 0);
-  const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+  // The only percentage in this card. Computing it twice — once here from whole
+  // accounts and again below with the in-account fraction blended in — is what put 92% in
+  // the hero and 83% on the Check button at the same moment.
+  const pct = magellanPct(s);
 
   // Importing reuses this card, so say which half is running — "Collecting"
   // over a HubSpot write is a lie the operator has no way to see through.
@@ -27303,19 +27307,6 @@ function renderMagellanState(s) {
       set('mg-beat-right', ids
         ? 'looking up IDs'
         : (c && c.pages ? `page ${c.pages}` : `${people.toLocaleString()} collected`));
-
-      // Blend the in-account fraction into the bar so it moves continuously
-      // instead of jumping a whole account at a time.
-      if (c && c.total && c.count != null && s.total) {
-        // The ID lookup is the back half of one account's work, so its
-        // fraction counts for the second half of that account's slice.
-        // Checking has no second half — its fraction is the whole slice.
-        const raw = Math.min(1, c.count / c.total);
-        const frac = c.stage === 'check' ? raw : ids ? 0.5 + raw / 2 : raw / 2;
-        const blended = Math.round((((s.done || 0) + frac) / s.total) * 100);
-        set('mg-pct', blended);
-        if (bar) bar.style.width = `${blended}%`;
-      }
     }
   }
 
