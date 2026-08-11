@@ -106,6 +106,7 @@ import { generateListRows } from './src/connections/fg-list-generate.js';
 import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
+import { connectionsPropOptions } from './src/connections/hubspot-client.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -2584,6 +2585,18 @@ app.get('/api/magellan/accounts', async (_req, res) => {
     // beats a fuzzy match.
     const overrides = magellanLabelOverrides();
 
+    // Which accounts HubSpot's "Linkedin 1st Connections" list will actually
+    // accept. Read here so the selection bar can say "12 of 13 can go in"
+    // BEFORE Check runs — the same split buildPreview does at run time. A
+    // portal that will not answer leaves this null: unknown, and the screen
+    // says nothing rather than guessing.
+    let hsOptions = null;
+    try {
+      hsOptions = await connectionsPropOptions();
+    } catch (err) {
+      console.warn(`[magellan] could not read the HubSpot options — ${err.message}`);
+    }
+
     res.json(profiles.map((p) => {
       const forced = overrides[p.name] || '';
       const hit = !forced && sooEmails.length ? resolveSoOEmail(p.name, sooEmails) : null;
@@ -2597,6 +2610,8 @@ app.get('/api/magellan/accounts', async (_req, res) => {
         profile: p.name,
         resolved: Boolean(email),
         ambiguous: Boolean(hit && hit.ambiguous),
+        // Matched exactly as buildPreview does: trimmed and lowercased.
+        importable: hsOptions ? hsOptions.has(String(account).trim().toLowerCase()) : null,
         collected: Boolean(c),
         count: c ? c.count : null,
         withMemberId: c ? c.withMemberId : null,
