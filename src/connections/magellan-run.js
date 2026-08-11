@@ -11,7 +11,7 @@ import { collectAccount, readForPlan } from './magellan-pull.js';
 import { planAccount } from './magellan.js';
 import { diagnose, logLine, summarise } from './magellan-diagnose.js';
 import { explainProblem, problemLine, summariseProblems } from './magellan-problems.js';
-import { publish as publishSheet, resetPublished } from './magellan-sheet.js';
+import { publish as publishSheet, resetPublished, setPlanVerdicts, resetPlanVerdicts } from './magellan-sheet.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
   checkMagellanProperties, connectionsPropOptions, mergeContacts,
@@ -66,7 +66,10 @@ export function stopCollect() {
   return { stopped: true };
 }
 export function getPlans() { return _plans; }
-export function reset() { _state = idle(); _plans = null; _stopRequested = false; }
+export function reset() {
+  _state = idle(); _plans = null; _stopRequested = false;
+  resetPlanVerdicts();   // stale verdicts must not survive into the next sweep
+}
 
 /**
  * Phase 1 — collect. Opens each account in turn and writes its connections to
@@ -216,7 +219,9 @@ export function startCollect(accounts, deps = {}) {
 /**
  * Phase 2 — work out what the import would do. Reads what was collected, asks
  * HubSpot which of those member ids it already has, and builds the plan.
- * Writes nothing.
+ * Writes nothing to HubSpot — the only write is the best-effort Plan tab on
+ * the review sheet, so a second person can see the answer before anyone
+ * presses Import.
  */
 export async function buildPreview(accounts, deps = {}) {
   const { lookup = lookupByMemberIds, read = readForPlan, checkProps = checkMagellanProperties,
@@ -268,12 +273,14 @@ export async function buildPreview(accounts, deps = {}) {
   // from listed against them.
   const dupeByMember = new Map();
 
-  // Snapshot of the rows Check actually looked at, stamped with what the
-  // lookup found. readForPlan re-reads from disk on every call and would come
-  // back with no existingId, so the sheet write below is handed this map
-  // instead of calling read() again — otherwise the Plan tab's "What happens"
-  // column would be wrong for every person already in HubSpot.
-  const rowsByAccount = new Map();
+  // What Check found, keyed by member id: the HubSpot id if the person is
+  // already there, null if new. Handed to magellan-sheet's planRows via
+  // setPlanVerdicts below — readForPlan rebuilds its rows from disk on every
+  // call, so nothing stamped onto a row here would survive a second read, and
+  // publish() is called from three OTHER places (collect, merge, import) that
+  // never run this loop at all. Keeping the verdicts in one shared place means
+  // all four agree, instead of only the caller that happens to pass an override.
+  const verdicts = new Map();
 
   let checkedSoFar = 0;
   try {
@@ -293,13 +300,12 @@ export async function buildPreview(accounts, deps = {}) {
         dupeByMember.set(d.memberId, { ...d, accounts: [account] });
       }
       const plan = planAccount(rows, account, (c) => existing.get(String(c.memberId)) || null);
-      // The sheet's Plan tab re-reads these rows, so the verdict has to travel
-      // with them — otherwise the reviewer sees a list with no answers on it.
-      for (const r of rows) {
-        const hit = r.memberId ? existing.get(String(r.memberId)) : null;
-        r.existingId = hit ? hit.id : null;
+      // Same verdict planAccount just used to sort creates from updates,
+      // recorded so the Plan tab can answer the same question later.
+      for (const id of memberIds) {
+        const hit = existing.get(String(id));
+        verdicts.set(String(id), hit ? hit.id : null);
       }
-      rowsByAccount.set(account, rows);
       plans.push({ account, plan });
       for (const k of Object.keys(totals)) totals[k] += plan.counts[k] || 0;
       checkedSoFar += memberIds.length;
@@ -342,14 +348,16 @@ export async function buildPreview(accounts, deps = {}) {
     // idempotent safety net for any path that throws before reaching here.
     _state.running = false;
     _state.outcome = buildOutcome(_state);
+    // Shared with every other publish() caller — see the comment on `verdicts`
+    // above. Set before the write below so this Check's own Plan tab is
+    // correct, and left in place afterwards so collect/merge/import's later
+    // writes stay correct too.
+    setPlanVerdicts(verdicts);
     // Written now, not on a button: the person who reviews this is not the
     // person at the keyboard, and asking them to wait for someone to press
-    // "publish" is how a review does not happen. `read` is overridden with the
-    // in-memory rows Check just stamped — the default readForPlan re-reads
-    // from disk and would come back with no existingId.
+    // "publish" is how a review does not happen.
     _state.step = 'Writing the sheet for review';
-    await sheet(_state, { force: true, read: (account) => rowsByAccount.get(account) || read(account) })
-      .catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
+    await sheet(_state, { force: true }).catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
     return { totals, plans, blocked, duplicates };
   } catch (err) {
     log(`✗ The check stopped — ${err.message}`);
@@ -359,8 +367,8 @@ export async function buildPreview(accounts, deps = {}) {
     _state.outcome = buildOutcome(_state);
     throw err;
   } finally {
-    // Check writes nothing, so the card must not be left looking busy — whether
-    // it finished, threw, or the portal refused halfway through.
+    // Check writes nothing to HubSpot, so the card must not be left looking
+    // busy — whether it finished, threw, or the portal refused halfway through.
     _state.account = null;
     _state.current = null;
     _state.step = null;

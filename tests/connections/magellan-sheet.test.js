@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   accountsRows, logRows, importRows, planRows, connectionsRowsForAccount, tabNameFor,
-  publish, resetPublished,
-  CONNECTIONS_HEADER, ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB,
+  publish, resetPublished, setPlanVerdicts, resetPlanVerdicts,
+  CONNECTIONS_HEADER, ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB, PLAN_TAB,
 } from '../../src/connections/magellan-sheet.js';
 import { diagnose } from '../../src/connections/magellan-diagnose.js';
 
@@ -154,17 +154,22 @@ test('a second publish is skipped while the first is still in flight', async () 
   await first;
 });
 
+// The verdict — already in HubSpot or not — comes from a Map keyed by member
+// id, not from anything stamped on the row. readForPlan rebuilds its rows
+// from disk on every call, so a stamped field would never survive a second
+// read; the Map is what every publish() caller, not just Check, can share.
 test('the Plan tab says, per person, what Import would do', () => {
+  const verdicts = new Map([['222', '900']]);   // 111: new (absent), 222: already there
   const rows = planRows({
     preview: {
       accounts: ['a@o.com'],
       totals: { created: 1, updated: 1, hidden: 1 },
     },
   }, () => ([
-    { memberId: '111', firstName: 'New', lastName: 'Person', slug: 'new-person', existingId: null },
-    { memberId: '222', firstName: 'Known', lastName: 'Person', slug: 'known-person', existingId: '900' },
-    { memberId: '', firstName: '', lastName: '', slug: '', existingId: null },
-  ]));
+    { memberId: '111', firstName: 'New', lastName: 'Person', slug: 'new-person' },
+    { memberId: '222', firstName: 'Known', lastName: 'Person', slug: 'known-person' },
+    { memberId: '', firstName: '', lastName: '', slug: '' },
+  ]), verdicts);
   assert.equal(rows.length, 3);
   assert.deepEqual(rows[0].slice(0, 3), ['a@o.com', 'New', 'Person']);
   assert.equal(rows[0][4], 'Will be added');
@@ -174,4 +179,99 @@ test('the Plan tab says, per person, what Import would do', () => {
 
 test('planRows is empty when Check has not run', () => {
   assert.deepEqual(planRows({}, () => []), []);
+});
+
+// A row with a slug but no member id is NOT hidden — magellan.js's isHidden
+// requires both to be missing. planAccount buckets these as "unresolved" and
+// retries them on the next collection; the tab has to say that, not claim
+// LinkedIn hid them.
+test('a person with a link but no LinkedIn ID yet is unresolved, not hidden', () => {
+  const rows = planRows({
+    preview: { accounts: ['a@o.com'] },
+  }, () => ([
+    { memberId: '', firstName: 'Not', lastName: 'Yet', slug: 'not-yet' },
+  ]), new Map());
+  assert.equal(rows[0][4], 'Not collected yet — no LinkedIn ID, we retry next collection');
+  assert.equal(rows[0][3], 'https://www.linkedin.com/in/not-yet', 'the link is still shown — we do know who they are');
+});
+
+// planAccount collapses repeat member ids so only one write is issued;
+// planRows has to agree, or the tab counts someone twice for a ledger that
+// counted them once.
+test('the same member id twice in one export becomes one row', () => {
+  const rows = planRows({
+    preview: { accounts: ['a@o.com'] },
+  }, () => ([
+    { memberId: '1', firstName: 'A', lastName: 'One', slug: 'a-one' },
+    { memberId: '1', firstName: 'A', lastName: 'One', slug: 'a-one' },
+  ]), new Map());
+  assert.equal(rows.length, 1);
+});
+
+// The bar from the review: the tab's rows have to reconcile with the three
+// numbers the card shows (new / already there / hidden), with the arithmetic
+// spelled out, not just "close enough".
+test('Plan tab counts reconcile with the ledger the card shows', () => {
+  const verdicts = new Map([['2', '900'], ['4', '901']]);   // 2 and 4 already in HubSpot
+  const read = () => ([
+    { memberId: '1', firstName: 'New', lastName: 'One', slug: 's1' },      // → will be added
+    { memberId: '2', firstName: 'Old', lastName: 'One', slug: 's2' },      // → already there
+    { memberId: '3', firstName: 'New', lastName: 'Two', slug: 's3' },      // → will be added
+    { memberId: '4', firstName: 'Old', lastName: 'Two', slug: 's4' },      // → already there
+    { memberId: '', firstName: '', lastName: '', slug: '' },               // → hidden
+    { memberId: '', firstName: 'Soon', lastName: '', slug: 's5' },         // → unresolved (not on the ledger)
+  ]);
+  const rows = planRows({ preview: { accounts: ['a@o.com'] } }, read, verdicts);
+
+  const willBeAdded = rows.filter((r) => r[4] === 'Will be added').length;
+  const alreadyThere = rows.filter((r) => r[4].startsWith('Already in HubSpot')).length;
+  const hidden = rows.filter((r) => r[4].startsWith('Hidden by LinkedIn')).length;
+  const unresolved = rows.filter((r) => r[4].startsWith('Not collected yet')).length;
+
+  // The three numbers on the card's ledger — created, updated, hidden — sum
+  // exactly to willBeAdded + alreadyThere + hidden. Unresolved people have no
+  // pill on the card at all (they are not a HubSpot outcome, they are a
+  // "we don't know yet"), so they are the one bucket the ledger's three
+  // numbers don't have to account for.
+  assert.equal(willBeAdded, 2);
+  assert.equal(alreadyThere, 2);
+  assert.equal(hidden, 1);
+  assert.equal(unresolved, 1);
+  assert.equal(rows.length, willBeAdded + alreadyThere + hidden + unresolved);
+});
+
+// The CRITICAL bug: only buildPreview's own publish() call used to know the
+// verdicts. Collect, merge and import all call publish() too, with no
+// override — setPlanVerdicts is what lets them agree.
+test('a publish() call with no override still sees the verdicts Check found', async () => {
+  resetPublished();
+  setPlanVerdicts(new Map([['1', '900']]));   // member 1 is already in HubSpot
+  const calls = [];
+  await publish(
+    {
+      perAccount: [],
+      log: [],
+      preview: { accounts: ['a@o.com'] },
+    },
+    {
+      // No `read` override, no verdicts passed — exactly what collect's
+      // toSheet(), mergeDuplicates() and runImport() actually call with.
+      read: () => [{ memberId: '1', firstName: 'Old', lastName: 'One', slug: 's1' }],
+      write: async (tab, header, rows) => { calls.push({ tab, rows }); return { url: 'https://sheet' }; },
+    },
+  );
+  const planCall = calls.find((c) => c.tab === PLAN_TAB);
+  assert.ok(planCall, 'the Plan tab was written');
+  assert.equal(planCall.rows[0][4], 'Already in HubSpot — we note the connection, nothing else changes');
+  resetPlanVerdicts();
+});
+
+test('resetPlanVerdicts clears what Check found — a fresh sweep starts unknown', () => {
+  setPlanVerdicts(new Map([['1', '900']]));
+  resetPlanVerdicts();
+  const rows = planRows({ preview: { accounts: ['a@o.com'] } },
+    () => [{ memberId: '1', firstName: 'A', lastName: 'B', slug: 's1' }]);
+  // With no verdicts at all, nothing is known to already exist — the safer
+  // default reads as "will be added", not a false "already there".
+  assert.equal(rows[0][4], 'Will be added');
 });

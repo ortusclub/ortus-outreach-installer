@@ -27551,6 +27551,12 @@ async function previewMagellan() {
 
   } catch (err) {
     showMagellanError(err.message);
+    // A failed re-check must not leave a stale Import button or review link
+    // up — either would point at a plan from a run that never finished.
+    const impErr = document.getElementById('mg-import-btn');
+    if (impErr) impErr.hidden = true;
+    const revErr = document.getElementById('mg-review');
+    if (revErr) revErr.hidden = true;
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Check what would happen'; }
   }
