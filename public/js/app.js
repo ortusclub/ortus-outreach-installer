@@ -27545,7 +27545,6 @@ async function previewMagellan() {
         : '';
     }
 
-    renderMagellanDupes(j.duplicates || []);
   } catch (err) {
     showMagellanError(err.message);
   } finally {
@@ -27553,96 +27552,14 @@ async function previewMagellan() {
   }
 }
 
-// People HubSpot holds twice under one LinkedIn ID. Named before anything is
-// written, and fixable from here — merging is why the "different vid" refusals
-// happen at all, so leaving it as a warning would just mean reading it again
-// after every run.
-let mgDupes = [];
-function renderMagellanDupes(dupes) {
-  mgDupes = dupes || [];
-  const box = document.getElementById('mg-dupes');
-  if (!box) return;
-  box.hidden = mgDupes.length === 0;
-  if (!mgDupes.length) { box.innerHTML = ''; return; }
-  // Render a page's worth; 1,284 cards would lock the tab up for seconds and
-  // nobody reads past the first screen anyway. The rest live in the sheet.
-  const SHOWN = 60;
-  const cards = mgDupes.slice(0, SHOWN).map((d) => {
-    const recs = (d.records || []).slice().sort((a, b) => (b.kept ? 1 : 0) - (a.kept ? 1 : 0));
-    const rows = recs.map((r) => {
-      // The synthetic address is the app's own bookkeeping. Showing
-      // "444725921@linkedinmembership.id" to someone tidying HubSpot explains
-      // nothing — what they need to know is that it isn't a real address.
-      const mail = r.synthetic || !r.email
-        ? '<span class="rec-mail made-up">a made-up address from an old import</span>'
-        : `<span class="rec-mail">${escHtml(r.email)}</span>`;
-      const when = r.createdAt
-        ? `${r.kept ? 'in HubSpot since' : 'added'} ${new Date(r.createdAt)
-          .toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
-        : '';
-      return `<div class="rec${r.kept ? ' keep' : ''}">`
-        + `<span class="rec-flag">${r.kept ? 'Keep' : 'Fold in'}</span>`
-        + mail
-        + `<span class="rec-when">${escHtml(when)}</span></div>`;
-    }).join('');
-    const count = recs.length || 1 + (d.otherIds || []).length;
-    // Same LinkedIn ID, different names. Almost always a wrong ID typed onto a
-    // contact — and the one case where merging would fuse two real people.
-    const risky = d.nameMatch === false;
-    return `<div class="dpa${risky ? ' is-risky' : ''}"><div class="dpa-top">`
-      + `<span class="dpa-name">${escHtml(d.name || 'Unnamed person')}</span>`
-      + `${d.company ? `<span class="dpa-sub">${escHtml(d.company)}</span>` : ''}`
-      + `<span class="dpa-count">${risky ? 'names do not match' : `${count} records`}</span></div>`
-      + (risky
-        ? '<div class="dpa-risky">These records share a LinkedIn ID but are under different names, '
-          + 'so they may be two different people. <b>This one is not merged</b> — check it by hand '
-          + 'in HubSpot.</div>'
-        : '')
-      + `${rows}</div>`;
-  }).join('');
-
-  const n = mgDupes.length;
-  box.innerHTML = `<div class="dp-head"><span class="dp-n">${n.toLocaleString()}</span>`
-    + `<span class="dp-h">${n === 1 ? 'person is' : 'people are'} in HubSpot more than once</span></div>`
-    + '<p class="dp-why">The same person ended up with two or three contact records. The old '
-    + 'spreadsheet imports created one under a made-up email address, and the person already '
-    + 'existed under their real one. We keep the record with the <b>real email address</b> and fold '
-    + 'the others into it — notes, deals and connections all move across, nothing is lost.</p>'
-    + '<span class="dp-warn">HubSpot cannot undo a merge</span>'
-    + `<div class="dpa-list">${cards}</div>`
-    + (n > SHOWN
-      ? `<p class="dp-more">…and ${(n - SHOWN).toLocaleString()} more people. `
-        + '<a href="#" onclick="openMagellanSheet();return false;">Open the full list in the sheet</a></p>'
-      : '')
-    + '<div class="dp-acts">'
-    + `<button type="button" class="btn" id="mg-merge-btn" onclick="mergeMagellanDupes()">Merge all ${n.toLocaleString()}</button>`
-    + '<span class="dp-hint">Skipping is safe — every connection is still recorded either way.</span>'
-    + '</div>';
-}
-
-async function mergeMagellanDupes() {
-  const btn = document.getElementById('mg-merge-btn');
-  if (!confirm(`This merges ${mgDupes.length} pairs of contacts in HubSpot. It cannot be undone. Continue?`)) return;
-  if (btn) { btn.disabled = true; btn.textContent = 'Merging…'; }
-  startMagellanPolling();
-  try {
-    const j = await mgFetch('/api/magellan/merge-duplicates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirm: true }),
-    });
-    if (j.ok === false) throw new Error(j.reason);
-    renderMagellanDupes([]);
-    document.getElementById('mg-confirm-t').innerHTML =
-      `<b>${(j.merged || 0).toLocaleString()} duplicate records merged.</b> `
-      + (j.errors && j.errors.length ? `${j.errors.length} could not be — see the log. ` : '')
-      + 'Press Check what would happen again to see the numbers without them.';
-  } catch (err) {
-    showMagellanError(err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Merge duplicates'; }
-  }
-}
-window.mergeMagellanDupes = mergeMagellanDupes;
+// Merging duplicates was removed from the screen on purpose. It cannot be undone
+// in HubSpot, and for a few hundred people it silently picks between two real
+// email addresses (Alecx Bagatsolon: alecx@ vs alecx.bagatsolon@) — rendered
+// identically to the harmless one-real-one-synthetic case. The import never
+// needed it: lookupByMemberIds already writes the connection to the record with
+// a real email address. Duplicates are stated in the run's outcome instead.
+// mergeDuplicates() and POST /api/magellan/merge-duplicates are still there,
+// with their tests, if this is ever wanted back.
 
 async function importMagellan() {
   const btn = document.getElementById('mg-import-btn');

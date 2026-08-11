@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.26" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.26" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.27" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.27" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -747,54 +747,6 @@
           content: '·'; position: absolute; left: 3px;
         }
 
-        /* Duplicate people. One card per person, every record listed, the one
-           we keep outlined. No contact ID is ever shown: a person is a name,
-           an email and the date they joined — the id means nothing to anyone
-           and was the most confusing thing on this screen. */
-        body[data-dashboard='v3'] #mg-dupes {
-          border: 1px solid var(--hairline); border-radius: 14px; padding: 22px 24px;
-          background: var(--card-bg); margin: 18px 0 4px;
-        }
-        body[data-dashboard='v3'] .dp-head { display: flex; align-items: baseline; gap: 13px; flex-wrap: wrap; }
-        body[data-dashboard='v3'] .dp-n { font-size: 40px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; }
-        body[data-dashboard='v3'] .dp-h { font-size: 15px; font-weight: 600; }
-        body[data-dashboard='v3'] .dp-why { max-width: 82ch; font-size: 13.5px; line-height: 1.62; color: var(--gray); margin: 10px 0 4px; }
-        body[data-dashboard='v3'] .dp-why b { color: var(--ink); }
-        body[data-dashboard='v3'] .dp-warn {
-          display: inline-block; margin-top: 10px; font-size: 12.5px; color: var(--gold, #d4a24a);
-          border: 1px solid currentColor; border-radius: 999px; padding: 5px 12px;
-        }
-        /* The list scrolls inside the block. 1,284 people must not push the
-           Import button somewhere you have to hunt for it. */
-        body[data-dashboard='v3'] .dpa-list {
-          display: grid; gap: 10px; margin-top: 20px;
-          max-height: 420px; overflow-y: auto; padding-right: 6px;
-        }
-        body[data-dashboard='v3'] .dpa { border: 1px solid var(--hairline); border-radius: 11px; padding: 13px 15px; background: var(--bg-soft); }
-        body[data-dashboard='v3'] .dpa-top { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
-        body[data-dashboard='v3'] .dpa-name { font-size: 14.5px; font-weight: 600; }
-        body[data-dashboard='v3'] .dpa-sub { font-size: 12.5px; color: var(--gray); }
-        body[data-dashboard='v3'] .dpa-count {
-          margin-left: auto; font-size: 11px; letter-spacing: .06em; color: var(--gold, #d4a24a);
-          border: 1px solid currentColor; padding: 4px 10px; border-radius: 999px; white-space: nowrap;
-        }
-        body[data-dashboard='v3'] .dpa .rec {
-          display: grid; grid-template-columns: 78px 1fr auto; gap: 12px; align-items: center;
-          padding: 9px 12px; border-radius: 8px; background: var(--card-bg); font-size: 13px;
-        }
-        body[data-dashboard='v3'] .dpa .rec + .rec { margin-top: 6px; }
-        body[data-dashboard='v3'] .dpa .rec.keep { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 40%, transparent); }
-        body[data-dashboard='v3'] .rec-flag { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); }
-        body[data-dashboard='v3'] .rec.keep .rec-flag { color: var(--green); font-weight: 600; }
-        body[data-dashboard='v3'] .rec-mail { font-family: ui-monospace, monospace; font-size: 12.5px; word-break: break-all; }
-        body[data-dashboard='v3'] .rec-mail.made-up { font-family: inherit; color: var(--gray); font-style: italic; }
-        body[data-dashboard='v3'] .rec-when { font-size: 12px; color: var(--gray); white-space: nowrap; }
-        body[data-dashboard='v3'] .dpa.is-risky { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold, #d4a24a) 45%, transparent); }
-        body[data-dashboard='v3'] .dpa-risky { font-size: 12.5px; line-height: 1.55; color: var(--gray); margin: -4px 0 10px; }
-        body[data-dashboard='v3'] .dpa-risky b { color: var(--gold, #d4a24a); }
-        body[data-dashboard='v3'] .dp-more { font-size: 12.5px; color: var(--gray); margin-top: 16px; }
-        body[data-dashboard='v3'] .dp-acts { display: flex; gap: 10px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
-        body[data-dashboard='v3'] .dp-hint { font-size: 12.5px; color: var(--gray); }
       </style>
       <div id="cx-magellan-pane" hidden>
         <p class="cx-lede">Collect the connections of our LinkedIn accounts and put them in HubSpot. <b>This is where the database comes from</b> — everything the other tab searches was collected here.</p>
@@ -943,10 +895,6 @@
 
           <!-- Accounts HubSpot will not accept, and what to do about them. -->
           <div id="mg-blocked" hidden></div>
-
-          <!-- People HubSpot holds twice. Found by Check, fixed by its own
-               button: merging is the one action here with no undo. -->
-          <div id="mg-dupes" hidden></div>
 
           <div class="mg-confirm">
             <div class="mg-confirm-t" id="mg-confirm-t"><b>Nothing has gone into HubSpot yet.</b> Check first to see what would happen.</div>
@@ -4075,7 +4023,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.26"></script>
+  <script type="module" src="/js/app.js?v=3.1.27"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
