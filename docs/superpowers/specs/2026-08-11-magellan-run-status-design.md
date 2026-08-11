@@ -28,6 +28,27 @@ Explicitly out of scope, previously considered and dropped:
 
 Those are real problems. They are not this spec.
 
+### Merging duplicates is dropped
+
+The Merge button and the duplicate-pair list come **off the card**.
+
+The import does not need them. `lookupByMemberIds` (`hubspot-client.js:141`)
+already picks the record with a real email address and writes the connection
+there — the record people actually open. Merging buys tidiness in HubSpot, and
+costs an irreversible operation that, for a few hundred people, silently decides
+which of two real email addresses stays. Alecx Bagatsolon has `alecx@ortusclub.com`
+(2021) and `alecx.bagatsolon@ortusclub.com` (2026); nothing on the screen
+distinguished that from Sam Adcock's harmless case of one real address and one
+synthetic placeholder from a 2024 import.
+
+`mergeDuplicates` and `POST /api/magellan/merge-duplicates` stay in the codebase
+with their tests. Nothing in the UI calls them. Duplicates remain a **reported
+fact** in the outcome — a number the operator can act on by hand, later, if they
+ever care.
+
+Removed from the card: `#mg-dupes`, `renderMagellanDupes`, `mergeMagellanDupes`,
+and the `.dp*` / `.dpa*` / `.rec*` style rules that only served them.
+
 ---
 
 ## 1. The job is not done until its result exists
@@ -175,7 +196,8 @@ run, so it cannot exist without the run having ended:
   ok: true,                 // false when it errored or was stopped short
   summary: '9,623 new · 15,545 already there',
   problems: [               // one line per distinct cause, already grouped
-    '3,727 people are in HubSpot more than once — merge them',
+    '3,727 people are in HubSpot more than once — their connection was recorded '
+      + 'on the record with a real email address, so nothing was missed',
     "1 account skipped: jemely.butron@ortus.solutions isn't on the HubSpot list yet",
   ],
 }
@@ -192,7 +214,6 @@ sorted by count.
 | collect | `24,607 people from 12 accounts · 9,102 with a LinkedIn ID` |
 | check | `9,623 new · 15,545 already there` |
 | import | `4,102 added · 20,505 updated` |
-| merge | `3,727 people merged` |
 | stopped | `Stopped after 7 of 12 accounts — the rest weren't asked about` |
 | error | the translated error, with `[raw]` appended as `problemLine` already does |
 
@@ -237,8 +258,8 @@ helpers — no browser, matching the 25 existing tests in
 | file | change |
 |---|---|
 | `src/connections/magellan-run.js` | widen the `try`; write `_state.outcome`; clear `running` last |
-| `public/js/app.js` | one `magellanPct`; render the outcome block; selection split in the bar |
-| `public/index.html` | `#mg-outcome` block + its `body[data-dashboard='v3']`-scoped rules |
+| `public/js/app.js` | one `magellanPct`; render the outcome block; selection split in the bar; delete `renderMagellanDupes` + `mergeMagellanDupes` |
+| `public/index.html` | `#mg-outcome` block + its `body[data-dashboard='v3']`-scoped rules; delete `#mg-dupes` and the `.dp*` / `.dpa*` / `.rec*` rules |
 | `tests/connections/magellan-run.test.js` | the five tests above |
 
 `src/connections/magellan-problems.js` and `hubspot-client.js` are unchanged —
