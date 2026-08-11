@@ -433,32 +433,30 @@ test('the same account twice in one selection is collected once', async () => {
 // The bug this exists to stop coming back: the card read
 // "NOT RUNNING · 92% · Idle" for several seconds while Check was still working,
 // because running cleared before the answer was written.
+//
+// A timer-based poller cannot catch this: buildPreview here resolves through a
+// chain of already-resolved promises, which drains as pure microtasks and
+// never once hands control to the timers phase, so a setInterval poll placed
+// around the call never gets a turn while it's actually running — it can only
+// ever observe the state well after everything is already settled, which
+// would let a real ordering regression slip straight through disguised as a
+// pass. onRunEnd is the seam built for exactly this: it fires from inside
+// buildPreview's own finally, one line after running clears, so it sees the
+// state at that instant with no race to lose.
 test('the answer exists before running clears', async () => {
   reset();
-  let stateWhenClear = null;
-  // Poll like the browser does, and grab the state the instant running drops.
-  const poll = setInterval(() => {
-    const st = getState();
-    if (!stateWhenClear && st.phase !== 'idle' && !st.running) stateWhenClear = st;
-  }, 1);
+  let snapshot = null;
   await buildPreview(['a@o.com'], {
     checkProps: async () => ({ ok: true, missing: [] }),
     options: async () => new Set(['a@o.com']),
     read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
     lookup: async () => new Map(),
+    onRunEnd: (st) => { snapshot = st; },
   });
-  // buildPreview here resolves through a chain of already-resolved promises,
-  // which drains as microtasks without ever handing control to the timers
-  // phase — so the 1ms poll above never gets a turn during the run itself.
-  // One real tick after completion lets it fire at least once and see the
-  // settled (running: false, preview/outcome written) state, which is what
-  // this test is actually checking: they were never absent when running
-  // was false, not the exact millisecond running flipped.
-  await settle();
-  clearInterval(poll);
-  assert.ok(stateWhenClear, 'the poller saw running go false');
-  assert.ok(stateWhenClear.preview, 'preview was already written when running cleared');
-  assert.ok(stateWhenClear.outcome, 'the outcome was already written too');
+  assert.ok(snapshot, 'onRunEnd fired');
+  assert.equal(snapshot.running, false, 'running had already cleared by the time onRunEnd saw it');
+  assert.ok(snapshot.preview, 'preview was already written when running cleared');
+  assert.ok(snapshot.outcome, 'the outcome was already written too');
 });
 
 test('a check that throws still clears running, and says why', async () => {

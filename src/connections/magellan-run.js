@@ -18,15 +18,6 @@ import {
 } from './hubspot-client.js';
 import { buildOutcome } from './magellan-outcome.js';
 
-// buildOutcome(state) returns null while state.running is true — there is
-// nothing truthful to say about a run still in flight. Every call site below
-// needs the outcome written BEFORE the real _state.running clears (so the
-// poller never sees running:false with a null outcome), which means asking
-// for it while _state.running is still technically true. This passes a
-// running:false view of the state to the builder without touching the real
-// flag — that stays exactly where each block already sets it.
-const outcomeNow = () => buildOutcome({ ..._state, running: false });
-
 const idle = () => ({
   running: false,
   phase: 'idle',           // idle | collecting | previewing | importing | done | error
@@ -199,11 +190,14 @@ export function startCollect(accounts, deps = {}) {
       + (ok.length < list.length ? `, ${list.length - ok.length} failed.` : '.'));
     _state.phase = _stopRequested ? 'stopped' : 'done';
     _state.stopped = _stopRequested;
-    _state.running = false;
     _state.account = null;
     _state.step = null;
     _state.finishedAt = new Date().toISOString();
-    _state.outcome = outcomeNow();
+    // running clears only once the state above already tells the truth about
+    // how the sweep ended — then buildOutcome(state) is asked honestly, since
+    // it refuses to answer (returns null) while state.running is still true.
+    _state.running = false;
+    _state.outcome = buildOutcome(_state);
     // force: the final picture must land even if a per-account write is still
     // in flight, otherwise the tab freezes one account short of the truth.
     await toSheet(true);
@@ -211,8 +205,8 @@ export function startCollect(accounts, deps = {}) {
     log(`✗ The collection stopped unexpectedly — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';
-    _state.outcome = outcomeNow();
     _state.running = false;
+    _state.outcome = buildOutcome(_state);
     await toSheet(true);
   });
 
@@ -226,7 +220,13 @@ export function startCollect(accounts, deps = {}) {
  */
 export async function buildPreview(accounts, deps = {}) {
   const { lookup = lookupByMemberIds, read = readForPlan, checkProps = checkMagellanProperties,
-    options = connectionsPropOptions } = deps;
+    options = connectionsPropOptions,
+    // Test seam, not a production dependency: fired once, in the finally, the
+    // instant after running clears, with a snapshot of the state at that exact
+    // moment. Nothing else can observe that instant — the whole tail below is
+    // synchronous, so a timer-based poller races code that never yields and
+    // always loses. Named for what it watches, not what it does.
+    onRunEnd = () => {} } = deps;
 
   // Fail before doing any work if the portal is missing the properties we write
   // — otherwise every single create silently drops the fields that matter.
@@ -319,22 +319,34 @@ export async function buildPreview(accounts, deps = {}) {
         + `not on the "Linkedin 1st Connections" list: ${blocked.join(', ')}`);
     }
     _state.phase = 'done';
-    _state.outcome = outcomeNow();
+    // running clears here, the moment the state actually carries the preview —
+    // not in the finally below. buildOutcome(state) refuses to answer while
+    // state.running is true (there is nothing truthful to say about a run
+    // still in flight — the project's "never invent data" rule, enforced in
+    // code), so it can only be asked honestly once running is already false.
+    // The finally's own running = false a few lines down is then just an
+    // idempotent safety net for any path that throws before reaching here.
+    _state.running = false;
+    _state.outcome = buildOutcome(_state);
     return { totals, plans, blocked, duplicates };
   } catch (err) {
     log(`✗ The check stopped — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';
-    _state.outcome = outcomeNow();
+    _state.running = false;
+    _state.outcome = buildOutcome(_state);
     throw err;
   } finally {
     // Check writes nothing, so the card must not be left looking busy — whether
-    // it finished, threw, or the portal refused halfway through. running goes
-    // last, after the try or the catch has written the result.
+    // it finished, threw, or the portal refused halfway through.
     _state.account = null;
     _state.current = null;
     _state.step = null;
     _state.running = false;
+    // Test seam — see onRunEnd above. Fires after everything this function
+    // ever writes, so a regression that puts a write back after this point
+    // shows up here, not just in a slower-to-notice output assertion.
+    onRunEnd(getState());
   }
 }
 
@@ -500,13 +512,19 @@ export async function runImport(plans = _plans, deps = {}) {
     _state.step = 'Writing the sheet';
     await sheet(_state, { force: true }).catch(() => {});
     _state.phase = 'done';
-    _state.outcome = outcomeNow();
+    // Same rule as buildPreview: running clears once _state.imported already
+    // exists, THEN buildOutcome(state) is asked — honestly, since it returns
+    // null for as long as state.running reads true. The finally's running =
+    // false is the idempotent safety net for a throw before this line.
+    _state.running = false;
+    _state.outcome = buildOutcome(_state);
     return { ok: true, ...result };
   } catch (err) {
     log(`✗ The import stopped — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';
-    _state.outcome = outcomeNow();
+    _state.running = false;
+    _state.outcome = buildOutcome(_state);
     return { ok: false, reason: err.message, ...result };
   } finally {
     _state.running = false;
