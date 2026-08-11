@@ -1295,3 +1295,212 @@ Expected: PASS, no failures.
    into HubSpot and name the ones that cannot.
 4. When the Check ends, the card must state what it found in one sentence, with
    the duplicates and any skipped account listed beneath it.
+
+---
+
+### Task 9: Aby can review the plan before anyone imports
+
+**Added mid-execution at the operator's request:** *"give the chance to Aby to review it properly, in case she wants, before importing — maybe with a link."*
+
+**Files:**
+- Modify: `src/connections/magellan-sheet.js` — new `PLAN_TAB` + `planRows(state, read)`, written by `publish`
+- Modify: `src/connections/magellan-run.js` — `buildPreview` publishes the sheet once the preview exists
+- Modify: `public/index.html` — a review line above the Import button
+- Modify: `public/js/app.js` — show that line once Check has produced a preview
+- Test: `tests/connections/magellan-sheet.test.js` (exists)
+
+**Interfaces:**
+- Consumes: `_state.preview` from Task 2; `readForPlan(account)` from `magellan-pull.js`;
+  `syntheticEmail(memberId)` from `magellan.js`; the existing `writeTab(tab, header, rows)`.
+- Produces: `PLAN_TAB` (`'Plan'`) and `PLAN_HEADER` exported from `magellan-sheet.js`.
+
+**Why a sheet and not a screen:** the person reviewing this is not the person
+running the app. The sheet already exists, already has a tab per account in
+Abygael's cleaned layout, and opens in a browser with no app running — it is the
+only artifact a second person can actually read. The card gets a link to it, not
+a copy of it.
+
+**What the tab must answer, per person, in one row:** who they are, which Ortus
+account they came from, and what pressing Import would do to them.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `tests/connections/magellan-sheet.test.js`:
+
+```js
+test('the Plan tab says, per person, what Import would do', () => {
+  const rows = planRows({
+    preview: {
+      accounts: ['a@o.com'],
+      totals: { created: 1, updated: 1, hidden: 1 },
+    },
+  }, () => ([
+    { memberId: '111', firstName: 'New', lastName: 'Person', slug: 'new-person', existingId: null },
+    { memberId: '222', firstName: 'Known', lastName: 'Person', slug: 'known-person', existingId: '900' },
+    { memberId: '', firstName: '', lastName: '', slug: '', existingId: null },
+  ]));
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[0].slice(0, 3), ['a@o.com', 'New', 'Person']);
+  assert.equal(rows[0][4], 'Will be added');
+  assert.equal(rows[1][4], 'Already in HubSpot — we note the connection, nothing else changes');
+  assert.equal(rows[2][4], 'Hidden by LinkedIn — nothing we can do');
+});
+
+test('planRows is empty when Check has not run', () => {
+  assert.deepEqual(planRows({}, () => []), []);
+});
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `node --test tests/connections/magellan-sheet.test.js`
+Expected: FAIL — `planRows is not exported`.
+
+- [ ] **Step 3: Implement the tab**
+
+In `src/connections/magellan-sheet.js`, beside the other tab constants (`:22-24`):
+
+```js
+export const PLAN_TAB = 'Plan';
+```
+
+and beside the other headers (`:32-35`):
+
+```js
+// What Import would do, one row per person. The reviewer is not the operator —
+// this is the only artifact a second person can open without the app running.
+export const PLAN_HEADER = ['Account', 'First Name', 'Last Name', 'LinkedIn', 'What happens'];
+```
+
+then, next to the other row builders:
+
+```js
+/**
+ * One row per person Check looked at, with what Import would do to them.
+ *
+ * `read` is injected so this stays pure and testable — the real one is
+ * readForPlan, the same reader buildPreview used, so the rows here are the rows
+ * that would actually be written.
+ */
+export function planRows(state = {}, read = readForPlan) {
+  const pv = state.preview;
+  if (!pv) return [];
+  const out = [];
+  for (const account of pv.accounts || []) {
+    let rows = [];
+    try { rows = read(account) || []; } catch { continue; }
+    for (const r of rows) {
+      const what = !r.memberId
+        ? 'Hidden by LinkedIn — nothing we can do'
+        : r.existingId
+          ? 'Already in HubSpot — we note the connection, nothing else changes'
+          : 'Will be added';
+      out.push([account, r.firstName || '', r.lastName || '',
+        r.slug ? `https://www.linkedin.com/in/${r.slug}` : '', what]);
+    }
+  }
+  return out;
+}
+```
+
+and write it in `publish`, immediately before the `const imp = importRows(...)` line:
+
+```js
+    const plan = planRows(state, read);
+    if (plan.length) last = await write(PLAN_TAB, PLAN_HEADER, plan, deps);
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `node --test tests/connections/magellan-sheet.test.js`
+Expected: PASS.
+
+- [ ] **Step 5: Have Check publish the sheet**
+
+`planRows` needs `existingId` on each row. In `magellan-run.js` `buildPreview`,
+inside the account loop, after `const plan = planAccount(...)`, stamp what the
+lookup found onto the rows the sheet will re-read:
+
+```js
+      // The sheet's Plan tab re-reads these rows, so the verdict has to travel
+      // with them — otherwise the reviewer sees a list with no answers on it.
+      for (const r of rows) {
+        const hit = r.memberId ? existing.get(String(r.memberId)) : null;
+        r.existingId = hit ? hit.id : null;
+      }
+```
+
+Then, in the same `try` block, after `_state.outcome = buildOutcome(_state);`
+and before the `return`:
+
+```js
+    // Written now, not on a button: the person who reviews this is not the
+    // person at the keyboard, and asking them to wait for someone to press
+    // "publish" is how a review does not happen.
+    _state.step = 'Writing the sheet for review';
+    await sheet(_state, { force: true }).catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
+```
+
+`buildPreview`'s `deps` must gain `sheet = publishSheet` alongside the existing
+defaults at `:215`.
+
+- [ ] **Step 6: Put the link where the decision is made**
+
+In `public/index.html`, inside `.mg-confirm`, immediately before `.mg-confirm-btns`:
+
+```html
+            <!-- The review step. Import is the only irreversible thing on this
+                 screen, and the person who checks it is usually not the person
+                 pressing it. -->
+            <div class="mg-review" id="mg-review" hidden>
+              <b>Want someone to check this first?</b>
+              <a href="#" onclick="openMagellanSheet();return false;">Open the full list in the sheet</a>
+              — every person, which account they came from, and what Import would do to them.
+              Nothing goes into HubSpot until someone presses Import.
+            </div>
+```
+
+with these rules in the Magellan `<style>` block:
+
+```css
+        body[data-dashboard='v3'] .mg-review {
+          margin: 0 0 14px; font-size: 13px; line-height: 1.65; color: var(--gray);
+          padding-left: 13px; border-left: 2px solid var(--hairline);
+        }
+        body[data-dashboard='v3'] .mg-review b { color: var(--ink); font-weight: 600; }
+        body[data-dashboard='v3'] .mg-review a { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+```
+
+- [ ] **Step 7: Reveal it when there is something to review**
+
+In `public/js/app.js`, in `previewMagellan`, beside the line that unhides the
+Import button (`imp.hidden = false;`):
+
+```js
+    // Only once Check has produced a plan — a link to an empty sheet is worse
+    // than no link.
+    const rev = document.getElementById('mg-review');
+    if (rev) rev.hidden = false;
+```
+
+- [ ] **Step 8: Verify by hand**
+
+Run a Check on two collected accounts. Then:
+1. The review line appears above the Import button.
+2. Clicking the link opens the Magellan sheet in a browser.
+3. The sheet has a **Plan** tab with one row per person, and the `What happens`
+   column reads `Will be added` / `Already in HubSpot — …` / `Hidden by LinkedIn — …`.
+4. The counts in the Plan tab match the ledger numbers on the card.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/connections/magellan-sheet.js src/connections/magellan-run.js public/js/app.js public/index.html tests/connections/magellan-sheet.test.js
+git commit -m "feat(magellan): a Plan tab anyone can review before Import
+
+Import is the only irreversible thing on this screen and the person who checks it
+is usually not the person pressing it. Check now writes a Plan tab — one row per
+person, which account they came from, and what Import would do to them — and the
+card links to it right above the Import button. The sheet opens in a browser with
+no app running, which is what makes a second pair of eyes possible at all."
+```
