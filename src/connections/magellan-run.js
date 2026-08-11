@@ -10,10 +10,11 @@ import * as browserSemaphore from '../browser-semaphore.js';
 import { collectAccount, readForPlan } from './magellan-pull.js';
 import { planAccount } from './magellan.js';
 import { diagnose, logLine, summarise } from './magellan-diagnose.js';
+import { explainProblem, problemLine, summariseProblems } from './magellan-problems.js';
 import { publish as publishSheet, resetPublished } from './magellan-sheet.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
-  checkMagellanProperties, connectionsPropOptions,
+  checkMagellanProperties, connectionsPropOptions, mergeContacts,
 } from './hubspot-client.js';
 
 const idle = () => ({
@@ -235,24 +236,160 @@ export async function buildPreview(accounts, deps = {}) {
   const plans = [];
   const totals = { created: 0, updated: 0, extraEmails: 0, hidden: 0, unresolved: 0, total: 0 };
 
+  // Check is three minutes of silence on a real sweep. Drive the same card the
+  // collect and import halves drive, so "is it still going?" is answered by
+  // looking at it.
+  _state = {
+    ..._state, running: true, phase: 'checking', error: null,
+    done: 0, total: usable.length, account: null, current: null,
+    checked: 0, step: 'Asking HubSpot who it already has',
+  };
+
+  // People HubSpot holds twice under one LinkedIn id. Found here, before a
+  // single write, because it is the one problem the import cannot fix by
+  // itself — and the reason for every "different vid" refusal later.
+  //
+  // Keyed by member id, NOT collected per account: a popular person is a
+  // connection of six Ortus accounts and would otherwise be counted six times
+  // and merged six times. One person, one entry, with every account they came
+  // from listed against them.
+  const dupeByMember = new Map();
+
+  let checkedSoFar = 0;
+  try {
   for (const account of usable) {
     const rows = read(account);
     const memberIds = rows.map((r) => r.memberId).filter(Boolean);
-    const existing = await lookup(memberIds);
+    _state.account = account;
+    const existing = await lookup(memberIds, {
+      onProgress: ({ done, total }) => {
+        _state.current = { account, count: done, total, stage: 'check' };
+        _state.checked = checkedSoFar + done;
+      },
+    });
+    for (const d of existing.duplicates || []) {
+      const seen = dupeByMember.get(d.memberId);
+      if (seen) { if (!seen.accounts.includes(account)) seen.accounts.push(account); continue; }
+      dupeByMember.set(d.memberId, { ...d, accounts: [account] });
+    }
     const plan = planAccount(rows, account, (c) => existing.get(String(c.memberId)) || null);
     plans.push({ account, plan });
     for (const k of Object.keys(totals)) totals[k] += plan.counts[k] || 0;
+    checkedSoFar += memberIds.length;
+    _state.done += 1;
+    _state.current = null;
+  }
+  } finally {
+    // Check writes nothing, so the card must not be left looking busy —
+    // whether it finished, threw, or the portal refused halfway through.
+    _state.running = false;
+    _state.account = null;
+    _state.current = null;
+    _state.step = null;
+    if (_state.phase === 'checking') _state.phase = 'done';
+  }
+
+  const duplicates = [...dupeByMember.values()];
+  if (duplicates.length) {
+    log(`⚠ ${duplicates.length} people are in HubSpot twice under one LinkedIn ID. `
+      + 'Their connection will be recorded on the record with a real email address, and the '
+      + 'second email address will be refused — that is the "different vid" message. Merge the '
+      + 'pairs in HubSpot (Actions → Merge) and it clears.');
+    for (const d of duplicates.slice(0, 10)) {
+      log(`⚠ ${d.name || 'unnamed'} (LinkedIn ${d.memberId}): keeping ${d.keptId}, `
+        + `also exists as ${d.otherIds.join(', ')}`);
+    }
+    if (duplicates.length > 10) log(`⚠ …and ${duplicates.length - 10} more pairs — the full list is in the sheet.`);
   }
 
   _plans = plans;
   _state.preview = {
-    totals, blocked, builtAt: new Date().toISOString(), accounts: usable,
+    totals, blocked, duplicates, builtAt: new Date().toISOString(), accounts: usable,
   };
   if (blocked.length) {
     log(`⚠ ${blocked.length} account${blocked.length === 1 ? '' : 's'} cannot go into HubSpot — `
       + `not on the "Linkedin 1st Connections" list: ${blocked.join(', ')}`);
   }
-  return { totals, plans, blocked };
+  return { totals, plans, blocked, duplicates };
+}
+
+/**
+ * Fold every duplicate pair Check found into one contact each.
+ *
+ * Separate from the import on purpose. The import can be re-run all day; a
+ * merge cannot be undone in HubSpot at all, so it is its own button, its own
+ * confirmation, and it writes the pairs to the log BEFORE touching anything —
+ * if a merge goes wrong, that list is the only record of what existed.
+ *
+ * The record with a real email address is always the one kept: it is the one
+ * people open, and the synthetic address is the disposable half.
+ */
+export async function mergeDuplicates(pairs = null, deps = {}) {
+  const { merge = mergeContacts, sheet = publishSheet } = deps;
+  const list = pairs || (_state.preview && _state.preview.duplicates) || [];
+
+  if (_state.running) return { ok: false, reason: 'Magellan is already running' };
+  if (!list.length) return { ok: false, reason: 'No duplicates to merge — run Check first' };
+
+  // Records that share a LinkedIn id but disagree about the person's name are
+  // never merged. A wrong id on one contact is rare; fusing two real people
+  // with no way back is not a risk worth taking to save a manual check.
+  const unsafe = list.filter((d) => d.nameMatch === false);
+  const safe = list.filter((d) => d.nameMatch !== false);
+  if (unsafe.length) {
+    log(`⚠ ${unsafe.length} of these are NOT being merged: the records share a LinkedIn ID but `
+      + 'have different names, so they may be two different people. Check them by hand in HubSpot.');
+    for (const d of unsafe.slice(0, 10)) log(`⚠ left alone: ${d.name || 'unnamed'} (LinkedIn ${d.memberId})`);
+  }
+  if (!safe.length) return { ok: false, reason: 'Nothing safe to merge — every pair has a name mismatch' };
+
+  _state = {
+    ..._state, running: true, phase: "merging", error: null,
+    done: 0, total: safe.length, account: null, step: "Merging duplicate people",
+  };
+
+  const result = { merged: 0, errors: [] };
+  log(`▶ Merging ${safe.length} duplicate ${safe.length === 1 ? 'person' : 'people'}. This cannot be undone.`);
+  // Written before the first merge, so the pairs survive even if the run dies.
+  for (const d of safe) {
+    log(`◦ ${d.name || 'unnamed'} (LinkedIn ${d.memberId}): keeping ${d.keptId}, folding in ${d.otherIds.join(', ')}`);
+  }
+
+  try {
+    for (const d of safe) {
+      _state.account = d.name || d.memberId;
+      for (const other of d.otherIds) {
+        try {
+          await merge({ primaryId: d.keptId, mergeId: other });
+          result.merged += 1;
+        } catch (err) {
+          const p = explainProblem(err.message, { stage: 'merge' });
+          result.errors.push({ account: d.account || '', memberId: d.memberId, error: err.message });
+          log(problemLine(d.name || d.memberId, p));
+        }
+      }
+      _state.done += 1;
+    }
+    _state.merged = { ...result, at: new Date().toISOString(), skipped: unsafe.length };
+    log(`■ Merging finished. ${result.merged} folded together`
+      + (result.errors.length ? `, ${result.errors.length} could not be merged` : '')
+      + (unsafe.length ? `, ${unsafe.length} left alone for a human to check.` : '.'));
+    // The duplicates are gone, so the preview that named them is stale — a
+    // second Check is the honest way to see what is left.
+    if (_state.preview) _state.preview.duplicates = [];
+    await sheet(_state, { force: true }).catch(() => {});
+    _state.phase = 'done';
+    return { ok: true, ...result };
+  } catch (err) {
+    log(`✗ Merging stopped — ${err.message}`);
+    _state.error = err.message;
+    _state.phase = 'error';
+    return { ok: false, reason: err.message, ...result };
+  } finally {
+    _state.running = false;
+    _state.account = null;
+    _state.step = null;
+  }
 }
 
 /**
@@ -265,7 +402,16 @@ export async function runImport(plans = _plans, deps = {}) {
 
   if (_state.running) return { ok: false, reason: 'Magellan is already running' };
   if (!plans) return { ok: false, reason: 'Nothing to import — build a preview first' };
-  _state = { ..._state, running: true, phase: 'importing', error: null };
+  // The import used to run silently and report one number at the end. On a
+  // 25,000-person write that is minutes of a card that looks broken, and a
+  // "check the log" message pointing at an empty box. Same log, same counters
+  // and same progress bar the collect half uses.
+  _state = {
+    ..._state, running: true, phase: 'importing', error: null,
+    done: 0, total: (plans || []).length, account: null, step: 'Starting the import',
+  };
+  const people = (plans || []).reduce((n, p) => n + p.plan.creates.length + p.plan.updates.length, 0);
+  log(`▶ Importing ${plans.length} account${plans.length === 1 ? '' : 's'} — ${people} people.`);
 
   // perAccount so the sheet can show which account contributed what, rather
   // than one aggregate number nobody can trace back.
@@ -274,36 +420,70 @@ export async function runImport(plans = _plans, deps = {}) {
     for (const { account, plan } of plans || []) {
       const row = { account, created: 0, updated: 0, extraEmails: 0, errors: [] };
       result.perAccount.push(row);
+      _state.account = account;
 
+      _state.step = `Adding ${plan.creates.length} new people`;
       const c = await create(plan.creates);
       row.created = c.created;
       row.errors.push(...c.errors.map((e) => ({ stage: 'create', ...e })));
 
+      _state.step = `Updating ${plan.updates.length} existing people`;
       const u = await update(plan.updates);
       row.updated = u.updated;
       row.errors.push(...u.errors.map((e) => ({ stage: 'update', ...e })));
 
       // One call each — no batch endpoint exists for secondary emails.
+      _state.step = `Attaching ${plan.additionalEmails.length} email addresses`;
       for (const item of plan.additionalEmails) {
         try { await attach(item); row.extraEmails += 1; } catch (err) {
           row.errors.push({ stage: 'email', id: item.id, error: err.message });
         }
       }
 
+      log(`✓ ${account}: ${row.created} added, ${row.updated} updated`
+        + (row.extraEmails ? `, ${row.extraEmails} email addresses attached` : '')
+        + (row.errors.length ? `, ${row.errors.length} problem${row.errors.length === 1 ? '' : 's'}` : ''));
+      // Every problem, in the words of whoever has to fix it — and never more
+      // than one line per distinct cause per account. Ten thousand identical
+      // duplicate-contact clashes are one job, not ten thousand log lines.
+      const seenCause = new Set();
+      for (const e of row.errors) {
+        const p = explainProblem(e.error, { stage: e.stage });
+        if (seenCause.has(p.code)) continue;
+        seenCause.add(p.code);
+        const n = row.errors.filter((x) => explainProblem(x.error).code === p.code).length;
+        log(problemLine(account, p) + (n > 1 ? ` (${n} people in this account)` : ''));
+      }
+
       result.created += row.created;
       result.updated += row.updated;
       result.extraEmails += row.extraEmails;
       result.errors.push(...row.errors.map((e) => ({ account, ...e })));
+      _state.done += 1;
     }
-    _state.imported = { ...result, at: new Date().toISOString() };
+    _state.imported = { ...result, at: new Date().toISOString(), problems: summariseProblems(result.errors) };
+    log(`■ Import finished. ${result.created} added, ${result.updated} updated`
+      + (result.extraEmails ? `, ${result.extraEmails} email addresses attached` : '')
+      + (result.errors.length ? `, ${result.errors.length} problem${result.errors.length === 1 ? '' : 's'}.` : '.'));
+    // The roll-up: one line per KIND of problem, with the count and what to do.
+    // This is the part someone hands to whoever cleans HubSpot, so it has to
+    // stand on its own without the lines above it.
+    for (const p of _state.imported.problems) {
+      log(`⚠ ${p.count} × ${p.what} — ${p.fix}`
+        + (p.accounts.length <= 3 ? ` (${p.accounts.join(', ')})` : ` (across ${p.accounts.length} accounts)`));
+    }
+    _state.step = 'Writing the sheet';
     await sheet(_state, { force: true }).catch(() => {});
     _state.phase = 'done';
     return { ok: true, ...result };
   } catch (err) {
+    log(`✗ The import stopped — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';
     return { ok: false, reason: err.message, ...result };
   } finally {
     _state.running = false;
+    _state.account = null;
+    _state.step = null;
   }
 }

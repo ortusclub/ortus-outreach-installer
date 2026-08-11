@@ -1,0 +1,10 @@
+{
+  "_comment": "GoLogin profile label -> the Ortus account email HubSpot accepts. Only for labels the SoO matcher cannot resolve on its own (bare first names, marketing-side accounts). Confirmed by Antonio, 11 Aug 2026.",
+  "Ines": "ines@ortusclub.com",
+  "Nikki": "nikki@ortusclub.com",
+  "Jovana": "jovana@ortusclub.com",
+  "Andrea": "andrea@ortusclub.com",
+  "Soleil": "soleil@ortusclub.com",
+  "Arlinda Sejdi": "arlinda@ortusclub.com",
+  "yurii": "yuri.maruyama@ortus.solutions"
+}

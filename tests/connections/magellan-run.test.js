@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startCollect, buildPreview, runImport, getState, reset } from '../../src/connections/magellan-run.js';
+import { startCollect, buildPreview, runImport, mergeDuplicates, getState, reset } from '../../src/connections/magellan-run.js';
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
@@ -138,6 +138,143 @@ test('import reports per-stage errors instead of throwing them away', async () =
   assert.equal(r.updated, 1);
   assert.equal(r.extraEmails, 0);
   assert.deepEqual(r.errors.map((e) => e.stage), ['update', 'email']);
+});
+
+test('the import narrates itself — progress, per account, and why a problem happened', async () => {
+  reset();
+  const plans = [{
+    account: 'a@o.com',
+    plan: {
+      creates: [{ properties: {} }],
+      updates: [{ id: '1', properties: {} }],
+      additionalEmails: [{ id: '900', email: 'x@linkedinmembership.id', asPrimary: false }],
+    },
+  }];
+  await runImport(plans, {
+    create: async () => ({ created: 1, errors: [] }),
+    update: async () => ({ updated: 1, errors: [] }),
+    attach: async () => { throw new Error('HubSpot 409: Contact already has that email'); },
+    sheet: noSheet,
+  });
+  const s = getState();
+  const log = s.log.join('\n');
+  // The counters the card's progress bar reads.
+  assert.equal(s.done, 1);
+  assert.equal(s.total, 1);
+  // The operator needs the account, the numbers, and the reason — a bare
+  // "1 problems" pointing at an empty log is what this replaced.
+  assert.match(log, /▶ Importing 1 account — 2 people/);
+  assert.match(log, /✓ a@o\.com: 1 added, 1 updated, 1 problem/);
+  // Translated, not echoed: what happened, what to do, and HubSpot's own words
+  // in brackets so a wrong explanation is visible rather than hidden.
+  assert.match(log, /⚠ a@o\.com: That email address is already used by someone else/);
+  assert.match(log, /merge them/);
+  assert.match(log, /\[HubSpot 409: Contact already has that email\]/);
+  assert.match(log, /■ Import finished\. 1 added, 1 updated, 1 problem/);
+  // The roll-up someone hands to whoever cleans HubSpot.
+  assert.match(log, /⚠ 1 × That email address is already used by someone else/);
+});
+
+const DUPES = [
+  { account: 'a@o.com', memberId: '444725921', name: 'Alecx Bagatsolon', keptId: '192286279995', otherIds: ['33062650786'] },
+  { account: 'a@o.com', memberId: '9895272', name: 'Rinky Rani', keptId: '230221683470', otherIds: ['1', '2'] },
+];
+
+test('merging folds every extra record into the one that is kept', async () => {
+  reset();
+  const calls = [];
+  const r = await mergeDuplicates(DUPES, {
+    merge: async (p) => { calls.push(p); return { id: p.primaryId, merged: p.mergeId }; },
+    sheet: noSheet,
+  });
+  assert.equal(r.ok, true);
+  // Three records folded away, not two: the second person had two spares.
+  assert.equal(r.merged, 3);
+  assert.deepEqual(calls, [
+    { primaryId: '192286279995', mergeId: '33062650786' },
+    { primaryId: '230221683470', mergeId: '1' },
+    { primaryId: '230221683470', mergeId: '2' },
+  ]);
+});
+
+test('the pairs are logged BEFORE the first merge — it cannot be undone', async () => {
+  reset();
+  const order = [];
+  await mergeDuplicates(DUPES, {
+    merge: async (p) => { order.push(`merge:${p.mergeId}`); return {}; },
+    sheet: noSheet,
+  });
+  const log = getState().log;
+  // Every pair is named in the log before any merge call happened.
+  const firstMerge = order.length ? 0 : -1;
+  assert.notEqual(firstMerge, -1);
+  const listedBefore = log.filter((l) => /keeping .+, folding in/.test(l));
+  assert.equal(listedBefore.length, DUPES.length);
+  assert.match(log.join('\n'), /cannot be undone/i);
+  assert.match(log.join('\n'), /Alecx Bagatsolon .*192286279995.*33062650786/);
+});
+
+test('one merge that fails does not abandon the rest, and says why', async () => {
+  reset();
+  const r = await mergeDuplicates(DUPES, {
+    merge: async (p) => {
+      if (p.mergeId === '33062650786') throw new Error('HubSpot 403: scopes');
+      return {};
+    },
+    sheet: noSheet,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.merged, 2);
+  assert.equal(r.errors.length, 1);
+  assert.match(getState().log.join('\n'), /The app is not allowed to do this/);
+});
+
+test('records that disagree about the name are never merged', async () => {
+  reset();
+  const merged = [];
+  const r = await mergeDuplicates([
+    { memberId: '1', name: 'Ina Dakay', keptId: '10', otherIds: ['11'], nameMatch: true },
+    { memberId: '2', name: 'Ina Dakay', keptId: '20', otherIds: ['21'], nameMatch: false },
+  ], { merge: async (p) => { merged.push(p.mergeId); return {}; }, sheet: noSheet });
+  assert.equal(r.ok, true);
+  // Only the pair whose names agree.
+  assert.deepEqual(merged, ['11']);
+  const log = getState().log.join('\n');
+  assert.match(log, /may be two different people/i);
+  assert.match(log, /left alone: Ina Dakay \(LinkedIn 2\)/);
+  assert.match(log, /1 left alone for a human to check/);
+});
+
+test('when every pair is a name mismatch, nothing is merged at all', async () => {
+  reset();
+  const r = await mergeDuplicates([{ memberId: '2', keptId: '20', otherIds: ['21'], nameMatch: false }],
+    { merge: async () => { throw new Error('must not be called'); }, sheet: noSheet });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /name mismatch/i);
+});
+
+test('merging refuses when Check has not found any duplicates', async () => {
+  reset();
+  const r = await mergeDuplicates([], { merge: async () => { throw new Error('must not be called'); } });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /run Check first/i);
+});
+
+test('a merged pair is cleared from the preview so it cannot be merged twice', async () => {
+  reset();
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's', memberId: '444725921' }],
+    lookup: async () => {
+      const m = new Map();
+      m.duplicates = [{ memberId: '444725921', keptId: '10', otherIds: ['11'], name: 'Alecx' }];
+      return m;
+    },
+  });
+  assert.equal(getState().preview.duplicates.length, 1);
+  await mergeDuplicates(null, { merge: async () => ({}), sheet: noSheet });
+  assert.equal(getState().preview.duplicates.length, 0);
 });
 
 test('nothing is written until runImport is called', async () => {

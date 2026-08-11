@@ -26961,8 +26961,22 @@ function setConnTab(tab) {
 async function loadMagellanAccounts() {
   try {
     mgAccounts = await mgFetch('/api/magellan/accounts');
-    // Default to the backlog — the whole point is the accounts nobody has done.
-    mgSelected = new Set(mgAccounts.filter((a) => !a.collected).map((a) => a.profileId));
+    // Tick exactly what can be imported today: collected AND carrying LinkedIn
+    // member ids. An account without ids has nothing HubSpot can match on, so
+    // including it only pads the blocked list. The old default was every
+    // UNcollected account, which meant one click asked for 262 accounts.
+    // Two GoLogin profiles can resolve to one account email — tick one of them,
+    // or the preview reads that account's file twice and doubles its numbers.
+    const pickedAccounts = new Set();
+    mgSelected = new Set(mgAccounts
+      .filter((a) => a.collected && a.withMemberId > 0)
+      .filter((a) => {
+        const key = String(a.account || '').toLowerCase();
+        if (pickedAccounts.has(key)) return false;
+        pickedAccounts.add(key);
+        return true;
+      })
+      .map((a) => a.profileId));
     renderMagellanAccounts();
     refreshMagellanState();
   } catch (err) {
@@ -27094,8 +27108,19 @@ async function startMagellanCollect() {
   }
 }
 
+// A job takes a moment to mark itself running — Check spends its first second
+// asking HubSpot about properties before it touches any state. Polling used to
+// stop on the first "not running" it saw, which was always that gap, so the
+// card froze at 0% for the whole run. Wait until we have actually seen it run,
+// or until it is clear nothing is going to.
+let mgSawRunning = false;
+let mgPollStarted = 0;
+const MG_POLL_GRACE_MS = 20000;
+
 function startMagellanPolling() {
   if (mgPoll) clearInterval(mgPoll);
+  mgSawRunning = false;
+  mgPollStarted = Date.now();
   mgPoll = setInterval(refreshMagellanState, 2000);
   refreshMagellanState();
 }
@@ -27106,7 +27131,9 @@ async function refreshMagellanState() {
     if (!res.ok) return;
     const s = await res.json();
     renderMagellanState(s);
-    if (!s.running && mgPoll) {
+    if (s.running) mgSawRunning = true;
+    const settled = mgSawRunning || Date.now() - mgPollStarted > MG_POLL_GRACE_MS;
+    if (!s.running && settled && mgPoll) {
       clearInterval(mgPoll);
       mgPoll = null;
       const btn = document.getElementById('mg-collect-btn');
@@ -27137,6 +27164,26 @@ function renderMagellanAccountDetail() {
   box.hidden = false;
   document.querySelectorAll('#mg-accts .stg-acct').forEach((b, n) => b.classList.toggle('sel', n === mgOpenAccount));
 
+  // An import row: what landed, and for anything that did not, HubSpot's own
+  // words. A "problem" is one skipped detail, not a skipped person — say so,
+  // because the number alone reads like lost data.
+  if (a.isImport) {
+    const errs = a.errors || [];
+    box.innerHTML = `<div class="mg-det-h">${escHtml(a.account)}`
+      + `${errs.length ? ` — ${errs.length} problem${errs.length === 1 ? '' : 's'}` : ''}</div>`
+      + `<div class="mg-det-why">${(a.created || 0).toLocaleString()} added · `
+      + `${(a.updated || 0).toLocaleString()} updated · `
+      + `${(a.extraEmails || 0).toLocaleString()} email addresses attached</div>`
+      + (errs.length
+        ? '<div class="mg-det-fix">Everyone here was written and now lists this account. '
+          + 'What failed is one extra detail — usually a second email address that another '
+          + 'contact already holds, which means that person exists twice in HubSpot.</div>'
+          + `<div class="mg-det-raw">${escHtml(errs.slice(0, 3).map((e) => `${e.stage}: ${e.error}`).join(' · '))}`
+          + `${errs.length > 3 ? ` · and ${errs.length - 3} more` : ''}</div>`
+        : '');
+    return;
+  }
+
   if (!a.error) {
     box.innerHTML = `<div class="mg-det-h">${escHtml(a.account)}</div>`
       + `<div class="mg-det-why">${(a.total || 0).toLocaleString()} connections · `
@@ -27163,14 +27210,45 @@ function renderMagellanState(s) {
   const matched = ok.reduce((n, a) => n + (a.withMemberId || 0), 0);
   const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
 
-  set('mg-eyebrow', s.running ? 'Collecting' : (s.perAccount || []).length ? 'Finished' : 'Not running');
+  // Importing reuses this card, so say which half is running — "Collecting"
+  // over a HubSpot write is a lie the operator has no way to see through.
+  const importing = s.phase === 'importing';
+  const checking = s.phase === 'checking';
+  set('mg-eyebrow', s.running ? (importing ? 'Importing' : checking ? 'Checking' : 'Collecting')
+    : (s.perAccount || []).length || s.imported ? 'Finished' : 'Not running');
   set('mg-when', s.startedAt ? new Date(s.startedAt).toLocaleTimeString() : '');
   set('mg-pct', pct);
   set('mg-done', s.done || 0);
   set('mg-total', s.total || 0);
-  set('mg-people', people.toLocaleString());
-  set('mg-matched', matched.toLocaleString());
-  set('mg-failed', failed);
+  // An import-only run never fills the collect counters, so the hero used to
+  // read "0 people · 0 with a LinkedIn ID" directly above a log saying 24,607
+  // people moved. When the import is what ran, the hero counts the import.
+  const imp = s.imported;
+  const heroIsImport = Boolean(imp) && !ok.length && !checking;
+  if (checking && s.running) {
+    // Nothing is decided yet, so the only honest number is how far along we
+    // are: people asked about, out of accounts done.
+    set('mg-people', (s.checked || 0).toLocaleString());
+    set('mg-people-lbl', 'people checked');
+    set('mg-matched', (s.total || 0) - (s.done || 0));
+    set('mg-matched-lbl', 'accounts to go');
+    set('mg-failed', 0);
+    set('mg-failed-lbl', 'failed');
+  } else if (heroIsImport) {
+    set('mg-people', ((imp.created || 0) + (imp.updated || 0)).toLocaleString());
+    set('mg-people-lbl', 'people imported');
+    set('mg-matched', (imp.created || 0).toLocaleString());
+    set('mg-matched-lbl', 'added');
+    set('mg-failed', (imp.updated || 0).toLocaleString());
+    set('mg-failed-lbl', 'updated');
+  } else {
+    set('mg-people', people.toLocaleString());
+    set('mg-people-lbl', 'people so far');
+    set('mg-matched', matched.toLocaleString());
+    set('mg-matched-lbl', 'with a LinkedIn ID');
+    set('mg-failed', failed);
+    set('mg-failed-lbl', 'failed');
+  }
   set('mg-phase-lbl', s.running ? 'Working' : 'Idle');
   const bar = el('mg-bar');
   if (bar) bar.style.width = `${pct}%`;
@@ -27185,6 +27263,10 @@ function renderMagellanState(s) {
   }
   const collectBtn = el('mg-collect-btn');
   if (collectBtn) collectBtn.disabled = !!s.running;
+  // A button that says "Checking…" for three minutes is indistinguishable from
+  // one that has hung. A number moving on it is not.
+  const prevBtn = el('mg-preview-btn');
+  if (prevBtn && checking) prevBtn.textContent = s.running ? `Checking… ${pct}%` : 'Check what would happen';
   if (s.stopped) set('mg-eyebrow', 'Stopped');
 
   // Stage block — the account being worked on and what is happening to it.
@@ -27201,7 +27283,11 @@ function renderMagellanState(s) {
       const ids = c && c.stage === 'ids';
       let sub = `Account ${Math.min((s.done || 0) + 1, s.total)} of ${s.total}`;
       if (c && typeof c.count === 'number') {
-        if (ids) {
+        if (c.stage === 'check') {
+          // Check asks HubSpot in batches of 100. Count people, not batches —
+          // "2,300 of 5,945 people" is the thing being waited on.
+          sub += ` · ${c.count.toLocaleString()} of ${(c.total || 0).toLocaleString()} people`;
+        } else if (ids) {
           // Second half: the list is already in hand, this resolves each
           // person's LinkedIn ID. Say so, or it looks like the count reset.
           sub += ` · looking up LinkedIn IDs, ${c.count.toLocaleString()} of ${(c.total || 0).toLocaleString()}`;
@@ -27223,8 +27309,9 @@ function renderMagellanState(s) {
       if (c && c.total && c.count != null && s.total) {
         // The ID lookup is the back half of one account's work, so its
         // fraction counts for the second half of that account's slice.
+        // Checking has no second half — its fraction is the whole slice.
         const raw = Math.min(1, c.count / c.total);
-        const frac = ids ? 0.5 + raw / 2 : raw / 2;
+        const frac = c.stage === 'check' ? raw : ids ? 0.5 + raw / 2 : raw / 2;
         const blended = Math.round((((s.done || 0) + frac) / s.total) * 100);
         set('mg-pct', blended);
         if (bar) bar.style.width = `${blended}%`;
@@ -27237,25 +27324,42 @@ function renderMagellanState(s) {
   // its reason appears under the row.
   const pbox = el('mg-accts');
   if (pbox) {
-    const list = s.perAccount || [];
+    // After an import-only run the collect list is empty, so show what the
+    // import did per account instead — otherwise the row vanishes exactly when
+    // there is most to report.
+    const list = (s.perAccount || []).length
+      ? s.perAccount
+      : (imp && imp.perAccount || []).map((r) => ({ ...r, isImport: true }));
     pbox.hidden = list.length === 0;
     pbox.innerHTML = list.map((a, i) => {
-      const cls = a.error ? 'bad' : 'ok';
-      const n = a.error ? 'failed' : (a.total || 0).toLocaleString();
+      const probs = (a.errors || []).length;
+      const cls = a.error ? 'bad' : (probs ? 'warn' : 'ok');
+      const n = a.error ? 'failed'
+        : a.isImport
+          ? `${(a.created || 0).toLocaleString()} added · ${(a.updated || 0).toLocaleString()} updated`
+            + (probs ? ` · ${probs} problem${probs === 1 ? '' : 's'}` : '')
+          : (a.total || 0).toLocaleString();
       return `<button type="button" class="stg-acct" onclick="showMagellanAccount(${i})">`
         + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(a.account)}</span>`
         + `<span class="n">${escHtml(n)}</span></span></button>`;
     }).join('');
     mgPerAccount = list;
     // Keep an open reason in step with the poll, and open the first failure
-    // automatically — a red pill nobody clicks explains nothing.
-    if (mgOpenAccount == null) mgOpenAccount = list.findIndex((a) => a.error);
+    // automatically — a red pill nobody clicks explains nothing. Same for an
+    // account whose import hit problems.
+    if (mgOpenAccount == null) {
+      const bad = list.findIndex((a) => a.error || (a.errors || []).length);
+      mgOpenAccount = bad;
+    }
     renderMagellanAccountDetail();
   }
 
   renderMagellanLog(s.log || []);
-  if (s.imported) {
-    set('mg-phase-lbl', `${(s.imported.created || 0).toLocaleString()} added`);
+  // "N added" here duplicated the hero once it started counting the import.
+  // The one number the hero does not carry is how much needs a human.
+  if (s.imported && !s.running) {
+    const probs = (s.imported.errors || []).length;
+    set('mg-phase-lbl', probs ? `${probs} problem${probs === 1 ? '' : 's'}` : 'no problems');
   }
   if (s.error) showMagellanError(s.error);
 }
@@ -27355,12 +27459,18 @@ async function previewMagellan() {
   showMagellanError('');
   // Default to the accounts this run just collected. After a sweep that is
   // what the operator means, and a reload clears the tick boxes.
-  let accounts = mgAccounts.filter((a) => mgSelected.has(a.profileId)).map((a) => a.account);
+  // Unique by account: two profiles can point at one email, and previewing it
+  // twice reads the same file twice and doubles that account's numbers.
+  let accounts = [...new Set(mgAccounts
+    .filter((a) => mgSelected.has(a.profileId))
+    .map((a) => a.account))];
   if (!accounts.length) accounts = mgPerAccount.filter((a) => !a.error).map((a) => a.account);
   if (!accounts.length) return showMagellanError('Pick at least one account first.');
 
   const btn = document.getElementById('mg-preview-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  // Three minutes of HubSpot calls. Drive the card so it visibly works.
+  startMagellanPolling();
   try {
     const j = await mgFetch('/api/magellan/preview', {
       method: 'POST',
@@ -27394,6 +27504,8 @@ async function previewMagellan() {
           + `<div class="mg-det-raw">${blocked.map(escHtml).join(', ')}</div>`
         : '';
     }
+
+    renderMagellanDupes(j.duplicates || []);
   } catch (err) {
     showMagellanError(err.message);
   } finally {
@@ -27401,10 +27513,105 @@ async function previewMagellan() {
   }
 }
 
+// People HubSpot holds twice under one LinkedIn ID. Named before anything is
+// written, and fixable from here — merging is why the "different vid" refusals
+// happen at all, so leaving it as a warning would just mean reading it again
+// after every run.
+let mgDupes = [];
+function renderMagellanDupes(dupes) {
+  mgDupes = dupes || [];
+  const box = document.getElementById('mg-dupes');
+  if (!box) return;
+  box.hidden = mgDupes.length === 0;
+  if (!mgDupes.length) { box.innerHTML = ''; return; }
+  // Render a page's worth; 1,284 cards would lock the tab up for seconds and
+  // nobody reads past the first screen anyway. The rest live in the sheet.
+  const SHOWN = 60;
+  const cards = mgDupes.slice(0, SHOWN).map((d) => {
+    const recs = (d.records || []).slice().sort((a, b) => (b.kept ? 1 : 0) - (a.kept ? 1 : 0));
+    const rows = recs.map((r) => {
+      // The synthetic address is the app's own bookkeeping. Showing
+      // "444725921@linkedinmembership.id" to someone tidying HubSpot explains
+      // nothing — what they need to know is that it isn't a real address.
+      const mail = r.synthetic || !r.email
+        ? '<span class="rec-mail made-up">a made-up address from an old import</span>'
+        : `<span class="rec-mail">${escHtml(r.email)}</span>`;
+      const when = r.createdAt
+        ? `${r.kept ? 'in HubSpot since' : 'added'} ${new Date(r.createdAt)
+          .toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+        : '';
+      return `<div class="rec${r.kept ? ' keep' : ''}">`
+        + `<span class="rec-flag">${r.kept ? 'Keep' : 'Fold in'}</span>`
+        + mail
+        + `<span class="rec-when">${escHtml(when)}</span></div>`;
+    }).join('');
+    const count = recs.length || 1 + (d.otherIds || []).length;
+    // Same LinkedIn ID, different names. Almost always a wrong ID typed onto a
+    // contact — and the one case where merging would fuse two real people.
+    const risky = d.nameMatch === false;
+    return `<div class="dpa${risky ? ' is-risky' : ''}"><div class="dpa-top">`
+      + `<span class="dpa-name">${escHtml(d.name || 'Unnamed person')}</span>`
+      + `${d.company ? `<span class="dpa-sub">${escHtml(d.company)}</span>` : ''}`
+      + `<span class="dpa-count">${risky ? 'names do not match' : `${count} records`}</span></div>`
+      + (risky
+        ? '<div class="dpa-risky">These records share a LinkedIn ID but are under different names, '
+          + 'so they may be two different people. <b>This one is not merged</b> — check it by hand '
+          + 'in HubSpot.</div>'
+        : '')
+      + `${rows}</div>`;
+  }).join('');
+
+  const n = mgDupes.length;
+  box.innerHTML = `<div class="dp-head"><span class="dp-n">${n.toLocaleString()}</span>`
+    + `<span class="dp-h">${n === 1 ? 'person is' : 'people are'} in HubSpot more than once</span></div>`
+    + '<p class="dp-why">The same person ended up with two or three contact records. The old '
+    + 'spreadsheet imports created one under a made-up email address, and the person already '
+    + 'existed under their real one. We keep the record with the <b>real email address</b> and fold '
+    + 'the others into it — notes, deals and connections all move across, nothing is lost.</p>'
+    + '<span class="dp-warn">HubSpot cannot undo a merge</span>'
+    + `<div class="dpa-list">${cards}</div>`
+    + (n > SHOWN
+      ? `<p class="dp-more">…and ${(n - SHOWN).toLocaleString()} more people. `
+        + '<a href="#" onclick="openMagellanSheet();return false;">Open the full list in the sheet</a></p>'
+      : '')
+    + '<div class="dp-acts">'
+    + `<button type="button" class="btn" id="mg-merge-btn" onclick="mergeMagellanDupes()">Merge all ${n.toLocaleString()}</button>`
+    + '<span class="dp-hint">Skipping is safe — every connection is still recorded either way.</span>'
+    + '</div>';
+}
+
+async function mergeMagellanDupes() {
+  const btn = document.getElementById('mg-merge-btn');
+  if (!confirm(`This merges ${mgDupes.length} pairs of contacts in HubSpot. It cannot be undone. Continue?`)) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Merging…'; }
+  startMagellanPolling();
+  try {
+    const j = await mgFetch('/api/magellan/merge-duplicates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    });
+    if (j.ok === false) throw new Error(j.reason);
+    renderMagellanDupes([]);
+    document.getElementById('mg-confirm-t').innerHTML =
+      `<b>${(j.merged || 0).toLocaleString()} duplicate records merged.</b> `
+      + (j.errors && j.errors.length ? `${j.errors.length} could not be — see the log. ` : '')
+      + 'Press Check what would happen again to see the numbers without them.';
+  } catch (err) {
+    showMagellanError(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Merge duplicates'; }
+  }
+}
+window.mergeMagellanDupes = mergeMagellanDupes;
+
 async function importMagellan() {
   const btn = document.getElementById('mg-import-btn');
   if (!confirm('This adds people to HubSpot for real. Continue?')) return;
   if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+  // The write takes minutes on a real sweep. Poll the same state the collect
+  // half does so the card, the progress bar and the log move while it runs
+  // instead of the page sitting dead until the final response lands.
+  startMagellanPolling();
   try {
     const j = await mgFetch('/api/magellan/import', {
       method: 'POST',
@@ -27412,9 +27619,15 @@ async function importMagellan() {
       body: JSON.stringify({ confirm: true }),
     });
     if (j.ok === false) throw new Error(j.reason);
+    const probs = (j.errors || []).length;
     document.getElementById('mg-confirm-t').innerHTML =
-      `<b>Done.</b> ${(j.created || 0).toLocaleString()} added, ${(j.updated || 0).toLocaleString()} updated`
-      + (j.errors && j.errors.length ? ` · ${j.errors.length} problems — check the log.` : '.');
+      `<b>Done.</b> ${(j.created || 0).toLocaleString()} people added, `
+      + `${(j.updated || 0).toLocaleString()} existing people updated`
+      + (j.extraEmails ? `, ${j.extraEmails.toLocaleString()} email addresses attached` : '')
+      + (probs
+        ? ` · <b>${probs} problem${probs === 1 ? '' : 's'}</b> — press Show log to see which, and why. `
+          + 'A problem means one detail was skipped, not that the person was missed.'
+        : ' · no problems.');
     if (btn) btn.hidden = true;
     refreshMagellanState();
   } catch (err) {

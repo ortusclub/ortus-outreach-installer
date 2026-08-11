@@ -14,7 +14,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
-import { appendFileSync, createWriteStream, existsSync, writeFileSync, chmodSync } from 'node:fs';
+import { appendFileSync, createWriteStream, existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
@@ -2548,6 +2548,15 @@ async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000 } = {}) {
   return emails;
 }
 
+// Read fresh each time — it is a handful of lines, and someone adding a
+// mapping should not have to restart the app to see it take effect.
+function magellanLabelOverrides() {
+  try {
+    const raw = JSON.parse(readFileSync(join(__dirname, 'data/magellan-labels.json'), 'utf8'));
+    return Object.fromEntries(Object.entries(raw).filter(([k, v]) => !k.startsWith('_') && v));
+  } catch { return {}; }
+}
+
 app.get('/api/magellan/accounts', async (_req, res) => {
   try {
     const collected = magellanListCollected();
@@ -2568,9 +2577,17 @@ app.get('/api/magellan/accounts', async (_req, res) => {
       console.warn(`[magellan] could not read the SoO — falling back to profile names: ${err.message}`);
     }
 
+    // Labels the matcher will never resolve — "Ines", "Nikki" — because a bare
+    // first name is not close enough to any address to be safe to guess at.
+    // Refusing is right; leaving them unusable is not, so the answers live in a
+    // file rather than in someone's head. Checked first: a confirmed mapping
+    // beats a fuzzy match.
+    const overrides = magellanLabelOverrides();
+
     res.json(profiles.map((p) => {
-      const hit = sooEmails.length ? resolveSoOEmail(p.name, sooEmails) : null;
-      const email = hit && hit.email ? hit.email : '';
+      const forced = overrides[p.name] || '';
+      const hit = !forced && sooEmails.length ? resolveSoOEmail(p.name, sooEmails) : null;
+      const email = forced || (hit && hit.email ? hit.email : '');
       const account = email || p.name;
       // Older files were written under the profile label; keep finding them.
       const c = collected.get(account) || collected.get(p.name) || null;
@@ -2613,10 +2630,23 @@ app.post('/api/magellan/stop', (_req, res) => {
 
 app.post('/api/magellan/preview', async (req, res) => {
   try {
-    const { totals, blocked } = await magellan.buildPreview((req.body || {}).accounts || []);
-    res.json({ totals, blocked });
+    const { totals, blocked, duplicates } = await magellan.buildPreview((req.body || {}).accounts || []);
+    res.json({ totals, blocked, duplicates });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Merging cannot be undone in HubSpot, so it needs its own confirmation — the
+// import's does not carry over to it.
+app.post('/api/magellan/merge-duplicates', async (req, res) => {
+  try {
+    if (!(req.body || {}).confirm) {
+      return res.status(400).json({ error: 'Merging must be confirmed' });
+    }
+    res.json(await magellan.mergeDuplicates());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
