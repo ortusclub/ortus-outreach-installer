@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CC+IC and CC+DM — before / after</title>
+<link rel="stylesheet" href="/css/style.css?v=3.1.26" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.26" />
+<style>
+  body[data-dashboard='v3'] .sk-lede { max-width: 84ch; font-size: 14px; line-height: 1.65; margin: 0 0 8px; }
+  body[data-dashboard='v3'] .sk-sub { max-width: 84ch; font-size: 13px; line-height: 1.6; color: var(--gray); margin: 0 0 22px; }
+
+  /* The global switch. Same shape as the app's pill buttons. */
+  body[data-dashboard='v3'] .sk-switch { display: inline-flex; border: 1px solid var(--hairline);
+      border-radius: 9999px; overflow: hidden; margin: 0 0 30px; }
+  body[data-dashboard='v3'] .sk-switch button { appearance: none; border: 0; background: transparent;
+      font: inherit; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600;
+      color: var(--gray); padding: 9px 22px; cursor: pointer; }
+  body[data-dashboard='v3'] .sk-switch button.on { background: var(--text); color: var(--card-bg); }
+
+  body[data-dashboard='v3'] .sk-case { margin: 0 0 42px; }
+  body[data-dashboard='v3'] .sk-case-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+      margin: 0 0 4px; }
+  body[data-dashboard='v3'] .sk-case-n { font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--gray); font-weight: 600; }
+  body[data-dashboard='v3'] .sk-case-t { font-size: 15px; font-weight: 600; }
+  body[data-dashboard='v3'] .sk-case-w { font-size: 12.5px; color: var(--gray); line-height: 1.6;
+      max-width: 84ch; margin: 0 0 14px; }
+  body[data-dashboard='v3'] .sk-case-w code { font-size: 11.5px; }
+
+  /* The verdict strip under each card — what is wrong / what is now true. */
+  body[data-dashboard='v3'] .sk-verdict { margin-top: 11px; font-size: 12.5px; line-height: 1.65;
+      border-left: 2px solid var(--hairline); padding: 2px 0 2px 13px; max-width: 84ch; }
+  body[data-dashboard='v3'] .sk-verdict.bad { border-left-color: #b45309; }
+  body[data-dashboard='v3'] .sk-verdict.good { border-left-color: var(--green); }
+  body[data-dashboard='v3'] .sk-verdict b { font-weight: 600; }
+  body[data-dashboard='v3'] .sk-src { display: block; margin-top: 5px; font-family: ui-monospace, monospace;
+      font-size: 11px; color: var(--gray); }
+
+  /* Replica of the top-of-screen progress strip (#st-bar) so case 1 can show
+     BOTH numbers on one screen, which is the whole point of that case. */
+  body[data-dashboard='v3'] .sk-strip { border: 1px solid var(--hairline); border-radius: 11px;
+      padding: 12px 15px; background: var(--card-bg); margin-bottom: 12px; }
+  body[data-dashboard='v3'] .sk-strip-h { display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 12px; color: var(--gray); margin-bottom: 8px; }
+  body[data-dashboard='v3'] .sk-strip-h b { font-size: 15px; color: var(--text); font-weight: 600; }
+  body[data-dashboard='v3'] .sk-strip-bar { height: 3px; background: var(--hairline); border-radius: 9999px; }
+  body[data-dashboard='v3'] .sk-strip-bar i { display: block; height: 100%; background: var(--text);
+      border-radius: 9999px; }
+
+  /* The finished-run outcome line — the one genuinely new piece of card DOM. */
+  body[data-dashboard='v3'] .vj-outcome { margin: 12px 0 2px; font-size: 13px; line-height: 1.7; }
+  body[data-dashboard='v3'] .vj-outcome .oc-sum { font-weight: 600; }
+  body[data-dashboard='v3'] .vj-outcome .oc-prob { color: var(--gray); display: block; margin-top: 3px; }
+
+  body[data-dashboard='v3'] .vj-card + .vj-card { margin-top: 14px; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · v3.1.26</div>
+    </div>
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+      <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+      <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+    </nav>
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip">
+        <span class="operator-chip-label">Operating as</span><strong>antoniov@ortusclub.com</strong>
+      </button>
+      <button type="button" class="btn btn-sm sidebar-signout">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="main"><div class="container">
+    <div class="dashboard-header"><h1 class="dashboard-title">CC+IC and CC+DM — before / after</h1></div>
+
+    <p class="sk-lede">Five real moments in a Connect + Introduce or Connect + DM campaign,
+      drawn in the real <code>.vj-card</code>. Flip the switch to see the same moment as it
+      renders <b>today</b> and as it would render <b>after</b>.</p>
+    <p class="sk-sub">Nothing here is invented — every "before" is what the current code
+      produces, cited underneath. The live cases animate.</p>
+
+    <div class="sk-switch" id="sw">
+      <button type="button" data-v="before" class="on">Before — today</button>
+      <button type="button" data-v="after">After</button>
+    </div>
+
+    <div id="cases"></div>
+
+  </div></main>
+</div>
+
+<script type="module">
+// ─────────────────────────────────────────────────────────────────────────────
+// The real card, as markup. Copied from public/index.html #active-card so the
+// sketch cannot drift from the app: same classes, same order, same slots.
+// Ids are scoped per-instance (data-f) instead of global.
+// ─────────────────────────────────────────────────────────────────────────────
+function cardHtml() {
+  return `
+  <section class="vj-card">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span data-f="eyebrow">No campaign running</span></span>
+      <span class="vj-when" data-f="when"></span>
+    </div>
+    <div class="vj-glyph-circle" data-f="glyph" aria-hidden="true"></div>
+    <h2 class="vj-name"><span data-f="name">No campaign running</span></h2>
+    <div class="vj-live" data-f="live" hidden>
+      <span class="vj-live-ico" data-f="liveIco"></span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1" data-f="liveL1"></span>
+        <span class="vj-live-l2" data-f="liveL2"></span>
+      </span>
+    </div>
+    <div class="vj-stage" data-f="stage" hidden>
+      <div class="vj-stage-gly" data-f="stageGly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-verb" data-f="stageVerb"></div>
+        <div class="vj-stage-name" data-f="stageName"></div>
+        <div class="vj-stage-sub" data-f="stageSub"></div>
+        <div class="vj-stage-accts" data-f="stageAccts"></div>
+        <div class="vj-stage-beat">
+          <span class="l"><span class="bd"></span><span data-f="beatL"></span></span>
+          <span data-f="beatR"></span>
+        </div>
+      </div>
+    </div>
+    <div class="vj-hbar" role="progressbar"><i data-f="bar" style="width:0%"></i></div>
+    <div class="vj-monitor" data-f="monitor" aria-hidden="true">
+      <div class="vj-mon-hero">
+        <span class="vj-mon-count" data-f="monCount">—</span>
+        <span class="vj-mon-cap" data-f="monCap">until next check</span>
+      </div>
+      <div class="vj-mon-line" data-f="monLine">— sent</div>
+    </div>
+    <div class="vj-outcome" data-f="outcome" hidden></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span data-f="pct">0</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b data-f="sent">0</b> of <span data-f="total">0</span> sent</span>
+          <span>Next batch in <b data-f="eta">—</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b data-f="accounts">0</b> accounts</span>
+        <span><b data-f="accepted">0</b> accepted</span>
+        <span>· <b data-f="sendingLbl">Idle</b> · <a style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px;cursor:pointer">batch settings</a></span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="btn-pill">Open</button>
+      <button class="vj-toggle-btn" aria-label="Show details">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="dock" role="toolbar">
+        <button class="dock-btn" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <div class="dock-actions">
+          <button class="dock-btn danger" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </section>`;
+}
+
+// Same glyph markup as app.js _stageGlyphHtml — the animations come from the
+// real CSS, so a phase that has no glyph in the app has none here either.
+function glyphHtml(phase) {
+  if (phase === 'done') return '<span class="stg-done">✓</span>';
+  if (phase === 'sending') return '<span class="stg-fly"><u></u><i>➤</i><i>➤</i><i>➤</i></span>';
+  if (phase === 'introducing' || phase === 'messaging') return '<span class="stg-typ"><i></i><i></i><i></i></span>';
+  if (phase === 'waiting') return '<span class="stg-wait"></span>';
+  return '<span class="stg-swp"></span>';
+}
+
+// Same pill markup as app.js _stageAcctPill: ONE .cap-badge wrapping .nm + .n.
+function pill(nm, n, cls) {
+  return `<button type="button" class="stg-acct"><span class="cap-badge ${cls || ''}">`
+    + `<span class="nm">${nm}</span><span class="n">${n}</span></span></button>`;
+}
+
+const MODE_BADGE = { connect_and_introduce: 'C+I', connect_and_message: 'C+D' };
+
+// Paint one card from a plain view object. Deliberately dumb — the whole design
+// argument is that a card should only DRAW, never compute.
+function paint(root, v) {
+  const F = (k) => root.querySelector(`[data-f="${k}"]`);
+  const card = root.querySelector('.vj-card');
+  const set = (k, t) => { const e = F(k); if (e) e.textContent = t; };
+
+  card.classList.toggle('is-monitor', !!v.monitor);
+  card.classList.toggle('is-detailed', false);
+
+  set('eyebrow', v.eyebrow); set('name', v.name); set('when', v.when || '');
+  F('glyph').textContent = MODE_BADGE[v.mode] || '—';
+  set('pct', String(v.pct)); set('sent', String(v.done)); set('total', String(v.total));
+  set('accounts', String(v.accounts)); set('accepted', v.accepted == null ? '—' : String(v.accepted));
+  set('sendingLbl', v.sendingLbl); set('eta', v.eta || '—');
+  F('bar').style.width = v.pct + '%';
+
+  F('monitor').style.display = v.monitor ? '' : 'none';
+  if (v.monitor) {
+    set('monCount', v.monitor.count); set('monCap', v.monitor.cap); set('monLine', v.monitor.line);
+    F('monitor').classList.toggle('is-checking', v.monitor.state === 'checking');
+  }
+
+  // .vj-live and .vj-stage are mutually exclusive — same rule as renderActiveCard.
+  const hasStage = !!v.stage;
+  F('stage').hidden = !hasStage;
+  F('live').hidden = hasStage || !v.live;
+  if (v.live && !hasStage) {
+    set('liveIco', v.live.icon); set('liveL1', v.live.l1); set('liveL2', v.live.l2);
+  }
+  if (hasStage) {
+    const st = F('stage');
+    st.classList.toggle('is-checking', v.stage.phase === 'checking');
+    st.classList.toggle('is-done', v.stage.phase === 'done');
+    F('stageGly').innerHTML = glyphHtml(v.stage.phase) + '<span class="vj-stage-secs"></span>';
+    set('stageVerb', v.stage.verb);
+    set('stageName', (v.stage.who || '').toUpperCase());
+    set('stageSub', v.stage.sub || '');
+    F('stageAccts').innerHTML = (v.stage.accts || []).map((a) => pill(a[0], a[1], a[2])).join('');
+    set('beatL', v.stage.beatL || ''); set('beatR', v.stage.beatR || '');
+  }
+
+  const oc = F('outcome');
+  oc.hidden = !v.outcome;
+  if (v.outcome) {
+    oc.innerHTML = `<span class="oc-sum">${v.outcome.summary}</span>`
+      + (v.outcome.problems ? `<span class="oc-prob">${v.outcome.problems}</span>` : '');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The five cases. `before` is what today's code renders; `after` is the change.
+// ─────────────────────────────────────────────────────────────────────────────
+const ACCTS = [['alecx@ortus.solutions', '18/25', 'ok'], ['janshane@ortus.solutions', '25/25', 'warn'],
+               ['ines@ortusclub.com', 'Weekly cap', 'bad']];
+
+const base = {
+  mode: 'connect_and_introduce', name: 'Roundtable · CFO London · Aug',
+  when: '14:22', total: 500, accounts: 3, accepted: 96, eta: '4 min',
+};
+
+const CASES = [
+  {
+    n: 'Case 1', mode: 'C+I / C+D', t: 'Mid-run, day two',
+    why: `The header strip counts <b>today's</b> sends against the whole target. The card counts
+          <b>every</b> send against the same target. Both are correct, nothing says which is which,
+          and they sit on the same screen.`,
+    strip: true,
+    before: {
+      ...base, eyebrow: 'Running', pct: 68, done: 340, sendingLbl: 'Sending',
+      stripPct: 8, stripLabel: '40 of 500',
+      live: { icon: '→', l1: 'Processing lead', l2: 'alecx@ortus.solutions · Ferran Balaguer' },
+      verdict: { kind: 'bad', txt: `Two percentages, <b>8%</b> and <b>68%</b>, one screen, no label.
+        Exactly the 92-vs-83 you photographed in Magellan.`,
+        src: 'app.js:13086 (processedToday/totalTargets) vs app.js:24278 (totalProcessed/totalTargets)' },
+    },
+    after: {
+      ...base, eyebrow: 'Running', pct: 68, done: 340, sendingLbl: 'Sending',
+      stripPct: 68, stripLabel: '340 of 500 · 40 today',
+      stage: { phase: 'sending', verb: 'Sending connection', who: 'Ferran Balaguer',
+        sub: 'alecx@ortus.solutions', accts: ACCTS, beatL: 'sending · 12s', beatR: '340 of 500' },
+      verdict: { kind: 'good', txt: `One <code>pct(job)</code> for every surface. "Today" is still
+        there — as a number with the word <b>today</b> next to it, not as a second percentage.`,
+        src: 'replaces 8 independent pct computations' },
+    },
+  },
+  {
+    n: 'Case 2', mode: 'C+I · runs on this Mac', t: 'Writing introductions',
+    why: `<code>setAction()</code> never stamps a <code>phase</code>, so <code>LIVE_PHASES</code>
+          never matches on a local run and the card falls through to the monitoring branch. The
+          fix for this shipped — on cloud only.`,
+    before: {
+      ...base, eyebrow: 'Monitoring', pct: 100, done: 500, sendingLbl: 'Monitoring', accepted: 96,
+      monitor: { count: '41:07', cap: 'until next check', line: '500 sent · 96 accepted', state: 'counting' },
+      live: { icon: '↻', l1: 'Checking for new acceptances…', l2: 'sweeping recent connections' },
+      verdict: { kind: 'bad', txt: `It is writing introductions to 96 people. For the whole run it
+        says <b>checking</b>. No name, no count, no glyph — indistinguishable from idle.`,
+        src: 'campaign.js:917 setAction() has no phase → live-activity.mjs:171 never matches → falls to :186' },
+    },
+    after: {
+      ...base, eyebrow: 'Introducing', pct: 100, done: 500, sendingLbl: 'Introducing', accepted: 96,
+      stage: { phase: 'introducing', verb: 'Writing introduction', who: 'Ferran Balaguer',
+        sub: 'alecx@ortus.solutions · 34 of 96 accepted connections', accts: ACCTS,
+        beatL: 'introducing · 8s', beatR: '34 of 96' },
+      verdict: { kind: 'good', txt: `<code>setAction('…', {phase:'introducing'})</code>. The stage the
+        cloud already renders now renders locally too — same component, same words.`,
+        src: 'live-activity.mjs:135 LIVE_PHASES.introducing — already exists, finally reachable' },
+    },
+  },
+  {
+    n: 'Case 3', mode: 'C+D · runs on the VM', t: 'Sending the auto-DMs',
+    why: `There is no <code>messaging</code> phase anywhere in the repo. CC+DM's entire phase two
+          renders as the acceptance sweep it happens to run inside.`,
+    before: {
+      ...base, mode: 'connect_and_message', name: 'Roundtable · CFO London · Aug (DM)',
+      eyebrow: 'Running', pct: 100, done: 500, sendingLbl: 'Sending', accepted: 96,
+      stage: { phase: 'checking', verb: 'Checking acceptances', who: 'Alecx',
+        sub: 'account 2 of 3', accts: ACCTS, beatL: 'checking · 2m', beatR: 'account 2 of 3' },
+      verdict: { kind: 'bad', txt: `It is writing direct messages. The card says <b>Checking Alecx
+        for acceptances</b> — and Alecx is an account, so the big name is an account where every
+        other phase puts a person.`,
+        src: 'app.js:7399 _cloudCurrentAction knows checking / introducing / sending only' },
+    },
+    after: {
+      ...base, mode: 'connect_and_message', name: 'Roundtable · CFO London · Aug (DM)',
+      eyebrow: 'Messaging', pct: 100, done: 500, sendingLbl: 'Messaging', accepted: 96,
+      stage: { phase: 'messaging', verb: 'Writing message', who: 'Ferran Balaguer',
+        sub: 'alecx@ortus.solutions · 34 of 96 accepted connections', accts: ACCTS,
+        beatL: 'messaging · 6s', beatR: '34 of 96' },
+      verdict: { kind: 'good', txt: `<code>messaging</code> joins <code>LIVE_PHASES</code>. CC+IC and
+        CC+DM stop being one code path with one of its two branches mislabelled.`,
+        src: 'live-activity.mjs:133 — one new entry, both modes fixed' },
+    },
+  },
+  {
+    n: 'Case 4', mode: 'C+I / C+D · monitoring', t: 'An acceptance check is running',
+    why: `A local sweep can run three minutes. The hero shows one word for all of it, and the word
+          never changes.`,
+    before: {
+      ...base, eyebrow: 'Monitoring', pct: 100, done: 500, sendingLbl: 'Checking now…', accepted: 96,
+      monitor: { count: 'CHECKING', cap: 'now', line: '500 sent · 96 accepted', state: 'checking' },
+      live: { icon: '↻', l1: 'Checking for new acceptances…', l2: 'sweeping recent connections' },
+      verdict: { kind: 'bad', txt: `Frozen gold word, for minutes. Nothing on the card separates
+        "sweeping account 2 of 3" from "hung". Cloud already says <b>account 2 of 3</b>; local says nothing.`,
+        src: 'live-activity.mjs:71 monitorHeroView returns CHECKING / "now" and no sub-count' },
+    },
+    after: {
+      ...base, eyebrow: 'Monitoring', pct: 100, done: 500, sendingLbl: 'Checking now…', accepted: 96,
+      monitor: { count: 'CHECKING', cap: 'account 2 of 3 · janshane', line: '500 sent · 96 accepted', state: 'checking' },
+      stage: { phase: 'checking', verb: 'Checking acceptances', who: 'janshane@ortus.solutions',
+        sub: '61 of 180 connections swept', accts: ACCTS, beatL: 'checking · 1m 12s', beatR: 'account 2 of 3' },
+      verdict: { kind: 'good', txt: `<code>within: {done: 2, total: 3, unit: 'accounts'}</code> — the
+        same field Magellan uses for "people checked in this account". A number that moves is the
+        only thing that says "not frozen".`,
+        src: 'one field on the record, read by hero + stage + board strip' },
+    },
+  },
+  {
+    n: 'Case 5', mode: 'C+I / C+D', t: 'The run has finished',
+    why: `The finished card keeps the last live numbers and <b>hides the live line</b>. Why 88
+          people were never reached is not on it. Only Follower Growth explains a shortfall.`,
+    before: {
+      ...base, eyebrow: 'Finished', pct: 82, done: 412, sendingLbl: 'Finished', accepted: 96, eta: '—',
+      verdict: { kind: 'bad', txt: `<b>412 of 500.</b> And? Whether that is a good run, a rate-limited
+        run, or a run that died at 3am is not answerable from this card.`,
+        src: 'app.js:24105–24125 — sets numbers, hides #active-live, no outcome' },
+    },
+    after: {
+      ...base, eyebrow: 'Finished', pct: 82, done: 412, sendingLbl: 'Finished', accepted: 96, eta: '—',
+      outcome: {
+        summary: '412 sent · 96 accepted · 88 never sent',
+        problems: '61 hit this week’s LinkedIn invite limit — they resume automatically on Monday ·'
+          + ' 27 opened the wrong profile and were skipped for safety',
+      },
+      stage: { phase: 'done', verb: 'Finished', who: '', sub: '3 accounts · 2h 41m',
+        accts: ACCTS, beatL: 'ended 14:22', beatR: '412 of 500' },
+      verdict: { kind: 'good', txt: `The classifier for those two sentences <b>already exists</b> —
+        seven plain-English rules that currently write one row of the Ops Log sheet and nothing in
+        the app. It moves next to <code>magellan-problems.js</code> and both cards read it.`,
+        src: 'campaign-summary.js:11 ISSUE_RULES — written, tested, unused by the UI' },
+    },
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+const wrap = document.getElementById('cases');
+wrap.innerHTML = CASES.map((c, i) => `
+  <div class="sk-case" data-i="${i}">
+    <div class="sk-case-h">
+      <span class="sk-case-n">${c.n} · ${c.mode}</span>
+      <span class="sk-case-t">${c.t}</span>
+    </div>
+    <p class="sk-case-w">${c.why}</p>
+    ${c.strip ? `<div class="sk-strip" data-strip>
+      <div class="sk-strip-h"><span>Campaign progress</span><b data-strip-pct>0%</b></div>
+      <div class="sk-strip-bar"><i data-strip-bar style="width:0%"></i></div>
+      <div class="sk-strip-h" style="margin:8px 0 0"><span data-strip-label></span></div>
+    </div>` : ''}
+    <div data-card>${cardHtml()}</div>
+    <div class="sk-verdict" data-verdict></div>
+  </div>`).join('');
+
+let variant = 'before';
+
+function render() {
+  CASES.forEach((c, i) => {
+    const host = wrap.querySelector(`[data-i="${i}"]`);
+    const v = c[variant];
+    paint(host.querySelector('[data-card]'), v);
+    const ver = host.querySelector('[data-verdict]');
+    ver.className = 'sk-verdict ' + v.verdict.kind;
+    ver.innerHTML = v.verdict.txt + `<span class="sk-src">${v.verdict.src}</span>`;
+    const strip = host.querySelector('[data-strip]');
+    if (strip) {
+      strip.querySelector('[data-strip-pct]').textContent = v.stripPct + '%';
+      strip.querySelector('[data-strip-bar]').style.width = v.stripPct + '%';
+      strip.querySelector('[data-strip-label]').textContent = v.stripLabel;
+    }
+  });
+}
+
+document.getElementById('sw').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-v]');
+  if (!b) return;
+  variant = b.dataset.v;
+  [...e.currentTarget.querySelectorAll('button')].forEach((x) => x.classList.toggle('on', x === b));
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
