@@ -218,10 +218,35 @@ export function planRows(state = {}, read = readForPlan, verdicts = _verdicts) {
         ? 'Already in HubSpot — we note the connection, nothing else changes'
         : 'Will be added';
       out.push([account, r.firstName || '', r.lastName || '',
-        `https://www.linkedin.com/in/${r.slug}`, what]);
+        r.slug ? `https://www.linkedin.com/in/${r.slug}` : '', what]);
     }
   }
   return out;
+}
+
+/**
+ * One-line provenance banner, written as the first row under the Plan tab's
+ * header — the row a reader cannot miss without scrolling past it.
+ *
+ * The Plan tab can go stale two ways and neither is fixed here (on purpose —
+ * see the comment on this being called from publish()): runImport rewrites
+ * it at the end with the *pre-import* verdicts, so right after an Import it
+ * still says "Will be added" for people who were just added; and a Check
+ * that finds nothing new leaves plan.length at 0, so the write is skipped
+ * and whatever was there survives untouched. Either way, a reader who can
+ * see WHEN this was built and WHAT it covers can judge for themselves
+ * whether they're looking at something current — which is all a stamp can
+ * honestly promise.
+ */
+export function planBanner(state = {}) {
+  const pv = state.preview || {};
+  const built = pv.builtAt
+    ? new Date(pv.builtAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'an unknown time';
+  const n = (pv.accounts || []).length;
+  const msg = `This plan was built ${built} and covers ${n} account${n === 1 ? '' : 's'}. `
+    + 'If a Check or an Import ran since, the rows below may no longer be accurate.';
+  return [msg, '', '', '', ''];
 }
 
 export function importRows(imported = null) {
@@ -270,7 +295,9 @@ export async function publish(state = {}, deps = {}) {
     }
 
     const plan = planRows(state, read);
-    if (plan.length) last = await write(PLAN_TAB, PLAN_HEADER, plan, deps);
+    // The banner rides along with the data it describes — it is only worth
+    // writing when there is a plan to have a provenance date at all.
+    if (plan.length) last = await write(PLAN_TAB, PLAN_HEADER, [planBanner(state), ...plan], deps);
 
     const imp = importRows(state.imported);
     if (imp.length) await write(IMPORT_TAB, IMPORT_HEADER, imp, deps);

@@ -2592,7 +2592,20 @@ app.get('/api/magellan/accounts', async (_req, res) => {
     // says nothing rather than guessing.
     let hsOptions = null;
     try {
-      hsOptions = await connectionsPropOptions();
+      // This route renders on every visit to the Magellan tab, so a hung
+      // HubSpot must not hang the page — that would be strictly worse than
+      // the importable split simply being unknown, which the code below
+      // already handles gracefully via hsOptions === null.
+      const TIMED_OUT = Symbol('magellan-accounts-hubspot-timeout');
+      const result = await Promise.race([
+        connectionsPropOptions(),
+        new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), 5000)),
+      ]);
+      if (result === TIMED_OUT) {
+        console.warn('[magellan] HubSpot options did not answer within 5s — showing accounts without the importable split');
+      } else {
+        hsOptions = result;
+      }
     } catch (err) {
       console.warn(`[magellan] could not read the HubSpot options — ${err.message}`);
     }

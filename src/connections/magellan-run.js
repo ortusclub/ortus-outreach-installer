@@ -47,6 +47,37 @@ function log(line) {
 }
 
 let _state = idle();
+
+// Fields that describe how a PREVIOUS run ended. A phase that starts a new
+// run must not begin wearing another phase's leftover answer — that's how a
+// Check ended up reporting the previous Import's numbers (`imported` beats
+// `preview` in buildOutcome's field-presence check), and how a stopped
+// collect's "Stopped" eyebrow survived forever into a Check that never
+// stopped. `startRun` is the one place "starting a run" happens, so every
+// phase clears the same things the same way instead of four hand-edited
+// spreads quietly disagreeing about what counts as stale.
+//
+// `log` is never listed here — the ring buffer is deliberately cumulative
+// across a session. `perAccount` likewise: a Check legitimately reports on
+// the collect that preceded it (accountsRows/publish read it to keep writing
+// the account tabs during a Check), so it survives unless the caller is the
+// one thing that legitimately replaces it (collect itself, which already
+// rebuilds from `idle()`).
+const RUN_RESULT_FIELDS = {
+  preview: null, imported: null, merged: null,
+  stopped: false, finishedAt: null, error: null, outcome: null,
+};
+
+/**
+ * The shared shape every phase begins from when it takes the card over.
+ * `keep` lets a caller hold onto a field it still legitimately needs (e.g.
+ * runImport and mergeDuplicates both still read `_state.preview` after
+ * starting) — everything else in RUN_RESULT_FIELDS is cleared.
+ */
+function startRun(patch, keep = {}) {
+  return { ..._state, ...RUN_RESULT_FIELDS, ...keep, running: true, ...patch };
+}
+
 // The plan can hold hundreds of thousands of rows, so it stays here and only
 // the totals cross the wire. Import replays what preview actually saw rather
 // than trusting a payload the browser round-tripped.
@@ -257,11 +288,11 @@ export async function buildPreview(accounts, deps = {}) {
   // Check is three minutes of silence on a real sweep. Drive the same card the
   // collect and import halves drive, so "is it still going?" is answered by
   // looking at it.
-  _state = {
-    ..._state, running: true, phase: 'checking', error: null,
+  _state = startRun({
+    phase: 'checking',
     done: 0, total: usable.length, account: null, current: null,
     checked: 0, step: 'Asking HubSpot who it already has',
-  };
+  });
 
   // People HubSpot holds twice under one LinkedIn id. Found here, before a
   // single write, because it is the one problem the import cannot fix by
@@ -410,10 +441,13 @@ export async function mergeDuplicates(pairs = null, deps = {}) {
   }
   if (!safe.length) return { ok: false, reason: 'Nothing safe to merge — every pair has a name mismatch' };
 
-  _state = {
-    ..._state, running: true, phase: "merging", error: null,
-    done: 0, total: safe.length, account: null, step: "Merging duplicate people",
-  };
+  // preview and imported are both kept: this function mutates
+  // _state.preview.duplicates below once the merge finishes, and merge can
+  // legitimately run after an import without erasing that import's result.
+  _state = startRun({
+    phase: 'merging',
+    done: 0, total: safe.length, account: null, step: 'Merging duplicate people',
+  }, { preview: _state.preview, imported: _state.imported });
 
   const result = { merged: 0, errors: [] };
   log(`▶ Merging ${safe.length} duplicate ${safe.length === 1 ? 'person' : 'people'}. This cannot be undone.`);
@@ -473,10 +507,13 @@ export async function runImport(plans = _plans, deps = {}) {
   // 25,000-person write that is minutes of a card that looks broken, and a
   // "check the log" message pointing at an empty box. Same log, same counters
   // and same progress bar the collect half uses.
-  _state = {
-    ..._state, running: true, phase: 'importing', error: null,
+  // preview is kept, not cleared: planRows (magellan-sheet.js) reads
+  // state.preview.accounts to write the Plan tab, and that write happens
+  // during THIS run's final publish below.
+  _state = startRun({
+    phase: 'importing',
     done: 0, total: (plans || []).length, account: null, step: 'Starting the import',
-  };
+  }, { preview: _state.preview });
   const people = (plans || []).reduce((n, p) => n + p.plan.creates.length + p.plan.updates.length, 0);
   log(`▶ Importing ${plans.length} account${plans.length === 1 ? '' : 's'} — ${people} people.`);
 

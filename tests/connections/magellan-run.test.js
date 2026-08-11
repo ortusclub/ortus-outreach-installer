@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startCollect, buildPreview, runImport, mergeDuplicates, getState, reset } from '../../src/connections/magellan-run.js';
+import {
+  startCollect, stopCollect, buildPreview, runImport, mergeDuplicates, getState, getPlans, reset,
+} from '../../src/connections/magellan-run.js';
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
@@ -532,4 +534,75 @@ test('a finished import carries its outcome', async () => {
   const st = getState();
   assert.equal(st.outcome.ok, true);
   assert.equal(st.outcome.summary, '1 added · 0 updated');
+});
+
+// F1 regression: buildPreview used to spread the previous _state and never
+// clear `imported`, so buildOutcome — which prefers `imported` over
+// `preview` by field presence — kept reporting the LAST import's numbers on
+// every Check that ran afterwards. Reproduces the exact real sequence:
+// Check → Import → Check, and asserts the second Check's outcome is its own.
+test('a Check after an Import states the Check\'s own numbers, not the Import\'s', async () => {
+  reset();
+  const rows = {
+    'a@o.com': [{ slug: 's1', memberId: '1', firstName: 'A' }, { slug: 's2', memberId: '2', firstName: 'B' }],
+  };
+  const checkDeps = {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: (acct) => rows[acct],
+    sheet: noSheet,
+  };
+
+  // 1. Check — 1 new, 1 already there.
+  await buildPreview(['a@o.com'], { ...checkDeps, lookup: async () => new Map([['2', { id: '900', properties: {} }]]) });
+  assert.equal(getState().outcome.summary, '1 new · 1 already there');
+
+  // 2. Import — deliberately different numbers than the check, so a leak is
+  // unmistakable.
+  await runImport(getPlans(), {
+    create: async () => ({ created: 4, errors: [] }),
+    update: async () => ({ updated: 7, errors: [] }),
+    attach: async () => {},
+    sheet: noSheet,
+  });
+  assert.equal(getState().outcome.summary, '4 added · 7 updated');
+
+  // 3. Check again — nothing already there this time. The outcome must be
+  // THIS check's numbers, never the import's.
+  await buildPreview(['a@o.com'], { ...checkDeps, lookup: async () => new Map() });
+  const st = getState();
+  assert.equal(st.outcome.summary, '2 new · 0 already there');
+  assert.notEqual(st.outcome.summary, '4 added · 7 updated', 'the second Check must not report the Import\'s result');
+});
+
+// F1 regression, second half: `stopped` leaked the same way — stop a
+// collect, then run a Check, and the card's eyebrow (app.js: `if (s.stopped)
+// set('mg-eyebrow', 'Stopped')`) read "Stopped" forever because nothing ever
+// cleared it on the next run.
+test('stop a collect, then run a Check — Stopped does not survive into it', async () => {
+  reset();
+  startCollect([
+    { account: 'a@o.com', profileId: 'p1' },
+    { account: 'b@o.com', profileId: 'p2' },
+  ], {
+    semaphore: fakeSemaphore(),
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    // Asks to stop while the first account is still "in flight" — the second
+    // account is then never started, exactly like stopCollect() being
+    // clicked mid-sweep.
+    collect: async () => { stopCollect(); return { total: 1, withMemberId: 1, hidden: 0 }; },
+    sheet: noSheet,
+  });
+  await settle();
+  assert.equal(getState().stopped, true, 'sanity: the stop actually landed');
+
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => new Map(),
+    sheet: noSheet,
+  });
+  assert.equal(getState().stopped, false, 'a Check that never stopped must not be marked Stopped');
 });

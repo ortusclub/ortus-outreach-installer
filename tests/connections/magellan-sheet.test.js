@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  accountsRows, logRows, importRows, planRows, connectionsRowsForAccount, tabNameFor,
+  accountsRows, logRows, importRows, planRows, planBanner, connectionsRowsForAccount, tabNameFor,
   publish, resetPublished, setPlanVerdicts, resetPlanVerdicts,
   CONNECTIONS_HEADER, ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB, PLAN_TAB,
 } from '../../src/connections/magellan-sheet.js';
@@ -177,6 +177,18 @@ test('the Plan tab says, per person, what Import would do', () => {
   assert.equal(rows[2][4], 'Hidden by LinkedIn — nothing we can do');
 });
 
+// F4: a row with a memberId but an empty slug used to render
+// "https://www.linkedin.com/in/" with nothing after it — a link to nowhere,
+// visible to the non-technical reviewer this tab exists for.
+test('a resolved person with no slug gets a blank link, not a dangling URL', () => {
+  const rows = planRows({
+    preview: { accounts: ['a@o.com'] },
+  }, () => ([
+    { memberId: '5', firstName: 'No', lastName: 'Slug', slug: '' },
+  ]), new Map());
+  assert.equal(rows[0][3], '', 'no slug means no URL, never "https://www.linkedin.com/in/"');
+});
+
 test('planRows is empty when Check has not run', () => {
   assert.deepEqual(planRows({}, () => []), []);
 });
@@ -262,8 +274,45 @@ test('a publish() call with no override still sees the verdicts Check found', as
   );
   const planCall = calls.find((c) => c.tab === PLAN_TAB);
   assert.ok(planCall, 'the Plan tab was written');
-  assert.equal(planCall.rows[0][4], 'Already in HubSpot — we note the connection, nothing else changes');
+  // Row 0 is the provenance banner (see the planBanner tests below); the
+  // person rows start at row 1.
+  assert.equal(planCall.rows[1][4], 'Already in HubSpot — we note the connection, nothing else changes');
   resetPlanVerdicts();
+});
+
+// F2: the Plan tab is the only artifact a non-technical reviewer can open
+// without the app running, and it can go stale two different ways (see the
+// comment on planBanner). Neither is suppressed — the banner just makes the
+// tab's age and coverage impossible to miss.
+test('planBanner says when the plan was built and what it covers', () => {
+  const row = planBanner({ preview: { builtAt: '2026-08-11T14:30:00.000Z', accounts: ['a@o.com', 'b@o.com'] } });
+  assert.equal(row.length, 5, 'padded to the Plan tab\'s column width');
+  assert.match(row[0], /built/i);
+  assert.match(row[0], /2 accounts/);
+});
+
+test('planBanner does not crash or invent a date when there is no preview yet', () => {
+  const row = planBanner({});
+  assert.match(row[0], /unknown time/);
+  assert.match(row[0], /0 accounts/);
+});
+
+test('the banner rides in front of the plan rows a publish() write actually sends', async () => {
+  resetPublished();
+  const calls = [];
+  await publish(
+    {
+      perAccount: [], log: [],
+      preview: { accounts: ['a@o.com'], builtAt: '2026-08-11T09:00:00.000Z' },
+    },
+    {
+      read: () => [{ memberId: '1', firstName: 'A', lastName: 'One', slug: 's1' }],
+      write: async (tab, header, rows) => { calls.push({ tab, rows }); return { url: 'https://sheet' }; },
+    },
+  );
+  const planCall = calls.find((c) => c.tab === PLAN_TAB);
+  assert.match(planCall.rows[0][0], /built/i, 'row 0 is the banner, not a person');
+  assert.equal(planCall.rows[1][2], 'One', 'row 1 onward is the actual plan');
 });
 
 test('resetPlanVerdicts clears what Check found — a fresh sweep starts unknown', () => {
