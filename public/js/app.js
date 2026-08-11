@@ -27070,12 +27070,25 @@ function updateMagellanCounts() {
     // rather than guess which colleague's account is about to be skipped.
     const show = sel.known && sel.total > 0 && sel.blocked.length > 0;
     split.hidden = !show;
-    split.innerHTML = show
-      ? `<b>${sel.usable}</b> can go into HubSpot · `
+    if (show) {
+      // MG_SPLIT_NAME_CAP: the brief's example (`join(', ')`) assumed one
+      // blocked account, but a real "Select all visible" against the full
+      // roster can put hundreds of names here — a wall of text that buries
+      // the two counts the operator actually needs. Show a handful and count
+      // the rest instead; the full list already lands in the post-run log
+      // line, so this isn't the only place it's readable. 6 fits two lines
+      // at this font size and covers the realistic case (a dozen accounts).
+      const MG_SPLIT_NAME_CAP = 6;
+      const shown = sel.blocked.slice(0, MG_SPLIT_NAME_CAP).map(escHtml).join(', ');
+      const rest = sel.blocked.length - MG_SPLIT_NAME_CAP;
+      const names = shown + (rest > 0 ? `, …and ${rest} more` : '');
+      split.innerHTML = `<b>${sel.usable}</b> can go into HubSpot · `
         + `<b>${sel.blocked.length} need${sel.blocked.length === 1 ? 's' : ''} adding</b> to the `
         + '"Linkedin 1st Connections" list first: '
-        + `<span class="blk">${sel.blocked.map(escHtml).join(', ')}</span>`
-      : '';
+        + `<span class="blk">${names}</span>`;
+    } else {
+      split.innerHTML = '';
+    }
   }
 }
 
