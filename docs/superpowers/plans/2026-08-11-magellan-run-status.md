@@ -831,10 +831,11 @@ guess when the HubSpot option list could not be read."
 Add near the other `/js/*.mjs` imports (around `public/js/app.js:26`):
 
 ```js
-import { magellanPct, selectionSummary } from '/js/magellan-view.mjs';
+import { magellanPct } from '/js/magellan-view.mjs';
 ```
 
-`selectionSummary` is used in Task 6; importing both here keeps one import line.
+Import only what this task uses. Task 6 widens this same line when it needs
+`selectionSummary`.
 
 - [ ] **Step 2: Replace the first percentage computation**
 
@@ -911,7 +912,16 @@ magellanPct()."
   already exist in `app.js`.
 - Produces: nothing new.
 
-- [ ] **Step 1: Give the bar somewhere to put the split**
+- [ ] **Step 1: Widen the import**
+
+In `public/js/app.js`, Task 5 added `import { magellanPct } from '/js/magellan-view.mjs';`.
+Widen it:
+
+```js
+import { magellanPct, selectionSummary } from '/js/magellan-view.mjs';
+```
+
+- [ ] **Step 2: Give the bar somewhere to put the split**
 
 In `public/index.html`, replace the `.mg-selbar` block (`:812-815`):
 
@@ -935,7 +945,7 @@ with:
           </div>
 ```
 
-- [ ] **Step 2: Style it**
+- [ ] **Step 3: Style it**
 
 In the Magellan `<style>` block in `public/index.html` (the one that opens at
 `:710`), add after the `#mg-acct-detail` rule:
@@ -951,7 +961,7 @@ In the Magellan `<style>` block in `public/index.html` (the one that opens at
         body[data-dashboard='v3'] .mg-selbar-split .blk { font-family: ui-monospace, monospace; font-size: 12px; }
 ```
 
-- [ ] **Step 3: Fill it**
+- [ ] **Step 4: Fill it**
 
 In `public/js/app.js`, replace the body of `updateMagellanCounts` from
 `set('mg-sel-count', mgSelected.size);` (`:27053`) to the end of the function
@@ -986,7 +996,7 @@ with:
 }
 ```
 
-- [ ] **Step 4: Verify by hand in the app**
+- [ ] **Step 5: Verify by hand in the app**
 
 Reload with Cmd+R and open the Magellan tab. Press **Select all visible**.
 
@@ -995,7 +1005,7 @@ Expected: under the count, a line reading
 Untick that account and the line disappears. The numbers must add up to the
 count above them.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add public/js/app.js public/index.html
