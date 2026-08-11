@@ -27278,7 +27278,9 @@ function renderMagellanState(s) {
     set('mg-failed-lbl', 'updated');
   } else {
     set('mg-people', people.toLocaleString());
-    set('mg-people-lbl', 'people so far');
+    // "so far" is a promise of more to come. Once a run has ended there is no
+    // more, and the outcome block below is where the real answer lives.
+    set('mg-people-lbl', s.running ? 'people so far' : 'people');
     set('mg-matched', matched.toLocaleString());
     set('mg-matched-lbl', 'with a LinkedIn ID');
     set('mg-failed', failed);
@@ -27303,6 +27305,22 @@ function renderMagellanState(s) {
   const prevBtn = el('mg-preview-btn');
   if (prevBtn && checking) prevBtn.textContent = s.running ? `Checking… ${pct}%` : 'Check what would happen';
   if (s.stopped) set('mg-eyebrow', 'Stopped');
+
+  // What happened. Only ever drawn from the run's own outcome record, which the
+  // engine writes at the moment the run ends — so there is no way to render a
+  // half-finished run's numbers as a final answer.
+  const ocBox = el('mg-outcome');
+  if (ocBox) {
+    const oc = s.outcome;
+    ocBox.hidden = !oc || !!s.running;
+    ocBox.classList.toggle('is-bad', !!oc && oc.ok === false);
+    ocBox.innerHTML = (oc && !s.running)
+      ? `<div class="oc-sum">${escHtml(oc.summary)}</div>`
+        + (oc.problems && oc.problems.length
+          ? `<ul class="oc-list">${oc.problems.map((p) => `<li>${escHtml(p)}</li>`).join('')}</ul>`
+          : '')
+      : '';
+  }
 
   // Stage block — the account being worked on and what is happening to it.
   const stage = el('mg-stage');

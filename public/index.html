@@ -730,6 +730,23 @@
         body[data-dashboard='v3'] .mg-selbar-split b { color: var(--ink); font-weight: 600; }
         body[data-dashboard='v3'] .mg-selbar-split .blk { font-family: ui-monospace, monospace; font-size: 12px; }
 
+        /* The outcome. One sentence, then the things worth knowing. Never a
+           progress colour — a finished run is a record, not an activity. */
+        body[data-dashboard='v3'] .mg-outcome {
+          margin: 16px 0 2px; padding-top: 15px; border-top: 1px solid var(--hairline);
+        }
+        body[data-dashboard='v3'] .mg-outcome .oc-sum { font-size: 15px; font-weight: 600; line-height: 1.5; }
+        body[data-dashboard='v3'] .mg-outcome.is-bad .oc-sum { color: var(--red); }
+        body[data-dashboard='v3'] .mg-outcome .oc-list { margin: 9px 0 0; padding: 0; list-style: none; }
+        body[data-dashboard='v3'] .mg-outcome .oc-list li {
+          font-size: 13px; line-height: 1.62; color: var(--gray);
+          padding-left: 15px; position: relative;
+        }
+        body[data-dashboard='v3'] .mg-outcome .oc-list li + li { margin-top: 5px; }
+        body[data-dashboard='v3'] .mg-outcome .oc-list li::before {
+          content: '·'; position: absolute; left: 3px;
+        }
+
         /* Duplicate people. One card per person, every record listed, the one
            we keep outlined. No contact ID is ever shown: a person is a name,
            an email and the date they joined — the id means nothing to anyone
@@ -872,6 +889,11 @@
                  must read as two problems, not three hundred lines. -->
             <!-- One pill per account, same row a campaign uses. Click one for
                  its numbers, or for why it failed — raw error included. -->
+            <!-- What happened, once it has happened. The card used to keep its
+                 live counters after a run ended, so a finished Check read
+                 "92% · 0 people so far". Written by the run itself, so it
+                 cannot exist without the run having ended. -->
+            <div class="mg-outcome" id="mg-outcome" hidden></div>
             <div class="vj-stage-accts" id="mg-accts" hidden></div>
             <div id="mg-acct-detail" hidden></div>
 
