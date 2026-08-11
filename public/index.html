@@ -747,6 +747,16 @@
           content: '·'; position: absolute; left: 3px;
         }
 
+        /* The review line above Import. Import is the only irreversible thing
+           on this screen, so this earns a hairline of its own rather than
+           blending into the confirm text above it. */
+        body[data-dashboard='v3'] .mg-review {
+          margin: 0 0 14px; font-size: 13px; line-height: 1.65; color: var(--gray);
+          padding-left: 13px; border-left: 2px solid var(--hairline);
+        }
+        body[data-dashboard='v3'] .mg-review b { color: var(--ink); font-weight: 600; }
+        body[data-dashboard='v3'] .mg-review a { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
       </style>
       <div id="cx-magellan-pane" hidden>
         <p class="cx-lede">Collect the connections of our LinkedIn accounts and put them in HubSpot. <b>This is where the database comes from</b> — everything the other tab searches was collected here.</p>
@@ -898,6 +908,15 @@
 
           <div class="mg-confirm">
             <div class="mg-confirm-t" id="mg-confirm-t"><b>Nothing has gone into HubSpot yet.</b> Check first to see what would happen.</div>
+            <!-- The review step. Import is the only irreversible thing on this
+                 screen, and the person who checks it is usually not the person
+                 pressing it. -->
+            <div class="mg-review" id="mg-review" hidden>
+              <b>Want someone to check this first?</b>
+              <a href="#" onclick="openMagellanSheet();return false;">Open the full list in the sheet</a>
+              — every person, which account they came from, and what Import would do to them.
+              Nothing goes into HubSpot until someone presses Import.
+            </div>
             <div class="mg-confirm-btns">
               <button type="button" class="btn btn-secondary" id="mg-preview-btn" onclick="previewMagellan()">Check what would happen</button>
               <button type="button" class="btn" id="mg-import-btn" onclick="importMagellan()" hidden>Import</button>

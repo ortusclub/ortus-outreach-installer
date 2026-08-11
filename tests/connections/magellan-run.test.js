@@ -111,6 +111,7 @@ test('preview totals up new vs existing across accounts, writing nothing', async
     options: async () => new Set(['a@o.com', 'b@o.com']),
     read: (acct) => rows[acct],
     lookup: async () => new Map([['2', { id: '900', properties: { email: 'real@x.com' } }]]),
+    sheet: noSheet,
   });
   assert.equal(totals.created, 2);
   assert.equal(totals.updated, 1);
@@ -271,6 +272,7 @@ test('a merged pair is cleared from the preview so it cannot be merged twice', a
       m.duplicates = [{ memberId: '444725921', keptId: '10', otherIds: ['11'], name: 'Alecx' }];
       return m;
     },
+    sheet: noSheet,
   });
   assert.equal(getState().preview.duplicates.length, 1);
   await mergeDuplicates(null, { merge: async () => ({}), sheet: noSheet });
@@ -286,6 +288,7 @@ test('nothing is written until runImport is called', async () => {
     read: () => [{ slug: 's', memberId: '1' }],
     lookup: async () => new Map(),
     create: async () => { wrote = true; },
+    sheet: noSheet,
   });
   assert.equal(wrote, false);
   assert.equal(getState().imported, null);
@@ -393,6 +396,7 @@ test('an account HubSpot cannot accept is held back and named', async () => {
     options: async () => new Set(['nushe@o.com']),
     read: () => [{ slug: 's', memberId: '1' }],
     lookup: async () => new Map(),
+    sheet: noSheet,
   });
   assert.deepEqual(blocked, ['Jovana']);
   assert.equal(totals.created, 1, 'only the account that can be written is counted');
@@ -405,6 +409,7 @@ test('the option check is case-insensitive — HubSpot options are emails either
     options: async () => new Set(['nushe@o.com']),
     read: () => [],
     lookup: async () => new Map(),
+    sheet: noSheet,
   });
   assert.deepEqual(blocked, []);
 });
@@ -452,6 +457,7 @@ test('the answer exists before running clears', async () => {
     read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
     lookup: async () => new Map(),
     onRunEnd: (st) => { snapshot = st; },
+    sheet: noSheet,
   });
   assert.ok(snapshot, 'onRunEnd fired');
   assert.equal(snapshot.running, false, 'running had already cleared by the time onRunEnd saw it');
@@ -481,6 +487,7 @@ test('a finished check carries its outcome', async () => {
     options: async () => new Set(['a@o.com']),
     read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }, { slug: 's2', memberId: '2', firstName: 'B' }],
     lookup: async () => new Map([['2', { id: '900', properties: { email: 'real@x.com' } }]]),
+    sheet: noSheet,
   });
   const st = getState();
   assert.equal(st.outcome.ok, true);
@@ -494,6 +501,7 @@ test('a blocked account reaches the outcome, named', async () => {
     options: async () => new Set(['a@o.com']),
     read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
     lookup: async () => new Map(),
+    sheet: noSheet,
   });
   assert.match(getState().outcome.problems.join(' '), /nope@o\.com/);
 });

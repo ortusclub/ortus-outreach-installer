@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  accountsRows, logRows, importRows, connectionsRowsForAccount, tabNameFor,
+  accountsRows, logRows, importRows, planRows, connectionsRowsForAccount, tabNameFor,
   publish, resetPublished,
   CONNECTIONS_HEADER, ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB,
 } from '../../src/connections/magellan-sheet.js';
@@ -152,4 +152,26 @@ test('a second publish is skipped while the first is still in flight', async () 
   assert.match(second.skipped, /already in flight/);
   release();
   await first;
+});
+
+test('the Plan tab says, per person, what Import would do', () => {
+  const rows = planRows({
+    preview: {
+      accounts: ['a@o.com'],
+      totals: { created: 1, updated: 1, hidden: 1 },
+    },
+  }, () => ([
+    { memberId: '111', firstName: 'New', lastName: 'Person', slug: 'new-person', existingId: null },
+    { memberId: '222', firstName: 'Known', lastName: 'Person', slug: 'known-person', existingId: '900' },
+    { memberId: '', firstName: '', lastName: '', slug: '', existingId: null },
+  ]));
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[0].slice(0, 3), ['a@o.com', 'New', 'Person']);
+  assert.equal(rows[0][4], 'Will be added');
+  assert.equal(rows[1][4], 'Already in HubSpot — we note the connection, nothing else changes');
+  assert.equal(rows[2][4], 'Hidden by LinkedIn — nothing we can do');
+});
+
+test('planRows is empty when Check has not run', () => {
+  assert.deepEqual(planRows({}, () => []), []);
 });

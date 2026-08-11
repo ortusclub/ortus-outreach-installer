@@ -22,6 +22,7 @@ import { syntheticEmail } from './magellan.js';
 export const ACCOUNTS_TAB = 'Accounts';
 export const LOG_TAB = 'Log';
 export const IMPORT_TAB = 'Import';
+export const PLAN_TAB = 'Plan';
 
 // Abygael's cleaned-sheet layout, verbatim. This is what gets imported, so the
 // names must match the HubSpot property labels exactly — including
@@ -33,6 +34,9 @@ export const ACCOUNTS_HEADER = ['Account', 'Status', 'Connections', 'With Member
   'Hidden', 'Collected At', 'Problem', 'What to do'];
 export const LOG_HEADER = ['Time', 'Event'];
 export const IMPORT_HEADER = ['Account', 'Created', 'Updated', 'Extra Emails', 'Errors', 'Detail'];
+// What Import would do, one row per person. The reviewer is not the operator —
+// this is the only artifact a second person can open without the app running.
+export const PLAN_HEADER = ['Account', 'First Name', 'Last Name', 'LinkedIn', 'What happens'];
 
 const s = (v) => (v == null ? '' : String(v));
 
@@ -156,6 +160,33 @@ export function logRows(state = {}) {
   });
 }
 
+/**
+ * One row per person Check looked at, with what Import would do to them.
+ *
+ * `read` is injected so this stays pure and testable — the real one is
+ * readForPlan, the same reader buildPreview used, so the rows here are the rows
+ * that would actually be written.
+ */
+export function planRows(state = {}, read = readForPlan) {
+  const pv = state.preview;
+  if (!pv) return [];
+  const out = [];
+  for (const account of pv.accounts || []) {
+    let rows = [];
+    try { rows = read(account) || []; } catch { continue; }
+    for (const r of rows) {
+      const what = !r.memberId
+        ? 'Hidden by LinkedIn — nothing we can do'
+        : r.existingId
+          ? 'Already in HubSpot — we note the connection, nothing else changes'
+          : 'Will be added';
+      out.push([account, r.firstName || '', r.lastName || '',
+        r.slug ? `https://www.linkedin.com/in/${r.slug}` : '', what]);
+    }
+  }
+  return out;
+}
+
 export function importRows(imported = null) {
   if (!imported) return [];
   return (imported.perAccount || []).map((a) => [
@@ -200,6 +231,9 @@ export async function publish(state = {}, deps = {}) {
       last = await write(tabNameFor(a.account), CONNECTIONS_HEADER, rows, deps);
       _written.set(a.account, rows.length);
     }
+
+    const plan = planRows(state, read);
+    if (plan.length) last = await write(PLAN_TAB, PLAN_HEADER, plan, deps);
 
     const imp = importRows(state.imported);
     if (imp.length) await write(IMPORT_TAB, IMPORT_HEADER, imp, deps);

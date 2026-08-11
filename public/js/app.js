@@ -27527,6 +27527,10 @@ async function previewMagellan() {
     const imp = document.getElementById('mg-import-btn');
     imp.hidden = false;
     imp.textContent = `Import ${(t.created || 0).toLocaleString()} people`;
+    // Only once Check has produced a plan — a link to an empty sheet is worse
+    // than no link.
+    const rev = document.getElementById('mg-review');
+    if (rev) rev.hidden = false;
 
     // Accounts HubSpot will not accept. "Linkedin 1st Connections" is a fixed
     // list of Ortus emails; anything else — a GoLogin profile NAME, a typo —
