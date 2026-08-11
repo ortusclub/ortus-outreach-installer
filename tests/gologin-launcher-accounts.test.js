@@ -37,21 +37,30 @@ function mockGologin(byToken) {
   return calls;
 }
 
+const ENV_OF = {
+  ortus: 'GOLOGIN_API_TOKEN',
+  lv: 'GOLOGIN_API_TOKEN_LINKEDVELOCITY',
+  mk: 'GOLOGIN_API_TOKEN_MARKETING',
+};
+
 function withAccounts(tokens, fn) {
-  const saved = [process.env.GOLOGIN_API_TOKEN, process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY];
   const savedFetch = globalThis.fetch;
-  if (tokens.ortus === undefined) delete process.env.GOLOGIN_API_TOKEN;
-  else process.env.GOLOGIN_API_TOKEN = tokens.ortus;
-  if (tokens.lv === undefined) delete process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY;
-  else process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY = tokens.lv;
+  const saved = {};
+  for (const [key, envName] of Object.entries(ENV_OF)) {
+    saved[key] = process.env[envName];
+    if (tokens[key] === undefined) delete process.env[envName];
+    else process.env[envName] = tokens[key];
+  }
   clearProfileCache();
   return (async () => {
     try { return await fn(); }
     finally {
       globalThis.fetch = savedFetch;
       clearProfileCache();
-      if (saved[0] === undefined) delete process.env.GOLOGIN_API_TOKEN; else process.env.GOLOGIN_API_TOKEN = saved[0];
-      if (saved[1] === undefined) delete process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY; else process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY = saved[1];
+      for (const [key, envName] of Object.entries(ENV_OF)) {
+        if (saved[key] === undefined) delete process.env[envName];
+        else process.env[envName] = saved[key];
+      }
     }
   })();
 }
@@ -130,5 +139,72 @@ test('the cache is per account — a second call re-fetches neither', async () =
     const after = calls.length;
     await getProfiles();
     assert.equal(calls.length, after, 'second call served from cache');
+  });
+});
+
+// 2026-08-11: GoLogin lets one workspace share a profile into another, so the
+// SAME profile id comes back from two tokens. 43 real profiles were in that
+// state — rj@ and marigona@ among them, shared from Ortus into marketing. The
+// tag loop was last-write-wins and marketing lists last, so those profiles were
+// re-stamped `marketing`, inherited its Follower-Growth-only rule, and every
+// connect campaign launch was refused with "1 selected account(s) are Marketing
+// accounts". First-wins fixes it; these lock it down.
+
+const MK = 'tok-mk';
+
+test('a profile shared into a second workspace stays owned by the first', async () => {
+  await withAccounts({ ortus: ORTUS, mk: MK }, async () => {
+    mockGologin({
+      [ORTUS]: { profiles: [{ id: 'rj', name: 'rj@ortusclub.com' }] },
+      [MK]: { profiles: [{ id: 'rj', name: 'rj@ortusclub.com' }, { id: 'm1', name: 'Adri' }] },
+    });
+
+    await getProfiles();
+    assert.equal(accountOfProfile('rj'), 'ortus', 'shared profile must not inherit the marketing mode rule');
+    assert.equal(accountOfProfile('m1'), 'marketing', 'a marketing-only profile is still marketing');
+  });
+});
+
+test('a shared profile appears once in the picker, not twice', async () => {
+  await withAccounts({ ortus: ORTUS, mk: MK }, async () => {
+    mockGologin({
+      [ORTUS]: { profiles: [{ id: 'rj', name: 'rj@ortusclub.com' }] },
+      [MK]: { profiles: [{ id: 'rj', name: 'rj@ortusclub.com' }, { id: 'm1', name: 'Adri' }] },
+    });
+
+    const list = await getProfiles();
+    assert.deepEqual(list.map((p) => [p.id, p.account]), [['rj', 'ortus'], ['m1', 'marketing']]);
+  });
+});
+
+test('a shared profile launches with its owning workspace\'s token', async () => {
+  await withAccounts({ ortus: ORTUS, mk: MK }, async () => {
+    mockGologin({
+      [ORTUS]: { profiles: [{ id: 'rj', name: 'rj@ortusclub.com' }] },
+      [MK]: { profiles: [{ id: 'rj', name: 'rj@ortusclub.com' }] },
+    });
+
+    assert.equal(await tokenForProfile('rj'), ORTUS, 'the marketing token would 404 this launch');
+  });
+});
+
+test('a profile that genuinely moves workspaces re-tags on the next list', async () => {
+  // First-wins must not freeze the first answer forever: ownership is decided
+  // fresh per run, so a profile removed from Ortus lands on marketing.
+  await withAccounts({ ortus: ORTUS, mk: MK }, async () => {
+    mockGologin({
+      [ORTUS]: { profiles: [{ id: 'p1', name: 'moving' }] },
+      [MK]: { profiles: [{ id: 'p1', name: 'moving' }] },
+    });
+    await getProfiles();
+    assert.equal(accountOfProfile('p1'), 'ortus');
+
+    clearProfileCache();
+    mockGologin({
+      [ORTUS]: { profiles: [] },
+      [MK]: { profiles: [{ id: 'p1', name: 'moving' }] },
+    });
+    await getProfiles();
+    assert.equal(accountOfProfile('p1'), 'marketing');
   });
 });

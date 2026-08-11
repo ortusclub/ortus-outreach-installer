@@ -120,6 +120,10 @@ async function fetchAccountProfiles(accountId, token) {
  */
 export async function getProfiles(_ignoredLegacyToken) {
   const out = [];
+  // Owner decided fresh on every run, then published in one go below — so a
+  // profile that genuinely MOVES workspaces re-tags on the next list instead of
+  // being frozen by the first answer we ever recorded.
+  const owner = new Map();
 
   for (const acc of configuredAccounts()) {
     const cached = profileCaches.get(acc.id);
@@ -143,11 +147,27 @@ export async function getProfiles(_ignoredLegacyToken) {
       }
     }
 
+    // First workspace to list a profile owns it, NOT the last. GoLogin lets one
+    // workspace share a profile into another, so the SAME id comes back from
+    // two tokens (2026-08-11: 43 of them, including rj@ and marigona@, shared
+    // from Ortus into marketing). Last-write-wins re-stamped every shared
+    // profile as `marketing`, which then inherited that workspace's
+    // Follower-Growth-and-Post-Amplification-only rule and refused every connect
+    // campaign — and handed launchProfile the wrong token besides. GL_ACCOUNTS
+    // is ordered ortus first, so first-wins gives a shared profile its real
+    // home; a profile that lives ONLY in marketing still tags marketing and
+    // stays restricted.
     for (const p of list) {
-      profileAccount.set(p.id, acc.id);
+      // A shared profile is ONE profile, so it gets one tile in the picker —
+      // the owning workspace's. Pushing both copies would show the operator the
+      // same account twice, once greyed out by a rule that does not apply to it.
+      if (owner.has(p.id)) continue;
+      owner.set(p.id, acc.id);
       out.push(p);
     }
   }
+
+  for (const [id, accId] of owner) profileAccount.set(id, accId);
 
   console.log(`[gologin] Total: ${out.length} profiles across ${configuredAccounts().length} account(s)`);
   return out;
