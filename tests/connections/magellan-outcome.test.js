@@ -7,6 +7,7 @@ test('a finished check says what it found', () => {
     phase: 'done', done: 12, total: 12,
     preview: {
       totals: { created: 9623, updated: 15545 },
+      accounts: ['a@o.com'],
       blocked: [],
       duplicates: [],
     },
@@ -21,6 +22,7 @@ test('duplicates are reported as a fact, never as a job to do', () => {
     phase: 'done', done: 12, total: 12,
     preview: {
       totals: { created: 1, updated: 2 },
+      accounts: ['a@o.com'],
       blocked: [],
       duplicates: new Array(3727).fill({ memberId: 'x' }),
     },
@@ -36,6 +38,7 @@ test('a blocked account is named, not counted', () => {
     phase: 'done', done: 11, total: 11,
     preview: {
       totals: { created: 1, updated: 2 },
+      accounts: ['ines@ortusclub.com'],
       blocked: ['jemely.butron@ortus.solutions'],
       duplicates: [],
     },
@@ -108,4 +111,48 @@ test('a collect that lost accounts groups the failures by cause', () => {
 test('an idle run has no outcome at all', () => {
   assert.equal(buildOutcome({ phase: 'idle' }), null);
   assert.equal(buildOutcome({ phase: 'checking', running: true }), null);
+});
+
+// Operator screenshot 2026-08-12: "0 new · 0 already there" as the headline of a
+// Check that never opened a single file, because all four accounts were skipped.
+// That reads as "we looked, they're all known" — the opposite of the truth.
+test('a Check with nothing it may look at says so, instead of reporting zeros', () => {
+  const o = buildOutcome({
+    phase: 'done', done: 0, total: 0,
+    preview: {
+      totals: { created: 0, updated: 0 },
+      accounts: [],
+      blocked: ['a@o.com', 'b@o.com', 'c@o.com', 'd@o.com'],
+      duplicates: [],
+    },
+  });
+  assert.equal(o.ok, false, 'a Check that examined nothing is not a success');
+  assert.equal(o.summary,
+    'Nothing was checked — none of the 4 accounts you picked is on the HubSpot list yet');
+  assert.doesNotMatch(o.summary, /already there/);
+  assert.match(o.problems.join(' '), /a@o\.com/, 'the skipped accounts are still named');
+});
+
+test('one usable account is still a real Check', () => {
+  const o = buildOutcome({
+    phase: 'done', done: 1, total: 1,
+    preview: {
+      totals: { created: 5, updated: 3 },
+      accounts: ['a@o.com'],
+      blocked: ['b@o.com'],
+      duplicates: [],
+    },
+  });
+  assert.equal(o.ok, true);
+  assert.equal(o.summary, '5 new · 3 already there');
+  assert.match(o.problems.join(' '), /1 account skipped: b@o\.com/);
+});
+
+test('a Check with no accounts picked at all says that, not zeros', () => {
+  const o = buildOutcome({
+    phase: 'done', done: 0, total: 0,
+    preview: { totals: { created: 0, updated: 0 }, accounts: [], blocked: [], duplicates: [] },
+  });
+  assert.equal(o.ok, false);
+  assert.equal(o.summary, 'Nothing was checked — no accounts were picked');
 });

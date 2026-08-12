@@ -27357,6 +27357,11 @@ function renderMagellanState(s) {
   // people moved. When the import is what ran, the hero counts the import.
   const imp = s.imported;
   const heroIsImport = Boolean(imp) && !ok.length && !checking;
+  // A Check that has finished. Its own numbers, not the collect's that preceded
+  // it — the two live side by side in the state on purpose (the Check reports a
+  // collect's failures in its problem list) and used to bleed into each other
+  // here.
+  const heroIsCheck = Boolean(s.preview) && !imp && !s.running;
   if (checking && s.running) {
     // Nothing is decided yet, so the only honest number is how far along we
     // are: people asked about, out of accounts done.
@@ -27373,6 +27378,20 @@ function renderMagellanState(s) {
     set('mg-matched-lbl', 'added');
     set('mg-failed', (imp.updated || 0).toLocaleString());
     set('mg-failed-lbl', 'updated');
+  } else if (heroIsCheck) {
+    // A finished Check used to fall through to the collect branch, so the hero
+    // read "27 people · 27 with a LinkedIn ID · 3 failed" from the COLLECT while
+    // the percentage beside it said "0 of 0 accounts" from the CHECK — two runs
+    // in one hero (operator screenshot 2026-08-12). A Check counts what a Check
+    // did.
+    const pv = s.preview || {};
+    const skipped = (pv.blocked || []).length;
+    set('mg-people', (s.checked || 0).toLocaleString());
+    set('mg-people-lbl', 'people checked');
+    set('mg-matched', (s.done || 0).toLocaleString());
+    set('mg-matched-lbl', 'accounts checked');
+    set('mg-failed', skipped.toLocaleString());
+    set('mg-failed-lbl', skipped === 1 ? 'account skipped' : 'accounts skipped');
   } else {
     set('mg-people', people.toLocaleString());
     // "so far" is a promise of more to come. Once a run has ended there is no

@@ -74,6 +74,24 @@ export function buildOutcome(state = {}) {
     return { ok: true, summary: `${n(imp.created)} added · ${n(imp.updated)} updated`, problems };
   }
   if (pv) {
+    // A Check with nothing it is allowed to look at is not a Check that found
+    // nothing. "0 new · 0 already there" reads as "we looked, they're all
+    // known" — the opposite of the truth, which is that the sweep never opened
+    // a single file. Operator screenshot 2026-08-12: that headline sat above a
+    // card showing 27 people collected, with all four accounts skipped.
+    const looked = (pv.accounts || []).length;
+    const skipped = (pv.blocked || []).length;
+    if (!looked) {
+      // Nothing was looked at, so every account picked was a skipped one.
+      return {
+        ok: false,
+        summary: skipped
+          ? `Nothing was checked — none of the ${n(skipped)} account${skipped === 1 ? '' : 's'} `
+            + 'you picked is on the HubSpot list yet'
+          : 'Nothing was checked — no accounts were picked',
+        problems,
+      };
+    }
     const t = pv.totals || {};
     return { ok: true, summary: `${n(t.created)} new · ${n(t.updated)} already there`, problems };
   }
