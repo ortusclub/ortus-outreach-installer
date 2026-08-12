@@ -26,7 +26,7 @@ import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfileP
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
 import { withGid, extractSheetGid } from './utils.js';
-import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
+import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
 import { getPrefs as getOperatorPrefs, identityGateEnabled } from './operator-prefs.js';
@@ -5090,6 +5090,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // v2.11.7: if neither catch nor a fatal error fired, but operator hit
     // Stop, mark accordingly. campaign._abort is set by stopCampaign().
     if (endReason !== 'errored' && campaign._abort) endReason = 'stopped';
+
+    // Sheet writes are coalesced, so the last few can still be sitting in the
+    // buffer when the loop ends. Land them before anything reports the run
+    // finished — otherwise the final leads of every campaign go unwritten.
+    await flushSheetWrites().catch((e) => log(`  ⚠ Final sheet flush failed: ${e.message}`));
 
     // v2.72: build a one-shot "why did it stop" notice the dashboard turns into
     // a popup. Covers every end reason — errored, operator-stopped, all accounts

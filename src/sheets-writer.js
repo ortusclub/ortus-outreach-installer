@@ -10,6 +10,7 @@
 
 import { extractSheetId, extractSheetGid } from './utils.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
+import { onWebappLane } from './webapp-lane.js';
 
 // v2.52.0: hard-coded constant from sheets-webapp-url.js wins over .env.
 // Function form preserved so the existing call sites don't have to change.
@@ -30,8 +31,15 @@ export function setOperatorTz(tz) {
 // idempotent (they set fixed cell values), so retrying a transient failure is
 // safe — at worst it re-stamps the same value (and may add a duplicate Audit
 // Log row, which is harmless).
+//
+// 2026-08-12: `simultane` was added after a run logged 270 permanent-classified
+// failures reading "Troppe chiamate simultanee: Fogli di lavoro" ("Too many
+// simultaneous invocations: Spreadsheets"). That is Google shedding load, i.e.
+// the most retryable error there is — but it matched nothing here, so every one
+// of those rows was dropped without a single retry. The stem covers both the
+// English and Italian wording the bridge returns.
 const _TRANSIENT_WRITE_RE =
-  /timeout|abort|ECONN|EAI_AGAIN|socket|network|fetch failed|terminated|\b(429|500|502|503|504)\b/i;
+  /timeout|abort|ECONN|EAI_AGAIN|socket|network|fetch failed|terminated|simultane|\b(429|500|502|503|504)\b/i;
 
 export function isTransientWriteError(msg) {
   return _TRANSIENT_WRITE_RE.test(String(msg || ''));
@@ -66,6 +74,15 @@ export async function withWriteRetry(attemptFn, {
   return result; // exhausted retries — return last (transient) error
 }
 
+// Per-leg timeout on the POST and its 302-redirect follow. Raised 15s → 60s.
+// A client abort cancels nothing: the Apps Script execution keeps running
+// server-side, so the old 15s cutoff didn't reduce load, it just guaranteed the
+// caller never saw the result and retried — turning one logical write into two
+// or three concurrent executions. 60s clears both measured ceilings: the web
+// app cold-starts in 28–58s, and a warm 25-row bulk chunk lands in ~8s
+// (measured 2026-08-12 against the live deployment).
+const WEBAPP_TIMEOUT_MS = 60000;
+
 // One POST attempt to the Apps Script web app. Returns the parsed result or
 // an { error } object; never throws. Wrapped by postToWebApp's retry loop.
 async function _postOnce(url, body) {
@@ -79,13 +96,13 @@ async function _postOnce(url, body) {
       headers: { 'Content-Type': 'application/json' },
       body,
       redirect: 'manual',
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(WEBAPP_TIMEOUT_MS),
     });
 
     let res;
     if (initial.status >= 300 && initial.status < 400) {
       const location = initial.headers.get('location');
-      res = await fetch(location, { signal: AbortSignal.timeout(15000) });
+      res = await fetch(location, { signal: AbortSignal.timeout(WEBAPP_TIMEOUT_MS) });
     } else {
       res = initial;
     }
@@ -124,9 +141,13 @@ async function postToWebApp(payload) {
   const enriched = _operatorTz ? { ...payload, tz: _operatorTz } : payload;
   const body = JSON.stringify(enriched);
 
-  const result = await withWriteRetry(() => _postOnce(url, body), {
-    maxAttempts: 3,
-    baseDelayMs: 1000,
+  // 4 attempts / 1.5s base mirrors the cloud engine's pushRows. The first
+  // attempt against a cold web app can burn its whole 30s and still warm the
+  // instance, so the extra attempt is what turns a cold start into a success
+  // instead of a dropped row.
+  const result = await withWriteRetry(() => onWebappLane(() => _postOnce(url, body)), {
+    maxAttempts: 4,
+    baseDelayMs: 1500,
     log: (m) => console.warn(`[sheets-writer] ${m}`),
   });
 
@@ -224,28 +245,165 @@ export async function updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinCo
     console.log('[sheets-writer] No SHEETS_WEBAPP_URL configured — skipping');
     return false;
   }
+  return enqueueRowUpdate(sheetUrl, linkedinUrl, tracking, linkedinColumn);
+}
 
+// ── Row-update coalescing ──────────────────────────────────────────────────
+// Every caller in the app writes one row per Apps Script execution. One
+// measured campaign run made 3,293 such calls from a single laptop; 1,772 of
+// them were lost. The writes themselves are fine — the call rate is what kills
+// them. So updateSheetRow no longer POSTs: it drops the row into a per-sheet
+// buffer that flushes as a single `updateRows` execution carrying up to 100
+// rows. Callers are unchanged and still get their own true/false back, because
+// the Apps Script returns a per-row result index-aligned with what we sent.
+//
+// The buffer is keyed by (sheetId, gid, urlColumnName) — the three things that
+// decide which cells a row resolves to. Rows destined for different tabs or
+// matched on different URL columns can never share an execution.
+// 25, not the engine's 100. Measured against the live deployment 2026-08-12:
+// 1 row 2.1s, 25 rows 8.4s, 100 rows 40.7s — the per-row cost is dominated by
+// handleUpdateRows re-reading the whole URL column for every lead. A 100-row
+// chunk would therefore sit ~41s inside one execution, and the app would be
+// waiting on it the whole time. 25 keeps a chunk under 10s with room to spare.
+// google-apps-script.js now hoists that column read out of the loop; once that
+// version is DEPLOYED (it is not yet — see the note in the commit) re-measure
+// and this can go to 100.
+const BULK_CHUNK = 25;
+const COALESCE_MS = 300;              // max added latency for a lone write
+
+const _rowBuffers = new Map();        // key -> { sheetId, gid, col, items, timer }
+const _pendingFlushes = new Set();    // in-flight flush promises, for flushSheetWrites()
+
+// An Apps Script deployment older than the `updateRows` action routes it to the
+// `default:` branch — handleUpdateRow — which rejects the bulk payload with
+// "linkedinUrl is required". That exact string is the "this deployment is old"
+// signal, and it makes the chunk fall back to per-row writes rather than lose
+// the rows. (Verified 2026-08-12: the live deployment DOES support updateRows.)
+function _isUnsupportedBulk(err) {
+  return /linkedinUrl is required|Unknown action|updateRows/i.test(String(err || ''));
+}
+
+function enqueueRowUpdate(sheetUrl, linkedinUrl, tracking, linkedinColumn) {
   const sheetId = extractSheetId(sheetUrl);
-  const gid = extractSheetGid(sheetUrl);
+  const gid = extractSheetGid(sheetUrl) || '';
+  const col = linkedinColumn || '';
+  const key = `${sheetId}|${gid}|${col}`;
 
-  const result = await postToWebApp({
-    action: 'updateRow',
-    sheetId,
-    gid: gid || '',
-    linkedinUrl,
-    urlColumnName: linkedinColumn || '',
-    ...tracking,
+  let buf = _rowBuffers.get(key);
+  if (!buf) {
+    buf = { sheetId, gid, col, items: [], timer: null };
+    _rowBuffers.set(key, buf);
+  }
+
+  const settled = new Promise((resolve) => {
+    buf.items.push({ row: { linkedinUrl, ...tracking }, resolve });
   });
 
-  if (result?.success) {
-    console.log(`[sheets-writer] ✓ Updated row ${result.row} in sheet ${sheetId}`);
-    return true;
+  if (buf.items.length >= BULK_CHUNK) {
+    _flushBuffer(key);
+  } else if (!buf.timer) {
+    // Armed once, on the first row of a buffer — never re-armed by later rows.
+    // A steady stream therefore still flushes every COALESCE_MS instead of
+    // being starved by its own arrivals.
+    buf.timer = setTimeout(() => _flushBuffer(key), COALESCE_MS);
+  }
+  return settled;
+}
+
+function _flushBuffer(key) {
+  const buf = _rowBuffers.get(key);
+  if (!buf) return;
+  if (buf.timer) { clearTimeout(buf.timer); buf.timer = null; }
+  const items = buf.items;
+  _rowBuffers.delete(key);
+  if (!items.length) return;
+
+  // ponytail: chunks within one flush are ordered, but two overlapping flushes
+  // for the same key are not. Only matters if the same lead is written twice
+  // inside COALESCE_MS, where the fields are additive anyway. Add a per-key
+  // chain if that ever stops being true.
+  const flush = (async () => {
+    for (let i = 0; i < items.length; i += BULK_CHUNK) {
+      await _writeChunk(buf, items.slice(i, i + BULK_CHUNK));
+    }
+  })();
+  _pendingFlushes.add(flush);
+  flush.finally(() => _pendingFlushes.delete(flush));
+}
+
+async function _writeChunk(buf, items) {
+  const result = await postToWebApp({
+    action: 'updateRows',
+    sheetId: buf.sheetId,
+    gid: buf.gid,
+    urlColumnName: buf.col,
+    rows: items.map((it) => it.row),
+  });
+
+  if (!result) {                                  // no webapp configured
+    items.forEach((it) => it.resolve(false));
+    return;
   }
 
-  if (result?.error) {
-    console.warn(`[sheets-writer] Update failed for ${linkedinUrl}: ${result.error}`);
+  const err = result.error;
+  if (err && _isUnsupportedBulk(err)) {
+    console.warn('[sheets-writer] Apps Script has no bulk updateRows — falling back to per-row writes (redeploy for the 100× saving)');
+    for (const it of items) it.resolve(await _writeOneRow(buf, it.row));
+    return;
   }
+
+  if (err || !result.success) {
+    // The whole execution failed after its retries. Say so loudly and name the
+    // count: 1,772 rows once vanished here with nothing but a per-row warning
+    // scrolling past, which is how a >50% loss rate went unnoticed for months.
+    console.warn(`[sheets-writer] ✗ LOST ${items.length} row write(s) for sheet ${buf.sheetId}: ${err || 'no success flag'}`);
+    items.forEach((it) => it.resolve(false));
+    return;
+  }
+
+  // results[i] mirrors rows[i]. A missing entry means the script didn't report
+  // per-row detail, in which case the chunk is all-or-nothing — and it said
+  // success. Same reading as the engine's pushRows.
+  const results = Array.isArray(result.results) ? result.results : [];
+  let failed = 0;
+  items.forEach((it, i) => {
+    const one = results[i];
+    const ok = !one || !one.error;
+    if (!ok) {
+      failed++;
+      console.warn(`[sheets-writer] row not written (${it.row.linkedinUrl}): ${one.error}`);
+    }
+    it.resolve(ok);
+  });
+  console.log(`[sheets-writer] ✓ ${items.length - failed}/${items.length} row(s) updated in sheet ${buf.sheetId}${failed ? ` — ${failed} not found` : ''}`);
+}
+
+// The pre-coalescing write path, kept only for old Apps Script deployments.
+async function _writeOneRow(buf, row) {
+  const { linkedinUrl, ...tracking } = row;
+  const result = await postToWebApp({
+    action: 'updateRow',
+    sheetId: buf.sheetId,
+    gid: buf.gid,
+    linkedinUrl,
+    urlColumnName: buf.col,
+    ...tracking,
+  });
+  if (result?.success) return true;
+  if (result?.error) console.warn(`[sheets-writer] Update failed for ${linkedinUrl}: ${result.error}`);
   return false;
+}
+
+/**
+ * Write out every buffered row and wait for it to land. Call at the end of a
+ * campaign, and before the process exits — otherwise the last partial buffer
+ * dies with up to COALESCE_MS of writes still in it.
+ */
+export async function flushSheetWrites() {
+  for (const key of [..._rowBuffers.keys()]) _flushBuffer(key);
+  while (_pendingFlushes.size) {
+    await Promise.allSettled([..._pendingFlushes]);
+  }
 }
 
 /**
@@ -435,20 +593,30 @@ export async function batchUpdateSheet(sheetUrl, updates) {
   const sheetId = extractSheetId(sheetUrl);
   const gid = extractSheetGid(sheetUrl);
 
-  const result = await postToWebApp({
-    action: 'batchUpdate',
-    sheetId,
-    gid: gid || '',
-    updates,
-  });
-
-  if (result?.success) {
-    console.log(`[sheets-writer] ✓ Batch updated ${result.processed} rows in sheet ${sheetId}`);
-    return true;
+  // Chunked at 100 like everything else. The one caller that matters here is
+  // the Needs Login flag, which builds one update per row assigned to an
+  // account — thousands on a big sheet, previously posted as a single payload
+  // that had to finish inside one Apps Script execution or lose the lot.
+  let processed = 0;
+  let allOk = true;
+  for (let i = 0; i < updates.length; i += BULK_CHUNK) {
+    const chunk = updates.slice(i, i + BULK_CHUNK);
+    const result = await postToWebApp({
+      action: 'batchUpdate',
+      sheetId,
+      gid: gid || '',
+      updates: chunk,
+    });
+    if (result?.success) {
+      processed += typeof result.processed === 'number' ? result.processed : chunk.length;
+      continue;
+    }
+    allOk = false;
+    console.warn(`[sheets-writer] ✗ LOST batch rows ${i + 1}–${i + chunk.length} for sheet ${sheetId}: ${result?.error || 'no success flag'}`);
   }
 
-  if (result?.error) {
-    console.warn(`[sheets-writer] Batch update failed: ${result.error}`);
+  if (processed) {
+    console.log(`[sheets-writer] ✓ Batch updated ${processed} rows in sheet ${sheetId}`);
   }
-  return false;
+  return allOk;
 }

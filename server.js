@@ -13,7 +13,7 @@ if (missing.length) {
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
-import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat, rename } from 'node:fs/promises';
 import { appendFileSync, createWriteStream, existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1546,9 +1546,48 @@ app.get('/api/campaign/cloud/:id', async (req, res) => {
 // re-reconciling. Best-effort — never blocks the /leads response.
 const _cloudReconcile = new Map(); // campaignId -> { at:number, writtenRows:Set<string> }
 const CLOUD_RECONCILE_THROTTLE_MS = 20 * 1000;
+
+// The dedup set used to live only in memory, so every app restart re-stamped
+// every terminal row of every cloud campaign the operator then looked at —
+// thousands of pointless Apps Script executions, and the single biggest
+// contributor to the write storm. It is now on disk, keyed by campaign.
+const CLOUD_RECONCILE_FILE = dataPath('cloud-reconcile.json');
+let _cloudReconcileLoaded = false;
+
+async function loadCloudReconcile() {
+  if (_cloudReconcileLoaded) return;
+  _cloudReconcileLoaded = true;
+  try {
+    const saved = JSON.parse(await readFile(CLOUD_RECONCILE_FILE, 'utf8'));
+    for (const [id, keys] of Object.entries(saved || {})) {
+      if (!Array.isArray(keys)) continue;
+      _cloudReconcile.set(id, { at: 0, writtenRows: new Set(keys) });
+    }
+  } catch { /* first run, or unreadable — an empty set just re-stamps once */ }
+}
+
+let _cloudReconcileSaving = null;
+function saveCloudReconcile() {
+  // Coalesced: a burst of reconciles writes the file once, on the next tick.
+  if (_cloudReconcileSaving) return _cloudReconcileSaving;
+  _cloudReconcileSaving = (async () => {
+    await new Promise((r) => setTimeout(r, 1000));
+    _cloudReconcileSaving = null;
+    const out = {};
+    for (const [id, st] of _cloudReconcile) out[id] = [...st.writtenRows];
+    try {
+      await writeFile(`${CLOUD_RECONCILE_FILE}.tmp`, JSON.stringify(out));
+      await rename(`${CLOUD_RECONCILE_FILE}.tmp`, CLOUD_RECONCILE_FILE);
+    } catch (err) {
+      cloudLog(`[cloud] reconcile dedup save failed: ${err.message}`);
+    }
+  })();
+  return _cloudReconcileSaving;
+}
 async function reconcileCloud(id, leads) {
   try {
     if (!Array.isArray(leads) || !leads.length) return;
+    await loadCloudReconcile();
     let state = _cloudReconcile.get(id);
     if (state && Date.now() - state.at < CLOUD_RECONCILE_THROTTLE_MS) return; // throttle both writes
     if (!state) { state = { at: 0, writtenRows: new Set() }; _cloudReconcile.set(id, state); }
@@ -1571,16 +1610,24 @@ async function reconcileCloud(id, leads) {
       const { updateSheetRow } = await import('./src/sheets-writer.js');
       const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
       const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
-      let stamped = 0;
-      for (const l of freshRows) {
+      // Issued together, NOT awaited one at a time: sheets-writer coalesces
+      // concurrent row writes into 100-row executions, and an await-per-row
+      // loop would hand it one row at a time and get one execution each —
+      // which is exactly what used to melt the per-spreadsheet limit here.
+      const settled = await Promise.all(freshRows.map(async (l) => {
         try {
           const sheetData = cloudLeadToLocalSheetData(mode, l, idToName.get(l.account) || '');
-          if (!sheetData) continue;
+          if (!sheetData) return null;
           const ok = await updateSheetRow(sheetUrl, l.leadUrl, sheetData, linkedinColumn);
-          if (ok) { state.writtenRows.add(`${l.id}:${l.status}:${l.stage || ''}`); stamped++; }
-        } catch { /* per-row best-effort */ }
+          return ok ? `${l.id}:${l.status}:${l.stage || ''}` : null;
+        } catch { return null; } // per-row best-effort
+      }));
+      const stamped = settled.filter(Boolean);
+      stamped.forEach((k) => state.writtenRows.add(k));
+      if (stamped.length) {
+        saveCloudReconcile();
+        cloudLog(`[cloud] sheet reconcile: stamped ${stamped.length} row(s) 1:1 with local for ${id} (${mode}).`);
       }
-      if (stamped) cloudLog(`[cloud] sheet reconcile: stamped ${stamped} row(s) 1:1 with local for ${id} (${mode}).`);
     }
 
     // (B) SoO — bump each account's weekly connection tally from the engine's

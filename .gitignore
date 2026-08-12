@@ -48,3 +48,5 @@ out/
 k8s/fg-roster/secret.yaml
 .claude/worktrees/
 data/funnel-i/
+
+data/cloud-reconcile.json

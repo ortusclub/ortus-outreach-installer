@@ -16,6 +16,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
+import { flushSheetWrites } from './sheets-writer.js';
 import * as browserSemaphore from './browser-semaphore.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
@@ -353,6 +354,10 @@ async function tick() {
     } catch (err) {
       console.warn(`[post-campaign] ${entry.profileName} sweep threw: ${err.message}`);
     } finally {
+      // Sheet writes are coalesced in sheets-writer; land this account's
+      // buffered rows before the sweep moves on, so nothing is left sitting in
+      // the buffer if the tick ends or the app is closed.
+      try { await flushSheetWrites(); } catch { /* best-effort */ }
       try { await closeProfile(entry.profileId); } catch { /* */ }
       browserSemaphore.release();
     }
