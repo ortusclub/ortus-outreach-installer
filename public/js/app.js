@@ -1182,6 +1182,44 @@ function isOnNewCampaignView() {
 }
 let localBrowserFirstName = (typeof localStorage !== 'undefined' && localStorage.getItem('localBrowserFirstName')) || '';
 
+// Typed-in first names for accounts with no usable SoO row. 12% of GoLogin
+// profiles have no row at all, and without one `{sender first name}` fell
+// through to `profileName.split(' ')[0]` at send time (campaign.js:3594) —
+// profileName being the GoLogin label, i.e. the account's EMAIL. Those leads
+// read "Hi Jerome, nabungaires@gmail.com here".
+//
+// Keyed by the GoLogin profile NAME (the email), lowercased — not the profile
+// id, which changes if the profile is recreated in GoLogin. Per-machine, in
+// localStorage: this is a stopgap for the operator sitting in front of the app,
+// NOT a substitute for a SoO row (which is what the whole team reads, and what
+// carries credits and the in-use reservation besides).
+const SENDER_NAME_OVERRIDES_KEY = 'senderFirstNameOverrides';
+let senderFirstNameOverrides = (() => {
+  try {
+    const raw = typeof localStorage !== 'undefined' && localStorage.getItem(SENDER_NAME_OVERRIDES_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+  } catch { return {}; } // corrupt entry must never take the picker down
+})();
+
+function overrideKeyForProfile(profileName) {
+  return String(profileName || '').trim().toLowerCase();
+}
+
+function getSenderNameOverride(profileName) {
+  const k = overrideKeyForProfile(profileName);
+  return k ? String(senderFirstNameOverrides[k] || '').trim() : '';
+}
+
+function setSenderNameOverride(profileName, value) {
+  const k = overrideKeyForProfile(profileName);
+  if (!k) return;
+  const v = String(value || '').trim();
+  if (v) senderFirstNameOverrides[k] = v;
+  else delete senderFirstNameOverrides[k]; // cleared → back to the SoO/email path
+  try { localStorage.setItem(SENDER_NAME_OVERRIDES_KEY, JSON.stringify(senderFirstNameOverrides)); } catch { /* */ }
+}
+
 function resolveSenderFirstName(profileId, profileName) {
   if (profileId === 'local-browser') {
     // v2.11.15: manual override wins, but if the operator hasn’t set
@@ -1199,8 +1237,12 @@ function resolveSenderFirstName(profileId, profileName) {
     return raw.charAt(0).toUpperCase() + raw.slice(1);
   }
   const soo = findSoOForProfile(profileName);
-  if (!soo) return '';
-  return (soo['First Name'] || soo.firstName || '').toString().trim();
+  const fromSoO = soo ? (soo['First Name'] || soo.firstName || '').toString().trim() : '';
+  // SoO wins whenever it actually has a name: it is the shared source of truth,
+  // so a row added later silently supersedes a stale typed-in override instead
+  // of quietly out-ranking it forever. The override covers the two cases SoO
+  // can't — no row at all, and a row whose First Name is blank.
+  return fromSoO || getSenderNameOverride(profileName);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2295,13 +2337,24 @@ function renderProfiles(profiles) {
         + (_checked ? ' selected' : '')
         + (_state.state === 'in-use' ? ' muted-soft' : '')
         + (_locked ? ' muted is-restricted' : '');
+      // No name resolves for this account (no SoO row, or a row with a blank
+      // First Name) — offer to type one, because the send-time fallback is the
+      // account's email and it goes out in the message body. Only on tiles the
+      // operator can actually pick: on a locked one the input is dead weight.
+      const _nameOverride = getSenderNameOverride(p.name);
+      const _needsName = !_locked && !resolveSenderFirstName(p.id, p.name);
+      const _nameRow = (_needsName || _nameOverride) ? `
+        <div class="jt-name-row">
+          <input type="text" class="jt-name-input" placeholder="First name for {sender first name}"
+            value="${escHtml(_nameOverride)}" />
+        </div>` : '';
       _inner = `${_statZone}
       <div class="jt-det">
         <div class="jt-top">
           <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
           <span class="jt-email">${escHtml(p.name)}${_dup}${_wsPill}</span>
         </div>
-        <div class="jt-sub">${_sub}</div>
+        <div class="jt-sub">${_sub}</div>${_nameRow}
       </div>`;
     }
 
@@ -2309,7 +2362,21 @@ function renderProfiles(profiles) {
     item.className = _classes;
     item.dataset.profileId = p.id;
     item.innerHTML = _inner;
-    const cb = item.querySelector('input');
+    // Explicit: the tile can now hold a second <input> (the first-name box), and
+    // a bare querySelector('input') would bind the campaign's account selection
+    // to whichever one the markup happens to put first.
+    const cb = item.querySelector('input[type="checkbox"]');
+    // Typed-in first name for an account SoO can't name. The tile is a <label>,
+    // so a click inside it would otherwise toggle the checkbox — same guard the
+    // Local Browser name input uses.
+    const nameInput = item.querySelector('.jt-name-input');
+    if (nameInput) {
+      nameInput.addEventListener('click', (e) => e.stopPropagation());
+      nameInput.addEventListener('input', (e) => {
+        setSenderNameOverride(p.name, e.target.value);
+        renderSelectedPanel();
+      });
+    }
     cb.addEventListener('change', () => {
       if (_locked) { cb.checked = false; return; } // blocked / NA — never selectable
       try { if (_acctAdd) _acctAddTouched = true; } catch (_) { /* */ }

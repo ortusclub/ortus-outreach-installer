@@ -1325,6 +1325,21 @@ select {
 }
 .browse-card .profile-item.jt .jt-sub b { color:var(--ink); font-weight:600; }
 
+/* Typed-in {sender first name} for an account the SoO can't name. Aligned to
+   the sub line's 30px gutter so it sits under the email, not under the
+   checkbox. Hairline + no radius, per the command-deck system. */
+.browse-card .profile-item.jt .jt-name-row { padding:4px 8px 2px 30px; }
+.browse-card .profile-item.jt .jt-name-input {
+  width:100%; box-sizing:border-box;
+  font-family:var(--body); font-size:0.74rem; font-weight:400;
+  text-transform:none; letter-spacing:normal;
+  color:var(--ink); background:transparent;
+  border:1px solid var(--hairline); border-radius:0;
+  padding:3px 6px;
+}
+.browse-card .profile-item.jt .jt-name-input::placeholder { color:var(--gray); opacity:0.8; }
+.browse-card .profile-item.jt .jt-name-input:focus { outline:none; border-color:var(--ink); }
+
 /* Variant C — per-channel breakdown tile (Message Campaign · Direct Messages ·
    InMail Only). Same shell + typography as the two-zone .jt tile; a slim accent
    stripe replaces the status word, and a clean 3-column channel row replaces the
