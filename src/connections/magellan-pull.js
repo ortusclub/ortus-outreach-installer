@@ -200,21 +200,36 @@ export async function collectAccount(page, account, { dir = CONNECTIONS_DIR, onP
  * can never disagree. Drive-synced accounts show up here too, which is correct:
  * we have their connections, however they arrived.
  */
+// Counting rows means CSV-parsing every file, and there are 455 of them holding
+// 70MB — 1.4–2.0s of blocking work on a route the Magellan tab hits on every
+// visit and every refresh. The parse result only changes when the file does, so
+// key it on the file's own mtime and size. A collect rewrites the file, which
+// moves both, so a stale count is not reachable. Unbounded on purpose: one
+// small record per account, and the account list is the roster.
+const _collectedCache = new Map();
+
 export function listCollected({ dir = CONNECTIONS_DIR } = {}) {
   const out = new Map();
   if (!fs.existsSync(dir)) return out;
   for (const f of fs.readdirSync(dir)) {
     if (!f.toLowerCase().endsWith('.csv')) continue;
     const full = path.join(dir, f);
-    let count = 0;
     try {
+      const st = fs.statSync(full);
+      const stamp = `${st.mtimeMs}:${st.size}`;
+      const hit = _collectedCache.get(full);
+      if (hit && hit.stamp === stamp) {
+        out.set(f.replace(/\.csv$/i, ''), hit.value);
+        continue;
+      }
       const bySlug = readExistingBySlug(full);
-      count = bySlug.size;
-      out.set(f.replace(/\.csv$/i, ''), {
-        count,
+      const value = {
+        count: bySlug.size,
         withMemberId: [...bySlug.values()].filter((v) => v.memberId).length,
-        at: fs.statSync(full).mtime.toISOString(),
-      });
+        at: st.mtime.toISOString(),
+      };
+      _collectedCache.set(full, { stamp, value });
+      out.set(f.replace(/\.csv$/i, ''), value);
     } catch { /* unreadable file — treat as not collected */ }
   }
   return out;

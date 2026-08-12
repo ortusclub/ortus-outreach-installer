@@ -2549,6 +2549,18 @@ async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000 } = {}) {
   return emails;
 }
 
+// Same reasoning for the HubSpot property. The picker reloads on every tab
+// visit and every refresh; the option list changes only when someone edits the
+// property by hand — and the refresh button passes maxAgeMs: 0, so adding an
+// account to the property and pressing refresh shows it immediately.
+let _magellanHsOptions = { at: 0, set: null };
+async function magellanHsOptions({ maxAgeMs = 5 * 60 * 1000 } = {}) {
+  if (_magellanHsOptions.set && Date.now() - _magellanHsOptions.at < maxAgeMs) return _magellanHsOptions.set;
+  const set = await connectionsPropOptions();
+  _magellanHsOptions = { at: Date.now(), set };
+  return set;
+}
+
 // Read fresh each time — it is a handful of lines, and someone adding a
 // mapping should not have to restart the app to see it take effect.
 function magellanLabelOverrides() {
@@ -2558,8 +2570,11 @@ function magellanLabelOverrides() {
   } catch { return {}; }
 }
 
-app.get('/api/magellan/accounts', async (_req, res) => {
+app.get('/api/magellan/accounts', async (req, res) => {
   try {
+    // The refresh button asks for the slow, authoritative answer. Everything
+    // else takes the cached one.
+    const maxAgeMs = req.query.fresh ? 0 : 5 * 60 * 1000;
     const collected = magellanListCollected();
     const profiles = await getProfiles();
 
@@ -2572,7 +2587,7 @@ app.get('/api/magellan/accounts', async (_req, res) => {
     // be imported against.
     let sooEmails = [];
     try {
-      const soo = await magellanSooEmails();
+      const soo = await magellanSooEmails({ maxAgeMs });
       sooEmails = soo;
     } catch (err) {
       console.warn(`[magellan] could not read the SoO — falling back to profile names: ${err.message}`);
@@ -2598,7 +2613,7 @@ app.get('/api/magellan/accounts', async (_req, res) => {
       // already handles gracefully via hsOptions === null.
       const TIMED_OUT = Symbol('magellan-accounts-hubspot-timeout');
       const result = await Promise.race([
-        connectionsPropOptions(),
+        magellanHsOptions({ maxAgeMs }),
         new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), 5000)),
       ]);
       if (result === TIMED_OUT) {

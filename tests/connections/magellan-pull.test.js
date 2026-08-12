@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   formatConnectedOn, readExistingBySlug, mergeRows, toCsv, writeAccountCsv,
-  readForPlan, collectAccount, CSV_HEADER,
+  readForPlan, collectAccount, listCollected, CSV_HEADER,
 } from '../../src/connections/magellan-pull.js';
 import { ingestFolder } from '../../src/connections/csv-ingest.js';
 
@@ -157,4 +157,30 @@ test('no progress callback means no polling — bulk-check behaviour is unchange
   };
   await collectAccount(page, 'x@y.com', { dir });
   assert.equal(evaluates, 1, 'only the walk itself — no beacon reads');
+});
+
+// The picker's route calls listCollected on every visit, and parsing 455 CSVs
+// holding 70MB took ~1.9s of blocking work each time. The parse is cached per
+// file on (mtime, size); a rewritten file must not serve the old count.
+test('listCollected re-reads a file after it changes', () => {
+  const dir = tmpdir();
+  const file = path.join(dir, 'a@b.com.csv');
+  fs.writeFileSync(file, `${CSV_HEADER.join(',')}\nx,y,https://www.linkedin.com/in/one,,,,,111\n`);
+
+  const first = listCollected({ dir });
+  assert.equal(first.get('a@b.com').count, 1);
+  assert.equal(first.get('a@b.com').withMemberId, 1);
+
+  // Cached: identical stat, so the same record comes straight back.
+  assert.deepEqual(listCollected({ dir }).get('a@b.com'), first.get('a@b.com'));
+
+  fs.writeFileSync(
+    file,
+    `${CSV_HEADER.join(',')}\nx,y,https://www.linkedin.com/in/one,,,,,111\na,b,https://www.linkedin.com/in/two,,,,,\n`,
+  );
+  // mtimeMs can tie on a coarse clock within the same millisecond; the size
+  // moved, which is the other half of the stamp.
+  const after = listCollected({ dir }).get('a@b.com');
+  assert.equal(after.count, 2);
+  assert.equal(after.withMemberId, 1);
 });

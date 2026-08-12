@@ -27029,10 +27029,13 @@ function setConnTab(tab) {
 // `keepSelection` is for the refresh button: the list is re-fetched, but what
 // the operator has already ticked survives it. Only the first load — and a load
 // after a sweep, when the DONE badges have changed — resets to the default.
-async function loadMagellanAccounts({ keepSelection = false } = {}) {
+async function loadMagellanAccounts({ keepSelection = false, fresh = false } = {}) {
   try {
     const previous = keepSelection ? new Set(mgSelected) : null;
-    mgAccounts = await mgFetch('/api/magellan/accounts');
+    // `fresh` is what the refresh button means: skip the server's SoO and
+    // HubSpot caches. Ordinary tab visits take the cached answer, which is what
+    // makes them instant.
+    mgAccounts = await mgFetch(`/api/magellan/accounts${fresh ? '?fresh=1' : ''}`);
     if (previous) {
       // A profile that has since disappeared from GoLogin must not stay ticked —
       // it would be sent to a collect that cannot open it.
@@ -27072,7 +27075,7 @@ async function refreshMagellanAccounts(btn) {
   showMagellanError('');
   if (btn) btn.disabled = true;
   try {
-    const ok = await loadMagellanAccounts({ keepSelection: true });
+    const ok = await loadMagellanAccounts({ keepSelection: true, fresh: true });
     if (ok && !mgAccounts.length) {
       showMagellanError('No GoLogin profiles came back. Check that GoLogin is running, then refresh again.');
     }
