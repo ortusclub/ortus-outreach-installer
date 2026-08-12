@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>One job status, four jobs</title>
+<link rel="stylesheet" href="/css/style.css?v=3.1.26" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.26" />
+<style>
+  .sk-lede { max-width: 84ch; font-size: 14px; line-height: 1.65; margin: 0 0 8px; }
+  .sk-lede b { font-weight: 600; }
+  .sk-sub { max-width: 84ch; font-size: 13px; line-height: 1.6; color: var(--gray); margin: 0 0 26px; }
+  .sk-h3 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gray);
+           margin: 34px 0 12px; font-weight: 600; }
+  .sk-contract { background: var(--bg-soft); border: 1px solid var(--hairline); border-radius: 12px;
+                 padding: 16px 18px; font-family: ui-monospace, monospace; font-size: 12.5px;
+                 line-height: 1.75; white-space: pre; overflow-x: auto; margin-bottom: 8px; }
+  .sk-contract .c { color: var(--gray); }
+  .sk-runbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 22px; }
+  .sk-note { font-size: 12.5px; color: var(--gray); max-width: 84ch; line-height: 1.6; margin: 10px 0 0; }
+  .sk-bad { color: #b45309; }
+  .sk-good { color: var(--green); }
+  .sk-pair { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 10px; }
+  @media (max-width: 1000px) { .sk-pair { grid-template-columns: 1fr; } }
+  .sk-mini { border: 1px solid var(--hairline); border-radius: 11px; padding: 13px 15px; background: var(--card-bg); }
+  .sk-mini-h { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 9px; font-weight: 600; }
+  .sk-mini-l { font-size: 13px; line-height: 1.7; }
+  .vj-card + .vj-card { margin-top: 14px; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · v3.1.26</div>
+    </div>
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+      <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+      <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+    </nav>
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip">
+        <span class="operator-chip-label">Operating as</span><strong>antoniov@ortusclub.com</strong>
+      </button>
+      <button type="button" class="btn btn-sm sidebar-signout">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="main"><div class="container">
+    <div class="dashboard-header"><h1 class="dashboard-title">One job status, four jobs</h1></div>
+
+    <p class="sk-lede">Every slow thing in this app — a campaign sending, a bulk check sweeping,
+      Follower Growth inviting, Magellan collecting or checking or importing — answers the
+      <b>same four questions</b>: is it running, how far along, what is it doing right now, and
+      how did it end.</p>
+    <p class="sk-sub">Today each screen answers those from its own numbers, which is why one said
+      92% while another said 83%, and why a finished Check left "NOT RUNNING · 92% · 0 people".
+      The proposal: the server keeps <b>one job record</b>, the card only draws it, and no component
+      is allowed to compute a status of its own.</p>
+
+    <div class="sk-h3">The record every job publishes</div>
+    <div class="sk-contract">{
+  state:     'idle' | 'running' | 'done' | 'failed' | 'stopped',   <span class="c">// the ONLY source of "is it running"</span>
+  title:     'Checking against HubSpot',        <span class="c">// what this job is, in the operator's words</span>
+  step:      'Asking HubSpot who it already has',
+  item:      'nushe.himaj@ortus.solutions',     <span class="c">// what it is on right now</span>
+
+  done: 4, total: 13, unit: 'accounts',         <span class="c">// coarse progress</span>
+  within:  { done: 2300, total: 5945, unit: 'people' },  <span class="c">// progress inside the current item</span>
+
+  headline: { n: 18400, label: 'people checked' },       <span class="c">// the number worth watching</span>
+  stats:    [ { n: 9623, label: 'new' }, { n: 15545, label: 'already there' } ],
+
+  outcome:  { ok: true, summary: '9,623 new · 15,545 already there · 3,727 duplicates',
+              problems: 1 },                    <span class="c">// set ONCE, when it ends. Never cleared by a redraw.</span>
+}</div>
+    <p class="sk-note">Percentage is computed in one place from <code>done/total</code> and
+      <code>within</code>. Nothing else may calculate one. <code>state</code> flips to
+      <code>done</code> only after the job has written its <code>outcome</code> — which is exactly
+      the bug that produced "NOT RUNNING, 92%, 0 people so far".</p>
+
+    <div class="sk-h3">The same card, four jobs</div>
+    <div class="sk-runbar">
+      <button class="btn btn-secondary" onclick="run('mg')">Run Magellan check</button>
+      <button class="btn btn-secondary" onclick="run('cc')">Run CC+IC campaign</button>
+      <button class="btn btn-secondary" onclick="run('bc')">Run bulk check</button>
+      <button class="btn btn-secondary" onclick="run('fg')">Run Follower Growth</button>
+      <button class="btn btn-secondary" onclick="['mg','cc','bc','fg'].forEach(run)">Run all four</button>
+    </div>
+
+    <section class="vj-card" id="c-mg"></section>
+    <section class="vj-card" id="c-cc"></section>
+    <section class="vj-card" id="c-bc"></section>
+    <section class="vj-card" id="c-fg"></section>
+
+    <div class="sk-h3">What changes, in the two states that break today</div>
+    <div class="sk-pair">
+      <div class="sk-mini">
+        <div class="sk-mini-h sk-bad">While running · now</div>
+        <div class="sk-mini-l">
+          NOT RUNNING · Idle<br>
+          92% here, 83% on the button<br>
+          13 accounts selected, "11 of 12"<br>
+          0 people so far
+        </div>
+      </div>
+      <div class="sk-mini">
+        <div class="sk-mini-h sk-good">While running · proposed</div>
+        <div class="sk-mini-l">
+          CHECKING · started 16:44<br>
+          one percentage, drawn once<br>
+          "account 11 of 12 · 1 skipped, not on HubSpot's list"<br>
+          18,400 people checked
+        </div>
+      </div>
+      <div class="sk-mini">
+        <div class="sk-mini-h sk-bad">When it ends · now</div>
+        <div class="sk-mini-l">
+          the last live numbers, frozen<br>
+          NOT RUNNING · 92% · 0 people<br>
+          no statement of what happened<br>
+          button still says "Checking… 83%"
+        </div>
+      </div>
+      <div class="sk-mini">
+        <div class="sk-mini-h sk-good">When it ends · proposed</div>
+        <div class="sk-mini-l">
+          FINISHED · 16:47 · took 3m 04s<br>
+          9,623 new · 15,545 already there<br>
+          3,727 people in HubSpot more than once<br>
+          1 account skipped — press for why
+        </div>
+      </div>
+    </div>
+    <p class="sk-note">A job that ends must <b>say what happened</b>. Leaving live counters on screen
+      is what makes a finished run look broken, and it is the same fix for all four cards.</p>
+  </div></main>
+</div>
+
+<script>
+// Four real jobs, same record shape, same renderer.
+const JOBS = {
+  mg: {
+    title: 'Magellan · checking against HubSpot',
+    step: 'Asking HubSpot who it already has',
+    unit: 'accounts', within: 'people',
+    items: [['ines@ortusclub.com', 7469], ['nikki@ortusclub.com', 7155],
+            ['nushe.himaj@ortus.solutions', 5945], ['jovana@ortusclub.com', 4021],
+            ['andrea@ortusclub.com', 3968], ['soleil@ortusclub.com', 1466]],
+    headline: 'people checked',
+    end: { summary: '9,623 new · 15,545 already there · 3,727 in HubSpot more than once', problems: 1,
+           note: '1 account skipped — not on HubSpot’s list' },
+  },
+  cc: {
+    title: 'Connect + Introduce Back · sending',
+    step: 'Sending connection requests',
+    unit: 'accounts', within: 'leads',
+    items: [['sentiya.semy@ortus.solutions', 40], ['karl.robles@ortus.solutions', 40],
+            ['nushe.himaj@ortus.solutions', 35]],
+    headline: 'requests sent',
+    end: { summary: '112 sent · 3 skipped, already connected', problems: 0,
+           note: 'next check sweep at 18:00' },
+  },
+  bc: {
+    title: 'Bulk check · who accepted',
+    step: 'Reading each account’s connections',
+    unit: 'accounts', within: 'profiles',
+    items: [['ines@ortusclub.com', 900], ['jovana@ortusclub.com', 640], ['mishy@ortus.solutions', 380]],
+    headline: 'profiles checked',
+    end: { summary: '38 accepted · 12 still pending', problems: 2,
+           note: '2 accounts were rate-limited — they retry on the next sweep' },
+  },
+  fg: {
+    title: 'Follower Growth · inviting',
+    step: 'Inviting connections to follow the page',
+    unit: 'accounts', within: 'invites',
+    items: [['nikki@ortusclub.com', 30], ['andrea@ortusclub.com', 30], ['soleil@ortusclub.com', 22]],
+    headline: 'invites sent',
+    end: { summary: '82 invited · 0 refused', problems: 0, note: 'credits left: 8 of 30' },
+  },
+};
+
+const n = (x) => Math.round(x).toLocaleString();
+
+// ONE renderer. Every card on this page is this function; nothing else draws a
+// status, a percentage or a summary.
+function draw(id, job, s) {
+  const el = document.getElementById('c-' + id);
+  const pct = s.state === 'done' ? 100 : s.total
+    ? Math.round(((s.done + (s.within.total ? s.within.done / s.within.total : 0)) / s.total) * 100) : 0;
+  const running = s.state === 'running';
+  const eyebrow = { idle: 'Not running', running: job.step ? 'Working' : 'Running',
+                    done: 'Finished', failed: 'Stopped', stopped: 'Stopped' }[s.state];
+
+  el.classList.toggle('is-live', running);
+  el.innerHTML =
+    '<div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span>'
+    + `<span>${running ? 'Working' : eyebrow}</span></span>`
+    + `<span class="vj-when">${s.when || ''}</span></div>`
+    + `<h2 class="vj-name"><span>${job.title}</span></h2>`
+    + (running
+      ? '<div class="vj-stage"><div class="vj-stage-gly">•</div><div class="vj-stage-body">'
+        + `<div class="vj-stage-verb">${job.step}</div>`
+        + `<div class="vj-stage-name">${s.item}</div>`
+        + `<div class="vj-stage-sub">${job.unit.replace(/s$/, '')} ${s.done + 1} of ${s.total}`
+        + ` · ${n(s.within.done)} of ${n(s.within.total)} ${job.within}</div>`
+        + '</div></div>'
+      : '')
+    + `<div class="vj-hbar"><i style="width:${pct}%"></i></div>`
+    + '<div class="vj-hero"><div class="vj-hero-row">'
+    + `<div class="num"><span>${pct}</span><span class="sub">%</span></div>`
+    + '<div class="vj-meta">'
+    + `<span><b>${s.done}</b> of ${s.total} ${job.unit}</span>`
+    + `<span><b>${n(s.headline)}</b> ${job.headline}</span>`
+    + '</div></div>'
+    // The resting state states the outcome. It never leaves live counters up.
+    + (s.state === 'done'
+      ? '<div class="vj-stats"><span>' + job.end.summary + '</span>'
+        + (job.end.problems ? `<span>· <b>${job.end.problems} problem${job.end.problems === 1 ? '' : 's'}</b></span>` : '')
+        + `<span>· took ${s.took}</span></div>`
+        + `<div class="vj-stats" style="opacity:.75"><span>${job.end.note}</span></div>`
+      : `<div class="vj-stats"><span>· <b>${running ? 'Working' : 'Idle'}</b></span></div>`)
+    + '</div>'
+    + '<div class="vj-controls">'
+    + `<button class="btn-pill"${running ? '' : ' disabled'}>Stop</button>`
+    + '<button class="btn-pill">Show log</button></div>';
+}
+
+const state = {};
+function fresh(job) {
+  return { state: 'idle', done: 0, total: job.items.length, item: '', headline: 0,
+           within: { done: 0, total: 0 }, when: '', took: '' };
+}
+for (const [id, job] of Object.entries(JOBS)) { state[id] = fresh(job); draw(id, job, state[id]); }
+
+async function run(id) {
+  const job = JOBS[id];
+  const s = state[id] = fresh(job);
+  const t0 = Date.now();
+  s.state = 'running';
+  s.when = new Date().toLocaleTimeString('en-GB');
+  for (let i = 0; i < job.items.length; i++) {
+    const [item, count] = job.items[i];
+    s.item = item; s.done = i;
+    const steps = 8;
+    for (let k = 1; k <= steps; k++) {
+      s.within = { done: Math.round((count / steps) * k), total: count };
+      s.headline += Math.round(count / steps);
+      draw(id, job, s);
+      await new Promise((r) => setTimeout(r, 110));
+    }
+  }
+  // Only now does it stop being "running" — after the outcome exists.
+  s.done = job.items.length;
+  s.within = { done: 0, total: 0 };
+  s.took = Math.max(1, Math.round((Date.now() - t0) / 1000)) + 's';
+  s.when = new Date().toLocaleTimeString('en-GB');
+  s.state = 'done';
+  draw(id, job, s);
+}
+</script>
+</body>
+</html>

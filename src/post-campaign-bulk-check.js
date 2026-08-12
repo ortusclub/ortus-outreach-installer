@@ -16,6 +16,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
+import { flushSheetWrites } from './sheets-writer.js';
 import * as browserSemaphore from './browser-semaphore.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
@@ -78,6 +79,19 @@ export function shouldFirePostCampaignDm(entry, connectedUrls) {
   return !!entry.ccDmBody;
 }
 
+/**
+ * Rebuild the `{ profileId: firstName }` map runAutoIntros/runAutoDms read from
+ * a schedule entry's single persisted name. Entries written before this shipped
+ * have no senderFirstName — those return {} and the send path keeps its old
+ * email-split fallback, so an old entry degrades exactly as it does today
+ * instead of throwing.
+ */
+export function senderFirstNamesFor(entry) {
+  const name = (entry && entry.senderFirstName || '').trim();
+  if (!name || !entry.profileId) return {};
+  return { [entry.profileId]: name };
+}
+
 // Lazy import to avoid a load-time circular dep with campaign.js (which
 // also imports from this file). Resolved at call time, never at module init.
 async function isCampaignRunning() {
@@ -101,6 +115,7 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
                                           autoAcceptPrimary = false, followUpEnabled = false,
                                           followUpBody = '', followUpDelayMinutes = 10,
                                           primarySource = 'local-browser',
+                                          senderFirstName = '',
                                           sweepIntervalMs = null }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
@@ -131,6 +146,17 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     followUpBody: followUpBody || '',
     followUpDelayMinutes: Number(followUpDelayMinutes) > 0 ? Number(followUpDelayMinutes) : 10,
     primarySource: (primarySource && primarySource !== 'local-browser') ? primarySource : 'local-browser',
+    // The operator-configured nice name for THIS account, so a sweep days later
+    // signs the intro/DM the same way the campaign itself did. The entry is
+    // per-(sheet, profile), so one string is the whole map: senderFirstNamesFor
+    // rebuilds the {profileId: name} shape runAutoIntros/runAutoDms expect.
+    // Without it those two paths fell through to `profileName.split(' ')[0]` —
+    // and profileName is the GoLogin label, i.e. the account's EMAIL. Every
+    // post-campaign intro carrying {sender first name} went out signed
+    // "nabungaires@gmail.com". The in-campaign and in-app monitoring paths both
+    // carried the name already (monitoring-persistence.js persists it); this
+    // background sweep was the one path that didn't.
+    senderFirstName: senderFirstName || '',
     // v2.148: per-entry sweep interval derived from the campaign's operator
     // cadence (checkIntervalMinutes). null → scheduler's 6h SWEEP_COOLDOWN_MS.
     sweepIntervalMs: Number(sweepIntervalMs) > 0 ? Number(sweepIntervalMs) : null,
@@ -267,10 +293,6 @@ async function tick() {
             // post-campaign window was silently skipped. Wrap in templates
             // here. (Same convention used by the 3 in-campaign call sites
             // in campaign.js and the manual /api/bulk-check-now button.)
-            // NOTE: senderFirstNames is not persisted on the schedule entry
-            // today, so `{sender first name}` tokens fall back to the
-            // profile email-split. Persist on registerSchedule in a future
-            // change if operators use that token in post-campaign intros.
             await runAutoIntros({
               page: launched.page,
               profileId: entry.profileId,
@@ -278,6 +300,7 @@ async function tick() {
               sheetUrl: entry.sheetUrl,
               linkedinColumn: entry.linkedinColumn,
               connectedUrls: r.connectedUrls,
+              senderFirstNames: senderFirstNamesFor(entry),
               templates: {
                 primaryName: entry.primaryName,
                 primaryIntroBody: entry.primaryIntroBody,
@@ -313,10 +336,11 @@ async function tick() {
               sheetUrl: entry.sheetUrl,
               linkedinColumn: entry.linkedinColumn,
               connectedUrls: r.connectedUrls,
-              // runAutoDms reads only templates.ccDmBody. senderFirstNames is not
-              // persisted on the schedule entry today (same limitation as the
-              // intro path) — {sender first name} falls back to the email split.
+              // runAutoDms reads the body from templates.ccDmBody and the nice
+              // name from the top-level senderFirstNames kwarg — two different
+              // places, mirroring the intro path above.
               templates: { ccDmBody: entry.ccDmBody },
+              senderFirstNames: senderFirstNamesFor(entry),
               log: (line) => {
                 console.log(`[post-campaign] ${line}`);
                 appendCampaignLog(entry.sheetId, entry.profileId, line);
@@ -330,6 +354,10 @@ async function tick() {
     } catch (err) {
       console.warn(`[post-campaign] ${entry.profileName} sweep threw: ${err.message}`);
     } finally {
+      // Sheet writes are coalesced in sheets-writer; land this account's
+      // buffered rows before the sweep moves on, so nothing is left sitting in
+      // the buffer if the tick ends or the app is closed.
+      try { await flushSheetWrites(); } catch { /* best-effort */ }
       try { await closeProfile(entry.profileId); } catch { /* */ }
       browserSemaphore.release();
     }

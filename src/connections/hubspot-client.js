@@ -79,8 +79,11 @@ export async function lookupBySlugs(slugs, { fetchImpl = fetch, token = process.
 import { CONNECTIONS_PROP, MEMBER_ID_PROP } from './magellan.js';
 
 // What we need back to decide create-vs-update and whether a real email exists.
+// createdate earns its place: when one person has three records, "in HubSpot
+// since 2021" is how a human tells the real one from the import's leftovers.
 export const MAGELLAN_PROPS = ['firstname', 'lastname', 'company', 'jobtitle',
-  'linkedinbio', 'email', 'hs_additional_emails', MEMBER_ID_PROP, CONNECTIONS_PROP];
+  'linkedinbio', 'email', 'hs_additional_emails', 'createdate',
+  MEMBER_ID_PROP, CONNECTIONS_PROP];
 
 // HubSpot caps batch endpoints at 100 objects per call.
 const BATCH_LIMIT = 100;
@@ -95,10 +98,19 @@ function chunk(arr, size = BATCH_LIMIT) {
  * Find existing contacts by LinkedIn member id — the key Magellan writes.
  * Returns a Map memberId → { id, properties }.
  */
-export async function lookupByMemberIds(memberIds, { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+export async function lookupByMemberIds(memberIds,
+  { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN, onProgress = null } = {}) {
   if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
   const out = new Map();
+  // Two contacts can carry the same LinkedIn id — the old manual process made
+  // one keyed on the synthetic address, and the person also exists under their
+  // real email. Keeping only "whichever HubSpot returned last" means updating
+  // an arbitrary half of a duplicate pair, so collect every hit and choose.
+  const all = new Map();
   const ids = [...new Set((memberIds || []).filter(Boolean).map(String))];
+  // 300-odd sequential round trips on a big account. Without a beat the card
+  // sits still for three minutes and reads as frozen.
+  let asked = 0;
   for (const batch of chunk(ids, BATCH_LIMIT)) {
     const body = {
       filterGroups: [{ filters: [{ propertyName: MEMBER_ID_PROP, operator: 'IN', values: batch }] }],
@@ -112,12 +124,73 @@ export async function lookupByMemberIds(memberIds, { fetchImpl = fetch, token = 
       const json = await res.json();
       for (const r of json.results || []) {
         const mid = r.properties?.[MEMBER_ID_PROP];
-        if (mid) out.set(String(mid), { id: r.id, properties: r.properties || {} });
+        if (!mid) continue;
+        const key = String(mid);
+        if (!all.has(key)) all.set(key, []);
+        all.get(key).push({ id: r.id, properties: r.properties || {} });
       }
       after = json.paging && json.paging.next && json.paging.next.after;
     } while (after);
+    asked += batch.length;
+    onProgress?.({ done: asked, total: ids.length });
   }
+
+  // Prefer the human-maintained record — the one with a real email — over the
+  // one the old CSV process created under a synthetic address. Writing to that
+  // one keeps the connection on the record people actually look at.
+  const duplicates = [];
+  for (const [mid, list] of all) {
+    const real = list.find((c) => !isSynthetic(c.properties?.email));
+    const keep = real || list[0];
+    out.set(mid, keep);
+    if (list.length > 1) {
+      duplicates.push({
+        memberId: mid,
+        keptId: keep.id,
+        otherIds: list.filter((c) => c.id !== keep.id).map((c) => c.id),
+        name: [keep.properties?.firstname, keep.properties?.lastname].filter(Boolean).join(' '),
+        company: keep.properties?.company || '',
+        // "Same LinkedIn id" is our only evidence that two records are one
+        // person. If that id was ever typed onto the wrong contact, merging
+        // would fuse two different humans — and HubSpot has no undo. So the
+        // names have to agree as well, and when they don't we say so instead
+        // of merging.
+        nameMatch: sameName(list),
+        // Every record, so the screen can show a person WHY one was chosen —
+        // a real address and an older join date — instead of two id numbers.
+        records: list.map((c) => ({
+          id: c.id,
+          email: c.properties?.email || '',
+          synthetic: isSynthetic(c.properties?.email),
+          createdAt: c.properties?.createdate || '',
+          kept: c.id === keep.id,
+        })),
+      });
+    }
+  }
+  // Array-style property, same convention getRecentConnections uses for
+  // .error / .partial — callers that don't care never see it.
+  out.duplicates = duplicates;
   return out;
+}
+
+function isSynthetic(email) {
+  return /@linkedinmembership\.id\s*$/i.test(String(email || ''));
+}
+
+/**
+ * Do every record agree on who this is? Compared loosely — punctuation and
+ * case differ all over a CRM — but a genuine disagreement ("Ina Dakay" vs
+ * "Patrick Reyes") must fail, because that is the case merging cannot undo.
+ * A record with no name at all abstains rather than blocking.
+ */
+function sameName(records) {
+  const names = records
+    .map((c) => [c.properties?.firstname, c.properties?.lastname].filter(Boolean).join(' '))
+    .map((s) => s.toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (names.length < 2) return true;
+  return names.every((x) => x === names[0]);
 }
 
 /**
@@ -186,6 +259,25 @@ export async function attachSyntheticEmail({ id, email, asPrimary },
     { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`HubSpot ${res.status}: ${await res.text()}`);
   return { id, email, action: 'additional_added' };
+}
+
+/**
+ * Fold one contact into another. HubSpot keeps the primary's own field values
+ * and pulls across everything the secondary has that the primary lacks —
+ * including its email, which is the whole point here: the synthetic address
+ * stops being owned by a second record.
+ *
+ * There is no undo in HubSpot. Callers must have said yes to this explicitly.
+ */
+export async function mergeContacts({ primaryId, mergeId },
+  { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  if (!primaryId || !mergeId) throw new Error('mergeContacts needs both ids');
+  if (String(primaryId) === String(mergeId)) throw new Error('Refusing to merge a contact into itself');
+  const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/merge`, token,
+    { primaryObjectId: String(primaryId), objectIdToMerge: String(mergeId) });
+  const j = await res.json();
+  return { id: j.id || primaryId, merged: String(mergeId) };
 }
 
 /** Does the portal actually have the properties Magellan writes? */

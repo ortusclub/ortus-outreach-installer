@@ -11,6 +11,7 @@
  * result object — outreach must never depend on it.
  */
 import { SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './sheets-webapp-url.js';
+import { onWebappLane } from './webapp-lane.js';
 
 // 30s PER HOP. It used to be 10s SHARED across both hops of the
 // POST-then-follow-the-302 dance — less than a cold Apps Script container's
@@ -278,6 +279,14 @@ export function buildNeedsLoginPayload({ email }) {
 // One attempt: POST, then follow the 302 by hand (node fetch would downgrade
 // the redirected POST to a GET).
 async function postOnce(payload) {
+  // Queued behind every other Apps Script POST this process makes. setSoO and
+  // bumpSoOConnections both take a GLOBAL LockService lock inside the script,
+  // so two of these in flight at once don't just risk the simultaneous-
+  // invocation limit — the second one sits burning its 10s waitLock.
+  return onWebappLane(() => _postOnceOnLane(payload));
+}
+
+async function _postOnceOnLane(payload) {
   // A FRESH signal per hop — the redirect follow gets its own full budget, the
   // way every other webapp caller here does it (soo.js:93, sheets.js:288,
   // sheets-writer.js:88, log-writer.js:232). Sharing one signal meant the

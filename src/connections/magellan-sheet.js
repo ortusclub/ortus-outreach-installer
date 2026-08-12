@@ -17,11 +17,12 @@
 // jobs. That contention is what made the first run's tabs come back empty.
 import { MAGELLAN_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { readForPlan } from './magellan-pull.js';
-import { syntheticEmail } from './magellan.js';
+import { syntheticEmail, isHidden } from './magellan.js';
 
 export const ACCOUNTS_TAB = 'Accounts';
 export const LOG_TAB = 'Log';
 export const IMPORT_TAB = 'Import';
+export const PLAN_TAB = 'Plan';
 
 // Abygael's cleaned-sheet layout, verbatim. This is what gets imported, so the
 // names must match the HubSpot property labels exactly — including
@@ -33,6 +34,9 @@ export const ACCOUNTS_HEADER = ['Account', 'Status', 'Connections', 'With Member
   'Hidden', 'Collected At', 'Problem', 'What to do'];
 export const LOG_HEADER = ['Time', 'Event'];
 export const IMPORT_HEADER = ['Account', 'Created', 'Updated', 'Extra Emails', 'Errors', 'Detail'];
+// What Import would do, one row per person. The reviewer is not the operator —
+// this is the only artifact a second person can open without the app running.
+export const PLAN_HEADER = ['Account', 'First Name', 'Last Name', 'LinkedIn', 'What happens'];
 
 const s = (v) => (v == null ? '' : String(v));
 
@@ -156,6 +160,97 @@ export function logRows(state = {}) {
   });
 }
 
+// What Check found, keyed by LinkedIn member id: the HubSpot id if the person
+// is already there, null if they are new. publish() is called from four
+// places — Check itself, and later, unrelated writes from collect, merge and
+// import — and every one of them has to draw the same Plan tab. Threading a
+// per-call override through all four would mean the three that never ran
+// Check (and so never populated this) each need to know to pass one through;
+// keeping it here instead means they don't have to know this exists at all.
+// Cleared by resetPlanVerdicts(), which magellan-run's reset() calls
+// alongside resetting _plans, so a fresh sweep starts with no stale verdicts.
+let _verdicts = null;
+
+/** Called once by buildPreview after Check finishes. */
+export function setPlanVerdicts(verdicts) { _verdicts = verdicts; }
+
+/** A fresh sweep or an explicit reset invalidates every verdict Check found. */
+export function resetPlanVerdicts() { _verdicts = null; }
+
+/**
+ * One row per person Check looked at, with what Import would do to them.
+ *
+ * `read` is injected so this stays pure and testable — the real one is
+ * readForPlan, the same reader buildPreview used, so the rows here are the
+ * rows that would actually be written. The already-in-HubSpot verdict itself
+ * does NOT come from these rows — readForPlan rebuilds them from disk on
+ * every call, so nothing stamped on them earlier survives a second read — it
+ * comes from _verdicts, set once by buildPreview and shared by every caller.
+ */
+export function planRows(state = {}, read = readForPlan, verdicts = _verdicts) {
+  const pv = state.preview;
+  if (!pv) return [];
+  const out = [];
+  for (const account of pv.accounts || []) {
+    let rows = [];
+    try { rows = read(account) || []; } catch { continue; }
+    const seen = new Set();
+    for (const r of rows) {
+      // Same three buckets planAccount uses, in the same order, so the tab
+      // never disagrees with the ledger about which bucket someone is in.
+      if (isHidden(r)) {
+        out.push([account, r.firstName || '', r.lastName || '', '',
+          'Hidden by LinkedIn — nothing we can do']);
+        continue;
+      }
+      if (!r.memberId) {
+        out.push([account, r.firstName || '', r.lastName || '',
+          r.slug ? `https://www.linkedin.com/in/${r.slug}` : '',
+          'Not collected yet — no LinkedIn ID, we retry next collection']);
+        continue;
+      }
+      // LinkedIn occasionally lists the same person twice in one export;
+      // planAccount issues one write for them, so this issues one row.
+      if (seen.has(r.memberId)) continue;
+      seen.add(r.memberId);
+      const existingId = verdicts ? verdicts.get(String(r.memberId)) : null;
+      const what = existingId
+        ? 'Already in HubSpot — we note the connection, nothing else changes'
+        : 'Will be added';
+      out.push([account, r.firstName || '', r.lastName || '',
+        r.slug ? `https://www.linkedin.com/in/${r.slug}` : '', what]);
+    }
+  }
+  return out;
+}
+
+/**
+ * One-line provenance banner, written as the first row under the Plan tab's
+ * header — the row a reader cannot miss without scrolling past it.
+ *
+ * The Plan tab can go stale two ways and neither is fixed here (on purpose —
+ * see the comment on this being called from publish()): runImport rewrites
+ * it at the end with the *pre-import* verdicts, so right after an Import it
+ * still says "Will be added" for people who were just added; and a Check
+ * that finds nothing new leaves plan.length at 0, so the write is skipped
+ * and whatever was there survives untouched. Either way, a reader who can
+ * see WHEN this was built and WHAT it covers can judge for themselves
+ * whether they're looking at something current — which is all a stamp can
+ * honestly promise.
+ */
+export function planBanner(state = {}) {
+  const pv = state.preview || {};
+  const built = pv.builtAt
+    ? new Date(pv.builtAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'an unknown time';
+  const n = (pv.accounts || []).length;
+  const coverage = `This plan was built ${built} and covers ${n} account${n === 1 ? '' : 's'}.`;
+  const msg = state.imported
+    ? `${coverage} An Import has already run. The rows below show what it was going to do, not what will happen if you press Import now.`
+    : `${coverage} If a Check or an Import ran since, the rows below may no longer be accurate.`;
+  return [msg, '', '', '', ''];
+}
+
 export function importRows(imported = null) {
   if (!imported) return [];
   return (imported.perAccount || []).map((a) => [
@@ -200,6 +295,11 @@ export async function publish(state = {}, deps = {}) {
       last = await write(tabNameFor(a.account), CONNECTIONS_HEADER, rows, deps);
       _written.set(a.account, rows.length);
     }
+
+    const plan = planRows(state, read);
+    // The banner rides along with the data it describes — it is only worth
+    // writing when there is a plan to have a provenance date at all.
+    if (plan.length) last = await write(PLAN_TAB, PLAN_HEADER, [planBanner(state), ...plan], deps);
 
     const imp = importRows(state.imported);
     if (imp.length) await write(IMPORT_TAB, IMPORT_HEADER, imp, deps);

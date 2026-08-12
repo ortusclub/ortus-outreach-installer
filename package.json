@@ -1,14 +1,14 @@
 {
   "name": "ortus-outreach",
   "productName": "The Ortus Outreach",
-  "version": "3.1.17",
+  "version": "3.1.37",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test tests/*.test.js",
+    "test": "node --test tests/*.test.js tests/connections/*.test.js tests/linkedin/*.test.js",
     "test:check-dms": "node --test tests/check-dms-*.test.js",
     "reset": "echo '{\"processed\":{},\"dailyCounts\":{}}' > data/state.json && echo 'State reset.'",
     "build:docs": "node docs/build.js",

@@ -1178,6 +1178,15 @@ function handleUpdateRows(sheet, data) {
     return jsonResponse({ error: 'No LinkedIn URL column found in the sheet' });
   }
 
+  // Read the URL column ONCE for the whole batch. This was inside the loop
+  // (via findRowsByUrl) and cost a full-column read per lead: 46s measured for
+  // a single 100-row chunk, which the client aborted at 30s — so the rows were
+  // reported lost while the script went on writing them.
+  var lastRow = sheet.getLastRow();
+  var urlsCache = lastRow >= 2
+    ? sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues()
+    : [];
+
   var results = [];
   for (var r = 0; r < rows.length; r++) {
     var item = rows[r] || {};
@@ -1188,7 +1197,7 @@ function handleUpdateRows(sheet, data) {
     try {
       // Same semantics as handleUpdateRow: stamp EVERY copy of the lead
       // (duplicate rows), auditing only once per lead.
-      var targetRows = findRowsByUrl(sheet, urlColIndex, item.linkedinUrl);
+      var targetRows = findRowsByUrl(sheet, urlColIndex, item.linkedinUrl, urlsCache);
       if (targetRows.length === 0) {
         results.push({ error: 'Row not found for: ' + item.linkedinUrl });
         continue;
@@ -1483,10 +1492,19 @@ function normalizeUrl(url) {
 // last. Exact normalized match first; if none, fall back to a /in/<slug>
 // contains-match (or a bare-slug search). Mirror of matchingRowNumbers in
 // src/sheet-url-match.js (keep in sync).
-function findRowsByUrl(sheet, urlColIndex, searchUrl) {
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  var urls = sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues();
+// `urlsCache` is the already-read URL column, [[v],[v],…] starting at row 2.
+// Pass it from a bulk handler: without it every lead in a 100-row batch
+// re-reads the whole column, which measured 46s for one chunk on a real sheet
+// — past the client's 30s timeout, so the batch aborted and the rows were lost
+// even though the script kept running. With it, the column is read once.
+// Safe to reuse across a batch: nothing here ever writes the URL column.
+function findRowsByUrl(sheet, urlColIndex, searchUrl, urlsCache) {
+  var urls = urlsCache;
+  if (!urls) {
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+    urls = sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues();
+  }
   var target = normalizeUrl(searchUrl);
   if (!target) return [];
 
@@ -1815,12 +1833,13 @@ function handleGetSoO(data) {
   var inmailUserCol    = findHeader(function(h) { return h.indexOf('inmail') !== -1 && h.indexOf('user') !== -1; });
   var ccCreditsCol     = findHeader(function(h) { return h.indexOf('cc') !== -1 && h.indexOf('credits') !== -1; });
 
-  if (emailCol === -1) {
-    return jsonResponse({
-      error: 'Required "Email" column header not found in SoO sheet',
-      errorCode: 'MISSING_EMAIL_HEADER'
-    });
-  }
+  // The header cell gets cleared or renamed from time to time by whoever is
+  // working in the sheet, and the tab is protected so it cannot always be put
+  // back. Column A has always held the email, so fall back to it rather than
+  // taking the whole app down over one cell. Every OTHER column stays strictly
+  // header-matched — this is a fallback for the one column we know the position
+  // of, not a return to positional reads.
+  if (emailCol === -1) emailCol = 0;
 
   var allData = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
   var accounts = [];

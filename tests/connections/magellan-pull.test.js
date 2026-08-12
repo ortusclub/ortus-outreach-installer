@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   formatConnectedOn, readExistingBySlug, mergeRows, toCsv, writeAccountCsv,
-  readForPlan, collectAccount, CSV_HEADER,
+  readForPlan, collectAccount, listCollected, CSV_HEADER,
 } from '../../src/connections/magellan-pull.js';
 import { ingestFolder } from '../../src/connections/csv-ingest.js';
 
@@ -157,4 +157,41 @@ test('no progress callback means no polling — bulk-check behaviour is unchange
   };
   await collectAccount(page, 'x@y.com', { dir });
   assert.equal(evaluates, 1, 'only the walk itself — no beacon reads');
+});
+
+// The picker's route calls listCollected on every visit, and parsing 455 CSVs
+// holding 70MB took ~1.9s of blocking work each time. The parse is cached per
+// file on (mtime, size); a rewritten file must not serve the old count.
+test('listCollected re-reads a file after it changes', () => {
+  const dir = tmpdir();
+  const file = path.join(dir, 'a@b.com.csv');
+  const ONE = `${CSV_HEADER.join(',')}\nx,y,https://www.linkedin.com/in/one,,,,,111\n`;
+  const TWO = `${ONE}a,b,https://www.linkedin.com/in/two,,,,,\n`;
+  fs.writeFileSync(file, TWO);
+
+  const first = listCollected({ dir });
+  assert.equal(first.get('a@b.com').count, 2);
+  assert.equal(first.get('a@b.com').withMemberId, 1);
+
+  // Prove the parse was actually SKIPPED, not merely that the answer matched:
+  // make the file unreadable. stat() still works, so the (mtime, size) stamp is
+  // unchanged and a cache hit still answers 2 — while a reparse would throw and
+  // drop the account entirely.
+  fs.chmodSync(file, 0o000);
+  try {
+    // Root ignores the mode bits, which would turn both assertions below into
+    // silent passes. Say so rather than pretend the test ran.
+    assert.throws(() => fs.readFileSync(file), 'this test cannot run as root');
+    assert.equal(listCollected({ dir }).get('a@b.com').count, 2, 'served from cache');
+    // ...and `fresh` — what the refresh button sends — really does reparse.
+    assert.equal(listCollected({ dir, fresh: true }).get('a@b.com'), undefined, 'fresh reparses');
+  } finally {
+    fs.chmodSync(file, 0o600);
+  }
+
+  // An ordinary rewrite moves the size, so no bypass is needed for it.
+  fs.writeFileSync(file, TWO);
+  const after = listCollected({ dir }).get('a@b.com');
+  assert.equal(after.count, 2);
+  assert.equal(after.withMemberId, 1);
 });

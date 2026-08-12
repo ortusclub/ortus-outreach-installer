@@ -26,7 +26,7 @@ import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfileP
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
 import { withGid, extractSheetGid } from './utils.js';
-import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
+import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
 import { getPrefs as getOperatorPrefs, identityGateEnabled } from './operator-prefs.js';
@@ -36,6 +36,8 @@ import { emptyTally, applyOutcome } from './campaign-tally.js';
 import { summariseCampaign } from './campaign-summary.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta, waitForProfileRender } from './linkedin/helpers.js';
+// Note-credit state for the sending session — see the WeakMap in actions.js.
+import { getNoteState } from './linkedin/actions.js';
 import { verifyConnectIdentity, readSourceMemberId, is404Url } from './profile-identity.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros, _shouldQueueAutoAccept } from './linkedin/auto-intro.js';
@@ -4096,6 +4098,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               profilesThatSentAtLeastOne.add(profileId);
             }
             if (result.action === 'connection_sent') {
+              // Did the invite carry its note? Read off the browser session —
+              // performOutreach's return shape lives in an off-limits file, and
+              // before 2026-08-11 a noteless invite looked identical to a noted
+              // one here, so twelve bare sends were logged as clean successes.
+              try {
+                const _note = getNoteState(page);
+                if (_note.lastNoteIncluded === false) {
+                  log(`  ✉ ${pName}: invite sent WITHOUT the note — this account has used LinkedIn's free personalised invites${_note.used ? ` (${_note.used} this run)` : ''}. Invites keep going out; the note doesn't.`);
+                  campaign.noteExhaustedProfiles = campaign.noteExhaustedProfiles || {};
+                  if (_note.exhausted) campaign.noteExhaustedProfiles[profileId] = true;
+                }
+              } catch { /* reporting only — never fail a good send over it */ }
               try {
                 const meta = await captureProfileMeta(page);
                 // v2.86.9 — only stamp the captured URN when it provably belongs
@@ -5077,6 +5091,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // Stop, mark accordingly. campaign._abort is set by stopCampaign().
     if (endReason !== 'errored' && campaign._abort) endReason = 'stopped';
 
+    // Sheet writes are coalesced, so the last few can still be sitting in the
+    // buffer when the loop ends. Land them before anything reports the run
+    // finished — otherwise the final leads of every campaign go unwritten.
+    await flushSheetWrites().catch((e) => log(`  ⚠ Final sheet flush failed: ${e.message}`));
+
     // v2.72: build a one-shot "why did it stop" notice the dashboard turns into
     // a popup. Covers every end reason — errored, operator-stopped, all accounts
     // parked (self-stop), or simply no more rows to process. The frontend
@@ -5324,6 +5343,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             followUpBody: (templates && templates.followUpBody) || '',
             followUpDelayMinutes: (templates && templates.followUpDelayMinutes) || 10,
             primarySource: (templates && templates.primarySource) || 'local-browser',
+            // The nice name this account sent under during the campaign, so an
+            // intro fired days later by the background sweep signs off the same
+            // way. Read off the campaign (not the closure) because that copy is
+            // the one startCampaign froze at launch.
+            senderFirstName: (campaign.senderFirstNames || {})[pid] || '',
             // v2.148 cleanup: sweep at the operator-configured cadence instead
             // of the hardcoded 6h. Entries without this field (old builds /
             // unset cadence) keep the scheduler's 6h SWEEP_COOLDOWN_MS fallback.

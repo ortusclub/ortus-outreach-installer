@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startCollect, buildPreview, runImport, getState, reset } from '../../src/connections/magellan-run.js';
+import {
+  startCollect, stopCollect, buildPreview, runImport, mergeDuplicates, getState, getPlans, reset,
+} from '../../src/connections/magellan-run.js';
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
@@ -111,6 +113,7 @@ test('preview totals up new vs existing across accounts, writing nothing', async
     options: async () => new Set(['a@o.com', 'b@o.com']),
     read: (acct) => rows[acct],
     lookup: async () => new Map([['2', { id: '900', properties: { email: 'real@x.com' } }]]),
+    sheet: noSheet,
   });
   assert.equal(totals.created, 2);
   assert.equal(totals.updated, 1);
@@ -140,6 +143,150 @@ test('import reports per-stage errors instead of throwing them away', async () =
   assert.deepEqual(r.errors.map((e) => e.stage), ['update', 'email']);
 });
 
+test('the import narrates itself — progress, per account, and why a problem happened', async () => {
+  reset();
+  const plans = [{
+    account: 'a@o.com',
+    plan: {
+      creates: [{ properties: {} }],
+      updates: [{ id: '1', properties: {} }],
+      additionalEmails: [{ id: '900', email: 'x@linkedinmembership.id', asPrimary: false }],
+    },
+  }];
+  await runImport(plans, {
+    create: async () => ({ created: 1, errors: [] }),
+    update: async () => ({ updated: 1, errors: [] }),
+    attach: async () => { throw new Error('HubSpot 409: Contact already has that email'); },
+    sheet: noSheet,
+  });
+  const s = getState();
+  const log = s.log.join('\n');
+  // The counters the card's progress bar reads.
+  assert.equal(s.done, 1);
+  assert.equal(s.total, 1);
+  // The operator needs the account, the numbers, and the reason — a bare
+  // "1 problems" pointing at an empty log is what this replaced.
+  assert.match(log, /▶ Importing 1 account — 2 people/);
+  assert.match(log, /✓ a@o\.com: 1 added, 1 updated, 1 problem/);
+  // Translated, not echoed: what happened, what to do, and HubSpot's own words
+  // in brackets so a wrong explanation is visible rather than hidden.
+  assert.match(log, /⚠ a@o\.com: That email address is already used by someone else/);
+  assert.match(log, /merge them/);
+  assert.match(log, /\[HubSpot 409: Contact already has that email\]/);
+  assert.match(log, /■ Import finished\. 1 added, 1 updated, 1 problem/);
+  // The roll-up someone hands to whoever cleans HubSpot.
+  assert.match(log, /⚠ 1 × That email address is already used by someone else/);
+});
+
+const DUPES = [
+  { account: 'a@o.com', memberId: '444725921', name: 'Alecx Bagatsolon', keptId: '192286279995', otherIds: ['33062650786'] },
+  { account: 'a@o.com', memberId: '9895272', name: 'Rinky Rani', keptId: '230221683470', otherIds: ['1', '2'] },
+];
+
+test('merging folds every extra record into the one that is kept', async () => {
+  reset();
+  const calls = [];
+  const r = await mergeDuplicates(DUPES, {
+    merge: async (p) => { calls.push(p); return { id: p.primaryId, merged: p.mergeId }; },
+    sheet: noSheet,
+  });
+  assert.equal(r.ok, true);
+  // Three records folded away, not two: the second person had two spares.
+  assert.equal(r.merged, 3);
+  assert.deepEqual(calls, [
+    { primaryId: '192286279995', mergeId: '33062650786' },
+    { primaryId: '230221683470', mergeId: '1' },
+    { primaryId: '230221683470', mergeId: '2' },
+  ]);
+});
+
+test('the pairs are logged BEFORE the first merge — it cannot be undone', async () => {
+  reset();
+  // Sampled at the moment of the FIRST merge, not after the call returns —
+  // reading the log at the end proves nothing about ordering, and the previous
+  // version of this test passed with the logging loop moved below the merges.
+  let logAtFirstMerge = null;
+  await mergeDuplicates(DUPES, {
+    merge: async () => {
+      if (!logAtFirstMerge) logAtFirstMerge = [...getState().log];
+      return {};
+    },
+    sheet: noSheet,
+  });
+  assert.ok(logAtFirstMerge, 'at least one merge ran');
+  // Every pair was already named in the log when the first irreversible call
+  // was made — so a crash mid-merge still leaves a record of what was touched.
+  const listedBefore = logAtFirstMerge.filter((l) => /keeping .+, folding in/.test(l));
+  assert.equal(listedBefore.length, DUPES.length);
+  const log = getState().log;
+  assert.match(log.join('\n'), /cannot be undone/i);
+  assert.match(log.join('\n'), /Alecx Bagatsolon .*192286279995.*33062650786/);
+});
+
+test('one merge that fails does not abandon the rest, and says why', async () => {
+  reset();
+  const r = await mergeDuplicates(DUPES, {
+    merge: async (p) => {
+      if (p.mergeId === '33062650786') throw new Error('HubSpot 403: scopes');
+      return {};
+    },
+    sheet: noSheet,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.merged, 2);
+  assert.equal(r.errors.length, 1);
+  assert.match(getState().log.join('\n'), /The app is not allowed to do this/);
+});
+
+test('records that disagree about the name are never merged', async () => {
+  reset();
+  const merged = [];
+  const r = await mergeDuplicates([
+    { memberId: '1', name: 'Ina Dakay', keptId: '10', otherIds: ['11'], nameMatch: true },
+    { memberId: '2', name: 'Ina Dakay', keptId: '20', otherIds: ['21'], nameMatch: false },
+  ], { merge: async (p) => { merged.push(p.mergeId); return {}; }, sheet: noSheet });
+  assert.equal(r.ok, true);
+  // Only the pair whose names agree.
+  assert.deepEqual(merged, ['11']);
+  const log = getState().log.join('\n');
+  assert.match(log, /may be two different people/i);
+  assert.match(log, /left alone: Ina Dakay \(LinkedIn 2\)/);
+  assert.match(log, /1 left alone for a human to check/);
+});
+
+test('when every pair is a name mismatch, nothing is merged at all', async () => {
+  reset();
+  const r = await mergeDuplicates([{ memberId: '2', keptId: '20', otherIds: ['21'], nameMatch: false }],
+    { merge: async () => { throw new Error('must not be called'); }, sheet: noSheet });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /name mismatch/i);
+});
+
+test('merging refuses when Check has not found any duplicates', async () => {
+  reset();
+  const r = await mergeDuplicates([], { merge: async () => { throw new Error('must not be called'); } });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /run Check first/i);
+});
+
+test('a merged pair is cleared from the preview so it cannot be merged twice', async () => {
+  reset();
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's', memberId: '444725921' }],
+    lookup: async () => {
+      const m = new Map();
+      m.duplicates = [{ memberId: '444725921', keptId: '10', otherIds: ['11'], name: 'Alecx' }];
+      return m;
+    },
+    sheet: noSheet,
+  });
+  assert.equal(getState().preview.duplicates.length, 1);
+  await mergeDuplicates(null, { merge: async () => ({}), sheet: noSheet });
+  assert.equal(getState().preview.duplicates.length, 0);
+});
+
 test('nothing is written until runImport is called', async () => {
   reset();
   let wrote = false;
@@ -149,6 +296,7 @@ test('nothing is written until runImport is called', async () => {
     read: () => [{ slug: 's', memberId: '1' }],
     lookup: async () => new Map(),
     create: async () => { wrote = true; },
+    sheet: noSheet,
   });
   assert.equal(wrote, false);
   assert.equal(getState().imported, null);
@@ -256,6 +404,7 @@ test('an account HubSpot cannot accept is held back and named', async () => {
     options: async () => new Set(['nushe@o.com']),
     read: () => [{ slug: 's', memberId: '1' }],
     lookup: async () => new Map(),
+    sheet: noSheet,
   });
   assert.deepEqual(blocked, ['Jovana']);
   assert.equal(totals.created, 1, 'only the account that can be written is counted');
@@ -268,6 +417,7 @@ test('the option check is case-insensitive — HubSpot options are emails either
     options: async () => new Set(['nushe@o.com']),
     read: () => [],
     lookup: async () => new Map(),
+    sheet: noSheet,
   });
   assert.deepEqual(blocked, []);
 });
@@ -291,4 +441,274 @@ test('the same account twice in one selection is collected once', async () => {
   await settle();
   assert.deepEqual(seen, ['a@o.com', 'b@o.com']);
   assert.equal(getState().total, 2);
+});
+
+// The bug this exists to stop coming back: the card read
+// "NOT RUNNING · 92% · Idle" for several seconds while Check was still working,
+// because running cleared before the answer was written.
+//
+// A timer-based poller cannot catch this: buildPreview here resolves through a
+// chain of already-resolved promises, which drains as pure microtasks and
+// never once hands control to the timers phase, so a setInterval poll placed
+// around the call never gets a turn while it's actually running — it can only
+// ever observe the state well after everything is already settled, which
+// would let a real ordering regression slip straight through disguised as a
+// pass. onRunEnd is the seam built for exactly this: it fires from inside
+// buildPreview's own finally, one line after running clears, so it sees the
+// state at that instant with no race to lose.
+test('the answer exists before running clears', async () => {
+  reset();
+  let snapshot = null;
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => new Map(),
+    onRunEnd: (st) => { snapshot = st; },
+    sheet: noSheet,
+  });
+  assert.ok(snapshot, 'onRunEnd fired');
+  assert.equal(snapshot.running, false, 'running had already cleared by the time onRunEnd saw it');
+  assert.ok(snapshot.preview, 'preview was already written when running cleared');
+  assert.ok(snapshot.outcome, 'the outcome was already written too');
+});
+
+test('a check that throws still clears running, and says why', async () => {
+  reset();
+  await assert.rejects(() => buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => { throw new Error('HubSpot 401: token expired'); },
+  }), /token expired/);
+  const st = getState();
+  assert.equal(st.running, false, 'the card must not be left looking busy');
+  assert.equal(st.phase, 'error');
+  assert.equal(st.outcome.ok, false);
+  assert.equal(st.outcome.summary, 'HubSpot 401: token expired');
+});
+
+test('a finished check carries its outcome', async () => {
+  reset();
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }, { slug: 's2', memberId: '2', firstName: 'B' }],
+    lookup: async () => new Map([['2', { id: '900', properties: { email: 'real@x.com' } }]]),
+    sheet: noSheet,
+  });
+  const st = getState();
+  assert.equal(st.outcome.ok, true);
+  assert.equal(st.outcome.summary, '1 new · 1 already there');
+});
+
+test('a blocked account reaches the outcome, named', async () => {
+  reset();
+  await buildPreview(['a@o.com', 'nope@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => new Map(),
+    sheet: noSheet,
+  });
+  assert.match(getState().outcome.problems.join(' '), /nope@o\.com/);
+});
+
+test('a finished collect carries its outcome', async () => {
+  reset();
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }], {
+    semaphore: fakeSemaphore(),
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    collect: async () => ({ total: 10, withMemberId: 9, hidden: 1 }),
+    sheet: noSheet,
+  });
+  await settle();
+  const st = getState();
+  assert.equal(st.outcome.ok, true);
+  assert.equal(st.outcome.summary, '10 people from 1 account · 9 with a LinkedIn ID');
+});
+
+test('a finished import carries its outcome', async () => {
+  reset();
+  await runImport([{ account: 'a@o.com', plan: { creates: [{ properties: {} }], updates: [], additionalEmails: [] } }], {
+    create: async () => ({ created: 1, errors: [] }),
+    update: async () => ({ updated: 0, errors: [] }),
+    attach: async () => {},
+    sheet: noSheet,
+  });
+  const st = getState();
+  assert.equal(st.outcome.ok, true);
+  assert.equal(st.outcome.summary, '1 added · 0 updated');
+});
+
+// F1 regression: buildPreview used to spread the previous _state and never
+// clear `imported`, so buildOutcome — which prefers `imported` over
+// `preview` by field presence — kept reporting the LAST import's numbers on
+// every Check that ran afterwards. Reproduces the exact real sequence:
+// Check → Import → Check, and asserts the second Check's outcome is its own.
+test('a Check after an Import states the Check\'s own numbers, not the Import\'s', async () => {
+  reset();
+  const rows = {
+    'a@o.com': [{ slug: 's1', memberId: '1', firstName: 'A' }, { slug: 's2', memberId: '2', firstName: 'B' }],
+  };
+  const checkDeps = {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: (acct) => rows[acct],
+    sheet: noSheet,
+  };
+
+  // 1. Check — 1 new, 1 already there.
+  await buildPreview(['a@o.com'], { ...checkDeps, lookup: async () => new Map([['2', { id: '900', properties: {} }]]) });
+  assert.equal(getState().outcome.summary, '1 new · 1 already there');
+
+  // 2. Import — deliberately different numbers than the check, so a leak is
+  // unmistakable.
+  await runImport(getPlans(), {
+    create: async () => ({ created: 4, errors: [] }),
+    update: async () => ({ updated: 7, errors: [] }),
+    attach: async () => {},
+    sheet: noSheet,
+  });
+  assert.equal(getState().outcome.summary, '4 added · 7 updated');
+
+  // 3. Check again — nothing already there this time. The outcome must be
+  // THIS check's numbers, never the import's.
+  await buildPreview(['a@o.com'], { ...checkDeps, lookup: async () => new Map() });
+  const st = getState();
+  assert.equal(st.outcome.summary, '2 new · 0 already there');
+  assert.notEqual(st.outcome.summary, '4 added · 7 updated', 'the second Check must not report the Import\'s result');
+});
+
+// F1 regression, second half: `stopped` leaked the same way — stop a
+// collect, then run a Check, and the card's eyebrow (app.js: `if (s.stopped)
+// set('mg-eyebrow', 'Stopped')`) read "Stopped" forever because nothing ever
+// cleared it on the next run.
+test('stop a collect, then run a Check — Stopped does not survive into it', async () => {
+  reset();
+  startCollect([
+    { account: 'a@o.com', profileId: 'p1' },
+    { account: 'b@o.com', profileId: 'p2' },
+  ], {
+    semaphore: fakeSemaphore(),
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    // Asks to stop while the first account is still "in flight" — the second
+    // account is then never started, exactly like stopCollect() being
+    // clicked mid-sweep.
+    collect: async () => { stopCollect(); return { total: 1, withMemberId: 1, hidden: 0 }; },
+    sheet: noSheet,
+  });
+  await settle();
+  assert.equal(getState().stopped, true, 'sanity: the stop actually landed');
+
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => new Map(),
+    sheet: noSheet,
+  });
+  assert.equal(getState().stopped, false, 'a Check that never stopped must not be marked Stopped');
+});
+
+// startCollect, runImport and mergeDuplicates all refused to start on top of a
+// live run; Check did not, and shares the same module-level _state.
+test('a Check refuses to start on top of a live collect', async () => {
+  reset();
+  let release;
+  const held = new Promise((r) => { release = r; });
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }], {
+    semaphore: fakeSemaphore(),
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    collect: async () => { await held; return { total: 10, withMemberId: 10, hidden: 0 }; },
+    sheet: noSheet,
+  });
+  await settle();
+  assert.equal(getState().running, true);
+
+  await assert.rejects(
+    () => buildPreview(['a@o.com'], {
+      checkProps: async () => { throw new Error('must not be reached'); },
+      options: async () => { throw new Error('must not be reached'); },
+      sheet: noSheet,
+    }),
+    /already running/i,
+  );
+  // The collect's own run is untouched by the refusal.
+  assert.equal(getState().phase, 'collecting');
+  release();
+  await settle();
+  assert.equal(getState().done, 1);
+  assert.equal(getState().phase, 'done');
+});
+
+// An account HubSpot allows but that was never collected reads back as zero
+// rows. Counting it as "looked at" produced "0 new · 0 already there".
+test('a Check on an allowed but uncollected account says nothing was collected', async () => {
+  reset();
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [],
+    lookup: async () => new Map(),
+    sheet: noSheet,
+  });
+  const st = getState();
+  assert.deepEqual(st.preview.read, [], 'no account had a file with rows in it');
+  assert.equal(st.outcome.ok, false);
+  assert.match(st.outcome.summary, /nothing has been collected yet/i);
+});
+
+// A contact HubSpot already holds complete needs no property written, so it
+// lands in neither creates nor updates. "Already there" counted updates.
+test('a Check counts people HubSpot already holds, not just the ones it will write to', async () => {
+  reset();
+  const complete = {
+    id: '900',
+    properties: {
+      linkedin_membership_id: '111',
+      linkedin_1st_connections: 'a@o.com',
+      firstname: 'Al', lastname: 'Ecx', company: 'Ortus', jobtitle: 'Ops',
+      email: 'alecx@ortusclub.com',
+      hs_additional_emails: '111@linkedinmembership.id',
+    },
+  };
+  const { totals } = await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 'alecx', memberId: '111', firstName: 'Al', lastName: 'Ecx', company: 'Ortus', jobTitle: 'Ops' }],
+    lookup: async () => new Map([['111', complete]]),
+    sheet: noSheet,
+  });
+  assert.equal(totals.created, 0, 'HubSpot already has them');
+  assert.equal(totals.updated, 0, 'and there is nothing left to write');
+  assert.equal(totals.existing, 1, 'but they were still found');
+  assert.match(getState().outcome.summary, /^0 new · 1 already there$/);
+});
+
+// HubSpot cannot un-create a contact, so an import that dies part-way still has
+// to account for what it already wrote.
+test('an import that fails part-way still reports what it already wrote', async () => {
+  reset();
+  const plans = [
+    { account: 'a@o.com', plan: { creates: [{ connection: { memberId: '1' }, properties: {} }], updates: [], additionalEmails: [] } },
+    { account: 'b@o.com', plan: { creates: [{ connection: { memberId: '2' }, properties: {} }], updates: [], additionalEmails: [] } },
+  ];
+  const r = await runImport(plans, {
+    create: async (items) => {
+      if (items[0].properties === plans[1].plan.creates[0].properties) throw new Error('HubSpot 500');
+      return { created: 7, errors: [] };
+    },
+    update: async () => ({ updated: 0, errors: [] }),
+    attach: async () => ({ attached: 0, errors: [] }),
+    sheet: noSheet,
+  });
+  assert.equal(r.ok, false);
+  const st = getState();
+  assert.equal(st.imported.created, 7, 'the first account is on the record');
+  assert.equal(st.outcome.ok, false);
+  assert.match(st.outcome.summary, /7 added .* before it stopped — HubSpot 500/);
 });

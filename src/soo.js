@@ -9,6 +9,7 @@
  */
 
 import { SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './sheets-webapp-url.js';
+import { onWebappLane } from './webapp-lane.js';
 
 // Measured against the live sheet 2026-07-31 (1011 rows, ~1.0 MB): the happy
 // path is 3-5s, but successful fetches were seen at 12.6s and slow failures at
@@ -81,19 +82,26 @@ async function fetchSoOOnce() {
     // A FRESH signal per hop. Sharing one meant the redirect follow — the hop
     // that actually streams the ~1 MB body — inherited whatever was left after
     // the POST, so a slow handshake could leave it almost no time at all.
-    const initial = await fetch(webappUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: payload,
-      redirect: 'manual',
-      signal: AbortSignal.timeout(SOO_TIMEOUT_MS),
+    //
+    // On the shared webapp lane: this read pulls a ~1 MB body and holds an Apps
+    // Script execution the whole time, so letting it run alongside a campaign's
+    // row writes is exactly the contention that trips the per-spreadsheet
+    // simultaneous-invocation limit.
+    data = await onWebappLane(async () => {
+      const initial = await fetch(webappUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        redirect: 'manual',
+        signal: AbortSignal.timeout(SOO_TIMEOUT_MS),
+      });
+
+      const response = (initial.status >= 300 && initial.status < 400)
+        ? await fetch(initial.headers.get('location'), { signal: AbortSignal.timeout(SOO_TIMEOUT_MS) })
+        : initial;
+
+      return response.json();
     });
-
-    const response = (initial.status >= 300 && initial.status < 400)
-      ? await fetch(initial.headers.get('location'), { signal: AbortSignal.timeout(SOO_TIMEOUT_MS) })
-      : initial;
-
-    data = await response.json();
   } catch (err) {
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {
       throw makeError(`Apps Script timed out after ${SOO_TIMEOUT_MS / 1000}s`, 'TIMEOUT');

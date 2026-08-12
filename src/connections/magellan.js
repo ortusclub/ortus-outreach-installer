@@ -131,6 +131,13 @@ export function planAccount(connections, account, lookup) {
   const hidden = [];
   const unresolved = [];
   const seen = new Set();
+  // People HubSpot already holds. NOT the same as `updates`: a contact that is
+  // already complete — member id, connection, names — produces an empty
+  // property patch and never becomes an update. Counting updates as "already
+  // there" meant re-checking an account straight after importing it read
+  // "0 new · 0 already there" while the Plan tab written by the same run listed
+  // every one of them as already in HubSpot.
+  let existingCount = 0;
 
   for (const c of connections || []) {
     if (isHidden(c)) { hidden.push(c); continue; }
@@ -148,6 +155,7 @@ export function planAccount(connections, account, lookup) {
       creates.push({ connection: c, properties: createProperties(c, account) });
       continue;
     }
+    existingCount += 1;
     const props = updateProperties(c, account, existing.properties);
     if (Object.keys(props).length) {
       updates.push({ id: existing.id, connection: c, properties: props });
@@ -172,6 +180,7 @@ export function planAccount(connections, account, lookup) {
     unresolved,
     counts: {
       created: creates.length,
+      existing: existingCount,
       updated: updates.length,
       extraEmails: additionalEmails.length,
       hidden: hidden.length,

@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.17" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.17" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.37" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.37" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -714,6 +714,49 @@
            the full width. */
         body[data-dashboard='v3'] #mg-card.is-detailed .vj-details { grid-template-columns: 1fr; }
         body[data-dashboard='v3'] #mg-card .vj-log { max-height: 360px; }
+        /* 15px is right mid-run, when the stage block sits above the pills.
+           Once it is hidden — which is exactly when a finished run's pills
+           matter — they crowd the title. Scoped to this card so campaign
+           screens keep their spacing. */
+        body[data-dashboard='v3'] #mg-card .vj-stage-accts { margin-top: 26px; margin-bottom: 4px; }
+        body[data-dashboard='v3'] #mg-card #mg-acct-detail { margin-top: 14px; }
+
+        /* The allowlist split. Quiet by default; the blocked names are the
+           part worth reading, so only they carry weight. */
+        body[data-dashboard='v3'] .mg-selbar-split {
+          display: block; width: 100%; margin-top: 7px;
+          font-size: 12.5px; line-height: 1.6; color: var(--gray);
+        }
+        body[data-dashboard='v3'] .mg-selbar-split b { color: var(--ink); font-weight: 600; }
+        body[data-dashboard='v3'] .mg-selbar-split .blk { font-family: ui-monospace, monospace; font-size: 12px; }
+
+        /* The outcome. One sentence, then the things worth knowing. Never a
+           progress colour — a finished run is a record, not an activity. */
+        body[data-dashboard='v3'] .mg-outcome {
+          margin: 16px 0 2px; padding-top: 15px; border-top: 1px solid var(--hairline);
+        }
+        body[data-dashboard='v3'] .mg-outcome .oc-sum { font-size: 15px; font-weight: 600; line-height: 1.5; }
+        body[data-dashboard='v3'] .mg-outcome.is-bad .oc-sum { color: var(--red); }
+        body[data-dashboard='v3'] .mg-outcome .oc-list { margin: 9px 0 0; padding: 0; list-style: none; }
+        body[data-dashboard='v3'] .mg-outcome .oc-list li {
+          font-size: 13px; line-height: 1.62; color: var(--gray);
+          padding-left: 15px; position: relative;
+        }
+        body[data-dashboard='v3'] .mg-outcome .oc-list li + li { margin-top: 5px; }
+        body[data-dashboard='v3'] .mg-outcome .oc-list li::before {
+          content: '·'; position: absolute; left: 3px;
+        }
+
+        /* The review line above Import. Import is the only irreversible thing
+           on this screen, so this earns a hairline of its own rather than
+           blending into the confirm text above it. */
+        body[data-dashboard='v3'] .mg-review {
+          margin: 0 0 14px; font-size: 13px; line-height: 1.65; color: var(--gray);
+          padding-left: 13px; border-left: 2px solid var(--hairline);
+        }
+        body[data-dashboard='v3'] .mg-review b { color: var(--ink); font-weight: 600; }
+        body[data-dashboard='v3'] .mg-review a { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
       </style>
       <div id="cx-magellan-pane" hidden>
         <p class="cx-lede">Collect the connections of our LinkedIn accounts and put them in HubSpot. <b>This is where the database comes from</b> — everything the other tab searches was collected here.</p>
@@ -740,6 +783,15 @@
                   <button type="button" class="chip" data-filter="all" onclick="setMagellanFilter('all')">All <span class="count" id="mg-count-all">0</span></button>
                   <button type="button" class="chip" data-filter="selected" onclick="setMagellanFilter('selected')">Selected <span class="count" id="mg-count-selected">0</span></button>
                 </div>
+                <!-- Same refresh control the GoLogin selector has. The list is one
+                     fetch away from GoLogin, the SoO sheet and HubSpot, so a blip
+                     empties it — this reloads without restarting the app, and
+                     keeps whatever is already ticked. -->
+                <div class="browse-icon-row">
+                  <button type="button" class="browse-icon-btn" onclick="refreshMagellanAccounts(this)" title="Refresh the account list" aria-label="Refresh the account list">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                  </button>
+                </div>
               </div>
               <div class="browse-secondary">
                 <div class="browse-bulk-row">
@@ -757,6 +809,10 @@
           <div class="mg-selbar">
             <span class="mg-selbar-n" id="mg-sel-count">0</span>
             <span class="mg-selbar-t" id="mg-sel-sub">accounts selected</span>
+            <!-- Which of them HubSpot will actually take. Said here, before
+                 Check runs — it used to be a log line after the run, which is
+                 why "13 accounts selected" sat above a run of "11 of 12". -->
+            <span class="mg-selbar-split" id="mg-sel-split" hidden></span>
           </div>
           <!-- Same live card as a running campaign (.vj-card), tuned for
                Magellan: the stage block names the account and what it is doing
@@ -790,12 +846,12 @@
                 <div class="num"><span id="mg-pct">0</span><span class="sub">%</span></div>
                 <div class="vj-meta">
                   <span><b id="mg-done">0</b> of <span id="mg-total">0</span> accounts</span>
-                  <span><b id="mg-people">0</b> people so far</span>
+                  <span><b id="mg-people">0</b> <span id="mg-people-lbl">people so far</span></span>
                 </div>
               </div>
               <div class="vj-stats" aria-live="polite">
-                <span><b id="mg-matched">0</b> with a LinkedIn ID</span>
-                <span><b id="mg-failed">0</b> failed</span>
+                <span><b id="mg-matched">0</b> <span id="mg-matched-lbl">with a LinkedIn ID</span></span>
+                <span><b id="mg-failed">0</b> <span id="mg-failed-lbl">failed</span></span>
                 <span>· <b id="mg-phase-lbl">Idle</b></span>
               </div>
             </div>
@@ -804,6 +860,11 @@
                  must read as two problems, not three hundred lines. -->
             <!-- One pill per account, same row a campaign uses. Click one for
                  its numbers, or for why it failed — raw error included. -->
+            <!-- What happened, once it has happened. The card used to keep its
+                 live counters after a run ended, so a finished Check read
+                 "92% · 0 people so far". Written by the run itself, so it
+                 cannot exist without the run having ended. -->
+            <div class="mg-outcome" id="mg-outcome" hidden></div>
             <div class="vj-stage-accts" id="mg-accts" hidden></div>
             <div id="mg-acct-detail" hidden></div>
 
@@ -842,7 +903,7 @@
             <div class="mg-led">
               <div class="mg-led-n" id="mg-led-existing">—</div>
               <div class="mg-led-t">Already there</div>
-              <div class="mg-led-s">We'll note the extra connection on their record. Nothing else changes.</div>
+              <div class="mg-led-s">We'll note the extra connection where it isn't already on their record. Nothing else changes.</div>
             </div>
             <div class="mg-led">
               <div class="mg-led-n" id="mg-led-hidden">—</div>
@@ -856,6 +917,15 @@
 
           <div class="mg-confirm">
             <div class="mg-confirm-t" id="mg-confirm-t"><b>Nothing has gone into HubSpot yet.</b> Check first to see what would happen.</div>
+            <!-- The review step. Import is the only irreversible thing on this
+                 screen, and the person who checks it is usually not the person
+                 pressing it. -->
+            <div class="mg-review" id="mg-review" hidden>
+              <b>Want someone to check this first?</b>
+              <a href="#" onclick="openMagellanSheet();return false;">Open the full list in the sheet</a>
+              — every person, which account they came from, and what Import would do to them.
+              Nothing goes into HubSpot until someone presses Import.
+            </div>
             <div class="mg-confirm-btns">
               <button type="button" class="btn btn-secondary" id="mg-preview-btn" onclick="previewMagellan()">Check what would happen</button>
               <button type="button" class="btn" id="mg-import-btn" onclick="importMagellan()" hidden>Import</button>
@@ -4013,7 +4083,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.17"></script>
+  <script type="module" src="/js/app.js?v=3.1.37"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
