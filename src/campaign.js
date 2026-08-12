@@ -5338,6 +5338,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             followUpBody: (templates && templates.followUpBody) || '',
             followUpDelayMinutes: (templates && templates.followUpDelayMinutes) || 10,
             primarySource: (templates && templates.primarySource) || 'local-browser',
+            // The nice name this account sent under during the campaign, so an
+            // intro fired days later by the background sweep signs off the same
+            // way. Read off the campaign (not the closure) because that copy is
+            // the one startCampaign froze at launch.
+            senderFirstName: (campaign.senderFirstNames || {})[pid] || '',
             // v2.148 cleanup: sweep at the operator-configured cadence instead
             // of the hardcoded 6h. Entries without this field (old builds /
             // unset cadence) keep the scheduler's 6h SWEEP_COOLDOWN_MS fallback.
