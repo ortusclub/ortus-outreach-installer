@@ -188,6 +188,26 @@ test('a shared profile launches with its owning workspace\'s token', async () =>
   });
 });
 
+test('a whitespace-padded GoLogin name is trimmed at the source', async () => {
+  // Real profile, 2026-08-12: "nabungaires@gmail.com " in the Linked Velocity
+  // workspace. The SoO matchers normalise, but the raw name is written verbatim
+  // into the sheet's "Account Used" column and is what {sender first name}
+  // email-splits from — so it gets cleaned once, on the way in.
+  await withAccounts({ ortus: ORTUS }, async () => {
+    mockGologin({ [ORTUS]: { profiles: [{ id: 'n1', name: 'nabungaires@gmail.com ' }] } });
+    const list = await getProfiles();
+    assert.equal(list[0].name, 'nabungaires@gmail.com');
+  });
+});
+
+test('a missing GoLogin name does not become the string "undefined"', async () => {
+  await withAccounts({ ortus: ORTUS }, async () => {
+    mockGologin({ [ORTUS]: { profiles: [{ id: 'n2' }] } });
+    const list = await getProfiles();
+    assert.equal(list[0].name, '');
+  });
+});
+
 test('a profile that genuinely moves workspaces re-tags on the next list', async () => {
   // First-wins must not freeze the first answer forever: ownership is decided
   // fresh per run, so a profile removed from Ortus lands on marketing.

@@ -98,7 +98,16 @@ async function fetchAccountProfiles(accountId, token) {
     if (!profiles.length) break;
 
     for (const p of profiles) {
-      allProfiles.push({ id: p.id, name: p.name, notes: p.notes || '', account: accountId });
+      // Trim once, here, so no consumer has to. GoLogin lets a profile be named
+      // with stray whitespace and one is ("nabungaires@gmail.com " — note the
+      // trailing space). The SoO matchers happen to normalise
+      // (account-guardrails lookupSoO trims, soo-writer normAccount strips all
+      // whitespace), but plenty of paths use the name RAW: it is written
+      // verbatim into the sheet's "Account Used" column, printed in logs and
+      // tiles, and is the string `{sender first name}` email-splits from when
+      // no nice name resolves. One padded name is a silent mismatch waiting for
+      // the first consumer that compares without normalising.
+      allProfiles.push({ id: p.id, name: String(p.name || '').trim(), notes: p.notes || '', account: accountId });
     }
 
     console.log(`[gologin] ${accountId} page ${page}: ${allProfiles.length}/${totalCount}`);
