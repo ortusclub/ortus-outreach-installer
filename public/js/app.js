@@ -27026,31 +27026,61 @@ function setConnTab(tab) {
   if (!warm && !mgAccounts.length) loadMagellanAccounts();
 }
 
-async function loadMagellanAccounts() {
+// `keepSelection` is for the refresh button: the list is re-fetched, but what
+// the operator has already ticked survives it. Only the first load — and a load
+// after a sweep, when the DONE badges have changed — resets to the default.
+async function loadMagellanAccounts({ keepSelection = false } = {}) {
   try {
+    const previous = keepSelection ? new Set(mgSelected) : null;
     mgAccounts = await mgFetch('/api/magellan/accounts');
+    if (previous) {
+      // A profile that has since disappeared from GoLogin must not stay ticked —
+      // it would be sent to a collect that cannot open it.
+      const live = new Set(mgAccounts.map((a) => a.profileId));
+      mgSelected = new Set([...previous].filter((id) => live.has(id)));
+    } else {
     // Tick exactly what can be imported today: collected AND carrying LinkedIn
     // member ids. An account without ids has nothing HubSpot can match on, so
     // including it only pads the blocked list. The old default was every
     // UNcollected account, which meant one click asked for 262 accounts.
     // Two GoLogin profiles can resolve to one account email — tick one of them,
     // or the preview reads that account's file twice and doubles its numbers.
-    const pickedAccounts = new Set();
-    mgSelected = new Set(mgAccounts
-      .filter((a) => a.collected && a.withMemberId > 0)
-      .filter((a) => {
-        const key = String(a.account || '').toLowerCase();
-        if (pickedAccounts.has(key)) return false;
-        pickedAccounts.add(key);
-        return true;
-      })
-      .map((a) => a.profileId));
+      const pickedAccounts = new Set();
+      mgSelected = new Set(mgAccounts
+        .filter((a) => a.collected && a.withMemberId > 0)
+        .filter((a) => {
+          const key = String(a.account || '').toLowerCase();
+          if (pickedAccounts.has(key)) return false;
+          pickedAccounts.add(key);
+          return true;
+        })
+        .map((a) => a.profileId));
+    }
     renderMagellanAccounts();
     refreshMagellanState();
+    return true;
   } catch (err) {
     showMagellanError(err.message);
+    return false;
   }
 }
+
+// The list is one fetch away from three services — GoLogin, the SoO sheet and
+// HubSpot — so a network blip empties it and leaves "fetch failed" under the
+// card with no way back except restarting the app. This is that way back.
+async function refreshMagellanAccounts(btn) {
+  showMagellanError('');
+  if (btn) btn.disabled = true;
+  try {
+    const ok = await loadMagellanAccounts({ keepSelection: true });
+    if (ok && !mgAccounts.length) {
+      showMagellanError('No GoLogin profiles came back. Check that GoLogin is running, then refresh again.');
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+window.refreshMagellanAccounts = refreshMagellanAccounts;
 
 function magellanVisible() {
   const q = (document.getElementById('mg-search')?.value || '').trim().toLowerCase();
