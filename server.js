@@ -2588,9 +2588,20 @@ app.get('/api/magellan/sheet-url', async (_req, res) => {
 // The SoO is a slow, heavily-contended read and the picker reloads often, so
 // hold the email list for a few minutes. Only the addresses are kept.
 let _magellanSoo = { at: 0, emails: [] };
-async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000 } = {}) {
+async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000, timeoutMs = 6000 } = {}) {
   if (_magellanSoo.emails.length && Date.now() - _magellanSoo.at < maxAgeMs) return _magellanSoo.emails;
-  const soo = await fetchSoOData();
+  // fetchSoOData retries a 25s Apps Script timeout, so a struggling sheet takes
+  // ~78s to FAIL — measured 2026-08-12, with the picker awaiting it the whole
+  // time. The tab rendered an empty account list and no error, because the
+  // request was simply still open, and nobody waits 78 seconds. The HubSpot leg
+  // below was already capped; this one was not. Losing the SoO only costs the
+  // email resolution, which the caller already handles.
+  const TIMED_OUT = Symbol('magellan-soo-timeout');
+  const soo = await Promise.race([
+    fetchSoOData(),
+    new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), timeoutMs)),
+  ]);
+  if (soo === TIMED_OUT) throw new Error(`the SoO did not answer within ${Math.round(timeoutMs / 1000)}s`);
   const emails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
   if (emails.length) _magellanSoo = { at: Date.now(), emails };
   return emails;
