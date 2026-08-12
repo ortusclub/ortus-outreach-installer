@@ -260,15 +260,17 @@ export async function updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinCo
 // The buffer is keyed by (sheetId, gid, urlColumnName) — the three things that
 // decide which cells a row resolves to. Rows destined for different tabs or
 // matched on different URL columns can never share an execution.
-// 25, not the engine's 100. Measured against the live deployment 2026-08-12:
-// 1 row 2.1s, 25 rows 8.4s, 100 rows 40.7s — the per-row cost is dominated by
-// handleUpdateRows re-reading the whole URL column for every lead. A 100-row
-// chunk would therefore sit ~41s inside one execution, and the app would be
-// waiting on it the whole time. 25 keeps a chunk under 10s with room to spare.
-// google-apps-script.js now hoists that column read out of the loop; once that
-// version is DEPLOYED (it is not yet — see the note in the commit) re-measure
-// and this can go to 100.
-const BULK_CHUNK = 25;
+// 100, same as the cloud engine's BULK_CHUNK — the two must not drift.
+//
+// Measured against the live deployment 2026-08-12, before and after the
+// handleUpdateRows fix that hoists the URL-column read out of the per-lead
+// loop:  100 rows  40.7s → 3.8s,  25 rows  8.4s → 4.2s. Per-row cost is now
+// flat, so the chunk size is bounded by the execution's own ceiling rather
+// than by a scan that grew with it. These timings are for rows that resolve
+// to no sheet row, so they exclude the per-row write itself; the engine has
+// run 100-row chunks of real writes against this same script under a 30s
+// timeout, and this side allows 60s.
+const BULK_CHUNK = 100;
 const COALESCE_MS = 300;              // max added latency for a lone write
 
 const _rowBuffers = new Map();        // key -> { sheetId, gid, col, items, timer }

@@ -12,7 +12,7 @@ import {
 // laptop — one Apps Script execution per row — and lost 1,772 of them to
 // "Troppe chiamate simultanee: Fogli di lavoro", the per-spreadsheet
 // simultaneous-invocation limit. These lock down the three things that fixed
-// it: rows are coalesced into 25-row `updateRows` executions, only one
+// it: rows are coalesced into 100-row `updateRows` executions, only one
 // execution is ever in flight, and a load-shedding error is retryable.
 
 const SHEET = 'https://docs.google.com/spreadsheets/d/SHEET_A/edit#gid=0';
@@ -49,15 +49,15 @@ async function withMock(reply, fn) {
   finally { await flushSheetWrites().catch(() => {}); globalThis.fetch = saved; }
 }
 
-test('250 row writes become 10 bulk executions, not 250', async () => {
+test('250 row writes become 3 bulk executions, not 250', async () => {
   await withMock(okRows, async (app) => {
     const rows = Array.from({ length: 250 }, (_, i) =>
       updateSheetRow(SHEET, `https://linkedin.com/in/lead-${i}`, { stage: 'CC' }, 'linkedin url'));
     const results = await Promise.all(rows);
 
-    assert.equal(app.posts.length, 10, 'one execution per 25 rows');
+    assert.equal(app.posts.length, 3, 'one execution per 100 rows');
     assert.deepEqual([...new Set(app.posts.map((p) => p.action))], ['updateRows']);
-    assert.deepEqual(app.posts.map((p) => p.rows.length), Array(10).fill(25));
+    assert.deepEqual(app.posts.map((p) => p.rows.length), [100, 100, 50]);
     assert.equal(results.filter(Boolean).length, 250, 'every caller still gets its own true');
   });
 });
@@ -130,7 +130,7 @@ test('batchUpdateSheet chunks instead of posting the whole array', async () => {
     const updates = Array.from({ length: 220 }, (_, i) => ({ linkedinUrl: `u${i}`, needsLogin: 'Y' }));
     const ok = await batchUpdateSheet(SHEET, updates);
     assert.equal(ok, true);
-    assert.deepEqual(app.posts.map((p) => p.updates.length), [...Array(8).fill(25), 20]);
+    assert.deepEqual(app.posts.map((p) => p.updates.length), [100, 100, 20]);
   });
 });
 
