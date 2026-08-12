@@ -27262,8 +27262,13 @@ async function refreshMagellanState() {
       mgPoll = null;
       const btn = document.getElementById('mg-collect-btn');
       if (btn) btn.disabled = false;
-      // Counts and DONE badges change once a sweep lands.
-      loadMagellanAccounts();
+      // Counts and DONE badges change once a sweep lands. keepSelection,
+      // because this reload exists to update badges — discarding the ticks is
+      // not its job. It used to, and the "check whatever the last collect
+      // touched" fallback in previewMagellan was papering over it: collect one
+      // account, and by the time it finished the tick was gone, so Check had an
+      // empty selection and silently ran a batch instead.
+      loadMagellanAccounts({ keepSelection: true });
     }
   } catch { /* transient — the next tick retries */ }
 }
