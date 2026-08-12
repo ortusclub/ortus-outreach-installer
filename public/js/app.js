@@ -38,7 +38,7 @@ import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, cam
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
-import { magellanPct, selectionSummary } from '/js/magellan-view.mjs';
+import { magellanPct, selectionSummary, mgNum } from '/js/magellan-view.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -27108,7 +27108,7 @@ function renderMagellanAccounts() {
     item.className = 'profile-item jt ' + (a.collected ? 'is-done' : 'free') + (on ? ' selected' : '');
     const when = a.collectedAt ? new Date(a.collectedAt).toLocaleDateString() : '';
     let sub = a.collected
-      ? `${(a.count || 0).toLocaleString()} collected on ${when}. Tick to collect again.`
+      ? `${mgNum(a.count || 0)} collected on ${when}. Tick to collect again.`
       : 'Never collected.';
     // The label on the GoLogin profile, when it isn't the address itself —
     // that's how the operator recognises the account.
@@ -27303,9 +27303,9 @@ function renderMagellanAccountDetail() {
     const errs = a.errors || [];
     box.innerHTML = `<div class="mg-det-h">${escHtml(a.account)}`
       + `${errs.length ? ` — ${errs.length} problem${errs.length === 1 ? '' : 's'}` : ''}</div>`
-      + `<div class="mg-det-why">${(a.created || 0).toLocaleString()} added · `
-      + `${(a.updated || 0).toLocaleString()} updated · `
-      + `${(a.extraEmails || 0).toLocaleString()} email addresses attached</div>`
+      + `<div class="mg-det-why">${mgNum(a.created || 0)} added · `
+      + `${mgNum(a.updated || 0)} updated · `
+      + `${mgNum(a.extraEmails || 0)} email addresses attached</div>`
       + (errs.length
         ? '<div class="mg-det-fix">Everyone here was written and now lists this account. '
           + 'What failed is one extra detail — usually a second email address that another '
@@ -27318,8 +27318,8 @@ function renderMagellanAccountDetail() {
 
   if (!a.error) {
     box.innerHTML = `<div class="mg-det-h">${escHtml(a.account)}</div>`
-      + `<div class="mg-det-why">${(a.total || 0).toLocaleString()} connections · `
-      + `${(a.withMemberId || 0).toLocaleString()} with a LinkedIn ID`
+      + `<div class="mg-det-why">${mgNum(a.total || 0)} connections · `
+      + `${mgNum(a.withMemberId || 0)} with a LinkedIn ID`
       + `${a.hidden ? ` · ${a.hidden} hidden by LinkedIn` : ''}</div>`;
     return;
   }
@@ -27359,27 +27359,33 @@ function renderMagellanState(s) {
   // read "0 people · 0 with a LinkedIn ID" directly above a log saying 24,607
   // people moved. When the import is what ran, the hero counts the import.
   const imp = s.imported;
-  const heroIsImport = Boolean(imp) && !ok.length && !checking;
+  // Which run the hero is counting is decided by which run happened, never by
+  // inferring it from whether some OTHER run's counters happen to be empty.
+  // `!ok.length` meant an Import in the same session as a collect fell through
+  // to the collect branch: "24,607 people · 9,102 with a LinkedIn ID" in the
+  // hero, "4,102 added · 20,505 updated" in the outcome line under it. perAccount
+  // survives a run change on purpose, so it can never be the discriminator.
+  const heroIsImport = Boolean(imp) && !s.running;
   // A Check that has finished. Its own numbers, not the collect's that preceded
   // it — the two live side by side in the state on purpose (the Check reports a
   // collect's failures in its problem list) and used to bleed into each other
-  // here.
+  // here. An Import supersedes it: newest run wins, same rule the outcome uses.
   const heroIsCheck = Boolean(s.preview) && !imp && !s.running;
   if (checking && s.running) {
     // Nothing is decided yet, so the only honest number is how far along we
     // are: people asked about, out of accounts done.
-    set('mg-people', (s.checked || 0).toLocaleString());
+    set('mg-people', mgNum(s.checked || 0));
     set('mg-people-lbl', 'people checked');
     set('mg-matched', (s.total || 0) - (s.done || 0));
     set('mg-matched-lbl', 'accounts to go');
     set('mg-failed', 0);
     set('mg-failed-lbl', 'failed');
   } else if (heroIsImport) {
-    set('mg-people', ((imp.created || 0) + (imp.updated || 0)).toLocaleString());
+    set('mg-people', mgNum((imp.created || 0) + (imp.updated || 0)));
     set('mg-people-lbl', 'people imported');
-    set('mg-matched', (imp.created || 0).toLocaleString());
+    set('mg-matched', mgNum(imp.created || 0));
     set('mg-matched-lbl', 'added');
-    set('mg-failed', (imp.updated || 0).toLocaleString());
+    set('mg-failed', mgNum(imp.updated || 0));
     set('mg-failed-lbl', 'updated');
   } else if (heroIsCheck) {
     // A finished Check used to fall through to the collect branch, so the hero
@@ -27389,18 +27395,18 @@ function renderMagellanState(s) {
     // did.
     const pv = s.preview || {};
     const skipped = (pv.blocked || []).length;
-    set('mg-people', (s.checked || 0).toLocaleString());
+    set('mg-people', mgNum(s.checked || 0));
     set('mg-people-lbl', 'people checked');
-    set('mg-matched', (s.done || 0).toLocaleString());
+    set('mg-matched', mgNum(s.done || 0));
     set('mg-matched-lbl', 'accounts checked');
-    set('mg-failed', skipped.toLocaleString());
+    set('mg-failed', mgNum(skipped));
     set('mg-failed-lbl', skipped === 1 ? 'account skipped' : 'accounts skipped');
   } else {
-    set('mg-people', people.toLocaleString());
+    set('mg-people', mgNum(people));
     // "so far" is a promise of more to come. Once a run has ended there is no
     // more, and the outcome block below is where the real answer lives.
     set('mg-people-lbl', s.running ? 'people so far' : 'people');
-    set('mg-matched', matched.toLocaleString());
+    set('mg-matched', mgNum(matched));
     set('mg-matched-lbl', 'with a LinkedIn ID');
     set('mg-failed', failed);
     set('mg-failed-lbl', 'failed');
@@ -27411,7 +27417,11 @@ function renderMagellanState(s) {
   el('mg-card')?.classList.toggle('is-live', !!s.running);
   const stopBtn = el('mg-stop-btn');
   if (stopBtn) {
-    stopBtn.hidden = !s.running;
+    // Only the collect loop reads the stop flag (magellan-run.js `_stopRequested`).
+    // Showing Stop during a Check or an Import logged "Stop requested", disabled
+    // the button, and then ran every remaining account to completion — the one
+    // control on this card that is supposed to be believable, lying.
+    stopBtn.hidden = !s.running || importing || checking;
     if (s.running && s.step !== 'Stopping after this account') {
       stopBtn.disabled = false;
       stopBtn.textContent = 'Stop';
@@ -27458,15 +27468,15 @@ function renderMagellanState(s) {
         if (c.stage === 'check') {
           // Check asks HubSpot in batches of 100. Count people, not batches —
           // "2,300 of 5,945 people" is the thing being waited on.
-          sub += ` · ${c.count.toLocaleString()} of ${(c.total || 0).toLocaleString()} people`;
+          sub += ` · ${mgNum(c.count)} of ${mgNum(c.total || 0)} people`;
         } else if (ids) {
           // Second half: the list is already in hand, this resolves each
           // person's LinkedIn ID. Say so, or it looks like the count reset.
-          sub += ` · looking up LinkedIn IDs, ${c.count.toLocaleString()} of ${(c.total || 0).toLocaleString()}`;
+          sub += ` · looking up LinkedIn IDs, ${mgNum(c.count)} of ${mgNum(c.total || 0)}`;
         } else {
           sub += c.total
-            ? ` · ${c.count.toLocaleString()} of ${c.total.toLocaleString()} connections`
-            : ` · ${c.count.toLocaleString()} connections so far`;
+            ? ` · ${mgNum(c.count)} of ${mgNum(c.total)} connections`
+            : ` · ${mgNum(c.count)} connections so far`;
         }
       }
       set('mg-stage-sub', sub);
@@ -27474,7 +27484,7 @@ function renderMagellanState(s) {
       set('mg-beat-txt', 'Reading only — nothing is being sent');
       set('mg-beat-right', ids
         ? 'looking up IDs'
-        : (c && c.pages ? `page ${c.pages}` : `${people.toLocaleString()} collected`));
+        : (c && c.pages ? `page ${c.pages}` : `${mgNum(people)} collected`));
     }
   }
 
@@ -27495,9 +27505,9 @@ function renderMagellanState(s) {
       const cls = a.error ? 'bad' : (probs ? 'warn' : 'ok');
       const n = a.error ? 'failed'
         : a.isImport
-          ? `${(a.created || 0).toLocaleString()} added · ${(a.updated || 0).toLocaleString()} updated`
+          ? `${mgNum(a.created || 0)} added · ${mgNum(a.updated || 0)} updated`
             + (probs ? ` · ${probs} problem${probs === 1 ? '' : 's'}` : '')
-          : (a.total || 0).toLocaleString();
+          : mgNum(a.total || 0);
       return `<button type="button" class="stg-acct" onclick="showMagellanAccount(${i})">`
         + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(a.account)}</span>`
         + `<span class="n">${escHtml(n)}</span></span></button>`;
@@ -27637,15 +27647,17 @@ async function previewMagellan() {
       body: JSON.stringify({ accounts }),
     });
     const t = j.totals || {};
-    document.getElementById('mg-led-new').textContent = (t.created || 0).toLocaleString();
-    document.getElementById('mg-led-existing').textContent = (t.updated || 0).toLocaleString();
-    document.getElementById('mg-led-hidden').textContent = (t.hidden || 0).toLocaleString();
+    document.getElementById('mg-led-new').textContent = mgNum(t.created || 0);
+    // `existing`, not `updated`: a contact HubSpot already holds complete needs
+    // no property written, so it is in neither the creates nor the updates.
+    document.getElementById('mg-led-existing').textContent = mgNum(t.existing || 0);
+    document.getElementById('mg-led-hidden').textContent = mgNum(t.hidden || 0);
     document.getElementById('mg-ledger').hidden = false;
     document.getElementById('mg-confirm-t').innerHTML =
       '<b>Nothing has gone into HubSpot yet.</b> The numbers above are what will happen when you press Import.';
     const imp = document.getElementById('mg-import-btn');
     imp.hidden = false;
-    imp.textContent = `Import ${(t.created || 0).toLocaleString()} people`;
+    imp.textContent = `Import ${mgNum(t.created || 0)} people`;
     // Only once Check has produced a plan — a link to an empty sheet is worse
     // than no link.
     const rev = document.getElementById('mg-review');
@@ -27707,9 +27719,9 @@ async function importMagellan() {
     if (j.ok === false) throw new Error(j.reason);
     const probs = (j.errors || []).length;
     document.getElementById('mg-confirm-t').innerHTML =
-      `<b>Done.</b> ${(j.created || 0).toLocaleString()} people added, `
-      + `${(j.updated || 0).toLocaleString()} existing people updated`
-      + (j.extraEmails ? `, ${j.extraEmails.toLocaleString()} email addresses attached` : '')
+      `<b>Done.</b> ${mgNum(j.created || 0)} people added, `
+      + `${mgNum(j.updated || 0)} existing people updated`
+      + (j.extraEmails ? `, ${mgNum(j.extraEmails)} email addresses attached` : '')
       + (probs
         ? ` · <b>${probs} problem${probs === 1 ? '' : 's'}</b> — press Show log to see which, and why. `
           + 'A problem means one detail was skipped, not that the person was missed.'

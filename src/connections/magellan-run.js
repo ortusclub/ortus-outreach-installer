@@ -264,6 +264,14 @@ export async function buildPreview(accounts, deps = {}) {
     // always loses. Named for what it watches, not what it does.
     onRunEnd = () => {} } = deps;
 
+  // startCollect, runImport and mergeDuplicates each refuse to start on top of
+  // a live run; Check was the one that did not. It shares the same module-level
+  // _state, so a Check clicked during a collect replaced the collect's counters
+  // mid-sweep, and the collect then ended the Check for it — writing a COLLECT
+  // outcome and running:false while HubSpot calls were still in flight. Throws
+  // rather than returning a reason because the route destructures the result.
+  if (_state.running) throw new Error('Magellan is already running — wait for it to finish.');
+
   // Fail before doing any work if the portal is missing the properties we write
   // — otherwise every single create silently drops the fields that matter.
   const props = await checkProps();
@@ -283,7 +291,7 @@ export async function buildPreview(accounts, deps = {}) {
   }
 
   const plans = [];
-  const totals = { created: 0, updated: 0, extraEmails: 0, hidden: 0, unresolved: 0, total: 0 };
+  const totals = { created: 0, existing: 0, updated: 0, extraEmails: 0, hidden: 0, unresolved: 0, total: 0 };
 
   // Check is three minutes of silence on a real sweep. Drive the same card the
   // collect and import halves drive, so "is it still going?" is answered by
@@ -364,6 +372,12 @@ export async function buildPreview(accounts, deps = {}) {
     _plans = plans;
     _state.preview = {
       totals, blocked, duplicates, builtAt: new Date().toISOString(), accounts: usable,
+      // Accounts that actually had a file to read. `accounts` is what HubSpot
+      // ALLOWED, which is not the same thing: tick an allowed account that was
+      // never collected and readForPlan returns [] silently, so every total
+      // stays 0 and the summary reads "0 new · 0 already there" as if the sweep
+      // had looked and found everything known. This is what it looked at.
+      read: plans.filter((p) => p.plan.counts.total > 0).map((p) => p.account),
     };
     if (blocked.length) {
       log(`⚠ ${blocked.length} account${blocked.length === 1 ? '' : 's'} cannot go into HubSpot — `
@@ -588,6 +602,13 @@ export async function runImport(plans = _plans, deps = {}) {
     return { ok: true, ...result };
   } catch (err) {
     log(`✗ The import stopped — ${err.message}`);
+    // Whatever already went into HubSpot is real and cannot be taken back, so
+    // it is recorded before the error is. Without this the card showed only the
+    // error sentence: an import that died on account 9 of 12 left no trace of
+    // the 18,000 contacts it had already written except the log.
+    if (result.created || result.updated || result.extraEmails || result.errors.length) {
+      _state.imported = { ...result, at: new Date().toISOString(), problems: summariseProblems(result.errors) };
+    }
     _state.error = err.message;
     _state.phase = 'error';
     _state.running = false;

@@ -27,7 +27,13 @@ export function buildOutcome(state = {}) {
   if (!['done', 'stopped', 'error'].includes(s.phase)) return null;
 
   if (s.phase === 'error') {
-    return { ok: false, summary: String(s.error || 'It stopped unexpectedly'), problems: [] };
+    const partial = s.imported;
+    // A failed import has usually already written thousands of contacts, and
+    // HubSpot cannot take them back. Say what got in before saying what broke.
+    const summary = partial
+      ? `${n(partial.created)} added · ${n(partial.updated)} updated before it stopped — ${s.error || 'it stopped unexpectedly'}`
+      : String(s.error || 'It stopped unexpectedly');
+    return { ok: false, summary, problems: ((partial && partial.problems) || []).map(problemLine) };
   }
 
   const problems = [];
@@ -79,21 +85,30 @@ export function buildOutcome(state = {}) {
     // known" — the opposite of the truth, which is that the sweep never opened
     // a single file. Operator screenshot 2026-08-12: that headline sat above a
     // card showing 27 people collected, with all four accounts skipped.
-    const looked = (pv.accounts || []).length;
+    // `read` is the accounts that had a file with rows in it. `accounts` is
+    // only what HubSpot allowed — an allowed account that was never collected
+    // reads as zero rows and would otherwise be counted as "looked at".
+    const allowed = (pv.accounts || []).length;
+    const looked = (pv.read || []).length;
     const skipped = (pv.blocked || []).length;
     if (!looked) {
-      // Nothing was looked at, so every account picked was a skipped one.
-      return {
-        ok: false,
-        summary: skipped
-          ? `Nothing was checked — none of the ${n(skipped)} account${skipped === 1 ? '' : 's'} `
-            + 'you picked is on the HubSpot list yet'
-          : 'Nothing was checked — no accounts were picked',
-        problems,
-      };
+      // Two different reasons to have looked at nothing, and the fix differs:
+      // put the account on the HubSpot list, or go and collect it first.
+      let why;
+      if (!allowed && skipped) {
+        why = `none of the ${n(skipped)} account${skipped === 1 ? '' : 's'} you picked is on the HubSpot list yet`;
+      } else if (allowed) {
+        why = `nothing has been collected yet for the ${n(allowed)} account${allowed === 1 ? '' : 's'} that could be checked`;
+      } else {
+        why = 'no accounts were picked';
+      }
+      return { ok: false, summary: `Nothing was checked — ${why}`, problems };
     }
     const t = pv.totals || {};
-    return { ok: true, summary: `${n(t.created)} new · ${n(t.updated)} already there`, problems };
+    // "Already there" is everyone HubSpot already holds, not the subset that
+    // needed a property written. A contact that is already complete produces
+    // no update at all, so counting updates hid them entirely.
+    return { ok: true, summary: `${n(t.created)} new · ${n(t.existing)} already there`, problems };
   }
   const ok = (s.perAccount || []).filter((a) => !a.error);
   const people = ok.reduce((sum, a) => sum + (a.total || 0), 0);

@@ -49,3 +49,17 @@ export function selectionSummary(accounts = []) {
   const blocked = known ? list.filter((a) => !a.importable).map((a) => a.account) : [];
   return { total: list.length, usable: list.length - blocked.length, blocked, known };
 }
+
+/**
+ * Every number the Magellan card prints, in one format.
+ *
+ * The host runs an it-IT locale, so a bare `toLocaleString()` renders 15545 as
+ * "15.545" — which an English reader parses as fifteen point five. The outcome
+ * sentence (magellan-outcome.js) pins en-US, so the card was showing the same
+ * total two ways, thousands apart in meaning, a few pixels apart on screen.
+ * The rest of app.js is bare-`toLocaleString()` throughout; this fixes the card
+ * that contradicts itself rather than relocalising the whole app.
+ */
+export function mgNum(v) {
+  return Number(v || 0).toLocaleString('en-US');
+}

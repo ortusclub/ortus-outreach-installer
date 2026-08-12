@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.33" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.33" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.34" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.34" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -903,7 +903,7 @@
             <div class="mg-led">
               <div class="mg-led-n" id="mg-led-existing">—</div>
               <div class="mg-led-t">Already there</div>
-              <div class="mg-led-s">We'll note the extra connection on their record. Nothing else changes.</div>
+              <div class="mg-led-s">We'll note the extra connection where it isn't already on their record. Nothing else changes.</div>
             </div>
             <div class="mg-led">
               <div class="mg-led-n" id="mg-led-hidden">—</div>
@@ -4051,7 +4051,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.33"></script>
+  <script type="module" src="/js/app.js?v=3.1.34"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

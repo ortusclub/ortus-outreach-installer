@@ -2574,8 +2574,9 @@ app.get('/api/magellan/accounts', async (req, res) => {
   try {
     // The refresh button asks for the slow, authoritative answer. Everything
     // else takes the cached one.
-    const maxAgeMs = req.query.fresh ? 0 : 5 * 60 * 1000;
-    const collected = magellanListCollected();
+    const fresh = Boolean(req.query.fresh);
+    const maxAgeMs = fresh ? 0 : 5 * 60 * 1000;
+    const collected = magellanListCollected({ fresh });
     const profiles = await getProfiles();
 
     // A GoLogin profile is labelled however someone typed it — sometimes the

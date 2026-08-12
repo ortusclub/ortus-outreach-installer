@@ -6,8 +6,8 @@ test('a finished check says what it found', () => {
   const o = buildOutcome({
     phase: 'done', done: 12, total: 12,
     preview: {
-      totals: { created: 9623, updated: 15545 },
-      accounts: ['a@o.com'],
+      totals: { created: 9623, existing: 15545, updated: 15545 },
+      accounts: ['a@o.com'], read: ['a@o.com'],
       blocked: [],
       duplicates: [],
     },
@@ -21,8 +21,8 @@ test('duplicates are reported as a fact, never as a job to do', () => {
   const o = buildOutcome({
     phase: 'done', done: 12, total: 12,
     preview: {
-      totals: { created: 1, updated: 2 },
-      accounts: ['a@o.com'],
+      totals: { created: 1, existing: 2, updated: 2 },
+      accounts: ['a@o.com'], read: ['a@o.com'],
       blocked: [],
       duplicates: new Array(3727).fill({ memberId: 'x' }),
     },
@@ -37,8 +37,8 @@ test('a blocked account is named, not counted', () => {
   const o = buildOutcome({
     phase: 'done', done: 11, total: 11,
     preview: {
-      totals: { created: 1, updated: 2 },
-      accounts: ['ines@ortusclub.com'],
+      totals: { created: 1, existing: 2, updated: 2 },
+      accounts: ['ines@ortusclub.com'], read: ['ines@ortusclub.com'],
       blocked: ['jemely.butron@ortus.solutions'],
       duplicates: [],
     },
@@ -137,8 +137,8 @@ test('one usable account is still a real Check', () => {
   const o = buildOutcome({
     phase: 'done', done: 1, total: 1,
     preview: {
-      totals: { created: 5, updated: 3 },
-      accounts: ['a@o.com'],
+      totals: { created: 5, existing: 3, updated: 3 },
+      accounts: ['a@o.com'], read: ['a@o.com'],
       blocked: ['b@o.com'],
       duplicates: [],
     },

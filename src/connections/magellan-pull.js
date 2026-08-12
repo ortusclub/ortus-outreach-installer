@@ -204,11 +204,13 @@ export async function collectAccount(page, account, { dir = CONNECTIONS_DIR, onP
 // 70MB — 1.4–2.0s of blocking work on a route the Magellan tab hits on every
 // visit and every refresh. The parse result only changes when the file does, so
 // key it on the file's own mtime and size. A collect rewrites the file, which
-// moves both, so a stale count is not reachable. Unbounded on purpose: one
-// small record per account, and the account list is the roster.
+// moves both. A restore or a Drive sync CAN preserve mtime at the same byte
+// size, though, so `fresh: true` — what the refresh button sends — reparses
+// unconditionally. Unbounded on purpose: one small record per account, and the
+// account list is the roster.
 const _collectedCache = new Map();
 
-export function listCollected({ dir = CONNECTIONS_DIR } = {}) {
+export function listCollected({ dir = CONNECTIONS_DIR, fresh = false } = {}) {
   const out = new Map();
   if (!fs.existsSync(dir)) return out;
   for (const f of fs.readdirSync(dir)) {
@@ -217,7 +219,7 @@ export function listCollected({ dir = CONNECTIONS_DIR } = {}) {
     try {
       const st = fs.statSync(full);
       const stamp = `${st.mtimeMs}:${st.size}`;
-      const hit = _collectedCache.get(full);
+      const hit = fresh ? null : _collectedCache.get(full);
       if (hit && hit.stamp === stamp) {
         out.set(f.replace(/\.csv$/i, ''), hit.value);
         continue;

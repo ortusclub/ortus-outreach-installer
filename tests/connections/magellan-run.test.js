@@ -202,17 +202,23 @@ test('merging folds every extra record into the one that is kept', async () => {
 
 test('the pairs are logged BEFORE the first merge — it cannot be undone', async () => {
   reset();
-  const order = [];
+  // Sampled at the moment of the FIRST merge, not after the call returns —
+  // reading the log at the end proves nothing about ordering, and the previous
+  // version of this test passed with the logging loop moved below the merges.
+  let logAtFirstMerge = null;
   await mergeDuplicates(DUPES, {
-    merge: async (p) => { order.push(`merge:${p.mergeId}`); return {}; },
+    merge: async () => {
+      if (!logAtFirstMerge) logAtFirstMerge = [...getState().log];
+      return {};
+    },
     sheet: noSheet,
   });
-  const log = getState().log;
-  // Every pair is named in the log before any merge call happened.
-  const firstMerge = order.length ? 0 : -1;
-  assert.notEqual(firstMerge, -1);
-  const listedBefore = log.filter((l) => /keeping .+, folding in/.test(l));
+  assert.ok(logAtFirstMerge, 'at least one merge ran');
+  // Every pair was already named in the log when the first irreversible call
+  // was made — so a crash mid-merge still leaves a record of what was touched.
+  const listedBefore = logAtFirstMerge.filter((l) => /keeping .+, folding in/.test(l));
   assert.equal(listedBefore.length, DUPES.length);
+  const log = getState().log;
   assert.match(log.join('\n'), /cannot be undone/i);
   assert.match(log.join('\n'), /Alecx Bagatsolon .*192286279995.*33062650786/);
 });
@@ -605,4 +611,104 @@ test('stop a collect, then run a Check — Stopped does not survive into it', as
     sheet: noSheet,
   });
   assert.equal(getState().stopped, false, 'a Check that never stopped must not be marked Stopped');
+});
+
+// startCollect, runImport and mergeDuplicates all refused to start on top of a
+// live run; Check did not, and shares the same module-level _state.
+test('a Check refuses to start on top of a live collect', async () => {
+  reset();
+  let release;
+  const held = new Promise((r) => { release = r; });
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }], {
+    semaphore: fakeSemaphore(),
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => {},
+    collect: async () => { await held; return { total: 10, withMemberId: 10, hidden: 0 }; },
+    sheet: noSheet,
+  });
+  await settle();
+  assert.equal(getState().running, true);
+
+  await assert.rejects(
+    () => buildPreview(['a@o.com'], {
+      checkProps: async () => { throw new Error('must not be reached'); },
+      options: async () => { throw new Error('must not be reached'); },
+      sheet: noSheet,
+    }),
+    /already running/i,
+  );
+  // The collect's own run is untouched by the refusal.
+  assert.equal(getState().phase, 'collecting');
+  release();
+  await settle();
+  assert.equal(getState().done, 1);
+  assert.equal(getState().phase, 'done');
+});
+
+// An account HubSpot allows but that was never collected reads back as zero
+// rows. Counting it as "looked at" produced "0 new · 0 already there".
+test('a Check on an allowed but uncollected account says nothing was collected', async () => {
+  reset();
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [],
+    lookup: async () => new Map(),
+    sheet: noSheet,
+  });
+  const st = getState();
+  assert.deepEqual(st.preview.read, [], 'no account had a file with rows in it');
+  assert.equal(st.outcome.ok, false);
+  assert.match(st.outcome.summary, /nothing has been collected yet/i);
+});
+
+// A contact HubSpot already holds complete needs no property written, so it
+// lands in neither creates nor updates. "Already there" counted updates.
+test('a Check counts people HubSpot already holds, not just the ones it will write to', async () => {
+  reset();
+  const complete = {
+    id: '900',
+    properties: {
+      linkedin_membership_id: '111',
+      linkedin_1st_connections: 'a@o.com',
+      firstname: 'Al', lastname: 'Ecx', company: 'Ortus', jobtitle: 'Ops',
+      email: 'alecx@ortusclub.com',
+      hs_additional_emails: '111@linkedinmembership.id',
+    },
+  };
+  const { totals } = await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 'alecx', memberId: '111', firstName: 'Al', lastName: 'Ecx', company: 'Ortus', jobTitle: 'Ops' }],
+    lookup: async () => new Map([['111', complete]]),
+    sheet: noSheet,
+  });
+  assert.equal(totals.created, 0, 'HubSpot already has them');
+  assert.equal(totals.updated, 0, 'and there is nothing left to write');
+  assert.equal(totals.existing, 1, 'but they were still found');
+  assert.match(getState().outcome.summary, /^0 new · 1 already there$/);
+});
+
+// HubSpot cannot un-create a contact, so an import that dies part-way still has
+// to account for what it already wrote.
+test('an import that fails part-way still reports what it already wrote', async () => {
+  reset();
+  const plans = [
+    { account: 'a@o.com', plan: { creates: [{ connection: { memberId: '1' }, properties: {} }], updates: [], additionalEmails: [] } },
+    { account: 'b@o.com', plan: { creates: [{ connection: { memberId: '2' }, properties: {} }], updates: [], additionalEmails: [] } },
+  ];
+  const r = await runImport(plans, {
+    create: async (items) => {
+      if (items[0].properties === plans[1].plan.creates[0].properties) throw new Error('HubSpot 500');
+      return { created: 7, errors: [] };
+    },
+    update: async () => ({ updated: 0, errors: [] }),
+    attach: async () => ({ attached: 0, errors: [] }),
+    sheet: noSheet,
+  });
+  assert.equal(r.ok, false);
+  const st = getState();
+  assert.equal(st.imported.created, 7, 'the first account is on the record');
+  assert.equal(st.outcome.ok, false);
+  assert.match(st.outcome.summary, /7 added .* before it stopped — HubSpot 500/);
 });
