@@ -27042,22 +27042,14 @@ async function loadMagellanAccounts({ keepSelection = false, fresh = false } = {
       const live = new Set(mgAccounts.map((a) => a.profileId));
       mgSelected = new Set([...previous].filter((id) => live.has(id)));
     } else {
-    // Tick exactly what can be imported today: collected AND carrying LinkedIn
-    // member ids. An account without ids has nothing HubSpot can match on, so
-    // including it only pads the blocked list. The old default was every
-    // UNcollected account, which meant one click asked for 262 accounts.
-    // Two GoLogin profiles can resolve to one account email — tick one of them,
-    // or the preview reads that account's file twice and doubles its numbers.
-      const pickedAccounts = new Set();
-      mgSelected = new Set(mgAccounts
-        .filter((a) => a.collected && a.withMemberId > 0)
-        .filter((a) => {
-          const key = String(a.account || '').toLowerCase();
-          if (pickedAccounts.has(key)) return false;
-          pickedAccounts.add(key);
-          return true;
-        })
-        .map((a) => a.profileId));
+      // Nothing is ticked that the operator did not tick. This used to
+      // pre-select every collected account carrying LinkedIn member ids —
+      // fourteen of them on 2026-08-12 — and the search box hides rows without
+      // unticking them, so someone who typed "edlor", ticked the one row they
+      // could see and pressed Check got fifteen accounts and 31,191 people
+      // instead of 437. A default that grows by one every time you collect
+      // something, and is invisible behind a filter, is not a convenience.
+      mgSelected = new Set();
     }
     renderMagellanAccounts();
     refreshMagellanState();
@@ -27626,14 +27618,14 @@ window.openMagellanSheet = openMagellanSheet;
 
 async function previewMagellan() {
   showMagellanError('');
-  // Default to the accounts this run just collected. After a sweep that is
-  // what the operator means, and a reload clears the tick boxes.
+  // What is ticked, and nothing else. This used to fall back to "whatever the
+  // last collect touched" when nothing was ticked — a second way for the card
+  // to check accounts nobody asked about, quietly.
   // Unique by account: two profiles can point at one email, and previewing it
   // twice reads the same file twice and doubles that account's numbers.
-  let accounts = [...new Set(mgAccounts
+  const accounts = [...new Set(mgAccounts
     .filter((a) => mgSelected.has(a.profileId))
     .map((a) => a.account))];
-  if (!accounts.length) accounts = mgPerAccount.filter((a) => !a.error).map((a) => a.account);
   if (!accounts.length) return showMagellanError('Pick at least one account first.');
 
   const btn = document.getElementById('mg-preview-btn');
