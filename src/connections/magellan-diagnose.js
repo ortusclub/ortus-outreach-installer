@@ -16,6 +16,26 @@
 // "The browser never opened" one line after being told it had signed in.
 
 const RULES = [
+  // These two are raised by the sweep itself (magellan-run.js), not by the
+  // browser, and they must come first: "stalled" would otherwise fall through
+  // to the generic unknown rule and be marked retryable, buying a dead browser
+  // another full stall window.
+  {
+    code: 'stopped_by_operator',
+    match: /^stopped-by-operator/,
+    what: 'It was stopped',
+    why: 'You pressed Stop while this account was being read.',
+    fix: 'Nothing to fix — tick it again to collect it.',
+    retryable: false,
+  },
+  {
+    code: 'stalled',
+    match: /^stalled:/,
+    what: 'The account stopped responding',
+    why: 'The browser went quiet mid-read — usually it was closed, crashed, or GoLogin ended the session.',
+    fix: 'Check the profile opens in GoLogin, then tick this account again.',
+    retryable: false,
+  },
   {
     code: 'gologin_extension_cache',
     phases: ['launch'],

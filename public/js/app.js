@@ -27422,7 +27422,7 @@ function renderMagellanState(s) {
     // the button, and then ran every remaining account to completion — the one
     // control on this card that is supposed to be believable, lying.
     stopBtn.hidden = !s.running || importing || checking;
-    if (s.running && s.step !== 'Stopping after this account') {
+    if (s.running && s.step !== 'Stopping') {
       stopBtn.disabled = false;
       stopBtn.textContent = 'Stop';
     }

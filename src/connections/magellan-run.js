@@ -82,18 +82,30 @@ function startRun(patch, keep = {}) {
 // the totals cross the wire. Import replays what preview actually saw rather
 // than trusting a payload the browser round-tripped.
 let _plans = null;
-// Set by stopCollect(). Checked between accounts — the one in flight is allowed
-// to finish and close its browser cleanly rather than being killed mid-read.
+// Set by stopCollect(). Watched by the per-account watchdog as well as checked
+// between accounts, so the account in flight is abandoned rather than finished:
+// "after this account" is indistinguishable from "never" when that account is
+// the one that hung. Nothing is lost — collectAccount writes its CSV only once
+// the walk completes.
 let _stopRequested = false;
+
+// How long a read may go without a single progress tick before it is treated as
+// dead. The beacon publishes every 1.5s through both halves of the walk, so this
+// is silence, not slowness. Generous because a cold Orbita on a loaded laptop
+// can take a while to produce its first page.
+let STALL_MS = 4 * 60 * 1000;
+
+/** Test seam. Four real minutes is not a unit test. */
+export function setStallMs(ms) { STALL_MS = ms; }
 
 export function getState() { return { ..._state }; }
 
-/** Ask the sweep to stop after the current account. */
+/** Stop the sweep, abandoning the account currently being read. */
 export function stopCollect() {
   if (!_state.running) return { stopped: false, reason: 'Nothing is running' };
   _stopRequested = true;
-  _state.step = 'Stopping after this account';
-  log('◼ Stop requested — finishing the current account, then stopping.');
+  _state.step = 'Stopping';
+  log('◼ Stop requested — abandoning the account being read and stopping.');
   return { stopped: true };
 }
 export function getPlans() { return _plans; }
@@ -156,6 +168,7 @@ export function startCollect(accounts, deps = {}) {
       while (!done) {
         attempt += 1;
         let launched = null;
+        let watchdog = null;
         // Which half of the account we are in, so a failure is explained by the
         // rules that can actually apply to it.
         let phase = 'launch';
@@ -169,11 +182,37 @@ export function startCollect(accounts, deps = {}) {
           phase = 'read';
           _state.step = 'Reading the connections list';
           log(`◦ ${entry.account}: signed in, reading the connections list…`);
-          const r = await collect(launched.page, entry.account, {
-            onProgress: ({ count, pages, total, stage }) => {
-              _state.current = { account: entry.account, count, pages, total, stage: stage || 'list' };
-            },
-          });
+          // The entire walk happens inside ONE page.evaluate(), so if the
+          // browser dies the promise never settles: the loop never comes back
+          // round to its stop check and Stop does nothing at all. 2026-08-12,
+          // an operator's log — nushe.himaj sat on "reading the connections
+          // list" for six minutes across two Stop clicks, with no browser open.
+          //
+          // So the read is raced against two ways of not finishing. Nothing is
+          // lost by abandoning one: collectAccount writes its CSV only after
+          // the walk completes, so a read that never completes was never going
+          // to save anything.
+          let lastTick = Date.now();
+          const r = await Promise.race([
+            collect(launched.page, entry.account, {
+              onProgress: ({ count, pages, total, stage }) => {
+                lastTick = Date.now();
+                _state.current = { account: entry.account, count, pages, total, stage: stage || 'list' };
+              },
+            }),
+            new Promise((_resolve, reject) => {
+              watchdog = setInterval(() => {
+                // Stop means stop. It used to mean "after this account", which
+                // is indistinguishable from "never" when this account is hung.
+                if (_stopRequested) return reject(new Error('stopped-by-operator'));
+                // The beacon ticks every 1.5s through both halves of the read,
+                // so four minutes of silence is a dead browser, not a slow one.
+                if (Date.now() - lastTick > STALL_MS) {
+                  reject(new Error(`stalled: no progress for ${Math.round(STALL_MS / 60000)} minutes`));
+                }
+              }, 1000);
+            }),
+          ]);
           _state.current = null;
 
           _state.perAccount.push({
@@ -205,6 +244,7 @@ export function startCollect(accounts, deps = {}) {
             done = true;
           }
         } finally {
+          if (watchdog) clearInterval(watchdog);
           _state.step = 'Closing the browser';
           try {
             if (launched) await closeProfile(entry.profileId);

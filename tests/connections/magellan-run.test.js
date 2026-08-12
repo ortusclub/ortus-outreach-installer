@@ -712,3 +712,63 @@ test('an import that fails part-way still reports what it already wrote', async 
   assert.equal(st.outcome.ok, false);
   assert.match(st.outcome.summary, /7 added .* before it stopped — HubSpot 500/);
 });
+
+// The whole walk lives inside one page.evaluate(), so a dead browser leaves a
+// promise that never settles. Stop was checked only BETWEEN accounts, which is
+// indistinguishable from never when the hung account is the current one.
+test('Stop abandons the account being read instead of waiting for it', async () => {
+  reset();
+  let closed = false;
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }, { account: 'b@o.com', profileId: 'p2' }], {
+    semaphore: fakeSemaphore(),
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => { closed = true; },
+    // Never settles — exactly what a closed browser leaves behind.
+    collect: () => new Promise(() => {}),
+    sheet: noSheet,
+  });
+  await settle();
+  assert.equal(getState().running, true);
+
+  stopCollect();
+  // The watchdog ticks once a second; give it two.
+  await new Promise((r) => setTimeout(r, 2200));
+
+  const st = getState();
+  assert.equal(st.running, false, 'the sweep actually ended');
+  assert.equal(st.phase, 'stopped');
+  assert.equal(closed, true, 'the browser was still closed on the way out');
+  const row = st.perAccount.find((a) => a.account === 'a@o.com');
+  assert.equal(row.diagnosis.code, 'stopped_by_operator');
+  assert.equal(row.diagnosis.retryable, false, 'a stop must never be retried');
+  assert.ok(!st.perAccount.some((a) => a.account === 'b@o.com'), 'the rest were not started');
+});
+
+// Same hang, nobody watching. Four minutes of silence used to be forever.
+test('a read that stops reporting progress is abandoned, and the sweep goes on', async () => {
+  reset();
+  const { setStallMs } = await import('../../src/connections/magellan-run.js');
+  setStallMs(1200);
+  try {
+    startCollect([{ account: 'dead@o.com', profileId: 'p1' }, { account: 'ok@o.com', profileId: 'p2' }], {
+      semaphore: fakeSemaphore(),
+      launchProfile: async () => ({ page: {} }),
+      closeProfile: async () => {},
+      collect: (page, account) => (account === 'dead@o.com'
+        ? new Promise(() => {})
+        : Promise.resolve({ total: 4, withMemberId: 4, hidden: 0 })),
+      sheet: noSheet,
+    });
+    await new Promise((r) => setTimeout(r, 3000));
+    const st = getState();
+    assert.equal(st.running, false);
+    assert.equal(st.phase, 'done', 'a stall is not a stop — the sweep finishes');
+    const dead = st.perAccount.find((a) => a.account === 'dead@o.com');
+    assert.equal(dead.diagnosis.code, 'stalled');
+    assert.equal(dead.diagnosis.retryable, false, 'retrying a dead browser just buys another stall');
+    const ok = st.perAccount.find((a) => a.account === 'ok@o.com');
+    assert.equal(ok.total, 4, 'the next account still ran');
+  } finally {
+    setStallMs(4 * 60 * 1000);
+  }
+});
