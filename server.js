@@ -2601,44 +2601,83 @@ function magellanSooFromDisk() {
   } catch { return []; }
 }
 
-async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000, timeoutMs = 12000 } = {}) {
-  if (_magellanSoo.emails.length && Date.now() - _magellanSoo.at < maxAgeMs) return _magellanSoo.emails;
-  // fetchSoOData retries a 25s Apps Script timeout, so a struggling sheet takes
-  // ~78s to FAIL — measured 2026-08-12, with the picker awaiting it the whole
-  // time. The tab rendered an empty account list and no error, because the
-  // request was simply still open, and nobody waits 78 seconds. The HubSpot leg
-  // below was already capped; this one was not.
-  //
-  // 12s, not 5: a HEALTHY read of this sheet measured 7.2s the same afternoon,
-  // so a tight cap would reject the sheet on a good day and fall back to a
-  // stale roster for no reason. This cap exists to bound the 78s failure, not
-  // to police a slow success. One load pays it; the 5-minute cache and the
-  // on-disk roster below carry every load after that.
-  const TIMED_OUT = Symbol('magellan-soo-timeout');
-  const soo = await Promise.race([
-    fetchSoOData(),
-    new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), timeoutMs)),
-  ]);
-  if (soo === TIMED_OUT) {
-    // A stale roster resolves labels correctly; no roster resolves nothing at
-    // all. Colleagues are added to the SoO monthly, so "stale" here means the
-    // one new hire is unresolved, not that 545 accounts are.
-    const stale = magellanSooFromDisk();
-    if (stale.length) {
-      console.warn(`[magellan] the SoO did not answer within ${Math.round(timeoutMs / 1000)}s — using the last known roster (${stale.length} accounts)`);
-      // Not written to _magellanSoo: that would give a stale read the same
-      // 5-minute grace as a fresh one and stop us retrying the real sheet.
-      return stale;
-    }
+// One refresh in flight at a time. Without this, three picker loads in a row
+// each start their own 78s SoO read against a sheet that is already the
+// bottleneck.
+let _magellanSooRefresh = null;
+function refreshMagellanSoo() {
+  if (_magellanSooRefresh) return _magellanSooRefresh;
+  _magellanSooRefresh = fetchSoOData()
+    .then((soo) => {
+      const emails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
+      if (emails.length) {
+        _magellanSoo = { at: Date.now(), emails };
+        try {
+          writeFileSync(`${MAGELLAN_SOO_FILE}.tmp`, JSON.stringify({ at: new Date().toISOString(), emails }));
+          renameSync(`${MAGELLAN_SOO_FILE}.tmp`, MAGELLAN_SOO_FILE);
+        } catch (err) { console.warn(`[magellan] could not cache the roster — ${err.message}`); }
+      }
+      return emails;
+    })
+    .catch((err) => {
+      console.warn(`[magellan] roster refresh failed — ${err.message}`);
+      return [];
+    })
+    .finally(() => { _magellanSooRefresh = null; });
+  return _magellanSooRefresh;
+}
+
+/**
+ * The account roster, never on the critical path.
+ *
+ * fetchSoOData retries a 25s Apps Script timeout, so a contended sheet takes
+ * ~78s to FAIL — measured 2026-08-12, with the picker awaiting it the whole
+ * time. The tab drew an empty account list and no error, because the request
+ * was simply still open, and nobody waits 78 seconds. Capping it was not
+ * enough: a healthy standalone read took 7.2s, but from inside the server —
+ * which is hammering the same Apps Script with campaign sheet writes — even 12s
+ * timed out, so the cap just traded a hang for a slow tab AND a stale roster.
+ *
+ * So the read comes off the request path entirely. Any roster we have is served
+ * immediately and a refresh runs behind it; only the very first load with no
+ * roster at all has to wait. A stale roster resolves labels correctly, and
+ * people join the SoO monthly, so stale means one unresolved new hire.
+ */
+async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000, timeoutMs = 12000, wait = false } = {}) {
+  const fresh = _magellanSoo.emails.length && Date.now() - _magellanSoo.at < maxAgeMs;
+  if (fresh) return _magellanSoo.emails;
+
+  const known = _magellanSoo.emails.length ? _magellanSoo.emails : magellanSooFromDisk();
+  // `wait` is what the refresh button means: it asked for the authoritative
+  // answer, so it gets to wait for one — but still capped, and still falling
+  // back to what we have rather than failing the whole picker.
+  if (wait) {
+    const TIMED_OUT = Symbol('magellan-soo-refresh-timeout');
+    const got = await Promise.race([
+      refreshMagellanSoo(),
+      new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), timeoutMs)),
+    ]);
+    if (got !== TIMED_OUT && got.length) return got;
+    if (known.length) return known;
     throw new Error(`the SoO did not answer within ${Math.round(timeoutMs / 1000)}s`);
   }
-  const emails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
-  if (emails.length) {
-    _magellanSoo = { at: Date.now(), emails };
-    try {
-      writeFileSync(`${MAGELLAN_SOO_FILE}.tmp`, JSON.stringify({ at: new Date().toISOString(), emails }));
-      renameSync(`${MAGELLAN_SOO_FILE}.tmp`, MAGELLAN_SOO_FILE);
-    } catch (err) { console.warn(`[magellan] could not cache the roster — ${err.message}`); }
+  if (known.length) {
+    // Stale-while-revalidate. Deliberately not awaited, and deliberately not
+    // stamped into _magellanSoo — that would hand a stale read the same
+    // five-minute grace as a fresh one and stop us retrying the real sheet.
+    refreshMagellanSoo();
+    return known;
+  }
+
+  // Nothing at all yet. This is the one call that has to wait, and it is capped
+  // so a first run during an outage still renders a picker.
+  const TIMED_OUT = Symbol('magellan-soo-timeout');
+  const emails = await Promise.race([
+    refreshMagellanSoo(),
+    new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), timeoutMs)),
+  ]);
+  if (emails === TIMED_OUT) {
+    throw new Error(`the SoO did not answer within ${Math.round(timeoutMs / 1000)}s`);
   }
   return emails;
 }
@@ -2682,7 +2721,7 @@ app.get('/api/magellan/accounts', async (req, res) => {
     // be imported against.
     let sooEmails = [];
     try {
-      const soo = await magellanSooEmails({ maxAgeMs });
+      const soo = await magellanSooEmails({ maxAgeMs, wait: fresh });
       sooEmails = soo;
     } catch (err) {
       console.warn(`[magellan] could not read the SoO — falling back to profile names: ${err.message}`);
@@ -6865,6 +6904,12 @@ app.listen(PORT, async () => {
   refreshScrapeBoardOnce()
     .then((b) => console.log(`  ✦ Sales Nav board: warmed (${(b.campaigns || []).length} scrapes)`))
     .catch((e) => console.log(`  ✦ Sales Nav board: warm-up failed (${e.message}) — will load on demand`));
+
+  // Same reasoning for Magellan's account roster: read it once at boot so the
+  // first visit to the tab is served from cache like every later one, instead of
+  // being the single request that has to wait out a contended Apps Script.
+  refreshMagellanSoo()
+    .then((e) => console.log(`  ✦ Magellan roster: ${e.length ? `warmed (${e.length} accounts)` : 'warm-up returned nothing — will retry on demand'}`));
 
   // Bulk "Delete all drafts" soft-deletes (trashedAt); hard-purge anything past
   // the 1-week grace on boot, then daily.
