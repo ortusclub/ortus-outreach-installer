@@ -14,7 +14,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { readFile, writeFile, mkdir, stat, rename } from 'node:fs/promises';
-import { appendFileSync, createWriteStream, existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { appendFileSync, createWriteStream, existsSync, readFileSync, writeFileSync, chmodSync, renameSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
@@ -2588,22 +2588,58 @@ app.get('/api/magellan/sheet-url', async (_req, res) => {
 // The SoO is a slow, heavily-contended read and the picker reloads often, so
 // hold the email list for a few minutes. Only the addresses are kept.
 let _magellanSoo = { at: 0, emails: [] };
-async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000, timeoutMs = 6000 } = {}) {
+// Last known good roster, on disk. The in-memory cache is empty on every
+// restart, which is precisely when a sheet outage hurts: 2026-08-12, with the
+// SoO refusing to answer, the picker resolved 5 of 550 labels to an email and
+// the other 545 were unimportable. Only email addresses are stored — see the
+// magellanSooEmails note.
+const MAGELLAN_SOO_FILE = dataPath('magellan-soo-emails.json');
+function magellanSooFromDisk() {
+  try {
+    const j = JSON.parse(readFileSync(MAGELLAN_SOO_FILE, 'utf8'));
+    return Array.isArray(j.emails) ? j.emails : [];
+  } catch { return []; }
+}
+
+async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000, timeoutMs = 12000 } = {}) {
   if (_magellanSoo.emails.length && Date.now() - _magellanSoo.at < maxAgeMs) return _magellanSoo.emails;
   // fetchSoOData retries a 25s Apps Script timeout, so a struggling sheet takes
   // ~78s to FAIL — measured 2026-08-12, with the picker awaiting it the whole
   // time. The tab rendered an empty account list and no error, because the
   // request was simply still open, and nobody waits 78 seconds. The HubSpot leg
-  // below was already capped; this one was not. Losing the SoO only costs the
-  // email resolution, which the caller already handles.
+  // below was already capped; this one was not.
+  //
+  // 12s, not 5: a HEALTHY read of this sheet measured 7.2s the same afternoon,
+  // so a tight cap would reject the sheet on a good day and fall back to a
+  // stale roster for no reason. This cap exists to bound the 78s failure, not
+  // to police a slow success. One load pays it; the 5-minute cache and the
+  // on-disk roster below carry every load after that.
   const TIMED_OUT = Symbol('magellan-soo-timeout');
   const soo = await Promise.race([
     fetchSoOData(),
     new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), timeoutMs)),
   ]);
-  if (soo === TIMED_OUT) throw new Error(`the SoO did not answer within ${Math.round(timeoutMs / 1000)}s`);
+  if (soo === TIMED_OUT) {
+    // A stale roster resolves labels correctly; no roster resolves nothing at
+    // all. Colleagues are added to the SoO monthly, so "stale" here means the
+    // one new hire is unresolved, not that 545 accounts are.
+    const stale = magellanSooFromDisk();
+    if (stale.length) {
+      console.warn(`[magellan] the SoO did not answer within ${Math.round(timeoutMs / 1000)}s — using the last known roster (${stale.length} accounts)`);
+      // Not written to _magellanSoo: that would give a stale read the same
+      // 5-minute grace as a fresh one and stop us retrying the real sheet.
+      return stale;
+    }
+    throw new Error(`the SoO did not answer within ${Math.round(timeoutMs / 1000)}s`);
+  }
   const emails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
-  if (emails.length) _magellanSoo = { at: Date.now(), emails };
+  if (emails.length) {
+    _magellanSoo = { at: Date.now(), emails };
+    try {
+      writeFileSync(`${MAGELLAN_SOO_FILE}.tmp`, JSON.stringify({ at: new Date().toISOString(), emails }));
+      renameSync(`${MAGELLAN_SOO_FILE}.tmp`, MAGELLAN_SOO_FILE);
+    } catch (err) { console.warn(`[magellan] could not cache the roster — ${err.message}`); }
+  }
   return emails;
 }
 
