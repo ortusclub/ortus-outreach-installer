@@ -7409,10 +7409,18 @@ async function renderCloudCampaigns() {
 
   // Fetch per-campaign lead counts (best-effort, parallel). Also pull the
   // per-lead log for running/expanded strips so their Log pane shows real rows.
+  // One request for every campaign's detail — see /api/campaign/cloud-details.
+  let _bulk = {};
+  try {
+    const br = await (await fetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(campaigns.map((c) => c.id).join(','))}`)).json();
+    _bulk = (br && br.details) || {};
+  } catch { /* fall back to per-campaign below */ }
   const details = await _mapLimit(campaigns, CLOUD_FANOUT_LIMIT, async (c) => {
-    let d;
-    try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
-    catch { d = { campaign: c, leadCounts: {} }; }
+    let d = _bulk[c.id];
+    if (!d) {
+      try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+      catch { d = { campaign: c, leadCounts: {} }; }
+    }
     const st = ((d && d.campaign) || c).status;
     if (st === 'running' || _snExpanded.has(c.id)) {
       try {
@@ -9795,15 +9803,30 @@ async function _refreshCloudItems() {
   try {
     const cl = await (await fetch('/api/campaign/cloud-list')).json();
     const cloudCamps = (cl && cl.campaigns) || [];
+    // Everything that still needs refreshing comes back in ONE request. Asking
+    // per campaign meant 89 of them, which pinned the browser at its six
+    // connections per host and starved every other poller in the page.
+    const _isFresh = (c) => {
+      if (!['done', 'cancelled', 'error'].includes(c.status) || _snExpanded.has(c.id)) return false;
+      const cached = _cloudDetailCache.get(c.id);
+      return Boolean(cached && cached.campaign && ['done', 'cancelled', 'error'].includes(cached.campaign.status));
+    };
+    const _needIds = cloudCamps.filter((c) => !_isFresh(c)).map((c) => c.id);
+    let _bulk = {};
+    if (_needIds.length) {
+      try {
+        const br = await (await fetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(_needIds.join(','))}`)).json();
+        _bulk = (br && br.details) || {};
+      } catch { /* fall back to the per-campaign path below */ }
+    }
     _cloudRaw = await _mapLimit(cloudCamps, CLOUD_FANOUT_LIMIT, async (c) => {
       let d;
-      const terminal = ['done', 'cancelled', 'error'].includes(c.status);
-      if (terminal && !_snExpanded.has(c.id) && _cloudDetailCache.has(c.id)) {
-        const cached = _cloudDetailCache.get(c.id);
-        if (cached && cached.campaign && ['done', 'cancelled', 'error'].includes(cached.campaign.status)) return cached;
+      if (_isFresh(c)) return _cloudDetailCache.get(c.id);
+      if (_bulk[c.id]) d = _bulk[c.id];
+      else {
+        try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+        catch { d = { campaign: c, leadCounts: {} }; }
       }
-      try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
-      catch { d = { campaign: c, leadCounts: {} }; }
       _cloudDetailCache.set(c.id, d);
       _cloudPolledAt.set(c.id, Date.now()); // feeds the live stage's heartbeat
       // A STALLED campaign needs its per-account states on the board, not just
@@ -22190,19 +22213,27 @@ async function fgtlLaunch() {
 }
 
 /** Poll /api/fg/team-launch/status every 2 s; stop when running===false. */
+// Guarded: fgtlPoll is called both on FG view restore and on launch, and each
+// call started its OWN 2s chain. With the connection pool contended those chains
+// pile up — CDP showed six /api/fg/team-launch/status requests open at once,
+// the oldest 23s. One chain at a time is all the card ever needed.
+let _fgtlPolling = false;
 function fgtlPoll() {
+  if (_fgtlPolling) return;
+  _fgtlPolling = true;
   const tick = async () => {
     let status = null;
     try {
       const r = await fetch('/api/fg/team-launch/status');
       if (r.ok) status = await r.json();
     } catch (_) {}
-    if (!status) return;
+    if (!status) { _fgtlPolling = false; return; }
     _fgtlLastStatus = status;
     fgtlRenderCard(status);
     if (status.running) {
       setTimeout(tick, 2000);
     } else {
+      _fgtlPolling = false;
       const goBtn = document.getElementById('fgtl-go');
       const stopBtn = document.getElementById('fgtl-stop');
       if (stopBtn) stopBtn.style.display = 'none';

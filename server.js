@@ -1518,21 +1518,61 @@ async function handleStartCloud(req, res) {
     res.status(500).json({ error: e.message });
   }
 }
+const CLOUD_MEMO_TTL_MS = 10_000;
+const _cloudMemo = new Map(); // key -> { at, val, inflight }
+function memoCloud(key, fetcher, { ttlMs = CLOUD_MEMO_TTL_MS, onFresh } = {}) {
+  const e = _cloudMemo.get(key) || {};
+  _cloudMemo.set(key, e);
+  if (!e.inflight && (!e.val || Date.now() - e.at >= ttlMs)) {
+    e.inflight = fetcher().then((v) => {
+      e.inflight = null;
+      // Never cache (or act on) an error — keep serving the last good value.
+      if (v && !v.error) {
+        e.val = v; e.at = Date.now();
+        // Side effects belong to the REFRESH, not to every cache hit, or a
+        // reconcile would re-run on every poll against unchanged data.
+        if (onFresh) { try { onFresh(v); } catch { /* best-effort */ } }
+      }
+      return v;
+    }, (err) => { e.inflight = null; throw err; });
+  }
+  return e.val ? Promise.resolve(e.val) : e.inflight;
+}
+
+
+// Any cloud mutation (start, cancel, unbench, account edits) must be visible on
+// the next poll, not up to a TTL later — so every non-GET under /api/campaign
+// drops the memo.
+app.use('/api/campaign', (req, _res, next) => {
+  if (req.method !== 'GET') _cloudMemo.clear();
+  next();
+});
+
 app.post('/api/campaign/start-cloud', handleStartCloud);
 
 // Cloud-campaign observability — proxied through the local server so the
 // frontend never handles the engine token (it lives in campaigns-client). The
 // "Cloud Campaigns" panel polls these.
+//
+// Every one of these is a round trip to the engine, measured at 4.8-8.5s each on
+// 2026-08-13 with 89 cloud campaigns on the board. The panel re-polls all of them
+// every 4s, so the browser sat permanently at its six-connections-per-host limit
+// and starved every other poller in the page (the Sales Nav board managed one
+// request in 75 seconds). Memoised with a short TTL: the first caller pays, the
+// rest are served instantly from the last good value while a single refresh runs
+// behind them.
 app.get('/api/campaign/cloud-list', async (req, res) => {
-  const r = await listCloudCampaigns(req.query.owner);
+  const r = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
   if (r.error) return res.status(502).json(r);
   res.json(r);
 });
 app.get('/api/campaign/cloud/:id', async (req, res) => {
-  const r = await getCloudCampaign(req.params.id);
+  const id = req.params.id;
+  const r = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
+    onFresh: (v) => { reconcilePrimaryHandshake(id, v).catch(() => {}); },
+  });
   if (r.error) return res.status(502).json(r);
   res.json(r);
-  reconcilePrimaryHandshake(req.params.id, r).catch(() => {}); // after response — never blocks
 });
 // ── Cloud sheet reconcile (parity fix #1) ─────────────────────────────────
 // The engine writes SENT rows back to the source sheet, but leaves ERROR /
@@ -1749,14 +1789,42 @@ async function reconcilePrimaryHandshake(id, detail) {
 // stays server-side. The dashboard fetches this only for running/expanded
 // cloud strips, so it's not on the hot path for the whole board. After
 // responding, best-effort reconciles error/skip rows into the source sheet.
+// ONE request for the whole board's per-campaign detail.
+//
+// The panel used to fetch /api/campaign/cloud/:id once per campaign — 89 of them
+// on this install. A browser opens at most six connections per host, so that fan-
+// out held the pool for minutes at a time and every other poller in the page
+// (the Sales Nav board, the FG status poll, drafts) queued behind it. Node has no
+// such limit, so the fan-out belongs here, where it is also memoised.
+app.get('/api/campaign/cloud-details', async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 500);
+  const details = {};
+  let next = 0;
+  const worker = async () => {
+    while (next < ids.length) {
+      const id = ids[next++];
+      try {
+        const v = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
+          onFresh: (fresh) => { reconcilePrimaryHandshake(id, fresh).catch(() => {}); },
+        });
+        if (v && !v.error) details[id] = v;
+      } catch { /* one bad id must not fail the board */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, ids.length) }, worker));
+  res.json({ details });
+});
+
 app.get('/api/campaign/cloud/:id/leads', async (req, res) => {
-  const r = await getCloudCampaignLeads(req.params.id);
+  const id = req.params.id;
+  const r = await memoCloud(`leads:${id}`, () => getCloudCampaignLeads(id), {
+    onFresh: (v) => { reconcileCloud(id, v.leads).catch(() => {}); }, // never blocks
+  });
   if (r.error) return res.status(502).json(r);
   res.json(r);
-  reconcileCloud(req.params.id, r.leads).catch(() => {}); // after response — never blocks
 });
 app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
-  const r = await getCloudCampaignAccounts(req.params.id);
+  const r = await memoCloud(`accounts:${req.params.id}`, () => getCloudCampaignAccounts(req.params.id));
   if (r && r.error) return res.status(502).json(r);
   res.json(r);
 });

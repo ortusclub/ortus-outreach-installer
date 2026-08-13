@@ -102,3 +102,21 @@ test('the cloud fan-out is bounded so other pollers keep a connection', () => {
       && !/await Promise\.all\((campaigns|cloudCamps)\.map\(/.test(APP);
   }
 });
+
+test('cloud detail is fetched in one request, not one per campaign', () => {
+  // 89 cloud campaigns => 89 requests => the pool stayed full for minutes. Node
+  // has no six-per-host limit, so the fan-out belongs on the server.
+  assert.match(SERVER, /app\.get\('\/api\/campaign\/cloud-details'/);
+  assert.match(APP, /\/api\/campaign\/cloud-details\?ids=/);
+  // The memo must not be per-request: a cache hit re-running reconcile on every
+  // poll is exactly the load this removes.
+  assert.match(SERVER, /function memoCloud\(key, fetcher, \{ ttlMs = CLOUD_MEMO_TTL_MS, onFresh \} = \{\}\)/);
+  assert.match(SERVER, /if \(req\.method !== 'GET'\) _cloudMemo\.clear\(\);/);
+});
+
+test('the FG status poll runs one chain, not one per entry point', () => {
+  // fgtlPoll is called from FG view restore AND from launch; each call started
+  // its own 2s chain. Six were observed open at once, the oldest 23s.
+  assert.match(APP, /let _fgtlPolling = false;/);
+  assert.match(APP, /function fgtlPoll\(\) \{\s*\n\s*if \(_fgtlPolling\) return;\s*\n\s*_fgtlPolling = true;/);
+});
