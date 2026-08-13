@@ -66,8 +66,16 @@ export function buildOutcome(state = {}) {
   // nothing to fix here — merging was dropped on purpose.
   const pv = s.preview;
   if (pv) {
+    // Said once, or not at all. The check counts everyone HubSpot holds twice;
+    // the import counts the subset whose second record refused the LinkedIn
+    // address. Both are true and they are different numbers, so shown together
+    // they read as a contradiction — "34 people are in HubSpot more than once"
+    // directly above "30 × This person is in HubSpot twice". Once an import has
+    // run, its line carries the same fact AND the fix, so this one stands down.
     const dupes = (pv.duplicates || []).length;
-    if (dupes) {
+    const importSaidIt = ((s.imported && s.imported.problems) || [])
+      .some((p) => p.code === 'duplicate_contact');
+    if (dupes && !importSaidIt) {
       problems.push(`${n(dupes)} ${dupes === 1 ? 'person is' : 'people are'} in HubSpot more than once — `
         + 'their connection was recorded on the record with a real email address, so nothing was missed');
     }

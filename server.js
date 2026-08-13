@@ -106,7 +106,8 @@ import { fgListTabName, ledgerUpdatesFromLeads } from './src/connections/fg-list
 import { buildListRows, dispatchFromRows } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
 import * as magellan from './src/connections/magellan-run.js';
-import { listCollected as magellanListCollected } from './src/connections/magellan-pull.js';
+import { listCollected as magellanListCollected,
+  migrateLegacyConnections as magellanMigrateLegacy } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
 import { connectionsPropOptions } from './src/connections/hubspot-client.js';
 import { normMonth } from './src/connections/fg-export.js';
@@ -6990,6 +6991,14 @@ app.listen(PORT, async () => {
   refreshScrapeBoardOnce()
     .then((b) => console.log(`  ✦ Sales Nav board: warmed (${(b.campaigns || []).length} scrapes)`))
     .catch((e) => console.log(`  ✦ Sales Nav board: warm-up failed (${e.message}) — will load on demand`));
+
+  // Collected connections used to live in the repo's own data/connections, so
+  // running the app from a worktree hid all 455 of them. They belong in
+  // ORTUS_DATA_DIR; this copies them across once and never deletes the original.
+  try {
+    const mig = magellanMigrateLegacy();
+    if (mig.moved) console.log(`  ✦ Magellan: copied ${mig.moved} collected account file(s) into ${mig.to}`);
+  } catch (e) { console.log(`  ✦ Magellan: could not copy the old connections folder (${e.message})`); }
 
   // Same reasoning for Magellan's account roster: read it once at boot so the
   // first visit to the tab is served from cache like every later one, instead of

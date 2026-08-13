@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   formatConnectedOn, readExistingBySlug, mergeRows, toCsv, writeAccountCsv,
-  readForPlan, collectAccount, listCollected, CSV_HEADER,
+  readForPlan, collectAccount, listCollected, CSV_HEADER, migrateLegacyConnections,
 } from '../../src/connections/magellan-pull.js';
 import { ingestFolder } from '../../src/connections/csv-ingest.js';
 
@@ -194,4 +194,42 @@ test('listCollected re-reads a file after it changes', () => {
   const after = listCollected({ dir }).get('a@b.com');
   assert.equal(after.count, 2);
   assert.equal(after.withMemberId, 1);
+});
+
+// ── where the collected CSVs live ────────────────────────────────────────────
+// They used to live in the repo, so running the app from a worktree hid all 455
+// of them and the card said "nothing has been collected yet" for accounts that
+// had been read weeks earlier. They are user data; they live in ORTUS_DATA_DIR.
+
+test('the legacy repo folder is copied across once, and never deleted', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'mag-mig-'));
+  const from = path.join(base, 'repo'); const to = path.join(base, 'data');
+  fs.mkdirSync(from, { recursive: true });
+  fs.writeFileSync(path.join(from, 'a@o.com.csv'), 'x');
+  fs.writeFileSync(path.join(from, 'b@o.com.csv'), 'y');
+  fs.writeFileSync(path.join(from, 'notes.txt'), 'not a csv');
+
+  const r = migrateLegacyConnections({ from, to });
+  assert.equal(r.moved, 2);
+  assert.deepEqual(fs.readdirSync(to).sort(), ['a@o.com.csv', 'b@o.com.csv']);
+  // The original is hours of LinkedIn reading. It stays put.
+  assert.equal(fs.existsSync(path.join(from, 'a@o.com.csv')), true);
+});
+
+test('a destination that already holds CSVs is never overwritten', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'mag-mig-'));
+  const from = path.join(base, 'repo'); const to = path.join(base, 'data');
+  fs.mkdirSync(from, { recursive: true }); fs.mkdirSync(to, { recursive: true });
+  fs.writeFileSync(path.join(from, 'a@o.com.csv'), 'STALE');
+  fs.writeFileSync(path.join(to, 'a@o.com.csv'), 'FRESH');
+
+  const r = migrateLegacyConnections({ from, to });
+  assert.equal(r.moved, 0);
+  assert.equal(r.kept, 1);
+  assert.equal(fs.readFileSync(path.join(to, 'a@o.com.csv'), 'utf8'), 'FRESH');
+});
+
+test('nothing to copy is not an error', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'mag-mig-'));
+  assert.deepEqual(migrateLegacyConnections({ from: path.join(base, 'nope'), to: path.join(base, 'to') }), { moved: 0 });
 });

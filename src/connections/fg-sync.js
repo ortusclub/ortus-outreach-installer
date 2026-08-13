@@ -20,17 +20,17 @@ const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function postFgOnce(payload, timeoutMs) {
   const body = JSON.stringify(payload);
   try {
-    const initial = await fetch(FG_WEBAPP_URL, {
+    // The "intermittent HTML error page from its one-time redirect URL" this
+    // used to retry around was self-inflicted: the 302 points at a URL good for
+    // exactly one fetch, and fetching it ourselves spent it outside its own
+    // redirect, so Google answered 404. fetch follows it correctly — see the
+    // measurement in magellan-sheet.js. The retry wrapper stays for real blips.
+    const res = await fetch(FG_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
-      redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),
     });
-    let res = initial;
-    if (initial.status >= 300 && initial.status < 400) {
-      res = await fetch(initial.headers.get('location'), { signal: AbortSignal.timeout(timeoutMs) });
-    }
     const text = await res.text();
     try {
       return JSON.parse(text);
@@ -39,9 +39,7 @@ async function postFgOnce(payload, timeoutMs) {
         // A login page is a deployment problem, not a transient blip — don't retry.
         return { error: 'FG Apps Script returned a login page — redeploy it ("anyone with the link")', transient: false };
       }
-      // Apps Script intermittently returns an HTML error page from its one-time
-      // redirect URL under load. This is transient — worth retrying.
-      return { error: 'Unexpected non-JSON response from the FG Apps Script', transient: true };
+      return { error: `The FG Apps Script answered ${res.status} with ${text.length} bytes that are not JSON`, transient: true };
     }
   } catch (err) {
     // Network / timeout — transient.

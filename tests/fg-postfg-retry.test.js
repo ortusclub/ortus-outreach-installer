@@ -6,8 +6,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { postFg } from '../src/connections/fg-sync.js';
 
-// Minimal fake Response: a 200 with a body string (no 302 dance needed — postFg
-// only follows a redirect when status is 3xx).
+// Minimal fake Response: a 200 with a body string. fetch follows Apps Script's
+// 302 itself now, so what postFg sees is always the final response.
 function res(body) { return { status: 200, headers: { get: () => null }, text: async () => body }; }
 
 test('postFg retries a transient non-JSON response and then succeeds', async () => {
@@ -46,7 +46,10 @@ test('postFg gives up after all attempts on a persistent transient failure', asy
   globalThis.fetch = async () => { calls += 1; return res('<!DOCTYPE html>nope'); };
   try {
     const out = await postFg({ action: 'fgState' }, { attempts: 3, sleep: async () => {} });
-    assert.match(out.error, /Unexpected non-JSON/i);
+    // The status and the size are in the message: "200 with 12 bytes" is a
+    // Google flap, "404 with 7,870 bytes" is the echo URL missing. A bare
+    // "non-JSON" made those look like the same failure for a day.
+    assert.match(out.error, /answered 200 with \d+ bytes that are not JSON/i);
     assert.equal(calls, 3, 'should try the full attempt budget');
   } finally {
     globalThis.fetch = orig;

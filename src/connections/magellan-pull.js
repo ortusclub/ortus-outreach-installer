@@ -14,10 +14,44 @@ import { fileURLToPath } from 'node:url';
 import { getRecentConnections } from '../linkedin/helpers.js';
 import { parseCsv } from './csv-ingest.js';
 import { normalizeSlug } from './slug.js';
+import { dataPath } from '../paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(__dirname, '../..');
-export const CONNECTIONS_DIR = path.join(REPO, 'data/connections');
+
+// Where the CSVs live. This used to be the repo's own data/connections, which
+// meant the 455 collected accounts belonged to whichever checkout happened to
+// be running: launch the app from a worktree and every one of them silently
+// disappeared, reporting "nothing has been collected yet" for accounts that had
+// been collected weeks earlier. Collected data is user data — it belongs in
+// ORTUS_DATA_DIR with everything else the operator owns.
+export const LEGACY_CONNECTIONS_DIR = path.join(REPO, 'data/connections');
+export const CONNECTIONS_DIR = dataPath('connections');
+
+/**
+ * One-time move of the legacy repo folder into the data dir.
+ *
+ * Copies. Never deletes: 70MB of collected connections is hours of LinkedIn
+ * reading that cannot be re-run cheaply, and leaving the original in place
+ * costs disk and nothing else. Runs only when the destination has no CSVs at
+ * all, so a later collect is never overwritten by a stale copy.
+ */
+export function migrateLegacyConnections({ from = LEGACY_CONNECTIONS_DIR, to = CONNECTIONS_DIR } = {}) {
+  const csvs = (dir) => {
+    try { return fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.csv')); } catch { return []; }
+  };
+  if (from === to) return { moved: 0 };
+  const already = csvs(to);
+  if (already.length) return { moved: 0, kept: already.length };
+  const legacy = csvs(from);
+  if (!legacy.length) return { moved: 0 };
+  fs.mkdirSync(to, { recursive: true });
+  let moved = 0;
+  for (const f of legacy) {
+    try { fs.copyFileSync(path.join(from, f), path.join(to, f)); moved += 1; } catch { /* skip the unreadable one */ }
+  }
+  return { moved, from, to };
+}
 
 // 40 rows a page. 500 pages is 20k connections — past any real Ortus account,
 // and the walk stops early on the first short page anyway.
