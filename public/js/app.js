@@ -27096,8 +27096,22 @@ window.rsweepStop = rsweepStop;
 // code than the page returns the SPA's HTML for an unknown route and res.json()
 // dies with `Unexpected token '<'` — which tells the operator nothing. This
 // names the actual problem: the app needs restarting.
+// 30s, because a request that never settles is worse than one that fails: the
+// caller's catch never runs, so its button stays disabled with no error on
+// screen and every later click is silently ignored. Measured 2026-08-13 — the
+// app was killed mid-POST and the Collect button sat dead for over three
+// minutes while the card read "Not running". Every Magellan route answers in
+// well under a second; the picker's own slow leg is capped server-side.
+const MG_FETCH_TIMEOUT_MS = 30000;
+
 async function mgFetch(url, opts) {
-  const res = await fetch(url, opts);
+  const res = await fetch(url, { signal: AbortSignal.timeout(MG_FETCH_TIMEOUT_MS), ...opts })
+    .catch((err) => {
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        throw new Error('The app did not answer. It may have restarted — reload with Cmd+R and try again.');
+      }
+      throw err;
+    });
   const body = await res.text();
   if (body.trim().startsWith('<')) {
     throw new Error('This needs a restart — quit The Ortus Outreach and open it again to finish updating.');
@@ -27328,6 +27342,14 @@ async function startMagellanCollect() {
     startMagellanPolling();
   } catch (err) {
     showMagellanError(err.message);
+  } finally {
+    // Always hand the button back. It used to be re-enabled only in the catch,
+    // so anything that left the request unsettled — the app restarting mid-POST
+    // is the one measured here — killed the button permanently, with no error
+    // beside it. Every click after that did nothing at all.
+    // Handing it back early is safe: renderMagellanState re-disables it on the
+    // next poll tick while a run is live, and the server refuses a second
+    // collect with "Magellan is already running" rather than starting one.
     if (btn) btn.disabled = false;
   }
 }
