@@ -100,3 +100,22 @@ test('a one-search scrape shows an indeterminate bar, not a permanent 0%', () =>
   assert.match(APP, /const indeterminate = c\.status === 'running' && total <= 1 && done === 0;/);
   assert.match(APP, /setF\('activePct', indeterminate \? '—' : pct\);/);
 });
+
+test('expanding a Sales Nav strip renders its OWN board immediately', () => {
+  // The handler called renderCampaignsBoard() — the campaigns board — so a
+  // scrape's rich card and live log were only built by the next 2.5s poll, and
+  // never while a poll was slow or stalled. The strip opened to an empty shell.
+  assert.match(APP, /if \(strip\.closest\('#sn-board'\)\) \{/);
+  assert.match(APP, /if \(_snLastCampaigns\) renderSalesNavBoard\(_snLastCampaigns\);/);
+});
+
+test('the board poll timer is installed before the first fetch, not after it', () => {
+  // /api/jobs takes 5-10s warm and was measured at 83s during app boot. Awaiting
+  // it before setInterval left the board with no poll timer for that whole
+  // window — frozen strips, no re-render, nothing to open.
+  const open = APP.slice(APP.indexOf('async function openSalesNavBoard'), APP.indexOf('window.openSalesNavBoard'));
+  const setIdx = open.indexOf('setInterval(pollSalesNavBoard, 2500)');
+  assert.ok(setIdx > -1, 'the poll interval must still be installed');
+  assert.equal(/await pollSalesNavBoard\(\);/.test(open), false, 'the first poll must not gate the timer');
+  assert.equal(/await loadOperatorEmail\(\);/.test(open), false, 'the email fetch must not gate the timer either');
+});

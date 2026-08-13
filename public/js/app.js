@@ -115,10 +115,23 @@ async function openSalesNavBoard() {
       _snPrevStatus = new Map();
     } catch (_) { /* fall through to the normal cold load */ }
   }
-  await loadOperatorEmail();
-  await pollSalesNavBoard();
+  // Start the poll loop BEFORE the first fetch rather than after it.
+  //
+  // The engine's /api/jobs takes 5–10s warm, and was measured at 83s while the
+  // app was still booting (a trivial 404 on another route took 10.4s in the same
+  // window, so the app's own server — not the network — was the bottleneck).
+  // Awaiting it here meant the board had NO poll timer for that entire window:
+  // the cached strips sat frozen, nothing re-rendered, and expanding a scrape
+  // produced an empty shell. Installing the timer first means the board starts
+  // updating the moment data is available. _snPollInFlight already stops the
+  // ticks stacking up behind a slow fetch.
   clearInterval(_snPollTimer);
   _snPollTimer = setInterval(pollSalesNavBoard, 2500);
+  pollSalesNavBoard();
+  // The operator email only decides "Your scrapes" vs "Other people's". Worth a
+  // re-render when it lands, not worth blocking the whole board on — and the
+  // board patches in place now, so the correction costs one cheap diff.
+  loadOperatorEmail().then(() => { try { pollSalesNavBoard(); } catch (_) { /* */ } });
 }
 window.openSalesNavBoard = openSalesNavBoard;
 
@@ -1027,10 +1040,16 @@ document.addEventListener('click', (e) => {
   if (!cid) return;
   if (_snExpanded.has(cid)) _snExpanded.delete(cid); else _snExpanded.add(cid);
   strip.classList.toggle('sn-collapsed', !_snExpanded.has(cid));
-  // Cloud strips fetch their per-lead log only when running/expanded — kick a
-  // background cloud refresh on expand so the log fills promptly (it re-renders
-  // when it lands), and render now for the instant collapse/expand feel.
-  if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  // A Sales Nav strip's rich card (and therefore its live log) is built by
+  // renderSalesNavBoard, which this handler never called — it called the
+  // CAMPAIGNS board's renderer instead. So expanding a scrape only did
+  // something on the next 2.5s poll, and nothing at all while a poll was slow
+  // or stalled: the strip opened to an empty shell. Render its own board now.
+  if (strip.closest('#sn-board')) {
+    try { if (_snLastCampaigns) renderSalesNavBoard(_snLastCampaigns); } catch (_) { /* keep the fold responsive */ }
+  } else if (typeof renderCampaignsBoard === 'function') {
+    renderCampaignsBoard();
+  }
   if (_snExpanded.has(cid) && typeof _refreshCloudItems === 'function') _refreshCloudItems();
 });
 
