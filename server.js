@@ -82,6 +82,7 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-configs.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
+import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
 import { listPresets, getPreset, savePreset, deletePreset, getLastUsed as getLastUsedPreset, saveLastUsed as saveLastUsedPreset } from './src/presets.js';
 import { lintLeads, blocklistExcludedUrls, normalizeProfileUrl } from './src/preflight-lint.js';
@@ -4597,10 +4598,7 @@ const SCRAPE_HISTORY_TTL = 30000;
 const _scrapeHistory = new Map(); // campaignId → { at, lines }
 
 app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
-  // Engine-derived strips have no local record; the board passes the strip's
-  // base tab name so we can filter the shared engine log to this campaign.
   const rec = await getScrapeCampaign(req.params.id);
-  const tabName = String(req.query.tabName || (rec && rec.tabName) || '').trim();
   // Read by the REQUESTED id as well as the local record's. Every app-written
   // line is keyed on the board id (an `eng_...` for engine-derived strips), but
   // this only ever read `rec.id` — which exists solely for local `sc_...`
@@ -4608,14 +4606,32 @@ app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
   const ids = [...new Set([req.params.id, rec && rec.id].filter(Boolean))];
   const persistedSets = await Promise.all(ids.map((id) => readScrapeLog(id, { limit: 300 })));
   const persisted = persistedSets.flat();
+
+  // Which engine job ids belong to THIS scrape. The engine stamps every live log
+  // line with its jobId, and a campaign's own jobs carry that same id (jobs[].id
+  // === jobs[].runId), so this is the only identity that actually scopes a line
+  // to a campaign.
+  //
+  // It replaces `String(ln.tabName || '').startsWith(tabName)`, which was wrong
+  // twice over. `tabName` here is the campaign's BASE tab, and 83 live campaigns
+  // share the tab "Results" — so every "Results *" scrape rendered every other
+  // one's events, including 18 failed "Results 1111 N" runs whose "account is
+  // logged out" lines then appeared under scrapes that were collecting fine.
+  // "A" likewise swallowed "A.". And when tabName came back empty — which it
+  // does for every engine-derived strip, since those have no local record —
+  // `!tabName` short-circuited the filter into a no-op and returned the ENTIRE
+  // global engine buffer.
+  const _board = await getScrapeBoard().catch(() => null);
+  const _rec = _board && (_board.campaigns || []).find((c) => c.id === req.params.id);
+  const jobIds = jobIdsForCampaign(_rec);
+
   let live = [];
   let engineDown = '';
   try {
     const l = await getScrapeLogs(req.query.since);
     if (l && l.error) throw new Error(l.error);
     const lines = Array.isArray(l) ? l : (l && l.logs) || [];
-    live = lines.filter((ln) => !tabName || String(ln.tabName || '').startsWith(tabName))
-                .map((ln) => ({ ts: ln.ts, message: ln.message, jobId: ln.jobId, tabName: ln.tabName }));
+    live = scopeLiveLines(lines, jobIds);
   } catch (e) {
     // Was swallowed: an unreachable engine rendered as an empty log box, which
     // reads identically to "this scrape did nothing".
@@ -4640,9 +4656,7 @@ app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
       history = cached.lines;
     } else {
       try {
-        const board = await getScrapeBoard();
-        const rec2 = (board.campaigns || []).find((c) => c.id === req.params.id);
-        const runIds = [...new Set((rec2 && rec2.jobs || []).map((j) => j && j.runId).filter(Boolean))];
+        const runIds = [...new Set((_rec && _rec.jobs || []).map((j) => j && j.runId).filter(Boolean))];
         const sets = await Promise.all(runIds.map((rid) => getScrapeRunLogs(rid).catch(() => null)));
         history = sets.flatMap((s) => (s && Array.isArray(s.logs) ? s.logs : []))
           .map((ln) => ({ ts: ln.ts, message: ln.message, jobId: ln.jobId, tabName: ln.tabName }));

@@ -258,7 +258,7 @@ function renderSalesNavBoard(campaigns) {
   // Empty state when NO strips are visible — covers both "no scrapes at all"
   // and "all scrapes dismissed / in a non-shown status" (previously blank).
   if (!html) html = _scrapeEmptyState();
-  host.innerHTML = html;
+  _snPatchBoard(host, html);
   // Fill each expanded strip's cloned card. Only expanded strips have one.
   const _byId = new Map(campaigns.map((c) => [c.id, c]));
   host.querySelectorAll('.sn-strip > .vj-card').forEach((root) => {
@@ -266,12 +266,88 @@ function renderSalesNavBoard(campaigns) {
     const c = strip && _byId.get(strip.dataset.cid);
     if (c) { try { _snFillStripCard(root, c); } catch (_) { /* a broken card must not blank the board */ } }
   });
-  // The rebuild reset every logs pane to its "…" placeholder — refill the ones
-  // showing the Logs tab so an open live log survives the 2.5s re-render.
-  if (_snLogsTab.size) {
-    host.querySelectorAll('.sn-pane.on .sn-logbox').forEach((box) => {
-      if (box.dataset.logsfor && _snLogsTab.has(box.dataset.logsfor)) { try { _snLoadLogs(box); } catch (_) { /* */ } }
-    });
+  // Refresh log CONTENT in place. The boxes themselves survive the patch above,
+  // so each of these is one atomic innerHTML swap on a node that already holds
+  // the previous lines — the reader never sees an empty frame.
+  _snRefreshLogs(host);
+}
+
+// Update every visible log box without destroying it. Only boxes that are
+// actually on screen are fetched; a collapsed strip costs nothing.
+function _snRefreshLogs(host) {
+  const boxes = [
+    ...host.querySelectorAll('.sn-pane.on .sn-logbox[data-logsfor]'),
+    ...host.querySelectorAll('.sn-strip > .vj-card [data-f="active-log"], .sn-strip > .vj-card .vj-log'),
+  ];
+  for (const box of boxes) {
+    if (!box.dataset.logsfor) continue;
+    if (box.closest('.sn-pane') && !_snLogsTab.has(box.dataset.logsfor)) continue;
+    try { _snLoadLogs(box); } catch (_) { /* a log failure must not break the board */ }
+  }
+}
+
+// Patch the board in place instead of replacing its innerHTML.
+//
+// The board used to do `host.innerHTML = html` on every 2.5s poll. That threw
+// away and rebuilt all ~290 strips — including 279 finished ones that had not
+// changed in hours — which is what made the board slow to open. Worse, it
+// destroyed the live log element inside any expanded strip; the replacement
+// started empty, `.vj-log:empty::after` printed "No events yet", and the log
+// only came back when an async refetch landed ~350ms later. Measured off a
+// screen recording: a blank frame and a refill frame 0.30–0.42s apart, once
+// per poll. That is the strobe.
+//
+// Now: strips are matched by cid, an unchanged data-sig means the node is left
+// completely untouched, and a changed strip keeps its live log node by
+// transplanting it into the new markup before the swap.
+function _snPatchBoard(host, html) {
+  const next = document.createElement('div');
+  next.innerHTML = html;
+
+  const prevByCid = new Map();
+  for (const el of host.children) {
+    if (el.dataset && el.dataset.cid) prevByCid.set(el.dataset.cid, el);
+  }
+
+  const wanted = [];
+  for (const el of [...next.children]) {
+    const cid = el.dataset && el.dataset.cid;
+    const prev = cid ? prevByCid.get(cid) : null;
+    if (prev) {
+      prevByCid.delete(cid);
+      if (prev.dataset.sig === el.dataset.sig) { wanted.push(prev); continue; } // nothing changed
+      _snCarryLiveNodes(prev, el);
+    }
+    wanted.push(el);
+  }
+
+  // Drop anything no longer on the board, then put the survivors in order.
+  // insertBefore MOVES a node that is already a child, so a reorder costs no
+  // re-render and an untouched strip is never even read.
+  const keep = new Set(wanted);
+  for (const el of [...host.children]) if (!keep.has(el)) el.remove();
+  let ref = host.firstChild;
+  for (const node of wanted) {
+    if (node === ref) { ref = ref.nextSibling; continue; }
+    host.insertBefore(node, ref);
+  }
+}
+
+// Move the live log element(s) from the outgoing strip into its replacement, so
+// a strip whose numbers changed doesn't lose its log. Without this every
+// running strip still blanks once per poll — which is the case in the recording.
+function _snCarryLiveNodes(prev, next) {
+  const SEL = '.sn-logbox, .vj-log, [data-f="active-log"]';
+  const olds = [...prev.querySelectorAll(SEL)];
+  if (!olds.length) return;
+  const key = (n) => `${n.className}|${n.dataset.logsfor || ''}|${n.dataset.f || ''}`;
+  for (const nb of [...next.querySelectorAll(SEL)]) {
+    const i = olds.findIndex((o) => key(o) === key(nb));
+    if (i === -1) continue;
+    const ob = olds.splice(i, 1)[0];
+    const top = ob.scrollTop;
+    nb.replaceWith(ob);
+    ob.scrollTop = top; // a DOM move resets scroll; put the reader back
   }
 }
 
@@ -477,8 +553,13 @@ function renderStrip(c) {
   // strips every 2.5s; cloning a card nobody can see 282 times per tick is a
   // measurable freeze for zero pixels. Expanding a strip re-renders it anyway.
   const richCard = (isQueued || collapsed) ? '' : vjCardSkeleton(c.id);
-  return `
-  <div class="sn-strip ${c.mine ? 'mine' : ''} ${c.status === 'running' && !isPaused ? 'run' : ''} ${isPaused ? 'paused' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}">
+  // data-sig fingerprints everything this template just rendered, so the board
+  // can tell "this strip is unchanged" from "this strip needs new markup"
+  // without diffing DOM. It is hashed from the finished string rather than a
+  // hand-listed set of fields, so a field added to the template above can never
+  // be forgotten here and leave a strip frozen on stale values.
+  const _html = `
+  <div class="sn-strip ${c.mine ? 'mine' : ''} ${c.status === 'running' && !isPaused ? 'run' : ''} ${isPaused ? 'paused' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}" data-sig="__SIG__">
     ${expandBtn}
     <div class="sn-compact">
     <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span>${c.mine ? '<span class="sn-you">You</span>' : `<span class="sn-owner">· ${escHtml(owner)}</span>`}
@@ -494,6 +575,18 @@ function renderStrip(c) {
       <div class="right">${dismissBtn}${viewBtn}${stopBtn}${openBtn}${rerunBtn}</div>
     </div>
   </div>`;
+  return _html.replace('__SIG__', _snHash(_html));
+}
+
+// FNV-1a → base36. Not a security hash; it only has to change when the markup
+// changes, and it runs ~290 times every 2.5s so it has to be cheap.
+function _snHash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
 }
 
 // Fill one expanded strip's cloned card with THIS scrape's numbers.
@@ -573,6 +666,12 @@ function _snFillStripCard(root, c) {
   const pages = jobs.reduce((n, j) => n + (Number(j && j.pages) || 0), 0);
   const accounts = (c.profileIds || []).length;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  // The percentage counts FINISHED searches, so a one-search scrape reads 0%
+  // from start to finish and then jumps to 100 — it sat on "0% · 0 of 1 searches
+  // done" through 1,270 leads and 51 pages, which reads as stuck. The engine
+  // reports no expected row total, so an honest percentage cannot be computed:
+  // show an indeterminate bar rather than a number that means nothing.
+  const indeterminate = c.status === 'running' && total <= 1 && done === 0;
 
   // Relabel the hero ONCE per clone — the campaign card counts sent/accepted,
   // a scrape counts searches/pages/leads.
@@ -613,12 +712,13 @@ function _snFillStripCard(root, c) {
   setF('sendingLbl', isPaused ? 'Paused' : V.state);
   setF('activeSent', done);
   setF('activeTotal', total);
-  setF('activePct', pct);
+  setF('activePct', indeterminate ? '—' : pct);
   setF('scrapePages', pages.toLocaleString());
   setF('scrapeLeads', leads.toLocaleString());
   setF('activeAccounts', accounts);
   const bar = root.querySelector('[data-f="activeBar"]');
-  if (bar) bar.style.width = pct + '%';
+  if (bar) bar.style.width = indeterminate ? '100%' : pct + '%';
+  root.classList.toggle('sn-indeterminate', indeterminate);
   setF('activeLiveL1', V.l1);
 }
 

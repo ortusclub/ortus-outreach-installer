@@ -601,6 +601,18 @@
   body[data-dashboard='v3'] .vj-hbar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--green); transition: width 0.4s ease; }
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-hbar > i { background: var(--blue); }
 
+  /* A one-search scrape has no computable percentage — the engine reports no
+     expected row total, and the "searches done" count is 0 until the instant
+     it is 1. The card shows "—" instead of a permanent 0%, and the bar becomes
+     a static hatched track: deliberately NOT animated, because a pulsing bar on
+     a board that already flickered is the last thing this screen needs. */
+  body[data-dashboard='v3'] .sn-indeterminate .vj-hbar > i {
+    background-image: repeating-linear-gradient(135deg,
+      rgba(255, 255, 255, 0.55) 0 4px, rgba(255, 255, 255, 0) 4px 8px);
+    opacity: 0.4;
+    transition: none;
+  }
+
   /* Monitoring: blue accent rail on the left edge (mirrors the green one). */
   body[data-dashboard='v3'] .vj-card.is-monitor::before {
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
