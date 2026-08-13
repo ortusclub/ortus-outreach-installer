@@ -573,10 +573,10 @@ export async function runImport(plans = _plans, deps = {}) {
 
   // perAccount so the sheet can show which account contributed what, rather
   // than one aggregate number nobody can trace back.
-  const result = { created: 0, updated: 0, extraEmails: 0, errors: [], perAccount: [] };
+  const result = { created: 0, updated: 0, extraEmails: 0, notWritten: 0, errors: [], perAccount: [] };
   try {
     for (const { account, plan } of plans || []) {
-      const row = { account, created: 0, updated: 0, extraEmails: 0, errors: [] };
+      const row = { account, created: 0, updated: 0, extraEmails: 0, notWritten: 0, errors: [] };
       result.perAccount.push(row);
       _state.account = account;
 
@@ -598,37 +598,59 @@ export async function runImport(plans = _plans, deps = {}) {
         }
       }
 
-      log(`✓ ${account}: ${row.created} added, ${row.updated} updated`
-        + (row.extraEmails ? `, ${row.extraEmails} email addresses attached` : '')
-        + (row.errors.length ? `, ${row.errors.length} problem${row.errors.length === 1 ? '' : 's'}` : ''));
+      // What the failures COST, not how many lines they produced. A rejected
+      // batch of 100 is one error object and a hundred missing people; counting
+      // the objects reported that as "1 problem" next to "168 added" and read
+      // like a clean run.
+      const byCause = summariseProblems(row.errors);
+      row.notWritten = byCause.reduce((n, g) => n + g.people, 0);
+      const notes = byCause.filter((g) => !g.blocking).reduce((n, g) => n + g.count, 0);
+
+      const bits = [`${row.created} added`, `${row.updated} updated`];
+      if (row.extraEmails) bits.push(`${row.extraEmails} email addresses attached`);
+      if (row.notWritten) bits.push(`${row.notWritten} NOT written`);
+      if (notes) bits.push(`${notes} note${notes === 1 ? '' : 's'}`);
+      log(`✓ ${account}: ${bits.join(', ')}`);
       // Every problem, in the words of whoever has to fix it — and never more
       // than one line per distinct cause per account. Ten thousand identical
       // duplicate-contact clashes are one job, not ten thousand log lines.
-      const seenCause = new Set();
-      for (const e of row.errors) {
-        const p = explainProblem(e.error, { stage: e.stage });
-        if (seenCause.has(p.code)) continue;
-        seenCause.add(p.code);
-        const n = row.errors.filter((x) => explainProblem(x.error).code === p.code).length;
-        log(problemLine(account, p) + (n > 1 ? ` (${n} people in this account)` : ''));
+      // Worst-first: the cause that cost people leads, whatever its tally.
+      for (const g of byCause) {
+        const first = row.errors.find((e) => explainProblem(e.error, { stage: e.stage }).code === g.code);
+        const p = explainProblem(first.error, { stage: first.stage });
+        log(problemLine(account, p, { people: g.people, count: g.count }));
       }
 
       result.created += row.created;
       result.updated += row.updated;
       result.extraEmails += row.extraEmails;
+      result.notWritten += row.notWritten;
       result.errors.push(...row.errors.map((e) => ({ account, ...e })));
       _state.done += 1;
     }
     _state.imported = { ...result, at: new Date().toISOString(), problems: summariseProblems(result.errors) };
-    log(`■ Import finished. ${result.created} added, ${result.updated} updated`
-      + (result.extraEmails ? `, ${result.extraEmails} email addresses attached` : '')
-      + (result.errors.length ? `, ${result.errors.length} problem${result.errors.length === 1 ? '' : 's'}.` : '.'));
+    const totals = [`${result.created} added`, `${result.updated} updated`];
+    if (result.extraEmails) totals.push(`${result.extraEmails} email addresses attached`);
+    if (result.notWritten) totals.push(`${result.notWritten} NOT written`);
+    log(`■ Import finished. ${totals.join(', ')}.`);
     // The roll-up: one line per KIND of problem, with the count and what to do.
     // This is the part someone hands to whoever cleans HubSpot, so it has to
-    // stand on its own without the lines above it.
-    for (const p of _state.imported.problems) {
-      log(`⚠ ${p.count} × ${p.what} — ${p.fix}`
-        + (p.accounts.length <= 3 ? ` (${p.accounts.join(', ')})` : ` (across ${p.accounts.length} accounts)`));
+    // stand on its own without the lines above it — and it has to keep the two
+    // kinds apart. Lumped together, one config error that dropped 61 people sat
+    // in the same list as thirty duplicate notes where nothing was lost at all.
+    const who = (p) => (p.accounts.length <= 3
+      ? ` (${p.accounts.join(', ')})` : ` (across ${p.accounts.length} accounts)`);
+    const blocking = _state.imported.problems.filter((p) => p.blocking);
+    const notes = _state.imported.problems.filter((p) => !p.blocking);
+    if (blocking.length) {
+      log(`⚠ ${result.notWritten} people were not written. Fix these, then run the import for `
+        + 'those accounts again — people already written are skipped, so a repeat run is safe:');
+      for (const p of blocking) {
+        log(`⚠ ${p.people} not written — ${p.what} — ${p.fix}${who(p)}`);
+      }
+    }
+    for (const p of notes) {
+      log(`· ${p.count} × ${p.what} — nothing was lost. ${p.fix}${who(p)}`);
     }
     _state.step = 'Writing the sheet';
     await sheet(_state, { force: true }).catch(() => {});

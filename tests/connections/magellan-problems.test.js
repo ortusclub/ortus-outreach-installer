@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { explainProblem, problemLine, summariseProblems } from '../../src/connections/magellan-problems.js';
+import { explainProblem, peopleLost, problemLine, summariseProblems } from '../../src/connections/magellan-problems.js';
 
 // The real one, copied from the log of the 11 Aug run.
 const REAL_409 = 'HubSpot 409: {"status":"error","message":"Email 444725921@linkedinmembership.id '
@@ -59,12 +59,51 @@ test('the roll-up groups by cause and counts, rather than repeating itself', () 
   ];
   const out = summariseProblems(errors);
   assert.equal(out.length, 2);
-  // Biggest first — that is the job worth doing.
-  assert.equal(out[0].code, 'duplicate_contact');
-  assert.equal(out[0].count, 3);
-  assert.deepEqual(out[0].accounts.sort(), ['a@o.com', 'b@o.com']);
-  assert.equal(out[1].code, 'rate_limited');
-  assert.equal(out[1].count, 1);
+  // Worst first, and "worst" is people lost — not lines printed. The single
+  // rate-limited update cost somebody; the three duplicate clashes cost nobody,
+  // because the connection is already on the record with the real address.
+  assert.equal(out[0].code, 'rate_limited');
+  assert.equal(out[0].people, 1);
+  assert.equal(out[0].blocking, true);
+  const dupes = out.find((g) => g.code === 'duplicate_contact');
+  assert.equal(dupes.count, 3);
+  assert.equal(dupes.people, 0);
+  assert.equal(dupes.blocking, false);
+  assert.deepEqual(dupes.accounts.sort(), ['a@o.com', 'b@o.com']);
+});
+
+test('a rejected batch is counted in PEOPLE, not in lines', () => {
+  // The bug this exists to prevent: one 400 on a batch of 61 was reported as
+  // "1 problem" beside "168 added", and read like a clean run. It was 61 people
+  // that never reached HubSpot.
+  const out = summariseProblems([
+    { account: 'a@o.com', stage: 'update', size: 61, error: 'HubSpot 400: not one of the allowed options' },
+    { account: 'a@o.com', stage: 'email', error: 'HubSpot 409: associated with a different vid 33062030850' },
+  ]);
+  assert.equal(out[0].code, 'not_an_option');
+  assert.equal(out[0].count, 1);
+  assert.equal(out[0].people, 61);
+  assert.equal(out[1].people, 0);
+});
+
+test('peopleLost: batches cost their size, email clashes cost nobody', () => {
+  assert.equal(peopleLost({ stage: 'update', size: 61 }), 61);
+  assert.equal(peopleLost({ stage: 'create', size: 100 }), 100);
+  assert.equal(peopleLost({ stage: 'email', id: '900' }), 0);
+  // An unrecognised failure with no size is one person, never zero — the whole
+  // point of this module is that it must not understate the damage.
+  assert.equal(peopleLost({ stage: 'update' }), 1);
+  assert.equal(peopleLost(), 1);
+});
+
+test('the line leads with the cost when there is one', () => {
+  const p = explainProblem('HubSpot 400: not one of the allowed options', { stage: 'update' });
+  const line = problemLine('a@o.com', p, { people: 61, count: 1 });
+  assert.match(line, /61 people NOT written/);
+  // Nothing lost: the old per-account tally, unchanged.
+  const dupe = explainProblem(REAL_409, { stage: 'email' });
+  assert.match(problemLine('a@o.com', dupe, { people: 0, count: 30 }), /\(30 people in this account\)/);
+  assert.doesNotMatch(problemLine('a@o.com', dupe, { people: 0, count: 30 }), /NOT written/);
 });
 
 test('no errors means no roll-up', () => {

@@ -103,27 +103,64 @@ export function explainProblem(raw, { stage = '' } = {}) {
   };
 }
 
-/** One log line: what happened, then what to do, then the raw text. */
-export function problemLine(account, p) {
-  return `⚠ ${account}: ${p.what} — ${p.fix} [${p.raw}]`;
+/**
+ * How many PEOPLE a failure actually cost — the only number that decides
+ * whether a line is a problem or a note.
+ *
+ * A rejected batch takes everyone in it with it; hubspot-client records that as
+ * `size`, for both a wholly-refused batch and the rejected half of a 207. An
+ * email failure costs nobody: the connection is already on the record holding
+ * the real address, and only the synthetic key was skipped. Anything else is
+ * one person until it proves otherwise — understating the damage is the failure
+ * mode this whole module exists to prevent.
+ */
+export function peopleLost(e = {}) {
+  if (e.stage === 'email') return 0;
+  return Number(e.size) || 1;
+}
+
+/**
+ * One log line: what happened, then what to do, then the raw text.
+ *
+ * `people` is the headline. An import that reported "31 problems" for 30
+ * harmless duplicate notes and one config error that silently dropped 61 people
+ * had its severity exactly backwards — the count of lines never was the story.
+ */
+export function problemLine(account, p, { people = 0, count = 1 } = {}) {
+  // Cost first when there is one. Buried mid-sentence behind the cause, the
+  // number that says work was lost reads like part of the explanation.
+  const head = people
+    ? `${people} ${people === 1 ? 'person' : 'people'} NOT written — ${p.what}`
+    : p.what + (count > 1 ? ` (${count} people in this account)` : '');
+  return `⚠ ${account}: ${head} — ${p.fix} [${p.raw}]`;
 }
 
 /**
  * The end-of-run roll-up. A hundred identical 409s are one job to do, not a
  * hundred, so group by cause and count.
  *
- * @param {Array<{account: string, stage?: string, error: string}>} errors
+ * Each group also carries `people` — how many were lost to that cause — and
+ * `blocking`, which is just `people > 0`. Classifying by damage rather than by
+ * a hand-kept list of codes means a new failure mode is sorted correctly the
+ * day it first appears, with nothing to remember to add.
+ *
+ * Sorted by people lost first: the one line that cost 61 people outranks the
+ * thirty that cost none, however many times they occurred.
+ *
+ * @param {Array<{account: string, stage?: string, size?: number, error: string}>} errors
  */
 export function summariseProblems(errors) {
   const byCode = new Map();
   for (const e of errors || []) {
     const p = explainProblem(e.error, { stage: e.stage });
-    const hit = byCode.get(p.code) || { code: p.code, what: p.what, fix: p.fix, count: 0, accounts: new Set() };
+    const hit = byCode.get(p.code)
+      || { code: p.code, what: p.what, fix: p.fix, count: 0, people: 0, accounts: new Set() };
     hit.count += 1;
+    hit.people += peopleLost(e);
     if (e.account) hit.accounts.add(e.account);
     byCode.set(p.code, hit);
   }
   return [...byCode.values()]
-    .map((h) => ({ ...h, accounts: [...h.accounts] }))
-    .sort((a, b) => b.count - a.count);
+    .map((h) => ({ ...h, blocking: h.people > 0, accounts: [...h.accounts] }))
+    .sort((a, b) => (b.people - a.people) || (b.count - a.count));
 }
