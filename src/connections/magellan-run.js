@@ -108,6 +108,33 @@ export function stopCollect() {
   log('◼ Stop requested — abandoning the account being read and stopping.');
   return { stopped: true };
 }
+/**
+ * The sheet write that follows a run which has ALREADY ended.
+ *
+ * Never awaited by the route. Check and Import both finish their real work,
+ * set running/phase/outcome, and only then push the record to Google — which
+ * is minutes of Apps Script with retries on top. Awaiting it held the HTTP
+ * response open long past the page's 30s guard, so a Check that had fully
+ * succeeded printed "The app did not answer. It may have restarted" over its
+ * own results, and the card read FINISHED · 100% · Idle while its stage block
+ * still said "Writing the sheet for review". Measured 2026-08-13:
+ * `[sheets-writer] transient write error (attempt 1/4): ... aborted due to
+ * timeout — retrying` landed while the operator was staring at that banner.
+ *
+ * The state is copied because the caller's `finally` clears account/step the
+ * instant this returns, and because the next run replaces _state entirely.
+ * publish() only reads, so a snapshot is enough.
+ */
+function sheetAfterRun(state, sheet, what) {
+  const snapshot = { ...state };
+  return sheet(snapshot, { force: true })
+    .then((r) => {
+      if (r && r.error) return log(`⚠ Could not update the sheet — ${r.error}`);
+      log(`✓ The ${what} sheet is up to date.`);
+    })
+    .catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
+}
+
 export function getPlans() { return _plans; }
 export function reset() {
   _state = idle(); _plans = null; _stopRequested = false;
@@ -441,8 +468,10 @@ export async function buildPreview(accounts, deps = {}) {
     // Written now, not on a button: the person who reviews this is not the
     // person at the keyboard, and asking them to wait for someone to press
     // "publish" is how a review does not happen.
-    _state.step = 'Writing the sheet for review';
-    await sheet(_state, { force: true }).catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
+    // Detached — see sheetAfterRun. The answer above is what the operator
+    // pressed the button for; the sheet is a record of it, and a record must
+    // never hold up the thing it records.
+    sheetAfterRun(_state, sheet, 'review');
     return { totals, plans, blocked, duplicates };
   } catch (err) {
     log(`✗ The check stopped — ${err.message}`);
@@ -532,8 +561,8 @@ export async function mergeDuplicates(pairs = null, deps = {}) {
     // The duplicates are gone, so the preview that named them is stale — a
     // second Check is the honest way to see what is left.
     if (_state.preview) _state.preview.duplicates = [];
-    await sheet(_state, { force: true }).catch(() => {});
     _state.phase = 'done';
+    sheetAfterRun(_state, sheet, 'review');
     return { ok: true, ...result };
   } catch (err) {
     log(`✗ Merging stopped — ${err.message}`);
@@ -652,8 +681,6 @@ export async function runImport(plans = _plans, deps = {}) {
     for (const p of notes) {
       log(`· ${p.count} × ${p.what} — nothing was lost. ${p.fix}${who(p)}`);
     }
-    _state.step = 'Writing the sheet';
-    await sheet(_state, { force: true }).catch(() => {});
     _state.phase = 'done';
     // Same rule as buildPreview: running clears once _state.imported already
     // exists, THEN buildOutcome(state) is asked — honestly, since it returns
@@ -661,6 +688,9 @@ export async function runImport(plans = _plans, deps = {}) {
     // false is the idempotent safety net for a throw before this line.
     _state.running = false;
     _state.outcome = buildOutcome(_state);
+    // Detached, and last: the snapshot it writes has to carry the finished
+    // phase and the outcome, or the Import tab records a run still in flight.
+    sheetAfterRun(_state, sheet, 'import');
     return { ok: true, ...result };
   } catch (err) {
     log(`✗ The import stopped — ${err.message}`);

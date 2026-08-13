@@ -182,6 +182,27 @@ test('the import narrates itself — progress, per account, and why a problem ha
   assert.match(log, /· 1 × That email address is already used by someone else — nothing was lost/);
 });
 
+// The sheet write is a record of a run that has already finished. On 13 Aug it
+// was still being awaited inside the request, so a Check that had succeeded sat
+// behind `[sheets-writer] transient write error (attempt 1/4)` until the page's
+// 30s guard fired and printed "The app did not answer" over its own results.
+test('Check answers without waiting for the sheet write', async () => {
+  reset();
+  let released;
+  const slowSheet = () => new Promise((r) => { released = () => r({ written: true }); });
+  const p = buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 'x', memberId: '1', firstName: 'A', lastName: 'B' }],
+    lookup: async () => Object.assign(new Map(), { duplicates: [] }),
+    sheet: slowSheet,
+  });
+  const out = await Promise.race([p, settle().then(() => 'STILL WAITING')]);
+  assert.notEqual(out, 'STILL WAITING', 'the answer must not sit behind Google');
+  assert.equal(getState().running, false);
+  released();
+});
+
 test('a rejected batch reports the people it cost, not the lines it printed', async () => {
   // The 13 Aug edlor run: 429 planned, 168 added + 200 updated, and a batch of
   // 61 updates refused by a property that had never been configured. The log
