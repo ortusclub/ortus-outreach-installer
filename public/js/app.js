@@ -353,9 +353,15 @@ function _snCarryLiveNodes(prev, next) {
   const SEL = '.sn-logbox, .vj-log, [data-f="active-log"]';
   const olds = [...prev.querySelectorAll(SEL)];
   if (!olds.length) return;
-  const key = (n) => `${n.className}|${n.dataset.logsfor || ''}|${n.dataset.f || ''}`;
+  // Match on class alone, in document order. Keying on data-logsfor as well
+  // looked safer and was in fact fatal: the OUTGOING node has been stamped with
+  // data-logsfor/data-snWired by _snFillStripCard, while the INCOMING one is a
+  // fresh vjCardSkeleton clone that is stamped only later — so the keys could
+  // never match ("vj-log|eng_x|" vs "vj-log||"), no node was ever carried, and
+  // the log blanked on every strip re-render until a refetch landed. Measured:
+  // ~17% of samples blank, in runs of ~4s starting at each swap.
   for (const nb of [...next.querySelectorAll(SEL)]) {
-    const i = olds.findIndex((o) => key(o) === key(nb));
+    const i = olds.findIndex((o) => o.className === nb.className);
     if (i === -1) continue;
     const ob = olds.splice(i, 1)[0];
     const top = ob.scrollTop;
