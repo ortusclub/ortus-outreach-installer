@@ -33,6 +33,7 @@ import { getScrapeOverride, saveScrapeOverride } from './src/scrape-config-overr
 import { appendAction, appendScrapeLog, readScrapeLog } from './src/scrape-campaign-logs.js';
 import {
   mergeCampaignsWithJobs, groupJobsIntoCampaigns, scrapeCampaignId, diffBoardEvents, baseTabName,
+  slimBoard,
 } from './public/js/scrape-board.mjs';
 import { getOperatorId } from './src/operator-id.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
@@ -4514,7 +4515,10 @@ async function getScrapeBoard() {
 app.get('/api/scrape/campaigns', async (_req, res) => {
   try {
     const board = await getScrapeBoard();
-    res.json({ campaigns: board.campaigns, me: board.me, cachedAt: board.at });
+    // Slimmed: the full board is 20.4MB and this is polled every 2.5s. The
+    // strips need a label and a count, not 2,247 full Sales Nav search URLs.
+    // /api/scrape/campaigns/:id below still serves the complete record.
+    res.json({ campaigns: slimBoard(board.campaigns), me: board.me, cachedAt: board.at });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

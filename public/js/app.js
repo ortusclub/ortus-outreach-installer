@@ -34,7 +34,7 @@ import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
-import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus } from '/js/scrape-board.mjs';
+import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus, searchKey } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
@@ -431,23 +431,30 @@ function _snSavePaused() {
 // each dispatched search URL, then backfill strips in _snEnrich(). localStorage so
 // it survives reloads. (Only covers THIS operator's launches — which is exactly
 // the set we're allowed to control.)
+// Keyed by searchKey(url), not the URL itself: the board list no longer carries
+// full search URLs (20.4MB per poll), so the strip can only match on the hash.
+// Entries written before this change are re-keyed on load.
 const _snLaunchReg = (() => {
-  try { return JSON.parse(localStorage.getItem('snLaunchReg') || '{}'); } catch (_) { return {}; }
+  let raw = {};
+  try { raw = JSON.parse(localStorage.getItem('snLaunchReg') || '{}'); } catch (_) { return {}; }
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) out[k.includes('://') ? searchKey(k) : k] = v;
+  return out;
 })();
 function _snSaveLaunchReg() {
   try { localStorage.setItem('snLaunchReg', JSON.stringify(_snLaunchReg)); } catch (_) { /* */ }
 }
 function _snRegisterLaunch(searchUrl, info) {
   if (!searchUrl) return;
-  _snLaunchReg[searchUrl] = { ...info, ts: Date.now() };
+  _snLaunchReg[searchKey(searchUrl)] = { ...info, ts: Date.now() };
   _snSaveLaunchReg();
 }
 // Backfill a strip from the launch registry when the engine didn't echo the
 // real name / owner / profiles.
 function _snEnrich(c) {
   let regName = null; const regProfiles = []; let regOwner = null;
-  for (const u of (c.searchUrls || [])) {
-    const e = _snLaunchReg[u];
+  for (const k of (c.searchKeys || (c.searchUrls || []).map(searchKey))) {
+    const e = _snLaunchReg[k];
     if (!e) continue;
     regName = regName || e.name;
     regOwner = regOwner || e.ownerEmail;
@@ -492,8 +499,9 @@ function renderStrip(c) {
   const isDone = c.status === 'done' || c.status === 'error';
   const collapsed = isQueued ? true : !_snExpanded.has(c.id);
   const owner = c.owner || 'unknown';
-  const nJobs = (c.jobs || []).length || (c.searchUrls || []).length;
-  const flow = `<b>${(c.searchUrls || []).length} searches</b> → <b>${nJobs} jobs</b> → feeds <b>${escHtml(c.name || c.tabName || '')}</b> · tab "${escHtml(c.tabName || 'Results')}"`;
+  const nSearches = c.searchCount != null ? c.searchCount : (c.searchUrls || []).length;
+  const nJobs = (c.jobs || []).length || nSearches;
+  const flow = `<b>${nSearches} searches</b> → <b>${nJobs} jobs</b> → feeds <b>${escHtml(c.name || c.tabName || '')}</b> · tab "${escHtml(c.tabName || 'Results')}"`;
   const doneAgo = isDone ? fmtAgo(_snDoneTs(c)) : '';
   // "Stopped" (red) only if the operator's stop actually cut short running work.
   // If EVERY job finished ('done'), the scrape completed on its own → show neutral
@@ -517,7 +525,7 @@ function renderStrip(c) {
     ? `<div class="sn-progtxt"><b>${(c.totalProfiles || 0).toLocaleString()}</b> rows so far · ${c.done}/${nJobs} jobs done${c.etaMs ? ` · ${fmtEta(c.etaMs)} left` : ''}</div>`
     : '';
   const jobsPane = (c.jobs || []).map((j) => {
-    const label = j.searchUrl ? j.searchUrl.slice(0, 60) : 'search';
+    const label = j.searchLabel || (j.searchUrl ? j.searchUrl.slice(0, 60) : 'search');
     const st = j.state === 'running' ? `<span class="dot run"></span> Running · ${j.profiles || 0} rows`
       : j.state === 'done' ? `<span class="dot mon"></span> Done · ${j.profiles || 0} rows`
       : j.state === 'error' ? `<span class="dot red"></span> Error`
@@ -693,7 +701,7 @@ function _snFillStripCard(root, c) {
   const V = _SCRAPE_VJ[state] || _SCRAPE_VJ.idle;
 
   const jobs = c.jobs || [];
-  const total = jobs.length || (c.searchUrls || []).length;
+  const total = jobs.length || (c.searchCount != null ? c.searchCount : (c.searchUrls || []).length);
   const done = Number(c.done) || 0;
   const leads = Number(c.totalProfiles) || 0;
   const pages = jobs.reduce((n, j) => n + (Number(j && j.pages) || 0), 0);
