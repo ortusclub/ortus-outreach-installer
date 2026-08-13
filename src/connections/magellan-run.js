@@ -82,20 +82,59 @@ function startRun(patch, keep = {}) {
 // the totals cross the wire. Import replays what preview actually saw rather
 // than trusting a payload the browser round-tripped.
 let _plans = null;
-// Set by stopCollect(). Checked between accounts — the one in flight is allowed
-// to finish and close its browser cleanly rather than being killed mid-read.
+// Set by stopCollect(). Watched by the per-account watchdog as well as checked
+// between accounts, so the account in flight is abandoned rather than finished:
+// "after this account" is indistinguishable from "never" when that account is
+// the one that hung. Nothing is lost — collectAccount writes its CSV only once
+// the walk completes.
 let _stopRequested = false;
+
+// How long a read may go without a single progress tick before it is treated as
+// dead. The beacon publishes every 1.5s through both halves of the walk, so this
+// is silence, not slowness. Generous because a cold Orbita on a loaded laptop
+// can take a while to produce its first page.
+let STALL_MS = 4 * 60 * 1000;
+
+/** Test seam. Four real minutes is not a unit test. */
+export function setStallMs(ms) { STALL_MS = ms; }
 
 export function getState() { return { ..._state }; }
 
-/** Ask the sweep to stop after the current account. */
+/** Stop the sweep, abandoning the account currently being read. */
 export function stopCollect() {
   if (!_state.running) return { stopped: false, reason: 'Nothing is running' };
   _stopRequested = true;
-  _state.step = 'Stopping after this account';
-  log('◼ Stop requested — finishing the current account, then stopping.');
+  _state.step = 'Stopping';
+  log('◼ Stop requested — abandoning the account being read and stopping.');
   return { stopped: true };
 }
+/**
+ * The sheet write that follows a run which has ALREADY ended.
+ *
+ * Never awaited by the route. Check and Import both finish their real work,
+ * set running/phase/outcome, and only then push the record to Google — which
+ * is minutes of Apps Script with retries on top. Awaiting it held the HTTP
+ * response open long past the page's 30s guard, so a Check that had fully
+ * succeeded printed "The app did not answer. It may have restarted" over its
+ * own results, and the card read FINISHED · 100% · Idle while its stage block
+ * still said "Writing the sheet for review". Measured 2026-08-13:
+ * `[sheets-writer] transient write error (attempt 1/4): ... aborted due to
+ * timeout — retrying` landed while the operator was staring at that banner.
+ *
+ * The state is copied because the caller's `finally` clears account/step the
+ * instant this returns, and because the next run replaces _state entirely.
+ * publish() only reads, so a snapshot is enough.
+ */
+function sheetAfterRun(state, sheet, what) {
+  const snapshot = { ...state };
+  return sheet(snapshot, { force: true })
+    .then((r) => {
+      if (r && r.error) return log(`⚠ Could not update the sheet — ${r.error}`);
+      log(`✓ The ${what} sheet is up to date.`);
+    })
+    .catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
+}
+
 export function getPlans() { return _plans; }
 export function reset() {
   _state = idle(); _plans = null; _stopRequested = false;
@@ -156,6 +195,7 @@ export function startCollect(accounts, deps = {}) {
       while (!done) {
         attempt += 1;
         let launched = null;
+        let watchdog = null;
         // Which half of the account we are in, so a failure is explained by the
         // rules that can actually apply to it.
         let phase = 'launch';
@@ -169,11 +209,37 @@ export function startCollect(accounts, deps = {}) {
           phase = 'read';
           _state.step = 'Reading the connections list';
           log(`◦ ${entry.account}: signed in, reading the connections list…`);
-          const r = await collect(launched.page, entry.account, {
-            onProgress: ({ count, pages, total, stage }) => {
-              _state.current = { account: entry.account, count, pages, total, stage: stage || 'list' };
-            },
-          });
+          // The entire walk happens inside ONE page.evaluate(), so if the
+          // browser dies the promise never settles: the loop never comes back
+          // round to its stop check and Stop does nothing at all. 2026-08-12,
+          // an operator's log — nushe.himaj sat on "reading the connections
+          // list" for six minutes across two Stop clicks, with no browser open.
+          //
+          // So the read is raced against two ways of not finishing. Nothing is
+          // lost by abandoning one: collectAccount writes its CSV only after
+          // the walk completes, so a read that never completes was never going
+          // to save anything.
+          let lastTick = Date.now();
+          const r = await Promise.race([
+            collect(launched.page, entry.account, {
+              onProgress: ({ count, pages, total, stage }) => {
+                lastTick = Date.now();
+                _state.current = { account: entry.account, count, pages, total, stage: stage || 'list' };
+              },
+            }),
+            new Promise((_resolve, reject) => {
+              watchdog = setInterval(() => {
+                // Stop means stop. It used to mean "after this account", which
+                // is indistinguishable from "never" when this account is hung.
+                if (_stopRequested) return reject(new Error('stopped-by-operator'));
+                // The beacon ticks every 1.5s through both halves of the read,
+                // so four minutes of silence is a dead browser, not a slow one.
+                if (Date.now() - lastTick > STALL_MS) {
+                  reject(new Error(`stalled: no progress for ${Math.round(STALL_MS / 60000)} minutes`));
+                }
+              }, 1000);
+            }),
+          ]);
           _state.current = null;
 
           _state.perAccount.push({
@@ -205,6 +271,7 @@ export function startCollect(accounts, deps = {}) {
             done = true;
           }
         } finally {
+          if (watchdog) clearInterval(watchdog);
           _state.step = 'Closing the browser';
           try {
             if (launched) await closeProfile(entry.profileId);
@@ -401,8 +468,10 @@ export async function buildPreview(accounts, deps = {}) {
     // Written now, not on a button: the person who reviews this is not the
     // person at the keyboard, and asking them to wait for someone to press
     // "publish" is how a review does not happen.
-    _state.step = 'Writing the sheet for review';
-    await sheet(_state, { force: true }).catch((err) => log(`⚠ Could not update the sheet — ${err.message}`));
+    // Detached — see sheetAfterRun. The answer above is what the operator
+    // pressed the button for; the sheet is a record of it, and a record must
+    // never hold up the thing it records.
+    sheetAfterRun(_state, sheet, 'review');
     return { totals, plans, blocked, duplicates };
   } catch (err) {
     log(`✗ The check stopped — ${err.message}`);
@@ -492,8 +561,8 @@ export async function mergeDuplicates(pairs = null, deps = {}) {
     // The duplicates are gone, so the preview that named them is stale — a
     // second Check is the honest way to see what is left.
     if (_state.preview) _state.preview.duplicates = [];
-    await sheet(_state, { force: true }).catch(() => {});
     _state.phase = 'done';
+    sheetAfterRun(_state, sheet, 'review');
     return { ok: true, ...result };
   } catch (err) {
     log(`✗ Merging stopped — ${err.message}`);
@@ -533,10 +602,10 @@ export async function runImport(plans = _plans, deps = {}) {
 
   // perAccount so the sheet can show which account contributed what, rather
   // than one aggregate number nobody can trace back.
-  const result = { created: 0, updated: 0, extraEmails: 0, errors: [], perAccount: [] };
+  const result = { created: 0, updated: 0, extraEmails: 0, notWritten: 0, errors: [], perAccount: [] };
   try {
     for (const { account, plan } of plans || []) {
-      const row = { account, created: 0, updated: 0, extraEmails: 0, errors: [] };
+      const row = { account, created: 0, updated: 0, extraEmails: 0, notWritten: 0, errors: [] };
       result.perAccount.push(row);
       _state.account = account;
 
@@ -558,40 +627,60 @@ export async function runImport(plans = _plans, deps = {}) {
         }
       }
 
-      log(`✓ ${account}: ${row.created} added, ${row.updated} updated`
-        + (row.extraEmails ? `, ${row.extraEmails} email addresses attached` : '')
-        + (row.errors.length ? `, ${row.errors.length} problem${row.errors.length === 1 ? '' : 's'}` : ''));
+      // What the failures COST, not how many lines they produced. A rejected
+      // batch of 100 is one error object and a hundred missing people; counting
+      // the objects reported that as "1 problem" next to "168 added" and read
+      // like a clean run.
+      const byCause = summariseProblems(row.errors);
+      row.notWritten = byCause.reduce((n, g) => n + g.people, 0);
+      const notes = byCause.filter((g) => !g.blocking).reduce((n, g) => n + g.count, 0);
+
+      const bits = [`${row.created} added`, `${row.updated} updated`];
+      if (row.extraEmails) bits.push(`${row.extraEmails} email addresses attached`);
+      if (row.notWritten) bits.push(`${row.notWritten} NOT written`);
+      if (notes) bits.push(`${notes} note${notes === 1 ? '' : 's'}`);
+      log(`✓ ${account}: ${bits.join(', ')}`);
       // Every problem, in the words of whoever has to fix it — and never more
       // than one line per distinct cause per account. Ten thousand identical
       // duplicate-contact clashes are one job, not ten thousand log lines.
-      const seenCause = new Set();
-      for (const e of row.errors) {
-        const p = explainProblem(e.error, { stage: e.stage });
-        if (seenCause.has(p.code)) continue;
-        seenCause.add(p.code);
-        const n = row.errors.filter((x) => explainProblem(x.error).code === p.code).length;
-        log(problemLine(account, p) + (n > 1 ? ` (${n} people in this account)` : ''));
+      // Worst-first: the cause that cost people leads, whatever its tally.
+      for (const g of byCause) {
+        const first = row.errors.find((e) => explainProblem(e.error, { stage: e.stage }).code === g.code);
+        const p = explainProblem(first.error, { stage: first.stage });
+        log(problemLine(account, p, { people: g.people, count: g.count }));
       }
 
       result.created += row.created;
       result.updated += row.updated;
       result.extraEmails += row.extraEmails;
+      result.notWritten += row.notWritten;
       result.errors.push(...row.errors.map((e) => ({ account, ...e })));
       _state.done += 1;
     }
     _state.imported = { ...result, at: new Date().toISOString(), problems: summariseProblems(result.errors) };
-    log(`■ Import finished. ${result.created} added, ${result.updated} updated`
-      + (result.extraEmails ? `, ${result.extraEmails} email addresses attached` : '')
-      + (result.errors.length ? `, ${result.errors.length} problem${result.errors.length === 1 ? '' : 's'}.` : '.'));
+    const totals = [`${result.created} added`, `${result.updated} updated`];
+    if (result.extraEmails) totals.push(`${result.extraEmails} email addresses attached`);
+    if (result.notWritten) totals.push(`${result.notWritten} NOT written`);
+    log(`■ Import finished. ${totals.join(', ')}.`);
     // The roll-up: one line per KIND of problem, with the count and what to do.
     // This is the part someone hands to whoever cleans HubSpot, so it has to
-    // stand on its own without the lines above it.
-    for (const p of _state.imported.problems) {
-      log(`⚠ ${p.count} × ${p.what} — ${p.fix}`
-        + (p.accounts.length <= 3 ? ` (${p.accounts.join(', ')})` : ` (across ${p.accounts.length} accounts)`));
+    // stand on its own without the lines above it — and it has to keep the two
+    // kinds apart. Lumped together, one config error that dropped 61 people sat
+    // in the same list as thirty duplicate notes where nothing was lost at all.
+    const who = (p) => (p.accounts.length <= 3
+      ? ` (${p.accounts.join(', ')})` : ` (across ${p.accounts.length} accounts)`);
+    const blocking = _state.imported.problems.filter((p) => p.blocking);
+    const notes = _state.imported.problems.filter((p) => !p.blocking);
+    if (blocking.length) {
+      log(`⚠ ${result.notWritten} people were not written. Fix these, then run the import for `
+        + 'those accounts again — people already written are skipped, so a repeat run is safe:');
+      for (const p of blocking) {
+        log(`⚠ ${p.people} not written — ${p.what} — ${p.fix}${who(p)}`);
+      }
     }
-    _state.step = 'Writing the sheet';
-    await sheet(_state, { force: true }).catch(() => {});
+    for (const p of notes) {
+      log(`· ${p.count} × ${p.what} — nothing was lost. ${p.fix}${who(p)}`);
+    }
     _state.phase = 'done';
     // Same rule as buildPreview: running clears once _state.imported already
     // exists, THEN buildOutcome(state) is asked — honestly, since it returns
@@ -599,6 +688,9 @@ export async function runImport(plans = _plans, deps = {}) {
     // false is the idempotent safety net for a throw before this line.
     _state.running = false;
     _state.outcome = buildOutcome(_state);
+    // Detached, and last: the snapshot it writes has to carry the finished
+    // phase and the outcome, or the Import tab records a run still in flight.
+    sheetAfterRun(_state, sheet, 'import');
     return { ok: true, ...result };
   } catch (err) {
     log(`✗ The import stopped — ${err.message}`);

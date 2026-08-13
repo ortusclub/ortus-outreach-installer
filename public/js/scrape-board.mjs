@@ -208,3 +208,50 @@ export function fmtEta(ms) {
   const h = Math.floor(totalMin / 60), m = totalMin % 60;
   return m ? `~${h}h ${m}m` : `~${h}h`;
 }
+
+// ---------------------------------------------------------------------------
+// Board payload slimming.
+//
+// Measured 2026-08-13 on the live board: GET /api/scrape/campaigns returned
+// 20,404,966 bytes for 288 strips / 2,247 jobs, and the client re-fetched and
+// re-parsed all of it every 2.5s. 17.7MB of that was Sales Nav search URLs
+// (~3.1KB each, carried twice — once per job, once per campaign) that no strip
+// ever renders in full. The heavy fields all have exactly one consumer:
+//   - job.searchUrl  → a 60-char label on the expanded card
+//   - campaign.searchUrls → a COUNT, plus a lookup key into the client's
+//     launch registry (localStorage, keyed by search URL)
+// So the list carries a short label and a hash key instead, and the wizard's
+// Open/Re-run path keeps reading full URLs from /api/scrape/campaigns/:id.
+// ---------------------------------------------------------------------------
+
+/** FNV-1a → base36. Stable across app and server; used to key the launch registry. */
+export function searchKey(url) {
+  const s = String(url || '');
+  if (!s) return '';
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
+const JOB_LABEL_MAX = 60;
+
+export function slimBoard(campaigns) {
+  return (campaigns || []).map((c) => {
+    const urls = c.searchUrls || [];
+    const { searchUrls, ...rest } = c;
+    return {
+      ...rest,
+      searchCount: urls.length,
+      searchKeys: urls.map(searchKey),
+      jobs: (c.jobs || []).map((j) => {
+        const { searchUrl, sheetUrl, lockKey, podId, podIP, ...jrest } = j;
+        return searchUrl
+          ? { ...jrest, searchLabel: String(searchUrl).slice(0, JOB_LABEL_MAX) }
+          : jrest;
+      }),
+    };
+  });
+}

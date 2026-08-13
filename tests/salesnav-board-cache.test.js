@@ -26,17 +26,27 @@ test('the board has a persisted display cache', () => {
 test('the cached board paints BEFORE any await', () => {
   // This is the whole point: an await before the first render puts a network
   // round trip back on the render path and the tab is empty again.
+  //
+  // 2026-08-13: the guarantee got STRONGER. openSalesNavBoard no longer awaits
+  // anything at all, so rather than "the paint precedes the first await" this
+  // now asserts there is nothing before the paint that could delay it.
   const paintAt = OPEN_FN.indexOf('renderSalesNavBoard(cached)');
-  const firstAwait = OPEN_FN.indexOf('await ');
   assert.ok(paintAt > -1, 'openSalesNavBoard must render the cache');
-  assert.ok(firstAwait > -1, 'openSalesNavBoard still awaits the live load');
-  assert.ok(paintAt < firstAwait, 'the cached paint must come before the first await');
+  assert.equal(/await /.test(OPEN_FN.slice(0, paintAt)), false,
+    'nothing may be awaited before the cached paint');
 });
 
 test('a corrupt cache cannot block the live load', () => {
   assert.match(OPEN_FN, /try \{\s*renderSalesNavBoard\(cached\);/);
-  // The live path runs regardless of what the cache did.
-  assert.match(OPEN_FN, /await pollSalesNavBoard\(\);/);
+  // The live path runs regardless of what the cache did — and the poll TIMER is
+  // installed without waiting on it. Awaiting the first fetch here used to leave
+  // the board with no timer for as long as that fetch took (5-10s warm, 83s
+  // measured during app boot), so the strips sat frozen and expanding a scrape
+  // opened an empty shell.
+  assert.match(OPEN_FN, /_snPollTimer = setInterval\(pollSalesNavBoard, 2500\);/);
+  assert.match(OPEN_FN, /\n\s*pollSalesNavBoard\(\);/);
+  assert.equal(/await pollSalesNavBoard\(\);/.test(OPEN_FN), false,
+    'the first poll must not gate the timer');
 });
 
 test('cached statuses do not seed the handover detector', () => {

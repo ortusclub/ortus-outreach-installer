@@ -42,33 +42,64 @@ const s = (v) => (v == null ? '' : String(v));
 
 // ── The spreadsheet ────────────────────────────────────────────────────────
 
-/** Mirrors drive-sync's postWebApp: Apps Script answers POST with a 302. */
-async function postWebApp(payload, { timeoutMs = 60000 } = {}) {
-  if (!MAGELLAN_WEBAPP_URL) {
-    return { error: 'The Magellan sheet is not set up yet — deploy magellan-apps-script.js and put its /exec URL in src/sheets-webapp-url.js (MAGELLAN_WEBAPP_URL).' };
-  }
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One attempt. Apps Script answers a POST with a 302 to a googleusercontent
+ * "echo" URL, and that URL intermittently 404s — measured 13 Aug over ten
+ * consecutive getSheetUrl calls, four came back as Google's "Pagina non
+ * trovata" HTML instead of the reply. It is a Google-side flap, not a
+ * deployment problem: the same URL answers correctly seconds later.
+ *
+ * fetch is left to follow the redirect itself. Handling it by hand — read the
+ * Location, fetch it as a second bare request — spends a one-time URL outside
+ * its own redirect and can only add failures on top of the flap.
+ */
+async function postOnce(payload, timeoutMs) {
   try {
-    const initial = await fetch(MAGELLAN_WEBAPP_URL, {
+    const res = await fetch(MAGELLAN_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),
     });
-    let res = initial;
-    if (initial.status >= 300 && initial.status < 400) {
-      res = await fetch(initial.headers.get('location'), { signal: AbortSignal.timeout(timeoutMs) });
-    }
     const text = await res.text();
     try { return JSON.parse(text); } catch {
       if (text.includes('accounts.google.com') || text.includes('Sign in')) {
-        return { error: 'The Apps Script returned a login page — redeploy it' };
+        // A login page is a deployment problem, not a flap — retrying it just
+        // burns the operator's time and reports the wrong cause at the end.
+        return { error: 'The Apps Script returned a login page — redeploy it', transient: false };
       }
-      return { error: 'Unexpected non-JSON response from the Apps Script' };
+      // The status is the difference between "redeploy it" and "Google flapped".
+      // Hiding it behind a bare "non-JSON" is what made this look like a dead
+      // deployment for a day.
+      return { error: `The Apps Script answered ${res.status} with ${text.length} bytes that are not JSON`, transient: true };
     }
   } catch (err) {
-    return { error: err.message };
+    return { error: err.message, transient: true };
   }
+}
+
+/**
+ * Every Magellan action is a whole-tab overwrite (writeTab) or a read
+ * (getSheetUrl), so re-sending one is safe by construction: the same rows land
+ * in the same place. That is what makes retrying the right answer here, exactly
+ * as it is for FG — and its absence is why one flap lost the whole sheet write
+ * after a 429-person import.
+ */
+async function postWebApp(payload, { timeoutMs = 60000, attempts = 4, sleep = _sleep } = {}) {
+  if (!MAGELLAN_WEBAPP_URL) {
+    return { error: 'The Magellan sheet is not set up yet — deploy magellan-apps-script.js and put its /exec URL in src/sheets-webapp-url.js (MAGELLAN_WEBAPP_URL).' };
+  }
+  let last = { error: 'The sheet request never ran' };
+  for (let i = 0; i < Math.max(1, attempts); i++) {
+    if (i > 0) await sleep(500 * i);         // 0ms, 500ms, 1s, 1.5s
+    const r = await postOnce(payload, timeoutMs);
+    if (!r || !r.error) return r;
+    last = r;
+    if (r.transient === false) break;
+  }
+  return { error: last.error };
 }
 
 /** The Apps Script's own spreadsheet — the one the tabs land in. */

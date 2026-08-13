@@ -156,3 +156,29 @@ test('a Check with no accounts picked at all says that, not zeros', () => {
   assert.equal(o.ok, false);
   assert.equal(o.summary, 'Nothing was checked — no accounts were picked');
 });
+
+test('the duplicate count is stated once, not twice with two numbers', () => {
+  // The check finds everyone HubSpot holds twice (34); the import hits the
+  // subset whose second record refused the address (30). Printed together they
+  // read as a contradiction. The import's line wins — it carries the fix.
+  const withImport = buildOutcome({
+    phase: 'done', running: false,
+    preview: { duplicates: new Array(34).fill({}), accounts: ['a@o.com'], read: ['a@o.com'], totals: {} },
+    imported: {
+      created: 168, updated: 200, notWritten: 0,
+      problems: [{ code: 'duplicate_contact', what: 'This person is in HubSpot twice', fix: 'Merge them', count: 30, people: 0, blocking: false, accounts: ['a@o.com'] }],
+    },
+  });
+  const dupeLines = withImport.problems.filter((p) => /in HubSpot (more than once|twice)/.test(p));
+  assert.equal(dupeLines.length, 1);
+  assert.match(dupeLines[0], /30 × This person is in HubSpot twice/);
+  assert.match(dupeLines[0], /nothing was lost/);
+
+  // With no import, the check's own count is the only thing anyone has.
+  const checkOnly = buildOutcome({
+    phase: 'done', running: false,
+    preview: { duplicates: new Array(34).fill({}), accounts: ['a@o.com'], read: ['a@o.com'], totals: { created: 1, existing: 2 } },
+  });
+  assert.equal(checkOnly.problems.filter((p) => /in HubSpot more than once/.test(p)).length, 1);
+  assert.match(checkOnly.problems[0], /34 people are in HubSpot more than once/);
+});

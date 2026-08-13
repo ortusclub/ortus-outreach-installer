@@ -194,6 +194,20 @@ function sameName(records) {
 }
 
 /**
+ * A batch HubSpot only partly accepted answers 207, not 4xx — so `res.ok` is
+ * true, `postWithRetry` returns happily, and `results` holds ONLY the rows that
+ * landed. Without this the rejected half is invisible: not written, not
+ * counted, not reported. `size` is the number of people it cost, the same field
+ * a wholly-rejected batch records, so both kinds add up the same way downstream.
+ */
+function partialFailure(json) {
+  const size = Number(json.numErrors) || (json.errors || []).length;
+  if (!size) return null;
+  const first = (json.errors || [])[0] || {};
+  return { size, error: first.message || `HubSpot rejected ${size} of the rows in this batch` };
+}
+
+/**
  * Create contacts in batches. `inputs` is [{ properties }] straight off the plan.
  * Returns { created, errors[] }. A failed batch is reported, not thrown — one
  * bad row must not abandon the other 300k.
@@ -208,6 +222,8 @@ export async function batchCreate(inputs, { fetchImpl = fetch, token = process.e
         { inputs: batch.map((b) => ({ properties: b.properties })) });
       const json = await res.json();
       created += (json.results || []).length;
+      const partial = partialFailure(json);
+      if (partial) errors.push(partial);
     } catch (err) {
       errors.push({ size: batch.length, error: err.message });
     }
@@ -227,6 +243,8 @@ export async function batchUpdate(inputs, { fetchImpl = fetch, token = process.e
         { inputs: batch.map((b) => ({ id: b.id, properties: b.properties })) });
       const json = await res.json();
       updated += (json.results || []).length;
+      const partial = partialFailure(json);
+      if (partial) errors.push(partial);
     } catch (err) {
       errors.push({ size: batch.length, error: err.message });
     }

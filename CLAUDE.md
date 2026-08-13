@@ -67,7 +67,25 @@ fast-forward merge to `main`.
 
 ## Operator rules (read this — these override defaults)
 
-These four rules apply to ALL work on this repo. They're durable, not session-specific.
+These rules apply to ALL work on this repo. They're durable, not session-specific.
+
+0. **NEVER GUESS. MEASURE.** Every state in this app is readable. Never assert what
+   a value is, or reason from what it "must be", without printing it first.
+   - **Server state:** `curl` the API with a session cookie. Mint one by HMAC-SHA256
+     signing `base64url(JSON.stringify({email, exp}))` with the secret at
+     `"$ORTUS_DATA_DIR/.session-secret"` — `dev:app` sets `ORTUS_DATA_DIR` to
+     `"$HOME/Library/Application Support/The Ortus Outreach/data"`. Send it as
+     `Cookie: ortus_session=<body>.<sig>`.
+   - **Browser state** (`mgSelected`, `mgAccounts`, `btn.disabled`, any module-scope
+     variable in `app.js`): relaunch with
+     `ORTUS_DATA_DIR=... ./node_modules/.bin/electron . --remote-debugging-port=9222`
+     and read it over CDP — `fetch('http://localhost:9222/json')` for the page target,
+     then `Runtime.evaluate` over the raw WebSocket. Node's global `WebSocket` uses
+     `addEventListener`, not the `ws` package's `.on()`.
+   - **Screenshots and screen recordings are evidence of the symptom, never the cause.**
+     Extract frames with `ffmpeg -vf fps=1` and read them, then go measure the values.
+   - Server-side `console.log` lands in `/tmp/dev-app.log`. An empty log is itself a
+     measurement: it means the request never arrived.
 
 1. **Ask first** — before touching code on any "build/fix" request, respond with **two
    concrete artefact-backed questions** (DOM HTML, log paste, console output,

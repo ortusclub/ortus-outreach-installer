@@ -36,7 +36,7 @@ import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
-import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus } from '/js/scrape-board.mjs';
+import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus, searchKey } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
@@ -61,6 +61,17 @@ async function loadViewerIdentity() {
 
 let _snPollTimer = null;
 let _snPollInFlight = false; // guard so slow polls don't stack (each poll every 2.5s)
+let _snPollStartedAt = 0;    // when the in-flight poll began — see SN_POLL_STUCK_MS
+// A poll that never settles used to freeze the board PERMANENTLY. The guard is
+// set before the fetch and cleared in `finally`, so a fetch that neither
+// resolves nor rejects leaves it true and every later tick returns early —
+// no polling, no re-render, until the app is restarted. Observed live on
+// 2026-08-13: a direct openSalesNavBoard() call issued no request at all.
+// Two independent defences, because one hung request must never cost the
+// board its entire session: the fetch has a timeout so it always settles, and
+// an in-flight mark older than this is treated as dead and overridden.
+const SN_POLL_TIMEOUT_MS = 30000;
+const SN_POLL_STUCK_MS = 60000;
 let _snEverLoaded = false;   // have we rendered the board successfully at least once?
 let _snConsecFail = 0;       // consecutive failed polls before the first success
 // Navigate to the Sales Nav board (its own top-level route #/salesnav). The
@@ -117,10 +128,23 @@ async function openSalesNavBoard() {
       _snPrevStatus = new Map();
     } catch (_) { /* fall through to the normal cold load */ }
   }
-  await loadOperatorEmail();
-  await pollSalesNavBoard();
+  // Start the poll loop BEFORE the first fetch rather than after it.
+  //
+  // The engine's /api/jobs takes 5–10s warm, and was measured at 83s while the
+  // app was still booting (a trivial 404 on another route took 10.4s in the same
+  // window, so the app's own server — not the network — was the bottleneck).
+  // Awaiting it here meant the board had NO poll timer for that entire window:
+  // the cached strips sat frozen, nothing re-rendered, and expanding a scrape
+  // produced an empty shell. Installing the timer first means the board starts
+  // updating the moment data is available. _snPollInFlight already stops the
+  // ticks stacking up behind a slow fetch.
   clearInterval(_snPollTimer);
   _snPollTimer = setInterval(pollSalesNavBoard, 2500);
+  pollSalesNavBoard();
+  // The operator email only decides "Your scrapes" vs "Other people's". Worth a
+  // re-render when it lands, not worth blocking the whole board on — and the
+  // board patches in place now, so the correction costs one cheap diff.
+  loadOperatorEmail().then(() => { try { pollSalesNavBoard(); } catch (_) { /* */ } });
 }
 window.openSalesNavBoard = openSalesNavBoard;
 
@@ -129,8 +153,10 @@ async function pollSalesNavBoard() {
   if (!document.body.classList.contains('route-salesnav')) { clearInterval(_snPollTimer); _snPollTimer = null; return; }
   const host = document.getElementById('sn-board');
   if (!host || document.hidden) return;
-  if (_snPollInFlight) return; // a previous poll is still waiting on a slow engine — don't stack
+  // Don't stack behind a slow engine — but don't trust the flag forever either.
+  if (_snPollInFlight && Date.now() - _snPollStartedAt < SN_POLL_STUCK_MS) return;
   _snPollInFlight = true;
+  _snPollStartedAt = Date.now();
   // Before the FIRST successful load, show an animated "Loading scrapes…" while the
   // /api/jobs fetch runs (it can take several seconds) so the board reads as loading,
   // not empty/stalled. Only when the board isn't already showing strips.
@@ -138,7 +164,8 @@ async function pollSalesNavBoard() {
     host.innerHTML = '<div class="sn-loading"><span class="sp" aria-hidden="true"></span> Loading scrapes…</div>';
   }
   try {
-    const r = await fetch('/api/scrape/campaigns');
+    // Timeout, so this always settles and the `finally` below always runs.
+    const r = await fetch('/api/scrape/campaigns', { signal: AbortSignal.timeout(SN_POLL_TIMEOUT_MS) });
     const d = await r.json();
     if (d && d.error) throw new Error(d.error);
     _snEverLoaded = true; _snConsecFail = 0;
@@ -260,7 +287,7 @@ function renderSalesNavBoard(campaigns) {
   // Empty state when NO strips are visible — covers both "no scrapes at all"
   // and "all scrapes dismissed / in a non-shown status" (previously blank).
   if (!html) html = _scrapeEmptyState();
-  host.innerHTML = html;
+  _snPatchBoard(host, html);
   // Fill each expanded strip's cloned card. Only expanded strips have one.
   const _byId = new Map(campaigns.map((c) => [c.id, c]));
   host.querySelectorAll('.sn-strip > .vj-card').forEach((root) => {
@@ -268,12 +295,94 @@ function renderSalesNavBoard(campaigns) {
     const c = strip && _byId.get(strip.dataset.cid);
     if (c) { try { _snFillStripCard(root, c); } catch (_) { /* a broken card must not blank the board */ } }
   });
-  // The rebuild reset every logs pane to its "…" placeholder — refill the ones
-  // showing the Logs tab so an open live log survives the 2.5s re-render.
-  if (_snLogsTab.size) {
-    host.querySelectorAll('.sn-pane.on .sn-logbox').forEach((box) => {
-      if (box.dataset.logsfor && _snLogsTab.has(box.dataset.logsfor)) { try { _snLoadLogs(box); } catch (_) { /* */ } }
-    });
+  // Refresh log CONTENT in place. The boxes themselves survive the patch above,
+  // so each of these is one atomic innerHTML swap on a node that already holds
+  // the previous lines — the reader never sees an empty frame.
+  _snRefreshLogs(host);
+}
+
+// Update every visible log box without destroying it. Only boxes that are
+// actually on screen are fetched; a collapsed strip costs nothing.
+function _snRefreshLogs(host) {
+  const boxes = [
+    ...host.querySelectorAll('.sn-pane.on .sn-logbox[data-logsfor]'),
+    ...host.querySelectorAll('.sn-strip > .vj-card [data-f="active-log"], .sn-strip > .vj-card .vj-log'),
+  ];
+  for (const box of boxes) {
+    if (!box.dataset.logsfor) continue;
+    if (box.closest('.sn-pane') && !_snLogsTab.has(box.dataset.logsfor)) continue;
+    try { _snLoadLogs(box); } catch (_) { /* a log failure must not break the board */ }
+  }
+}
+
+// Patch the board in place instead of replacing its innerHTML.
+//
+// The board used to do `host.innerHTML = html` on every 2.5s poll. That threw
+// away and rebuilt all ~290 strips — including 279 finished ones that had not
+// changed in hours — which is what made the board slow to open. Worse, it
+// destroyed the live log element inside any expanded strip; the replacement
+// started empty, `.vj-log:empty::after` printed "No events yet", and the log
+// only came back when an async refetch landed ~350ms later. Measured off a
+// screen recording: a blank frame and a refill frame 0.30–0.42s apart, once
+// per poll. That is the strobe.
+//
+// Now: strips are matched by cid, an unchanged data-sig means the node is left
+// completely untouched, and a changed strip keeps its live log node by
+// transplanting it into the new markup before the swap.
+function _snPatchBoard(host, html) {
+  const next = document.createElement('div');
+  next.innerHTML = html;
+
+  const prevByCid = new Map();
+  for (const el of host.children) {
+    if (el.dataset && el.dataset.cid) prevByCid.set(el.dataset.cid, el);
+  }
+
+  const wanted = [];
+  for (const el of [...next.children]) {
+    const cid = el.dataset && el.dataset.cid;
+    const prev = cid ? prevByCid.get(cid) : null;
+    if (prev) {
+      prevByCid.delete(cid);
+      if (prev.dataset.sig === el.dataset.sig) { wanted.push(prev); continue; } // nothing changed
+      _snCarryLiveNodes(prev, el);
+    }
+    wanted.push(el);
+  }
+
+  // Drop anything no longer on the board, then put the survivors in order.
+  // insertBefore MOVES a node that is already a child, so a reorder costs no
+  // re-render and an untouched strip is never even read.
+  const keep = new Set(wanted);
+  for (const el of [...host.children]) if (!keep.has(el)) el.remove();
+  let ref = host.firstChild;
+  for (const node of wanted) {
+    if (node === ref) { ref = ref.nextSibling; continue; }
+    host.insertBefore(node, ref);
+  }
+}
+
+// Move the live log element(s) from the outgoing strip into its replacement, so
+// a strip whose numbers changed doesn't lose its log. Without this every
+// running strip still blanks once per poll — which is the case in the recording.
+function _snCarryLiveNodes(prev, next) {
+  const SEL = '.sn-logbox, .vj-log, [data-f="active-log"]';
+  const olds = [...prev.querySelectorAll(SEL)];
+  if (!olds.length) return;
+  // Match on class alone, in document order. Keying on data-logsfor as well
+  // looked safer and was in fact fatal: the OUTGOING node has been stamped with
+  // data-logsfor/data-snWired by _snFillStripCard, while the INCOMING one is a
+  // fresh vjCardSkeleton clone that is stamped only later — so the keys could
+  // never match ("vj-log|eng_x|" vs "vj-log||"), no node was ever carried, and
+  // the log blanked on every strip re-render until a refetch landed. Measured:
+  // ~17% of samples blank, in runs of ~4s starting at each swap.
+  for (const nb of [...next.querySelectorAll(SEL)]) {
+    const i = olds.findIndex((o) => o.className === nb.className);
+    if (i === -1) continue;
+    const ob = olds.splice(i, 1)[0];
+    const top = ob.scrollTop;
+    nb.replaceWith(ob);
+    ob.scrollTop = top; // a DOM move resets scroll; put the reader back
   }
 }
 
@@ -324,23 +433,30 @@ function _snSavePaused() {
 // each dispatched search URL, then backfill strips in _snEnrich(). localStorage so
 // it survives reloads. (Only covers THIS operator's launches — which is exactly
 // the set we're allowed to control.)
+// Keyed by searchKey(url), not the URL itself: the board list no longer carries
+// full search URLs (20.4MB per poll), so the strip can only match on the hash.
+// Entries written before this change are re-keyed on load.
 const _snLaunchReg = (() => {
-  try { return JSON.parse(localStorage.getItem('snLaunchReg') || '{}'); } catch (_) { return {}; }
+  let raw = {};
+  try { raw = JSON.parse(localStorage.getItem('snLaunchReg') || '{}'); } catch (_) { return {}; }
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) out[k.includes('://') ? searchKey(k) : k] = v;
+  return out;
 })();
 function _snSaveLaunchReg() {
   try { localStorage.setItem('snLaunchReg', JSON.stringify(_snLaunchReg)); } catch (_) { /* */ }
 }
 function _snRegisterLaunch(searchUrl, info) {
   if (!searchUrl) return;
-  _snLaunchReg[searchUrl] = { ...info, ts: Date.now() };
+  _snLaunchReg[searchKey(searchUrl)] = { ...info, ts: Date.now() };
   _snSaveLaunchReg();
 }
 // Backfill a strip from the launch registry when the engine didn't echo the
 // real name / owner / profiles.
 function _snEnrich(c) {
   let regName = null; const regProfiles = []; let regOwner = null;
-  for (const u of (c.searchUrls || [])) {
-    const e = _snLaunchReg[u];
+  for (const k of (c.searchKeys || (c.searchUrls || []).map(searchKey))) {
+    const e = _snLaunchReg[k];
     if (!e) continue;
     regName = regName || e.name;
     regOwner = regOwner || e.ownerEmail;
@@ -385,8 +501,9 @@ function renderStrip(c) {
   const isDone = c.status === 'done' || c.status === 'error';
   const collapsed = isQueued ? true : !_snExpanded.has(c.id);
   const owner = c.owner || 'unknown';
-  const nJobs = (c.jobs || []).length || (c.searchUrls || []).length;
-  const flow = `<b>${(c.searchUrls || []).length} searches</b> → <b>${nJobs} jobs</b> → feeds <b>${escHtml(c.name || c.tabName || '')}</b> · tab "${escHtml(c.tabName || 'Results')}"`;
+  const nSearches = c.searchCount != null ? c.searchCount : (c.searchUrls || []).length;
+  const nJobs = (c.jobs || []).length || nSearches;
+  const flow = `<b>${nSearches} searches</b> → <b>${nJobs} jobs</b> → feeds <b>${escHtml(c.name || c.tabName || '')}</b> · tab "${escHtml(c.tabName || 'Results')}"`;
   const doneAgo = isDone ? fmtAgo(_snDoneTs(c)) : '';
   // "Stopped" (red) only if the operator's stop actually cut short running work.
   // If EVERY job finished ('done'), the scrape completed on its own → show neutral
@@ -410,7 +527,7 @@ function renderStrip(c) {
     ? `<div class="sn-progtxt"><b>${(c.totalProfiles || 0).toLocaleString()}</b> rows so far · ${c.done}/${nJobs} jobs done${c.etaMs ? ` · ${fmtEta(c.etaMs)} left` : ''}</div>`
     : '';
   const jobsPane = (c.jobs || []).map((j) => {
-    const label = j.searchUrl ? j.searchUrl.slice(0, 60) : 'search';
+    const label = j.searchLabel || (j.searchUrl ? j.searchUrl.slice(0, 60) : 'search');
     const st = j.state === 'running' ? `<span class="dot run"></span> Running · ${j.profiles || 0} rows`
       : j.state === 'done' ? `<span class="dot mon"></span> Done · ${j.profiles || 0} rows`
       : j.state === 'error' ? `<span class="dot red"></span> Error`
@@ -479,8 +596,13 @@ function renderStrip(c) {
   // strips every 2.5s; cloning a card nobody can see 282 times per tick is a
   // measurable freeze for zero pixels. Expanding a strip re-renders it anyway.
   const richCard = (isQueued || collapsed) ? '' : vjCardSkeleton(c.id);
-  return `
-  <div class="sn-strip ${c.mine ? 'mine' : ''} ${c.status === 'running' && !isPaused ? 'run' : ''} ${isPaused ? 'paused' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}">
+  // data-sig fingerprints everything this template just rendered, so the board
+  // can tell "this strip is unchanged" from "this strip needs new markup"
+  // without diffing DOM. It is hashed from the finished string rather than a
+  // hand-listed set of fields, so a field added to the template above can never
+  // be forgotten here and leave a strip frozen on stale values.
+  const _html = `
+  <div class="sn-strip ${c.mine ? 'mine' : ''} ${c.status === 'running' && !isPaused ? 'run' : ''} ${isPaused ? 'paused' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}" data-sig="__SIG__">
     ${expandBtn}
     <div class="sn-compact">
     <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span>${c.mine ? '<span class="sn-you">You</span>' : `<span class="sn-owner">· ${escHtml(owner)}</span>`}
@@ -496,6 +618,18 @@ function renderStrip(c) {
       <div class="right">${dismissBtn}${viewBtn}${stopBtn}${openBtn}${rerunBtn}</div>
     </div>
   </div>`;
+  return _html.replace('__SIG__', _snHash(_html));
+}
+
+// FNV-1a → base36. Not a security hash; it only has to change when the markup
+// changes, and it runs ~290 times every 2.5s so it has to be cheap.
+function _snHash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
 }
 
 // Fill one expanded strip's cloned card with THIS scrape's numbers.
@@ -569,12 +703,18 @@ function _snFillStripCard(root, c) {
   const V = _SCRAPE_VJ[state] || _SCRAPE_VJ.idle;
 
   const jobs = c.jobs || [];
-  const total = jobs.length || (c.searchUrls || []).length;
+  const total = jobs.length || (c.searchCount != null ? c.searchCount : (c.searchUrls || []).length);
   const done = Number(c.done) || 0;
   const leads = Number(c.totalProfiles) || 0;
   const pages = jobs.reduce((n, j) => n + (Number(j && j.pages) || 0), 0);
   const accounts = (c.profileIds || []).length;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  // The percentage counts FINISHED searches, so a one-search scrape reads 0%
+  // from start to finish and then jumps to 100 — it sat on "0% · 0 of 1 searches
+  // done" through 1,270 leads and 51 pages, which reads as stuck. The engine
+  // reports no expected row total, so an honest percentage cannot be computed:
+  // show an indeterminate bar rather than a number that means nothing.
+  const indeterminate = c.status === 'running' && total <= 1 && done === 0;
 
   // Relabel the hero ONCE per clone — the campaign card counts sent/accepted,
   // a scrape counts searches/pages/leads.
@@ -615,12 +755,13 @@ function _snFillStripCard(root, c) {
   setF('sendingLbl', isPaused ? 'Paused' : V.state);
   setF('activeSent', done);
   setF('activeTotal', total);
-  setF('activePct', pct);
+  setF('activePct', indeterminate ? '—' : pct);
   setF('scrapePages', pages.toLocaleString());
   setF('scrapeLeads', leads.toLocaleString());
   setF('activeAccounts', accounts);
   const bar = root.querySelector('[data-f="activeBar"]');
-  if (bar) bar.style.width = pct + '%';
+  if (bar) bar.style.width = indeterminate ? '100%' : pct + '%';
+  root.classList.toggle('sn-indeterminate', indeterminate);
   setF('activeLiveL1', V.l1);
 }
 
@@ -929,10 +1070,16 @@ document.addEventListener('click', (e) => {
   if (!cid) return;
   if (_snExpanded.has(cid)) _snExpanded.delete(cid); else _snExpanded.add(cid);
   strip.classList.toggle('sn-collapsed', !_snExpanded.has(cid));
-  // Cloud strips fetch their per-lead log only when running/expanded — kick a
-  // background cloud refresh on expand so the log fills promptly (it re-renders
-  // when it lands), and render now for the instant collapse/expand feel.
-  if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  // A Sales Nav strip's rich card (and therefore its live log) is built by
+  // renderSalesNavBoard, which this handler never called — it called the
+  // CAMPAIGNS board's renderer instead. So expanding a scrape only did
+  // something on the next 2.5s poll, and nothing at all while a poll was slow
+  // or stalled: the strip opened to an empty shell. Render its own board now.
+  if (strip.closest('#sn-board')) {
+    try { if (_snLastCampaigns) renderSalesNavBoard(_snLastCampaigns); } catch (_) { /* keep the fold responsive */ }
+  } else if (typeof renderCampaignsBoard === 'function') {
+    renderCampaignsBoard();
+  }
   if (_snExpanded.has(cid) && typeof _refreshCloudItems === 'function') _refreshCloudItems();
 });
 
@@ -7264,10 +7411,18 @@ async function renderCloudCampaigns() {
 
   // Fetch per-campaign lead counts (best-effort, parallel). Also pull the
   // per-lead log for running/expanded strips so their Log pane shows real rows.
-  const details = await Promise.all(campaigns.map(async (c) => {
-    let d;
-    try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
-    catch { d = { campaign: c, leadCounts: {} }; }
+  // One request for every campaign's detail — see /api/campaign/cloud-details.
+  let _bulk = {};
+  try {
+    const br = await (await fetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(campaigns.map((c) => c.id).join(','))}`)).json();
+    _bulk = (br && br.details) || {};
+  } catch { /* fall back to per-campaign below */ }
+  const details = await _mapLimit(campaigns, CLOUD_FANOUT_LIMIT, async (c) => {
+    let d = _bulk[c.id];
+    if (!d) {
+      try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+      catch { d = { campaign: c, leadCounts: {} }; }
+    }
     const st = ((d && d.campaign) || c).status;
     if (st === 'running' || _snExpanded.has(c.id)) {
       try {
@@ -7276,7 +7431,7 @@ async function renderCloudCampaigns() {
       } catch { /* best-effort — the status note stays */ }
     }
     return d;
-  }));
+  });
 
   const items = details.map((d) => ({ c: d.campaign || {}, lc: d.leadCounts || {}, log: d._logLines || null }));
   for (const it of items) { if (it.c.sheet_url) _cloudSheetUrls.set(it.c.id, it.c.sheet_url); }
@@ -9623,21 +9778,57 @@ let _cloudRefreshInFlight = false;
 // into _cloudRaw instead; the render builds cloud strips from that cache with no
 // network wait. Dismiss/ownership filtering still runs live in the render, so
 // those stay instant.
+// Bounded-concurrency map. Chromium allows only SIX connections per host, so an
+// unbounded Promise.all over cloud campaigns (1-3 requests each, 13-16s apiece
+// through the engine proxy) saturates the pool and starves every OTHER poller in
+// the page. Measured 2026-08-13: 7 requests open at once, and the Sales Nav
+// board's 2.5s poll managed ONE request in 75 seconds — its timer was ticking
+// fine, its fetch just never got a socket. Cap the fan-out so the rest of the app
+// always has connections left.
+async function _mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+const CLOUD_FANOUT_LIMIT = 3;
+
 async function _refreshCloudItems() {
   if (_cloudRefreshInFlight) return;
   _cloudRefreshInFlight = true;
   try {
     const cl = await (await fetch('/api/campaign/cloud-list')).json();
     const cloudCamps = (cl && cl.campaigns) || [];
-    _cloudRaw = await Promise.all(cloudCamps.map(async (c) => {
+    // Everything that still needs refreshing comes back in ONE request. Asking
+    // per campaign meant 89 of them, which pinned the browser at its six
+    // connections per host and starved every other poller in the page.
+    const _isFresh = (c) => {
+      if (!['done', 'cancelled', 'error'].includes(c.status) || _snExpanded.has(c.id)) return false;
+      const cached = _cloudDetailCache.get(c.id);
+      return Boolean(cached && cached.campaign && ['done', 'cancelled', 'error'].includes(cached.campaign.status));
+    };
+    const _needIds = cloudCamps.filter((c) => !_isFresh(c)).map((c) => c.id);
+    let _bulk = {};
+    if (_needIds.length) {
+      try {
+        const br = await (await fetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(_needIds.join(','))}`)).json();
+        _bulk = (br && br.details) || {};
+      } catch { /* fall back to the per-campaign path below */ }
+    }
+    _cloudRaw = await _mapLimit(cloudCamps, CLOUD_FANOUT_LIMIT, async (c) => {
       let d;
-      const terminal = ['done', 'cancelled', 'error'].includes(c.status);
-      if (terminal && !_snExpanded.has(c.id) && _cloudDetailCache.has(c.id)) {
-        const cached = _cloudDetailCache.get(c.id);
-        if (cached && cached.campaign && ['done', 'cancelled', 'error'].includes(cached.campaign.status)) return cached;
+      if (_isFresh(c)) return _cloudDetailCache.get(c.id);
+      if (_bulk[c.id]) d = _bulk[c.id];
+      else {
+        try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+        catch { d = { campaign: c, leadCounts: {} }; }
       }
-      try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
-      catch { d = { campaign: c, leadCounts: {} }; }
       _cloudDetailCache.set(c.id, d);
       _cloudPolledAt.set(c.id, Date.now()); // feeds the live stage's heartbeat
       // A STALLED campaign needs its per-account states on the board, not just
@@ -9678,7 +9869,7 @@ async function _refreshCloudItems() {
         } catch { /* best-effort */ }
       }
       return d;
-    }));
+    });
   } catch (_) { /* keep last snapshot on engine hiccup */ }
   finally { _cloudRefreshInFlight = false; }
   try { renderCampaignsBoard(); } catch { /* */ }
@@ -22077,19 +22268,27 @@ async function fgtlLaunch() {
 }
 
 /** Poll /api/fg/team-launch/status every 2 s; stop when running===false. */
+// Guarded: fgtlPoll is called both on FG view restore and on launch, and each
+// call started its OWN 2s chain. With the connection pool contended those chains
+// pile up — CDP showed six /api/fg/team-launch/status requests open at once,
+// the oldest 23s. One chain at a time is all the card ever needed.
+let _fgtlPolling = false;
 function fgtlPoll() {
+  if (_fgtlPolling) return;
+  _fgtlPolling = true;
   const tick = async () => {
     let status = null;
     try {
       const r = await fetch('/api/fg/team-launch/status');
       if (r.ok) status = await r.json();
     } catch (_) {}
-    if (!status) return;
+    if (!status) { _fgtlPolling = false; return; }
     _fgtlLastStatus = status;
     fgtlRenderCard(status);
     if (status.running) {
       setTimeout(tick, 2000);
     } else {
+      _fgtlPolling = false;
       const goBtn = document.getElementById('fgtl-go');
       const stopBtn = document.getElementById('fgtl-stop');
       if (stopBtn) stopBtn.style.display = 'none';
@@ -27047,8 +27246,22 @@ window.rsweepStop = rsweepStop;
 // code than the page returns the SPA's HTML for an unknown route and res.json()
 // dies with `Unexpected token '<'` — which tells the operator nothing. This
 // names the actual problem: the app needs restarting.
+// 30s, because a request that never settles is worse than one that fails: the
+// caller's catch never runs, so its button stays disabled with no error on
+// screen and every later click is silently ignored. Measured 2026-08-13 — the
+// app was killed mid-POST and the Collect button sat dead for over three
+// minutes while the card read "Not running". Every Magellan route answers in
+// well under a second; the picker's own slow leg is capped server-side.
+const MG_FETCH_TIMEOUT_MS = 30000;
+
 async function mgFetch(url, opts) {
-  const res = await fetch(url, opts);
+  const res = await fetch(url, { signal: AbortSignal.timeout(MG_FETCH_TIMEOUT_MS), ...opts })
+    .catch((err) => {
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        throw new Error('The app did not answer. It may have restarted — reload with Cmd+R and try again.');
+      }
+      throw err;
+    });
   const body = await res.text();
   if (body.trim().startsWith('<')) {
     throw new Error('This needs a restart — quit The Ortus Outreach and open it again to finish updating.');
@@ -27093,22 +27306,14 @@ async function loadMagellanAccounts({ keepSelection = false, fresh = false } = {
       const live = new Set(mgAccounts.map((a) => a.profileId));
       mgSelected = new Set([...previous].filter((id) => live.has(id)));
     } else {
-    // Tick exactly what can be imported today: collected AND carrying LinkedIn
-    // member ids. An account without ids has nothing HubSpot can match on, so
-    // including it only pads the blocked list. The old default was every
-    // UNcollected account, which meant one click asked for 262 accounts.
-    // Two GoLogin profiles can resolve to one account email — tick one of them,
-    // or the preview reads that account's file twice and doubles its numbers.
-      const pickedAccounts = new Set();
-      mgSelected = new Set(mgAccounts
-        .filter((a) => a.collected && a.withMemberId > 0)
-        .filter((a) => {
-          const key = String(a.account || '').toLowerCase();
-          if (pickedAccounts.has(key)) return false;
-          pickedAccounts.add(key);
-          return true;
-        })
-        .map((a) => a.profileId));
+      // Nothing is ticked that the operator did not tick. This used to
+      // pre-select every collected account carrying LinkedIn member ids —
+      // fourteen of them on 2026-08-12 — and the search box hides rows without
+      // unticking them, so someone who typed "edlor", ticked the one row they
+      // could see and pressed Check got fifteen accounts and 31,191 people
+      // instead of 437. A default that grows by one every time you collect
+      // something, and is invisible behind a filter, is not a convenience.
+      mgSelected = new Set();
     }
     renderMagellanAccounts();
     refreshMagellanState();
@@ -27287,6 +27492,14 @@ async function startMagellanCollect() {
     startMagellanPolling();
   } catch (err) {
     showMagellanError(err.message);
+  } finally {
+    // Always hand the button back. It used to be re-enabled only in the catch,
+    // so anything that left the request unsettled — the app restarting mid-POST
+    // is the one measured here — killed the button permanently, with no error
+    // beside it. Every click after that did nothing at all.
+    // Handing it back early is safe: renderMagellanState re-disables it on the
+    // next poll tick while a run is live, and the server refuses a second
+    // collect with "Magellan is already running" rather than starting one.
     if (btn) btn.disabled = false;
   }
 }
@@ -27321,8 +27534,13 @@ async function refreshMagellanState() {
       mgPoll = null;
       const btn = document.getElementById('mg-collect-btn');
       if (btn) btn.disabled = false;
-      // Counts and DONE badges change once a sweep lands.
-      loadMagellanAccounts();
+      // Counts and DONE badges change once a sweep lands. keepSelection,
+      // because this reload exists to update badges — discarding the ticks is
+      // not its job. It used to, and the "check whatever the last collect
+      // touched" fallback in previewMagellan was papering over it: collect one
+      // account, and by the time it finished the tick was gone, so Check had an
+      // empty selection and silently ran a batch instead.
+      loadMagellanAccounts({ keepSelection: true });
     }
   } catch { /* transient — the next tick retries */ }
 }
@@ -27473,7 +27691,7 @@ function renderMagellanState(s) {
     // the button, and then ran every remaining account to completion — the one
     // control on this card that is supposed to be believable, lying.
     stopBtn.hidden = !s.running || importing || checking;
-    if (s.running && s.step !== 'Stopping after this account') {
+    if (s.running && s.step !== 'Stopping') {
       stopBtn.disabled = false;
       stopBtn.textContent = 'Stop';
     }
@@ -27677,14 +27895,14 @@ window.openMagellanSheet = openMagellanSheet;
 
 async function previewMagellan() {
   showMagellanError('');
-  // Default to the accounts this run just collected. After a sweep that is
-  // what the operator means, and a reload clears the tick boxes.
+  // What is ticked, and nothing else. This used to fall back to "whatever the
+  // last collect touched" when nothing was ticked — a second way for the card
+  // to check accounts nobody asked about, quietly.
   // Unique by account: two profiles can point at one email, and previewing it
   // twice reads the same file twice and doubles that account's numbers.
-  let accounts = [...new Set(mgAccounts
+  const accounts = [...new Set(mgAccounts
     .filter((a) => mgSelected.has(a.profileId))
     .map((a) => a.account))];
-  if (!accounts.length) accounts = mgPerAccount.filter((a) => !a.error).map((a) => a.account);
   if (!accounts.length) return showMagellanError('Pick at least one account first.');
 
   const btn = document.getElementById('mg-preview-btn');

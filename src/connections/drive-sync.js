@@ -24,17 +24,15 @@ async function postWebApp(payload, { timeoutMs = 30000 } = {}) {
   if (!SHEETS_WEBAPP_URL) return { error: 'SHEETS_WEBAPP_URL not configured' };
   const body = JSON.stringify(payload);
   try {
-    const initial = await fetch(SHEETS_WEBAPP_URL, {
+    // Apps Script's 302 points at a ONE-TIME URL. Fetching it ourselves spends
+    // it outside its redirect and Google answers 404 — see the note in
+    // magellan-sheet.js for the measurement. fetch follows it correctly.
+    const res = await fetch(SHEETS_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
-      redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),
     });
-    let res = initial;
-    if (initial.status >= 300 && initial.status < 400) {
-      res = await fetch(initial.headers.get('location'), { signal: AbortSignal.timeout(timeoutMs) });
-    }
     const text = await res.text();
     try {
       return JSON.parse(text);
@@ -42,7 +40,7 @@ async function postWebApp(payload, { timeoutMs = 30000 } = {}) {
       if (text.includes('accounts.google.com') || text.includes('Sign in')) {
         return { error: 'Apps Script returned a login page — redeploy it (and enable the Drive service)' };
       }
-      return { error: 'Unexpected non-JSON response from Apps Script' };
+      return { error: `Apps Script answered ${res.status} with ${text.length} bytes that are not JSON` };
     }
   } catch (err) {
     return { error: err.message };

@@ -167,15 +167,73 @@ test('the import narrates itself — progress, per account, and why a problem ha
   // The operator needs the account, the numbers, and the reason — a bare
   // "1 problems" pointing at an empty log is what this replaced.
   assert.match(log, /▶ Importing 1 account — 2 people/);
-  assert.match(log, /✓ a@o\.com: 1 added, 1 updated, 1 problem/);
+  // A failed secondary email costs nobody — the connection is already on the
+  // record that holds the real address. It is a note, and calling it a problem
+  // is what made one genuine 61-person loss look like the same kind of thing.
+  assert.match(log, /✓ a@o\.com: 1 added, 1 updated, 1 note/);
+  assert.doesNotMatch(log, /NOT written/);
   // Translated, not echoed: what happened, what to do, and HubSpot's own words
   // in brackets so a wrong explanation is visible rather than hidden.
   assert.match(log, /⚠ a@o\.com: That email address is already used by someone else/);
   assert.match(log, /merge them/);
   assert.match(log, /\[HubSpot 409: Contact already has that email\]/);
-  assert.match(log, /■ Import finished\. 1 added, 1 updated, 1 problem/);
+  assert.match(log, /■ Import finished\. 1 added, 1 updated\./);
   // The roll-up someone hands to whoever cleans HubSpot.
-  assert.match(log, /⚠ 1 × That email address is already used by someone else/);
+  assert.match(log, /· 1 × That email address is already used by someone else — nothing was lost/);
+});
+
+// The sheet write is a record of a run that has already finished. On 13 Aug it
+// was still being awaited inside the request, so a Check that had succeeded sat
+// behind `[sheets-writer] transient write error (attempt 1/4)` until the page's
+// 30s guard fired and printed "The app did not answer" over its own results.
+test('Check answers without waiting for the sheet write', async () => {
+  reset();
+  let released;
+  const slowSheet = () => new Promise((r) => { released = () => r({ written: true }); });
+  const p = buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 'x', memberId: '1', firstName: 'A', lastName: 'B' }],
+    lookup: async () => Object.assign(new Map(), { duplicates: [] }),
+    sheet: slowSheet,
+  });
+  const out = await Promise.race([p, settle().then(() => 'STILL WAITING')]);
+  assert.notEqual(out, 'STILL WAITING', 'the answer must not sit behind Google');
+  assert.equal(getState().running, false);
+  released();
+});
+
+test('a rejected batch reports the people it cost, not the lines it printed', async () => {
+  // The 13 Aug edlor run: 429 planned, 168 added + 200 updated, and a batch of
+  // 61 updates refused by a property that had never been configured. The log
+  // said "1 problem" and the card said "168 added · 200 updated". Both true;
+  // together they read as a clean run that had in fact dropped 61 people.
+  reset();
+  const plans = [{
+    account: 'edlor@o.com',
+    plan: { creates: [{ properties: {} }], updates: [{ id: '1', properties: {} }], additionalEmails: [] },
+  }];
+  await runImport(plans, {
+    create: async () => ({ created: 168, errors: [] }),
+    update: async () => ({
+      updated: 200,
+      errors: [{ size: 61, error: 'HubSpot 400: jhengh@ortus.solutions was not one of the allowed options' }],
+    }),
+    attach: async () => {},
+    sheet: noSheet,
+  });
+  const s = getState();
+  const log = s.log.join('\n');
+  assert.equal(s.imported.notWritten, 61);
+  assert.match(log, /✓ edlor@o\.com: 168 added, 200 updated, 61 NOT written/);
+  assert.match(log, /■ Import finished\. 168 added, 200 updated, 61 NOT written\./);
+  // The roll-up leads with the cost and says the repeat run is safe.
+  assert.match(log, /⚠ 61 people were not written/);
+  assert.match(log, /⚠ 61 not written — This account is not on the "Linkedin 1st Connections" list/);
+  // And the card says it in its headline, where it cannot be missed.
+  assert.equal(s.outcome.ok, false);
+  assert.match(s.outcome.summary, /168 added · 200 updated · 61 NOT written/);
+  assert.match(s.outcome.problems[0], /61 people NOT written/);
 });
 
 const DUPES = [
@@ -711,4 +769,64 @@ test('an import that fails part-way still reports what it already wrote', async 
   assert.equal(st.imported.created, 7, 'the first account is on the record');
   assert.equal(st.outcome.ok, false);
   assert.match(st.outcome.summary, /7 added .* before it stopped — HubSpot 500/);
+});
+
+// The whole walk lives inside one page.evaluate(), so a dead browser leaves a
+// promise that never settles. Stop was checked only BETWEEN accounts, which is
+// indistinguishable from never when the hung account is the current one.
+test('Stop abandons the account being read instead of waiting for it', async () => {
+  reset();
+  let closed = false;
+  startCollect([{ account: 'a@o.com', profileId: 'p1' }, { account: 'b@o.com', profileId: 'p2' }], {
+    semaphore: fakeSemaphore(),
+    launchProfile: async () => ({ page: {} }),
+    closeProfile: async () => { closed = true; },
+    // Never settles — exactly what a closed browser leaves behind.
+    collect: () => new Promise(() => {}),
+    sheet: noSheet,
+  });
+  await settle();
+  assert.equal(getState().running, true);
+
+  stopCollect();
+  // The watchdog ticks once a second; give it two.
+  await new Promise((r) => setTimeout(r, 2200));
+
+  const st = getState();
+  assert.equal(st.running, false, 'the sweep actually ended');
+  assert.equal(st.phase, 'stopped');
+  assert.equal(closed, true, 'the browser was still closed on the way out');
+  const row = st.perAccount.find((a) => a.account === 'a@o.com');
+  assert.equal(row.diagnosis.code, 'stopped_by_operator');
+  assert.equal(row.diagnosis.retryable, false, 'a stop must never be retried');
+  assert.ok(!st.perAccount.some((a) => a.account === 'b@o.com'), 'the rest were not started');
+});
+
+// Same hang, nobody watching. Four minutes of silence used to be forever.
+test('a read that stops reporting progress is abandoned, and the sweep goes on', async () => {
+  reset();
+  const { setStallMs } = await import('../../src/connections/magellan-run.js');
+  setStallMs(1200);
+  try {
+    startCollect([{ account: 'dead@o.com', profileId: 'p1' }, { account: 'ok@o.com', profileId: 'p2' }], {
+      semaphore: fakeSemaphore(),
+      launchProfile: async () => ({ page: {} }),
+      closeProfile: async () => {},
+      collect: (page, account) => (account === 'dead@o.com'
+        ? new Promise(() => {})
+        : Promise.resolve({ total: 4, withMemberId: 4, hidden: 0 })),
+      sheet: noSheet,
+    });
+    await new Promise((r) => setTimeout(r, 3000));
+    const st = getState();
+    assert.equal(st.running, false);
+    assert.equal(st.phase, 'done', 'a stall is not a stop — the sweep finishes');
+    const dead = st.perAccount.find((a) => a.account === 'dead@o.com');
+    assert.equal(dead.diagnosis.code, 'stalled');
+    assert.equal(dead.diagnosis.retryable, false, 'retrying a dead browser just buys another stall');
+    const ok = st.perAccount.find((a) => a.account === 'ok@o.com');
+    assert.equal(ok.total, 4, 'the next account still ran');
+  } finally {
+    setStallMs(4 * 60 * 1000);
+  }
 });

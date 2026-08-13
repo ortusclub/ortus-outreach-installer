@@ -14,7 +14,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { readFile, writeFile, mkdir, stat, rename } from 'node:fs/promises';
-import { appendFileSync, createWriteStream, existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { appendFileSync, createWriteStream, existsSync, readFileSync, writeFileSync, chmodSync, renameSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
@@ -33,6 +33,7 @@ import { getScrapeOverride, saveScrapeOverride } from './src/scrape-config-overr
 import { appendAction, appendScrapeLog, readScrapeLog } from './src/scrape-campaign-logs.js';
 import {
   mergeCampaignsWithJobs, groupJobsIntoCampaigns, scrapeCampaignId, diffBoardEvents, baseTabName,
+  slimBoard,
 } from './public/js/scrape-board.mjs';
 import { getOperatorId } from './src/operator-id.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
@@ -82,6 +83,7 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-configs.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
+import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
 import { listPresets, getPreset, savePreset, deletePreset, getLastUsed as getLastUsedPreset, saveLastUsed as saveLastUsedPreset } from './src/presets.js';
 import { lintLeads, blocklistExcludedUrls, normalizeProfileUrl } from './src/preflight-lint.js';
@@ -105,7 +107,8 @@ import { buildListRows, dispatchFromRows, resolveListSource } from './src/connec
 import { generateListRows } from './src/connections/fg-list-generate.js';
 import { pageById, FG_PAGE_LIST } from './src/fg-pages.js';
 import * as magellan from './src/connections/magellan-run.js';
-import { listCollected as magellanListCollected } from './src/connections/magellan-pull.js';
+import { listCollected as magellanListCollected,
+  migrateLegacyConnections as magellanMigrateLegacy } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
 import { connectionsPropOptions } from './src/connections/hubspot-client.js';
 import { normMonth } from './src/connections/fg-export.js';
@@ -1517,21 +1520,61 @@ async function handleStartCloud(req, res) {
     res.status(500).json({ error: e.message });
   }
 }
+const CLOUD_MEMO_TTL_MS = 10_000;
+const _cloudMemo = new Map(); // key -> { at, val, inflight }
+function memoCloud(key, fetcher, { ttlMs = CLOUD_MEMO_TTL_MS, onFresh } = {}) {
+  const e = _cloudMemo.get(key) || {};
+  _cloudMemo.set(key, e);
+  if (!e.inflight && (!e.val || Date.now() - e.at >= ttlMs)) {
+    e.inflight = fetcher().then((v) => {
+      e.inflight = null;
+      // Never cache (or act on) an error — keep serving the last good value.
+      if (v && !v.error) {
+        e.val = v; e.at = Date.now();
+        // Side effects belong to the REFRESH, not to every cache hit, or a
+        // reconcile would re-run on every poll against unchanged data.
+        if (onFresh) { try { onFresh(v); } catch { /* best-effort */ } }
+      }
+      return v;
+    }, (err) => { e.inflight = null; throw err; });
+  }
+  return e.val ? Promise.resolve(e.val) : e.inflight;
+}
+
+
+// Any cloud mutation (start, cancel, unbench, account edits) must be visible on
+// the next poll, not up to a TTL later — so every non-GET under /api/campaign
+// drops the memo.
+app.use('/api/campaign', (req, _res, next) => {
+  if (req.method !== 'GET') _cloudMemo.clear();
+  next();
+});
+
 app.post('/api/campaign/start-cloud', handleStartCloud);
 
 // Cloud-campaign observability — proxied through the local server so the
 // frontend never handles the engine token (it lives in campaigns-client). The
 // "Cloud Campaigns" panel polls these.
+//
+// Every one of these is a round trip to the engine, measured at 4.8-8.5s each on
+// 2026-08-13 with 89 cloud campaigns on the board. The panel re-polls all of them
+// every 4s, so the browser sat permanently at its six-connections-per-host limit
+// and starved every other poller in the page (the Sales Nav board managed one
+// request in 75 seconds). Memoised with a short TTL: the first caller pays, the
+// rest are served instantly from the last good value while a single refresh runs
+// behind them.
 app.get('/api/campaign/cloud-list', async (req, res) => {
-  const r = await listCloudCampaigns(req.query.owner);
+  const r = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
   if (r.error) return res.status(502).json(r);
   res.json(r);
 });
 app.get('/api/campaign/cloud/:id', async (req, res) => {
-  const r = await getCloudCampaign(req.params.id);
+  const id = req.params.id;
+  const r = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
+    onFresh: (v) => { reconcilePrimaryHandshake(id, v).catch(() => {}); },
+  });
   if (r.error) return res.status(502).json(r);
   res.json(r);
-  reconcilePrimaryHandshake(req.params.id, r).catch(() => {}); // after response — never blocks
 });
 // ── Cloud sheet reconcile (parity fix #1) ─────────────────────────────────
 // The engine writes SENT rows back to the source sheet, but leaves ERROR /
@@ -1748,14 +1791,42 @@ async function reconcilePrimaryHandshake(id, detail) {
 // stays server-side. The dashboard fetches this only for running/expanded
 // cloud strips, so it's not on the hot path for the whole board. After
 // responding, best-effort reconciles error/skip rows into the source sheet.
+// ONE request for the whole board's per-campaign detail.
+//
+// The panel used to fetch /api/campaign/cloud/:id once per campaign — 89 of them
+// on this install. A browser opens at most six connections per host, so that fan-
+// out held the pool for minutes at a time and every other poller in the page
+// (the Sales Nav board, the FG status poll, drafts) queued behind it. Node has no
+// such limit, so the fan-out belongs here, where it is also memoised.
+app.get('/api/campaign/cloud-details', async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 500);
+  const details = {};
+  let next = 0;
+  const worker = async () => {
+    while (next < ids.length) {
+      const id = ids[next++];
+      try {
+        const v = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
+          onFresh: (fresh) => { reconcilePrimaryHandshake(id, fresh).catch(() => {}); },
+        });
+        if (v && !v.error) details[id] = v;
+      } catch { /* one bad id must not fail the board */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, ids.length) }, worker));
+  res.json({ details });
+});
+
 app.get('/api/campaign/cloud/:id/leads', async (req, res) => {
-  const r = await getCloudCampaignLeads(req.params.id);
+  const id = req.params.id;
+  const r = await memoCloud(`leads:${id}`, () => getCloudCampaignLeads(id), {
+    onFresh: (v) => { reconcileCloud(id, v.leads).catch(() => {}); }, // never blocks
+  });
   if (r.error) return res.status(502).json(r);
   res.json(r);
-  reconcileCloud(req.params.id, r.leads).catch(() => {}); // after response — never blocks
 });
 app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
-  const r = await getCloudCampaignAccounts(req.params.id);
+  const r = await memoCloud(`accounts:${req.params.id}`, () => getCloudCampaignAccounts(req.params.id));
   if (r && r.error) return res.status(502).json(r);
   res.json(r);
 });
@@ -2589,11 +2660,97 @@ app.get('/api/magellan/sheet-url', async (_req, res) => {
 // The SoO is a slow, heavily-contended read and the picker reloads often, so
 // hold the email list for a few minutes. Only the addresses are kept.
 let _magellanSoo = { at: 0, emails: [] };
-async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000 } = {}) {
-  if (_magellanSoo.emails.length && Date.now() - _magellanSoo.at < maxAgeMs) return _magellanSoo.emails;
-  const soo = await fetchSoOData();
-  const emails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
-  if (emails.length) _magellanSoo = { at: Date.now(), emails };
+// Last known good roster, on disk. The in-memory cache is empty on every
+// restart, which is precisely when a sheet outage hurts: 2026-08-12, with the
+// SoO refusing to answer, the picker resolved 5 of 550 labels to an email and
+// the other 545 were unimportable. Only email addresses are stored — see the
+// magellanSooEmails note.
+const MAGELLAN_SOO_FILE = dataPath('magellan-soo-emails.json');
+function magellanSooFromDisk() {
+  try {
+    const j = JSON.parse(readFileSync(MAGELLAN_SOO_FILE, 'utf8'));
+    return Array.isArray(j.emails) ? j.emails : [];
+  } catch { return []; }
+}
+
+// One refresh in flight at a time. Without this, three picker loads in a row
+// each start their own 78s SoO read against a sheet that is already the
+// bottleneck.
+let _magellanSooRefresh = null;
+function refreshMagellanSoo() {
+  if (_magellanSooRefresh) return _magellanSooRefresh;
+  _magellanSooRefresh = fetchSoOData()
+    .then((soo) => {
+      const emails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
+      if (emails.length) {
+        _magellanSoo = { at: Date.now(), emails };
+        try {
+          writeFileSync(`${MAGELLAN_SOO_FILE}.tmp`, JSON.stringify({ at: new Date().toISOString(), emails }));
+          renameSync(`${MAGELLAN_SOO_FILE}.tmp`, MAGELLAN_SOO_FILE);
+        } catch (err) { console.warn(`[magellan] could not cache the roster — ${err.message}`); }
+      }
+      return emails;
+    })
+    .catch((err) => {
+      console.warn(`[magellan] roster refresh failed — ${err.message}`);
+      return [];
+    })
+    .finally(() => { _magellanSooRefresh = null; });
+  return _magellanSooRefresh;
+}
+
+/**
+ * The account roster, never on the critical path.
+ *
+ * fetchSoOData retries a 25s Apps Script timeout, so a contended sheet takes
+ * ~78s to FAIL — measured 2026-08-12, with the picker awaiting it the whole
+ * time. The tab drew an empty account list and no error, because the request
+ * was simply still open, and nobody waits 78 seconds. Capping it was not
+ * enough: a healthy standalone read took 7.2s, but from inside the server —
+ * which is hammering the same Apps Script with campaign sheet writes — even 12s
+ * timed out, so the cap just traded a hang for a slow tab AND a stale roster.
+ *
+ * So the read comes off the request path entirely. Any roster we have is served
+ * immediately and a refresh runs behind it; only the very first load with no
+ * roster at all has to wait. A stale roster resolves labels correctly, and
+ * people join the SoO monthly, so stale means one unresolved new hire.
+ */
+async function magellanSooEmails({ maxAgeMs = 5 * 60 * 1000, timeoutMs = 12000, wait = false } = {}) {
+  const fresh = _magellanSoo.emails.length && Date.now() - _magellanSoo.at < maxAgeMs;
+  if (fresh) return _magellanSoo.emails;
+
+  const known = _magellanSoo.emails.length ? _magellanSoo.emails : magellanSooFromDisk();
+  // `wait` is what the refresh button means: it asked for the authoritative
+  // answer, so it gets to wait for one — but still capped, and still falling
+  // back to what we have rather than failing the whole picker.
+  if (wait) {
+    const TIMED_OUT = Symbol('magellan-soo-refresh-timeout');
+    const got = await Promise.race([
+      refreshMagellanSoo(),
+      new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), timeoutMs)),
+    ]);
+    if (got !== TIMED_OUT && got.length) return got;
+    if (known.length) return known;
+    throw new Error(`the SoO did not answer within ${Math.round(timeoutMs / 1000)}s`);
+  }
+  if (known.length) {
+    // Stale-while-revalidate. Deliberately not awaited, and deliberately not
+    // stamped into _magellanSoo — that would hand a stale read the same
+    // five-minute grace as a fresh one and stop us retrying the real sheet.
+    refreshMagellanSoo();
+    return known;
+  }
+
+  // Nothing at all yet. This is the one call that has to wait, and it is capped
+  // so a first run during an outage still renders a picker.
+  const TIMED_OUT = Symbol('magellan-soo-timeout');
+  const emails = await Promise.race([
+    refreshMagellanSoo(),
+    new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), timeoutMs)),
+  ]);
+  if (emails === TIMED_OUT) {
+    throw new Error(`the SoO did not answer within ${Math.round(timeoutMs / 1000)}s`);
+  }
   return emails;
 }
 
@@ -2636,7 +2793,7 @@ app.get('/api/magellan/accounts', async (req, res) => {
     // be imported against.
     let sooEmails = [];
     try {
-      const soo = await magellanSooEmails({ maxAgeMs });
+      const soo = await magellanSooEmails({ maxAgeMs, wait: fresh });
       sooEmails = soo;
     } catch (err) {
       console.warn(`[magellan] could not read the SoO — falling back to profile names: ${err.message}`);
@@ -4548,7 +4705,10 @@ async function getScrapeBoard() {
 app.get('/api/scrape/campaigns', async (_req, res) => {
   try {
     const board = await getScrapeBoard();
-    res.json({ campaigns: board.campaigns, me: board.me, cachedAt: board.at });
+    // Slimmed: the full board is 20.4MB and this is polled every 2.5s. The
+    // strips need a label and a count, not 2,247 full Sales Nav search URLs.
+    // /api/scrape/campaigns/:id below still serves the complete record.
+    res.json({ campaigns: slimBoard(board.campaigns), me: board.me, cachedAt: board.at });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -4632,10 +4792,7 @@ const SCRAPE_HISTORY_TTL = 30000;
 const _scrapeHistory = new Map(); // campaignId → { at, lines }
 
 app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
-  // Engine-derived strips have no local record; the board passes the strip's
-  // base tab name so we can filter the shared engine log to this campaign.
   const rec = await getScrapeCampaign(req.params.id);
-  const tabName = String(req.query.tabName || (rec && rec.tabName) || '').trim();
   // Read by the REQUESTED id as well as the local record's. Every app-written
   // line is keyed on the board id (an `eng_...` for engine-derived strips), but
   // this only ever read `rec.id` — which exists solely for local `sc_...`
@@ -4643,14 +4800,32 @@ app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
   const ids = [...new Set([req.params.id, rec && rec.id].filter(Boolean))];
   const persistedSets = await Promise.all(ids.map((id) => readScrapeLog(id, { limit: 300 })));
   const persisted = persistedSets.flat();
+
+  // Which engine job ids belong to THIS scrape. The engine stamps every live log
+  // line with its jobId, and a campaign's own jobs carry that same id (jobs[].id
+  // === jobs[].runId), so this is the only identity that actually scopes a line
+  // to a campaign.
+  //
+  // It replaces `String(ln.tabName || '').startsWith(tabName)`, which was wrong
+  // twice over. `tabName` here is the campaign's BASE tab, and 83 live campaigns
+  // share the tab "Results" — so every "Results *" scrape rendered every other
+  // one's events, including 18 failed "Results 1111 N" runs whose "account is
+  // logged out" lines then appeared under scrapes that were collecting fine.
+  // "A" likewise swallowed "A.". And when tabName came back empty — which it
+  // does for every engine-derived strip, since those have no local record —
+  // `!tabName` short-circuited the filter into a no-op and returned the ENTIRE
+  // global engine buffer.
+  const _board = await getScrapeBoard().catch(() => null);
+  const _rec = _board && (_board.campaigns || []).find((c) => c.id === req.params.id);
+  const jobIds = jobIdsForCampaign(_rec);
+
   let live = [];
   let engineDown = '';
   try {
     const l = await getScrapeLogs(req.query.since);
     if (l && l.error) throw new Error(l.error);
     const lines = Array.isArray(l) ? l : (l && l.logs) || [];
-    live = lines.filter((ln) => !tabName || String(ln.tabName || '').startsWith(tabName))
-                .map((ln) => ({ ts: ln.ts, message: ln.message, jobId: ln.jobId, tabName: ln.tabName }));
+    live = scopeLiveLines(lines, jobIds);
   } catch (e) {
     // Was swallowed: an unreachable engine rendered as an empty log box, which
     // reads identically to "this scrape did nothing".
@@ -4675,9 +4850,7 @@ app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
       history = cached.lines;
     } else {
       try {
-        const board = await getScrapeBoard();
-        const rec2 = (board.campaigns || []).find((c) => c.id === req.params.id);
-        const runIds = [...new Set((rec2 && rec2.jobs || []).map((j) => j && j.runId).filter(Boolean))];
+        const runIds = [...new Set((_rec && _rec.jobs || []).map((j) => j && j.runId).filter(Boolean))];
         const sets = await Promise.all(runIds.map((rid) => getScrapeRunLogs(rid).catch(() => null)));
         history = sets.flatMap((s) => (s && Array.isArray(s.logs) ? s.logs : []))
           .map((ln) => ({ ts: ln.ts, message: ln.message, jobId: ln.jobId, tabName: ln.tabName }));
@@ -6939,6 +7112,20 @@ app.listen(PORT, async () => {
   refreshScrapeBoardOnce()
     .then((b) => console.log(`  ✦ Sales Nav board: warmed (${(b.campaigns || []).length} scrapes)`))
     .catch((e) => console.log(`  ✦ Sales Nav board: warm-up failed (${e.message}) — will load on demand`));
+
+  // Collected connections used to live in the repo's own data/connections, so
+  // running the app from a worktree hid all 455 of them. They belong in
+  // ORTUS_DATA_DIR; this copies them across once and never deletes the original.
+  try {
+    const mig = magellanMigrateLegacy();
+    if (mig.moved) console.log(`  ✦ Magellan: copied ${mig.moved} collected account file(s) into ${mig.to}`);
+  } catch (e) { console.log(`  ✦ Magellan: could not copy the old connections folder (${e.message})`); }
+
+  // Same reasoning for Magellan's account roster: read it once at boot so the
+  // first visit to the tab is served from cache like every later one, instead of
+  // being the single request that has to wait out a contended Apps Script.
+  refreshMagellanSoo()
+    .then((e) => console.log(`  ✦ Magellan roster: ${e.length ? `warmed (${e.length} accounts)` : 'warm-up returned nothing — will retry on demand'}`));
 
   // Bulk "Delete all drafts" soft-deletes (trashedAt); hard-purge anything past
   // the 1-week grace on boot, then daily.

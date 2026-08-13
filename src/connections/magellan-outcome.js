@@ -14,7 +14,25 @@ const n = (v) => Number(v || 0).toLocaleString('en-US');
 // One line per KIND of problem, never per occurrence: 61 identical duplicate
 // clashes are one job, not 61 lines. Both group-by-cause helpers in this folder
 // already return {count, what, fix}, so they render the same way.
-const problemLine = (p) => `${n(p.count)} × ${p.what} — ${p.fix}`;
+//
+// A group that cost people leads with that number instead of its tally. The
+// card used to read "31 problems" when 30 of them lost nobody and the 31st
+// silently dropped 61 people — the count of lines was never the severity.
+const problemLine = (p) => (p.people
+  ? `${n(p.people)} ${p.people === 1 ? 'person' : 'people'} NOT written — ${p.what} — ${p.fix}`
+  // "nothing was lost" is the whole difference between the two kinds, and the
+  // card is where it is read. Only say it where the distinction was computed —
+  // `blocking` is absent on the collect and check groups this also renders.
+  : `${n(p.count)} × ${p.what}${p.blocking === false ? ' — nothing was lost' : ''} — ${p.fix}`);
+
+// Import groups sort worst-first out of summariseProblems; keep that order and
+// state the cost before anything that cost nothing.
+const importLines = (imp) => ((imp && imp.problems) || []).map(problemLine);
+
+// "168 added · 200 updated" on a run that dropped 61 people is a true sentence
+// that reads as a clean one. The loss belongs in the headline or nowhere.
+const writeSummary = (imp, tail = '') => `${n(imp.created)} added · ${n(imp.updated)} updated`
+  + (imp.notWritten ? ` · ${n(imp.notWritten)} NOT written` : '') + tail;
 
 /**
  * @param {object} state - magellan-run.js getState() shape
@@ -31,9 +49,9 @@ export function buildOutcome(state = {}) {
     // A failed import has usually already written thousands of contacts, and
     // HubSpot cannot take them back. Say what got in before saying what broke.
     const summary = partial
-      ? `${n(partial.created)} added · ${n(partial.updated)} updated before it stopped — ${s.error || 'it stopped unexpectedly'}`
+      ? writeSummary(partial, ` before it stopped — ${s.error || 'it stopped unexpectedly'}`)
       : String(s.error || 'It stopped unexpectedly');
-    return { ok: false, summary, problems: ((partial && partial.problems) || []).map(problemLine) };
+    return { ok: false, summary, problems: importLines(partial) };
   }
 
   const problems = [];
@@ -48,8 +66,16 @@ export function buildOutcome(state = {}) {
   // nothing to fix here — merging was dropped on purpose.
   const pv = s.preview;
   if (pv) {
+    // Said once, or not at all. The check counts everyone HubSpot holds twice;
+    // the import counts the subset whose second record refused the LinkedIn
+    // address. Both are true and they are different numbers, so shown together
+    // they read as a contradiction — "34 people are in HubSpot more than once"
+    // directly above "30 × This person is in HubSpot twice". Once an import has
+    // run, its line carries the same fact AND the fix, so this one stands down.
     const dupes = (pv.duplicates || []).length;
-    if (dupes) {
+    const importSaidIt = ((s.imported && s.imported.problems) || [])
+      .some((p) => p.code === 'duplicate_contact');
+    if (dupes && !importSaidIt) {
       problems.push(`${n(dupes)} ${dupes === 1 ? 'person is' : 'people are'} in HubSpot more than once — `
         + 'their connection was recorded on the record with a real email address, so nothing was missed');
     }
@@ -60,9 +86,13 @@ export function buildOutcome(state = {}) {
     }
   }
 
-  // Import problems, already grouped by cause with a fix attached.
+  // Import problems, already grouped by cause with a fix attached. Anything
+  // that cost people goes to the TOP of the whole list, above the collect and
+  // check findings — it is the only kind that means work was lost.
   const imp = s.imported;
-  for (const p of (imp && imp.problems) || []) problems.push(problemLine(p));
+  const groups = (imp && imp.problems) || [];
+  problems.unshift(...groups.filter((p) => p.blocking).map(problemLine));
+  problems.push(...groups.filter((p) => !p.blocking).map(problemLine));
 
   // A run that ended early says how far it got BEFORE it states any total. A
   // partial number is never presented as a final one.
@@ -77,7 +107,7 @@ export function buildOutcome(state = {}) {
   // Which half ran decides which numbers mean anything. Newest wins: an import
   // replaces a check's summary, a check replaces a collect's.
   if (imp) {
-    return { ok: true, summary: `${n(imp.created)} added · ${n(imp.updated)} updated`, problems };
+    return { ok: !imp.notWritten, summary: writeSummary(imp), problems };
   }
   if (pv) {
     // A Check with nothing it is allowed to look at is not a Check that found
