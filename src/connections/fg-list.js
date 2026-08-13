@@ -34,7 +34,21 @@ const HEADER_ALIASES = {
   invitedAt: ['invited at', 'invited', 'invited on', 'fg invited at'],
   note: ['note', 'fg note', 'reason', 'notes'],
   memberId: ['member id', 'memberid', 'member', 'linkedin id', 'urn', 'fg member id'],
+  // Every account connected to this person, comma-joined, as a BYO export
+  // (the OP FUNNEL tab) writes it. Deliberately narrow: a bare 'accounts' or
+  // 'connections' would swallow unrelated columns.
+  connectedAccounts: ['connected accounts', 'connected account'],
 };
+
+// Pull the email addresses out of a Connected Accounts cell. The cell mixes
+// emails with display names and the literal word "Connections":
+//   "Andoela Sadikaj - Connections, andoelas@ortus.solutions, Ar…"
+// so match addresses rather than splitting on the comma.
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+export function emailsInCell(cell) {
+  const found = String(cell == null ? '' : cell).match(EMAIL_RE) || [];
+  return [...new Set(found.map((e) => e.toLowerCase()))];
+}
 
 const norm = (v) => String(v == null ? '' : v).trim();
 const lc = (v) => norm(v).toLowerCase();
@@ -201,21 +215,66 @@ export function parseListRows(rows, { emailToProfileId = {}, defaultStatus = 'Qu
   const skipped = [];
   const seenId = new Set();           // de-dupe a person listed twice in the same tab
   const byProfile = new Map();        // profileId → perAccount entry
+  const assigned = new Map();         // email → rows already routed to it this parse
+
+  // Choose which of a person's connected accounts sends their invite. Least-
+  // loaded-so-far, so a list where everyone shares the same two accounts splits
+  // evenly instead of burning the first account's monthly allowance and idling
+  // the rest. Ties break on the cell's own order, so the choice is deterministic.
+  // ponytail: balances within THIS run only — it cannot see invites already
+  // spent earlier in the month. Plumb remaining credits down here if runs start
+  // colliding; the engine still enforces the per-account cap either way.
+  const pickConnected = (candidates) => {
+    let best = '';
+    let bestLoad = Infinity;
+    for (const email of candidates) {
+      const load = assigned.get(email) || 0;
+      if (load < bestLoad) { best = email; bestLoad = load; }
+    }
+    return best;
+  };
 
   for (let r = 1; r < grid.length; r++) {
     const row = grid[r] || [];
     const rowNumber = r + 1;          // 1-based sheet row (header is row 1)
     const url = norm(row[idx.url]);
-    const accountEmail = lc(row[idx.accountEmail]);
     const first = norm(row[idx.firstName]);
     const last = norm(row[idx.lastName]);
+    const connectedCell = idx.connectedAccounts === undefined ? '' : norm(row[idx.connectedAccounts]);
 
-    if (!url && !accountEmail && !first && !last) continue; // blank line
+    let accountEmail = lc(row[idx.accountEmail]);
+
+    // Blank-line and URL checks stay ahead of account resolution, so a row with
+    // no URL still reports the URL as the problem rather than an account one.
+    if (!url && !accountEmail && !connectedCell && !first && !last) continue; // blank line
     if (!url) { skipped.push({ rowNumber, reason: 'missing LinkedIn URL', url, accountEmail }); continue; }
+
+    // An explicit Account Email always wins; Connected Accounts is the fallback
+    // for BYO exports that never had a single-account column to begin with.
+    let fromConnected = false;
+    if (!accountEmail && connectedCell) {
+      const listed = emailsInCell(connectedCell);
+      const known = listed.filter((e) => emailMap[e]);
+      if (!known.length) {
+        skipped.push({
+          rowNumber,
+          reason: listed.length
+            ? `no connected account is a known GoLogin login (${listed.join(', ')})`
+            : 'no connected account found in the cell',
+          url,
+          accountEmail: '',
+        });
+        continue;
+      }
+      accountEmail = pickConnected(known);
+      fromConnected = true;
+    }
+
     if (!accountEmail) { skipped.push({ rowNumber, reason: 'missing Account Email', url, accountEmail }); continue; }
 
     const profileId = emailMap[accountEmail];
     if (!profileId) { skipped.push({ rowNumber, reason: `unknown account email "${accountEmail}"`, url, accountEmail }); continue; }
+    if (fromConnected) assigned.set(accountEmail, (assigned.get(accountEmail) || 0) + 1);
 
     const memberId = norm(row[idx.memberId]);
     const identity = inviteIdentity({ memberId, url });

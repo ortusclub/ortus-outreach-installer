@@ -142,3 +142,69 @@ test('parseListRows returns empty for header-only or empty input', () => {
   assert.deepEqual(parseListRows([], {}), { leads: [], perAccount: [], skipped: [] });
   assert.deepEqual(parseListRows([FG_LIST_HEADER], {}), { leads: [], perAccount: [], skipped: [] });
 });
+
+// ── Connected Accounts fallback ───────────────────────────────────────────
+// A BYO export (the OP FUNNEL tab) carries "Connected Accounts": every account
+// connected to that person, comma-joined and mixed with non-email noise
+// ("Connections", "Andoela Sadikaj - "). The operator should not have to
+// collapse that to one account per row by hand — that is exactly the review
+// busywork the sheet-as-input work exists to delete. So when Account Email is
+// absent or blank, pick from Connected Accounts.
+
+test('Connected Accounts: picks a known account when Account Email is blank', () => {
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Connected Accounts'],
+    ['Ada', 'https://li/ada', 'Connections, ada@ortus.example, someone@nowhere.com'],
+  ];
+  const { leads, skipped } = parseListRows(rows, { emailToProfileId: EMAIL_MAP });
+  assert.equal(skipped.length, 0);
+  assert.equal(leads.length, 1);
+  assert.equal(leads[0].routeAccount, 'pid_ada');
+  assert.equal(leads[0].row.accountEmail, 'ada@ortus.example');
+});
+
+test('Connected Accounts: an explicit Account Email still wins', () => {
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Account Email', 'Connected Accounts'],
+    ['Ada', 'https://li/ada', 'grace@ortus.example', 'Connections, ada@ortus.example'],
+  ];
+  const { leads } = parseListRows(rows, { emailToProfileId: EMAIL_MAP });
+  assert.equal(leads[0].routeAccount, 'pid_grace');
+});
+
+test('Connected Accounts: spreads rows across accounts instead of hammering the first', () => {
+  const both = 'Connections, ada@ortus.example, grace@ortus.example';
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Connected Accounts'],
+    ['P1', 'https://li/p1', both],
+    ['P2', 'https://li/p2', both],
+    ['P3', 'https://li/p3', both],
+    ['P4', 'https://li/p4', both],
+  ];
+  const { leads } = parseListRows(rows, { emailToProfileId: EMAIL_MAP });
+  assert.equal(leads.length, 4);
+  const perAccount = {};
+  for (const l of leads) perAccount[l.routeAccount] = (perAccount[l.routeAccount] || 0) + 1;
+  // Even split — not 4/0.
+  assert.deepEqual(perAccount, { pid_ada: 2, pid_grace: 2 });
+});
+
+test('Connected Accounts: no listed account is known -> skipped, and the reason says which', () => {
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Connected Accounts'],
+    ['Ada', 'https://li/ada', 'Connections, nobody@x.com'],
+  ];
+  const { leads, skipped } = parseListRows(rows, { emailToProfileId: EMAIL_MAP });
+  assert.equal(leads.length, 0);
+  assert.equal(skipped.length, 1);
+  assert.match(skipped[0].reason, /connected account/i);
+});
+
+test('Connected Accounts: an empty cell still reports missing Account Email', () => {
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Connected Accounts'],
+    ['Ada', 'https://li/ada', ''],
+  ];
+  const { skipped } = parseListRows(rows, { emailToProfileId: EMAIL_MAP });
+  assert.equal(skipped[0].reason, 'missing Account Email');
+});

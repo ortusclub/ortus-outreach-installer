@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.56" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.56" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.57" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.57" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2633,8 +2633,8 @@
             </div>
             <div class="fgw-format" style="margin-top:13px">
               <div class="fgw-format-h">Your tab needs two columns:</div>
-              <code class="fgw-format-cols">LinkedIn URL &#183; Account Email</code>
-              <div class="fgw-format-note"><b>Account Email</b> = the GoLogin login that sends that invite. Nothing in your sheet is ever deleted. The app <b>adds</b> its own tracking columns (FG Status, FG Invited At and a few others) and may <b>hide</b> a handful of columns it recognises by name, exactly like a CC campaign.</div>
+              <code class="fgw-format-cols">LinkedIn URL &#183; Account Email <span style="opacity:.55">or</span> Connected Accounts</code>
+              <div class="fgw-format-note"><b>Account Email</b> = the GoLogin login that sends that invite. If your tab instead carries a <b>Connected Accounts</b> list, the app picks one for you and spreads the run evenly across them &mdash; you don&rsquo;t have to choose per row. Nothing in your sheet is ever deleted. The app <b>adds</b> its own tracking columns (FG Status, FG Invited At and a few others) and may <b>hide</b> a handful of columns it recognises by name, exactly like a CC campaign.</div>
             </div>
           </div>
         </div>
@@ -4083,7 +4083,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.56"></script>
+  <script type="module" src="/js/app.js?v=3.1.57"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
