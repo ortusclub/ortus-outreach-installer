@@ -59,6 +59,17 @@ async function loadViewerIdentity() {
 
 let _snPollTimer = null;
 let _snPollInFlight = false; // guard so slow polls don't stack (each poll every 2.5s)
+let _snPollStartedAt = 0;    // when the in-flight poll began — see SN_POLL_STUCK_MS
+// A poll that never settles used to freeze the board PERMANENTLY. The guard is
+// set before the fetch and cleared in `finally`, so a fetch that neither
+// resolves nor rejects leaves it true and every later tick returns early —
+// no polling, no re-render, until the app is restarted. Observed live on
+// 2026-08-13: a direct openSalesNavBoard() call issued no request at all.
+// Two independent defences, because one hung request must never cost the
+// board its entire session: the fetch has a timeout so it always settles, and
+// an in-flight mark older than this is treated as dead and overridden.
+const SN_POLL_TIMEOUT_MS = 30000;
+const SN_POLL_STUCK_MS = 60000;
 let _snEverLoaded = false;   // have we rendered the board successfully at least once?
 let _snConsecFail = 0;       // consecutive failed polls before the first success
 // Navigate to the Sales Nav board (its own top-level route #/salesnav). The
@@ -140,8 +151,10 @@ async function pollSalesNavBoard() {
   if (!document.body.classList.contains('route-salesnav')) { clearInterval(_snPollTimer); _snPollTimer = null; return; }
   const host = document.getElementById('sn-board');
   if (!host || document.hidden) return;
-  if (_snPollInFlight) return; // a previous poll is still waiting on a slow engine — don't stack
+  // Don't stack behind a slow engine — but don't trust the flag forever either.
+  if (_snPollInFlight && Date.now() - _snPollStartedAt < SN_POLL_STUCK_MS) return;
   _snPollInFlight = true;
+  _snPollStartedAt = Date.now();
   // Before the FIRST successful load, show an animated "Loading scrapes…" while the
   // /api/jobs fetch runs (it can take several seconds) so the board reads as loading,
   // not empty/stalled. Only when the board isn't already showing strips.
@@ -149,7 +162,8 @@ async function pollSalesNavBoard() {
     host.innerHTML = '<div class="sn-loading"><span class="sp" aria-hidden="true"></span> Loading scrapes…</div>';
   }
   try {
-    const r = await fetch('/api/scrape/campaigns');
+    // Timeout, so this always settles and the `finally` below always runs.
+    const r = await fetch('/api/scrape/campaigns', { signal: AbortSignal.timeout(SN_POLL_TIMEOUT_MS) });
     const d = await r.json();
     if (d && d.error) throw new Error(d.error);
     _snEverLoaded = true; _snConsecFail = 0;

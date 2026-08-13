@@ -119,3 +119,18 @@ test('the board poll timer is installed before the first fetch, not after it', (
   assert.equal(/await pollSalesNavBoard\(\);/.test(open), false, 'the first poll must not gate the timer');
   assert.equal(/await loadOperatorEmail\(\);/.test(open), false, 'the email fetch must not gate the timer either');
 });
+
+test('one hung request cannot freeze the board for the rest of the session', () => {
+  // _snPollInFlight is set before the fetch and cleared in `finally`. A fetch
+  // that neither resolves nor rejects therefore left it true forever: every
+  // later tick returned early, so the board stopped polling and stopped
+  // re-rendering until the app was restarted. Observed live 2026-08-13 — a
+  // direct openSalesNavBoard() call issued no request at all.
+  assert.match(APP, /const SN_POLL_TIMEOUT_MS = 30000;/);
+  assert.match(APP, /const SN_POLL_STUCK_MS = 60000;/);
+  // Defence 1: the fetch always settles, so `finally` always runs.
+  assert.match(APP, /fetch\('\/api\/scrape\/campaigns', \{ signal: AbortSignal\.timeout\(SN_POLL_TIMEOUT_MS\) \}\)/);
+  // Defence 2: a stale in-flight mark is overridden rather than trusted.
+  assert.match(APP, /if \(_snPollInFlight && Date\.now\(\) - _snPollStartedAt < SN_POLL_STUCK_MS\) return;/);
+  assert.match(APP, /_snPollStartedAt = Date\.now\(\);/);
+});
