@@ -90,13 +90,15 @@ export function buildListRows(pairs, { accountEmails = {} } = {}, deps = {}) {
  * @param {Object} opts
  * @param {Object} opts.accountEmails  profileId → email (inverted for the URL→account resolve)
  * @param {Object} opts.campaign       { name, owner, config }
+ * @param {Set<string>|null} [opts.allowedSenders]  emails allowed to invite to
+ *   this page (see sendersForPage). Empty/absent = no restriction.
  * @param {Object} deps
  * @param {(payload)=>Promise<{id?:string,error?:string}>} deps.startCloud
  * @returns {Promise<{cloudId?:string, leadCount?:number, perAccount?:Array, skipped:Array, error?:string}>}
  */
-export async function dispatchFromRows(rows, { accountEmails = {}, campaign = {} } = {}, deps = {}) {
+export async function dispatchFromRows(rows, { accountEmails = {}, campaign = {}, allowedSenders = null } = {}, deps = {}) {
   const { emailToProfileId } = invertAccountEmails(accountEmails);
-  const { leads, perAccount, skipped } = parseListRows(rows, { emailToProfileId });
+  const { leads, perAccount, skipped } = parseListRows(rows, { emailToProfileId, allowedSenders });
   if (!leads.length) {
     return { error: 'No invites to send — the list has no usable rows.', skipped };
   }

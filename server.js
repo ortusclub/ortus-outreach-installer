@@ -105,7 +105,7 @@ import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWriteback
 import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows, fgLedgerTracking, listRunShouldRetire } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows, resolveListSource } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
-import { pageById, FG_PAGE_LIST } from './src/fg-pages.js';
+import { pageById, FG_PAGE_LIST, sendersForPage } from './src/fg-pages.js';
 import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected,
   migrateLegacyConnections as magellanMigrateLegacy } from './src/connections/magellan-pull.js';
@@ -3341,6 +3341,41 @@ function fgNextRunCycleKey(days = [1, 15]) {
   return cycleKey(d || new Date());
 }
 
+// Which accounts may invite people to follow the chosen page, from the SoO
+// `Company` column. Only an account belonging to the page's org can send its
+// invites, so this decides who a run is allowed to route through.
+//
+// Two constraints shape this. The SoO read sits on a LAUNCH request, and
+// fetchSoOData retries a 25s Apps Script timeout — ~78s to fail on a contended
+// sheet (see magellanSooEmails). So it is capped hard and cached. And it FAILS
+// OPEN: an empty set means "no restriction" downstream, because an SoO outage
+// silently reducing a run to zero invites is worse than the wrong-org sends the
+// gate exists to prevent — those are visible, a zero-invite run is not.
+const FG_SOO_TTL_MS = 5 * 60 * 1000;
+const FG_SOO_TIMEOUT_MS = 12_000;
+let _fgSooRows = { rows: [], at: 0 };
+
+async function fgAllowedSenders(page) {
+  if (!page?.sooCompany) return null;   // page declares no org — no restriction
+  const fresh = _fgSooRows.rows.length && Date.now() - _fgSooRows.at < FG_SOO_TTL_MS;
+  if (!fresh) {
+    const TIMED_OUT = Symbol('fg-soo-timeout');
+    const got = await Promise.race([
+      fetchSoOData().catch(() => TIMED_OUT),
+      new Promise((r) => setTimeout(() => r(TIMED_OUT), FG_SOO_TIMEOUT_MS)),
+    ]);
+    if (got !== TIMED_OUT) {
+      const rows = Array.isArray(got) ? got : (got?.rows || got?.accounts || []);
+      if (rows.length) _fgSooRows = { rows, at: Date.now() };
+    }
+  }
+  const senders = sendersForPage(_fgSooRows.rows, page);
+  if (!senders.size) {
+    campaignLog(`[FG-cloud] ⚠ could not read the SoO roster for ${page.label} — sending WITHOUT the page/org sender check`);
+  }
+  return senders;
+}
+
 // The FG Google Sheet's own URL — so the wizard can deep-link "Open the FG Sheet".
 // Asks the Apps Script (getSheetUrl); falls back to a local FG_SHEET_URL env var
 // when the deployed script predates that action.
@@ -3614,8 +3649,13 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       }
 
       const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+      const allowedSenders = await fgAllowedSenders(page);
+      if (allowedSenders?.size) {
+        campaignLog(`[FG-cloud] ${allowedSenders.size} account(s) may invite to ${page.label} (SoO Company "${page.sooCompany}")`);
+      }
       const out = await dispatchFromRows(rows, {
         accountEmails,
+        allowedSenders,
         // Name it for the RUN DAY, not the month: two fires in one month were
         // both called "· 2026-08" and were indistinguishable on the board.
         campaign: { name: `Team Follower Growth · ${runKey}`, owner,

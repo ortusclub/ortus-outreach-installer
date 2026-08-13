@@ -200,6 +200,61 @@ test('Connected Accounts: no listed account is known -> skipped, and the reason 
   assert.match(skipped[0].reason, /connected account/i);
 });
 
+// ── Page/org sender gate ──────────────────────────────────────────────────
+// Only accounts belonging to a page's org can invite people to follow it, so a
+// list run at the Apex page must not send from Ortus accounts.
+
+test('allowedSenders: picks only from accounts that may invite to this page', () => {
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Connected Accounts'],
+    ['Ada', 'https://li/ada', 'Connections, ada@ortus.example, grace@ortus.example'],
+  ];
+  const { leads } = parseListRows(rows, {
+    emailToProfileId: EMAIL_MAP,
+    allowedSenders: new Set(['grace@ortus.example']),
+  });
+  assert.equal(leads.length, 1);
+  assert.equal(leads[0].row.accountEmail, 'grace@ortus.example');
+});
+
+test('allowedSenders: row whose connections are all off-org is skipped, and says so', () => {
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Connected Accounts'],
+    ['Ada', 'https://li/ada', 'Connections, ada@ortus.example'],
+  ];
+  const { leads, skipped } = parseListRows(rows, {
+    emailToProfileId: EMAIL_MAP,
+    allowedSenders: new Set(['grace@ortus.example']),
+  });
+  assert.equal(leads.length, 0);
+  assert.match(skipped[0].reason, /invite to this page/i);
+  assert.match(skipped[0].reason, /ada@ortus\.example/);
+});
+
+test('allowedSenders: an explicit off-org Account Email is refused, not silently sent', () => {
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Account Email'],
+    ['Ada', 'https://li/ada', 'ada@ortus.example'],
+  ];
+  const { leads, skipped } = parseListRows(rows, {
+    emailToProfileId: EMAIL_MAP,
+    allowedSenders: new Set(['grace@ortus.example']),
+  });
+  assert.equal(leads.length, 0);
+  assert.match(skipped[0].reason, /cannot invite to this page/i);
+});
+
+test('allowedSenders: an empty set means no restriction (SoO outage must not zero a run)', () => {
+  const rows = [
+    ['First Name', 'LinkedIn URL', 'Connected Accounts'],
+    ['Ada', 'https://li/ada', 'Connections, ada@ortus.example'],
+  ];
+  for (const gate of [new Set(), null, undefined]) {
+    const { leads } = parseListRows(rows, { emailToProfileId: EMAIL_MAP, allowedSenders: gate });
+    assert.equal(leads.length, 1, `gate=${gate === null ? 'null' : typeof gate}`);
+  }
+});
+
 test('Connected Accounts: an empty cell still reports missing Account Email', () => {
   const rows = [
     ['First Name', 'LinkedIn URL', 'Connected Accounts'],

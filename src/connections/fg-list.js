@@ -202,13 +202,20 @@ export function listRowFromFgRow(fgRow = [], { accountEmail = '', status = 'Queu
  *   perAccount:[{ profileId, account(email), rows, rowsByUrl, count }]  rowsByUrl: url → Member ID (or '')
  *   skipped:   [{ rowNumber, reason, url, accountEmail }]  (1-based, matching the sheet)
  */
-export function parseListRows(rows, { emailToProfileId = {}, defaultStatus = 'Queued' } = {}) {
+export function parseListRows(rows, { emailToProfileId = {}, defaultStatus = 'Queued', allowedSenders = null } = {}) {
   const grid = Array.isArray(rows) ? rows : [];
   if (grid.length < 2) return { leads: [], perAccount: [], skipped: [] };
 
   // Normalise the email→profileId map keys to lower-case for a forgiving lookup.
   const emailMap = {};
   for (const [email, pid] of Object.entries(emailToProfileId || {})) emailMap[lc(email)] = pid;
+
+  // Only accounts belonging to the page's org can invite people to follow it,
+  // so a run for one page must not send from another page's accounts. An empty
+  // or absent set means "no restriction": the caller could not determine the
+  // org (SoO down), and an outage must not silently zero out a run.
+  const gate = allowedSenders && allowedSenders.size ? allowedSenders : null;
+  const maySend = (email) => !gate || gate.has(email);
 
   const idx = mapHeader(grid[0]);
   const leads = [];
@@ -255,18 +262,23 @@ export function parseListRows(rows, { emailToProfileId = {}, defaultStatus = 'Qu
     if (!accountEmail && connectedCell) {
       const listed = emailsInCell(connectedCell);
       const known = listed.filter((e) => emailMap[e]);
-      if (!known.length) {
+      const eligible = known.filter(maySend);
+      if (!eligible.length) {
         skipped.push({
           rowNumber,
-          reason: listed.length
-            ? `no connected account is a known GoLogin login (${listed.join(', ')})`
-            : 'no connected account found in the cell',
+          reason: !listed.length
+            ? 'no connected account found in the cell'
+            : !known.length
+              ? `no connected account is a known GoLogin login (${listed.join(', ')})`
+              // Known accounts exist but none belongs to this page's org — the
+              // common case when a list built for one company is run at another.
+              : `no connected account can invite to this page (${known.join(', ')})`,
           url,
           accountEmail: '',
         });
         continue;
       }
-      accountEmail = pickConnected(known);
+      accountEmail = pickConnected(eligible);
       fromConnected = true;
     }
 
@@ -274,6 +286,13 @@ export function parseListRows(rows, { emailToProfileId = {}, defaultStatus = 'Qu
 
     const profileId = emailMap[accountEmail];
     if (!profileId) { skipped.push({ rowNumber, reason: `unknown account email "${accountEmail}"`, url, accountEmail }); continue; }
+    // A hand-typed Account Email is checked too: sending from another org's
+    // account fails at LinkedIn, and doing it silently is how a run "succeeds"
+    // having invited nobody.
+    if (!maySend(accountEmail)) {
+      skipped.push({ rowNumber, reason: `"${accountEmail}" cannot invite to this page — it is not one of this page's accounts`, url, accountEmail });
+      continue;
+    }
     if (fromConnected) assigned.set(accountEmail, (assigned.get(accountEmail) || 0) + 1);
 
     const memberId = norm(row[idx.memberId]);
