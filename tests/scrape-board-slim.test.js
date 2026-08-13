@@ -83,3 +83,22 @@ test('the client reads the slim shape', () => {
   assert.match(APP, /const label = j\.searchLabel \|\|/);
   assert.match(APP, /c\.searchCount != null \? c\.searchCount/);
 });
+
+// ── Connection-pool starvation ──────────────────────────────────────────────
+// Measured 2026-08-13, after the payload slimming above: the board's 2.5s timer
+// was ticking (6 probes in 15s) on a visible, correctly-routed board, and still
+// issued ONE request in 75 seconds — that request never even got response
+// headers. CDP showed 7 requests open at once, six of them
+// /api/campaign/cloud/:id/leads at 13-16s each. Chromium allows SIX connections
+// per host, so the cloud board's unbounded Promise.all fan-out was consuming the
+// entire pool and every other poller in the page starved behind it.
+test('the cloud fan-out is bounded so other pollers keep a connection', () => {
+  assert.match(APP, /async function _mapLimit\(items, limit, fn\)/);
+  assert.match(APP, /const CLOUD_FANOUT_LIMIT = 3;/);
+  assert.ok(CLOUD_FANOUT_LIMIT_OK(), 'cloud fan-outs must go through _mapLimit');
+  function CLOUD_FANOUT_LIMIT_OK() {
+    return APP.includes('await _mapLimit(campaigns, CLOUD_FANOUT_LIMIT,')
+      && APP.includes('await _mapLimit(cloudCamps, CLOUD_FANOUT_LIMIT,')
+      && !/await Promise\.all\((campaigns|cloudCamps)\.map\(/.test(APP);
+  }
+});

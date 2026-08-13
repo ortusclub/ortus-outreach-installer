@@ -7409,7 +7409,7 @@ async function renderCloudCampaigns() {
 
   // Fetch per-campaign lead counts (best-effort, parallel). Also pull the
   // per-lead log for running/expanded strips so their Log pane shows real rows.
-  const details = await Promise.all(campaigns.map(async (c) => {
+  const details = await _mapLimit(campaigns, CLOUD_FANOUT_LIMIT, async (c) => {
     let d;
     try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
     catch { d = { campaign: c, leadCounts: {} }; }
@@ -7421,7 +7421,7 @@ async function renderCloudCampaigns() {
       } catch { /* best-effort — the status note stays */ }
     }
     return d;
-  }));
+  });
 
   const items = details.map((d) => ({ c: d.campaign || {}, lc: d.leadCounts || {}, log: d._logLines || null }));
   for (const it of items) { if (it.c.sheet_url) _cloudSheetUrls.set(it.c.id, it.c.sheet_url); }
@@ -9768,13 +9768,34 @@ let _cloudRefreshInFlight = false;
 // into _cloudRaw instead; the render builds cloud strips from that cache with no
 // network wait. Dismiss/ownership filtering still runs live in the render, so
 // those stay instant.
+// Bounded-concurrency map. Chromium allows only SIX connections per host, so an
+// unbounded Promise.all over cloud campaigns (1-3 requests each, 13-16s apiece
+// through the engine proxy) saturates the pool and starves every OTHER poller in
+// the page. Measured 2026-08-13: 7 requests open at once, and the Sales Nav
+// board's 2.5s poll managed ONE request in 75 seconds — its timer was ticking
+// fine, its fetch just never got a socket. Cap the fan-out so the rest of the app
+// always has connections left.
+async function _mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+const CLOUD_FANOUT_LIMIT = 3;
+
 async function _refreshCloudItems() {
   if (_cloudRefreshInFlight) return;
   _cloudRefreshInFlight = true;
   try {
     const cl = await (await fetch('/api/campaign/cloud-list')).json();
     const cloudCamps = (cl && cl.campaigns) || [];
-    _cloudRaw = await Promise.all(cloudCamps.map(async (c) => {
+    _cloudRaw = await _mapLimit(cloudCamps, CLOUD_FANOUT_LIMIT, async (c) => {
       let d;
       const terminal = ['done', 'cancelled', 'error'].includes(c.status);
       if (terminal && !_snExpanded.has(c.id) && _cloudDetailCache.has(c.id)) {
@@ -9823,7 +9844,7 @@ async function _refreshCloudItems() {
         } catch { /* best-effort */ }
       }
       return d;
-    }));
+    });
   } catch (_) { /* keep last snapshot on engine hiccup */ }
   finally { _cloudRefreshInFlight = false; }
   try { renderCampaignsBoard(); } catch { /* */ }
