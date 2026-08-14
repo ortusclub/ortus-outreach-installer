@@ -5,6 +5,7 @@
 // (Apps Script answers POST with a 302 that Node's fetch would turn into a GET).
 import { FG_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { FG_MASTER_HEADER, chunkRows } from './fg-master.js';
+import { onFgLane } from '../webapp-lane.js';
 
 // LinkedIn's monthly "Invite to follow" credit pool. The live balance is shown
 // in the invite modal ("30/30 credits available · Credit refill <date>") and is
@@ -39,6 +40,14 @@ async function postFgOnce(payload, timeoutMs) {
         // A login page is a deployment problem, not a transient blip — don't retry.
         return { error: 'FG Apps Script returned a login page — redeploy it ("anyone with the link")', transient: false };
       }
+      // An Apps Script exception is served as an HTML page. The one that
+      // matters is the script lock expiring ("Timeout di blocco" / "Lock
+      // timeout") — another FG job held it longer than waitLock allows. Name
+      // it, so the log says which problem this is, and retry: the holder
+      // finishes eventually.
+      if (/Timeout di blocco|Lock timeout|waitLock/i.test(text)) {
+        return { error: 'The FG Apps Script was busy — another FG job held its lock. Retrying.', transient: true };
+      }
       return { error: `The FG Apps Script answered ${res.status} with ${text.length} bytes that are not JSON`, transient: true };
     }
   } catch (err) {
@@ -55,8 +64,12 @@ export async function postFg(payload, { timeoutMs = 30000, attempts = 3, sleep =
   if (!FG_WEBAPP_URL) return { error: 'FG_WEBAPP_URL not configured — deploy fg-apps-script.js and set its URL in src/sheets-webapp-url.js' };
   let last = { error: 'FG request never ran' };
   for (let i = 0; i < Math.max(1, attempts); i++) {
-    if (i > 0) await sleep(400 * i); // 0ms, 400ms, 800ms…
-    const r = await postFgOnce(payload, timeoutMs);
+    if (i > 0) await sleep(400 * i); // 0ms, 400ms, 800ms… (OUTSIDE the lane)
+    // One FG call at a time from this process. The script serialises writers
+    // with a 120s script lock and fgState is a ~78s read, so two overlapping
+    // calls meant the second sat out waitLock() and came back as an HTML error
+    // page ("Timeout di blocco") — which is what made every FG surface fail.
+    const r = await onFgLane(() => postFgOnce(payload, timeoutMs));
     if (!r || !r.error) return r;            // success
     last = r;
     if (r.transient === false) break;        // non-retryable (e.g. login page)

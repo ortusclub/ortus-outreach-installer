@@ -29,3 +29,21 @@ export function onWebappLane(fn) {
   _lane = out.then(() => {}, () => {});
   return out;
 }
+
+/**
+ * The same discipline for the FG Apps Script — a SEPARATE deployment bound to
+ * a different spreadsheet, so it needs its own lane rather than sharing the one
+ * above (queueing FG reads behind campaign writes would help nobody).
+ *
+ * FG's constraint is a script lock rather than a quota: doPost serialises
+ * writers with LockService, and fgState is a ~78s read, so two overlapping
+ * calls means the second waits out waitLock() and dies with an HTML error page.
+ * One lane per process removes the overlap this app causes itself. Same rule as
+ * above: retry backoff belongs OUTSIDE the lane.
+ */
+let _fgLaneP = Promise.resolve();
+export function onFgLane(fn) {
+  const out = _fgLaneP.then(fn, fn);
+  _fgLaneP = out.then(() => {}, () => {});
+  return out;
+}

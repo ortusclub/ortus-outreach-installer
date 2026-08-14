@@ -28,11 +28,44 @@ var FG_MASTER_HEADER = [
 ];
 var FG_MASTER_TAB = 'FG Master';
 
+// Actions that only READ. They take no lock: fgState alone is a ~78s read of
+// the whole FG Invites tab, and holding the write lock for it meant every other
+// call — including the next fgState — died on waitLock() with an uncaught
+// throw, which Apps Script serves as an HTML error page ("Timeout di blocco").
+// A read that overlaps a write may see a row mid-append; that is a snapshot of
+// invites and budgets, so a row arriving one read later is harmless.
+var FG_READ_ONLY = {
+  fgState: true, fgReadList: true, fgMasterKeys: true,
+  getSheetUrl: true, listTabs: true,
+};
+
 function doPost(e) {
+  var data;
+  try { data = JSON.parse(e.postData.contents || '{}'); }
+  catch (err) { return json_({ error: 'Bad request body: ' + String(err && err.message || err) }); }
+
+  if (FG_READ_ONLY[data.action]) {
+    try { return json_(fgRun_(data)); }
+    catch (err) { return json_({ error: String(err && err.message || err) }); }
+  }
+
   var lock = LockService.getScriptLock();
-  lock.waitLock(30000); // serialize concurrent operators
+  // 120s, not 30s: the writes this serialises against (fgWriteMaster chunks,
+  // fgQueue on a 15k-row tab) routinely run longer than 30s, and a waitLock
+  // that expires throws rather than queueing.
+  lock.waitLock(120000); // serialize concurrent operators
   try {
-    var data = JSON.parse(e.postData.contents || '{}');
+    return json_(fgRun_(data));
+  } catch (err) {
+    return json_({ error: String(err && err.message || err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// The action table itself. Returns the plain result object; doPost decides
+// whether it needed the lock and wraps it as JSON.
+function fgRun_(data) {
     var out;
     if (data.action === 'fgState') out = fgState_();
     else if (data.action === 'fgQueue') out = fgQueue_(data.rows || []);
@@ -55,12 +88,7 @@ function doPost(e) {
     // "Unexpected non-JSON response" for EVERY action. Formatting is idempotent
     // and belongs on a timer or a manual run, never on the write path.
     // Run fgFormatAll() from the editor, or install fgInstallDailyFormat() once.
-    return json_(out);
-  } catch (err) {
-    return json_({ error: String(err && err.message || err) });
-  } finally {
-    lock.releaseLock();
-  }
+    return out;
 }
 function doGet() { return json_({ ok: true, service: 'fg' }); }
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
