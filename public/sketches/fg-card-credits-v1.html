@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FG card — why it sent nothing · variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/dashboard-v0.3.css">
+<style>
+  body { padding: 28px 24px 80px; }
+  .sk-wrap { max-width: 1180px; margin: 0 auto; }
+  .sk-h { font: 600 12px/1 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; opacity: .55; margin: 34px 0 10px; }
+  .sk-note { font: 400 12.5px/1.55 -apple-system, system-ui, sans-serif; opacity: .6; max-width: 60ch; margin: 0 0 14px; }
+  .vj-card { margin-bottom: 8px; }
+
+  /* No sketch-only card CSS: .vj-dupe and everything else here is the real
+     dashboard-v0.3.css, so what this page shows is what the app renders. */
+</style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+<div class="sk-wrap">
+
+<h1 style="font:600 20px/1.2 -apple-system,system-ui,sans-serif;margin:0 0 6px">FG card — “finished, 0 of 89 sent”</h1>
+<p class="sk-note">
+  Real data: Sam’s three Aug-8 runs. Same 89 leads, same 7 accounts, launched 20:16 / 20:17 / 20:20.
+  Six of the seven accounts had <b>0 LinkedIn invite credits</b> (refill Aug 31); only paul.r had any.
+  The card today says <code>FINISHED · 0%</code> and shows <code>0/50</code> per account —
+  <code>0/50</code> is the <em>connection</em> quota, which is always 0/50 on a follower run
+  (<code>app.js:24229</code>). Neither number mentions credits, which the payload already carries as
+  <code>credits:{available,allowance,refill}</code>.
+</p>
+
+<!-- ============================================= NOW ============================================= -->
+<div class="sk-h">Now — what the app shows</div>
+<section class="vj-card is-detailed">
+  <div class="vj-eyebrow">
+    <span class="vj-tag"><span class="dot"></span><span>Finished</span></span>
+    <span class="vj-when">8 Aug · 20:20</span>
+  </div>
+  <div class="vj-glyph-circle">FG</div>
+  <h2 class="vj-name"><span>Team Follower Growth · 2026-08-15</span></h2>
+  <div class="vj-stage">
+    <div class="vj-stage-body">
+      <div class="vj-stage-accts">
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">ernes.rama</span><span class="n">0/50</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">bea.talusan</span><span class="n">0/50</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">justin</span><span class="n">0/50</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">koleena</span><span class="n">0/50</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">gab.arcamo</span><span class="n">0/50</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">paul.r</span><span class="n">0/50</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">zildjiang</span><span class="n">0/50</span></span></button>
+      </div>
+    </div>
+  </div>
+  <div class="vj-hbar"><i style="width:0%"></i></div>
+  <div class="vj-hero">
+    <div class="vj-hero-row">
+      <div class="num"><span>0</span><span class="sub">%</span></div>
+      <div class="vj-meta">
+        <span><b>0</b> of <span>89</span> sent</span>
+        <span>Next batch in <b>—</b></span>
+      </div>
+    </div>
+    <div class="vj-stats">
+      <span><b>7</b> accounts</span><span><b>—</b> accepted</span>
+      <span>· <b>Finished</b> · batch settings</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================= A ============================================= -->
+<div class="sk-h">A — the pill tells the truth</div>
+<p class="sk-note">Smallest change. Pill reads credits instead of the connection quota, eyebrow names the cause.
+  Nothing else moves. <code>_stageAcctPill</code> already receives <code>a.credits</code> — it just ignores it.</p>
+<section class="vj-card is-detailed">
+  <div class="vj-eyebrow">
+    <span class="vj-tag"><span class="dot"></span><span>Stopped — no credits</span></span>
+    <span class="vj-when">8 Aug · 20:20</span>
+  </div>
+  <div class="vj-glyph-circle">FG</div>
+  <h2 class="vj-name"><span>Team Follower Growth · 2026-08-15</span></h2>
+  <div class="vj-stage">
+    <div class="vj-stage-body">
+      <div class="vj-stage-accts">
+        <button type="button" class="stg-acct" title="No invite credits — refills 31 August 2026"><span class="cap-badge bad"><span class="nm">ernes.rama</span><span class="n">0 credits</span></span></button>
+        <button type="button" class="stg-acct" title="No invite credits — refills 31 August 2026"><span class="cap-badge bad"><span class="nm">bea.talusan</span><span class="n">0 credits</span></span></button>
+        <button type="button" class="stg-acct" title="Spent its last 3 credits on this run"><span class="cap-badge"><span class="nm">justin</span><span class="n">3 sent · 0 left</span></span></button>
+        <button type="button" class="stg-acct" title="Spent its last credit on this run"><span class="cap-badge"><span class="nm">koleena</span><span class="n">1 sent · 0 left</span></span></button>
+        <button type="button" class="stg-acct" title="No invite credits"><span class="cap-badge bad"><span class="nm">gab.arcamo</span><span class="n">0 credits</span></span></button>
+        <button type="button" class="stg-acct" title="20 of 30 credits left"><span class="cap-badge ok"><span class="nm">paul.r</span><span class="n">3 sent · 20 left</span></span></button>
+        <button type="button" class="stg-acct" title="No invite credits — refills 31 August 2026"><span class="cap-badge bad"><span class="nm">zildjiang</span><span class="n">0 credits</span></span></button>
+      </div>
+    </div>
+  </div>
+  <div class="vj-hbar"><i style="width:8%"></i></div>
+  <div class="vj-hero">
+    <div class="vj-hero-row">
+      <div class="num"><span>7</span><span class="sub">%</span></div>
+      <div class="vj-meta">
+        <span><b>7</b> of <span>89</span> sent</span>
+        <span>82 still queued — <b>31 Aug</b></span>
+      </div>
+    </div>
+    <div class="vj-stats">
+      <span><b>7</b> accounts</span><span><b>5</b> out of credits</span>
+      <span>· <b>Stopped early</b> · batch settings</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================= B ============================================= -->
+<div class="sk-h">B — one sentence of why, above the accounts &nbsp;·&nbsp; SHIPPED v3.1.72</div>
+<p class="sk-note">A, plus a plain-English reason strip. Says what happened, what it costs, and what to do —
+  the thing you had to ask me for. Also flags the two duplicate runs.</p>
+<section class="vj-card is-detailed">
+  <div class="vj-eyebrow">
+    <span class="vj-tag"><span class="dot"></span><span>Stopped — no credits</span></span>
+    <span class="vj-when">8 Aug · 20:20</span>
+  </div>
+  <div class="vj-glyph-circle">FG</div>
+  <h2 class="vj-name"><span>Team Follower Growth · 2026-08-15</span> <span class="vj-dupe">2 duplicate runs</span></h2>
+
+  <div class="vj-stage">
+    <div class="vj-stage-gly" style="font-size:26px;opacity:.5">⊘</div>
+    <div class="vj-stage-body">
+      <div class="vj-stage-verb">Stopped early</div>
+      <div class="vj-stage-name">82 of 89 never went out — no invite credits</div>
+      <div class="vj-stage-sub">LinkedIn gives each account 30 “invite to follow” credits a month. Five of the seven were
+        already at zero when this started; the other two spent their last 4 here.</div>
+      <div class="vj-stage-fix">Credits refill <b>31 August</b> — restart then and the remaining 82 go out automatically.</div>
+      <div class="vj-stage-accts">
+        <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">ernes.rama</span><span class="n">0 credits</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">bea.talusan</span><span class="n">0 credits</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">justin</span><span class="n">3 sent · 0 left</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">koleena</span><span class="n">1 sent · 0 left</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">gab.arcamo</span><span class="n">0 credits</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge ok"><span class="nm">paul.r</span><span class="n">3 sent · 20 left</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">zildjiang</span><span class="n">0 credits</span></span></button>
+      </div>
+    </div>
+  </div>
+  <div class="vj-hbar"><i style="width:8%"></i></div>
+  <div class="vj-hero">
+    <div class="vj-hero-row">
+      <div class="num"><span>7</span><span class="sub">%</span></div>
+      <div class="vj-meta">
+        <span><b>7</b> of <span>89</span> sent</span>
+        <span>82 waiting on credits</span>
+      </div>
+    </div>
+    <div class="vj-stats">
+      <span><b>7</b> accounts</span><span><b>5</b> out of credits</span>
+      <span>· <b>Stopped early</b> · batch settings</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================= C ============================================= -->
+<div class="sk-h">C — credits are the hero</div>
+<p class="sk-note">Biggest change: on an FG run the binding constraint is never % of the list, it’s the credit pool.
+  The big number becomes credits available across the team, and the bar fills with credits, not sends.
+  A run that can’t possibly finish says so <em>before</em> it starts, not after.</p>
+<section class="vj-card is-detailed">
+  <div class="vj-eyebrow">
+    <span class="vj-tag"><span class="dot"></span><span>Stopped — pool empty</span></span>
+    <span class="vj-when">8 Aug · 20:20</span>
+  </div>
+  <div class="vj-glyph-circle">FG</div>
+  <h2 class="vj-name"><span>Team Follower Growth · 2026-08-15</span> <span class="vj-dupe">2 duplicate runs</span></h2>
+  <div class="vj-stage">
+    <div class="vj-stage-gly" style="font-size:26px;opacity:.5">⊘</div>
+    <div class="vj-stage-body">
+      <div class="vj-stage-verb">Credits</div>
+      <div class="vj-stage-name">1 of 7 accounts can still invite</div>
+      <div class="vj-stage-sub">7 of 89 people invited. The other 82 stay queued until the pool refills — nothing is lost.</div>
+      <div class="vj-stage-accts">
+        <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">ernes.rama</span><span class="n">0</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">bea.talusan</span><span class="n">0</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">justin</span><span class="n">0</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">koleena</span><span class="n">0</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">gab.arcamo</span><span class="n">0</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge ok"><span class="nm">paul.r</span><span class="n">20</span></span></button>
+        <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">zildjiang</span><span class="n">0</span></span></button>
+      </div>
+    </div>
+  </div>
+  <div class="vj-hbar"><i style="width:3%"></i></div>
+  <div class="vj-hero">
+    <div class="vj-hero-row">
+      <div class="num"><span>0</span><span class="sub">credits left</span></div>
+      <div class="vj-meta">
+        <span><b>7</b> invites sent · <b>82</b> queued</span>
+        <span>Pool refills <b>31 Aug</b> · <b>210</b> credits</span>
+      </div>
+    </div>
+    <div class="vj-stats">
+      <span><b>7</b> accounts</span><span><b>1</b> with credits</span>
+      <span>· <b>Stopped early</b> · batch settings</span>
+    </div>
+  </div>
+</section>
+
+<div class="sk-h">Separate from the display: the duplicates</div>
+<p class="sk-note">
+  Three campaigns for the same 89 leads and the same 7 accounts were accepted 1 and 3 minutes apart with no complaint.
+  Whichever variant you pick, launch should refuse (or ask) when an FG run with the same sheet + accounts is already live —
+  same guard the CC+IC duplicate-submit needed. That’s a server change, not a card change.
+</p>
+
+</div>
+</body>
+</html>

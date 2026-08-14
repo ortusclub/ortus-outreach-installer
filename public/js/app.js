@@ -7688,10 +7688,16 @@ function _fgFinishedNote(status) {
   let credits = 0, login = 0, errored = 0, refill = '';
   for (const a of accounts) {
     const r = String((a && a.bench) || '').toLowerCase();
-    if (r.includes('credit')) {
+    // An account is out of credits either because the engine benched it mid-run
+    // (bench prose) or because it simply started the run at zero and was never
+    // benched at all. The second case is the common one and had no reason line:
+    // Sam's 8 Aug run stopped at 7 of 89 with a blank "Reason not recorded".
+    const cr = _fgCredits(a);
+    if (r.includes('credit') || (cr && cr.available === 0)) {
       credits += 1;
       const m = /refills?\s+([^·)]+)/i.exec(String(a.bench || ''));
       if (m && !refill) refill = m[1].trim();
+      else if (cr && cr.refill && !refill) refill = cr.refill;
     } else if ((a && a.needsLogin) || r.includes('logged out') || r.includes('login')) login += 1;
     else if (r) errored += 1;
   }
@@ -8822,6 +8828,23 @@ function vjCardSkeleton(cid) {
   return clone.outerHTML;
 }
 
+// "2 identical runs" beside the title. Sits next to the name span rather than
+// inside it so the name stays a plain string everywhere else it is read.
+function _setDupeChip(root, n) {
+  const nameEl = root.querySelector('[data-f="activeName"]');
+  if (!nameEl) return;
+  let chip = nameEl.parentElement.querySelector('.vj-dupe');
+  const count = Number(n) || 0;
+  if (count < 1) { if (chip) chip.remove(); return; }
+  if (!chip) {
+    chip = document.createElement('span');
+    chip.className = 'vj-dupe';
+    nameEl.parentElement.appendChild(chip);
+  }
+  chip.textContent = `${count} identical run${count === 1 ? '' : 's'}`;
+  chip.title = 'Another campaign with the same name and the same accounts was launched within minutes of this one. They compete for the same LinkedIn credits.';
+}
+
 function _fillVjMonitorHero(root, status) {
   // This card is a cloneNode(true) of card #2's LIVE DOM, so it arrives carrying
   // whatever caption and state class card #2 happened to be showing when it was
@@ -8887,6 +8910,7 @@ function fillVjCard(root, status) {
   root.classList.remove('is-empty', 'is-preflight');
 
   set('activeName', f.name);
+  _setDupeChip(root, status.dupes);
   set('activeEyebrow', f.eyebrow);
   set('activePct', String(f.pct));
   set('activeSent', String(f.done));
@@ -9939,8 +9963,21 @@ async function _renderCampaignsBoardInner() {
   // 3) Cloud campaigns — built from the BACKGROUND snapshot (_cloudRaw), not
   // fetched here, so the render never blocks on the slow remote engine.
   try {
+    // Identical runs. Three FG campaigns with the same name and the same
+    // accounts were dispatched 1 and 3 minutes apart on 8 Aug (a double-clicked
+    // Start); on the board they were three indistinguishable cards, and the two
+    // later ones sent almost nothing because the first had already spent the
+    // accounts' credits. Naming them is not the fix — the launch guard is — but
+    // an operator looking at the board should not have to work this out.
+    const _dupeSeen = new Map();
+    for (const d of _cloudRaw) {
+      const c = d.campaign || {};
+      const k = `${c.mode}|${c.name}|${(c.profile_ids || []).slice().sort().join(',')}`;
+      _dupeSeen.set(k, (_dupeSeen.get(k) || 0) + 1);
+    }
     for (const d of _cloudRaw) {
       const c = d.campaign || {}; const lc = d.leadCounts || {};
+      const _dupes = (_dupeSeen.get(`${c.mode}|${c.name}|${(c.profile_ids || []).slice().sort().join(',')}`) || 1) - 1;
       if (['done', 'cancelled', 'error'].includes(c.status) && _cloudDismissed.has(c.id)) continue;
       if (c.sheet_url) _cloudSheetUrls.set(c.id, c.sheet_url);
       const mine = !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase());
@@ -9974,6 +10011,7 @@ async function _renderCampaignsBoardInner() {
         accounts: (c.profile_ids || []).length, profileIds: c.profile_ids || [], mine,
         // Per-account states — feeds _fgFinishedNote's "why it stopped short".
         benchAccounts: _cloudAccountsById.get(c.id) || null,
+        dupes: _dupes,
         // When the VM will start it — the engine reads this off the pending
         // start_campaign task itself, so it can't drift from the real timer.
         scheduledAt: c.scheduled_start_at || null,
@@ -24268,11 +24306,44 @@ function _benchWord(reason) {
   return 'Benched';
 }
 
+// LinkedIn's monthly "invite to follow" allowance for one account, as the
+// engine observed it in the invite modal ("6 of 30 remaining"). Present only on
+// follower-growth payloads, and only once an account's browser has opened the
+// modal — absent means "not observed", NOT "zero", so callers must fall back to
+// their old text rather than claim the account has no credits.
+function _fgCredits(a) {
+  const c = a && a.credits;
+  if (!c || !Number.isFinite(Number(c.available))) return null;
+  const allowance = Number.isFinite(Number(c.allowance)) ? Number(c.allowance) : null;
+  return { available: Number(c.available), allowance, refill: String(c.refill || '').trim() };
+}
+
+function _fgCreditTip(cr) {
+  if (!cr) return '';
+  const of = cr.allowance ? ` of ${cr.allowance}` : '';
+  const when = cr.refill ? ` — refills ${cr.refill}` : '';
+  return cr.available === 0
+    ? `No LinkedIn invite credits left${when}`
+    : `${cr.available}${of} invite credits left${when}`;
+}
+
 function _stageAcctPill(a, isCurrent, counts) {
   const nm = _acctLabel(a);
   const tally = counts && counts.get(String(a.profileId || ''));
   // Invites sent / queued for THIS run when we have it; the daily quota otherwise.
-  const count = tally ? `${tally.sent}/${tally.total}` : `${a.dailyCount || 0}/${a.dailyLimit || 0}`;
+  let count = tally ? `${tally.sent}/${tally.total}` : `${a.dailyCount || 0}/${a.dailyLimit || 0}`;
+  // On a follower run the daily quota is the CONNECTION quota — always 0/50,
+  // and nothing to do with why the run stopped. What binds is LinkedIn's
+  // monthly "invite to follow" credits, which the payload already carries.
+  // Sam's 8 Aug runs read "0/50" on seven accounts that were simply out of
+  // credits, which is what made a stalled run look idle.
+  const cr = _fgCredits(a);
+  if (cr) {
+    const sent = tally ? tally.sent : null;
+    count = cr.available === 0
+      ? (sent ? `${sent} sent · 0 left` : '0 credits')
+      : (sent ? `${sent} sent · ${cr.available} left` : `${cr.available} credits`);
+  }
   const benchWord = _benchWord(a.bench);
   let cls = '', text = count, tip = '';
   if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; }
@@ -24280,6 +24351,10 @@ function _stageAcctPill(a, isCurrent, counts) {
   else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly cap'; }
   else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
   else if (a.parked || a.parkReason === 'throttle') { cls = 'warn'; text = 'Throttled'; }
+  // Out of credits having sent NOTHING is a blocked account; out of credits
+  // having spent them all is just a finished one. Same number, different news.
+  else if (cr && cr.available === 0 && !(tally && tally.sent)) cls = 'bad';
+  else if (cr && cr.available > 0) cls = 'ok';
   else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) cls = 'warn';
   else if (isCurrent) cls = 'ok';
   // Out of free personalised invites — the account IS still sending, so this is
@@ -24292,7 +24367,7 @@ function _stageAcctPill(a, isCurrent, counts) {
     text = `${text} · no note`;
     noteTip = 'Out of LinkedIn\'s free personalised invites — invites are still going out, without the note. Refills monthly.';
   }
-  const title = tip ? `${tip} — retries next run` : noteTip;
+  const title = tip ? `${tip} — retries next run` : (cr ? _fgCreditTip(cr) : noteTip);
   return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')"`
     + `${title ? ` title="${escHtml(title)}"` : ''}>`
     + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>`;

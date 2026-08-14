@@ -105,7 +105,7 @@ import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWriteback
 import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows, fgLedgerTracking, listRunShouldRetire, parseListRows, emailsInCell } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows, resolveListSource } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
-import { pageById, FG_PAGE_LIST, sendersForPage } from './src/fg-pages.js';
+import { pageById, FG_PAGE_LIST, FG_PAGES, sendersForPage } from './src/fg-pages.js';
 import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected,
   migrateLegacyConnections as magellanMigrateLegacy } from './src/connections/magellan-pull.js';
@@ -3797,7 +3797,9 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
         allowedSenders,
         // Name it for the RUN DAY, not the month: two fires in one month were
         // both called "· 2026-08" and were indistinguishable on the board.
-        campaign: { name: `Team Follower Growth · ${runKey}`, owner,
+        // The page is in the name because the board carries Ortus and Apex runs
+        // side by side and they were indistinguishable — same title, same day.
+        campaign: { name: `${page.label} · Follower Growth · ${runKey}`, owner,
                     config: { inviteUrl: page.inviteUrl, pageId: page.id, pageLabel: page.label,
                               monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE } },
       }, { startCloud: (payload) => startCloudCampaign(payload) });
@@ -3853,7 +3855,9 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       now: () => new Date().toISOString(),
       log: (m) => { try { campaignLog(`[FG-cloud] ${m}`); } catch (_) {} },
       month, owner: getOperatorEmail() || req.user || '',
-      name: `Team Follower Growth · ${month}`,
+      // This path is Ortus-only (it hardcodes ORTUS_PAGE_INVITE_URL below), so
+      // the page name is fixed rather than read off a dropdown.
+      name: `${FG_PAGES.ortus.label} · Follower Growth · ${month}`,
       inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE,
     });
     if (result.error) return res.status(502).json({ error: result.error });

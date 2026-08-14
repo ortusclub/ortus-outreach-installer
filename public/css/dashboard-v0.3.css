@@ -597,6 +597,15 @@
     color: var(--ink); padding-right: 64px;
   }
 
+  /* "2 identical runs" beside the title — a warning, so it sits at label size
+     next to a 2.13rem name rather than competing with it. */
+  body[data-dashboard='v3'] .vj-dupe {
+    display: inline-block; vertical-align: middle; margin-left: 12px;
+    font-family: var(--mono); font-size: 0.68rem; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 4px 8px; border: 1px solid var(--hairline); color: var(--gray);
+  }
+
   body[data-dashboard='v3'] .vj-hbar { grid-area: bar; position: relative; height: 3px; background: var(--hairline); border-radius: 9999px; overflow: hidden; }
   body[data-dashboard='v3'] .vj-hbar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--green); transition: width 0.4s ease; }
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-hbar > i { background: var(--blue); }
