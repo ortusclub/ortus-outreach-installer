@@ -7682,7 +7682,13 @@ function _cloudCurrentAction(d) {
 // Returns null when there is nothing to explain (everything sent).
 function _fgFinishedNote(status) {
   if (!status || !status.isFG || status.bucket !== 'done') return null;
-  const left = Math.max(0, Number(status.total || 0) - Number(status.sent || 0));
+  // Board cards arrive as statusFromItem output (totalTargets/totalProcessed);
+  // the raw board item spells the same two numbers total/sent. Reading only one
+  // pair made `left` 0 on the board, which is the other half of why this note
+  // never appeared there.
+  const total = Number(status.totalTargets ?? status.total ?? 0);
+  const sent = Number(status.totalProcessed ?? status.sent ?? 0);
+  const left = Math.max(0, total - sent);
   if (!left) return null;
   const accounts = Array.isArray(status.benchAccounts) ? status.benchAccounts : [];
   let credits = 0, login = 0, errored = 0, refill = '';
@@ -7708,7 +7714,7 @@ function _fgFinishedNote(status) {
   if (errored) bits.push(`${errored} errored`);
   // No per-account detail to stand on — say only what we actually know.
   if (!bits.length) {
-    return { icon: '•', l1: `${nf(left)} of ${nf(status.total || 0)} never sent`,
+    return { icon: '•', l1: `${nf(left)} of ${nf(total)} never sent`,
       l2: 'Reason not recorded for this run — the log has the per-account lines.' };
   }
   const l1 = credits >= Math.max(login, errored)

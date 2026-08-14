@@ -20,6 +20,22 @@ test('statusFromItem: running local item → running, no state', () => {
   assert.equal(s.state, undefined);
   assert.equal(s.paused, true);
 });
+// Regression: statusFromItem is a WHITELIST, so a field the card reads but this
+// function drops is silently always-undefined. _fgFinishedNote returns null the
+// moment `bucket` is missing, which killed the "ran out of invite credits" line
+// on every board card; the pills need benchAccounts and the chip needs dupes.
+test('statusFromItem: carries the fields the finished-FG note and dupe chip read', () => {
+  const accounts = [{ profileId: 'p1', credits: { available: 0, allowance: 30, refill: 'August 31, 2026' } }];
+  const s = statusFromItem({ where: 'cloud', bucket: 'done', isFG: true, benchAccounts: accounts, dupes: 2 });
+  assert.equal(s.bucket, 'done');
+  assert.deepEqual(s.benchAccounts, accounts);
+  assert.equal(s.dupes, 2);
+});
+test('statusFromItem: absent benchAccounts/dupes are null and 0, never undefined', () => {
+  const s = statusFromItem({ where: 'cloud', bucket: 'done' });
+  assert.equal(s.benchAccounts, null);
+  assert.equal(s.dupes, 0);
+});
 test('statusFromItem: done + queued map their states', () => {
   assert.equal(statusFromItem({ bucket: 'done' }).state, 'done');
   assert.equal(statusFromItem({ bucket: 'queued' }).state, 'queued');

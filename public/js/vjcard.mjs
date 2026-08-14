@@ -46,6 +46,13 @@ export function statusFromItem(it = {}) {
     followUp: it.followUp,
     autoChecksEnabled: it.autoChecksEnabled,
     checkIntervalMinutes: Number(it.checkIntervalMinutes) || 60,
+    // The finished-FG reason line reads all three of these. Leaving them out of
+    // this whitelist is why a done FG card on the board never explained itself:
+    // _fgFinishedNote returns null the moment `bucket` is undefined, so the
+    // "ran out of invite credits" note was dead everywhere it mattered.
+    bucket: it.bucket,
+    benchAccounts: it.benchAccounts || null,
+    dupes: Number(it.dupes) || 0,
     bad: !!it.bad,
     badLabel: it.badLabel,
     histIdx: it.histIdx,
