@@ -21025,6 +21025,19 @@ async function fgRefreshSheetPreview(force) {
   }
 }
 
+/** Load the roster once, on demand. Door 1 skips it at board load (it costs
+ *  ~80s and answers a question the sheet already answers), so anything that
+ *  actually shows the account list calls this first. */
+let _fgRosterLoading = false;
+async function fgEnsureRoster() {
+  if (_fgRosterLoading || (Array.isArray(fgtlPeople) && fgtlPeople.length)) return;
+  _fgRosterLoading = true;
+  try {
+    if (!sooData || !Object.keys(sooData).length) { try { await loadSoOStatus(); } catch (_) {} }
+    await fgtlRefreshMatched();
+  } finally { _fgRosterLoading = false; }
+}
+
 /** Paint §3 from the preview. Returns false when door 1 isn't the source, so
  *  the roster answer below still runs for door 2. */
 function fgRenderPreviewAnswer() {
@@ -21192,6 +21205,7 @@ function fgtlBindBoard() {
     if (e.target.id === 'fg-who-toggle') {
       const panel = document.getElementById('fg-who-panel');
       if (panel) { const open = panel.style.display !== 'none'; panel.style.display = open ? 'none' : ''; e.target.innerHTML = open ? 'Which accounts? &#9662;' : 'Hide accounts &#9652;'; }
+      fgEnsureRoster();   // door 1 skips the slow roster load until it's looked at
       return;
     }
     const ch = e.target.closest('[data-fgchange]'); if (ch) { (fgtlPicked[ch.dataset.fgchange] ||= {}).changing = true; fgtlRenderCart(); return; }
@@ -21742,12 +21756,18 @@ async function initFollowerGrowth() {
   fgBindListSource(); // ends in fgRenderSource() — paints both doors AND the live-status pill
   fgLoadPages().catch(() => {});
 
-  // 4b. Ensure SoO is loaded so launch-list eligibility (Company col AQ) is
-  // accurate on first render — else every account shows optimistically eligible.
-  if (!sooData || !Object.keys(sooData).length) { try { await loadSoOStatus(); } catch (_) {} }
-
-  // 5. Fetch colleagues with matched counts
-  await fgtlRefreshMatched();
+  // 4b/5. The roster (SoO + /api/fg/colleagues, ~80s on this machine because it
+  // scores every connection against the role keywords) is only what door 2
+  // needs. A pasted sheet already names its senders and §3 answers from
+  // /api/fg/sheet-preview in about a second, so that whole round trip is
+  // skipped there and loaded on demand instead — when the operator opens
+  // "Which accounts?" or switches to door 2.
+  if (fgSheetSourceUrl()) {
+    fgRefreshSheetPreview(true);
+  } else {
+    if (!sooData || !Object.keys(sooData).length) { try { await loadSoOStatus(); } catch (_) {} }
+    await fgtlRefreshMatched();
+  }
 
   if (!_fgViewReady) { _fgViewReady = true; }
 
@@ -22159,6 +22179,7 @@ function fgBindListSource() {
       fgSaveSource({ activeDoor: d.id === 'door-build' ? 'build' : 'have' });
       fgRenderSource();
       fgRefreshSheetPreview();
+      if (d.id === 'door-build') fgEnsureRoster();   // door 2 builds from the roster
     });
   });
   fgRenderSource();
