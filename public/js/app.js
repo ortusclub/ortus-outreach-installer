@@ -21033,6 +21033,7 @@ async function fgEnsureRoster() {
   if (_fgRosterLoading || (Array.isArray(fgtlPeople) && fgtlPeople.length)) return;
   _fgRosterLoading = true;
   try {
+    if (!_fgDb) fgLoadDb().then(() => { try { fgtlRenderAll(); } catch (_) {} }).catch(() => {});
     if (!sooData || !Object.keys(sooData).length) { try { await loadSoOStatus(); } catch (_) {} }
     await fgtlRefreshMatched();
   } finally { _fgRosterLoading = false; }
@@ -21735,8 +21736,21 @@ async function initFollowerGrowth() {
   // with 15k invite rows, and awaiting it left the whole screen blank until it
   // came back. Budgets only affect the per-account invite numbers, so let them
   // land late and re-render then.
-  fgtlSetLoading(true);
-  fgLoadDb().then(() => { try { fgtlRenderAll(); } catch (_) { /* */ } }).catch(() => {});
+  // Measured on this machine: 95s, then a 502. It only feeds the per-account
+  // invite budgets in the roster panel, so door 1 (the sheet answers §3 by
+  // itself) skips it and loads it with the roster on demand.
+  //
+  // The matching fgtlSetLoading(false) MUST be in .finally: fgLoadDb() never
+  // rejects (it catches internally), so a .catch()-only counterpart never ran
+  // and the "working it out…" spinner stayed up forever over a number that had
+  // long since arrived.
+  if (!fgSheetSourceUrl()) {
+    fgtlSetLoading(true);
+    fgLoadDb()
+      .then(() => { try { fgtlRenderAll(); } catch (_) { /* */ } })
+      .catch(() => {})
+      .finally(() => fgtlSetLoading(false));
+  }
 
   // 2. Wait for allProfilesData to be populated (bounded retry)
   let tries = 0;
