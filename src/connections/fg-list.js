@@ -50,6 +50,11 @@ export function emailsInCell(cell) {
   return [...new Set(found.map((e) => e.toLowerCase()))];
 }
 
+// LinkedIn's monthly "Invite to follow" pool per account. KEEP IN SYNC with
+// FG_DEFAULT_MONTHLY_ALLOWANCE in fg-sync.js — duplicated rather than imported
+// so this module stays pure (no I/O) and unit-testable.
+const FG_MONTHLY_CREDITS = 30;
+
 const norm = (v) => String(v == null ? '' : v).trim();
 const lc = (v) => norm(v).toLowerCase();
 
@@ -224,21 +229,33 @@ export function parseListRows(rows, { emailToProfileId = {}, defaultStatus = 'Qu
   const byProfile = new Map();        // profileId → perAccount entry
   const assigned = new Map();         // email → rows already routed to it this parse
 
-  // Choose which of a person's connected accounts sends their invite. Least-
-  // loaded-so-far, so a list where everyone shares the same two accounts splits
-  // evenly instead of burning the first account's monthly allowance and idling
-  // the rest. Ties break on the cell's own order, so the choice is deterministic.
-  // ponytail: balances within THIS run only — it cannot see invites already
-  // spent earlier in the month. Plumb remaining credits down here if runs start
-  // colliding; the engine still enforces the per-account cap either way.
+  // Choose which of a person's connected accounts sends their invite. FILL an
+  // account to its monthly credit cap before opening the next one — the exact
+  // opposite of spreading, and for a concrete reason: Follower Growth is a BATCH
+  // mode. One "Invite to follow" modal session per account invites everyone
+  // routed to it at once. Spreading 111 rows evenly across the 108 accounts they
+  // happen to share put ONE person on 107 of them, so the run opened 108 browser
+  // sessions to send one invite each — hours of work for what packs into four
+  // modals. Ties break on the cell's own order, so the choice stays deterministic.
   const pickConnected = (candidates) => {
     let best = '';
-    let bestLoad = Infinity;
+    let bestLoad = -1;
     for (const email of candidates) {
       const load = assigned.get(email) || 0;
-      if (load < bestLoad) { best = email; bestLoad = load; }
+      if (load >= FG_MONTHLY_CREDITS) continue;      // full — leave it for next month
+      if (load > bestLoad) { best = email; bestLoad = load; }
     }
-    return best;
+    if (best) return best;
+    // Every candidate is already at the cap in THIS run. Fall back to the least
+    // loaded rather than dropping the row: the engine enforces the real credit
+    // count from the modal and stops there anyway.
+    let least = '';
+    let leastLoad = Infinity;
+    for (const email of candidates) {
+      const load = assigned.get(email) || 0;
+      if (load < leastLoad) { least = email; leastLoad = load; }
+    }
+    return least;
   };
 
   for (let r = 1; r < grid.length; r++) {
@@ -293,7 +310,10 @@ export function parseListRows(rows, { emailToProfileId = {}, defaultStatus = 'Qu
       skipped.push({ rowNumber, reason: `"${accountEmail}" cannot invite to this page — it is not one of this page's accounts`, url, accountEmail });
       continue;
     }
-    if (fromConnected) assigned.set(accountEmail, (assigned.get(accountEmail) || 0) + 1);
+    // Count EVERY assignment, hand-typed ones included — the packing above caps
+    // an account at its 30 credits, and a row that named the account explicitly
+    // spends one of those credits just the same.
+    assigned.set(accountEmail, (assigned.get(accountEmail) || 0) + 1);
 
     const memberId = norm(row[idx.memberId]);
     const identity = inviteIdentity({ memberId, url });

@@ -172,7 +172,11 @@ test('Connected Accounts: an explicit Account Email still wins', () => {
   assert.equal(leads[0].routeAccount, 'pid_grace');
 });
 
-test('Connected Accounts: spreads rows across accounts instead of hammering the first', () => {
+// Follower Growth is a BATCH mode: one invite-modal session per account sends
+// to everyone routed to it. So rows must PACK onto as few accounts as possible,
+// not spread evenly — spreading put one person on 107 accounts of a real 111-row
+// sheet, which made the run open 107 browser sessions to send one invite each.
+test('Connected Accounts: fills one account before opening the next', () => {
   const both = 'Connections, ada@ortus.example, grace@ortus.example';
   const rows = [
     ['First Name', 'LinkedIn URL', 'Connected Accounts'],
@@ -185,8 +189,20 @@ test('Connected Accounts: spreads rows across accounts instead of hammering the 
   assert.equal(leads.length, 4);
   const perAccount = {};
   for (const l of leads) perAccount[l.routeAccount] = (perAccount[l.routeAccount] || 0) + 1;
-  // Even split — not 4/0.
-  assert.deepEqual(perAccount, { pid_ada: 2, pid_grace: 2 });
+  // All four on ONE account — one modal session, not four.
+  assert.deepEqual(perAccount, { pid_ada: 4 });
+});
+
+test('Connected Accounts: a full account overflows to the next one at 30', () => {
+  const both = 'Connections, ada@ortus.example, grace@ortus.example';
+  const rows = [['First Name', 'LinkedIn URL', 'Connected Accounts']];
+  for (let i = 0; i < 34; i++) rows.push([`P${i}`, `https://li/p${i}`, both]);
+  const { leads } = parseListRows(rows, { emailToProfileId: EMAIL_MAP });
+  assert.equal(leads.length, 34);
+  const perAccount = {};
+  for (const l of leads) perAccount[l.routeAccount] = (perAccount[l.routeAccount] || 0) + 1;
+  // 30 is LinkedIn's monthly invite-to-follow pool per account.
+  assert.deepEqual(perAccount, { pid_ada: 30, pid_grace: 4 });
 });
 
 test('Connected Accounts: no listed account is known -> skipped, and the reason says which', () => {
