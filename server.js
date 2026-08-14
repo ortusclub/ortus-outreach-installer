@@ -3620,12 +3620,42 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       // remove. The legacy tab path is exempt: it writes through the
       // container-bound FG Apps Script against the central spreadsheet, which
       // already has these columns and isn't touched by prepareSheet.
-      if (src.kind === 'sheet') {
+      // …but only when they are actually missing. prepareSheet is an Apps
+      // Script POST, and every such POST queues in ONE global lane shared with
+      // every running campaign's row writes (src/webapp-lane.js). Measured
+      // 2026-08-14 with 29 campaigns live: a launch sat in that queue for 11+
+      // minutes with the operator's Run button frozen on "Dispatching…", to add
+      // four columns the sheet already had. The header is already in `rows` from
+      // the read above, so this check costs nothing and skips the lane entirely
+      // on every run after the first.
+      const FG_LEDGER_COLUMNS = ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID'];
+      const header = (rows[0] || []).map((c) => String(c == null ? '' : c).trim());
+      const missing = FG_LEDGER_COLUMNS.filter((c) => !header.includes(c));
+
+      if (src.kind === 'sheet' && !missing.length) {
+        campaignLog(`[FG-cloud] ✓ ledger columns already present on ${src.sheetUrl} — skipping prepareSheet`);
+      } else if (src.kind === 'sheet') {
+        campaignLog(`[FG-cloud] preparing ${src.sheetUrl} — missing: ${missing.join(', ')}`);
         const { prepareSheet } = await import('./src/sheets-writer.js');
-        const prep = await prepareSheet(src.sheetUrl, 'follower_growth').catch((e) => {
-          campaignLog(`[FG-cloud] ⚠ prepareSheet failed for ${src.sheetUrl}: ${e.message}`);
-          return { ok: false };
-        });
+        // Bounded: the lane can be minutes deep, and this sits on a request the
+        // operator is watching. Timing out here reports a stuck bridge instead
+        // of hanging the button forever.
+        const PREPARE_TIMEOUT_MS = 90_000;
+        const TIMED_OUT = Symbol('prepare-timeout');
+        const prep = await Promise.race([
+          prepareSheet(src.sheetUrl, 'follower_growth').catch((e) => {
+            campaignLog(`[FG-cloud] ⚠ prepareSheet failed for ${src.sheetUrl}: ${e.message}`);
+            return { ok: false };
+          }),
+          new Promise((r) => setTimeout(() => r(TIMED_OUT), PREPARE_TIMEOUT_MS)),
+        ]).then((v) => (v === TIMED_OUT
+          ? (campaignLog(`[FG-cloud] ⚠ prepareSheet timed out after ${PREPARE_TIMEOUT_MS / 1000}s — the Apps Script lane is congested`), { ok: false, timedOut: true })
+          : v));
+        if (prep.timedOut) {
+          return res.status(504).json({
+            error: `Timed out adding the tracking columns to "${src.sheetUrl}" — the Google Apps Script bridge is busy (it is shared with every running campaign). Add these columns to the tab by hand and run again: ${missing.join(', ')}. Nothing was launched.`,
+          });
+        }
         if (!prep.ok) {
           // Unlike a connection campaign (run locally, watched, with SoO as a
           // fallback record), an FG sheet run is fired at a remote VM and this
