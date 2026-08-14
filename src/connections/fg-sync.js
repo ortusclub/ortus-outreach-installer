@@ -112,7 +112,16 @@ export async function getFgState({ maxAgeMs = FG_STATE_TTL_MS } = {}) {
   if (_fgState.data && Date.now() - _fgState.at < maxAgeMs) return _fgState.data;
   if (_fgStateInFlight) return _fgStateInFlight;
   _fgStateInFlight = _readFgState().finally(() => { _fgStateInFlight = null; });
-  return _fgStateInFlight;
+  try {
+    return await _fgStateInFlight;
+  } catch (err) {
+    // The lock can be held by something outside this process (the VM's ledger
+    // writes, another operator's app). Stale rows beat no rows for every reader
+    // here — they show budgets and skip already-invited people, and a person
+    // missing from a stale skip-list is caught again by fgQueue's own dedupe.
+    if (_fgState.data) return _fgState.data;
+    throw err;
+  }
 }
 
 async function _readFgState() {
