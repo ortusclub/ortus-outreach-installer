@@ -20988,11 +20988,98 @@ function fgtlSetLoading(on) {
   if (n) n.style.opacity = _fgtlLoading ? '.35' : '';
 }
 
+// ── §3 when the list comes from the operator's own sheet ──────────────────
+// The sheet names the sender on every row, so §3 is not a picker there: it
+// reports who will send and how many of the sheet's people that covers. The
+// numbers come from /api/fg/sheet-preview, which runs the SAME parse the launch
+// runs (parseListRows), so the headline can never promise rows the run drops.
+let _fgPreview = null;
+let _fgPreviewKey = '';
+let _fgPreviewSeq = 0;
+
+/** True when door 1 is armed — the only case the preview applies to. */
+function fgSheetSourceUrl() {
+  try { return (fgActivePayload(fgLoadSource()).sheetUrl || '').trim(); }
+  catch (_) { return ''; }
+}
+
+async function fgRefreshSheetPreview(force) {
+  const sheetUrl = fgSheetSourceUrl();
+  const pageId = fgSelectedPageId();
+  if (!sheetUrl) { _fgPreview = null; _fgPreviewKey = ''; fgSyncRunButton(); return; }
+  const key = `${sheetUrl}|${pageId}`;
+  if (!force && key === _fgPreviewKey && _fgPreview && !_fgPreview.error) return;
+  _fgPreviewKey = key;
+  const seq = ++_fgPreviewSeq;
+  fgtlSetLoading(true);
+  try {
+    const r = await fetch(`/api/fg/sheet-preview?sheetUrl=${encodeURIComponent(sheetUrl)}&pageId=${encodeURIComponent(pageId)}`);
+    const d = await r.json();
+    if (seq !== _fgPreviewSeq) return;                 // a newer request won
+    _fgPreview = d && d.error ? { error: d.error } : d;
+  } catch (e) {
+    if (seq === _fgPreviewSeq) _fgPreview = { error: String((e && e.message) || e) };
+  } finally {
+    fgtlSetLoading(false);
+    if (seq === _fgPreviewSeq) { try { fgtlRenderAnswer(); } catch (_) {} fgSyncRunButton(); }
+  }
+}
+
+/** Paint §3 from the preview. Returns false when door 1 isn't the source, so
+ *  the roster answer below still runs for door 2. */
+function fgRenderPreviewAnswer() {
+  if (!fgSheetSourceUrl()) return false;
+  const n = document.getElementById('fg-answer-n');
+  const sub = document.getElementById('fg-answer-sub');
+  if (!n || !sub) return false;
+  const p = _fgPreview;
+  if (!p) { n.textContent = '—'; sub.textContent = 'Reading your sheet…'; return true; }
+  if (p.error) { n.textContent = '—'; sub.innerHTML = `Couldn’t read that sheet — ${escHtml(p.error)}`; return true; }
+
+  const company = p.page && p.page.company ? p.page.company : (p.page && p.page.label) || 'this page';
+  const uncovered = Math.max(0, (p.rowsTotal || 0) - (p.rowsCovered || 0));
+  const pct = p.rowsTotal ? Math.round((p.rowsCovered / p.rowsTotal) * 100) : 0;
+  n.textContent = (p.rowsCovered || 0).toLocaleString();
+  const sitting = (p.wrongCompany || 0) + (p.noProfile || 0);
+  const bits = [];
+  if (p.wrongCompany) bits.push(`<b>${p.wrongCompany}</b> belong to another company`);
+  if (p.noProfile) bits.push(`<b>${p.noProfile}</b> have no GoLogin profile here`);
+  sub.innerHTML =
+    `<div class="rv-bar"><i style="width:${pct}%"></i></div>`
+    + `Sent by <b>${p.willSend || 0}</b> of your ${escHtml(company)} accounts.`
+    + (sitting ? ` The other <b>${sitting}</b> the sheet names sit this out — ${bits.join(', ')}.` : '')
+    + (uncovered
+      ? `<br><span class="rv-sub-out"><b>${uncovered} row${uncovered === 1 ? '' : 's'}</b> have no ${escHtml(company)} account among their connections.`
+        + ` They’ll be stamped <code>FG Note: no connected account can invite to this page</code> and left for a later run.</span>`
+      : '');
+  const lab = document.querySelector('#fg-answer-n + .rv-big-lab');
+  if (lab) lab.textContent = `of ${(p.rowsTotal || 0).toLocaleString()} people in your sheet will be invited`;
+  return true;
+}
+
+/** The run button carries the count, so a shortfall can't be clicked past. */
+function fgSyncRunButton() {
+  const btn = document.getElementById('fgap-run');
+  if (!btn || btn.dataset.busy === '1') return;
+  const p = fgSheetSourceUrl() ? _fgPreview : null;
+  const n = p && !p.error ? p.rowsCovered : null;
+  btn.innerHTML = n != null ? `&#9654; Run it now &#183; ${n.toLocaleString()}` : '&#9654; Run it now';
+  btn.disabled = n === 0;
+  btn.title = n === 0
+    ? 'None of your sheet’s rows have an account that can invite to this page.'
+    : 'Fire the list source chosen in step 2 to the cloud VM now, outside the schedule';
+}
+
 // The headline is what this run will actually SEND — not the size of the pool.
 // The two differ a lot: each LinkedIn account gets ~30 follow invites a month, so
 // 66 accounts cap the run at ~2k however many connections match. Saying "people
 // match" over the capped number was a lie; both numbers are shown instead.
 function fgtlRenderAnswer() {
+  // Door 1 (the operator's own sheet) answers from the sheet, not the roster —
+  // see fgRenderPreviewAnswer.
+  if (fgRenderPreviewAnswer()) return;
+  const backLab = document.querySelector('#fg-answer-n + .rv-big-lab');
+  if (backLab) backLab.textContent = 'invites this run';   // door 1 rewrites it
   const emails = Object.keys(fgtlPicked);
   let invites = 0;
   let matches = 0;
@@ -21483,7 +21570,10 @@ async function fgapRunNow() {
   const byId = {};
   for (const p of [...fgtlAllPairedPairs(), ...fgtlPairs()]) { if (p && p.profileId) byId[p.profileId] = p; }
   const pairs = Object.values(byId);
-  if (!pairs.length) {
+  // A pasted sheet names its own senders on every row, and the server resolves
+  // them against the FULL GoLogin profile list — so an empty roster is fine
+  // there. Only the build-a-list door needs the roster loaded first.
+  if (!pairs.length && !active.sheetUrl) {
     showCampaignToast('Open the FG board first so the team roster loads, then Run it now.', 4500);
     return;
   }
@@ -21494,7 +21584,7 @@ async function fgapRunNow() {
   // what fires can never disagree. The true count comes back as r.leadCount.
   const what = active.sheetUrl ? `the list in your sheet\n${active.sheetUrl}` : `tab “${active.tab}”`;
   if (!confirm(`Invite everyone in ${what} to follow ${pageLabel}?\nThis dispatches to the cloud VM immediately.`)) return;
-  if (btn) { btn.disabled = true; btn.textContent = 'Dispatching…'; }
+  if (btn) { btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = 'Dispatching…'; }
   try {
     // Building targets + dispatch can take up to a minute; keep the operator informed.
     showCampaignToast(`Dispatching to the cloud — this can take a minute…`, 6000);
@@ -21518,7 +21608,8 @@ async function fgapRunNow() {
   } catch (e) {
     showCampaignToast('Couldn’t run — ' + String(e?.message || e), 4000);
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '&#9654; Run it now'; }
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+    fgSyncRunButton();   // restores the label WITH its count
   }
 }
 
@@ -22031,6 +22122,7 @@ function fgBindListSource() {
       // roster and the headline count are page-specific. Without this the board
       // keeps showing the previous page's accounts and its invite total.
       try { fgtlRenderAll(); } catch (_) {}
+      fgRefreshSheetPreview();   // door 1: who can send is page-specific too
     });
   }
   const url = document.getElementById('fg-sheet-url');
@@ -22042,6 +22134,7 @@ function fgBindListSource() {
     const persist = () => {
       fgSaveSource({ sheetUrl: url.value.trim(), activeDoor: 'have' });
       fgRenderSource();
+      fgRefreshSheetPreview();
     };
     url.addEventListener('change', persist);
     url.addEventListener('blur', persist);
@@ -22065,9 +22158,11 @@ function fgBindListSource() {
       if (e.target.closest('.sk-body')) return; // don't hijack clicks on the input/buttons inside
       fgSaveSource({ activeDoor: d.id === 'door-build' ? 'build' : 'have' });
       fgRenderSource();
+      fgRefreshSheetPreview();
     });
   });
   fgRenderSource();
+  fgRefreshSheetPreview();
 }
 
 /** Stream the campaign log into the Live Status section's log box. */

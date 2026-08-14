@@ -102,7 +102,7 @@ import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredi
 import { buildMasterRows, invitedIndexFromFgInvites, newRowsOnly } from './src/connections/fg-master.js';
 import { readSeedDir, mergeFunnelSeeds } from './src/connections/fg-funnel-seed.js';
 import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
-import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows, fgLedgerTracking, listRunShouldRetire } from './src/connections/fg-list.js';
+import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows, fgLedgerTracking, listRunShouldRetire, parseListRows, emailsInCell } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows, resolveListSource } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
 import { pageById, FG_PAGE_LIST, sendersForPage } from './src/fg-pages.js';
@@ -3376,6 +3376,72 @@ async function fgAllowedSenders(page) {
   return senders;
 }
 
+// Every GoLogin login on this machine, keyed by the account email. GoLogin
+// profiles are NAMED after the email they log in as (the client pairs the same
+// way in fgtlAutoPairName), so this is the whole account map — not just the
+// accounts a roles search happened to surface. A sheet names its own senders;
+// they must resolve even when the launch cart is empty.
+const FG_PROFILES_TTL_MS = 5 * 60 * 1000;
+let _fgProfileMap = { map: null, at: 0 };
+async function fgProfileIdsByEmail() {
+  if (_fgProfileMap.map && Date.now() - _fgProfileMap.at < FG_PROFILES_TTL_MS) return _fgProfileMap.map;
+  const map = {};
+  const profiles = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+  for (const p of profiles || []) {
+    const name = String(p?.name || '').trim().toLowerCase();
+    if (name.includes('@')) map[name] = p.id;
+  }
+  _fgProfileMap = { map, at: Date.now() };
+  return map;
+}
+
+// Every email a sheet names as a sender — the Account Email column and the
+// Connected Accounts cells both count.
+function fgEmailsNamedByRows(rows) {
+  const out = new Set();
+  for (const row of Array.isArray(rows) ? rows.slice(1) : []) {
+    for (const cell of row || []) for (const e of emailsInCell(cell)) out.add(e);
+  }
+  return out;
+}
+
+// What this sheet + page would actually do, before anything is dispatched. The
+// answer comes from the SAME parse the launch runs (parseListRows), so §3 can
+// never promise a number the run won't deliver.
+app.get('/api/fg/sheet-preview', async (req, res) => {
+  const sheetUrl = String(req.query.sheetUrl || '').trim();
+  if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl is required' });
+  const page = pageById(req.query.pageId);
+  let rows;
+  try { rows = gridFromSheetRows(await fetchSheet(sheetUrl)); }
+  catch (e) { return res.status(502).json({ error: `Could not read that sheet: ${e.message}` }); }
+  if (!rows || rows.length < 2) return res.status(400).json({ error: 'That tab has no rows under its header — check the link’s #gid.' });
+
+  const [emailToProfileId, allowedSenders] = await Promise.all([
+    fgProfileIdsByEmail().catch(() => ({})),
+    fgAllowedSenders(page),
+  ]);
+  const { leads, skipped } = parseListRows(rows, { emailToProfileId, allowedSenders });
+
+  const named = fgEmailsNamedByRows(rows);
+  const mayInvite = (e) => !allowedSenders?.size || allowedSenders.has(e);
+  const willSend = [...named].filter((e) => emailToProfileId[e] && mayInvite(e));
+  const wrongCompany = [...named].filter((e) => !mayInvite(e));
+  const noProfile = [...named].filter((e) => mayInvite(e) && !emailToProfileId[e]);
+
+  res.json({
+    page: { id: page.id, label: page.label, company: page.sooCompany || '' },
+    rowsTotal: leads.length + skipped.length,
+    rowsCovered: leads.length,
+    accountsNamed: named.size,
+    willSend: willSend.length,
+    wrongCompany: wrongCompany.length,
+    noProfile: noProfile.length,
+    senders: willSend.sort(),
+    uncovered: skipped.slice(0, 50).map((s) => ({ row: s.rowNumber, url: s.url, reason: s.reason })),
+  });
+});
+
 // The FG Google Sheet's own URL — so the wizard can deep-link "Open the FG Sheet".
 // Asks the Apps Script (getSheetUrl); falls back to a local FG_SHEET_URL env var
 // when the deployed script predates that action.
@@ -3572,7 +3638,10 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
   if (_fgTeam.running) return res.status(409).json({ error: 'A team launch is already running.' });
   const b = req.body || {};
   const pairs = Array.isArray(b.pairs) ? b.pairs.filter((p) => p && p.operator && p.account && p.profileId) : [];
-  if (!pairs.length) return res.status(400).json({ error: 'At least one paired account is required.' });
+  // A sheet run names its own senders row by row, so an empty cart is fine
+  // there — the account map is resolved from GoLogin below. Every other path
+  // builds its list per account and still needs at least one.
+  if (!pairs.length && b.source !== 'list') return res.status(400).json({ error: 'At least one paired account is required.' });
 
   // A list source is required on EVERY path, cloud or local. This refusal sits
   // ABOVE the target branch on purpose: the local branch below still contains
@@ -3683,7 +3752,19 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
         campaignLog(`[FG-cloud] ✓ prepareSheet ready on ${src.sheetUrl}${prep.added?.length ? ` — added: ${prep.added.join(', ')}` : ''}`);
       }
 
+      // The SHEET names the senders, so the account map comes from GoLogin —
+      // every login on this machine — not from the client's roster search. The
+      // cart's pairs are folded in on top (they carry the operator label) but
+      // are no longer the gate: a sheet naming an account nobody searched for
+      // used to route to nothing, which is a run that dispatches zero leads.
       const accountEmails = Object.fromEntries(pairs.map((p) => [p.profileId, p.account]));
+      try {
+        for (const [email, pid] of Object.entries(await fgProfileIdsByEmail())) {
+          if (!accountEmails[pid]) accountEmails[pid] = email;
+        }
+      } catch (e) {
+        campaignLog(`[FG-cloud] ⚠ could not list GoLogin profiles (${e.message}) — routing from the launch cart only`);
+      }
       const allowedSenders = await fgAllowedSenders(page);
       if (allowedSenders?.size) {
         campaignLog(`[FG-cloud] ${allowedSenders.size} account(s) may invite to ${page.label} (SoO Company "${page.sooCompany}")`);
