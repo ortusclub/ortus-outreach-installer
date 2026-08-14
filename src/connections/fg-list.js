@@ -118,7 +118,11 @@ export function ledgerUpdatesFromLeads(leads = []) {
     if (!url) continue;
     const status = String((l && l.status) || '');
     const sent = (l && l.stage === 'Invited') || status === 'sent';
-    if (sent) out.push({ url, status: 'Invited', invitedAt: fmtInvitedAt(l.sentAt), note: '', memberId: extractMemberIdFromUrl(url) });
+    // `account` is the GoLogin profile id the engine routed this lead to. The
+    // caller maps it to the account's email (it holds the run's perAccount
+    // table) — "which of my accounts sent this" is the question a row raises,
+    // and a 24-hex id does not answer it.
+    if (sent) out.push({ url, status: 'Invited', invitedAt: fmtInvitedAt(l.sentAt), note: '', memberId: extractMemberIdFromUrl(url), account: String((l && l.account) || '') });
     else if (status === 'skipped') out.push({ url, status: 'Skipped', note: String((l && l.error) || 'skipped') });
     else if (status === 'error' || status === 'failed') out.push({ url, status: 'Failed', note: String((l && l.error) || 'error') });
     // pending / other → no update
@@ -374,8 +378,8 @@ export function gridFromSheetRows(rows) {
  * from the JSON body and leave whatever a previous run wrote in the cell —
  * which reads as "this row was never touched" when in fact it was.
  *
- * @param {{status?:string, invitedAt?:string, note?:string, memberId?:string}} u
- * @returns {{fgStatus:string, fgInvitedAt:string, fgNote:string, fgMemberId:string}}
+ * @param {{status?:string, invitedAt?:string, note?:string, memberId?:string, invitedBy?:string}} u
+ * @returns {{fgStatus:string, fgInvitedAt:string, fgNote:string, fgMemberId:string, fgInvitedBy:string}}
  */
 export function fgLedgerTracking(u) {
   const s = (v) => (v === null || v === undefined ? '' : String(v));
@@ -384,6 +388,7 @@ export function fgLedgerTracking(u) {
     fgInvitedAt: s((u || {}).invitedAt),
     fgNote:      s((u || {}).note),
     fgMemberId:  s((u || {}).memberId),
+    fgInvitedBy: s((u || {}).invitedBy),
   };
 }
 

@@ -44,8 +44,8 @@ test('the FG columns are provisioned for the follower_growth mode only', () => {
   // Spread the vm-realm array into a plain one first — Node's strict
   // deepEqual treats an Array from a different vm context as a different
   // realm and refuses reference-equality on its elements otherwise.
-  assert.deepEqual([...MODE_COLUMNS_V2.follower_growth], ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID']);
-  for (const col of ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID']) {
+  assert.deepEqual([...MODE_COLUMNS_V2.follower_growth], ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID', 'FG Invited By']);
+  for (const col of ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID', 'FG Invited By']) {
     assert.ok(ALL_MODE_COLUMNS_V2.includes(col), `${col} must be in ALL_MODE_COLUMNS_V2`);
   }
 });

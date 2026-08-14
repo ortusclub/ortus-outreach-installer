@@ -3162,7 +3162,14 @@ async function reconcileListRun(record) {
       // deployment — so one POST per row meant a 700-row run re-issuing 700
       // locked POSTs every 30 seconds. updateSheetRows chunks internally.
       const { updateSheetRows } = await import('./src/sheets-writer.js');
-      const stamp = await updateSheetRows(record.sheetUrl, updates.map((u) => ({ linkedinUrl: u.url, ...fgLedgerTracking(u) })), '');
+      // profileId → account email, from the plan stored at dispatch. The engine
+      // reports the routed profile id; the sheet wants the login it belongs to.
+      const acctEmail = {};
+      for (const a of record.perAccount || []) { if (a && a.profileId) acctEmail[String(a.profileId)] = a.account || ''; }
+      const stamp = await updateSheetRows(record.sheetUrl, updates.map((u) => ({
+        linkedinUrl: u.url,
+        ...fgLedgerTracking({ ...u, invitedBy: acctEmail[u.account] || '' }),
+      })), '');
       sheetStampOk = stamp.ok;
       sheetStampTotal = stamp.total;
       try { campaignLog(`[FG-cloud] list ledger → operator sheet: stamped ${sheetStampOk}/${sheetStampTotal} row(s)`); } catch (_) {}
@@ -3712,7 +3719,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       // four columns the sheet already had. The header is already in `rows` from
       // the read above, so this check costs nothing and skips the lane entirely
       // on every run after the first.
-      const FG_LEDGER_COLUMNS = ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID'];
+      const FG_LEDGER_COLUMNS = ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID', 'FG Invited By'];
       const header = (rows[0] || []).map((c) => String(c == null ? '' : c).trim());
       const missing = FG_LEDGER_COLUMNS.filter((c) => !header.includes(c));
 

@@ -115,7 +115,7 @@ var MODE_COLUMNS_V2 = {
                           'DM Status'],
   // Follower Growth: the four ledger columns stamped back into the operator's
   // own invite-list sheet.
-  follower_growth: ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID']
+  follower_growth: ['FG Status', 'FG Invited At', 'FG Note', 'FG Member ID', 'FG Invited By']
 };
 
 // Every per-mode column across every mode — used to compute the "hide
@@ -128,7 +128,7 @@ var ALL_MODE_COLUMNS_V2 = [
   'Connection Request Status', 'DM Status', 'OP Status',
   'InM Status', 'Intro Status', 'Connection Accepted Status',
   'Open Profile', 'Introduction Status',
-  'FG Status', 'FG Invited At', 'FG Note', 'FG Member ID'
+  'FG Status', 'FG Invited At', 'FG Note', 'FG Member ID', 'FG Invited By'
 ];
 
 // Column widths applied on every prepareSheet call. Universal map: any
@@ -359,7 +359,10 @@ var FIELD_MAP = {
   fgStatus:        'FG Status',
   fgInvitedAt:     'FG Invited At',
   fgNote:          'FG Note',
-  fgMemberId:      'FG Member ID'
+  fgMemberId:      'FG Member ID',
+  // Which of the operator's LinkedIn logins actually sent that invite. A run
+  // spreads across several accounts, so the row cannot be read without it.
+  fgInvitedBy:     'FG Invited By'
 };
 
 // Header aliases — a sheet may carry an older/variant header for the same

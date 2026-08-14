@@ -23,7 +23,9 @@ test('ledgerUpdatesFromLeads: only actioned leads produce updates', () => {
     { leadUrl: '', status: 'sent' },                                       // no url → dropped
   ]);
   assert.equal(out.length, 3);
-  assert.deepEqual(out[0], { url: 'https://www.linkedin.com/in/haque16', status: 'Invited', invitedAt: '2026-07-24 09:20 UTC', note: '', memberId: '' });
+  // `account` is the routed GoLogin profile id — '' when the engine did not
+  // report one; server.js maps it to the account email for FG Invited By.
+  assert.deepEqual(out[0], { url: 'https://www.linkedin.com/in/haque16', status: 'Invited', invitedAt: '2026-07-24 09:20 UTC', note: '', memberId: '', account: '' });
   assert.deepEqual(out[1], { url: 'https://www.linkedin.com/in/x', status: 'Skipped', note: 'already connected' });
   assert.deepEqual(out[2], { url: 'https://www.linkedin.com/in/z', status: 'Failed', note: 'invite failed' });
 });

@@ -19,6 +19,18 @@ test('an invited lead translates to all four FIELD_MAP keys', () => {
   assert.equal(typeof t.fgMemberId, 'string');
 });
 
+test('an invited lead carries the routed account through to FG Invited By', () => {
+  // The engine reports the GoLogin PROFILE ID it routed to; server.js maps it to
+  // that account's email from the run's stored plan. Both hops must survive, or
+  // the row says a person was invited without saying by whom.
+  const [u] = ledgerUpdatesFromLeads([
+    { leadUrl: 'https://www.linkedin.com/in/ada', stage: 'Invited', account: '6985911fbc94935db26641cf' },
+  ]);
+  assert.equal(u.account, '6985911fbc94935db26641cf');
+  const t = fgLedgerTracking({ ...u, invitedBy: 'grace@ortus.example' });
+  assert.equal(t.fgInvitedBy, 'grace@ortus.example');
+});
+
 test('a skipped lead carries its reason into the Note column', () => {
   const [u] = ledgerUpdatesFromLeads([
     { leadUrl: 'https://www.linkedin.com/in/bob', status: 'skipped', error: 'already follows' },
@@ -44,9 +56,12 @@ test('missing optional fields become empty strings, never undefined', () => {
   assert.equal(t.fgMemberId, '');
 });
 
-test('the keys are exactly the four FG FIELD_MAP keys and nothing else', () => {
+test('the keys are exactly the FG FIELD_MAP keys and nothing else', () => {
+  // Every key here must exist in FIELD_MAP in google-apps-script.js. A key the
+  // deployed script does not know is dropped silently, so this list and that
+  // map are one change, never two.
   const t = fgLedgerTracking({ url: 'https://www.linkedin.com/in/dee', status: 'Invited' });
-  assert.deepEqual(Object.keys(t).sort(), ['fgInvitedAt', 'fgMemberId', 'fgNote', 'fgStatus']);
+  assert.deepEqual(Object.keys(t).sort(), ['fgInvitedAt', 'fgInvitedBy', 'fgMemberId', 'fgNote', 'fgStatus']);
 });
 
 // listRunShouldRetire: the terminal-retire decision. updateSheetRow never
