@@ -20905,8 +20905,12 @@ function fgtlRenderCart() {
   // Setting display straight from the picker state overrode that mark on a cold
   // load — this render runs before the poll re-attaches to the cloud run — and
   // the FG screen's own card came back as a second card next to the shared one.
+  // A cloud run owns the card — including a sheet run, whose cart is empty by
+  // definition (the sheet names the accounts, nobody picks them here). Keying
+  // the card off the cart was the second reason the FG screen went blank
+  // mid-run. With no run on screen, the cart still decides.
   const card = document.getElementById('fgtl-card');
-  if (card) card.style.display = (card.dataset.fgHidden || _fgtlCloudSeen) ? 'none' : (emails.length ? '' : 'none');
+  if (card) card.style.display = (_fgtlCloudId || _fgtlCloudSeen) ? '' : (emails.length ? '' : 'none');
   const clr = document.getElementById('fgtl-clear');
   if (!emails.length) { el.innerHTML = '<div class="empty">Add colleagues from the left.<br>You will see their paired account and how many invites they can send.</div>'; const foot = document.getElementById('fgtl-foot'); if (foot) foot.style.display = 'none'; if (clr) clr.style.display = 'none'; fgapQueuePublish(); return; }
   if (clr) clr.style.display = '';
@@ -21696,13 +21700,22 @@ function fgSyncLiveSurfaces() {
   // Once this screen has shown a cloud run, it stays on the shared card.
   if (_fgtlCloudId) _fgtlCloudSeen = true;
   const cloud = !!_fgtlCloudId || _fgtlCloudSeen;
-  for (const id of ['fgw-log', 'fgtl-acctboard', 'fgtl-card']) {
+  // fgtl-card is NOT in this list. v2.160.169 hid it on the reasoning that "the
+  // shared campaign card already shows it properly" — true on the dashboard,
+  // where that card is rendered. The FG workspace renders no shared card, so
+  // hiding this one left the FG screen with no live surface at all during a
+  // cloud run: the run was visible on the dashboard and invisible here.
+  // The black log box and the raw-GoLogin-id account board stay hidden — those
+  // really are the same thing in a worse shape.
+  for (const id of ['fgw-log', 'fgtl-acctboard']) {
     const el = document.getElementById(id);
     if (!el) continue;
     if (cloud) el.dataset.fgHidden = '1'; else delete el.dataset.fgHidden;
     el.style.display = cloud ? 'none' : '';
     if (id === 'fgtl-acctboard' && !cloud) el.style.display = el.hidden ? 'none' : '';
   }
+  const card = document.getElementById('fgtl-card');
+  if (card) { delete card.dataset.fgHidden; if (cloud) card.style.display = ''; }
 }
 
 function fgapShowCloudLaunchCard(cloudId) {
