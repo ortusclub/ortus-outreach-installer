@@ -3162,10 +3162,16 @@ async function reconcileListRun(record) {
       // deployment — so one POST per row meant a 700-row run re-issuing 700
       // locked POSTs every 30 seconds. updateSheetRows chunks internally.
       const { updateSheetRows } = await import('./src/sheets-writer.js');
-      // profileId → account email, from the plan stored at dispatch. The engine
-      // reports the routed profile id; the sheet wants the login it belongs to.
+      // Account id → email. The CAMPAIGN's own config.accountEmails is the
+      // authoritative map: the engine re-routes leads across accounts as it
+      // runs, so the ids on its leads are not the ids in the plan we stored at
+      // dispatch. Measured on a live run: 0 of 50 lead account ids appeared in
+      // record.perAccount, all 50 appeared in config.accountEmails. The stored
+      // plan stays as the fallback for a campaign fetched without its config.
       const acctEmail = {};
       for (const a of record.perAccount || []) { if (a && a.profileId) acctEmail[String(a.profileId)] = a.account || ''; }
+      const cfgEmails = (camp && (camp.campaign?.config ?? camp.config) || {}).accountEmails || {};
+      for (const [id, email] of Object.entries(cfgEmails)) { if (email) acctEmail[String(id)] = email; }
       const stamp = await updateSheetRows(record.sheetUrl, updates.map((u) => ({
         linkedinUrl: u.url,
         ...fgLedgerTracking({ ...u, invitedBy: acctEmail[u.account] || '' }),
