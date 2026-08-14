@@ -247,6 +247,13 @@ export async function startTeamLaunchCloud(pairs, deps) {
     month: deps.month,
     dispatchedAt: deps.now(),
     status: 'dispatched',
+    // The identity duplicateFgRun matches on. This path builds its own list
+    // from the connections DB rather than reading a sheet or a tab, so those
+    // two stay empty and the page alone identifies it — which is what keeps it
+    // from ever colliding with a list run on the same page.
+    pageId: deps.pageId || '',
+    sheetUrl: '',
+    tab: '',
     perAccount: perAccount.map((a) => ({
       profileId: a.profileId, account: a.account, operator: a.operator, month: deps.month, rowsByUrl: a.rowsByUrl,
     })),

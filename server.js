@@ -3134,6 +3134,14 @@ let _fgActiveHandle = null;
 // ORTUS_DATA_DIR is set (e.g. the packaged Electron app / `npm run dev:app`).
 const _fgCloudRunStore = makeRunStore(dataPath('fg-cloud-runs.json'));
 
+// FG launches currently between "accepted" and "recorded in the run store".
+// Same identity duplicateFgRun matches on, so the in-flight half and the
+// already-dispatched half of the duplicate guard agree on what "the same run"
+// means. In memory only: a restart mid-dispatch clears it, which is correct —
+// after a restart there is no in-flight request left to collide with.
+const _fgLaunchesInFlight = new Set();
+const fgLaunchKey = ({ pageId = '', sheetUrl = '', tab = '' } = {}) => `${pageId}|${sheetUrl}|${tab}`;
+
 // Sheet-driven (list) run reconcile: stamp Status / Invited At / Note / Member ID
 // back into the run's OWN list tab from the engine's per-lead results, so the tab
 // you built doubles as the live ledger. Idempotent (re-stamping the same value is
@@ -3685,11 +3693,29 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       const runKey = b.cycleKey || fgNextRunCycleKey(b.days);
       const page = pageById(b.pageId);
 
-      // Duplicate guard. Sits above every read and every write on purpose: a
-      // second press must cost nothing and change nothing. `force` is the
-      // operator saying they meant it, and only ever arrives from the confirm
-      // dialog the 409 below drives.
+      // Duplicate guard, in two halves. Both sit above every read and every
+      // write on purpose: a second press must cost nothing and change nothing.
+      // `force` is the operator saying they meant it, and only ever arrives
+      // from the confirm dialog these 409s drive — it bypasses both.
+      const launchKey = fgLaunchKey({
+        pageId: page.id, sheetUrl: src.kind === 'sheet' ? src.sheetUrl : '', tab: src.tab || '',
+      });
       if (!b.force) {
+        // Half one: a launch still IN FLIGHT. The run store is only written
+        // after dispatchFromRows returns, and everything between here and
+        // there — prepareSheet, the sheet read, the SoO read, the dispatch —
+        // takes up to a minute. Without this, two presses inside that minute
+        // both read an empty store and both dispatch, which is precisely the
+        // double-click this guard exists to stop.
+        if (_fgLaunchesInFlight.has(launchKey)) {
+          campaignLog('[FG-cloud] refused a duplicate launch — one for the same page and list is still being dispatched');
+          return res.status(409).json({
+            duplicate: true, inFlight: true,
+            error: `A Follower Growth run for ${page.label} on this same list is being dispatched right now. `
+              + 'Give it a moment — it can take a minute to build the list and hand it to the VM.',
+          });
+        }
+        // Half two: a launch already DISPATCHED minutes ago.
         const dupe = duplicateFgRun(_fgCloudRunStore.load(), {
           pageId: page.id, sheetUrl: src.kind === 'sheet' ? src.sheetUrl : '', tab: src.tab || '',
         });
@@ -3703,6 +3729,11 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
           });
         }
       }
+      // Held for the rest of this request, released however it ends — a thrown
+      // error or a dropped connection must not leave FG wedged. 'close' fires
+      // on every outcome, and the release is idempotent.
+      _fgLaunchesInFlight.add(launchKey);
+      res.on('close', () => { _fgLaunchesInFlight.delete(launchKey); });
 
       // The operator's OWN sheet (src.kind === 'sheet') is read straight over
       // the public CSV endpoint — no Apps Script involved, so it works on any
@@ -3851,6 +3882,33 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       return res.json({ started: true, cloudId: out.cloudId, leadCount: out.leadCount, skipped: out.skipped, tab: src.tab || '', sheetUrl: src.kind === 'sheet' ? src.sheetUrl : '', perAccount: plan });
     }
 
+    // The build-from-the-connections-DB path (auto-pilot and the manual Team
+    // Launch) gets the same guard as the sheet path. It fires on a schedule
+    // rather than a button, so a collision is far less likely — but "less
+    // likely" is not a reason for one of two launch paths to be unprotected.
+    const monthlyPage = FG_PAGES.ortus;               // this path hardcodes the Ortus invite URL
+    const monthlyKey = fgLaunchKey({ pageId: monthlyPage.id });
+    if (!b.force) {
+      if (_fgLaunchesInFlight.has(monthlyKey)) {
+        return res.status(409).json({
+          duplicate: true, inFlight: true,
+          error: `A Follower Growth run for ${monthlyPage.label} is being dispatched right now. Give it a moment.`,
+        });
+      }
+      const dupe = duplicateFgRun(_fgCloudRunStore.load(), { pageId: monthlyPage.id, sheetUrl: '', tab: '' });
+      if (dupe) {
+        const mins = Math.max(1, Math.round((Date.now() - Date.parse(dupe.dispatchedAt)) / 60000));
+        campaignLog(`[FG-cloud] refused a duplicate team launch — ${dupe.cloudId} started ${mins} min ago`);
+        return res.status(409).json({
+          duplicate: true, cloudId: dupe.cloudId,
+          error: `A Follower Growth run for ${monthlyPage.label} started ${mins} minute${mins === 1 ? '' : 's'} ago. `
+            + 'Running it again splits the same monthly invite credits across two campaigns, so both send less than one would.',
+        });
+      }
+    }
+    _fgLaunchesInFlight.add(monthlyKey);
+    res.on('close', () => { _fgLaunchesInFlight.delete(monthlyKey); });
+
     const keywords = Array.isArray(b.keywords) ? b.keywords : [];
     let snap;
     try { snap = await getFgState(); } catch (e) { return res.status(502).json({ error: `Could not read FG sheet: ${e.message}` }); }
@@ -3875,8 +3933,10 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       log: (m) => { try { campaignLog(`[FG-cloud] ${m}`); } catch (_) {} },
       month, owner: getOperatorEmail() || req.user || '',
       // This path is Ortus-only (it hardcodes ORTUS_PAGE_INVITE_URL below), so
-      // the page name is fixed rather than read off a dropdown.
-      name: `${FG_PAGES.ortus.label} · Follower Growth · ${month}`,
+      // the page name is fixed rather than read off a dropdown. pageId goes
+      // into the run store as this run's identity for the duplicate guard.
+      name: `${monthlyPage.label} · Follower Growth · ${month}`,
+      pageId: monthlyPage.id,
       inviteUrl: ORTUS_PAGE_INVITE_URL, monthlyBudget: FG_DEFAULT_MONTHLY_ALLOWANCE,
     });
     if (result.error) return res.status(502).json({ error: result.error });

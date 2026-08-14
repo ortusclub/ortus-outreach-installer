@@ -54,6 +54,26 @@ test('a clock skewed into the future does not block', () => {
   assert.equal(duplicateFgRun(future, { pageId: 'apex', sheetUrl: SHEET, tab: '' }, { now: NOW }), null);
 });
 
+// The monthly / auto-pilot path builds its list from the connections DB, so it
+// stores a pageId with no sheet and no tab. That must be its own identity, not
+// something that collides with a list run on the same page.
+test('a build-from-DB run and a sheet run on the same page are different runs', () => {
+  const mixed = [
+    { cloudId: 'cmp_monthly', pageId: 'ortus', sheetUrl: '', tab: '', dispatchedAt: '2026-08-08T20:16:00.000Z' },
+    { cloudId: 'cmp_sheet', pageId: 'ortus', sheetUrl: SHEET, tab: '', dispatchedAt: '2026-08-08T20:16:00.000Z' },
+  ];
+  assert.equal(duplicateFgRun(mixed, { pageId: 'ortus', sheetUrl: '', tab: '' }, { now: NOW }).cloudId, 'cmp_monthly');
+  assert.equal(duplicateFgRun(mixed, { pageId: 'ortus', sheetUrl: SHEET, tab: '' }, { now: NOW }).cloudId, 'cmp_sheet');
+});
+
+test('legacy records with no pageId cannot be duplicated by a real launch', () => {
+  // Runs stored before the page registry existed carry no identity at all.
+  // They must never match a launch that names a page, or every FG launch would
+  // be refused against a record nobody can explain.
+  const legacy = [{ cloudId: 'cmp_old', dispatchedAt: '2026-08-08T20:16:00.000Z' }];
+  assert.equal(duplicateFgRun(legacy, { pageId: 'ortus', sheetUrl: '', tab: '' }, { now: NOW }), null);
+});
+
 test('an empty or missing store is not a duplicate', () => {
   assert.equal(duplicateFgRun([], { pageId: 'apex', sheetUrl: SHEET, tab: '' }, { now: NOW }), null);
   assert.equal(duplicateFgRun(null, { pageId: 'apex', sheetUrl: SHEET, tab: '' }, { now: NOW }), null);

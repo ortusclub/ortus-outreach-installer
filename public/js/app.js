@@ -8848,7 +8848,7 @@ function _setDupeChip(root, n) {
     nameEl.parentElement.appendChild(chip);
   }
   chip.textContent = `${count} identical run${count === 1 ? '' : 's'}`;
-  chip.title = 'Another campaign with the same name and the same accounts was launched within minutes of this one. They compete for the same LinkedIn credits.';
+  chip.title = 'Another campaign for the same page, the same list and the same accounts was launched within minutes of this one. They compete for the same LinkedIn invite credits, so between them they send less than one would.';
 }
 
 function _fillVjMonitorHero(root, status) {
@@ -9975,15 +9975,21 @@ async function _renderCampaignsBoardInner() {
     // later ones sent almost nothing because the first had already spent the
     // accounts' credits. Naming them is not the fix — the launch guard is — but
     // an operator looking at the board should not have to work this out.
+    //
+    // The SHEET is part of the identity, matching what the server's guard keys
+    // on. The name carries the page and the run day but not the source, so two
+    // different lists fired to the same page on the same day share a name and
+    // a roster — legitimately different runs that would otherwise be labelled
+    // identical, which is how a badge teaches people to ignore it.
+    const _dupeKey = (c) => `${c.mode}|${c.name}|${c.sheet_url || ''}|${(c.profile_ids || []).slice().sort().join(',')}`;
     const _dupeSeen = new Map();
     for (const d of _cloudRaw) {
-      const c = d.campaign || {};
-      const k = `${c.mode}|${c.name}|${(c.profile_ids || []).slice().sort().join(',')}`;
+      const k = _dupeKey(d.campaign || {});
       _dupeSeen.set(k, (_dupeSeen.get(k) || 0) + 1);
     }
     for (const d of _cloudRaw) {
       const c = d.campaign || {}; const lc = d.leadCounts || {};
-      const _dupes = (_dupeSeen.get(`${c.mode}|${c.name}|${(c.profile_ids || []).slice().sort().join(',')}`) || 1) - 1;
+      const _dupes = (_dupeSeen.get(_dupeKey(c)) || 1) - 1;
       if (['done', 'cancelled', 'error'].includes(c.status) && _cloudDismissed.has(c.id)) continue;
       if (c.sheet_url) _cloudSheetUrls.set(c.id, c.sheet_url);
       const mine = !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase());
@@ -21682,6 +21688,10 @@ async function fgapRunNow() {
     // 409 duplicate — this button is the one that was pressed three times on
     // 8 Aug. Ask instead of refusing outright; declining costs nothing.
     if (raw.status === 409 && r.duplicate) {
+      // An IN-FLIGHT duplicate gets no override: the first launch is still
+      // building its list and will be on the board in a moment. Offering
+      // "start a second anyway" here is offering to make the exact mistake.
+      if (r.inFlight) { showCampaignToast(r.error, 6000); return; }
       if (!confirm(`${r.error}\n\nStart a second run anyway?`)) {
         showCampaignToast('Nothing dispatched — the run already in progress keeps going.', 4000);
         return;
@@ -22505,6 +22515,12 @@ async function fgtlLaunch() {
       let body = {};
       try { body = await res.clone().json(); } catch (_) {}
       if (body.duplicate) {
+        // In flight → no override offered; the first launch is mid-dispatch.
+        if (body.inFlight) {
+          alert(body.error);
+          if (goBtn) goBtn.disabled = false;
+          return;
+        }
         if (!confirm(`${body.error}\n\nStart a second run anyway?`)) {
           if (goBtn) goBtn.disabled = false;
           return;
@@ -24401,7 +24417,10 @@ function _stageAcctPill(a, isCurrent, counts) {
     text = `${text} · no note`;
     noteTip = 'Out of LinkedIn\'s free personalised invites — invites are still going out, without the note. Refills monthly.';
   }
-  const title = tip ? `${tip} — retries next run` : (cr ? _fgCreditTip(cr) : noteTip);
+  // Credits and the note allowance are separate LinkedIn limits and an account
+  // can be short of both, so the tooltip carries whichever apply. Picking one
+  // dropped the note explanation on every FG account that had credit data.
+  const title = tip ? `${tip} — retries next run` : [cr ? _fgCreditTip(cr) : '', noteTip].filter(Boolean).join('\n');
   return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')"`
     + `${title ? ` title="${escHtml(title)}"` : ''}>`
     + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>`;
