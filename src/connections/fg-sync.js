@@ -5,6 +5,7 @@
 // (Apps Script answers POST with a 302 that Node's fetch would turn into a GET).
 import { FG_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { FG_MASTER_HEADER, chunkRows } from './fg-master.js';
+import { FG_BASE_COLUMNS } from './fg-export.js';
 import { onFgLane } from '../webapp-lane.js';
 
 // LinkedIn's monthly "Invite to follow" credit pool. The live balance is shown
@@ -139,10 +140,20 @@ async function _readFgState() {
   return state;
 }
 
-// Pad each FG_HEADER-order row (13 cells) to 16 by appending the run's id + time
-// + an empty Reason. Single choke point so callers never hand-build the new cols.
+// Complete each base row (FG_BASE_COLUMNS) into a full FG_HEADER row by
+// appending the run's id + time + an empty Reason. Single choke point so
+// callers never hand-build the run columns.
+//
+// The base width is DERIVED, not the literal 13 that used to sit here: a 14th
+// base column would have been sliced off silently, writing a row whose cells
+// were one place left of their headers.
 export function stampRunCells(rows, { runId = '', runAt = '' } = {}) {
-  return (rows || []).map((r) => [...r.slice(0, 13), String(runId), String(runAt), '']);
+  const base = FG_BASE_COLUMNS.length;
+  return (rows || []).map((r) => {
+    const cells = (r || []).slice(0, base);
+    while (cells.length < base) cells.push('');   // never write a ragged row
+    return [...cells, String(runId), String(runAt), ''];
+  });
 }
 
 // Append queued rows (FG_HEADER order). Stamps the run id + time onto every row.

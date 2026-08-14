@@ -3,13 +3,22 @@
 // tab. Every cell is coerced to a string (Apps Script setValues needs
 // rectangular string data — no undefineds). Mirror of export.js.
 
-// Column order of the `FG Invites` tab. KEEP IN SYNC with fg-apps-script.js.
-export const FG_HEADER = [
+// Column order of the `FG Invites` tab. KEEP IN SYNC with fg-apps-script.js —
+// tests/connections/fg-export.test.js enforces it rather than trusting this
+// comment, which is how the two drifted apart in the first place.
+//
+// The tab is written in two halves. fgRow builds the BASE columns, which are
+// everything known when a row is queued; stampRunCells then appends the RUN
+// columns, which only exist once a run has an id. Both widths are derived from
+// these two arrays — a fixed 13 used to be written into stampRunCells by hand,
+// so adding a 14th base column would have silently truncated it.
+export const FG_BASE_COLUMNS = [
   'Target Name', 'LinkedIn URL', 'Member ID', 'Company', 'Job Title',
   'Function Match', 'Geo', 'Invited By', 'Account', 'Status',
   'Invited At', 'FG Note', 'Month',
-  'Run ID', 'Run At', 'Reason',
 ];
+export const FG_RUN_COLUMNS = ['Run ID', 'Run At', 'Reason'];
+export const FG_HEADER = [...FG_BASE_COLUMNS, ...FG_RUN_COLUMNS];
 
 // Coerce any Month cell value to a plain "YYYY-MM" string for budget matching.
 // Google Sheets silently turns a "2026-06" string into a Date cell; read back over
@@ -40,8 +49,12 @@ export function inviteKey(contact = {}) {
   return String(contact.linkedin_membership_id || '') || (contact.linkedinbio || '');
 }
 
-// One `FG Invites` row in FG_HEADER order. `record` is an annotated row
-// ({ contact, warmVia, ... }); operatorName/account/month come from the campaign.
+// One `FG Invites` row in FG_BASE_COLUMNS order — the row as it is known at
+// queue time. It is NOT a full FG_HEADER row: stampRunCells appends the three
+// run columns on the way to the sheet, and every write path goes through
+// queueFgInvites, which always stamps.
+// `record` is an annotated row ({ contact, warmVia, ... }); operatorName /
+// account / month come from the campaign.
 export function fgRow(record, colleagues = {}, { operatorName = '', account = '', month = '', keywords = [], status = 'Queued', note = '' } = {}) {
   const c = record.contact || {};
   const geo = [c.city, c.state, c.country].filter(Boolean).join(', ');
