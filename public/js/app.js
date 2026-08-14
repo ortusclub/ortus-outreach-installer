@@ -20759,11 +20759,26 @@ function fgtlCredit(profileName) {
 // Ortus Club Page; an account signed with a client (Apex Strategy, CCG Chatham…)
 // can't. Unknown/blank company ⇒ eligible (optimistic — the runtime "not a Page
 // admin" skip is the backstop; we don't block on missing SoO data).
+// Only accounts belonging to the SELECTED page's org may invite people to
+// follow it, so the board shows — and the launch sends — that page's accounts.
+//
+// This was hardcoded to 'the ortus club', from before FG could grow more than
+// one page. The dropdown made the server page-aware but not this, so an Apex
+// run shipped an all-Ortus roster into an Apex-only gate and produced zero
+// leads every time, with "the list has no usable rows" as the only symptom.
+//
+// The company string comes from /api/fg/pages — the SAME `sooCompany` the
+// server gates on (src/fg-pages.js) — so what the operator sees here and what
+// the launch accepts cannot drift apart. A page with no company declared, or a
+// pages fetch that failed, leaves it blank and everything stays eligible:
+// today's behaviour, never a silently empty roster.
 function fgtlEligibility(email) {
   const acct = (typeof sooData !== 'undefined' && sooData) ? sooData[String(email || '').toLowerCase()] : null;
   const company = acct ? String(acct.Company || '').trim() : '';
   if (!company) return { eligible: true, company: '' };
-  return { eligible: company.toLowerCase() === 'the ortus club', company };
+  const want = fgSelectedPageCompany();
+  if (!want) return { eligible: true, company };
+  return { eligible: company.toLowerCase() === want.toLowerCase(), company };
 }
 // "2026-06-25T..." → "Jun 25". Empty/garbage → ''.
 function fgtlShortDate(iso) {
@@ -21922,10 +21937,23 @@ function fgSaveSource(patch) {
 
 // Company pages, loaded from /api/fg/pages. Ortus-only default so the
 // dropdown and any confirm dialog have something sane before that fetch lands.
-let _fgPagesList = [{ id: 'ortus', label: 'Ortus Club' }];
+let _fgPagesList = [{ id: 'ortus', label: 'Ortus Club', sooCompany: 'The Ortus Club' }];
 function fgPageLabel(id) {
   const p = _fgPagesList.find((x) => x.id === (id || 'ortus'));
   return (p || _fgPagesList[0] || { label: 'Ortus Club' }).label;
+}
+
+/** Which page the board is currently showing accounts for. */
+function fgSelectedPageId() {
+  const sel = document.getElementById('fg-page-select');
+  if (sel && sel.value) return sel.value;          // live dropdown wins
+  return fgLoadSource().pageId || 'ortus';         // before it renders
+}
+
+/** The SoO `Company` that marks an account as belonging to the selected page. */
+function fgSelectedPageCompany() {
+  const p = _fgPagesList.find((x) => x.id === fgSelectedPageId());
+  return String((p || {}).sooCompany || '').trim();
 }
 
 /** Populate the page <select>, selecting the stored page or Ortus. */
@@ -21999,6 +22027,10 @@ function fgBindListSource() {
       fgSaveSource({ pageId: sel.value });
       const echo = document.getElementById('fg-page-echo');
       if (echo) echo.textContent = fgPageLabel(sel.value);
+      // The page decides which accounts may send (fgtlEligibility), so the
+      // roster and the headline count are page-specific. Without this the board
+      // keeps showing the previous page's accounts and its invite total.
+      try { fgtlRenderAll(); } catch (_) {}
     });
   }
   const url = document.getElementById('fg-sheet-url');

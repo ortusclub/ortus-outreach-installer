@@ -3470,7 +3470,12 @@ app.post('/api/fg/master/build', async (req, res) => {
 // The company pages FG can grow. Static, but served so the dropdown and the
 // launch path can never disagree about the ids.
 app.get('/api/fg/pages', (_req, res) => {
-  res.json({ pages: FG_PAGE_LIST.map((p) => ({ id: p.id, label: p.label })) });
+  // sooCompany goes with it: the board filters the account roster by the SAME
+  // SoO Company the server gates senders on, so the accounts an operator can
+  // see and pick are exactly the ones the launch will accept. Without it the
+  // browser fell back to a hardcoded "the ortus club" and every Apex run
+  // dispatched an all-Ortus roster into an Apex-only gate — zero leads, always.
+  res.json({ pages: FG_PAGE_LIST.map((p) => ({ id: p.id, label: p.label, sooCompany: p.sooCompany || '' })) });
 });
 
 // All tab names in the FG sheet — populates the "bring your own" dropdown.
