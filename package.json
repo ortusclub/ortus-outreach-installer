@@ -15,7 +15,7 @@
     "electron:dev": "electron .",
     "dev:app": "ORTUS_DATA_DIR=\"$HOME/Library/Application Support/The Ortus Outreach/data\" electron .",
     "electron:build": "electron-builder",
-    "electron:build:mac": "electron-builder --mac && node scripts/rename-dmgs.js",
+    "electron:build:mac": "node scripts/detach-stale-dmgs.js && electron-builder --mac && node scripts/rename-dmgs.js && node scripts/notarize-dmgs.js",
     "electron:build:win": "electron-builder --win",
     "release:mac": "npm run electron:build:mac && node scripts/release-mac.js"
   },
@@ -97,7 +97,10 @@
       ],
       "icon": "build/icon.icns",
       "category": "public.app-category.business",
-      "identity": "-"
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
       "writeUpdateInfo": false,
