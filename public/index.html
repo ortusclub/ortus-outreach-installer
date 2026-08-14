@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.66" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.66" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.67" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.67" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2328,6 +2328,10 @@
       #nav-follower-growth .rv-big-lab { font-size:15px; color:#6a6a6a; letter-spacing:0; }
       #nav-follower-growth .rv-load { margin-left:12px; font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); white-space:nowrap; }
       #nav-follower-growth .rv-sub { font-family:'Hanken Grotesk',sans-serif; font-size:12.5px; color:#6a6a6a; margin-top:7px; }
+      /* What the "Read this sheet" button found — proof of which tab was read. */
+      #nav-follower-growth .fgw-read-echo { font-family:var(--mono); font-size:11px; line-height:1.6; color:var(--gray); margin-top:10px; border-left:2px solid var(--ink); padding:8px 0 8px 11px; }
+      #nav-follower-growth .fgw-read-echo b { color:var(--ink); }
+      #nav-follower-growth .fgw-read-echo.bad { border-left-color:#b00020; color:#b00020; }
       /* Coverage of the pasted sheet — how many of its rows a run would reach. */
       #nav-follower-growth .rv-bar { height:5px; background:var(--hairline); margin:11px 0 9px; max-width:560px; }
       #nav-follower-growth .rv-bar > i { display:block; height:100%; background:var(--ink); opacity:.75; }
@@ -2631,9 +2635,14 @@
           <div class="sk-body">
             <input class="sk-url" id="fg-sheet-url" placeholder="Paste your Google Sheet link&#8230;" autocomplete="off">
             <div class="sk-row">
+              <!-- Reads the pasted link NOW and reports what came back (tab gid,
+                   row count, when). The preview also refreshes on its own; this
+                   is the button that proves WHICH tab the app is looking at. -->
+              <button type="button" class="fgw-btn fgw-btn-primary" id="fg-sheet-check" title="Read this tab now and show what the app found in it">Read this sheet</button>
               <button type="button" class="fgw-btn" id="fg-sheet-open">Open sheet &#8599;</button>
               <span class="fgw-list-tab" id="fg-sheet-echo" style="display:none"></span>
             </div>
+            <div class="fgw-read-echo" id="fg-sheet-read" style="display:none"></div>
             <div class="fgw-format" style="margin-top:13px">
               <div class="fgw-format-h">Your tab needs two columns:</div>
               <code class="fgw-format-cols">LinkedIn URL &#183; Account Email <span style="opacity:.55">or</span> Connected Accounts</code>
@@ -4086,7 +4095,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.66"></script>
+  <script type="module" src="/js/app.js?v=3.1.67"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

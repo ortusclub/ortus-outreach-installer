@@ -20883,7 +20883,12 @@ function fgtlRenderPeople() {
       <div class="fgtl-mbox ${zero ? 'zero' : ''}"><b>${p.matched.toLocaleString()}</b><small>match</small></div>
       <button class="fgtl-addbtn ${blocked ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${blocked ? 'disabled' : ''}>${label}</button>
     </div>`;
-  }).join('') || '<div class="empty" style="color:var(--gray);padding:22px;text-align:center">No colleagues match that search.</div>';
+  // "No colleagues match that search" is only true once the roster is HERE.
+  // While it is still loading, that sentence reads as a broken panel — which is
+  // exactly how it read for the ~30s the 49-keyword roles query takes.
+  }).join('') || (_fgRosterLoading || !fgtlPeople.length
+    ? '<div class="fgtl-loading"><span class="fgtl-spin"></span> Loading the team…</div>'
+    : '<div class="empty" style="color:var(--gray);padding:22px;text-align:center">No colleagues match that search.</div>');
 }
 
 function fgtlRenderProfileOpts(em, prof, pq) {
@@ -21069,6 +21074,23 @@ function fgRenderPreviewAnswer() {
   const lab = document.querySelector('#fg-answer-n + .rv-big-lab');
   if (lab) lab.textContent = `of ${(p.rowsTotal || 0).toLocaleString()} people in your sheet will be invited`;
   return true;
+}
+
+/** Print what the last read actually fetched — spreadsheet id, gid, header,
+ *  row count, time. null = a read is in flight. */
+function fgRenderReadEcho(p) {
+  const box = document.getElementById('fg-sheet-read');
+  if (!box) return;
+  box.style.display = '';
+  box.classList.remove('bad');
+  if (!p) { box.textContent = 'Reading the tab…'; return; }
+  if (p.error) { box.classList.add('bad'); box.textContent = `Could not read it — ${p.error}`; return; }
+  const r = p.read || {};
+  const when = r.at ? new Date(r.at).toLocaleTimeString() : '';
+  box.innerHTML = `Read <b>gid ${escHtml(r.gid || '?')}</b> of sheet <b>${escHtml(String(r.sheetId || '').slice(0, 12))}…</b>`
+    + ` at ${escHtml(when)} — <b>${r.dataRows == null ? '?' : r.dataRows}</b> data rows,`
+    + ` <b>${(r.header || []).length}</b> columns.`
+    + `<br>Columns: ${escHtml((r.header || []).join(' · '))}`;
 }
 
 /** The run button carries the count, so a shortfall can't be clicked past. */
@@ -22173,6 +22195,28 @@ function fgBindListSource() {
     url.addEventListener('change', persist);
     url.addEventListener('blur', persist);
   }
+  // "Read this sheet" — reads the pasted link on demand and prints what came
+  // back. The preview refreshes by itself; this button exists so the operator
+  // can SEE which spreadsheet and which gid the app actually fetched.
+  const checkBtn = document.getElementById('fg-sheet-check');
+  if (checkBtn && !checkBtn._fgBound) {
+    checkBtn._fgBound = true;
+    checkBtn.addEventListener('click', async () => {
+      const field = document.getElementById('fg-sheet-url');
+      if (field && field.value.trim() !== (fgLoadSource().sheetUrl || '')) {
+        fgSaveSource({ sheetUrl: field.value.trim(), activeDoor: 'have' });   // read what's typed, not what was saved
+        fgRenderSource();
+      }
+      const prev = checkBtn.textContent;
+      checkBtn.disabled = true; checkBtn.textContent = 'Reading…';
+      fgRenderReadEcho(null);
+      try { await fgRefreshSheetPreview(true); } finally {
+        checkBtn.disabled = false; checkBtn.textContent = prev;
+        fgRenderReadEcho(_fgPreview);
+      }
+    });
+  }
+
   const openBtn = document.getElementById('fg-sheet-open');
   if (openBtn && !openBtn._fgBound) {
     openBtn._fgBound = true;

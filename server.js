@@ -3431,6 +3431,16 @@ app.get('/api/fg/sheet-preview', async (req, res) => {
 
   res.json({
     page: { id: page.id, label: page.label, company: page.sooCompany || '' },
+    // Proof of WHAT was read, for the "Read this sheet" button: the spreadsheet
+    // id and gid actually fetched (not the ones the operator believes they
+    // pasted), plus the header it found.
+    read: {
+      sheetId: (String(sheetUrl).match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1] || '',
+      gid: (String(sheetUrl).match(/[?#&]gid=(\d+)/) || [])[1] || '0',
+      header: (rows[0] || []).map((c) => String(c == null ? '' : c).trim()).filter(Boolean),
+      dataRows: rows.length - 1,
+      at: new Date().toISOString(),
+    },
     rowsTotal: leads.length + skipped.length,
     rowsCovered: leads.length,
     accountsNamed: named.size,
