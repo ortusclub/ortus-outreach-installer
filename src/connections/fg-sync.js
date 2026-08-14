@@ -74,9 +74,36 @@ export function invitedKeysFromState(invites) {
     .filter(Boolean);
 }
 
+// fgState reads the WHOLE central FG sheet (15k+ invite rows) and measures at
+// ~78s end to end. Three things follow, and all three were missing:
+//   • the timeout must clear the real duration — 60s guaranteed a timeout, and
+//     because a timeout is "transient" postFg retried it 3× (~93s, then a 502).
+//   • concurrent callers must share one call. The FG board fires several at
+//     once (db view, colleagues, budgets); each used to open its own 78s read
+//     of the same sheet, and Google serialises them per spreadsheet anyway.
+//   • the result must be cached briefly. Nothing in the sheet changes second to
+//     second, and every write below busts the cache, so a stale read can't
+//     outlive an invite we just recorded.
+// 10 minutes: the only writers that matter are this module's own (which bust
+// the cache below) and the cloud reconcile, which also writes through here. A
+// re-read costs 78s, so a short TTL just moves the wait rather than removing it.
+const FG_STATE_TTL_MS = 10 * 60_000;
+let _fgState = { data: null, at: 0 };
+let _fgStateInFlight = null;
+
+/** Drop the cached fgState — called after every write through this module. */
+export function invalidateFgState() { _fgState = { data: null, at: 0 }; }
+
 // { invites: [...row objects], budgets: [...], funnel: [...] }
-export async function getFgState() {
-  const r = await postFg({ action: 'fgState' }, { timeoutMs: 60000 });
+export async function getFgState({ maxAgeMs = FG_STATE_TTL_MS } = {}) {
+  if (_fgState.data && Date.now() - _fgState.at < maxAgeMs) return _fgState.data;
+  if (_fgStateInFlight) return _fgStateInFlight;
+  _fgStateInFlight = _readFgState().finally(() => { _fgStateInFlight = null; });
+  return _fgStateInFlight;
+}
+
+async function _readFgState() {
+  const r = await postFg({ action: 'fgState' }, { timeoutMs: 180_000 });
   if (r?.error) throw new Error(r.error);
   // fgState_ always returns all three arrays, so a missing key means the reply
   // was not the reply — a 302 body, a truncated read, a timeout page. Defaulting
@@ -85,7 +112,9 @@ export async function getFgState() {
   if (!r || !Array.isArray(r.invites) || !Array.isArray(r.budgets)) {
     throw new Error('The FG sheet returned an unreadable reply (no invites/budgets) — try again.');
   }
-  return { invites: r.invites, budgets: r.budgets, funnel: r.funnel || [] };
+  const state = { invites: r.invites, budgets: r.budgets, funnel: r.funnel || [] };
+  _fgState = { data: state, at: Date.now() };
+  return state;
 }
 
 // Pad each FG_HEADER-order row (13 cells) to 16 by appending the run's id + time
@@ -97,7 +126,10 @@ export function stampRunCells(rows, { runId = '', runAt = '' } = {}) {
 // Append queued rows (FG_HEADER order). Stamps the run id + time onto every row.
 export async function queueFgInvites(rows, { runId = '', runAt = '' } = {}) {
   const stamped = stampRunCells(rows, { runId, runAt });
+  invalidateFgState();   // before AND after: a read that overlaps this write
+                         // must not repopulate the cache with pre-write rows
   const r = await postFg({ action: 'fgQueue', rows: stamped }, { timeoutMs: 90000 });
+  invalidateFgState();
   if (r?.error) throw new Error(r.error);
   return r; // { queued, skippedDuplicates }
 }
@@ -105,7 +137,10 @@ export async function queueFgInvites(rows, { runId = '', runAt = '' } = {}) {
 // Sweep every still-'Queued' row for this run to 'Failed' (post-reconcile). `reasons`
 // is an optional { memberId: text } map for per-lead reasons; `reason` is the fallback.
 export async function markFgFailed({ runId, reason, reasons }) {
+  invalidateFgState();   // before AND after: a read that overlaps this write
+                         // must not repopulate the cache with pre-write rows
   const r = await postFg({ action: 'fgMarkFailed', runId, reason, reasons }, { timeoutMs: 90000 });
+  invalidateFgState();
   if (r?.error) throw new Error(r.error);
   return r; // { failed }
 }
@@ -113,7 +148,10 @@ export async function markFgFailed({ runId, reason, reasons }) {
 // Flip the given Member IDs from Queued → Invited (stamp Invited At) and bump
 // the account's FG Budgets row for the month.
 export async function markFgInvited({ memberIds, invited, account, operator, month }) {
+  invalidateFgState();   // before AND after: a read that overlaps this write
+                         // must not repopulate the cache with pre-write rows
   const r = await postFg({ action: 'fgMarkInvited', memberIds, invited, account, operator, month }, { timeoutMs: 90000 });
+  invalidateFgState();
   if (r?.error) throw new Error(r.error);
   return r; // { invited, remaining, master }
 }
@@ -153,7 +191,10 @@ export async function updateFgListLedger(tab, updates) {
 // refill date + an "Observed At" stamp. Authoritative over the 30−Sent estimate
 // because LinkedIn refills credits on accept/withdraw, which Sent can't see.
 export async function observeFgCredits({ account, operator, month, available, allowance, refill }) {
+  invalidateFgState();   // before AND after: a read that overlaps this write
+                         // must not repopulate the cache with pre-write rows
   const r = await postFg({ action: 'fgObserveCredits', account, operator, month, available, allowance, refill }, { timeoutMs: 60000 });
+  invalidateFgState();
   if (r?.error) throw new Error(r.error);
   return r; // { observed, remaining, allowance }
 }

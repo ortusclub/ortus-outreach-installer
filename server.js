@@ -7269,6 +7269,15 @@ app.listen(PORT, async () => {
     .then((b) => console.log(`  ✦ Sales Nav board: warmed (${(b.campaigns || []).length} scrapes)`))
     .catch((e) => console.log(`  ✦ Sales Nav board: warm-up failed (${e.message}) — will load on demand`));
 
+  // Same for the central FG sheet: fgState is a 78s read (15k+ invite rows) and
+  // every FG surface needs it — the db view, the colleague roster, the budgets.
+  // Reading it once here means the first FG open is served from cache like the
+  // rest. Not awaited; getFgState coalesces, so a visit during the warm-up joins
+  // this read instead of starting a second one.
+  getFgState()
+    .then((s) => console.log(`  ✦ FG sheet: warmed (${s.invites.length} invite rows)`))
+    .catch((e) => console.log(`  ✦ FG sheet: warm-up failed (${e.message}) — will load on demand`));
+
   // Collected connections used to live in the repo's own data/connections, so
   // running the app from a worktree hid all 455 of them. They belong in
   // ORTUS_DATA_DIR; this copies them across once and never deletes the original.
