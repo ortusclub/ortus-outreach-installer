@@ -21673,10 +21673,22 @@ async function fgapRunNow() {
   try {
     // Building targets + dispatch can take up to a minute; keep the operator informed.
     showCampaignToast(`Dispatching to the cloud — this can take a minute…`, 6000);
-    const r = await fetch('/api/fg/team-launch/start', {
+    const post = (force) => fetch('/api/fg/team-launch/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'list', sheetUrl: active.sheetUrl, tab: active.tab, pageId, pairs, target: 'cloud', month: new Date().toISOString().slice(0, 7) }),
-    }).then((x) => x.json());
+      body: JSON.stringify({ source: 'list', sheetUrl: active.sheetUrl, tab: active.tab, pageId, pairs, target: 'cloud', month: new Date().toISOString().slice(0, 7), ...(force ? { force: true } : {}) }),
+    });
+    let raw = await post(false);
+    let r = await raw.json().catch(() => ({}));
+    // 409 duplicate — this button is the one that was pressed three times on
+    // 8 Aug. Ask instead of refusing outright; declining costs nothing.
+    if (raw.status === 409 && r.duplicate) {
+      if (!confirm(`${r.error}\n\nStart a second run anyway?`)) {
+        showCampaignToast('Nothing dispatched — the run already in progress keeps going.', 4000);
+        return;
+      }
+      raw = await post(true);
+      r = await raw.json().catch(() => ({}));
+    }
     if (r.error) showCampaignToast(`Couldn’t run — ${r.error}`, 5000);
     else if (r.skipped && !r.cloudId) showCampaignToast(`Nothing to run — ${r.reason || 'no eligible invites in that list'}`, 4500);
     else {
@@ -22471,19 +22483,35 @@ async function fgtlLaunch() {
     return;
   }
   const listPayload = { source: 'list', sheetUrl: active.sheetUrl, tab: active.tab, pageId: saved.pageId || 'ortus' };
+  const post = (force) => fetch('/api/fg/team-launch/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      keywords: fgtlChips,
+      pairs,
+      month: new Date().toISOString().slice(0, 7),
+      target: isCloud ? 'cloud' : 'local',
+      ...listPayload,
+      ...(force ? { force: true } : {}),
+    }),
+  });
   let res;
   try {
-    res = await fetch('/api/fg/team-launch/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        keywords: fgtlChips,
-        pairs,
-        month: new Date().toISOString().slice(0, 7),
-        target: isCloud ? 'cloud' : 'local',
-        ...listPayload,
-      }),
-    });
+    res = await post(false);
+    // 409 duplicate: the server found a run for this page and list minutes old.
+    // Ask, rather than refuse — a second run is sometimes deliberate. Declining
+    // is the common answer, and it costs nothing, which is the whole point.
+    if (res.status === 409) {
+      let body = {};
+      try { body = await res.clone().json(); } catch (_) {}
+      if (body.duplicate) {
+        if (!confirm(`${body.error}\n\nStart a second run anyway?`)) {
+          if (goBtn) goBtn.disabled = false;
+          return;
+        }
+        res = await post(true);
+      }
+    }
   } catch (err) {
     alert('Launch failed: ' + (err && err.message ? err.message : String(err)));
     if (goBtn) goBtn.disabled = false;

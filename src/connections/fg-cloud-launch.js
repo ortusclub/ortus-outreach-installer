@@ -113,6 +113,45 @@ export function makeRunStore(filePath) {
   };
 }
 
+/**
+ * The most recent run that a new launch would duplicate, or null.
+ *
+ * Sam dispatched the same 89 leads three times on 8 Aug — 20:16, 20:17, 20:20,
+ * same page, same accounts — by pressing Start again when the first press
+ * showed no immediate sign of working. The later two sent 1 and 0 invites: the
+ * first had already spent the accounts' monthly invite credits, and all three
+ * then sat on the board as identical cards.
+ *
+ * "Duplicate" is same PAGE and same SOURCE within a short window. Not same
+ * accounts: the sheet names its own senders and the routing can differ run to
+ * run, while the page + source pair is what actually decides who gets invited.
+ *
+ * The window is deliberately short. This exists to stop a double-press, not to
+ * ration re-runs — a deliberate second run an hour later is legitimate (credits
+ * refill, a row was fixed), and the caller can override sooner than that.
+ *
+ * @param {Array<Object>} runs      _fgCloudRunStore.load()
+ * @param {Object} launch           { pageId, sheetUrl, tab }
+ * @param {Object} [opts]           { now = Date.now(), windowMs }
+ * @returns {Object|null} the run being duplicated
+ */
+export function duplicateFgRun(runs, launch, opts = {}) {
+  const now = opts.now ?? Date.now();
+  const windowMs = opts.windowMs ?? 15 * 60 * 1000;
+  const key = (r) => `${String(r?.pageId || '')}|${String(r?.sheetUrl || '')}|${String(r?.tab || '')}`;
+  const want = key(launch);
+  let best = null;
+  for (const r of Array.isArray(runs) ? runs : []) {
+    if (key(r) !== want) continue;
+    const at = Date.parse(r?.dispatchedAt || '');
+    if (!Number.isFinite(at)) continue;          // undated run — can't judge, don't block
+    const age = now - at;
+    if (age < 0 || age > windowMs) continue;
+    if (!best || at > Date.parse(best.dispatchedAt)) best = r;
+  }
+  return best;
+}
+
 const TERMINAL_STATUS = new Set(['done', 'error', 'stopped', 'cancelled']);
 
 export async function reconcileCloudRun(record, deps) {

@@ -101,7 +101,7 @@ import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-laun
 import { getFgState, queueFgInvites, markFgInvited, markFgFailed, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE, invitedKeysFromState, writeFgList, readFgList, updateFgListLedger, postFg, writeFgMaster, readFgMasterKeys } from './src/connections/fg-sync.js';
 import { buildMasterRows, invitedIndexFromFgInvites, newRowsOnly } from './src/connections/fg-master.js';
 import { readSeedDir, mergeFunnelSeeds } from './src/connections/fg-funnel-seed.js';
-import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads } from './src/connections/fg-cloud-launch.js';
+import { startTeamLaunchCloud, makeRunStore, reconcileCloudRun, invitedWritebackFromLeads, duplicateFgRun } from './src/connections/fg-cloud-launch.js';
 import { fgListTabName, ledgerUpdatesFromLeads, gridFromSheetRows, fgLedgerTracking, listRunShouldRetire, parseListRows, emailsInCell } from './src/connections/fg-list.js';
 import { buildListRows, dispatchFromRows, resolveListSource } from './src/connections/fg-list-launch.js';
 import { generateListRows } from './src/connections/fg-list-generate.js';
@@ -3684,6 +3684,25 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       const owner = getOperatorEmail() || req.user || '';
       const runKey = b.cycleKey || fgNextRunCycleKey(b.days);
       const page = pageById(b.pageId);
+
+      // Duplicate guard. Sits above every read and every write on purpose: a
+      // second press must cost nothing and change nothing. `force` is the
+      // operator saying they meant it, and only ever arrives from the confirm
+      // dialog the 409 below drives.
+      if (!b.force) {
+        const dupe = duplicateFgRun(_fgCloudRunStore.load(), {
+          pageId: page.id, sheetUrl: src.kind === 'sheet' ? src.sheetUrl : '', tab: src.tab || '',
+        });
+        if (dupe) {
+          const mins = Math.max(1, Math.round((Date.now() - Date.parse(dupe.dispatchedAt)) / 60000));
+          campaignLog(`[FG-cloud] refused a duplicate launch — ${dupe.cloudId} started ${mins} min ago for the same page and list`);
+          return res.status(409).json({
+            duplicate: true, cloudId: dupe.cloudId,
+            error: `A Follower Growth run for ${page.label} on this same list started ${mins} minute${mins === 1 ? '' : 's'} ago. `
+              + 'Running it again splits the same monthly invite credits across two campaigns, so both send less than one would.',
+          });
+        }
+      }
 
       // The operator's OWN sheet (src.kind === 'sheet') is read straight over
       // the public CSV endpoint — no Apps Script involved, so it works on any
