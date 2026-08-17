@@ -164,7 +164,23 @@ async function fetchSheetCsv(sheetUrl) {
     // surfacing as a sweep failure. Bulk-check is gated by a 6h cooldown,
     // so spending a few extra seconds here is cheap insurance.
     console.warn(`[sheets] First CSV fetch failed (${err.message}); retrying once…`);
-    response = await tryFetch(30000);
+    try {
+      response = await tryFetch(30000);
+    } catch (err2) {
+      // undici collapses DNS failures, refused connections, socket exhaustion
+      // and TLS interception into a bare "fetch failed" — the reason only ever
+      // lives on .cause, and without it the operator's screen is a dead end
+      // (RJ, 17 Aug: wizard said "Error: fetch failed", his shell reached
+      // Google fine six minutes later, and nothing told us which layer broke).
+      const why = err2.cause?.code || err2.cause?.message || err2.name;
+      console.error(`[sheets] CSV fetch failed twice: ${err2.message}${why ? ` (${why})` : ''}`);
+      throw new Error(
+        `Could not reach Google Sheets — ${err2.message}${why ? ` (${why})` : ''}. `
+        + 'The sheet itself is fine; this is the network on this machine — DNS, '
+        + 'firewall, VPN, or an antivirus/corporate TLS proxy the browser trusts '
+        + 'but the app does not.',
+      );
+    }
   }
   if (!response.ok) {
     throw new Error(`Failed to fetch Google Sheet (HTTP ${response.status}). Is the sheet publicly viewable?`);
