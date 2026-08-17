@@ -76,7 +76,7 @@ export async function lookupBySlugs(slugs, { fetchImpl = fetch, token = process.
 // collected connections INTO HubSpot. Kept separate so the warm-reach cache
 // keeps requesting its own narrow PROPS set (it stores 152MB as it is).
 
-import { CONNECTIONS_PROP, MEMBER_ID_PROP } from './magellan.js';
+import { CONNECTIONS_PROP, MEMBER_ID_PROP, syntheticEmail } from './magellan.js';
 
 // What we need back to decide create-vs-update and whether a real email exists.
 // createdate earns its place: when one person has three records, "in HubSpot
@@ -133,6 +133,45 @@ export async function lookupByMemberIds(memberIds,
     } while (after);
     asked += batch.length;
     onProgress?.({ done: asked, total: ids.length });
+  }
+
+  // Second pass: the ids the search above could not see at all.
+  //
+  // The old manual process wrote the synthetic address as a contact's primary
+  // email but left linkedin_membership_id empty, so those records match no
+  // member-id filter. The app concluded "new person", planned a create, and the
+  // create then collided on the very address that made the record invisible —
+  // "that email address is already used by someone else". That is the whole of
+  // Abygael's 17 Aug run: 24 planned creates, 24 rejected, 0 written.
+  //
+  // Measured against the live portal on 2026-08-17: 401 such records out of
+  // 12.2M contacts, 212 of them created this year — so this is an active
+  // inflow, not a closed backlog, and a one-off backfill would refill.
+  //
+  // Finding them by the synthetic address recovers the record we should have
+  // been updating all along. updateProperties writes the member id back to it
+  // (it fills that property whenever it is blank), so every run permanently
+  // repairs the records it touches and this second pass shrinks over time.
+  const missing = ids.filter((id) => !all.has(id));
+  for (const batch of chunk(missing, BATCH_LIMIT)) {
+    // The address we searched IS the member id, so map back from it rather than
+    // trusting a property the record is missing by definition.
+    const idByEmail = new Map(batch.map((id) => [syntheticEmail(id).toLowerCase(), id]));
+    const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/search`, token, {
+      filterGroups: [{ filters: [{ propertyName: 'email', operator: 'IN', values: [...idByEmail.keys()] }] }],
+      properties: MAGELLAN_PROPS,
+      limit: BATCH_LIMIT,
+    });
+    const json = await res.json();
+    for (const r of json.results || []) {
+      const mid = idByEmail.get(String(r.properties?.email || '').trim().toLowerCase());
+      // Never overwrite a member-id hit: that one is the record a human
+      // maintains, this one is the synthetic shell.
+      if (!mid || all.has(mid)) continue;
+      all.set(mid, [{ id: r.id, properties: r.properties || {} }]);
+    }
+    asked += batch.length;
+    onProgress?.({ done: Math.min(asked, ids.length), total: ids.length });
   }
 
   // Prefer the human-maintained record — the one with a real email — over the
