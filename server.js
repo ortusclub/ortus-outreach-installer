@@ -335,7 +335,7 @@ async function rejectIfForeignProfiles(req, res, profileIds, mode) {
   // problems and a merged message would send the operator looking in the wrong
   // place. Wrong-workspace is checked first because it is the harder block:
   // switching campaign type cannot fix it.
-  const foreign = ids.filter((id) => !canOperatorUseProfile(email, accountOfProfile(id)));
+  const foreign = ids.filter((id) => !canOperatorUseProfile(email, accountOfProfile(id), id));
   if (foreign.length) {
     const theirs = accountLabel(viewerAccount(req));
     res.status(403).json({
@@ -636,7 +636,7 @@ app.get('/api/profiles', async (req, res) => {
     const email = viewerEmail(req);
     res.json(profiles.map((p) => ({
       ...p,
-      available: canOperatorUseProfile(email, p.account),
+      available: canOperatorUseProfile(email, p.account, p.id),
       accountLabel: accountLabel(p.account),
       // null = runs anything. An array means the picker must re-check on every
       // campaign-type change, which is why this ships with the list rather than

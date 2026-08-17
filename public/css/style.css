@@ -5556,6 +5556,24 @@ body.route-salesnav .sidebar-nav { display: none; }
 }
 .wizard-queue-banner strong { color: var(--text-primary, #111); margin-right: 8px; }
 
+/* Naming the replacement campaign, inside the cloud-edit banner. */
+.cloud-edit-rename-label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #777);
+  margin: 0 0 5px;
+}
+#cloud-edit-new-name { width: 100%; font-family: var(--mono, monospace); font-size: 12.5px; }
+.cloud-edit-swap {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  margin-top: 8px;
+  color: var(--text-secondary, #555);
+}
+.cloud-edit-swap .old { text-decoration: line-through; opacity: .55; }
+
 /* Apply / Cancel for an account-picker session, pinned to the top of §3 where
    the operator is actually ticking accounts. */
 .acct-add-bar {

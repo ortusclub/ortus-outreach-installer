@@ -4,6 +4,7 @@
 // directly (no setTimeout race between classic + module script loading).
 // Every function referenced from an inline onclick handler in index.html is
 // re-exposed on `window` at the bottom of this file.
+import { nextReplacementName } from '/js/replacement-name.mjs';
 import { renderRepliesPanel } from '/js/replies-panel.mjs';
 import { initRepliesInbox } from '/js/replies-inbox.mjs';
 import {
@@ -1523,7 +1524,7 @@ function gatherCampaignFormState() {
 
   const senderFirstNames = {};
   for (const id of selectedProfileIds) {
-    const pName = selectedProfileNames[id] || id;
+    const pName = profileLabel(id);
     senderFirstNames[id] = resolveSenderFirstName(id, pName);
   }
 
@@ -1989,6 +1990,42 @@ function dedupeKey(p) {
   return ((p && p.account) || '') + '|' + email;
 }
 
+// id → GoLogin label (the account's email), built from the RAW profile list.
+// Deliberately NOT from allProfilesData: that one is deduped by email, and the
+// duplicates it drops are still perfectly valid ids that a campaign can be
+// running on. A selected account whose id was deduped away had no tile to
+// backfill its name, so every "|| id" fallback printed a raw 24-hex GoLogin id
+// where the operator expects an email (report 2026-08-17: a campaign's existing
+// account showed as "690d87f15906fbc1eaedffeb" next to a normal address).
+const _profileNameById = new Map();
+function _indexProfileNames(profiles) {
+  for (const p of (profiles || [])) {
+    const nm = String((p && p.name) || '').trim();
+    if (p && p.id && nm) _profileNameById.set(p.id, nm);
+  }
+}
+
+/**
+ * What to call a GoLogin profile in the UI. Never invents a name; falls back to
+ * the raw id only when nothing anywhere knows this account.
+ */
+function profileLabel(id) {
+  if (!id) return '';
+  const picked = selectedProfileNames[id];
+  if (picked) return picked;
+  const known = _profileNameById.get(id);
+  if (known) { selectedProfileNames[id] = known; return known; } // memoise for the next render
+  // A cloud campaign's own account list carries the email the engine stamped.
+  try {
+    for (const accounts of _cloudAccountsById.values()) {
+      const hit = (accounts || []).find((a) => a && a.profileId === id && a.email);
+      if (hit) return hit.email;
+    }
+  } catch (_) { /* board snapshot not loaded yet */ }
+  return id;
+}
+window.profileLabel = profileLabel;
+
 function dedupeProfilesByEmail(profiles) {
   const seen = new Map();   // key -> kept profile
   const hidden = new Map(); // key -> count hidden
@@ -2229,6 +2266,7 @@ async function loadProfiles() {
     const profilesRes = await fetch('/api/profiles');
     const profiles = await profilesRes.json();
     if (profiles.error) { loading.textContent = `Error: ${profiles.error}`; return; }
+    _indexProfileNames(profiles); // BEFORE the dedupe — hidden duplicates keep their labels
     allProfilesData = dedupeProfilesByEmail(profiles);
     loading.classList.add('hidden');
     grid.classList.remove('hidden');
@@ -2580,7 +2618,7 @@ function renderSelectedPanel() {
   if (count) count.textContent = `${selectedProfileIds.length} selected / ${allProfilesData.length} total`;
 
   list.innerHTML = selectedProfileIds.map((id, i) => {
-    const name = selectedProfileNames[id] || id;
+    const name = profileLabel(id);
     const first = resolveSenderFirstName(id, name);
     const senderTag = first
       ? `<span class="sender-first" style="color:#3fb950;font-size:11px;margin-left:6px">→ "${escHtml(first)}"</span>`
@@ -2612,7 +2650,7 @@ function renderGuardrailAlert() {
   const el = document.getElementById('guardrail-alert');
   if (!el) return;
   const selected = (selectedProfileIds || []).map(id => {
-    const name = selectedProfileNames[id] || id;
+    const name = profileLabel(id);
     return { email: name, soo: findSoOForProfile(name) };
   });
   const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
@@ -4801,7 +4839,7 @@ function renderPostAmpEngagementTable() {
   rows.innerHTML = ids.map(id => {
     const cfg = postAmpAccountConfig[id] || { like: true, comment: false, commentText: '' };
     postAmpAccountConfig[id] = cfg;
-    const name = selectedProfileNames[id] || id;
+    const name = profileLabel(id);
     const offCls = cfg.comment ? '' : ' is-comment-off';
     const isPanelOpen = postAmpSuggestionsOpenForId === id;
     const panel = isPanelOpen
@@ -5009,7 +5047,7 @@ async function startPostAmplification() {
     const cfg = postAmpAccountConfig[id] || {};
     return {
       profileId: id,
-      profileName: selectedProfileNames[id] || id,
+      profileName: profileLabel(id),
       like: !!cfg.like,
       comment: !!cfg.comment,
       commentText: (cfg.commentText || '').trim(),
@@ -6713,7 +6751,7 @@ async function startCampaign(opts = {}) {
   // there now too.
   const senderFirstNames = {};
   for (const id of selectedProfileIds) {
-    const pName = selectedProfileNames[id] || id;
+    const pName = profileLabel(id);
     senderFirstNames[id] = resolveSenderFirstName(id, pName);
   }
 
@@ -6836,7 +6874,7 @@ async function startCampaign(opts = {}) {
   } catch (_) { /* naming is best-effort — never block a launch */ }
 
   // Show account queue
-  renderAccountQueue(selectedProfileIds.map(id => selectedProfileNames[id] || id), null);
+  renderAccountQueue(selectedProfileIds.map(id => profileLabel(id)), null);
 
   const body = {
     profileIds: selectedProfileIds,
@@ -10468,14 +10506,32 @@ function _cloudEditBannerEls() {
     detail: document.getElementById('cloud-edit-banner-detail'),
     pauseBtn: document.getElementById('btn-cloud-edit-pause'),
     saveBtn: document.getElementById('btn-cloud-edit-save'),
+    rename: document.getElementById('cloud-edit-rename'),
+    newName: document.getElementById('cloud-edit-new-name'),
+    swap: document.getElementById('cloud-edit-swap'),
   };
 }
 
+// How many of this campaign's leads would actually move to the replacement.
+// Read off the board's own snapshot — no extra request, and '' when the
+// snapshot hasn't landed yet, because a wrong number here is worse than none.
+function _cloudEditPendingCount(id) {
+  try {
+    const d = (_cloudRaw || []).find((x) => ((x && x.campaign) || {}).id === id);
+    const n = Number(((d || {}).leadCounts || {}).pending);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch (_) { return null; }
+}
+
 function _renderCloudEditBanner() {
-  const { banner, title, detail, pauseBtn, saveBtn } = _cloudEditBannerEls();
+  const { banner, title, detail, pauseBtn, saveBtn, rename, newName, swap } = _cloudEditBannerEls();
   if (!banner) return;
   if (!_cloudEdit) { banner.style.display = 'none'; return; }
   banner.style.display = '';
+  // Only the paused (redispatch) branch names a replacement — hide it everywhere
+  // else, including the 5s poll's re-render of a still-running campaign.
+  if (rename && !(_cloudEdit.paused && !_cloudEdit.readOnly)) rename.style.display = 'none';
+  if (swap && !(_cloudEdit.paused && !_cloudEdit.readOnly)) swap.textContent = '';
   if (_cloudEdit.readOnly) {
     // v2.160.46: OPEN on an ACTIVE campaign → read-only view. No pause/save
     // path here — to edit, the operator stops it from the dashboard (→ Stopped,
@@ -10487,8 +10543,17 @@ function _renderCloudEditBanner() {
     return;
   }
   if (_cloudEdit.paused) {
-    if (title) title.textContent = `Editing "${_cloudEdit.name || 'cloud campaign'}" (paused).`;
-    if (detail) detail.textContent = 'Change the messaging or any other field below, then Save edits & resume — the remaining leads are redispatched with your changes.';
+    // Saving REPLACES this campaign — it does not resume it (server.js
+    // edit-redispatch). Say that at the top, and name the replacement here so
+    // the operator sees two distinct campaigns before committing.
+    const oldName = _cloudEdit.name || 'This campaign';
+    const pending = _cloudEditPendingCount(_cloudEdit.cloudId);
+    const leads = pending ? `Its ${pending.toLocaleString()} unsent lead${pending === 1 ? '' : 's'} move` : 'Its unsent leads move';
+    if (title) title.textContent = `Editing "${oldName}" — this replaces it.`;
+    if (detail) detail.textContent = `"${oldName}" stops for good. ${leads} to a new campaign:`;
+    if (rename) rename.style.display = '';
+    if (newName && !newName.value.trim()) newName.value = nextReplacementName(_cloudEdit.name) || _cloudEdit.name || '';
+    _renderCloudEditSwap();
     if (pauseBtn) pauseBtn.style.display = 'none';
     if (saveBtn) saveBtn.style.display = '';
   } else {
@@ -10498,6 +10563,23 @@ function _renderCloudEditBanner() {
     if (saveBtn) saveBtn.style.display = 'none';
   }
 }
+
+// old → new, so the two campaigns read as two campaigns before committing.
+// textContent per node (never innerHTML): the campaign name is operator input.
+function _renderCloudEditSwap() {
+  const { newName, swap } = _cloudEditBannerEls();
+  if (!swap || !_cloudEdit) return;
+  swap.textContent = '';
+  const oldEl = document.createElement('span');
+  oldEl.className = 'old';
+  oldEl.textContent = _cloudEdit.name || 'this campaign';
+  const arrow = document.createElement('span');
+  arrow.textContent = ' → ';
+  const newEl = document.createElement('span');
+  newEl.textContent = ((newName && newName.value) || '').trim() || '(name the replacement)';
+  swap.append(oldEl, arrow, newEl);
+}
+window.cloudEditSwapChanged = _renderCloudEditSwap;
 
 // Lock/unlock every control in the wizard EXCEPT the banner's own buttons and
 // the back link. Only elements THIS lock disabled get re-enabled (via the
@@ -10546,6 +10628,11 @@ async function openRunningCampaignEditor(id) {
   _cloudEdit = { cloudId: id, name: d.name || '', paused };
   const nameInput = document.getElementById('campaign-name-input');
   if (nameInput) nameInput.value = d.name || '';
+  // Clear any replacement name left from the LAST campaign opened — the banner
+  // only auto-fills an empty field, so a stale value would silently name this
+  // campaign's replacement after a different one.
+  const { newName: _rn } = _cloudEditBannerEls();
+  if (_rn) _rn.value = '';
   try { clearActiveDraft(); } catch (_) { /* editing a live campaign, not a draft */ }
   if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
   goCreateCampaign();
@@ -10579,6 +10666,17 @@ async function cloudEditPauseNow() {
 window.cloudEditPauseNow = cloudEditPauseNow;
 
 function cloudEditSaveResume() {
+  // The banner's name field is what the operator actually looked at, so it wins.
+  // The wizard's own name input is the single source the launch body reads
+  // (app.js:6879), so copy it across rather than threading a second name down.
+  const { newName } = _cloudEditBannerEls();
+  const chosen = ((newName && newName.value) || '').trim();
+  if (chosen) {
+    const ni = document.getElementById('campaign-name-input');
+    if (ni) ni.value = chosen;
+    // Beat the same name-restore race openCampaignForEdit guards against.
+    window._openEditNameOverride = chosen;
+  }
   // Same wizard entry as a real launch so every validation runs; the body is
   // diverted to edit-redispatch inside submitStartCampaign.
   if (typeof startCampaign === 'function') startCampaign({ cloud: true });
@@ -24333,12 +24431,18 @@ function _cloudCountsByAccount(leads) {
 
 // A GoLogin profile id is not a name. We hold the profile list locally, so
 // resolve it rather than printing 68a841147a803f7714c0eaef at the operator.
-function _acctLabel(a) {
-  const email = String(a.email || '');
-  if (email) return email.includes('@') ? email.split('@')[0] : email;
-  const p = (allProfilesData || []).find((x) => x && x.id === a.profileId);
-  if (p && p.name) return String(p.name).includes('@') ? String(p.name).split('@')[0] : p.name;
-  return String(a.profileId || 'account').slice(0, 8);
+function _acctLabel(a, opts = {}) {
+  const short = (s) => (opts.full ? s : (String(s).includes('@') ? String(s).split('@')[0] : String(s)));
+  const email = String((a && a.email) || '');
+  if (email) return short(email);
+  // _profileNameById, not allProfilesData: the latter is deduped by email, and a
+  // campaign can be running on exactly the duplicate id that was dropped — which
+  // is how a live pill read "690d87f1" instead of stanley.o@klabber.co.
+  const known = _profileNameById.get((a && a.profileId) || '');
+  if (known) return short(known);
+  const p = (allProfilesData || []).find((x) => x && x.id === (a && a.profileId));
+  if (p && p.name) return short(p.name);
+  return String((a && a.profileId) || 'account').slice(0, 8);
 }
 
 // FG bench reasons arrive as engine prose ("no invite credits · refills August
@@ -24430,7 +24534,7 @@ function _stageAcctPill(a, isCurrent, counts) {
 // watching its browser, and clearing a bench. Add/remove live in the accounts
 // panel below the card — this doesn't duplicate them.
 function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
-  const email = escHtml(String(a.email || a.profileId || ''));
+  const email = escHtml(_acctLabel(a, { full: true }));
   const benched = !!(a.weeklyCap || a.parkReason === 'weekly' || a.parked);
   const st = a.needsLogin ? '<span class="st" style="color:var(--red)">needs login</span>'
     : a.bench ? `<span class="st" style="color:var(--red)">${escHtml(_benchWord(a.bench).toLowerCase())}</span>`
@@ -24479,7 +24583,7 @@ function _nextMondayText() {
 
 function _stageFixHtml(cid, accts) {
   if (!accts.length) return '';
-  const nm = (a) => escHtml(String(a.email || a.profileId || '').split('@')[0]);
+  const nm = (a) => escHtml(_acctLabel(a));
   const list = (xs) => xs.map(nm).join(', ');
   const needsLogin = accts.filter((a) => a.needsLogin);
   const proxy = accts.filter((a) => !a.needsLogin && a.parkReason === 'proxy');
@@ -24586,7 +24690,9 @@ function renderLiveStage(root, status) {
     const _acctList = (cid && _cloudAccountsById.get(cid)) || [];
     const _label = (id) => {
       const hit = _acctList.find((a) => a.profileId === id || a.email === id);
-      return (hit && (hit.email || hit.name)) || id;
+      // Not-yet-loaded account list → fall back to the local roster rather than
+      // to the raw id (profileLabel returns the id itself only as a last resort).
+      return (hit && (hit.email || hit.name)) || profileLabel(id);
     };
     const acct = ca && ca.account && ca.account !== who ? _label(ca.account) : '';
     const sub = [acct, ca && ca.sub].filter(Boolean).join(' · ');

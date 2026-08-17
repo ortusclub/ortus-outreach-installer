@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.0" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.0" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.2" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.2" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1009,8 +1009,17 @@
       <div id="wizard-cloud-edit-banner" class="wizard-queue-banner" style="display:none">
         <strong id="cloud-edit-banner-title">This campaign is running.</strong>
         <span id="cloud-edit-banner-detail">Fields are locked while it sends — pause it to make edits.</span>
+        <!-- Saving does NOT resume this campaign: server.js edit-redispatch stops
+             it for good and dispatches a NEW one with the still-pending leads. The
+             replacement used to inherit the dead campaign's name, which is how one
+             list became CC_I → CC_J → CC_K → CC_L on the board. Name it here. -->
+        <div id="cloud-edit-rename" style="display:none; margin:11px 0 4px; max-width:340px">
+          <label for="cloud-edit-new-name" class="cloud-edit-rename-label">New campaign name</label>
+          <input type="text" id="cloud-edit-new-name" autocomplete="off" oninput="cloudEditSwapChanged()" />
+          <div id="cloud-edit-swap" class="cloud-edit-swap"></div>
+        </div>
         <button type="button" class="btn btn-primary" id="btn-cloud-edit-pause" onclick="cloudEditPauseNow()" style="margin-left:12px">Pause campaign</button>
-        <button type="button" class="btn btn-primary" id="btn-cloud-edit-save" onclick="cloudEditSaveResume()" style="margin-left:12px; display:none">Save edits &amp; resume</button>
+        <button type="button" class="btn btn-primary" id="btn-cloud-edit-save" onclick="cloudEditSaveResume()" style="margin-left:12px; display:none">Stop &amp; start replacement</button>
       </div>
 
       <!-- "＋ Add account" on a live campaign's Accounts panel brings the operator
@@ -4095,7 +4104,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.0"></script>
+  <script type="module" src="/js/app.js?v=3.1.2"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

@@ -123,17 +123,55 @@ export function accountForEmail(email) {
 }
 
 /**
+ * Per-profile grants — the escape hatch the domain rule deliberately lacks.
+ *
+ * The domain gate is right for the roster as a whole and wrong for the handful
+ * of accounts two workspaces genuinely share (2026-08-17: milee.mel and
+ * matt.adcock, owned by Ortus, driven by Linked Velocity). GoLogin's own
+ * profile-sharing cannot express this — a shared profile still tags its owning
+ * workspace (see getProfiles' first-wins rule), which is exactly what keeps a
+ * shared profile out of the marketing mode restriction and must not change.
+ *
+ * So the grant lives beside the token it overrides, in the environment:
+ *
+ *   GOLOGIN_PROFILE_GRANTS=linkedvelocity:686696205c3c6094e10f461c,linkedvelocity:686698b83d9568f25c44b0fe
+ *
+ * Read at call time, never cached, for the same reason tokenForAccount is: the
+ * Electron wrapper rewrites the environment before importing the server.
+ *
+ * A grant widens WHO may drive a profile. It never changes who OWNS it, so
+ * tokenForProfile still hands the launcher the owning workspace's token and a
+ * granted profile still answers to its owner's mode rules.
+ */
+export function grantsForProfile(profileId) {
+  const id = String(profileId || '').trim();
+  if (!id) return [];
+  const out = [];
+  for (const entry of String(process.env.GOLOGIN_PROFILE_GRANTS || '').split(/[,\s]+/)) {
+    const [accId, profId] = entry.split(':');
+    if (!accId || !profId) continue;
+    if (profId.trim() === id) out.push(accId.trim().toLowerCase());
+  }
+  return out;
+}
+
+/**
  * The access rule in one place, so the picker's greying, the launch guard and
  * any future caller can never disagree about it.
  *
  * A profile with no recorded account is treated as the default account's —
  * that is what every profile was before this file existed.
+ *
+ * `profileId` is optional only so the pre-grant call signature keeps working;
+ * a caller that omits it simply cannot benefit from a grant.
  */
-export function canOperatorUseProfile(email, profileAccountId) {
+export function canOperatorUseProfile(email, profileAccountId, profileId) {
   const id = profileAccountId || DEFAULT_ACCOUNT_ID;
   const acc = accountById(id);
   if (acc && acc.openToAll) return true;
-  return accountForEmail(email) === id;
+  const mine = accountForEmail(email);
+  if (mine === id) return true;
+  return grantsForProfile(profileId).includes(mine);
 }
 
 /**
@@ -167,6 +205,6 @@ export function accountAllowsMode(profileAccountId, mode) {
  * an account from THIS workspace? Both axes in one place so a caller cannot
  * check one and forget the other.
  */
-export function profileUsableFor(email, profileAccountId, mode) {
-  return canOperatorUseProfile(email, profileAccountId) && accountAllowsMode(profileAccountId, mode);
+export function profileUsableFor(email, profileAccountId, mode, profileId) {
+  return canOperatorUseProfile(email, profileAccountId, profileId) && accountAllowsMode(profileAccountId, mode);
 }

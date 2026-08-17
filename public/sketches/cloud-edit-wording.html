@@ -1,0 +1,118 @@
+<meta charset="utf-8">
+<title>Cloud edit wording — variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/dashboard-v0.3.css">
+<style>
+  /* The app's own tokens differ between style.css and dashboard-v0.3.css, and a
+     sketch with no body class picks up the dark set while these rules assume the
+     light one — which is how v1 shipped as white-on-white. Pin the theme. */
+  /* Pin the token values too: the app's dark set is also reachable via
+     prefers-color-scheme, which a body class alone does not beat on a Mac in
+     dark mode. */
+  body, body.theme-light {
+    --bg: #fff; --bg-soft: #f7f7f5; --border: #d4d4d4; --hairline: #e5e5e5;
+    --text-primary: #111; --text-secondary: #555;
+    padding: 32px 40px 80px; max-width: 940px; background: #fff; color: #111;
+  }
+  .wizard-queue-banner strong, .modal h3, .ledger b, b { color: #111; }
+  h1 { font-family: 'Bebas Neue', sans-serif; font-size: 30px; letter-spacing: .04em; margin: 0 0 4px; }
+  .lede { color: var(--text-secondary, #555); font-size: 13px; margin: 0 0 30px; max-width: 70ch; line-height: 1.55; }
+  h2 { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-secondary, #666);
+       margin: 38px 0 4px; padding-top: 18px; border-top: 1px solid var(--hairline, #e5e5e5); }
+  .why { font-size: 12.5px; color: var(--text-secondary, #555); margin: 0 0 14px; line-height: 1.5; max-width: 74ch; }
+  .frame { border: 1px solid var(--hairline, #e5e5e5); padding: 20px 22px; background: var(--bg, #fff); }
+  .field-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-secondary, #777); margin: 0 0 5px; }
+  .fake-input { border: 1px solid var(--border, #d4d4d4); border-radius: 6px; padding: 9px 11px; font-size: 13px;
+                background: var(--bg, #fff); color: var(--text-primary, #111); }
+  .fake-input.mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+  .swap { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; margin-top: 10px;
+          color: var(--text-secondary, #555); font-family: 'JetBrains Mono', monospace; }
+  .swap .old { text-decoration: line-through; opacity: .55; }
+  .modal { border: 1px solid var(--border, #d4d4d4); border-radius: 8px; padding: 20px 22px; max-width: 480px;
+           background: var(--bg, #fff); box-shadow: 0 8px 30px rgba(0,0,0,.10); }
+  .modal h3 { margin: 0 0 10px; font-size: 15px; }
+  .modal p { font-size: 13px; line-height: 1.55; color: var(--text-secondary, #555); margin: 0 0 12px; }
+  .ledger { font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.9; margin: 0 0 16px;
+            border: 1px solid var(--hairline, #e5e5e5); padding: 10px 12px; }
+  .ledger b { color: var(--text-primary, #111); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .note { font-size: 12px; color: var(--text-secondary, #666); margin-top: 12px; line-height: 1.5; }
+  .verdict { font-size: 12.5px; line-height: 1.6; margin-top: 8px; }
+</style>
+
+<body class="theme-light" data-dashboard="v3">
+
+<h1>“Save edits &amp; resume” — it doesn’t resume</h1>
+<p class="lede">
+  The button stops the original campaign for good and dispatches a <b>new</b> one with the leads that
+  haven’t been sent yet (<span class="fake-input mono" style="padding:1px 5px">server.js:2066 edit-redispatch</span>).
+  The name comes from the wizard’s own name field, so unless the operator changes it, the replacement
+  carries the same name as the campaign that just died. Milee hit this four times — CC_I → CC_J → CC_K → CC_L —
+  and read it as the app creating campaigns by itself.
+</p>
+
+<h2>Today</h2>
+<p class="why">Every word here points the wrong way: “Editing”, “resume”, “remaining leads are redispatched” buried at the end.</p>
+<div class="frame">
+  <div class="wizard-queue-banner">
+    <strong>Editing "PRIMO_I CC_J" (paused).</strong>
+    <span>Change the messaging or any other field below, then Save edits &amp; resume — the remaining leads are redispatched with your changes.</span>
+    <button type="button" class="btn btn-primary" style="margin-left:12px">Save edits &amp; resume</button>
+  </div>
+</div>
+
+<h2>A — Say it in the button</h2>
+<p class="why">Smallest possible change: the banner leads with the consequence and the button stops lying. One line of copy, no new UI.</p>
+<div class="frame">
+  <div class="wizard-queue-banner">
+    <strong>Editing "PRIMO_I CC_J" — this replaces it.</strong>
+    <span>Saving stops "PRIMO_I CC_J" for good and starts a <b>new campaign</b> with its 1,048 unsent leads. Already-sent leads stay with the old one.</span>
+    <button type="button" class="btn btn-primary" style="margin-left:12px">Stop &amp; start replacement</button>
+  </div>
+</div>
+<p class="verdict"><b>Costs:</b> two strings. <b>Doesn’t fix:</b> the duplicate name — she’d still get a second “PRIMO_I CC_J” unless she scrolls up and renames it.</p>
+
+<h2>B — Name the replacement, right here</h2>
+<p class="why">The naming <em>is</em> the confusion. Pull the new campaign’s name into the banner, pre-filled with an auto-incremented suffix, so the operator sees two distinct campaigns before committing.</p>
+<div class="frame">
+  <div class="wizard-queue-banner">
+    <strong>Editing "PRIMO_I CC_J" — this replaces it.</strong>
+    <span>"PRIMO_I CC_J" stops for good. Its 1,048 unsent leads move to a new campaign:</span>
+    <div style="margin:11px 0 4px; max-width:340px">
+      <div class="field-label">New campaign name</div>
+      <div class="fake-input mono">PRIMO_I CC_J (2)</div>
+    </div>
+    <div class="swap"><span class="old">PRIMO_I CC_J · 1,048 unsent</span> <span>→</span> <span>PRIMO_I CC_J (2)</span></div>
+    <button type="button" class="btn btn-primary" style="margin-top:14px">Stop &amp; start replacement</button>
+  </div>
+</div>
+<p class="verdict"><b>Costs:</b> a field in the banner + an auto-name helper. <b>Fixes:</b> the board stops filling with same-named cards, and the lineage is readable afterwards.</p>
+
+<h2>C — Confirm with the numbers</h2>
+<p class="why">Button and banner keep A’s wording; the irreversible half moves behind a confirm that shows what is actually about to move. Nobody discovers the split after the fact.</p>
+<div class="frame">
+  <div class="modal">
+    <h3>Replace "PRIMO_I CC_J"?</h3>
+    <p>This can’t be undone. The campaign stops for good and its unsent leads start again as a new one.</p>
+    <div class="ledger">
+      PRIMO_I CC_J&nbsp;&nbsp;<b>stops permanently</b><br>
+      &nbsp;&nbsp;272 sent&nbsp;&nbsp;<span style="opacity:.6">stay here, not re-sent</span><br>
+      &nbsp;&nbsp;1,048 unsent&nbsp;&nbsp;<span style="opacity:.6">move →</span><br>
+      <b>PRIMO_I CC_J (2)</b>&nbsp;&nbsp;starts with your edits
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn">Keep editing</button>
+      <button type="button" class="btn btn-primary">Replace campaign</button>
+    </div>
+  </div>
+  <p class="note">Pairs with A or B — it’s the gate, not a replacement for fixing the button.</p>
+</div>
+
+<h2>What I’d ship</h2>
+<p class="why">
+  <b>B, then C.</b> A alone leaves the duplicate-name trap that produced J, K and L in the first place —
+  the operator reads the warning, agrees, and still ends up with two identically-named cards.
+  B is what actually stops the board filling up; C is cheap insurance on an irreversible action.
+  All three are copy and one input — no change to what the button does.
+</p>
