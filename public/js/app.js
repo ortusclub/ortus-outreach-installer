@@ -27950,17 +27950,23 @@ async function magellanAddHubspotOptions(btn) {
   btn.disabled = true;
   btn.textContent = 'Adding…';
   try {
-    const res = await fetch('/api/magellan/hubspot-options/add', {
+    // Through mgFetch, not bare fetch: it carries the 30s cap, so a stalled
+    // POST surfaces as an error instead of leaving this button disabled with
+    // nothing on screen.
+    const j = await mgFetch('/api/magellan/hubspot-options/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accounts }),
     });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
     btn.textContent = `Added ${j.added.length} ✓`;
-    // Re-read so the tiles that were amber turn green. `fresh` bypasses the
-    // server's option-list cache, which the endpoint has already cleared.
-    await loadMagellanAccounts({ keepSelection: true, fresh: true });
+    // Deliberately NOT `fresh`. The server already cleared its option-list
+    // cache when the write landed, so an ordinary reload recomputes
+    // `importable` and the amber tiles turn green — in about a second.
+    // `fresh` additionally forces a blocking SoO re-read (server.js:2808),
+    // which measured 16s here and blew mgFetch's 30s timeout on slower
+    // laptops: the write succeeded, then the reload behind it reported
+    // "The app did not answer", which read as the add having failed.
+    await loadMagellanAccounts({ keepSelection: true });
   } catch (err) {
     btn.textContent = label;
     showMagellanError(`Could not add to the HubSpot list — ${err.message}`);
