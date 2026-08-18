@@ -17,7 +17,7 @@
 // jobs. That contention is what made the first run's tabs come back empty.
 import { MAGELLAN_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { readForPlan } from './magellan-pull.js';
-import { syntheticEmail, isHidden } from './magellan.js';
+import { syntheticEmail, isHidden, mergeConnections } from './magellan.js';
 
 export const ACCOUNTS_TAB = 'Accounts';
 export const LOG_TAB = 'Log';
@@ -129,6 +129,18 @@ async function writeTab(tab, header, rows, { post = postWebApp } = {}) {
  *
  * Location is blank: neither the archive export nor the connections API carries
  * it. Nothing is invented to fill the column.
+ *
+ * "Linkedin First Connections" carries a LEADING SEMICOLON, and that is not
+ * cosmetic. The HubSpot property is multi-value, and on a CSV import a bare
+ * value REPLACES whatever the contact already had, wiping the other Ortus
+ * accounts they are connected to. `;value` appends instead. The API path has
+ * always written it that way (magellan.js createProperties / mergeConnections);
+ * this column did not, so the sheet route quietly overwrote what the app route
+ * preserved. Reported by Abygael, 17 Aug 2026.
+ *
+ * Built with mergeConnections so there is exactly one definition of the format
+ * — a second hand-rolled `';' + account` here is how the two paths drifted
+ * apart in the first place.
  */
 export function connectionsRowsForAccount(account, rows) {
   return (rows || [])
@@ -142,7 +154,7 @@ export function connectionsRowsForAccount(account, rows) {
       s(r.company),
       s(r.jobTitle),
       syntheticEmail(r.memberId),
-      s(account),
+      mergeConnections('', account) || '',
     ]);
 }
 

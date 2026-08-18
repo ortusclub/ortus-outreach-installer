@@ -6,6 +6,7 @@ import {
   CONNECTIONS_HEADER, ACCOUNTS_TAB, LOG_TAB, IMPORT_TAB, PLAN_TAB,
 } from '../../src/connections/magellan-sheet.js';
 import { diagnose } from '../../src/connections/magellan-diagnose.js';
+import { createProperties, CONNECTIONS_PROP } from '../../src/connections/magellan.js';
 
 // The layout is Abygael's cleaned sheet, so the columns are a contract.
 test('the connections tab has exactly the cleaned-sheet columns, in order', () => {
@@ -21,7 +22,24 @@ test('a connection becomes a cleaned-sheet row, keyed by the synthetic email', (
   ]);
   assert.deepEqual(rows[0], ['14258192', '', 'Anand', 'Choudha',
     'https://www.linkedin.com/in/anand-choudha', 'Hive Pro Inc', 'CEO and Founder',
-    '14258192@linkedinmembership.id', 'karl@ortus.solutions']);
+    '14258192@linkedinmembership.id', ';karl@ortus.solutions']);
+});
+
+// The leading ';' is what makes a CSV import APPEND to the multi-value property
+// instead of replacing it. Without it the import wipes every other Ortus account
+// already on that contact — reported by Abygael, 17 Aug 2026.
+test('the connections column carries the leading semicolon the CSV import needs', () => {
+  const rows = connectionsRowsForAccount('pat.yanguas@ortus.solutions', [
+    { memberId: '2723390', firstName: 'Dawn', lastName: 'Maloney', slug: 'dawnmaloney' },
+  ]);
+  assert.equal(rows[0][8], ';pat.yanguas@ortus.solutions');
+});
+
+// Same format on both routes. They drifted once already.
+test('the sheet column and the API property agree on the format', () => {
+  const [row] = connectionsRowsForAccount('Karl@Ortus.Solutions ', [{ memberId: '7', slug: 'x' }]);
+  assert.equal(row[8], createProperties({ memberId: '7' }, 'Karl@Ortus.Solutions ')[CONNECTIONS_PROP]);
+  assert.equal(row[8], ';karl@ortus.solutions', 'trimmed and lowercased, like the property options');
 });
 
 // No member id means no HubSpot key — a half-row would just be noise.
