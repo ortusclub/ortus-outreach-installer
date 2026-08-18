@@ -50,3 +50,6 @@ k8s/fg-roster/secret.yaml
 data/funnel-i/
 
 data/cloud-reconcile.json
+# Per-operator Magellan state: memberId -> HubSpot contact id, for the sheet's
+# HubSpot Link column. Machine-local, never shared.
+data/magellan-hubspot-ids.json

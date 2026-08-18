@@ -17,6 +17,8 @@
 // jobs. That contention is what made the first run's tabs come back empty.
 import { MAGELLAN_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { readForPlan } from './magellan-pull.js';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { dataPath } from '../paths.js';
 import { syntheticEmail, isHidden, mergeConnections, hubspotContactUrl } from './magellan.js';
 
 export const ACCOUNTS_TAB = 'Accounts';
@@ -128,24 +130,81 @@ async function writeTab(tab, header, rows, { post = postWebApp } = {}) {
 //
 // Filled from two sources, because ids become known at two different moments:
 // Check learns the ids of people already in HubSpot, and Import learns the ids
-// of the people it just created. Until one of those has run the column is
-// blank — which is honest, since before an import there is nothing to link to.
-let _hubspotIds = new Map();
+// of the people it just created.
+//
+// PERSISTED, unlike _verdicts, and that difference is the whole point. A
+// verdict describes one run. A contact id is permanent — HubSpot never changes
+// it — so forgetting one only means re-deriving a fact that never changed.
+//
+// Held in memory it did worse than that: writeTab does sheet.clear() before
+// every write, so a fresh collect rewrote the tab with an empty link column and
+// ERASED links a previous import had already published. Aby opening the sheet
+// in that window saw blanks, which is exactly the signal we told her means
+// "not imported". Measured 2026-08-18, then fixed here.
+const IDS_FILE = dataPath('magellan-hubspot-ids.json');
 
-/** Merge in ids as they are learned. Never clears — the two sources add up. */
-export function addHubspotIds(entries) {
-  for (const [memberId, id] of entries || []) {
-    const mid = String(memberId || '').trim();
-    if (mid && id) _hubspotIds.set(mid, String(id));
+let _hubspotIds = null;   // null = not loaded yet
+let _idsDirty = false;
+
+function loadIds() {
+  if (_hubspotIds) return _hubspotIds;
+  try {
+    const parsed = JSON.parse(readFileSync(IDS_FILE, 'utf8'));
+    _hubspotIds = new Map(Object.entries(parsed || {}).map(([k, v]) => [String(k), String(v)]));
+  } catch {
+    _hubspotIds = new Map();   // absent or unreadable: start empty, never throw
   }
   return _hubspotIds;
 }
 
-/** A fresh sweep starts with no links: last run's ids describe last run. */
-export function resetHubspotIds() { _hubspotIds = new Map(); }
+/**
+ * Merge in ids as they are learned. Never clears — the two sources add up, and
+ * so do previous runs.
+ *
+ * Marks dirty rather than writing: Check calls this once PER PERSON, so writing
+ * here would be a file write per contact on a 7,000-connection account.
+ * flushHubspotIds() does the write, from publish(), which is already throttled.
+ */
+export function addHubspotIds(entries) {
+  const ids = loadIds();
+  for (const [memberId, id] of entries || []) {
+    const mid = String(memberId || '').trim();
+    if (mid && id) {
+      if (ids.get(mid) !== String(id)) _idsDirty = true;
+      ids.set(mid, String(id));
+    }
+  }
+  return ids;
+}
+
+/** Atomic write, per the repo convention: .tmp then rename. Never throws. */
+export function flushHubspotIds() {
+  if (!_idsDirty || !_hubspotIds) return false;
+  try {
+    const tmp = `${IDS_FILE}.tmp`;
+    writeFileSync(tmp, JSON.stringify(Object.fromEntries(_hubspotIds), null, 0));
+    renameSync(tmp, IDS_FILE);
+    _idsDirty = false;
+    return true;
+  } catch {
+    // A link column is not worth failing a sweep over. Stays dirty, retries on
+    // the next publish.
+    return false;
+  }
+}
+
+/**
+ * Forget every link. NOT called by a fresh sweep any more — that is what was
+ * erasing them. Kept for tests and for an explicit "start clean".
+ */
+export function resetHubspotIds() {
+  _hubspotIds = new Map();
+  _idsDirty = true;
+  flushHubspotIds();
+}
 
 /** Test seam, and what publish()'s cache key is indirectly built from. */
-export function hubspotIdCount() { return _hubspotIds.size; }
+export function hubspotIdCount() { return loadIds().size; }
 
 /**
  * The cleaned-sheet rows for one account, straight from its collected CSV.
@@ -169,7 +228,7 @@ export function hubspotIdCount() { return _hubspotIds.size; }
  * — a second hand-rolled `';' + account` here is how the two paths drifted
  * apart in the first place.
  */
-export function connectionsRowsForAccount(account, rows, ids = _hubspotIds) {
+export function connectionsRowsForAccount(account, rows, ids = loadIds()) {
   return (rows || [])
     .filter((r) => r && r.memberId)
     .map((r) => [
@@ -352,6 +411,10 @@ export async function publish(state = {}, deps = {}) {
   const { write = writeTab, read = readForPlan, force = false } = deps;
   if (_inFlight && !force) return { written: false, skipped: 'a write is already in flight' };
   _inFlight = true;
+  // Whatever Check and Import learned since the last publish. Done here because
+  // publish() is already the throttled point — one file write per publish
+  // instead of one per person.
+  flushHubspotIds();
   try {
     // Accounts and Log first: on a long run those are what someone watching
     // actually needs, and the per-account tabs are the slow part.

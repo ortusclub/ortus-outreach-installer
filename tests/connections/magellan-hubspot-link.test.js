@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   connectionsRowsForAccount, CONNECTIONS_HEADER,
-  addHubspotIds, resetHubspotIds, hubspotIdCount,
+  addHubspotIds, resetHubspotIds, hubspotIdCount, flushHubspotIds,
 } from '../../src/connections/magellan-sheet.js';
 import { hubspotContactUrl, HUBSPOT_PORTAL_ID } from '../../src/connections/magellan.js';
 
@@ -67,12 +67,59 @@ test('a rejected create contributes no id, so its row stays blank', () => {
   assert.equal(row[LINK], '');
 });
 
-test('a fresh sweep drops last run links', () => {
+test('an explicit reset clears them, and the clearing survives a reload', async () => {
   resetHubspotIds();
   addHubspotIds([['1', 'a']]);
   assert.equal(hubspotIdCount(), 1);
   resetHubspotIds();
   assert.equal(hubspotIdCount(), 0);
+});
+
+/**
+ * The bug this whole persistence layer exists for.
+ *
+ * writeTab does sheet.clear() before every write, so if the ids lived only in
+ * memory, a fresh collect rewrote the tab with a blank link column and ERASED
+ * links a previous import had published — showing Aby "not imported" for people
+ * who were imported last week.
+ */
+test('links survive a fresh sweep — a re-collect no longer erases them', async () => {
+  const { reset } = await import('../../src/connections/magellan-run.js');
+  resetHubspotIds();
+  addHubspotIds([['2723390', '221275842971']]);        // Monday's import
+  flushHubspotIds();
+
+  reset();                                             // Tuesday: fresh sweep
+
+  const [row] = connectionsRowsForAccount(ACCOUNT, [PERSON]);
+  assert.equal(row[LINK].endsWith('/contact/221275842971'), true,
+    'collect must not blank a link a previous import already published');
+  resetHubspotIds();
+});
+
+test('links survive an app restart — they are on disk, not in memory', async () => {
+  resetHubspotIds();
+  addHubspotIds([['2723390', '221275842971']]);
+  assert.equal(flushHubspotIds(), true, 'the write happened');
+
+  // A fresh module instance is what a restarted app gets.
+  const fresh = await import(`../../src/connections/magellan-sheet.js?restart=${Date.now()}`);
+  const [row] = fresh.connectionsRowsForAccount(ACCOUNT, [PERSON]);
+  assert.equal(row[fresh.CONNECTIONS_HEADER.indexOf('HubSpot Link')]
+    .endsWith('/contact/221275842971'), true);
+  resetHubspotIds();
+});
+
+test('a corrupt or missing id file starts empty instead of throwing', async () => {
+  const { writeFileSync } = await import('node:fs');
+  const { dataPath } = await import('../../src/paths.js');
+  resetHubspotIds();
+  writeFileSync(dataPath('magellan-hubspot-ids.json'), 'not json {{{');
+  const fresh = await import(`../../src/connections/magellan-sheet.js?corrupt=${Date.now()}`);
+  assert.equal(fresh.hubspotIdCount(), 0);
+  const [row] = fresh.connectionsRowsForAccount(ACCOUNT, [PERSON]);
+  assert.equal(row[9], '');
+  resetHubspotIds();
 });
 
 test('numeric member ids from the CSV still match string-keyed ids', () => {

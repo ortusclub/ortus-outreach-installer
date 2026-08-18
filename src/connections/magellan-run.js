@@ -13,7 +13,7 @@ import { diagnose, logLine, summarise } from './magellan-diagnose.js';
 import { explainProblem, problemLine, summariseProblems } from './magellan-problems.js';
 import {
   publish as publishSheet, resetPublished, setPlanVerdicts, resetPlanVerdicts,
-  addHubspotIds, resetHubspotIds,
+  addHubspotIds,
 } from './magellan-sheet.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
@@ -142,7 +142,9 @@ export function getPlans() { return _plans; }
 export function reset() {
   _state = idle(); _plans = null; _stopRequested = false;
   resetPlanVerdicts();   // stale verdicts must not survive into the next sweep
-  resetHubspotIds();     // nor last run's contact links
+  // The contact links deliberately DO survive. A verdict describes one run; a
+  // HubSpot contact id is permanent. Clearing them here is what made a fresh
+  // collect erase links a previous import had already published.
 }
 
 /**
