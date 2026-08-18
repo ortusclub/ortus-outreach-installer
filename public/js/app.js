@@ -9183,6 +9183,20 @@ function renderUnifiedStrip(it) {
   const psBadge = primarySessionBadge(it.primarySession);
   const psBadgeHtml = psBadge.show ? `<div class="${psBadge.cls}">${escHtml(psBadge.text)}</div>` : '';
 
+  // An account LinkedIn logged out stops THIS campaign and no other, so it is
+  // said on this campaign's card and nowhere else — a dashboard-wide banner
+  // nagged operators about accounts that were none of their business. Only
+  // while the campaign is live: a finished run's dead account is history.
+  const _loggedOut = (running || queued)
+    ? ((_cloudAccountsById.get(it.id) || []).filter((a) => a && a.needsLogin))
+    : [];
+  const acctBadgeHtml = _loggedOut.length
+    ? `<div class="sn-acctwarn">`
+      + `<span class="sn-acctwarn-txt">${_loggedOut.length === 1 ? 'This account is' : `These ${_loggedOut.length} accounts are`} logged out of LinkedIn — ${_loggedOut.length === 1 ? 'it sends' : 'they send'} nothing until you log back in on GoLogin</span>`
+      + `<span class="sn-acctwarn-pills">${_loggedOut.map((a) => _stageAcctPill(a, false, null)).join('')}</span>`
+      + `</div>`
+    : '';
+
   const flow = it.isFG
     ? `<b>${it.total || '—'} invites</b> → <b>${it.accounts || 1} account${(it.accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
     : `<b>${it.total || 0} leads</b> → <b>${it.accounts || 0} ${acctWord}</b> → feeds <b>${escHtml(it.name || '')}</b> · ${escHtml(_cloudModeLabel(it.mode))}`;
@@ -9395,6 +9409,7 @@ function renderUnifiedStrip(it) {
     <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
     <div class="sn-flow">${flow}</div>
     ${psBadgeHtml}
+    ${acctBadgeHtml}
     ${progLine}
     ${monBlock}
     ${hsAwaiting ? handshakeBlock : switchBlock}
@@ -10220,57 +10235,6 @@ async function _renderCampaignsBoardInner() {
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
   _renderPrimaryNudge(items);
-  _renderLoggedOutAccounts(items);
-}
-
-// An account logged out of LinkedIn stops sending and says so ONLY inside the
-// stalled campaign's card — which nobody has open. danicaf@ortus.solutions sat
-// logged out for 20 hours on 17-18 Aug while its campaign re-opened the browser
-// every 30 minutes to rediscover the same thing. Surface it where the operator
-// actually looks, in the same pill vocabulary the stage card uses, so the fix
-// (log back in on GoLogin) is one glance away rather than three clicks deep.
-// Reads the per-campaign account payloads the board already fetched — no extra
-// request, and it degrades to hidden when nothing has been loaded yet.
-function _renderLoggedOutAccounts(items) {
-  const el = document.getElementById('account-nudge');
-  if (!el) return;
-  const mineIds = new Set((items || []).filter((it) => it && it.mine && it.id).map((it) => String(it.id)));
-  // Dedupe by profile: the same account can be blocked in more than one campaign.
-  const stuck = new Map();
-  for (const [cid, accts] of _cloudAccountsById.entries()) {
-    if (!mineIds.has(String(cid))) continue;
-    for (const a of accts || []) {
-      if (!a || !a.needsLogin) continue;
-      if (!stuck.has(a.profileId)) stuck.set(a.profileId, a);
-    }
-  }
-  if (!stuck.size) { el.hidden = true; el.innerHTML = ''; return; }
-  const pills = [...stuck.values()].map((a) => _stageAcctPill(a, false, null)).join('');
-  const n = stuck.size;
-  el.hidden = false;
-  el.innerHTML = `
-    <div class="acct-nudge">
-      <div class="acct-nudge-eyebrow">Accounts needing attention</div>
-      <div class="acct-nudge-head">${n} account${n === 1 ? '' : 's'} logged out of LinkedIn</div>
-      <div class="acct-nudge-sub">${n === 1 ? 'It is' : 'They are'} sending nothing until you log back in on GoLogin. The campaign keeps running and picks ${n === 1 ? 'it' : 'them'} up automatically afterwards.</div>
-      <div class="acct-nudge-pills">${pills}</div>
-    </div>`;
-}
-
-// Aggregate nudge: ONE informational line at the top of the board when this
-// machine pulled down personal-primary follow-ups LATE (the app had been closed
-// past their due time — see cloud-followup-poller). Personal follow-ups can only
-// send from the person's own machine, so the honest ask is "keep the app open".
-// Non-clickable. `items` is unused now (the old needs_login VM framing is
-// retired); kept in the signature so the single caller needn't change.
-async function _renderPrimaryNudge(_items) {
-  const el = document.getElementById('primary-nudge');
-  if (!el) return;
-  let late = 0;
-  try { const r = await fetch('/api/local-followups/pending').then((x) => x.json()); late = (r && r.late) || 0; } catch { /* best-effort nudge */ }
-  if (!late) { el.hidden = true; el.innerHTML = ''; return; }
-  el.hidden = false;
-  el.innerHTML = `<div class="needs-login">⚠ ${late} follow-up${late === 1 ? '' : 's'} waiting to send from this machine — keep the app open.</div>`;
 }
 
 // Lazy-fill done-strip log boxes from the persisted campaign log. Cached per

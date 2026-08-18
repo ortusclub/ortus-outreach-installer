@@ -126,6 +126,13 @@ import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
+// UI-preview instance (ORTUS_UI_PREVIEW=1): serves the real app against a COPY
+// of a data dir so a change can be looked at in the real UI, with every actor
+// that touches the outside world switched off. Without this, a second instance
+// drains the operator's personal follow-ups into its own throwaway queue and
+// ACKs them to the engine — the real app would then never send them — and its
+// queue drain can start a campaign nobody asked for.
+const UI_PREVIEW = process.env.ORTUS_UI_PREVIEW === '1';
 
 const pkg = JSON.parse(await readFile(resolve(__dirname, 'package.json'), 'utf8'));
 const APP_VERSION = pkg.version;
@@ -7461,7 +7468,9 @@ app.listen(PORT, async () => {
   // Gated on operator identity — a resumed monitoring loop runs acceptance
   // checks that flip accounts "In Use", so it must not run anonymously. Skip
   // quietly (no boot-time notify spam); the load-time modal prompts the human.
-  if (getOperatorEmail()) {
+  if (UI_PREVIEW) {
+    console.log('[boot] UI preview — monitoring resume, task runner, follow-up poller and queue drain are OFF');
+  } else if (getOperatorEmail()) {
     resumeMonitoringFromDisk()
       .then((r) => {
         if (r.action !== 'noop') console.log('[boot] monitoring:', r.action);
@@ -7472,7 +7481,7 @@ app.listen(PORT, async () => {
   }
 
   // v2.14 — start the T+7d monitoring auto-end watcher
-  startMonitoringWatcher();
+  if (!UI_PREVIEW) startMonitoringWatcher();
 
   // Cloud-FG write-back: reconcile on boot, then every 30s while the app is open.
   reconcileFgCloudRuns().catch(() => {});
@@ -7480,17 +7489,17 @@ app.listen(PORT, async () => {
 
   // v2.91 — drain primary-side automation tasks (auto-accept + first follow-up)
   // in idle gaps, one browser at a time, gated on the global browser semaphore.
-  startPrimaryTaskRunner();
+  if (!UI_PREVIEW) startPrimaryTaskRunner();
 
   // Pull a cloud campaign's PERSONAL-primary follow-ups down to this machine and
   // enqueue them into the same local runner (the VM can't safely send as a
   // personal account). GoLogin primaries send on the VM, untouched.
-  startCloudFollowupPoller();
+  if (!UI_PREVIEW) startCloudFollowupPoller();
 
   // Drain the campaign queue at startup. If the server crashed/restarted
   // while items were queued, this auto-promotes the next one to active so
   // the operator doesn't have to re-trigger anything.
-  setTimeout(() => {
+  if (!UI_PREVIEW) setTimeout(() => {
     runNextFromQueue().catch(err => console.error('Startup queue drain failed:', err.message));
   }, 1000);
 });
