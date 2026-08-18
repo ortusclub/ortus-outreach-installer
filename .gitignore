@@ -53,3 +53,12 @@ data/cloud-reconcile.json
 # Per-operator Magellan state: memberId -> HubSpot contact id, for the sheet's
 # HubSpot Link column. Machine-local, never shared.
 data/magellan-hubspot-ids.json
+# Live monitoring state — which campaign is being watched and when its next
+# auto-check is due. Per-operator runtime state that was tracked by accident:
+# every pull overwrote the puller's file with the committer's laptop, so an
+# operator could rehydrate a monitoring schedule that was never theirs.
+# The app treats an absent file as "nothing monitoring" (readMonitoringState
+# returns null, clearMonitoringState deletes it routinely), so untracked is the
+# state it is already designed for.
+data/monitoring-campaign.json
+data/monitoring-campaign.local-backup.json
