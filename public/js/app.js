@@ -41,7 +41,7 @@ import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, cam
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
-import { magellanPct, selectionSummary, mgNum } from '/js/magellan-view.mjs';
+import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -27806,6 +27806,7 @@ function magellanVisible() {
   const q = (document.getElementById('mg-search')?.value || '').trim().toLowerCase();
   return mgAccounts.filter((a) => {
     if (q && !a.account.toLowerCase().includes(q)) return false;
+    if (mgFilter === 'fixable') return a.resolved && a.importable === false;
     if (mgFilter === 'todo') return !a.collected;
     if (mgFilter === 'done') return a.collected;
     if (mgFilter === 'selected') return mgSelected.has(a.profileId);
@@ -27824,6 +27825,11 @@ function renderMagellanAccounts() {
     const item = document.createElement('label');
     item.className = 'profile-item jt ' + (a.collected ? 'is-done' : 'free') + (on ? ' selected' : '');
     const when = a.collectedAt ? new Date(a.collectedAt).toLocaleDateString() : '';
+    // Whether we have collected it, and whether it can be imported at all, are
+    // two different questions. The tile used to answer only the first, so a
+    // green DONE could sit on an account HubSpot would refuse — two accounts
+    // were already in exactly that hole. tileState decides which one wins.
+    const st = tileState(a);
     let sub = a.collected
       ? `${mgNum(a.count || 0)} collected on ${when}. Tick to collect again.`
       : 'Never collected.';
@@ -27832,15 +27838,24 @@ function renderMagellanAccounts() {
     if (a.resolved && a.profile && a.profile !== a.account) sub = `${a.profile} · ${sub}`;
     // No SoO address means nothing to write in HubSpot's Linkedin 1st
     // Connections field, so say so here rather than at import time.
-    if (!a.resolved) {
+    if (st.kind === 'nosoo') {
       sub = a.ambiguous
         ? `Two SoO accounts match this name — can't tell which. ${sub}`
         : `No email found in the SoO for this profile — it can be collected, but not imported. ${sub}`;
+    } else if (st.kind === 'fixable') {
+      sub = `Not on the HubSpot "Linkedin 1st Connections" list yet — one click below fixes it. ${sub}`;
+    } else if (st.kind === 'unknown') {
+      sub = `HubSpot didn't answer in time, so we don't know if this one can be imported. ${sub}`;
     }
+    // Blocked accounts stay tickable on purpose: collecting still writes the
+    // connections to the operator's Google Sheet tab, only the HubSpot import
+    // is held up. Amber warns, it does not wall.
+    item.className += (st.kind === 'nosoo' ? ' is-nosoo' : '')
+      + (st.kind === 'fixable' ? ' is-fixable' : '');
     item.innerHTML = `
-      <div class="jt-stat ${a.collected ? '' : 's-free'}">
+      <div class="jt-stat ${st.band}">
         <span class="jt-dot"></span>
-        <span class="jt-word ${a.collected ? 'w-done' : 'w-todo'}">${a.collected ? 'DONE' : 'TO DO'}</span>
+        <span class="jt-word ${a.collected ? 'w-done' : 'w-todo'}">${st.word}</span>
       </div>
       <div class="jt-det">
         <div class="jt-top">
@@ -27866,6 +27881,9 @@ function updateMagellanCounts() {
   set('mg-count-done', done);
   set('mg-count-all', mgAccounts.length);
   set('mg-count-selected', mgSelected.size);
+  // Accounts with a real address that HubSpot will nonetheless refuse — the set
+  // the fix button clears. Measured 170 of 568 on 2026-08-18.
+  set('mg-count-fixable', mgAccounts.filter((a) => a.resolved && a.importable === false).length);
   set('mg-stat-accounts', mgAccounts.length);
   set('mg-stat-collected', done);
   set('mg-stat-todo', mgAccounts.length - done);
@@ -27907,7 +27925,50 @@ function updateMagellanCounts() {
       split.innerHTML = '';
     }
   }
+
+  const fix = document.getElementById('mg-fix-hs');
+  if (fix) {
+    // Hidden when there is nothing to fix, and when the token cannot edit
+    // properties at all. In that second case the split sentence above still
+    // names the blocked accounts, so the operator knows what to ask for.
+    const canShow = sel.known && sel.blocked.length > 0 && mgCanEditOptions;
+    fix.hidden = !canShow;
+    if (canShow) {
+      fix.textContent = `Add ${sel.blocked.length} to the HubSpot list`;
+      fix.dataset.accounts = JSON.stringify(sel.blocked);
+    }
+  }
 }
+
+// Adds the selected blocked addresses to HubSpot's option list. The server does
+// the read-modify-verify; this only reports. It never says "Added" off a 200 —
+// the server has already proved the values are on the list by reading it back.
+async function magellanAddHubspotOptions(btn) {
+  const accounts = JSON.parse(btn.dataset.accounts || '[]');
+  if (!accounts.length) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+  try {
+    const res = await fetch('/api/magellan/hubspot-options/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accounts }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+    btn.textContent = `Added ${j.added.length} ✓`;
+    // Re-read so the tiles that were amber turn green. `fresh` bypasses the
+    // server's option-list cache, which the endpoint has already cleared.
+    await loadMagellanAccounts({ keepSelection: true, fresh: true });
+  } catch (err) {
+    btn.textContent = label;
+    showMagellanError(`Could not add to the HubSpot list — ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+window.magellanAddHubspotOptions = magellanAddHubspotOptions;
 
 function setMagellanFilter(f) {
   mgFilter = f;

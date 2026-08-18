@@ -1297,6 +1297,25 @@ select {
 .browse-card .profile-item.jt .s-nosoo .jt-dot { background:var(--red); }
 .browse-card .profile-item.jt .s-nosoo .jt-word { color:var(--red); font-size:0.82rem; text-align:center; line-height:1.15; }
 .browse-card .profile-item.jt.is-nosoo .jt-email { color:var(--red); }
+/* Blocked-but-fixable: the account's address is not on HubSpot's
+   linkedin_1st_connections option list, so its people cannot be imported.
+   AMBER, deliberately not red — s-nosoo above is red because no SoO email
+   exists and nothing can be done about it. This one is one button press from
+   working, and the colour is what tells those two apart at a glance. */
+.browse-card .profile-item.jt .jt-stat.s-fixable { background:rgba(247,190,104,0.16); }
+.browse-card .profile-item.jt .s-fixable .jt-dot { background:var(--gold); }
+.browse-card .profile-item.jt .s-fixable .jt-word { color:var(--gold); font-size:0.82rem; text-align:center; line-height:1.15; }
+.browse-card .profile-item.jt.is-fixable .jt-email { color:var(--gold); }
+/* HS UNKNOWN is two words like NEEDS HS LIST — same wrap treatment. */
+.browse-card .profile-item.jt .s-assigned .jt-word { font-size:0.82rem; text-align:center; line-height:1.15; }
+/* Adds the selected addresses to HubSpot's linkedin_1st_connections list.
+   Amber to match the tiles it clears, outline rather than the gold Start CTA's
+   filled treatment — this is a fix-up, not the primary action on the card. */
+.hs-fix { font-family:var(--mono); font-size:11px; letter-spacing:.05em; text-transform:uppercase;
+  background:none; border:1px solid var(--gold); color:var(--gold); border-radius:9999px;
+  padding:5px 14px; cursor:pointer; white-space:nowrap; }
+.hs-fix:hover { background:rgba(247,190,104,0.10); }
+.hs-fix[disabled] { opacity:.5; cursor:default; }
 .browse-card .profile-item.jt .jt-dot { width:9px; height:9px; border-radius:50%; }
 .browse-card .profile-item.jt .s-free .jt-dot { background:var(--green); }
 .browse-card .profile-item.jt .s-assigned .jt-dot { background:var(--blue); }

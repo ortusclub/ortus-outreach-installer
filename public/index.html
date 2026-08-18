@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.9" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.10" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.5" />
 </head>
 <body data-dashboard="v3">
@@ -782,6 +782,7 @@
                   <button type="button" class="chip" data-filter="done" onclick="setMagellanFilter('done')">Collected <span class="count" id="mg-count-done">0</span></button>
                   <button type="button" class="chip" data-filter="all" onclick="setMagellanFilter('all')">All <span class="count" id="mg-count-all">0</span></button>
                   <button type="button" class="chip" data-filter="selected" onclick="setMagellanFilter('selected')">Selected <span class="count" id="mg-count-selected">0</span></button>
+                  <button type="button" class="chip" data-filter="fixable" onclick="setMagellanFilter('fixable')">Needs HubSpot list <span class="count" id="mg-count-fixable">0</span></button>
                 </div>
                 <!-- Same refresh control the GoLogin selector has. The list is one
                      fetch away from GoLogin, the SoO sheet and HubSpot, so a blip
@@ -813,6 +814,11 @@
                  Check runs — it used to be a log line after the run, which is
                  why "13 accounts selected" sat above a run of "11 of 12". -->
             <span class="mg-selbar-split" id="mg-sel-split" hidden></span>
+            <!-- Clears the amber tiles: adds the selected addresses to HubSpot's
+                 Linkedin 1st Connections option list. Hidden when nothing
+                 selected is blocked, and when the token cannot edit properties
+                 at all — a button that always 403s is worse than no button. -->
+            <button type="button" class="hs-fix" id="mg-fix-hs" hidden onclick="magellanAddHubspotOptions(this)"></button>
           </div>
           <!-- Same live card as a running campaign (.vj-card), tuned for
                Magellan: the stage block names the account and what it is doing
@@ -4104,7 +4110,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.9"></script>
+  <script type="module" src="/js/app.js?v=3.1.10"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
