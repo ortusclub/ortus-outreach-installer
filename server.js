@@ -110,7 +110,7 @@ import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected,
   migrateLegacyConnections as magellanMigrateLegacy } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
-import { connectionsPropOptions } from './src/connections/hubspot-client.js';
+import { connectionsPropOptions, addConnectionsOptions, tokenScopes } from './src/connections/hubspot-client.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -2766,6 +2766,18 @@ async function magellanHsOptions({ maxAgeMs = 5 * 60 * 1000 } = {}) {
   return set;
 }
 
+// Can this token edit the property's option list at all? Cached like the option
+// list itself so the card does not pay a round trip per render. When the answer
+// is false the picker hides the "add to the HubSpot list" button entirely — a
+// button that always 403s is worse than no button.
+let _magellanCanEdit = { at: 0, val: null };
+async function magellanCanEditOptions({ maxAgeMs = 5 * 60 * 1000 } = {}) {
+  if (_magellanCanEdit.val !== null && Date.now() - _magellanCanEdit.at < maxAgeMs) return _magellanCanEdit.val;
+  const val = (await tokenScopes()).includes('crm.schemas.contacts.write');
+  _magellanCanEdit = { at: Date.now(), val };
+  return val;
+}
+
 // Read fresh each time — it is a handful of lines, and someone adding a
 // mapping should not have to restart the app to see it take effect.
 function magellanLabelOverrides() {
@@ -2831,7 +2843,7 @@ app.get('/api/magellan/accounts', async (req, res) => {
       console.warn(`[magellan] could not read the HubSpot options — ${err.message}`);
     }
 
-    res.json(profiles.map((p) => {
+    const accounts = profiles.map((p) => {
       const forced = overrides[p.name] || '';
       const hit = !forced && sooEmails.length ? resolveSoOEmail(p.name, sooEmails) : null;
       const email = forced || (hit && hit.email ? hit.email : '');
@@ -2851,7 +2863,8 @@ app.get('/api/magellan/accounts', async (req, res) => {
         withMemberId: c ? c.withMemberId : null,
         collectedAt: c ? c.at : null,
       };
-    }));
+    });
+    res.json({ accounts, canEditOptions: await magellanCanEditOptions({ maxAgeMs }) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2861,6 +2874,24 @@ app.post('/api/magellan/collect', (req, res) => {
   try {
     res.json(magellan.startCollect((req.body || {}).accounts || []));
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add operator addresses to HubSpot's linkedin_1st_connections option list.
+// Any operator may call this — the safety is in the writer (append-only merge,
+// guarded, then verified by reading the list back), not in who presses it.
+app.post('/api/magellan/hubspot-options/add', async (req, res) => {
+  try {
+    const accounts = ((req.body || {}).accounts || []).filter(Boolean);
+    if (!accounts.length) return res.status(400).json({ error: 'no accounts given' });
+    const out = await addConnectionsOptions(accounts);
+    // The cached option list is stale by definition now.
+    _magellanHsOptions = { at: 0, set: null };
+    console.log(`[magellan] added ${out.added.length} option(s) to linkedin_1st_connections: ${out.added.join(', ')}`);
+    res.json(out);
+  } catch (err) {
+    console.warn(`[magellan] could not add options — ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });

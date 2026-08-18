@@ -27732,6 +27732,9 @@ async function mgFetch(url, opts) {
 let mgAccounts = [];
 let mgSelected = new Set();
 let mgFilter = 'todo';
+// Whether the HubSpot token can edit property options. Set from the accounts
+// response; gates the "add to the HubSpot list" button.
+let mgCanEditOptions = false;
 let mgPoll = null;
 
 function setConnTab(tab) {
@@ -27752,7 +27755,12 @@ async function loadMagellanAccounts({ keepSelection = false, fresh = false } = {
     // `fresh` is what the refresh button means: skip the server's SoO and
     // HubSpot caches. Ordinary tab visits take the cached answer, which is what
     // makes them instant.
-    mgAccounts = await mgFetch(`/api/magellan/accounts${fresh ? '?fresh=1' : ''}`);
+    // The response is an object, not a bare array: it carries `canEditOptions`
+    // alongside the accounts so the picker knows whether the HubSpot-list fix
+    // button can work at all.
+    const payload = await mgFetch(`/api/magellan/accounts${fresh ? '?fresh=1' : ''}`);
+    mgAccounts = payload.accounts || [];
+    mgCanEditOptions = Boolean(payload.canEditOptions);
     if (previous) {
       // A profile that has since disappeared from GoLogin must not stay ticked —
       // it would be sent to a collect that cannot open it.
