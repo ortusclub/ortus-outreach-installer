@@ -28062,6 +28062,12 @@ async function refreshMagellanState() {
       mgPoll = null;
       const btn = document.getElementById('mg-collect-btn');
       if (btn) btn.disabled = false;
+      // An import started from this page has just finished. Its outcome comes
+      // from here now, not from the response to the request that started it.
+      if (mgImportPending) {
+        mgImportPending = false;
+        renderMagellanImportOutcome(s);
+      }
       // Counts and DONE badges change once a sweep lands. keepSelection,
       // because this reload exists to update badges — discarding the ticks is
       // not its job. It used to, and the "check whatever the last collect
@@ -28513,22 +28519,47 @@ async function importMagellan() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirm: true }),
     });
+    // The server answers as soon as the run has started — a refusal comes back
+    // here, the outcome does not. Waiting for the write itself is what made a
+    // finished import print "The app did not answer" at the 30s mark.
     if (j.ok === false) throw new Error(j.reason);
-    const probs = (j.errors || []).length;
-    document.getElementById('mg-confirm-t').innerHTML =
-      `<b>Done.</b> ${mgNum(j.created || 0)} people added, `
-      + `${mgNum(j.updated || 0)} existing people updated`
-      + (j.extraEmails ? `, ${mgNum(j.extraEmails)} email addresses attached` : '')
-      + (probs
-        ? ` · <b>${probs} problem${probs === 1 ? '' : 's'}</b> — press Show log to see which, and why. `
-          + 'A problem means one detail was skipped, not that the person was missed.'
-        : ' · no problems.');
-    if (btn) btn.hidden = true;
+    mgImportPending = true;
     refreshMagellanState();
   } catch (err) {
     showMagellanError(err.message);
     if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
   }
+}
+
+// Set while an import this page started is in flight, so the poller knows the
+// run that just settled was an import and not a collect — state.imported can
+// be left over from an earlier run, and is not on its own evidence that THIS
+// run wrote anything.
+let mgImportPending = false;
+
+// The sentence that used to be built from the import's HTTP response, now built
+// from the state the card polls. Same wording.
+function renderMagellanImportOutcome(s) {
+  const btn = document.getElementById('mg-import-btn');
+  if (s.phase === 'error' || s.error) {
+    showMagellanError(s.error || 'The import stopped.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
+    return;
+  }
+  const imp = s.imported || {};
+  const probs = (imp.errors || []).length;
+  const el = document.getElementById('mg-confirm-t');
+  if (el) {
+    el.innerHTML =
+      `<b>Done.</b> ${mgNum(imp.created || 0)} people added, `
+      + `${mgNum(imp.updated || 0)} existing people updated`
+      + (imp.extraEmails ? `, ${mgNum(imp.extraEmails)} email addresses attached` : '')
+      + (probs
+        ? ` · <b>${probs} problem${probs === 1 ? '' : 's'}</b> — press Show log to see which, and why. `
+          + 'A problem means one detail was skipped, not that the person was missed.'
+        : ' · no problems.');
+  }
+  if (btn) btn.hidden = true;
 }
 
 // Inline onclick handlers need these on window — app.js is a module, so

@@ -589,6 +589,36 @@ export async function mergeDuplicates(pairs = null, deps = {}) {
  * Phase 3 — write. Only ever called from an explicit operator action; there is
  * no automatic path from collect to import.
  */
+/**
+ * Start the import and return immediately.
+ *
+ * runImport writes for minutes on a real sweep. On 2026-08-18 a 1,250-person
+ * import ran long enough that the browser's 30s fetch cap (MG_FETCH_TIMEOUT_MS)
+ * fired and printed "The app did not answer. It may have restarted" over an
+ * import that was still running and went on to finish cleanly — 800 people
+ * updated. The request that starts a run is the wrong place to wait for it.
+ *
+ * The card already polls /api/magellan/state every 2s and renders the phase,
+ * the counters and the log from it, and runImport records the finished result
+ * on _state.imported. So the outcome has a way home that does not depend on
+ * holding a socket open.
+ *
+ * The two guards run here, synchronously, so a refusal still comes back on the
+ * request itself. runImport's own body up to its first await sets running, so
+ * a second press cannot slip past this check.
+ */
+export function startImport(plans = _plans, deps = {}) {
+  if (_state.running) return { ok: false, reason: 'Magellan is already running' };
+  if (!plans) return { ok: false, reason: 'Nothing to import — build a preview first' };
+  runImport(plans, deps).catch((err) => {
+    // runImport records its own failure on _state and returns rather than
+    // throwing; this is the last-resort net so nothing here can become an
+    // unhandled rejection that takes the server down.
+    log(`✗ The import stopped — ${err.message}`);
+  });
+  return { ok: true, started: true };
+}
+
 export async function runImport(plans = _plans, deps = {}) {
   const { create = batchCreate, update = batchUpdate, attach = attachSyntheticEmail,
     sheet = publishSheet } = deps;

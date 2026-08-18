@@ -2936,7 +2936,11 @@ app.post('/api/magellan/import', async (req, res) => {
     if (!(req.body || {}).confirm) {
       return res.status(400).json({ error: 'Import must be confirmed' });
     }
-    res.json(await magellan.runImport());
+    // Starts the run and answers now. The import takes minutes; the card reads
+    // its progress and its outcome from /api/magellan/state, which it already
+    // polls. Holding this request open for the whole write is what made a
+    // successful import report "The app did not answer".
+    res.json(magellan.startImport());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
