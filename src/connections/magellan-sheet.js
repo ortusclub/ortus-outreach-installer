@@ -17,7 +17,7 @@
 // jobs. That contention is what made the first run's tabs come back empty.
 import { MAGELLAN_WEBAPP_URL } from '../sheets-webapp-url.js';
 import { readForPlan } from './magellan-pull.js';
-import { syntheticEmail, isHidden, mergeConnections } from './magellan.js';
+import { syntheticEmail, isHidden, mergeConnections, hubspotContactUrl } from './magellan.js';
 
 export const ACCOUNTS_TAB = 'Accounts';
 export const LOG_TAB = 'Log';
@@ -29,7 +29,7 @@ export const PLAN_TAB = 'Plan';
 // "Linkedin First Connections", which is spelled that way in the portal.
 export const CONNECTIONS_HEADER = ['LinkedIn Membership ID', 'Location', 'First Name',
   'Last Name', 'LinkedIn Bio', 'Company Name', 'Job Title', 'Email',
-  'Linkedin First Connections'];
+  'Linkedin First Connections', 'HubSpot Link'];
 export const ACCOUNTS_HEADER = ['Account', 'Status', 'Connections', 'With Member ID',
   'Hidden', 'Collected At', 'Problem', 'What to do'];
 export const LOG_HEADER = ['Time', 'Event'];
@@ -120,6 +120,33 @@ async function writeTab(tab, header, rows, { post = postWebApp } = {}) {
 
 // ── The rows ───────────────────────────────────────────────────────────────
 
+// memberId -> HubSpot contact id, for the "HubSpot Link" column. Kept here for
+// the same reason _verdicts is: publish() is called from four unrelated places
+// and every one of them has to draw the same tab, so threading an argument
+// through all four would mean the three that never learned an id still need to
+// know this exists.
+//
+// Filled from two sources, because ids become known at two different moments:
+// Check learns the ids of people already in HubSpot, and Import learns the ids
+// of the people it just created. Until one of those has run the column is
+// blank — which is honest, since before an import there is nothing to link to.
+let _hubspotIds = new Map();
+
+/** Merge in ids as they are learned. Never clears — the two sources add up. */
+export function addHubspotIds(entries) {
+  for (const [memberId, id] of entries || []) {
+    const mid = String(memberId || '').trim();
+    if (mid && id) _hubspotIds.set(mid, String(id));
+  }
+  return _hubspotIds;
+}
+
+/** A fresh sweep starts with no links: last run's ids describe last run. */
+export function resetHubspotIds() { _hubspotIds = new Map(); }
+
+/** Test seam, and what publish()'s cache key is indirectly built from. */
+export function hubspotIdCount() { return _hubspotIds.size; }
+
 /**
  * The cleaned-sheet rows for one account, straight from its collected CSV.
  *
@@ -142,7 +169,7 @@ async function writeTab(tab, header, rows, { post = postWebApp } = {}) {
  * — a second hand-rolled `';' + account` here is how the two paths drifted
  * apart in the first place.
  */
-export function connectionsRowsForAccount(account, rows) {
+export function connectionsRowsForAccount(account, rows, ids = _hubspotIds) {
   return (rows || [])
     .filter((r) => r && r.memberId)
     .map((r) => [
@@ -155,6 +182,7 @@ export function connectionsRowsForAccount(account, rows) {
       s(r.jobTitle),
       syntheticEmail(r.memberId),
       mergeConnections('', account) || '',
+      hubspotContactUrl(ids ? ids.get(String(r.memberId)) : ''),
     ]);
 }
 
@@ -334,9 +362,14 @@ export async function publish(state = {}, deps = {}) {
       if (a.error) continue;
       let rows;
       try { rows = connectionsRowsForAccount(a.account, read(a.account)); } catch { continue; }
-      if (_written.get(a.account) === rows.length) continue;   // unchanged since last time
+      // Keyed on the row count AND how many of them carry a link. Import adds
+      // no people, it only fills the HubSpot Link column — so a count-only key
+      // reads "unchanged since last time" and skips the very write that would
+      // have published the links.
+      const key = `${rows.length}:${rows.filter((r) => r[9]).length}`;
+      if (_written.get(a.account) === key) continue;   // unchanged since last time
       last = await write(tabNameFor(a.account), CONNECTIONS_HEADER, rows, deps);
-      _written.set(a.account, rows.length);
+      _written.set(a.account, key);
     }
 
     const plan = planRows(state, read);

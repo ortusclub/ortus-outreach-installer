@@ -25,6 +25,24 @@ export const CONNECTIONS_PROP = process.env.HUBSPOT_CONNECTIONS_PROP
 
 export const MEMBER_ID_PROP = 'linkedin_membership_id';
 
+// The portal these contacts live in. Read off the live account on 2026-08-18
+// (/account-info/v3/details -> portalId 2748825, uiDomain app.hubspot.com), not
+// copied from memory. Overridable because a sandbox portal is a different
+// number and a link into the wrong portal is worse than no link.
+export const HUBSPOT_PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || '2748825';
+
+/**
+ * The record's page in HubSpot — what a human clicks to check we really wrote
+ * the person we said we wrote. Blank id gives a blank string rather than a URL
+ * that 404s, because an empty cell reads as "not imported yet" and a dead link
+ * reads as "imported, and broken".
+ */
+export function hubspotContactUrl(contactId) {
+  const id = String(contactId == null ? '' : contactId).trim();
+  if (!id) return '';
+  return `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/contact/${encodeURIComponent(id)}`;
+}
+
 /** The synthetic key. Byte-identical to the HS Extension's version. */
 export function syntheticEmail(memberId) {
   return `${memberId}@linkedinmembership.id`;

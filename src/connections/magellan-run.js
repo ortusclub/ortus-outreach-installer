@@ -11,7 +11,10 @@ import { collectAccount, readForPlan } from './magellan-pull.js';
 import { planAccount } from './magellan.js';
 import { diagnose, logLine, summarise } from './magellan-diagnose.js';
 import { explainProblem, problemLine, summariseProblems } from './magellan-problems.js';
-import { publish as publishSheet, resetPublished, setPlanVerdicts, resetPlanVerdicts } from './magellan-sheet.js';
+import {
+  publish as publishSheet, resetPublished, setPlanVerdicts, resetPlanVerdicts,
+  addHubspotIds, resetHubspotIds,
+} from './magellan-sheet.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
   checkMagellanProperties, connectionsPropOptions, mergeContacts,
@@ -139,6 +142,7 @@ export function getPlans() { return _plans; }
 export function reset() {
   _state = idle(); _plans = null; _stopRequested = false;
   resetPlanVerdicts();   // stale verdicts must not survive into the next sweep
+  resetHubspotIds();     // nor last run's contact links
 }
 
 /**
@@ -411,6 +415,9 @@ export async function buildPreview(accounts, deps = {}) {
       for (const id of memberIds) {
         const hit = existing.get(String(id));
         verdicts.set(String(id), hit ? hit.id : null);
+        // The same answer, in the form the sheet's HubSpot Link column wants.
+        // Someone already in HubSpot is linkable before any import happens.
+        if (hit) addHubspotIds([[String(id), hit.id]]);
       }
       plans.push({ account, plan });
       for (const k of Object.keys(totals)) totals[k] += plan.counts[k] || 0;
@@ -612,6 +619,10 @@ export async function runImport(plans = _plans, deps = {}) {
       _state.step = `Adding ${plan.creates.length} new people`;
       const c = await create(plan.creates);
       row.created = c.created;
+      // The other half of the HubSpot Link column: people who did not exist
+      // until this call. Only the ones HubSpot confirmed — a rejected create
+      // has no id, and must stay blank rather than get a link to nothing.
+      if (c.ids) addHubspotIds(c.ids);
       row.errors.push(...c.errors.map((e) => ({ stage: 'create', ...e })));
 
       _state.step = `Updating ${plan.updates.length} existing people`;

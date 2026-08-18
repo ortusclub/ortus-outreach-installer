@@ -12,7 +12,7 @@ import { createProperties, CONNECTIONS_PROP } from '../../src/connections/magell
 test('the connections tab has exactly the cleaned-sheet columns, in order', () => {
   assert.deepEqual(CONNECTIONS_HEADER, ['LinkedIn Membership ID', 'Location', 'First Name',
     'Last Name', 'LinkedIn Bio', 'Company Name', 'Job Title', 'Email',
-    'Linkedin First Connections']);
+    'Linkedin First Connections', 'HubSpot Link']);
 });
 
 test('a connection becomes a cleaned-sheet row, keyed by the synthetic email', () => {
@@ -22,7 +22,8 @@ test('a connection becomes a cleaned-sheet row, keyed by the synthetic email', (
   ]);
   assert.deepEqual(rows[0], ['14258192', '', 'Anand', 'Choudha',
     'https://www.linkedin.com/in/anand-choudha', 'Hive Pro Inc', 'CEO and Founder',
-    '14258192@linkedinmembership.id', ';karl@ortus.solutions']);
+    '14258192@linkedinmembership.id', ';karl@ortus.solutions',
+    '']);   // no import has run for this person yet, so nothing to link to
 });
 
 // The leading ';' is what makes a CSV import APPEND to the multi-value property

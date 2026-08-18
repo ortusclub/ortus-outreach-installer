@@ -217,6 +217,12 @@ function isSynthetic(email) {
   return /@linkedinmembership\.id\s*$/i.test(String(email || ''));
 }
 
+/** The member id back out of a synthetic address, or '' if it is not one. */
+function memberIdFromSynthetic(email) {
+  const m = /^\s*([^@\s]+)@linkedinmembership\.id\s*$/i.exec(String(email || ''));
+  return m ? m[1] : '';
+}
+
 /**
  * Do every record agree on who this is? Compared loosely — punctuation and
  * case differ all over a CRM — but a genuine disagreement ("Ina Dakay" vs
@@ -255,12 +261,21 @@ export async function batchCreate(inputs, { fetchImpl = fetch, token = process.e
   if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
   let created = 0;
   const errors = [];
+  // memberId -> new contact id. HubSpot answers a create with the record it
+  // made; throwing that away meant the only way to find a just-imported person
+  // was to search for them again. Keyed off the synthetic email because that is
+  // the one property we are certain we sent for every create.
+  const ids = new Map();
   for (const batch of chunk(inputs)) {
     try {
       const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/batch/create`, token,
         { inputs: batch.map((b) => ({ properties: b.properties })) });
       const json = await res.json();
       created += (json.results || []).length;
+      for (const r of json.results || []) {
+        const mid = memberIdFromSynthetic(r.properties?.email);
+        if (mid && r.id) ids.set(mid, String(r.id));
+      }
       const partial = partialFailure(json);
       if (partial) errors.push(partial);
     } catch (err) {
@@ -268,7 +283,7 @@ export async function batchCreate(inputs, { fetchImpl = fetch, token = process.e
     }
     onProgress?.({ created, errors: errors.length });
   }
-  return { created, errors };
+  return { created, errors, ids };
 }
 
 /** Update contacts in batches. `inputs` is [{ id, properties }]. */
