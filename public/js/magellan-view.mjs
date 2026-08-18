@@ -63,3 +63,26 @@ export function selectionSummary(accounts = []) {
 export function mgNum(v) {
   return Number(v || 0).toLocaleString('en-US');
 }
+
+/**
+ * Which of the four states a tile is in.
+ *
+ * The precedence matters and is easy to get backwards: an account with no SoO
+ * email is a DEAD END regardless of the HubSpot list — there is no address to
+ * add, so no button can help. That must beat "not on the list", which is a
+ * one-click problem. Red means nothing you can do; amber means press the button.
+ */
+export function tileState(a = {}) {
+  if (!a.resolved) {
+    return { kind: 'nosoo', band: 's-nosoo', word: 'NO SoO', tone: 'red' };
+  }
+  if (a.importable === false) {
+    return { kind: 'fixable', band: 's-fixable', word: 'NEEDS<br>HS LIST', tone: 'amber' };
+  }
+  if (a.importable == null) {
+    return { kind: 'unknown', band: 's-assigned', word: 'HS<br>UNKNOWN', tone: 'blue' };
+  }
+  return a.collected
+    ? { kind: 'ready', band: '', word: 'DONE', tone: 'grey' }
+    : { kind: 'ready', band: 's-free', word: 'TO DO', tone: 'green' };
+}
