@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.11" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.5" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.12" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.6" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -245,6 +245,10 @@
            primary needs to log in. Filled by _renderPrimaryNudge() in app.js,
            called from renderCampaignsBoard(). Non-clickable, informational only. -->
       <div id="primary-nudge" hidden></div>
+      <!-- Aggregate account alarm: any account of MY campaigns that LinkedIn has
+           logged out. Same pill vocabulary as the stalled-campaign stage card.
+           Filled by _renderLoggedOutAccounts() from renderCampaignsBoard(). -->
+      <div id="account-nudge" hidden></div>
       <div class="sn-qmeta" id="campaigns-qmeta" style="text-align:right;margin:0 2px 4px">—</div>
       <div id="campaigns-board" class="sn-board"><div class="sn-empty">Loading campaigns…</div></div>
 
@@ -4110,7 +4114,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.11"></script>
+  <script type="module" src="/js/app.js?v=3.1.12"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

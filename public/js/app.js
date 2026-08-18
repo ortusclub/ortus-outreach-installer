@@ -10220,6 +10220,41 @@ async function _renderCampaignsBoardInner() {
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
   _renderPrimaryNudge(items);
+  _renderLoggedOutAccounts(items);
+}
+
+// An account logged out of LinkedIn stops sending and says so ONLY inside the
+// stalled campaign's card — which nobody has open. danicaf@ortus.solutions sat
+// logged out for 20 hours on 17-18 Aug while its campaign re-opened the browser
+// every 30 minutes to rediscover the same thing. Surface it where the operator
+// actually looks, in the same pill vocabulary the stage card uses, so the fix
+// (log back in on GoLogin) is one glance away rather than three clicks deep.
+// Reads the per-campaign account payloads the board already fetched — no extra
+// request, and it degrades to hidden when nothing has been loaded yet.
+function _renderLoggedOutAccounts(items) {
+  const el = document.getElementById('account-nudge');
+  if (!el) return;
+  const mineIds = new Set((items || []).filter((it) => it && it.mine && it.id).map((it) => String(it.id)));
+  // Dedupe by profile: the same account can be blocked in more than one campaign.
+  const stuck = new Map();
+  for (const [cid, accts] of _cloudAccountsById.entries()) {
+    if (!mineIds.has(String(cid))) continue;
+    for (const a of accts || []) {
+      if (!a || !a.needsLogin) continue;
+      if (!stuck.has(a.profileId)) stuck.set(a.profileId, a);
+    }
+  }
+  if (!stuck.size) { el.hidden = true; el.innerHTML = ''; return; }
+  const pills = [...stuck.values()].map((a) => _stageAcctPill(a, false, null)).join('');
+  const n = stuck.size;
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="acct-nudge">
+      <div class="acct-nudge-eyebrow">Accounts needing attention</div>
+      <div class="acct-nudge-head">${n} account${n === 1 ? '' : 's'} logged out of LinkedIn</div>
+      <div class="acct-nudge-sub">${n === 1 ? 'It is' : 'They are'} sending nothing until you log back in on GoLogin. The campaign keeps running and picks ${n === 1 ? 'it' : 'them'} up automatically afterwards.</div>
+      <div class="acct-nudge-pills">${pills}</div>
+    </div>`;
 }
 
 // Aggregate nudge: ONE informational line at the top of the board when this
@@ -11488,9 +11523,17 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
     let done = false;
     const cleanup = () => { if (poll) { clearInterval(poll); poll = null; } try { back.remove(); } catch (_) { /* */ } };
     const finish = (result) => { if (done) return; done = true; cleanup(); resolve(result); };
-    // Always dismissable: clicking the scrim cancels (aborts dispatch) so a hung
-    // handshake can never trap the operator on a button-less spinner.
-    back.addEventListener('click', (e) => { if (e.target === back) finish({ ok: false, proceedAnyway: false }); });
+    // Dismissable, but never by accident. A bare scrim-click used to resolve
+    // {ok:false} and silently abandon the whole launch — one stray click outside
+    // the dialog and the campaign vanished with no message (Milee, 18 Aug). The
+    // operator still can't get trapped on a button-less spinner: the scrim asks,
+    // and Cancel / "start anyway" are always on the card.
+    back.addEventListener('click', (e) => {
+      if (e.target !== back) return;
+      if (confirm('Cancel this launch?\n\nThe senders will not be connected and nothing is sent to the cloud. Your campaign stays saved as a draft.')) {
+        finish({ ok: false, proceedAnyway: false });
+      }
+    });
 
     const paint = (senders) => {
       let connected = 0;
@@ -11604,7 +11647,15 @@ async function _submitCloudCampaign(body) {
         primarySource: t.primarySource || 'local-browser',
         autoAcceptAllPending: !!t.autoAcceptAllPending,
       });
-      if (!hs.ok && !hs.proceedAnyway) return; // operator cancelled → don't dispatch
+      if (!hs.ok && !hs.proceedAnyway) {
+        // Never exit silently. This return abandons the launch AND the finally
+        // below wipes the board card, so without a word on screen the campaign
+        // simply disappeared — the operator's read was that the app ate it.
+        if (typeof showCampaignToast === 'function') {
+          showCampaignToast('Launch cancelled at the primary handshake — nothing was sent, and your campaign is still saved as a draft.', 7000);
+        }
+        return;
+      }
     }
     // Handshake over (or never needed). The next step reads the whole lead sheet
     // and POSTs — the step that used to be two silent minutes with the modal gone
