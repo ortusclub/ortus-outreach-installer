@@ -77,6 +77,7 @@ export async function lookupBySlugs(slugs, { fetchImpl = fetch, token = process.
 // keeps requesting its own narrow PROPS set (it stores 152MB as it is).
 
 import { CONNECTIONS_PROP, MEMBER_ID_PROP, syntheticEmail } from './magellan.js';
+import { mergeOptions, verifyReadBack } from './hubspot-options.js';
 
 // What we need back to decide create-vs-update and whether a real email exists.
 // createdate earns its place: when one person has three records, "in HubSpot
@@ -374,12 +375,69 @@ export async function checkMagellanProperties({ fetchImpl = fetch, token = proce
  *
  * @returns {Promise<Set<string>>} lowercased option values
  */
-export async function connectionsPropOptions({ fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+export async function connectionsProp({ fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
   if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
   const res = await fetchImpl(`${BASE}/crm/v3/properties/contacts/${encodeURIComponent(CONNECTIONS_PROP)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`HubSpot ${res.status} reading ${CONNECTIONS_PROP}`);
   const j = await res.json();
-  return new Set((j.options || []).map((o) => String(o.value || '').trim().toLowerCase()));
+  return { options: j.options || [] };
+}
+
+export async function connectionsPropOptions({ fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  const { options } = await connectionsProp({ fetchImpl, token });
+  return new Set(options.map((o) => String(o.value || '').trim().toLowerCase()));
+}
+
+/**
+ * Append addresses to the property's option list.
+ *
+ * The PATCH replaces the entire array, so: read fresh, append only, send, then
+ * read back and prove it landed. The final read is what makes this safe for two
+ * operators pressing at the same moment — whoever writes second read first.
+ */
+export async function addConnectionsOptions(values, { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  const before = (await connectionsProp({ fetchImpl, token })).options;
+  const { options, added } = mergeOptions(before, values);
+  if (!added.length) return { added: [], total: before.length };
+
+  const res = await fetchImpl(`${BASE}/crm/v3/properties/contacts/${encodeURIComponent(CONNECTIONS_PROP)}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ options }),
+  });
+  if (!res.ok) {
+    const detail = typeof res.text === 'function' ? await res.text() : '';
+    throw new Error(`HubSpot ${res.status} updating ${CONNECTIONS_PROP}: ${detail}`);
+  }
+
+  const after = (await connectionsProp({ fetchImpl, token })).options;
+  const check = verifyReadBack(before, after, added);
+  if (!check.ok) {
+    throw new Error(`HubSpot accepted the update but it did not take — missing: ${check.missing.join(', ') || 'count mismatch'}`);
+  }
+  return { added, total: after.length };
+}
+
+/**
+ * Which scopes this token carries. The OAuth v1 endpoints 404 for private-app
+ * tokens; oauth/v2/private-apps is the one that answers. Never throws — an
+ * unknown scope list must not take the whole accounts card down with it.
+ */
+export async function tokenScopes({ fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  if (!token) return [];
+  try {
+    const res = await fetchImpl(`${BASE}/oauth/v2/private-apps/get/access-token-info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenKey: token }),
+    });
+    if (!res.ok) return [];
+    const j = await res.json();
+    return Array.isArray(j.scopes) ? j.scopes : [];
+  } catch {
+    return [];
+  }
 }
