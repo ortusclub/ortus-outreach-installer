@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sketch · Magellan picker — blocked-account states</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css">
+  <style>
+    body { background:var(--bg); color:var(--ink); padding:26px 30px; }
+    .vh { font-family:var(--display); font-size:1.5rem; letter-spacing:.04em; margin:34px 0 4px; }
+    .vh:first-of-type { margin-top:8px; }
+    .vs { font-family:var(--mono); font-size:11px; color:var(--gray); margin-bottom:14px; max-width:78ch; line-height:1.55; }
+    .browse-card { border:1px solid var(--hairline); border-radius:12px; padding:14px; background:var(--card-bg); max-width:940px; }
+    .grid { display:grid; gap:8px; }
+    .foot { display:flex; align-items:center; gap:14px; margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); flex-wrap:wrap; }
+    .foot .n { font-family:var(--display); font-size:1.7rem; line-height:1; }
+    .foot .n-sub { font-family:var(--mono); font-size:11px; color:var(--gray); }
+    .mg-split { font-family:var(--mono); font-size:11px; color:var(--gray); line-height:1.6; flex-basis:100%; }
+    .mg-split .blk { color:var(--gold); }
+    /* NEW in this sketch: the fix-it button. Hairline + 9999 radius.
+       AMBER, not red — red is "dead end, nothing you can do" (no SoO email).
+       Amber is "blocked, and this button unblocks it". */
+    .hs-fix { font-family:var(--mono); font-size:11px; letter-spacing:.05em; text-transform:uppercase;
+      background:none; border:1px solid var(--gold); color:var(--gold); border-radius:9999px;
+      padding:5px 14px; cursor:pointer; white-space:nowrap; }
+    .hs-fix:hover { background:rgba(247,190,104,0.10); }
+    /* NEW: amber "fixable" status band — the third band, between green DONE and red NO SoO. */
+    .browse-card .profile-item.jt .jt-stat.s-fixable { background:rgba(247,190,104,0.16); }
+    .browse-card .profile-item.jt .s-fixable .jt-dot { background:var(--gold); }
+    .browse-card .profile-item.jt .s-fixable .jt-word { color:var(--gold); font-size:0.82rem; text-align:center; line-height:1.15; }
+    .browse-card .profile-item.jt.is-fixable .jt-email { color:var(--gold); }
+    .hs-fix[disabled] { opacity:.5; cursor:default; }
+    /* NEW: per-tile "not on the list" pill. Same shape as the shipped .restricted-flag. */
+    .hs-flag { display:inline-block; font-size:0.52rem; letter-spacing:0.06em; text-transform:uppercase;
+      color:#c0392b; border:1px solid rgba(192,57,43,0.5); border-radius:9999px; padding:0 6px;
+      margin-left:6px; white-space:nowrap; vertical-align:middle; cursor:help; }
+    .hs-flag.unk { color:#64748b; border-color:rgba(100,116,139,0.45); }
+    /* NEW: two-word status needs the same wrap treatment s-nosoo already has. */
+    .browse-card .profile-item.jt .s-assigned .jt-word { font-size:0.82rem; text-align:center; line-height:1.15; }
+    .chips-row { display:flex; gap:7px; margin-bottom:10px; flex-wrap:wrap; }
+    .chip { font-family:var(--mono); font-size:11px; border:1px solid var(--hairline); border-radius:9999px;
+      padding:4px 12px; color:var(--gray); background:none; cursor:pointer; }
+    .chip.active { border-color:var(--ink); color:var(--ink); }
+    .chip.warn { border-color:rgba(247,190,104,0.5); color:var(--gold); }
+    .chip.warn.active { border-color:var(--gold); color:var(--gold); }
+    .banner { border:1px solid var(--gold); border-radius:10px; padding:11px 14px; margin-bottom:10px;
+      display:flex; align-items:center; gap:14px; background:rgba(247,190,104,0.07); }
+    .banner .txt { font-family:var(--mono); font-size:11.5px; line-height:1.55; color:var(--ink); flex:1; }
+    .banner .txt em { font-style:normal; color:var(--gray); }
+  </style>
+</head>
+<body>
+
+<!--
+  Real data, measured 2026-08-18 against the live portal + /api/magellan/accounts:
+    568 accounts · 301 importable · 267 not · 103 with no SoO email · 287 collected
+    170 = have an email AND are blocked only by the HubSpot option list (the fixable set)
+    property linkedin_1st_connections: enumeration/checkbox, 1029 options
+    somnath.mandal@ortus.solutions  MISSING      pat.yanguas@ortus.solutions  ALLOWED
+    antoniovarlese@ortus.solutions  MISSING
+  Nothing below is invented.
+-->
+
+<div class="vh">A · Keep the word, add a pill</div>
+<div class="vs">
+  Stat zone keeps meaning "have we collected this". A red pill next to the address carries the second
+  question. Smallest diff — the pill is the shipped <code>.restricted-flag</code> shape, already in style.css.
+  Risk: at a glance the tile still reads DONE / green, and the pill is small.
+</div>
+<div class="browse-card">
+  <div class="grid" id="gA"></div>
+  <div class="foot">
+    <div><span class="n">3</span> <span class="n-sub">accounts selected · one at a time, roughly a minute each</span></div>
+    <div class="mg-split"><b>1</b> can go into HubSpot · <b>2 need adding</b> to the "Linkedin 1st Connections" list first:
+      <span class="blk">somnath.mandal@ortus.solutions, antoniovarlese@ortus.solutions</span></div>
+    <button class="hs-fix" onclick="fix(this)">Add 2 to the HubSpot list</button>
+  </div>
+</div>
+
+<div class="vh">B · Readiness wins the zone <span style="color:var(--gold);font-size:0.7em">← recommended</span></div>
+<div class="vs">
+  When an account can't be imported, that IS its status. Three colours, three meanings, no overlap:
+  <b style="color:var(--green)">green</b> = ready · <b style="color:var(--gold)">amber</b> = blocked but one
+  click fixes it · <b style="color:var(--red)">red</b> = dead end, no SoO email exists so there is nothing
+  to add. Plus C's filter chip, which costs nothing and makes the amber set reachable in one click.
+  Risk: you lose collected/not-collected as a scannable column for 267 of 568 tiles.
+</div>
+<div class="browse-card">
+  <div class="chips-row">
+    <button class="chip active">All 568</button>
+    <button class="chip">To do 281</button>
+    <button class="chip">Done 287</button>
+    <button class="chip warn">Needs HubSpot list 170</button>
+  </div>
+  <div class="grid" id="gB"></div>
+  <div class="foot">
+    <div><span class="n">3</span> <span class="n-sub">accounts selected · one at a time, roughly a minute each</span></div>
+    <div class="mg-split"><b>1</b> can go into HubSpot · <b>2 need adding</b> to the "Linkedin 1st Connections" list first:
+      <span class="blk">somnath.mandal@ortus.solutions, antoniovarlese@ortus.solutions</span></div>
+    <button class="hs-fix" onclick="fix(this)">Add 2 to the HubSpot list</button>
+  </div>
+</div>
+
+<div class="vh">C · Out of the tile entirely</div>
+<div class="vs">
+  Tiles stay exactly as they ship today. The blocked set becomes a filter chip and a banner above the grid,
+  so the operator meets it once instead of 267 times. Zero tile churn.
+  Risk: select an account without touching the chip and you still learn nothing until the footer sentence.
+</div>
+<div class="browse-card">
+  <div class="chips-row">
+    <button class="chip active">All 568</button>
+    <button class="chip">To do 281</button>
+    <button class="chip">Done 287</button>
+    <button class="chip warn active">Can't import 267</button>
+  </div>
+  <div class="banner">
+    <div class="txt"><b>267 accounts can't be imported into HubSpot.</b>
+      170 of them just need adding to the "Linkedin 1st Connections" list — one click.
+      <em>The other 97 have no SoO email, so there's nothing to add.</em></div>
+    <button class="hs-fix" onclick="fix(this)">Add all 170</button>
+  </div>
+  <div class="grid" id="gC"></div>
+</div>
+
+<script>
+// Four rows covering every state that exists: importable, blocked-but-fixable,
+// no SoO email at all, and importable === null (HubSpot did not answer).
+const ROWS = [
+  { email:'pat.yanguas@ortus.solutions',    done:true,  when:'12 Aug', n:'1,204', importable:true,  resolved:true },
+  { email:'somnath.mandal@ortus.solutions', done:true,  when:'9 Aug',  n:'873',   importable:false, resolved:true },
+  { email:'antoniovarlese@ortus.solutions', done:false, when:'',       n:'',      importable:false, resolved:true },
+  { email:'mary.simon@ortus.solutions',     done:false, when:'',       n:'',      importable:null,  resolved:false },
+  // importable === null means the 5s HubSpot call timed out. Measured 0 accounts in this
+  // state today, but the code path is live (server.js:2848) and the UI currently says nothing.
+  { email:'wali.hassan@ortus.solutions',    done:false, when:'',       n:'',      importable:null,  resolved:true },
+];
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const progress = (r) => r.done ? `${r.n} collected on ${r.when}. Tick to collect again.` : 'Never collected.';
+
+function tile(r, variant) {
+  const el = document.createElement('label');
+  const sel = r.importable !== null;   // the three ticked rows the footer counts
+  let cls = 'profile-item jt ' + (r.done ? 'is-done' : 'free') + (sel ? ' selected' : '');
+  let band, word, sub = progress(r), flag = '';
+
+  if (!r.resolved) {                                  // shipped behaviour, unchanged in all three
+    band = 's-nosoo'; word = 'NO SoO'; cls += ' is-nosoo';
+    sub = 'No email found in the SoO for this profile — it can be collected, but not imported. ' + sub;
+  } else if (variant === 'B' && r.importable === false) {
+    band = 's-fixable'; word = 'NEEDS<br>HS LIST'; cls += ' is-fixable';
+    sub = 'Not on the HubSpot "Linkedin 1st Connections" list yet — one click below fixes it. ' + sub;
+  } else if (variant === 'B' && r.importable === null) {
+    band = 's-assigned'; word = 'HS<br>UNKNOWN'; cls += ' muted-soft';
+    sub = 'HubSpot didn\'t answer in time, so we don\'t know if this one can be imported. ' + sub;
+  } else {
+    band = r.done ? '' : 's-free'; word = r.done ? 'DONE' : 'TO DO';
+    if (variant === 'A' && r.importable === false) {
+      flag = '<span class="hs-flag" title="Not on the HubSpot Linkedin 1st Connections list">not on HS list</span>';
+      sub = 'Can be collected, but not imported until it\'s added to the HubSpot list. ' + sub;
+    }
+    if (variant === 'A' && r.importable === null) {
+      flag = '<span class="hs-flag unk" title="HubSpot did not answer in time">HS unknown</span>';
+    }
+  }
+
+  el.className = cls;
+  el.innerHTML =
+    `<div class="jt-stat ${band}"><span class="jt-dot"></span>` +
+    `<span class="jt-word ${r.done ? 'w-done' : 'w-todo'}">${word}</span></div>` +
+    `<div class="jt-det"><div class="jt-top"><input type="checkbox" ${sel ? 'checked' : ''}>` +
+    `<span class="jt-email">${esc(r.email)}</span>${flag}</div>` +
+    `<div class="jt-sub">${sub}</div></div>`;
+  return el;
+}
+
+for (const [id, v] of [['gA','A'], ['gB','B'], ['gC','C']]) {
+  const g = document.getElementById(id);
+  for (const r of ROWS) g.appendChild(tile(r, v));
+}
+
+// Optimistic-then-verify is the whole point of the interaction: the PATCH replaces
+// all 1029 options at once, so the button must read the list back before it says done.
+function fix(btn) {
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Adding…';
+  setTimeout(() => { btn.textContent = 'Checking…'; }, 700);
+  setTimeout(() => { btn.textContent = 'Added ✓'; }, 1500);
+  setTimeout(() => { btn.disabled = false; btn.textContent = label; }, 3200);
+}
+</script>
+</body>
+</html>
