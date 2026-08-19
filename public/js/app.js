@@ -42,7 +42,7 @@ import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
-import { queueState } from '/js/queue-state.mjs';
+import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -10038,10 +10038,18 @@ async function _refreshCloudItems() {
     // One reading per poll for the whole board: the queue is global, so every
     // waiting strip asks the same question and the answer is memoised server
     // side. Only worth the request when something is actually waiting.
-    if (cloudCamps.some((c) => c.status === 'queued')) {
+    // Also while anything is LIVE, for the header's VM tile. Widened from
+    // queued-only on purpose and no further: when nothing is live the pods are
+    // zero BY DEFINITION, so the tile can say "asleep" without a request. This
+    // poll already sits near the browser's six-connections-per-host limit — the
+    // ceiling that froze the board once — so an unconditional fetch here would
+    // cost a connection every 2.5s to re-learn a constant.
+    const _vmLive = cloudCamps.some((c) => ['queued', 'running', 'monitoring', 'paused'].includes(c.status));
+    if (_vmLive) {
       try { _cloudCapacity = await (await fetch('/api/campaign/cloud-capacity')).json(); }
       catch { _cloudCapacity = { queue: [], unavailable: true }; }
     }
+    renderVmTile(_vmLive);
     // Everything that still needs refreshing comes back in ONE request. Asking
     // per campaign meant 89 of them, which pinned the browser at its six
     // connections per host and starved every other poller in the page.
@@ -13946,6 +13954,19 @@ function classifyCpu(load1, cpuPct, cpuCount) {
   if (effectiveLoad >= cpuCount * 0.9) return 'err';
   if (effectiveLoad >= cpuCount * 0.7) return 'warn';
   return '';
+}
+
+// The header's VM tile. Its neighbours (RAM/CPU/Browsers) are THIS Mac; this one
+// is the cloud, which is why it carries a label saying so. The wording lives in
+// vmCapacityTile so the tile and the queue card can never disagree about what
+// "full" means.
+function renderVmTile(live) {
+  const el = document.getElementById('hero-vm');
+  if (!el) return;
+  const t = vmCapacityTile(_cloudCapacity, live);
+  el.textContent = t.text;
+  el.className = t.cls ? `v ${t.cls}` : 'v';
+  el.title = t.title;
 }
 
 function renderHeaderResources(resources) {

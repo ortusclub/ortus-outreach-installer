@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { queueState } from '../public/js/queue-state.mjs';
+import { queueState, vmCapacityTile } from '../public/js/queue-state.mjs';
 
 const CAP = { queue: ['a', 'b', 'c'], active: 30, ceiling: 30, full: true };
 const camp = (over = {}) => ({ id: 'a', status: 'queued', leadCount: 798, ...over });
@@ -98,4 +98,49 @@ test('a campaign with no lead count drops the phrase, not the card', () => {
 test('lead counts are grouped so 1720 does not read as 172', () => {
   const s = queueState(camp({ leadCount: 1720 }), { queue: ['a'], active: 1, ceiling: 30 });
   assert.match(s.line, /1,720 leads/);
+});
+
+// ── vmCapacityTile — the header strip's VM tile ──────────────────────────────
+
+test('says ASLEEP when nothing is live, needing no capacity data at all', () => {
+  // The caller must NOT spend a request to learn this: with no live campaign the
+  // pods are zero by definition, and the board poll already sits near the
+  // browser's six-connections-per-host limit.
+  const t = vmCapacityTile({}, false);
+  assert.equal(t.text, 'ASLEEP');
+  assert.match(t.title, /scaled to zero/);
+});
+
+test('shows workers awake out of the maximum while something is live', () => {
+  const t = vmCapacityTile({ podsBusy: 2, maxPods: 6, active: 7, ceiling: 30 }, true);
+  assert.equal(t.text, '2/6');
+  assert.equal(t.cls, '', 'two of six is not a warning');
+  assert.match(t.title, /7 of 30 campaign slots in use/);
+});
+
+test('warns one short of the cap, and errors when the engine says full', () => {
+  assert.equal(vmCapacityTile({ podsBusy: 5, maxPods: 6 }, true).cls, 'warn');
+  const full = vmCapacityTile({ podsBusy: 6, maxPods: 6, active: 30, ceiling: 30, full: true }, true);
+  assert.equal(full.cls, 'err');
+  assert.match(full.title, /waits for a slot/);
+});
+
+test("trusts the engine's own `full` flag rather than recomputing it", () => {
+  // podsBusy < maxPods but the engine says full — believe the engine, because it
+  // is what actually decides whether a new campaign queues.
+  assert.equal(vmCapacityTile({ podsBusy: 3, maxPods: 6, full: true }, true).cls, 'err');
+});
+
+test('never claims the VM is idle when it simply could not be reached', () => {
+  // The failure that matters: "unreachable" rendered as "asleep" would tell the
+  // operator everything is fine while nothing at all is known.
+  const t = vmCapacityTile({ unavailable: true }, true);
+  assert.equal(t.text, '—');
+  assert.doesNotMatch(t.title, /scaled to zero/);
+  assert.match(t.title, /says nothing about whether your campaigns are running/);
+});
+
+test('does not invent a ratio when the engine reports no maximum', () => {
+  assert.equal(vmCapacityTile({ podsBusy: 0 }, true).text, '—',
+    'a "0/0" tile would read as a broken VM');
 });

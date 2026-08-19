@@ -102,3 +102,49 @@ function ordinal(n) {
   if (rem100 >= 11 && rem100 <= 13) return 'TH';
   return ['TH', 'ST', 'ND', 'RD'][n % 10] || 'TH';
 }
+
+/** The header strip's VM tile: how much of the cloud is actually awake.
+ *
+ * Deliberately NOT a RAM/CPU gauge. The VM is not a machine that is always on —
+ * it is GKE pods that scale to ZERO when no campaign needs them, so a memory
+ * figure would be blank or invented for most of the day. Deliberately not a bare
+ * slot count either: the ceiling is 30 and the highest ever recorded is 4, so
+ * "0 of 30" would read the same forever and teach the operator to ignore it.
+ *
+ * Pods awake answers both useful questions at once — 0/6 means asleep (normal,
+ * and costing nothing), 6/6 means genuinely full and the next campaign queues.
+ *
+ * `live` is whether any cloud campaign is running/queued/monitoring. When
+ * nothing is, pods are zero BY DEFINITION and the caller must not spend a
+ * request to confirm it — the board poll is already at the browser's six-
+ * connections-per-host limit.
+ *
+ * Returns { text, cls, title }. cls is '' | 'warn' | 'err' | 'small'.
+ */
+export function vmCapacityTile(capacity = {}, live = false) {
+  const cap = capacity || {};
+  if (!live) {
+    return { text: 'ASLEEP', cls: 'small',
+      title: 'No cloud campaign is running, so the VM has scaled to zero. It wakes by itself when one starts.' };
+  }
+  if (cap.unavailable) {
+    return { text: '—', cls: 'small',
+      title: 'Could not reach the VM to ask how busy it is. This says nothing about whether your campaigns are running.' };
+  }
+  const busy = Number(cap.podsBusy) || 0;
+  const max = Number(cap.maxPods) || 0;
+  if (!max) {
+    return { text: '—', cls: 'small',
+      title: 'The VM did not report how many workers it can run.' };
+  }
+  const active = Number(cap.active) || 0;
+  const ceiling = Number(cap.ceiling) || 0;
+  const slots = ceiling ? ` · ${active} of ${ceiling} campaign slot${ceiling === 1 ? '' : 's'} in use` : '';
+  // `full` is the engine's own answer, not ours to recompute — it is what
+  // decides whether a new campaign queues.
+  const cls = cap.full ? 'err' : (busy >= max - 1 ? 'warn' : '');
+  const title = cap.full
+    ? `Every VM worker is busy — a campaign started now waits for a slot${slots}.`
+    : `${busy} of ${max} VM worker${max === 1 ? '' : 's'} awake${slots}. Workers scale to zero when idle.`;
+  return { text: `${busy}/${max}`, cls, title };
+}
