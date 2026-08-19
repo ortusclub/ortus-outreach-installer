@@ -187,6 +187,17 @@ export function getCloudCapacity() {
   return requestWithRetry('GET', '/api/campaign/capacity');
 }
 
+/**
+ * Per-account block truth for a set of GoLogin profile ids: why each cannot
+ * send, and when it could again. Feeds both the Waiting card and the Start
+ * prompt, so the two can never disagree. Idempotent GET, so it retries
+ * transient failures.
+ */
+export function getCloudPreflight(profileIds) {
+  const q = encodeURIComponent((profileIds || []).join(','));
+  return requestWithRetry('GET', `/api/campaign/preflight?profiles=${q}`);
+}
+
 /** One campaign + its live lead-status counts. */
 export function getCloudCampaign(id) {
   return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}`);

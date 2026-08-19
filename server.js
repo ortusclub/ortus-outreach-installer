@@ -53,7 +53,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1584,6 +1584,22 @@ app.get('/api/campaign/cloud-list', async (req, res) => {
 app.get('/api/campaign/cloud-capacity', async (_req, res) => {
   const r = await memoCloud('capacity', () => getCloudCapacity());
   if (r.error) return res.json({ queue: [], unavailable: true });
+  res.json(r);
+});
+// Per-account block truth for the Waiting card and the Start prompt.
+//
+// Memo key is the sorted account SET, not the campaign: the card polls every few
+// seconds and campaigns share accounts, so this collapses to one engine call per
+// distinct set rather than one per campaign per poll.
+app.get('/api/campaign/cloud-preflight', async (req, res) => {
+  const ids = String(req.query.profiles || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!ids.length) return res.json({ accounts: [], usable: 0, earliest: null });
+  const r = await memoCloud(`preflight:${ids.slice().sort().join(',')}`, () => getCloudPreflight(ids));
+  // A 502 must NOT read as "nothing can send" — that would fire the Start prompt
+  // on an engine blip and block a launch that is perfectly fine. usable:null is
+  // the "we don't know" signal both callers fail open on. Deliberately different
+  // from cloud-capacity above, which can safely answer with an empty shape.
+  if (r.error) return res.json({ accounts: [], usable: null, earliest: null, unavailable: true });
   res.json(r);
 });
 app.get('/api/campaign/cloud/:id', async (req, res) => {
