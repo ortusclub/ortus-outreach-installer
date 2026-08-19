@@ -10225,6 +10225,10 @@ async function _renderCampaignsBoardInner() {
         // Connection Request Status on import — the engine parks them in
         // status='sent' so they're never re-opened, but they aren't part of this
         // run. Exclude them from BOTH sides of "X of Y sent".
+        // Unsent leads. Drives the ▶ Resume sending control on a monitoring card:
+        // a campaign that stopped sending early has leads waiting, one that
+        // finished has none, and only the first should offer the button.
+        pending: Number(lc.pending || 0),
         bucket, sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)),
         total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - Number(lc._preActioned || 0),
         accounts: (c.profile_ids || []).length, profileIds: c.profile_ids || [], mine,

@@ -126,3 +126,35 @@ test('controls: queued → cancel + open routes to edit/viewCloud', () => {
   const cloud = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'qc', bucket: 'queued' }));
   assert.match(cloud.open.onclick, /viewCloudCampaign\('qc'\)/);
 });
+
+test('a cloud monitoring campaign with unsent leads offers Resume sending', () => {
+  const c = vjCardControlsFor({
+    _cloud: true, id: 'c1', state: 'monitoring', pending: 793,
+  });
+  const resume = c.extra.find((x) => x.kind === 'play');
+  assert.ok(resume, 'a campaign that stopped sending early must offer a way back');
+  assert.match(resume.onclick, /restartCloudCampaignUI\('c1', ?false\)/,
+    'continue where it left off — never restart from the beginning');
+});
+
+test('a cloud monitoring campaign that FINISHED sending offers no Resume', () => {
+  const c = vjCardControlsFor({
+    _cloud: true, id: 'c1', state: 'monitoring', pending: 0,
+  });
+  assert.equal(c.extra.find((x) => x.kind === 'play'), undefined,
+    'nothing left to send — the button would re-open leads that are already done');
+});
+
+test('Stop monitoring and Run check now survive on the monitoring card', () => {
+  const c = vjCardControlsFor({
+    _cloud: true, id: 'c1', state: 'monitoring', pending: 793,
+  });
+  assert.ok(c.stop, 'Stop monitoring must not be displaced');
+  assert.ok(c.bulk, 'Run check now must not be displaced');
+});
+
+test('statusFromItem carries pending through to the card', () => {
+  const s = statusFromItem({ where: 'cloud', id: 'c1', monitoring: true, pending: 793 });
+  assert.equal(s.pending, 793,
+    'without this the control matrix cannot tell a stalled campaign from a finished one');
+});

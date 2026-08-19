@@ -27,6 +27,7 @@ export function statusFromItem(it = {}) {
     isFG: !!it.isFG,
     totalTargets: Number(it.total) || 0,
     totalProcessed: Number(it.sent) || 0,
+    pending: Number(it.pending) || 0,
     accountsCount: Number(it.accounts) || 0,
     // The live stage counts accounts from these, not from accountsCount — a
     // board strip that only carried the number showed "0 accounts" beside a
@@ -163,6 +164,14 @@ export function vjCardControlsFor(status = {}) {
     c.stop = { tip: 'Stop monitoring', onclick: `stopCloudCampaignUI('${id}')` };
     c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}')` };
     c.monAuto = { checked: s.autoChecksEnabled !== false, onclick: `setCloudAutoChecks('${id}',this.checked,this)` };
+    // A campaign that switched to monitoring because nothing could send still has
+    // leads waiting. The engine already accepts a restart in this state (it only
+    // short-circuits when nothing is pending); the app just never offered it, so
+    // the only way back was to wait for the scheduled resume. Continue-where-it-
+    // left-off only: re-sending to leads already connected is not one click away.
+    if (Number(s.pending) > 0) {
+      c.extra.push({ tip: 'Resume sending', kind: 'play', onclick: `restartCloudCampaignUI('${id}', false)` });
+    }
   } else if (done) {
     // Restart controls — only for a STOPPED/CANCELLED/ERRORED campaign (never a
     // cleanly-completed one). ▶ Continue where it left off · ⟲ from the beginning.
