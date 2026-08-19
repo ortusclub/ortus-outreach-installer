@@ -43,8 +43,13 @@ Doing Task 3 before Task 2 makes the product lie more than it does today. Do not
 | engine | `campaign-store.js` | `accountBlockStates(profileIds)` — reads park reason + TTL + needs-login. No policy. |
 | engine | `campaign-worker.js` | delete the `BLOCK_CAP_SEC` clamp |
 | engine | `server.js` | 15-minute unblock re-check in the scale bridge |
-| app | `public/js/app.js` | date-aware wake text; preflight-sourced reasons; second clock; Start modal |
-| app | `public/css/style.css` | Waiting tokens |
+| app | `src/campaigns-client.js` | `getCloudPreflight` — the engine token lives here, never in the browser |
+| app | `server.js` | `/api/campaign/cloud-preflight` proxy, memoised on the account SET |
+| app | `public/js/app.js` | date-aware wake text; preflight-sourced reasons; second clock; Start prompt |
+| app | `public/css/style.css` | Waiting tokens (grey for capped, red for fixable) |
+
+**Seven tasks: 1, 3, 4 are engine; 2, 5, 6, 7 are app.** Task 5 is the bridge — the browser
+cannot reach the engine directly, so Tasks 6 and 7 are unbuildable until it exists.
 
 ---
 
@@ -583,7 +588,82 @@ git commit -m "feat: wake a sleeping campaign when its accounts become workable"
 
 ---
 
-### Task 5: App — Waiting card with real reasons and the second clock
+
+### Task 5: App server — expose preflight through the proxy
+
+**REPO: `/Users/antoniovarlese/ortus-gologin-clone/.worktrees/fg-sheet-input`**
+
+**The browser cannot call the engine.** The engine token lives server-side in `src/campaigns-client.js`, and every engine route is proxied by `server.js` (`/api/campaign/cloud-capacity` → `getCloudCapacity()`). Tasks 6 and 7 are unbuildable until this layer exists.
+
+**Files:**
+- Modify: `src/campaigns-client.js` (add beside `getCloudCapacity`, ~line 186)
+- Modify: `server.js` (import at ~line 56; route beside `/api/campaign/cloud-capacity`, ~line 1584)
+
+**Interfaces:**
+- Consumes: `GET /api/campaign/preflight?profiles=a,b,c` from Task 1.
+- Produces: `GET /api/campaign/cloud-preflight?profiles=a,b,c` → `{ accounts, usable, earliest, unavailable? }`.
+  **`usable` is `null`, never `0`, when the engine is unreachable.** Tasks 6 and 7 branch on that difference — `0` means "provably nothing can send", `null` means "we do not know". Conflating them would let the Start prompt fire on an engine blip.
+
+- [ ] **Step 1: Add the client call**
+
+In `src/campaigns-client.js`, after `getCloudCapacity` (~line 186):
+
+```js
+/**
+ * Per-account block truth for a set of GoLogin profile ids: why each cannot
+ * send, and when it could again. Feeds both the Waiting card and the Start
+ * prompt, so the two can never disagree. Idempotent GET, so it retries
+ * transient failures.
+ */
+export function getCloudPreflight(profileIds) {
+  const q = encodeURIComponent((profileIds || []).join(','));
+  return requestWithRetry('GET', `/api/campaign/preflight?profiles=${q}`);
+}
+```
+
+- [ ] **Step 2: Add the proxy route**
+
+In `server.js`, add `getCloudPreflight` to the existing `campaigns-client.js` import (~line 56), then add beside `/api/campaign/cloud-capacity` (~line 1584):
+
+```js
+// Per-account block truth for the Waiting card and the Start prompt.
+//
+// Memo key is the sorted account SET, not the campaign: the card polls every few
+// seconds and campaigns share accounts, so this collapses to one engine call per
+// distinct set rather than one per campaign per poll.
+app.get('/api/campaign/cloud-preflight', async (req, res) => {
+  const ids = String(req.query.profiles || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!ids.length) return res.json({ accounts: [], usable: 0, earliest: null });
+  const r = await memoCloud(`preflight:${ids.slice().sort().join(',')}`, () => getCloudPreflight(ids));
+  // A 502 must NOT read as "nothing can send" — that would fire the Start prompt
+  // on an engine blip and block a launch that is perfectly fine. usable:null is
+  // the "we don't know" signal both callers fail open on. Deliberately different
+  // from cloud-capacity above, which can safely answer with an empty shape.
+  if (r.error) return res.json({ accounts: [], usable: null, earliest: null, unavailable: true });
+  res.json(r);
+});
+```
+
+- [ ] **Step 3: Verify by hand**
+
+Start the app server and hit the route with two real profile ids — one capped, one free (as of 19 Aug, `cmp:park:*` holds 13 `weekly` and 1 `proxy`):
+
+```bash
+curl -s "http://localhost:3000/api/campaign/cloud-preflight?profiles=68a53e862fa6401ecc9ef5fb,68b534418a020bb39ba20720"
+```
+
+Expected: `accounts[]` with `reason:"weekly"` carrying a multi-day `until`, and `usable: 1`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/campaigns-client.js server.js
+git commit -m "feat: proxy the engine's per-account preflight to the app"
+```
+
+---
+
+### Task 6: App — Waiting card with real reasons and the second clock
 
 **REPO: `/Users/antoniovarlese/ortus-gologin-clone/.worktrees/fg-sheet-input`**
 
@@ -592,38 +672,96 @@ git commit -m "feat: wake a sleeping campaign when its accounts become workable"
 - Modify: `public/css/style.css` (Waiting tokens)
 
 **Interfaces:**
-- Consumes: `GET /api/campaign/preflight?profiles=…` from Task 1; `_wakeWhenText` from Task 2.
+- Consumes: `GET /api/campaign/cloud-preflight` (Task 5); `_wakeWhenText` (Task 2).
 
-- [ ] **Step 1: Fetch preflight for the campaign's accounts**
+Read `public/js/app.js:7676-7700` before editing. The Waiting branch already exists — you are amending it.
 
-The existing `why` comes from `_cloudWaitingReason(d.monitorLog)` — scraping the monitor log, which the engine's own comment says goes stale within 15 minutes. Replace it with a preflight call keyed on the campaign's `profile_ids`, cached per campaign for 60s so the 5s poller does not hammer the endpoint.
+- [ ] **Step 1: Add a synchronous-read preflight cache**
 
-- [ ] **Step 2: Build the summary line**
+`_cloudCurrentAction` is **synchronous** — it feeds a poll-driven render and cannot `await`. So the fetch is kicked off in the background and the render reads the last known answer. Add above `_cloudCurrentAction`:
 
-Group the preflight rows by reason and lead with the FIXABLE ones, because those are the only ones the operator can act on:
-
-- all capped → `5 accounts capped until Sat 23 Aug`
-- mixed → `1 account needs re-login, 4 capped until Sat 23 Aug`
-- single → `1 account capped until Sat 23 Aug`
-
-- [ ] **Step 3: Add the second clock**
-
-The card must state that monitoring is still alive, because it is. Weekly cap does not stop acceptance checks — only proxy park, needs-login and the busy lock skip an account in a sweep. Render:
-
+```js
+// Preflight answers for the Waiting card, keyed by campaign.
+//
+// _cloudCurrentAction is SYNCHRONOUS (it feeds the poll render), so it cannot
+// await. Kick the fetch off and read the last answer: a card 60s stale about a
+// four-day wait is fine; a render that blocks on the network is not.
+const _preflightCache = new Map();   // campaignId -> { at, data }
+function _preflightFor(c) {
+  const id = c && c.id;
+  const ids = (c && c.profile_ids) || [];
+  if (!id || !ids.length) return null;
+  const hit = _preflightCache.get(id);
+  if (!hit || Date.now() - hit.at > 60000) {
+    // Stamp `at` BEFORE the fetch so a slow engine cannot queue one request per
+    // poll tick. Keep serving the previous answer while the new one lands.
+    _preflightCache.set(id, { at: Date.now(), data: hit ? hit.data : null });
+    fetch('/api/campaign/cloud-preflight?profiles=' + encodeURIComponent(ids.join(',')))
+      .then((r) => r.json())
+      .then((d) => _preflightCache.set(id, { at: Date.now(), data: d }))
+      .catch(() => { /* card falls back to its old wording */ });
+  }
+  return hit ? hit.data : null;
+}
 ```
-Not sending — 5 accounts capped until Sat 23 Aug
-Still checking acceptances hourly · next check 14:12
+
+- [ ] **Step 2: Build the summary line, fixable first**
+
+```js
+// "1 account needs you, 4 capped until Sat 23 Aug"
+//
+// Fixable FIRST, always: proxy and needs-login are the only things the operator
+// can act on. A weekly cap is not a fault and has no action — leading with it
+// buries the one line that would have got them moving.
+function _blockSummary(pf) {
+  const blocked = ((pf && pf.accounts) || []).filter((a) => a.reason);
+  if (!blocked.length) return '';
+  const fixable = blocked.filter((a) => a.fixable);
+  const waiting = blocked.filter((a) => !a.fixable);
+  const parts = [];
+  if (fixable.length) {
+    parts.push(`${fixable.length} account${fixable.length === 1 ? '' : 's'} need${fixable.length === 1 ? 's' : ''} you`);
+  }
+  if (waiting.length) {
+    const clocks = waiting.map((a) => a.until).filter(Boolean).sort();
+    const when = clocks[0] ? _wakeWhenText(new Date(clocks[0]).getTime()) : '';
+    parts.push(`${waiting.length} capped${when ? ` until ${when}` : ''}`);
+  }
+  return parts.join(', ');
+}
 ```
 
-`next_check_at` is already available on the card (`app.js:3927 showWaiting`). Without this line an operator reads Waiting as "stopped" and may cancel a campaign that is still collecting acceptances and firing intros.
+- [ ] **Step 3: Use it in the Waiting branch, and add the second clock**
+
+In the Waiting branch (~7689), replace the `sub:` line. `why` currently comes from `_cloudWaitingReason(d.monitorLog)` — scraping the monitor log, which the engine's own comment says goes stale within 15 minutes. Prefer preflight; fall back to `why` only when preflight has not answered yet:
+
+```js
+      const pf = _preflightFor(c);
+      const summary = _blockSummary(pf) || why || 'every account is at a limit or benched';
+      // The SECOND clock. A capped account still RECEIVES acceptances — only
+      // proxy park, needs-login and the busy lock skip an account in a sweep. So
+      // a Waiting campaign is half-alive, and saying only "not sending" gets it
+      // cancelled by an operator who thinks it stopped.
+      const nextTxt = c.next_check_at ? _wakeWhenText(new Date(c.next_check_at).getTime()) : '';
+      return { phase: 'waiting', label: 'Not sending',
+        account: '', lead: summary,
+        sub: `still checking acceptances${nextTxt ? ` · next check ${nextTxt}` : ''} · sending resumes ${when}` };
+```
 
 - [ ] **Step 4: Style it**
 
-In `public/css/style.css`, near the existing status tokens: Waiting is **grey (`--gray`), never red**. A weekly cap is not a fault and there is nothing to fix. Red is reserved for proxy / needs-login, which a human clears in a minute. That distinction is the point of the whole card. No new accent colours; gold stays reserved for the Start CTA.
+In `public/css/style.css`, beside the existing status tokens. Waiting is **grey (`--gray`), never red** — a weekly cap is not a fault and there is nothing to fix. Red stays for proxy / needs-login, which a human clears in a minute. That distinction is the point of the card. No new accent colours; gold remains reserved for the Start CTA.
 
 - [ ] **Step 5: Verify manually**
 
-Bump `package.json` and both `index.html` `?v=`, relaunch `npm run dev:app`, and check against the real blocked campaign state (as of 19 Aug: `cmp:park:*` shows 13 weekly, 1 proxy). Confirm: a date appears, the reason names accounts, and the monitoring line is present.
+Bump `package.json` and both `index.html` `?v=`, then relaunch:
+
+```bash
+pkill -f "npm.*dev:app" 2>/dev/null; pkill -f "Electron.*ortus" 2>/dev/null
+npm run dev:app > /tmp/dev-app.log 2>&1 &
+```
+
+Open a cloud campaign with capped accounts. Confirm all three: a **date** appears (not a bare time), the reason names accounts with fixable ones first, and the "still checking acceptances" line is present.
 
 - [ ] **Step 6: Commit**
 
@@ -634,37 +772,114 @@ git commit -m "feat: Waiting card shows real per-account reasons and the monitor
 
 ---
 
-### Task 6: App — Start-time prompt when nothing can send
+### Task 7: App — Start-time prompt when nothing can send
 
 **REPO: `/Users/antoniovarlese/ortus-gologin-clone/.worktrees/fg-sheet-input`**
 
 **Files:**
-- Modify: `public/js/app.js` (the `/api/campaign/start-cloud` path, ~line 11669)
+- Modify: `public/js/app.js` (new `runPreflightPrompt`; call it before `fetch('/api/campaign/start-cloud')` at ~11669)
 
-Sketch to match: `public/sketches/2026-08-19-waiting-state-variants.html`, variant B. Open it with `npx http-server public -p 8850` and read it before building.
+**Interfaces:**
+- Consumes: `GET /api/campaign/cloud-preflight` (Task 5).
+- Produces: `runPreflightPrompt({ profileIds }) -> Promise<{ ok, proceedAnyway }>`.
 
-- [ ] **Step 1: Gate the cloud start**
+**Mirror the existing precedent, do not invent one.** `runHandshakeWizard` (`public/js/app.js:11497`) is the same shape: a pre-dispatch gate returning `{ ok, proceedAnyway }`, built from `modal-backdrop` / `modal-card` / `modal-title` / `modal-body` / `modal-actions`, using `escHtml` and `selectedProfileNames`. Read it first and match it.
 
-Before `fetch('/api/campaign/start-cloud', …)` at ~11669, call preflight with the selected profile ids. When `usable > 0`, proceed exactly as today — no prompt, no change.
+Sketch to match: `public/sketches/2026-08-19-waiting-state-variants.html`, variant B. Serve with `npx http-server public -p 8850`.
 
-- [ ] **Step 2: Build the modal for `usable === 0`**
+- [ ] **Step 1: Build the prompt**
 
-Per the sketch: title **"Nothing can send yet"**, every account listed with its reason, fixable ones (proxy / re-login) visually separated from just-wait (weekly cap), and an explicit line that acceptance checking still runs on the capped accounts.
+```js
+// Start-time gate: every account is blocked, so say so before the operator walks
+// away expecting sends. Same contract as runHandshakeWizard — resolve
+// {ok, proceedAnyway} and let the caller decide.
+function runPreflightPrompt({ accounts = [], earliest = null }) {
+  return new Promise((resolve) => {
+    const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+    const label = (a) => {
+      if (a.reason === 'needslogin') return 'Needs re-login in GoLogin';
+      if (a.reason === 'proxy') return 'Proxy — fix the profile';
+      if (a.until) return `Capped until ${_wakeWhenText(new Date(a.until).getTime())}`;
+      return 'Blocked';
+    };
+    // Fixable first: those are the only rows with an action behind them.
+    const rows = accounts.slice().sort((x, y) => Number(!!y.fixable) - Number(!!x.fixable));
+    const when = earliest ? _wakeWhenText(new Date(earliest).getTime()) : 'later';
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="No account can send yet">
+        <h3 class="modal-title">Nothing can send yet</h3>
+        <div class="modal-body">
+          <p>All <b>${accounts.length}</b> account${accounts.length === 1 ? '' : 's'} on this campaign are blocked. The earliest any of them can send a connection request is <b>${escHtml(when)}</b>.</p>
+          <div class="pf-list">
+            ${rows.map((a) => `<div class="pf-row${a.fixable ? ' fixable' : ''}"><span class="who">${escHtml(String(nameOf(a.id)))}</span><span class="st">${escHtml(label(a))}</span></div>`).join('')}
+          </div>
+          <p class="pf-note">Starting anyway is not pointless: <b>acceptance checking still runs</b> on the capped accounts, and intros still fire. Only <b>sending</b> is on hold.</p>
+        </div>
+        <div class="modal-actions" style="display:flex; gap:10px; flex-wrap:wrap">
+          <button type="button" class="btn btn-primary pf-fix">Fix accounts</button>
+          <button type="button" class="btn pf-anyway">Start anyway</button>
+          <button type="button" class="btn modal-cancel-link pf-back">Back</button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+    const done = (r) => { try { back.remove(); } catch (_) { /* */ } resolve(r); };
+    back.querySelector('.pf-anyway').addEventListener('click', () => done({ ok: false, proceedAnyway: true }));
+    back.querySelector('.pf-back').addEventListener('click', () => done({ ok: false, proceedAnyway: false }));
+    back.querySelector('.pf-fix').addEventListener('click', () => done({ ok: false, proceedAnyway: false, fix: true }));
+    // Scrim click = Back. Safe here (unlike the handshake wizard, which guards it
+    // with a confirm) because nothing has been dispatched yet and the draft is
+    // untouched — the operator loses nothing by dismissing.
+    back.addEventListener('click', (e) => { if (e.target === back) done({ ok: false, proceedAnyway: false }); });
+  });
+}
+```
 
-Three buttons — **Back** / **Start anyway** / **Fix accounts**. Three because "start anyway" is legitimate: the leads send themselves when the cap lifts. Forcing a single path is what makes prompts hated.
+- [ ] **Step 2: Gate the dispatch**
 
-- [ ] **Step 3: Fail open**
+Immediately before `const res = await fetch('/api/campaign/start-cloud', …)` (~line 11669):
 
-If preflight errors or times out, **do not block the start**. A campaign that cannot start because a diagnostic endpoint is down is worse than one that starts into a wait.
+```js
+    // Preflight gate. FAIL OPEN on every uncertainty: a campaign that cannot
+    // launch because a diagnostic endpoint is down is worse than one that
+    // launches into a wait. Only a PROVEN usable===0 stops here.
+    try {
+      const ids = body.profileIds || [];
+      if (ids.length) {
+        const pf = await (await fetch('/api/campaign/cloud-preflight?profiles=' + encodeURIComponent(ids.join(',')))).json();
+        // usable===null means the engine was unreachable — NOT that nothing can
+        // send. Only a hard 0 fires the prompt.
+        if (pf && pf.usable === 0) {
+          const verdict = await runPreflightPrompt({ accounts: pf.accounts || [], earliest: pf.earliest });
+          if (!verdict.proceedAnyway) {
+            if (typeof showCampaignToast === 'function') {
+              showCampaignToast('Launch held — no account can send yet. Your campaign is still saved as a draft.', 6000);
+            }
+            return;
+          }
+        }
+      }
+    } catch (_) { /* fail open — never block a launch on this check */ }
+```
+
+- [ ] **Step 3: Style the rows**
+
+In `public/css/style.css`: `.pf-row` on a hairline, `.pf-row .st` grey by default, `.pf-row.fixable .st` in `--red`. Grey for capped (nothing to fix), red for fixable (a human clears it in a minute) — the same distinction the card makes. No new accent colours.
 
 - [ ] **Step 4: Verify manually**
 
-Relaunch and try starting a cloud campaign whose accounts are all capped. Confirm the modal lists them with dates, that "Start anyway" proceeds, and that a campaign with at least one free account shows **no** modal.
+Bump versions, relaunch, then check all three cases:
+1. A cloud campaign whose accounts are **all** capped → prompt appears, lists accounts with dates, fixable rows first.
+2. "Start anyway" → the launch proceeds normally.
+3. A campaign with **at least one free** account → **no** prompt at all.
+
+Then confirm fail-open: stop the engine (or point `ENGINE_URL` at a dead host), start a campaign, and confirm it launches with no prompt.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/js/app.js package.json public/index.html
+git add public/js/app.js public/css/style.css package.json public/index.html
 git commit -m "feat: tell the operator at Start when no account can send"
 ```
 
@@ -678,11 +893,12 @@ git commit -m "feat: tell the operator at Start when no account can send"
 - [ ] `node test-monitor-survives-block.js` — PASS (2) — the campaign still sweeps while asleep
 - [ ] `node test-monitor-backoff.js` — PASS (10)
 - [ ] `node test-campaign-scalebridge.js` — PASS
+- [ ] `curl` the proxy route returns real reasons and a multi-day `until`
 - [ ] Manual: a multi-day block renders a **date**, not a bare time
-- [ ] Manual: the Waiting card names accounts and shows the monitoring clock
-- [ ] Manual: Start prompt appears only when `usable === 0`, and fails open
+- [ ] Manual: the Waiting card names accounts, fixable first, and shows the monitoring clock
+- [ ] Manual: Start prompt appears only on a proven `usable === 0`, and fails open when the engine is down
 
-**Not done by this plan:** `./deploy.sh`, any `kubectl apply`, and any push. Shipping is the operator's call.
+**Not done by this plan:** `./deploy.sh`, any `kubectl apply`, any push. Shipping is the operator's call.
 
 ## Out of scope
 
