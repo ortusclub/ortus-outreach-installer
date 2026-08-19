@@ -7673,6 +7673,21 @@ function _fgLastActivity(leads) {
   return best;
 }
 
+// Wake-time text for a blocked campaign. Date-aware ON PURPOSE.
+//
+// This used to be a bare toLocaleTimeString (hour+minute), which was safe only
+// while the engine clamped every sleep to 6 hours. Once a campaign can sleep out
+// a real weekly cap (~4.4 days), "until 23:59" reads as tonight when it means
+// Saturday — a worse lie than the "Working…" this card was built to replace.
+function _wakeWhenText(ms) {
+  const d = new Date(ms);
+  const now = new Date();
+  const hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return hm;
+  return `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${hm}`;
+}
+
 function _cloudCurrentAction(d) {
   const lp = d && d.liveProgress;
   if (!lp || !lp.phase) {
@@ -7688,7 +7703,7 @@ function _cloudCurrentAction(d) {
     // stall. See the engine's campaigns.blocked_until (scraper v130).
     const wake = c.blocked_until ? new Date(c.blocked_until).getTime() : 0;
     if (wake > Date.now()) {
-      const when = new Date(wake).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const when = _wakeWhenText(wake);
       return { phase: 'waiting', label: 'Waiting for a free account',
         account: '', lead: 'No account free',
         sub: `${why || 'every account is at a limit or benched'} · the VM stands down until ${when} to save cost, then picks itself back up` };
