@@ -7374,12 +7374,18 @@ function renderCloudStrip(c, lc, logLines = null) {
     ? `<b>${total || '—'} invites</b> → <b>${accounts || 1} account${(accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
     : `<b>${total} leads</b> → <b>${accounts} ${acctWord}</b> → feeds <b>${escHtml(c.name || '')}</b> · ${escHtml(_cloudModeLabel(c.mode))}`;
 
+  // Same rule as renderUnifiedStrip: asleep on blocked_until means sending is
+  // gated, so the chip says Waiting even though the DB status is 'running'
+  // (which it must stay, or the acceptance sweep stops with it).
+  const isWaiting = isRunning && !!c.blocked_until && new Date(c.blocked_until).getTime() > Date.now();
   const statusTxt = isQueued ? 'Queued'
+    : isWaiting ? 'Waiting'
     : isRunning ? (isFG ? 'Inviting' : 'Running')
     : isBad ? (status === 'cancelled' ? 'Stopped' : 'Error')
     : 'Done';
   const dot = status === 'error' ? '<span class="dot red"></span>'
     : isBad ? '<span class="dot cancel"></span>'   // cancelled — gray, not red
+    : isWaiting ? '<span class="dot mon"></span>'
     : isRunning ? '<span class="dot run"></span>'
     : isQueued ? '<span class="dot q"></span>'
     : '<span class="dot done"></span>';            // done — ink
@@ -9229,6 +9235,13 @@ function renderUnifiedStrip(it) {
   const queued = it.bucket === 'queued';
   const done = it.bucket === 'done';
   const monitoring = cloud && it.monitoring;   // Task 3 — post-send acceptance-watch (still ACTIVE)
+  // Asleep on blocked_until: sending is gated until a real unblock time, but the
+  // DB status stays 'running' SO THE MONITOR SWEEP KEEPS RUNNING. The chip must
+  // report the truth about SENDING, not echo the raw status word — a green
+  // "Running" sitting above a card that says every account is capped is the same
+  // lie as the "Working…" this card was built to kill. Bucket stays `running` on
+  // purpose: the controls and the acceptance sweep both depend on it.
+  const waiting = !!(it.currentAction && it.currentAction.phase === 'waiting');
   const scheduled = queued && !!it.scheduledAt;
   const whenTxt = scheduled && typeof v3FormatScheduledAt === 'function' ? v3FormatScheduledAt(it.scheduledAt) : '';
   const collapsed = queued ? true : !_snExpanded.has(it.id);
@@ -9246,8 +9259,8 @@ function renderUnifiedStrip(it) {
   const cancelled = it.bad && !errored;            // 'Cancelled' / 'Stopped' — benign
   const stateCls = [
     it.where === 'local' ? 'local' : '',
-    running && !monitoring ? 'run' : '',
-    monitoring ? 'monitoring' : '',
+    running && !monitoring && !waiting ? 'run' : '',
+    (monitoring || waiting) ? 'monitoring' : '',
     queued ? 'queued' : '',
     scheduled ? 'sched' : '',
     done ? 'done' : '',
@@ -9262,7 +9275,7 @@ function renderUnifiedStrip(it) {
   const whenPill = scheduled ? '<span class="sn-when-pill">⏰ Scheduled</span>' : '';
   const dot = errored ? '<span class="dot red"></span>'
     : it.bad ? '<span class="dot cancel"></span>'   // cancelled / stopped — gray, not red
-    : monitoring ? '<span class="dot mon"></span>'
+    : (monitoring || waiting) ? '<span class="dot mon"></span>'
     : running ? (cloud ? '<span class="dot run"></span>' : '<span class="dot runlocal"></span>')
     : scheduled ? '<span class="dot gold"></span>'
     : queued ? '<span class="dot q"></span>'
@@ -9278,6 +9291,7 @@ function renderUnifiedStrip(it) {
     : warming ? '⏳ Warming up (~2 min)'
     : queued ? 'Queued'
     : monitoring ? 'Monitoring'
+    : waiting ? 'Waiting'
     : running ? (it.paused ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
