@@ -8360,6 +8360,17 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .sn-mon-line b{color:var(--ink);font-weight:600;}
 .sn-mon.ending .sn-mon-badge{color:var(--ink);font-weight:700;}
 .sn-mon-ctl{display:inline-flex;align-items:center;gap:13px;margin-left:auto;}
+/* Why a queued campaign hasn't started (queue-state.mjs). Same .sn-mon row plus
+   a second line for the reassurance, so it reads as one block rather than two.
+   Monochrome throughout: the three states differ in WORDS, not colour — the one
+   an operator must act on (accounts) earns a hairline rule, nothing louder. */
+/* Block, not the parent's flex row: the badge and the fact line share a line and
+   wrap together, then the note falls beneath them as its own paragraph. */
+.sn-queue{display:block;}
+.sn-queue .sn-mon-badge{margin-right:9px;}
+.sn-queue-note{display:block;margin-top:3px;font-size:11.5px;color:var(--gray);line-height:1.45;}
+.sn-queue-accounts{border-left:1px solid var(--hairline);padding-left:11px;margin-left:-1px;}
+.sn-queue-accounts .sn-mon-badge{font-weight:700;}
 /* Command-deck styling: mono, hairline, ink — no native grey pill, no gold. */
 .sn-mon-btn{-webkit-appearance:none;appearance:none;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:5px 12px;background:transparent;border:1px solid var(--hairline);border-radius:9999px;color:var(--ink);cursor:pointer;line-height:1;transition:border-color .12s ease;}
 .sn-mon-btn:hover{border-color:var(--ink);}

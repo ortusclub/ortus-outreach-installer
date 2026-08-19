@@ -53,7 +53,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -1573,6 +1573,17 @@ app.post('/api/campaign/start-cloud', handleStartCloud);
 app.get('/api/campaign/cloud-list', async (req, res) => {
   const r = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
   if (r.error) return res.status(502).json(r);
+  res.json(r);
+});
+// Cloud load + the global queue order, for the "why hasn't it started" block on
+// a waiting campaign. Memoised on the same lane as the list: every queued strip
+// on the board wants the same answer, and the board re-polls every few seconds.
+//
+// A 502 here is not an error worth showing — the card simply falls back to its
+// old wording. Answer with an empty shape so the renderer has one code path.
+app.get('/api/campaign/cloud-capacity', async (_req, res) => {
+  const r = await memoCloud('capacity', () => getCloudCapacity());
+  if (r.error) return res.json({ queue: [], unavailable: true });
   res.json(r);
 });
 app.get('/api/campaign/cloud/:id', async (req, res) => {

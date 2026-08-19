@@ -176,6 +176,17 @@ export function listCloudCampaigns(owner) {
   return requestWithRetry('GET', `/api/campaign/list${q}`);
 }
 
+/**
+ * Cloud load: how many campaigns are drawing a runtime against the ceiling, and
+ * the ordered ids of everything waiting for a slot.
+ *
+ * The queue is global — the board is filtered per operator, the cloud is not —
+ * so a campaign's position comes from here and never from the board's own rows.
+ */
+export function getCloudCapacity() {
+  return requestWithRetry('GET', '/api/campaign/capacity');
+}
+
 /** One campaign + its live lead-status counts. */
 export function getCloudCampaign(id) {
   return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}`);

@@ -42,6 +42,7 @@ import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
+import { queueState } from '/js/queue-state.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -7523,6 +7524,11 @@ let _cloudCardTimer = null;
 const _cloudEventLog = new Map();        // campaignId -> [{ t, line }]  (user actions)
 const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine per-account check events)
 const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
+// Cloud load + the global queue order, refreshed once per board poll and only
+// while something is waiting. Shape: { queue:[id…], active, ceiling, full }.
+// Empty until the first reading, which is why queueState treats an id it cannot
+// find as "say nothing" rather than as first in line.
+let _cloudCapacity = { queue: [] };
 // Last hero state we logged per cloud campaign, so the "check due" line is
 // EDGE-triggered. The dashboard polls every 5s; logging on level would write
 // the same line ~24 times per wake.
@@ -7591,6 +7597,12 @@ function _buildCloudActiveStatus(c, leads, counts) {
   return {
     _cloud: true, id: c.id, running: c.status === 'running' || c.status === 'paused', paused: c.status === 'paused',
     state: isMon ? 'monitoring' : undefined, queued: isQueued,
+    // Why it hasn't started, in the same words the board strip uses — card #2
+    // and the board are two render paths over one campaign, and an operator who
+    // opens the campaign after reading the board must not be told a new story.
+    queueWait: isQueued
+      ? queueState({ id: c.id, status: 'queued', leadCount: total }, _cloudCapacity, _cloudAccountsById.get(c.id) || null)
+      : null,
     // Raw engine status ('cancelled'/'error'/'done'/…) — drives the live-status
     // card's ▶ Continue / ⟲ Restart swap for stopped campaigns.
     engineStatus: c.status || '',
@@ -7777,6 +7789,12 @@ async function _refreshCloudActiveStatus(id) {
     }
     // The detail cache is what renderCloudAccountsPanel reads the mode off.
     if (d) _cloudDetailCache.set(id, d);
+    // This route can be open without the board ever having polled, so card #2
+    // fetches its own capacity reading rather than depending on _refreshCloudItems.
+    if (d && d.campaign && (d.campaign.status === 'queued' || d.campaign.status === 'pending')) {
+      try { _cloudCapacity = await (await fetch('/api/campaign/cloud-capacity')).json(); }
+      catch (_) { /* queueState says nothing without a reading, which is correct */ }
+    }
     // Engine's per-account check-sweep events (reliable — one line per account the
     // VM opens, e.g. "🖥️ Checking liza.advocate@ortus.solutions…"). Captured here
     // and merged into the log by _combineCloudEvents. Newest-first from Redis.
@@ -9197,6 +9215,21 @@ function renderUnifiedStrip(it) {
       + `</div>`
     : '';
 
+  // Why a queued campaign hasn't started. "Queued" alone covers a two-minute
+  // cold start, someone else's campaigns holding every slot, and a campaign
+  // whose own accounts cannot send — see /js/queue-state.mjs for which is which.
+  const _qs = queued
+    ? queueState({ id: it.id, status: 'queued', leadCount: it.leadCount || it.total || 0 },
+      _cloudCapacity, _cloudAccountsById.get(it.id) || null)
+    : null;
+  const queueHtml = _qs
+    ? `<div class="sn-mon sn-queue sn-queue-${_qs.kind}">`
+      + `<span class="sn-mon-badge">● ${escHtml(_qs.badge)}</span>`
+      + `<span class="sn-mon-line">${_qs.line}</span>`
+      + `<span class="sn-queue-note">${_qs.note}</span>`
+      + `</div>`
+    : '';
+
   const flow = it.isFG
     ? `<b>${it.total || '—'} invites</b> → <b>${it.accounts || 1} account${(it.accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
     : `<b>${it.total || 0} leads</b> → <b>${it.accounts || 0} ${acctWord}</b> → feeds <b>${escHtml(it.name || '')}</b> · ${escHtml(_cloudModeLabel(it.mode))}`;
@@ -9410,6 +9443,7 @@ function renderUnifiedStrip(it) {
     <div class="sn-flow">${flow}</div>
     ${psBadgeHtml}
     ${acctBadgeHtml}
+    ${queueHtml}
     ${progLine}
     ${monBlock}
     ${hsAwaiting ? handshakeBlock : switchBlock}
@@ -9888,6 +9922,13 @@ async function _refreshCloudItems() {
   try {
     const cl = await (await fetch('/api/campaign/cloud-list')).json();
     const cloudCamps = (cl && cl.campaigns) || [];
+    // One reading per poll for the whole board: the queue is global, so every
+    // waiting strip asks the same question and the answer is memoised server
+    // side. Only worth the request when something is actually waiting.
+    if (cloudCamps.some((c) => c.status === 'queued')) {
+      try { _cloudCapacity = await (await fetch('/api/campaign/cloud-capacity')).json(); }
+      catch { _cloudCapacity = { queue: [], unavailable: true }; }
+    }
     // Everything that still needs refreshing comes back in ONE request. Asking
     // per campaign meant 89 of them, which pinned the browser at its six
     // connections per host and starved every other poller in the page.
@@ -24361,6 +24402,22 @@ function renderSheetWriteWarn(status) {
 // 'needs_login' state shows anything. Same host-div pattern as
 // renderSheetWriteWarn above: a fixed #active-primary-login-warn div that
 // this function fills/hides on every renderActiveCard call.
+// Why a queued cloud campaign hasn't started, on card #2. Same queueState call
+// the board strip makes, so the two surfaces cannot tell different stories about
+// the same campaign — the whole reason the decision lives in its own module.
+function renderQueueWait(status) {
+  const el = document.getElementById('active-queue-wait');
+  if (!el) return;
+  const q = status && status.queueWait;
+  if (!q) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = `<div class="sn-mon sn-queue sn-queue-${q.kind}">`
+    + `<span class="sn-mon-badge">● ${escHtml(q.badge)}</span>`
+    + `<span class="sn-mon-line">${q.line}</span>`
+    + `<span class="sn-queue-note">${q.note}</span>`
+    + `</div>`;
+}
+
 function renderPrimaryLoginWarn(status) {
   const el = document.getElementById('active-primary-login-warn');
   if (!el) return;
@@ -24886,6 +24943,7 @@ window.renderActiveCard = function(status) {
     window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
     renderSheetWriteWarn(status);
     renderPrimaryLoginWarn(status);
+    renderQueueWait(status);
     return;
   }
   card.classList.remove('is-queued');
@@ -25117,6 +25175,8 @@ window.renderActiveCard = function(status) {
   window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
   renderSheetWriteWarn(status);
   renderPrimaryLoginWarn(status);
+  // Not launching — clear any block left from the previous poll.
+  renderQueueWait(null);
   // Batch ETA — best-effort from nextCheckAt or currentAction.endsAt
   const etaEl = document.getElementById('batchEta');
   if (etaEl) {
