@@ -11671,6 +11671,55 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
 }
 window.runHandshakeWizard = runHandshakeWizard;
 
+// ── Start-time preflight gate (Task 7) ──────────────────────────────────────
+// Every account on the campaign is blocked, so say so before the operator
+// walks away expecting sends. Same contract as runHandshakeWizard — resolve
+// {ok, proceedAnyway} and let the caller decide. Unlike the handshake wizard,
+// the scrim click needs no confirm() guard: nothing has been dispatched yet
+// and the draft is untouched, so a dismissal costs the operator nothing.
+function runPreflightPrompt({ accounts = [], earliest = null }) {
+  return new Promise((resolve) => {
+    const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+    const label = (a) => {
+      if (a.reason === 'needslogin') return 'Needs re-login in GoLogin';
+      if (a.reason === 'proxy') return 'Proxy — fix the profile';
+      if (a.until) return `Capped until ${_wakeWhenText(new Date(a.until).getTime())}`;
+      return 'Blocked';
+    };
+    // Fixable first: those are the only rows with an action behind them.
+    const rows = accounts.slice().sort((x, y) => Number(!!y.fixable) - Number(!!x.fixable));
+    const when = earliest ? _wakeWhenText(new Date(earliest).getTime()) : 'later';
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="No account can send yet">
+        <h3 class="modal-title">Nothing can send yet</h3>
+        <div class="modal-body">
+          <p>All <b>${accounts.length}</b> account${accounts.length === 1 ? '' : 's'} on this campaign are blocked. The earliest any of them can send a connection request is <b>${escHtml(when)}</b>.</p>
+          <div class="pf-list">
+            ${rows.map((a) => `<div class="pf-row${a.fixable ? ' fixable' : ''}"><span class="who">${escHtml(String(nameOf(a.id)))}</span><span class="st">${escHtml(label(a))}</span></div>`).join('')}
+          </div>
+          <p class="pf-note">Starting anyway is not pointless: <b>acceptance checking still runs</b> on the capped accounts, and intros still fire. Only <b>sending</b> is on hold.</p>
+        </div>
+        <div class="modal-actions" style="display:flex; gap:10px; flex-wrap:wrap">
+          <button type="button" class="btn btn-primary pf-fix">Fix accounts</button>
+          <button type="button" class="btn pf-anyway">Start anyway</button>
+          <button type="button" class="btn modal-cancel-link pf-back">Back</button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+    const done = (r) => { try { back.remove(); } catch (_) { /* */ } resolve(r); };
+    back.querySelector('.pf-anyway').addEventListener('click', () => done({ ok: false, proceedAnyway: true }));
+    back.querySelector('.pf-back').addEventListener('click', () => done({ ok: false, proceedAnyway: false }));
+    back.querySelector('.pf-fix').addEventListener('click', () => done({ ok: false, proceedAnyway: false, fix: true }));
+    // Scrim click = Back. Safe here (unlike the handshake wizard, which guards it
+    // with a confirm) because nothing has been dispatched yet and the draft is
+    // untouched — the operator loses nothing by dismissing.
+    back.addEventListener('click', (e) => { if (e.target === back) done({ ok: false, proceedAnyway: false }); });
+  });
+}
+window.runPreflightPrompt = runPreflightPrompt;
+
 // server reads the sheet into leads and hands off to the engine; the campaign
 // then runs in the cloud and survives the laptop closing.
 // Re-entrancy guard: a slow multi-account CC+IC start (it runs the primary
@@ -11732,6 +11781,26 @@ async function _submitCloudCampaign(body) {
     // Handshake over (or never needed). The next step reads the whole lead sheet
     // and POSTs — the step that used to be two silent minutes with the modal gone
     // and the board still showing a draft.
+    // Preflight gate (Task 7). FAIL OPEN on every uncertainty: a campaign that
+    // cannot launch because a diagnostic endpoint is down is worse than one
+    // that launches into a wait. Only a PROVEN usable===0 stops here.
+    try {
+      const ids = body.profileIds || [];
+      if (ids.length) {
+        const pf = await (await fetch('/api/campaign/cloud-preflight?profiles=' + encodeURIComponent(ids.join(',')))).json();
+        // usable===null means the engine was unreachable — NOT that nothing can
+        // send. Only a hard 0 fires the prompt.
+        if (pf && pf.usable === 0) {
+          const verdict = await runPreflightPrompt({ accounts: pf.accounts || [], earliest: pf.earliest });
+          if (!verdict.proceedAnyway) {
+            if (typeof showCampaignToast === 'function') {
+              showCampaignToast('Launch held — no account can send yet. Your campaign is still saved as a draft.', 6000);
+            }
+            return;
+          }
+        }
+      }
+    } catch (_) { /* fail open — never block a launch on this check */ }
     setCloudLaunchPhase('dispatching');
     const res = await fetch('/api/campaign/start-cloud', {
       method: 'POST',

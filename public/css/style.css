@@ -3852,6 +3852,25 @@ body.theme-light .launch-actions.launch-actions--four #btn-start {
 }
 .modal-actions .btn { min-width: 120px; }
 
+/* Task 7 — Start-time preflight prompt (runPreflightPrompt). Grey for a
+   capped account (nothing to fix), red for a fixable one (proxy/needslogin —
+   a human clears it in a minute). Same distinction the Waiting card makes. */
+.pf-list { border-top: 1px solid var(--hairline); margin-bottom: 8px; }
+.pf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+}
+.pf-row .who { color: var(--ink); }
+.pf-row .st { color: var(--gray); font-size: 0.68rem; letter-spacing: 0.04em; }
+.pf-row.fixable .st { color: var(--red); }
+.pf-note { font-size: 0.82rem !important; }
+
 /* v2.100 — Reconnect & retry modal: auto-accept toggle + inline GoLogin picker. */
 .revive-aa-toggle {
   display: flex;
