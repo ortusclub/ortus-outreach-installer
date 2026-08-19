@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>18 Aug — three fixes</title>
+<!-- The REAL stylesheets, exactly as index.html loads them. Nothing is
+     re-styled here: every pill, panel and toast below is the app's own markup,
+     so what you see is what ships. -->
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  /* Sketch chrome only — never anything that touches the components. */
+  .sk-wrap { max-width: 1080px; margin: 0 auto; padding: 34px 22px 90px; }
+  .sk-h { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin: 0 0 6px; }
+  .sk-t { font-family: var(--display); font-size: 1.6rem; margin: 0 0 4px; color: var(--ink); }
+  .sk-note { font-size: 0.8rem; color: var(--gray); line-height: 1.55; margin: 0 0 16px; max-width: 70ch; }
+  .sk-sec { padding: 26px 0 30px; border-bottom: 1px solid var(--hairline-soft); }
+  .sk-before { border: 1px dashed var(--hairline); border-radius: 12px; padding: 14px 18px; margin: 0 0 14px; }
+  .sk-lbl { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); margin-bottom: 7px; }
+  .sk-btn { font-family: var(--mono); font-size: 0.68rem; letter-spacing: .1em; text-transform: uppercase;
+            padding: 9px 15px; border: 1px solid var(--hairline); border-radius: 9999px; background: transparent;
+            color: var(--ink); cursor: pointer; }
+  .sk-btn:hover { border-color: var(--gold, #d4a24a); }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sk-wrap">
+
+  <p class="sk-h">Sketch · 18 Aug 2026 · v3.1.12 + engine</p>
+  <h1 class="sk-t">Three fixes, as the operator sees them</h1>
+  <p class="sk-note">Real stylesheets, real components. The pills below are built by the same
+    <code>_stageAcctPill()</code> markup the stalled-campaign card uses, so they cannot drift from it.</p>
+
+  <!-- ─────────────── 1 ─────────────── -->
+  <section class="sk-sec">
+    <p class="sk-h">Fix 1 · Milee</p>
+    <h2 class="sk-t">A cancelled launch says so</h2>
+    <p class="sk-note">Before: clicking outside the handshake dialog abandoned the launch, the card wiped itself,
+      and nothing was said. She created three campaigns trying to get back to where she was.</p>
+
+    <div class="sk-before">
+      <div class="sk-lbl">Before</div>
+      <div style="font-size:.85rem;color:var(--gray)">(the card disappears — no message, no draft in sight)</div>
+    </div>
+
+    <div class="sk-lbl">After · click the scrim</div>
+    <div class="sk-before" style="border-style:solid">
+      <div style="font-family:var(--mono);font-size:.78rem;color:var(--ink);line-height:1.6">
+        Cancel this launch?<br><br>
+        <span style="color:var(--gray)">The senders will not be connected and nothing is sent to the cloud.
+        Your campaign stays saved as a draft.</span>
+      </div>
+    </div>
+
+    <div class="sk-lbl" style="margin-top:14px">After · confirm it</div>
+    <button class="sk-btn" onclick="skToast()">Show the toast</button>
+  </section>
+
+  <!-- ─────────────── 2 ─────────────── -->
+  <section class="sk-sec">
+    <p class="sk-h">Fix 2 · qendresa's campaign, 20 hours on one logged-out account</p>
+    <h2 class="sk-t">A campaign that cannot send lets the accounts go</h2>
+    <p class="sk-note">Before: every 30 minutes, forever — open the browser, find it logged out, bench it, log
+      “No account free”. Five accounts reserved the whole time. After: one hour without a send ends the send phase.</p>
+
+    <div class="sk-before">
+      <div class="sk-lbl">Before · the log, all night</div>
+      <div class="sn-logbox" style="font-family:var(--mono);font-size:.7rem;line-height:1.8;color:var(--gray)">
+        ⏳ No account free right now — 1 at the daily limit · 4 parked (throttled / needs login / weekly cap) · retrying automatically<br>
+        🖥️ Opening danicaf@ortus.solutions's browser on the VM — 0/50 sent today<br>
+        ✗ danicaf@ortus.solutions — logged out of LinkedIn · parked, needs re-login in GoLogin<br>
+        ⏹ danicaf@ortus.solutions — browser closed · 0 sent this turn (0/50 today) · benched for 30 min (session)<br>
+        ⏳ No account free right now — 1 at the daily limit · 4 parked (throttled / needs login / weekly cap) · retrying automatically
+      </div>
+    </div>
+
+    <div class="sk-lbl">After · one hour in</div>
+    <div class="sk-before" style="border-style:solid">
+      <div class="sn-logbox" style="font-family:var(--mono);font-size:.7rem;line-height:1.8;color:var(--ink)">
+        🛑 Stopped sending — no account has been able to send for 20h. The accounts are released so other
+        campaigns can use them; already-sent connects keep being checked for acceptances, and the unsent
+        leads stay queued for a restart.
+      </div>
+      <div style="margin-top:12px;font-size:.8rem;color:var(--gray)">
+        Status goes <b style="color:var(--ink)">Running → Monitoring</b>. 596 sent connects keep being swept.
+        617 pending leads stay pending. Five accounts return to the pool.
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────── 3 ─────────────── -->
+  <section class="sk-sec" style="border-bottom:0">
+    <p class="sk-h">Fix 3 · danicaf, logged out for 20 hours, nobody told</p>
+    <h2 class="sk-t">The dashboard says it, in the pill you already know</h2>
+    <p class="sk-note">Sits directly above the campaigns board. Gold, not red — nothing is broken, someone just
+      has to log back in. Hidden entirely when every account is fine.</p>
+    <div id="account-nudge"></div>
+  </section>
+</div>
+
+<div id="campaign-toast" class="campaign-toast" role="status" aria-live="polite"></div>
+
+<script type="module">
+  // The panel markup is generated here by the same shape app.js emits, and the
+  // pills use the app's real cap-badge classes.
+  const pill = (nm, text, cls) =>
+    `<button type="button" class="stg-acct"><span class="cap-badge ${cls}"><span class="nm">${nm}</span><span class="n">${text}</span></span></button>`;
+  document.getElementById('account-nudge').innerHTML = `
+    <div class="acct-nudge">
+      <div class="acct-nudge-eyebrow">Accounts needing attention</div>
+      <div class="acct-nudge-head">1 account logged out of LinkedIn</div>
+      <div class="acct-nudge-sub">It is sending nothing until you log back in on GoLogin. The campaign keeps running and picks it up automatically afterwards.</div>
+      <div class="acct-nudge-pills">${pill('danicaf', 'Logged out', 'bad')}</div>
+    </div>`;
+
+  window.skToast = () => {
+    const t = document.getElementById('campaign-toast');
+    t.textContent = 'Launch cancelled at the primary handshake — nothing was sent, and your campaign is still saved as a draft.';
+    t.classList.add('visible');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('visible'), 7000);
+  };
+</script>
+</body>
+</html>
