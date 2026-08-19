@@ -1600,7 +1600,19 @@ app.get('/api/campaign/cloud-preflight', async (req, res) => {
   // the "we don't know" signal both callers fail open on. Deliberately different
   // from cloud-capacity above, which can safely answer with an empty shape.
   if (r.error) return res.json({ accounts: [], usable: null, earliest: null, unavailable: true });
-  res.json(r);
+  // Defensive normalization: a malformed/partial 200 (e.g. `{}`) carries no
+  // `.error`, so memoCloud caches it verbatim and `usable` would leak through
+  // as `undefined` instead of `null`. Tasks 6/7 branch on `usable === null` to
+  // fail open — an `undefined` would silently miss that check and let a
+  // blocking "nothing can send" prompt fire on a malformed response, the exact
+  // bug the null-vs-zero split exists to prevent. Normalized here, not in
+  // requestWithRetry, since other callers of that helper rely on its current
+  // pass-through behaviour.
+  res.json({
+    accounts: Array.isArray(r.accounts) ? r.accounts : [],
+    usable: typeof r.usable === 'number' ? r.usable : null,
+    earliest: typeof r.earliest === 'string' ? r.earliest : null,
+  });
 });
 app.get('/api/campaign/cloud/:id', async (req, res) => {
   const id = req.params.id;
