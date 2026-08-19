@@ -421,7 +421,16 @@ export async function publish(state = {}, deps = {}) {
     let last = await write(ACCOUNTS_TAB, ACCOUNTS_HEADER, accountsRows(state), deps);
     await write(LOG_TAB, LOG_HEADER, logRows(state), deps);
 
-    for (const a of state.perAccount || []) {
+    // Which accounts get their connections tab rewritten. perAccount is filled
+    // by Collect and Import; a CHECK fills neither — it only learns HubSpot ids
+    // — so driving the loop off perAccount alone meant the very run that
+    // discovers the links never publishes them. preview.read is what that run
+    // actually looked at. Measured 2026-08-19: a Check stamped 20k links onto
+    // disk and wrote none of them to the sheet.
+    const tabs = (state.perAccount || []).length
+      ? state.perAccount
+      : (((state.preview || {}).read) || []).map((account) => ({ account }));
+    for (const a of tabs) {
       if (a.error) continue;
       let rows;
       try { rows = connectionsRowsForAccount(a.account, read(a.account)); } catch { continue; }

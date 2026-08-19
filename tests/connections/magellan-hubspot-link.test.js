@@ -170,3 +170,30 @@ test('filling links rewrites the tab even though the row count is identical', as
   resetHubspotIds();
   resetPublished();
 });
+
+/**
+ * A Check fills state.preview.read and nothing else — no perAccount, because it
+ * neither collects nor imports. Driving the tab loop off perAccount alone meant
+ * the one run that LEARNS the links published none of them. Measured on 19 Aug
+ * 2026: 20,372 links stamped onto disk, zero written to the sheet.
+ */
+test('a Check publishes the tabs it read, not just the ones an import touched', async () => {
+  const { publish, resetPublished } = await import('../../src/connections/magellan-sheet.js');
+  resetPublished();
+  resetHubspotIds();
+  addHubspotIds([['1', 'c1']]);
+
+  const wrote = [];
+  const deps = {
+    write: async (tab, header, rows) => { wrote.push({ tab, rows }); return { url: 'u' }; },
+    read: () => [{ memberId: '1', firstName: 'A', slug: 'a' }],
+  };
+  // Exactly the shape buildPreview leaves behind.
+  await publish({ perAccount: [], preview: { read: [ACCOUNT] } }, deps);
+
+  const tab = wrote.filter((w) => w.tab === ACCOUNT);
+  assert.equal(tab.length, 1, 'the checked account gets its tab written');
+  assert.equal(tab[0].rows[0][LINK].endsWith('/contact/c1'), true, 'with the link the check just learned');
+  resetHubspotIds();
+  resetPublished();
+});
