@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch · what a waiting campaign says</title>
+<!-- The app's own stylesheets, nothing added. Every class below is a class the
+     board already renders; the only new one is .sn-queue. -->
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<!-- The board's strip styles live in <style> blocks inside index.html, not in a
+     stylesheet, so pull them straight out of the app's own page. This keeps the
+     sketch 1:1 by construction: change the app and the sketch changes with it. -->
+<script>
+  (async () => {
+    const html = await (await fetch('/index.html')).text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    for (const st of doc.querySelectorAll('style')) document.head.appendChild(st.cloneNode(true));
+    document.body.classList.add('sk-ready');
+  })();
+</script>
+<style>
+  body[data-dashboard='v3'] { padding: 34px 40px 90px; background: var(--bg); }
+  body:not(.sk-ready) .sn-board { opacity: 0; }
+  .sk-head { margin: 0 0 6px; font-family: var(--mono); font-size: .62rem; letter-spacing: .22em; text-transform: uppercase; color: var(--gray); }
+  .sk-title { margin: 0 0 4px; font-size: 1.15rem; letter-spacing: .01em; }
+  .sk-sub { margin: 0 0 30px; font-size: .82rem; color: var(--gray); max-width: 74ch; }
+  .sk-lbl { margin: 30px 0 8px; font-family: var(--mono); font-size: .6rem; letter-spacing: .2em; text-transform: uppercase; color: var(--gray); }
+  .sk-lbl b { color: var(--ink); font-weight: 600; letter-spacing: .06em; }
+  .sk-note { margin: 7px 2px 0; font-size: .76rem; color: var(--gray); }
+
+  /* The one new block. Same shape as .sn-mon (the monitoring line) so a waiting
+     campaign reads with the same weight as a monitoring one. */
+  body[data-dashboard='v3'] .sn-queue { margin: 8px 0 0; font-size: 12.5px; color: var(--gray); }
+  body[data-dashboard='v3'] .sn-queue-top { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+  body[data-dashboard='v3'] .sn-queue-badge { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+  body[data-dashboard='v3'] .sn-queue-line b { color: var(--ink); font-weight: 600; }
+  body[data-dashboard='v3'] .sn-queue-why { margin-top: 3px; font-size: 11.5px; color: var(--gray); }
+</style>
+</head>
+<body data-dashboard="v3">
+
+<div class="sk-head">Sketch · hypothesis data · nothing here is live</div>
+<h1 class="sk-title">What a campaign that hasn't started yet tells you</h1>
+<p class="sk-sub">Three waits that today all render as the single word <b>Queued</b>. Same cards, same fonts, same
+stylesheets as the board — only the numbers are invented.</p>
+
+<div class="sn-board">
+
+  <div class="sk-lbl">Today · <b>what an operator actually sees</b></div>
+  <div class="sn-strip queued sn-collapsed">
+    <div class="sn-compact">
+      <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span>
+        <span class="sn-status"><span class="dot q"></span> Queued</span></div>
+      <div class="sn-name">MAEN_ANZ_HOB — CCII</div>
+      <div class="sn-flow"><b>798 leads</b> → <b>5 accounts</b> → feeds <b>MAEN_ANZ_HOB</b> · Connect Only</div>
+      <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+    </div>
+  </div>
+  <div class="sk-note">No reason, no position, no ETA, nothing about whether the leads survived. This is the card Milee stared at.</div>
+
+  <div class="sk-lbl">A · <b>waiting for a VM worker</b> — the normal 2-minute cold start</div>
+  <div class="sn-strip queued sn-collapsed">
+    <div class="sn-compact">
+      <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span>
+        <span class="sn-status"><span class="dot q"></span> Starting · ~2 min</span></div>
+      <div class="sn-name">MAEN_ANZ_HOB — CCII</div>
+      <div class="sn-flow"><b>798 leads</b> → <b>5 accounts</b> → feeds <b>MAEN_ANZ_HOB</b> · Connect Only</div>
+      <div class="sn-queue">
+        <div class="sn-queue-top">
+          <span class="sn-queue-badge">● In the queue</span>
+          <span class="sn-queue-line">Waking a VM worker — <b>first send in ~2 min</b> · nothing ahead of you · <b>798 leads</b> waiting</span>
+        </div>
+        <div class="sn-queue-why">Normal for the first couple of minutes after a launch. Nothing was lost, and you can close the app.</div>
+      </div>
+      <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+    </div>
+  </div>
+
+  <div class="sk-lbl">B · <b>the cloud is full</b> — someone else's campaigns are ahead</div>
+  <div class="sn-strip queued sn-collapsed">
+    <div class="sn-compact">
+      <div class="sn-top"><span class="sn-type">Campaign · C+I</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span>
+        <span class="sn-status"><span class="dot q"></span> 2nd in line · ~25 min</span></div>
+      <div class="sn-name">CC7 — NICE MEL</div>
+      <div class="sn-flow"><b>1720 leads</b> → <b>5 accounts</b> → feeds <b>CC7 - NICE MEL</b> · Connect + Introduce</div>
+      <div class="sn-queue">
+        <div class="sn-queue-top">
+          <span class="sn-queue-badge">● 2nd in line</span>
+          <span class="sn-queue-line">The cloud is full — <b>30 of 30</b> campaigns running · starts in <b>~25 min</b> · <b>1720 leads</b> waiting</span>
+        </div>
+        <div class="sn-queue-why">One campaign ahead of yours. It starts by itself the moment a slot frees — you don't need to do anything.</div>
+      </div>
+      <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+    </div>
+  </div>
+
+  <div class="sk-lbl">C · <b>stuck, and it says so</b> — the wait that is actually a problem</div>
+  <div class="sn-strip queued sn-collapsed">
+    <div class="sn-compact">
+      <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-owner">· qendresa.j@ortusclub.com</span><span class="sn-where cloud">☁︎ VM</span>
+        <span class="sn-status"><span class="dot q"></span> Can't start · 41 min</span></div>
+      <div class="sn-name">(unnamed)</div>
+      <div class="sn-flow"><b>798 leads</b> → <b>5 accounts</b> → feeds · Connect Only</div>
+      <div class="sn-queue">
+        <div class="sn-queue-top">
+          <span class="sn-queue-badge">● Waiting on your accounts</span>
+          <span class="sn-queue-line">No account can send — <b>1</b> at its daily limit · <b>4</b> parked · retrying every 10 min for <b>41 min</b></span>
+        </div>
+        <div class="sn-queue-why">Nothing is ahead of you in the cloud — the hold-up is the accounts. Daily limits reset at midnight; parked accounts need a GoLogin login.</div>
+      </div>
+      <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+    </div>
+  </div>
+
+  <div class="sk-lbl">D · <b>scheduled</b> — already shipped, shown for comparison</div>
+  <div class="sn-strip queued sched sn-collapsed">
+    <div class="sn-compact">
+      <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-when-pill">⏰ Scheduled</span>
+        <span class="sn-status"><span class="dot gold"></span> tomorrow 13:00</span></div>
+      <div class="sn-name">(unnamed)</div>
+      <div class="sn-flow"><b>798 leads</b> → <b>5 accounts</b> → feeds · Connect Only</div>
+      <div class="sn-foot"><div class="right"><button class="mini">Cancel</button><button class="mini solid">Open</button></div></div>
+    </div>
+  </div>
+
+</div>
+
+<p class="sk-note" style="margin-top:34px;max-width:74ch">
+Every number in A–C already exists engine-side: <code>/api/campaign/capacity</code> returns
+<code>active</code>/<code>ceiling</code>/<code>podsBusy</code>, the lead counts come from the campaign detail, and C's wording is
+the engine's own <i>"No account free right now"</i> log line — today it's written to a log box the queued card doesn't render.
+The only new piece is position in line.
+</p>
+
+</body>
+</html>
