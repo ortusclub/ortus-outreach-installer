@@ -55,3 +55,59 @@ function bar() {
   };
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bar); else bar();
+
+// ── Sketch · what a waiting campaign tells the operator ─────────────────────
+// Today a queued cloud campaign says "Queued" and nothing else: no reason, no
+// position, no ETA, no reassurance the leads survived. Three variants of the
+// same block, drawn with the existing .sn-mon classes so it is the app's own
+// typography, seeded onto whatever cards are idle on this board.
+const QUEUE_VARIANTS = [
+  {
+    badge: '● IN THE QUEUE',
+    line: 'Starting a VM worker — <b>first send in ~2 min</b> · nothing else is ahead of you · <b>798 leads</b> waiting',
+    note: 'Nothing was lost. The VM is waking up — this is normal for the first couple of minutes after a launch.',
+  },
+  {
+    badge: '● 2ND IN LINE',
+    line: 'The cloud is full — <b>30 of 30</b> campaigns running · starts in <b>~25 min</b> · <b>1720 leads</b> waiting',
+    note: 'One campaign ahead of yours. It starts by itself as soon as a slot frees — you do not need to do anything.',
+  },
+];
+
+function queueBlock(v) {
+  return `<div class="sn-mon sn-queue-preview" style="flex-direction:column;align-items:stretch;gap:4px">`
+    + `<div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">`
+    + `<span class="sn-mon-badge">${v.badge}</span>`
+    + `<span class="sn-mon-line">${v.line}</span>`
+    + `</div>`
+    + `<div class="sn-mon-line" style="font-size:11.5px;color:var(--gray)">${v.note}</div>`
+    + `</div>`;
+}
+
+setInterval(() => {
+  let idle = [...document.querySelectorAll('.sn-strip.queued, .sn-strip.sched')];
+  if (!idle.length) return;
+  // The board rarely has two waiting campaigns at once, so clone the one it has
+  // to put both variants side by side. The clone is inert — buttons stripped.
+  while (idle.length < QUEUE_VARIANTS.length) {
+    const c = idle[0].cloneNode(true);
+    c.dataset.uipreviewClone = '1';
+    c.querySelectorAll('.sn-queue-preview').forEach((n) => n.remove());
+    c.querySelectorAll('button').forEach((b) => { b.onclick = null; b.disabled = true; });
+    idle[0].parentNode.insertBefore(c, idle[0].nextSibling);
+    idle = [...document.querySelectorAll('.sn-strip.queued, .sn-strip.sched')];
+  }
+  idle.forEach((strip, i) => {
+    if (strip.querySelector('.sn-queue-preview')) return;
+    const flow = strip.querySelector('.sn-flow');
+    const v = QUEUE_VARIANTS[i % QUEUE_VARIANTS.length];
+    if (flow) flow.insertAdjacentHTML('afterend', queueBlock(v));
+    // Variant 2 is the "cloud is full" wait, not a scheduled start — say so in
+    // the status slot instead of leaving the ⏰ Scheduled pill lying.
+    if (i > 0) {
+      const st = strip.querySelector('.sn-status, .sn-statustxt, .sn-when');
+      if (st) st.textContent = 'in ~25 min';
+      strip.querySelectorAll('.sn-when-pill').forEach((n) => { n.textContent = '⏳ Waiting'; });
+    }
+  });
+}, 400);
