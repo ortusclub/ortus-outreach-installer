@@ -8957,7 +8957,7 @@ function vjCardSkeleton(cid) {
   const clone = src.cloneNode(true);
   clone.removeAttribute('id');
   clone.classList.add('sn-vjcard', 'is-detailed');
-  clone.classList.remove('in-wizard', 'is-empty', 'is-preflight', 'is-monitor', 'is-local', 'is-mini');
+  clone.classList.remove('in-wizard', 'is-empty', 'is-preflight', 'is-monitor', 'is-waiting', 'is-local', 'is-mini');
   clone.setAttribute('data-cid', cid);
   clone.removeAttribute('aria-hidden');
   // The singleton carries an inline `display:none` while idle (app.js sets
@@ -9072,6 +9072,7 @@ function fillVjCard(root, status) {
   const f = vjCardFields(status);
   const set = (name, text) => { const el = root.querySelector(`[data-f="${name}"]`); if (el) el.textContent = text; };
   root.classList.toggle('is-monitor', f.isMonitor);
+  root.classList.toggle('is-waiting', f.isWaiting);
   root.classList.add('is-detailed');
   root.classList.remove('is-empty', 'is-preflight');
 

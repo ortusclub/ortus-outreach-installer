@@ -74,17 +74,26 @@ export function vjCardFields(status = {}) {
     ? Number(s.accountsCount) || 0
     : (((isMonitor ? s.participatingProfileIds : s.profileIds) || s.profileIds || []).length);
   const accepted = (s.acceptedCount == null) ? '—' : String(s.acceptedCount);
+  // Asleep on the engine's blocked_until. The DB status stays 'running' so the
+  // acceptance sweep keeps running, so EVERY status word here would otherwise
+  // fall through to 'Running'/'Sending' — printed directly above a card that
+  // says every account is capped. The strip chip already reads this; the card
+  // eyebrow is a SEPARATE renderer and was still echoing the raw status.
+  const isWaiting = !isMonitor && !isDone && !isQueued && !s.bad
+    && !!(s.currentAction && s.currentAction.phase === 'waiting');
   const eyebrow = s.bad ? (s.badLabel || 'Stopped')
     : isMonitor ? 'Monitoring'
     : isQueued ? 'Queued'
     : isDone ? 'Finished'
+    : isWaiting ? 'Waiting'
     : (s.paused ? 'Paused' : 'Running');
   const sendingLbl = isMonitor ? 'Watching'
     : isDone ? 'Finished'
     : isQueued ? 'Queued'
+    : isWaiting ? 'Waiting'
     : (s.paused ? 'Paused' : 'Sending');
   return {
-    isMonitor, isDone, isQueued,
+    isMonitor, isDone, isQueued, isWaiting,
     name: s.name || '(unnamed)',
     eyebrow, pct, done, total, accountsCount, accepted, sendingLbl,
   };

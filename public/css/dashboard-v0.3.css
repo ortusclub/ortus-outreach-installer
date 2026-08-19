@@ -576,6 +576,10 @@
   body[data-dashboard='v3'] .vj-eyebrow .vj-tag { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
   body[data-dashboard='v3'] .vj-eyebrow .vj-tag .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--green); display: inline-block; }
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-eyebrow .vj-tag .dot { background: var(--blue); }
+  /* Waiting — sending gated on blocked_until. NOT green (nothing is sending)
+     and NOT blue (that means the acceptance sweep is driving). Neutral grey,
+     hollow: alive but held. */
+  body[data-dashboard='v3'] .vj-card.is-waiting .vj-eyebrow .vj-tag .dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--gray, #8a8a8a); }
   /* Queued/launching cloud campaign — gold dot (pre-Start accent), pulsing so it
      reads as "about to run", never as a green "done/ok". */
   body[data-dashboard='v3'] .vj-card.is-queued .vj-eyebrow .vj-tag .dot { background: var(--gold); animation: vj-queued-pulse 1.4s ease-in-out infinite; }
