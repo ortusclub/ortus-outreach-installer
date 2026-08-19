@@ -7703,7 +7703,10 @@ function _preflightFor(c) {
     // Stamp `at` BEFORE the fetch so a slow engine cannot queue one request per
     // poll tick. Keep serving the previous answer while the new one lands.
     _preflightCache.set(id, { at: Date.now(), data: hit ? hit.data : null });
-    fetch('/api/campaign/cloud-preflight?profiles=' + encodeURIComponent(ids.join(',')))
+    // daily_limit comes off the campaign row — without it the engine cannot see
+    // the daily cap, the most common reason a Waiting campaign is waiting.
+    const dl = Number(c.daily_limit) > 0 ? '&dailyLimit=' + Math.floor(Number(c.daily_limit)) : '';
+    fetch('/api/campaign/cloud-preflight?profiles=' + encodeURIComponent(ids.join(',')) + dl)
       .then((r) => r.json())
       .then((d) => _preflightCache.set(id, { at: Date.now(), data: d }))
       .catch(() => { /* card falls back to its old wording */ });
@@ -7733,6 +7736,29 @@ function _blockSummary(pf) {
   return parts.join(', ');
 }
 
+// Is an acceptance sweep actually going to run on this campaign?
+//
+// TWO things have to be true, and the card used to assert the clause with
+// NEITHER checked. (1) The campaign must monitor at all — connect_only,
+// message_only, introduce_back, inmail_only and open_profile_only have
+// monitor:false in the engine's MODE_PLAN and check nothing, ever. next_check_at
+// is the natural gate: the engine only writes it in transitionToMonitoring,
+// AFTER its `if (!plan.monitor)` bail, and on a check-now. (2) At least one
+// account must survive the sweep's skip list — the monitor skips proxy-parked
+// and needs-login accounts outright (campaign-runtime.js), so a campaign whose
+// every account is proxy-parked checks nothing either. A capped account IS
+// swept, which is the whole reason the clause exists.
+//
+// Unknown preflight = false. Claiming a check that isn't happening is a fresh
+// instance of the "Working…" lie this card was built to kill; saying one line
+// less for a poll tick costs nothing.
+function _sweepStillRuns(c, pf) {
+  if (!c || !c.next_check_at) return false;
+  const accounts = (pf && pf.accounts) || [];
+  if (!accounts.length) return false;
+  return accounts.some((a) => a.reason !== 'proxy' && a.reason !== 'needslogin');
+}
+
 function _cloudCurrentAction(d) {
   const lp = d && d.liveProgress;
   if (!lp || !lp.phase) {
@@ -7755,10 +7781,15 @@ function _cloudCurrentAction(d) {
       // proxy park, needs-login and the busy lock skip an account in a sweep. So
       // a Waiting campaign is half-alive, and saying only "not sending" gets it
       // cancelled by an operator who thinks it stopped.
-      const nextTxt = c.next_check_at ? _wakeWhenText(new Date(c.next_check_at).getTime()) : '';
+      //
+      // But ONLY when it is true: see _sweepStillRuns. A connect_only campaign
+      // monitors nothing, and an all-proxy campaign gets every account skipped —
+      // promising them an acceptance check is the same lie in a new costume.
+      const checking = _sweepStillRuns(c, pf);
+      const nextTxt = checking ? _wakeWhenText(new Date(c.next_check_at).getTime()) : '';
       return { phase: 'waiting', label: 'Not sending',
         account: '', lead: summary,
-        sub: `still checking acceptances${nextTxt ? ` · next check ${nextTxt}` : ''} · sending resumes ${when}` };
+        sub: `${checking ? `still checking acceptances · next check ${nextTxt} · ` : ''}sending resumes ${when}` };
     }
     // A follower campaign never publishes liveProgress, so without this it fell
     // through to the generic "Working…" with no account, no lead and no time —
@@ -11683,6 +11714,12 @@ function runPreflightPrompt({ accounts = [], earliest = null }) {
     const label = (a) => {
       if (a.reason === 'needslogin') return 'Needs re-login in GoLogin';
       if (a.reason === 'proxy') return 'Proxy — fix the profile';
+      // A dead session is an ACTION, not a wait. It used to render as "Capped
+      // until Saturday", which sends the operator away for four days from a
+      // problem one re-login clears.
+      if (a.reason === 'session') return 'Session expired — re-login';
+      if (a.reason === 'dailycap') return `Daily limit spent — resets ${_wakeWhenText(new Date(a.until).getTime())}`;
+      if (a.reason === 'cooldown') return 'Cooling down between batches';
       if (a.until) return `Capped until ${_wakeWhenText(new Date(a.until).getTime())}`;
       return 'Blocked';
     };
@@ -11787,7 +11824,16 @@ async function _submitCloudCampaign(body) {
     try {
       const ids = body.profileIds || [];
       if (ids.length) {
-        const pf = await (await fetch('/api/campaign/cloud-preflight?profiles=' + encodeURIComponent(ids.join(',')))).json();
+        // 3s and no longer. This proxies to the engine through requestWithRetry
+        // (3 attempts × 20s + 1s + 2s backoff), so a 502 or a hung engine held
+        // Start for ~63s between the handshake and 'dispatching' with no phase on
+        // screen — the exact silence that produced a triple-submit once already.
+        // Aborting lands in the catch below, which fails open and dispatches.
+        const dl = Number(body.dailyLimit) > 0 ? '&dailyLimit=' + Math.floor(Number(body.dailyLimit)) : '';
+        const pf = await (await fetch(
+          '/api/campaign/cloud-preflight?profiles=' + encodeURIComponent(ids.join(',')) + dl,
+          { signal: AbortSignal.timeout(3000) },
+        )).json();
         // usable===null means the engine was unreachable — NOT that nothing can
         // send. Only a hard 0 fires the prompt.
         if (pf && pf.usable === 0) {

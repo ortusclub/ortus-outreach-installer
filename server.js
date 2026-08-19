@@ -1594,7 +1594,11 @@ app.get('/api/campaign/cloud-capacity', async (_req, res) => {
 app.get('/api/campaign/cloud-preflight', async (req, res) => {
   const ids = String(req.query.profiles || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (!ids.length) return res.json({ accounts: [], usable: 0, earliest: null });
-  const r = await memoCloud(`preflight:${ids.slice().sort().join(',')}`, () => getCloudPreflight(ids));
+  // dailyLimit rides along (optional) — without it the engine cannot tell a
+  // daily-capped account from a free one. Part of the memo key: two campaigns on
+  // the same accounts with different limits get different answers.
+  const dl = Math.max(0, Math.floor(Number(req.query.dailyLimit) || 0));
+  const r = await memoCloud(`preflight:${ids.slice().sort().join(',')}:${dl}`, () => getCloudPreflight(ids, dl));
   // A 502 must NOT read as "nothing can send" — that would fire the Start prompt
   // on an engine blip and block a launch that is perfectly fine. usable:null is
   // the "we don't know" signal both callers fail open on. Deliberately different

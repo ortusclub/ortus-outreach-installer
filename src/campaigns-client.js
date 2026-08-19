@@ -193,9 +193,13 @@ export function getCloudCapacity() {
  * prompt, so the two can never disagree. Idempotent GET, so it retries
  * transient failures.
  */
-export function getCloudPreflight(profileIds) {
+export function getCloudPreflight(profileIds, dailyLimit) {
   const q = encodeURIComponent((profileIds || []).join(','));
-  return requestWithRetry('GET', `/api/campaign/preflight?profiles=${q}`);
+  // dailyLimit is optional and the engine skips the daily-cap check without it.
+  // Pass it whenever the caller knows it: the daily cap is the most common block
+  // in prod, and an account that has spent it reads as "usable" otherwise.
+  const dl = Number(dailyLimit) > 0 ? `&dailyLimit=${Math.floor(Number(dailyLimit))}` : '';
+  return requestWithRetry('GET', `/api/campaign/preflight?profiles=${q}${dl}`);
 }
 
 /** One campaign + its live lead-status counts. */
