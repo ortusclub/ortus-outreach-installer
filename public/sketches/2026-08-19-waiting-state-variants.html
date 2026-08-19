@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Waiting state — B: refuse at start · C: warn in picker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+.wrap { max-width: 1120px; margin: 0 auto; padding: 26px 26px 120px; }
+.tag { font-family: var(--mono); font-size:0.62rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 12px; display:inline-block; margin-bottom:14px; }
+.sec { font-family:var(--display); font-size:1.5rem; letter-spacing:0.04em; color:var(--ink); margin:44px 0 6px; }
+.sec:first-of-type { margin-top:16px; }
+.lead { font-family:var(--mono); font-size:0.78rem; color:var(--gray); line-height:1.62; margin:0 0 18px; max-width:860px; }
+.lead b { color:var(--ink); }
+.panel { border:1px solid var(--card-border); border-radius:14px; background:var(--card-bg); box-shadow:var(--card-shadow); padding:18px; margin-bottom:8px; }
+.note { font-family:var(--mono); font-size:0.62rem; color:var(--gray); margin-top:14px; font-style:italic; line-height:1.55; }
+
+/* J3 tile — copied verbatim from 2026-06-19-account-picker-j3-states-v2.html */
+.j3-card { display:flex; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); overflow:hidden; cursor:pointer; }
+.j3-card.sel { border-color:var(--ink); }
+.j3-card.dim { opacity:0.6; }
+.j3-status { width:138px; flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; padding:16px 8px; text-align:center; }
+.st-free { background:rgba(63,185,80,0.10); }
+.st-stop { background:rgba(248,81,73,0.10); }
+.st-wait { background:rgba(140,140,140,0.13); }
+.j3-dot { width:13px; height:13px; border-radius:9999px; }
+.dot-free{background:var(--green);} .dot-stop{background:var(--red);} .dot-wait{background:var(--gray);}
+.j3-word { font-family:var(--display); font-size:1.3rem; letter-spacing:0.06em; }
+.w-free{color:var(--green);} .w-stop{color:var(--red);} .w-wait{color:var(--gray);}
+.j3-when { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.06em; color:var(--gray); text-transform:uppercase; line-height:1.35; }
+.j3-detail { flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:8px; min-width:0; justify-content:center; }
+.j3-top { display:flex; align-items:center; gap:8px; }
+.j3-top input { margin:0; flex:none; }
+.j3-email { font-family:var(--body); font-size:0.86rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.j3-verdict { font-family:var(--body); font-size:0.79rem; color:var(--gray); line-height:1.45; }
+.j3-verdict b { color:var(--ink); font-weight:600; }
+.gallery { display:grid; grid-template-columns:1fr; gap:13px; }
+
+/* modal */
+.scrim { background:rgba(0,0,0,0.42); border-radius:14px; padding:40px 20px; display:flex; justify-content:center; }
+.modal { width:100%; max-width:540px; background:var(--card-bg); border:1px solid var(--card-border); border-radius:14px; box-shadow:0 18px 50px rgba(0,0,0,0.32); padding:24px; }
+.modal h3 { font-family:var(--display); font-size:1.55rem; letter-spacing:0.04em; color:var(--ink); margin:0 0 10px; }
+.modal p { font-family:var(--body); font-size:0.85rem; color:var(--gray); line-height:1.6; margin:0 0 16px; }
+.modal p b { color:var(--ink); font-weight:600; }
+.acctlist { border-top:1px solid var(--hairline); margin:0 0 18px; }
+.acctrow { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid var(--hairline); }
+.acctrow .nm { font-family:var(--mono); font-size:0.72rem; color:var(--ink); }
+.acctrow .st { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.06em; text-transform:uppercase; }
+.st-red{color:var(--red);} .st-gray{color:var(--gray);}
+.btnrow { display:flex; gap:10px; justify-content:flex-end; }
+.btn { font-family:var(--mono); font-size:0.68rem; letter-spacing:0.1em; text-transform:uppercase; padding:10px 18px; border-radius:9999px; border:1px solid var(--hairline); background:transparent; color:var(--ink); cursor:pointer; }
+.btn.primary { background:var(--gold); border-color:var(--gold); color:#1a1a1a; font-weight:600; }
+.btn.ghost { color:var(--gray); }
+.monitorline { font-family:var(--mono); font-size:0.64rem; color:var(--gray); line-height:1.55; border-left:2px solid var(--hairline); padding-left:11px; margin:0 0 18px; }
+.monitorline b { color:var(--ink); }
+.verdict { font-family:var(--mono); font-size:0.68rem; line-height:1.7; color:var(--gray); border:1px solid var(--hairline); border-radius:10px; padding:13px 15px; margin-top:14px; }
+.verdict b { color:var(--ink); }
+.pro::before { content:"+ "; color:var(--green); }
+.con::before { content:"\2212 "; color:var(--red); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="tag">Sketch · 19 Aug 2026 · Waiting state</span>
+
+  <p class="lead">
+    Both variants answer one question: <b>operator hits Start, every account is capped for days — what do they see?</b>
+    Account state below is <b>real, measured 19 Aug 13:22 UTC</b> from the live Redis park keys. Weekly park TTL was
+    383,786s → free again <b>Sat 23 Aug</b>. Proxy park 66,729s → <b>tomorrow morning</b>.
+    No campaign is <i>currently</i> 100% blocked, so the fully-blocked set below is the projected case, built from real accounts and real dates.
+  </p>
+
+  <!-- ─────────────── VARIANT B ─────────────── -->
+  <h2 class="sec">B — Refuse with a prompt</h2>
+  <p class="lead">Start is intercepted. Operator must confront the wall before committing. One extra click, every time — including when they already know.</p>
+
+  <div class="panel">
+    <div class="scrim">
+      <div class="modal">
+        <h3>Nothing can send yet</h3>
+        <p>All <b>5 accounts</b> on <b>CC7 — NICE MEL</b> are blocked. The earliest any of them can send a connection request is <b>Sat 23 Aug</b>.</p>
+
+        <div class="acctlist">
+          <div class="acctrow"><span class="nm">697c157d…d171</span><span class="st st-red">Proxy — fix profile</span></div>
+          <div class="acctrow"><span class="nm">68a53e86…f5fb</span><span class="st st-gray">Weekly cap — Sat 23 Aug</span></div>
+          <div class="acctrow"><span class="nm">69b10298…d559</span><span class="st st-gray">Weekly cap — Sat 23 Aug</span></div>
+          <div class="acctrow"><span class="nm">68b53441…0720</span><span class="st st-gray">Weekly cap — Sat 23 Aug</span></div>
+          <div class="acctrow"><span class="nm">68e4d028…8632</span><span class="st st-red">Needs re-login in GoLogin</span></div>
+        </div>
+
+        <p class="monitorline">
+          Starting anyway is not pointless: <b>acceptance checking still runs hourly</b> on every account above except
+          the proxy and re-login ones, and intros still fire. Only <b>sending</b> is on hold.
+        </p>
+
+        <div class="btnrow">
+          <button class="btn ghost">Back</button>
+          <button class="btn">Start anyway</button>
+          <button class="btn primary">Fix accounts</button>
+        </div>
+      </div>
+    </div>
+    <p class="note">Three buttons because "Start anyway" and "Fix accounts" are both legitimate here — forcing one is what makes a prompt annoying.</p>
+  </div>
+
+  <div class="verdict">
+    <div class="pro">Impossible to miss. Operator learns the real date before they walk away expecting sends.</div>
+    <div class="pro">Names the accounts and separates fixable (proxy, re-login) from just-wait (weekly cap).</div>
+    <div class="con">Fires on every start while capped — during a bad week that is the same modal several times a day.</div>
+    <div class="con">Arrives too late to change anything. The accounts were already chosen two steps earlier.</div>
+  </div>
+
+  <!-- ─────────────── VARIANT C ─────────────── -->
+  <h2 class="sec">C — Warn in the account picker</h2>
+  <p class="lead">Park state moves into the J3 tiles the operator is already reading. They never assemble an unusable set, so the modal in B never needs to exist.</p>
+
+  <div class="panel">
+    <div class="gallery">
+
+      <div class="j3-card sel">
+        <div class="j3-status st-free">
+          <span class="j3-dot dot-free"></span>
+          <span class="j3-word w-free">FREE</span>
+          <span class="j3-when">can send now</span>
+        </div>
+        <div class="j3-detail">
+          <div class="j3-top"><input type="checkbox" checked /><span class="j3-email">68b53441…0720</span></div>
+          <div class="j3-verdict">Ready to send.</div>
+        </div>
+      </div>
+
+      <div class="j3-card sel">
+        <div class="j3-status st-free">
+          <span class="j3-dot dot-free"></span>
+          <span class="j3-word w-free">FREE</span>
+          <span class="j3-when">can send now</span>
+        </div>
+        <div class="j3-detail">
+          <div class="j3-top"><input type="checkbox" checked /><span class="j3-email">68e4d028…8632</span></div>
+          <div class="j3-verdict">Ready to send.</div>
+        </div>
+      </div>
+
+      <div class="j3-card dim">
+        <div class="j3-status st-wait">
+          <span class="j3-dot dot-wait"></span>
+          <span class="j3-word w-wait">CAPPED</span>
+          <span class="j3-when">free Sat 23 Aug</span>
+        </div>
+        <div class="j3-detail">
+          <div class="j3-top"><input type="checkbox" disabled /><span class="j3-email">68a53e86…f5fb</span></div>
+          <div class="j3-verdict">Weekly invite limit reached. <b>Still checks acceptances</b> — it just can't send.</div>
+        </div>
+      </div>
+
+      <div class="j3-card dim">
+        <div class="j3-status st-wait">
+          <span class="j3-dot dot-wait"></span>
+          <span class="j3-word w-wait">CAPPED</span>
+          <span class="j3-when">free Sat 23 Aug</span>
+        </div>
+        <div class="j3-detail">
+          <div class="j3-top"><input type="checkbox" disabled /><span class="j3-email">69b10298…d559</span></div>
+          <div class="j3-verdict">Weekly invite limit reached. <b>Still checks acceptances</b> — it just can't send.</div>
+        </div>
+      </div>
+
+      <div class="j3-card">
+        <div class="j3-status st-stop">
+          <span class="j3-dot dot-stop"></span>
+          <span class="j3-word w-stop">BROKEN</span>
+          <span class="j3-when">needs you</span>
+        </div>
+        <div class="j3-detail">
+          <div class="j3-top"><input type="checkbox" disabled /><span class="j3-email">697c157d…d171</span></div>
+          <div class="j3-verdict">Proxy refuses its browser (3 tries). Fix the GoLogin profile, then <b>Retry</b> — this one unblocks instantly, it isn't a wait.</div>
+        </div>
+      </div>
+
+    </div>
+    <p class="note">CAPPED is grey, not red — it is not a fault and there is nothing to fix. BROKEN is red because a human can clear it in a minute. That distinction is the whole point of this variant.</p>
+  </div>
+
+  <div class="verdict">
+    <div class="pro">Prevents instead of reports. The operator sees "2 usable of 5" while choosing, not after starting.</div>
+    <div class="pro">Separates <b>wait</b> from <b>fix</b> — today both surface as the same dead campaign.</div>
+    <div class="pro">Reuses the canonical J3 tile; one new state, no new screen.</div>
+    <div class="con">Silent if the operator ignores the tiles and starts with 2 weak accounts anyway.</div>
+    <div class="con">Doesn't cover accounts capped <i>after</i> the campaign starts — the common case. Needs the Waiting card regardless.</div>
+  </div>
+
+  <h2 class="sec">Honest read</h2>
+  <p class="lead">
+    These are not alternatives. <b>C prevents the bad start; B catches what C misses; neither covers the real case</b> —
+    accounts cap mid-run, days after the operator last looked at the picker. That case is only covered by the
+    Waiting state on the campaign card. C is the cheapest real win; B is the one I'd cut if we only build two.
+  </p>
+</div>
+</body>
+</html>
