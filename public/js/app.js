@@ -7688,6 +7688,51 @@ function _wakeWhenText(ms) {
   return `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${hm}`;
 }
 
+// Preflight answers for the Waiting card, keyed by campaign.
+//
+// _cloudCurrentAction is SYNCHRONOUS (it feeds the poll render), so it cannot
+// await. Kick the fetch off and read the last answer: a card 60s stale about a
+// four-day wait is fine; a render that blocks on the network is not.
+const _preflightCache = new Map();   // campaignId -> { at, data }
+function _preflightFor(c) {
+  const id = c && c.id;
+  const ids = (c && c.profile_ids) || [];
+  if (!id || !ids.length) return null;
+  const hit = _preflightCache.get(id);
+  if (!hit || Date.now() - hit.at > 60000) {
+    // Stamp `at` BEFORE the fetch so a slow engine cannot queue one request per
+    // poll tick. Keep serving the previous answer while the new one lands.
+    _preflightCache.set(id, { at: Date.now(), data: hit ? hit.data : null });
+    fetch('/api/campaign/cloud-preflight?profiles=' + encodeURIComponent(ids.join(',')))
+      .then((r) => r.json())
+      .then((d) => _preflightCache.set(id, { at: Date.now(), data: d }))
+      .catch(() => { /* card falls back to its old wording */ });
+  }
+  return hit ? hit.data : null;
+}
+
+// "1 account needs you, 4 capped until Sat 23 Aug"
+//
+// Fixable FIRST, always: proxy and needs-login are the only things the operator
+// can act on. A weekly cap is not a fault and has no action — leading with it
+// buries the one line that would have got them moving.
+function _blockSummary(pf) {
+  const blocked = ((pf && pf.accounts) || []).filter((a) => a.reason);
+  if (!blocked.length) return '';
+  const fixable = blocked.filter((a) => a.fixable);
+  const waiting = blocked.filter((a) => !a.fixable);
+  const parts = [];
+  if (fixable.length) {
+    parts.push(`${fixable.length} account${fixable.length === 1 ? '' : 's'} need${fixable.length === 1 ? 's' : ''} you`);
+  }
+  if (waiting.length) {
+    const clocks = waiting.map((a) => a.until).filter(Boolean).sort();
+    const when = clocks[0] ? _wakeWhenText(new Date(clocks[0]).getTime()) : '';
+    parts.push(`${waiting.length} capped${when ? ` until ${when}` : ''}`);
+  }
+  return parts.join(', ');
+}
+
 function _cloudCurrentAction(d) {
   const lp = d && d.liveProgress;
   if (!lp || !lp.phase) {
@@ -7704,9 +7749,16 @@ function _cloudCurrentAction(d) {
     const wake = c.blocked_until ? new Date(c.blocked_until).getTime() : 0;
     if (wake > Date.now()) {
       const when = _wakeWhenText(wake);
-      return { phase: 'waiting', label: 'Waiting for a free account',
-        account: '', lead: 'No account free',
-        sub: `${why || 'every account is at a limit or benched'} · the VM stands down until ${when} to save cost, then picks itself back up` };
+      const pf = _preflightFor(c);
+      const summary = _blockSummary(pf) || why || 'every account is at a limit or benched';
+      // The SECOND clock. A capped account still RECEIVES acceptances — only
+      // proxy park, needs-login and the busy lock skip an account in a sweep. So
+      // a Waiting campaign is half-alive, and saying only "not sending" gets it
+      // cancelled by an operator who thinks it stopped.
+      const nextTxt = c.next_check_at ? _wakeWhenText(new Date(c.next_check_at).getTime()) : '';
+      return { phase: 'waiting', label: 'Not sending',
+        account: '', lead: summary,
+        sub: `still checking acceptances${nextTxt ? ` · next check ${nextTxt}` : ''} · sending resumes ${when}` };
     }
     // A follower campaign never publishes liveProgress, so without this it fell
     // through to the generic "Working…" with no account, no lead and no time —
