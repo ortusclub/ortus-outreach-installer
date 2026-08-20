@@ -30,6 +30,27 @@ const CHECKING_OVERRUN_MS = 15 * 60 * 1000;
  * Absent task fields (older engine, failed detail fetch) → 'counting'. Never
  * invent a wake.
  */
+/** "1h" / "30 min" — the form the monitoring card has always used. */
+export function cadenceLabel(min) {
+  const n = Number(min) || 60;
+  return n >= 60 && n % 60 === 0 ? `${n / 60}h` : `${n} min`;
+}
+
+/**
+ * Is this campaign checking less often than its operator asked for?
+ *
+ * The app deliberately does NOT carry the cadence table — the engine sends the
+ * effective interval and the base one, and slowed is simply the difference. Two
+ * copies of that table would eventually disagree, and the card would confidently
+ * describe a slowdown that was not happening.
+ */
+export function checkSlowdown(status) {
+  const eff = Number(status && status.checkIntervalMinutes) || 0;
+  const base = Number(status && status.checkIntervalBaseMinutes) || 0;
+  if (!eff || !base || eff <= base) return null;
+  return { eff, base, streak: Math.max(0, Number(status.emptyCheckStreak) || 0) };
+}
+
 export function monitorHeroState(status, now = Date.now()) {
   if (!status) return { state: 'counting', overrun: false };
 
@@ -82,11 +103,15 @@ export function monitorHeroView(status, fmtCountdown, now = Date.now()) {
       state: 'waking',
     };
   }
+  // A sweep in flight or a worker waking outranks the slowdown — both branches
+  // above return first. Here the number IS a countdown, so the caption may name
+  // what it is counting toward.
+  const slow = checkSlowdown(status);
   return {
     count: status && status.nextCheckAt
       ? fmtCountdown(new Date(status.nextCheckAt).getTime() - now)
       : '—',
-    cap: 'until next check',
+    cap: slow ? `next check · slowed to ${cadenceLabel(slow.eff)}` : 'until next check',
     state: 'counting',
   };
 }
@@ -234,6 +259,21 @@ export function buildLiveActivity(status, now = Date.now()) {
         icon: '◍',
         l1: 'Waking a worker',
         l2: hero.overrun ? 'still waking — worker hasn’t picked it up' : 'sweeping in ~2 min',
+      };
+    }
+    const slow = checkSlowdown(status);
+    if (slow) {
+      // Says three things, in the order an operator asks them: it is deliberate,
+      // here is the evidence, here is what undoes it. Without the third the
+      // slowdown reads as permanent and the operator goes looking for a setting
+      // to change.
+      return {
+        state: 'monitoring',
+        icon: '◷',
+        l1: 'Quiet — checking less often',
+        l2: `nothing accepted in the last ${slow.streak} check${slow.streak === 1 ? '' : 's'} · `
+          + (slow.base === 60 ? 'hourly' : `every ${cadenceLabel(slow.base)}`)
+          + ' again as soon as one lands',
       };
     }
     return {

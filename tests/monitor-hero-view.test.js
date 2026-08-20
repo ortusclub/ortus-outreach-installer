@@ -97,3 +97,45 @@ test('no status at all → a plain dash, never a fabricated wake', () => {
   assert.equal(v.count, '—');
   assert.equal(v.cap, 'until next check');
 });
+
+test('an unslowed campaign keeps the caption it has always had', () => {
+  // The regression lock for the whole feature: a campaign that never slows down
+  // must not gain a single new word.
+  const v = monitorHeroView(
+    { nextCheckAt: new Date(Date.now() + 600000).toISOString(),
+      checkIntervalMinutes: 60, checkIntervalBaseMinutes: 60 },
+    () => '10:00'
+  );
+  assert.equal(v.cap, 'until next check');
+  assert.equal(v.state, 'counting');
+});
+
+test('a slowed campaign names its cadence in the caption', () => {
+  const v = monitorHeroView(
+    { nextCheckAt: new Date(Date.now() + 600000).toISOString(),
+      checkIntervalMinutes: 240, checkIntervalBaseMinutes: 60, emptyCheckStreak: 9 },
+    () => '3:41:08'
+  );
+  assert.equal(v.cap, 'next check · slowed to 4h');
+  assert.equal(v.count, '3:41:08', 'the number is still the countdown');
+});
+
+test('a slowed campaign mid-sweep says CHECKING, not a cadence', () => {
+  // The number and its caption must come from the SAME decision — the drift this
+  // function exists to prevent. A sweep in flight outranks the slowdown.
+  const v = monitorHeroView(
+    { monitorTaskStatus: 'claimed', checkIntervalMinutes: 240, checkIntervalBaseMinutes: 60 },
+    () => 'x'
+  );
+  assert.equal(v.count, 'CHECKING');
+  assert.equal(v.cap, 'now');
+});
+
+test('a 30-minute campaign slowed to an hour says so in minutes-or-hours form', () => {
+  const v = monitorHeroView(
+    { nextCheckAt: new Date(Date.now() + 600000).toISOString(),
+      checkIntervalMinutes: 120, checkIntervalBaseMinutes: 30, emptyCheckStreak: 6 },
+    () => '1:02:03'
+  );
+  assert.equal(v.cap, 'next check · slowed to 2h');
+});

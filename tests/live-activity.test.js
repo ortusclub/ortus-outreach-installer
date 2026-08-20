@@ -207,3 +207,37 @@ test('past the deadline the card drops "resumes instantly"', () => {
   assert.equal(r.l2, 'auto-stopping now — paused too long');
   assert.ok(!/resumes instantly/.test(r.l2));
 });
+
+test('a monitoring campaign that is not slowed reads exactly as it always has', () => {
+  const a = buildLiveActivity({
+    running: false, state: 'monitoring', profileIds: ['a', 'b', 'c', 'd', 'e'],
+    checkIntervalMinutes: 60, checkIntervalBaseMinutes: 60, emptyCheckStreak: 1,
+  });
+  assert.equal(a.l1, 'Waiting for next check');
+  assert.equal(a.l2, '5 accounts · checks every 1h · nothing running right now');
+});
+
+test('a slowed campaign explains itself and promises the way back', () => {
+  const a = buildLiveActivity({
+    running: false, state: 'monitoring', profileIds: ['a', 'b', 'c', 'd', 'e'],
+    checkIntervalMinutes: 240, checkIntervalBaseMinutes: 60, emptyCheckStreak: 9,
+  });
+  assert.equal(a.l1, 'Quiet — checking less often');
+  assert.equal(a.l2, 'nothing accepted in the last 9 checks · hourly again as soon as one lands');
+});
+
+test('a slowed 30-minute campaign promises 30 minutes, not "hourly"', () => {
+  const a = buildLiveActivity({
+    running: false, state: 'monitoring', profileIds: ['a'],
+    checkIntervalMinutes: 120, checkIntervalBaseMinutes: 30, emptyCheckStreak: 7,
+  });
+  assert.match(a.l2, /every 30 min again as soon as one lands/);
+});
+
+test('one check is singular', () => {
+  const a = buildLiveActivity({
+    running: false, state: 'monitoring', profileIds: ['a'],
+    checkIntervalMinutes: 120, checkIntervalBaseMinutes: 60, emptyCheckStreak: 3,
+  });
+  assert.match(a.l2, /nothing accepted in the last 3 checks/);
+});
