@@ -195,3 +195,15 @@ test('the app and the engine agree on 48 hours', () => {
   // If these ever diverge the card counts down to a moment nothing acts on.
   assert.equal(PAUSE_MAX_MS, 48 * 60 * 60 * 1000);
 });
+
+test('past the deadline the card drops "resumes instantly"', () => {
+  // Caught in the sketch: the card read "auto-stopping now — paused too long ·
+  // resumes instantly, browsers stay open". It is about to be cancelled, so
+  // resuming is the one thing it will not do.
+  const r = buildLiveActivity(
+    { running: true, paused: true, pausedAt: '2026-08-18T00:00:00Z' },
+    Date.parse('2026-08-20T10:00:00Z'),
+  );
+  assert.equal(r.l2, 'auto-stopping now — paused too long');
+  assert.ok(!/resumes instantly/.test(r.l2));
+});

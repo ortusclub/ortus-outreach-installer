@@ -247,6 +247,11 @@ export function buildLiveActivity(status, now = Date.now()) {
   if (status.running) {
     if (paused) {
       const stop = pauseAutoStop(status.pausedAt, now);
+      const started = Date.parse(status.pausedAt || '');
+      // Past the deadline the reassurance becomes a contradiction: this campaign
+      // is about to be cancelled, so "resumes instantly" is the one thing it
+      // will not do. The deadline line stands alone.
+      const expired = Number.isFinite(started) && now >= started + PAUSE_MAX_MS;
       return {
         state: 'paused',
         icon: '‖',
@@ -255,9 +260,9 @@ export function buildLiveActivity(status, now = Date.now()) {
         // campaign has no pausedAt — its pause lives in memory and dies with the
         // app — so it keeps the old wording rather than being told about a 48h
         // rule that nothing enforces for it.
-        l2: stop
-          ? `${stop} · resumes instantly, browsers stay open`
-          : 'resumes instantly · browsers stay open',
+        l2: !stop ? 'resumes instantly · browsers stay open'
+          : expired ? stop
+            : `${stop} · resumes instantly, browsers stay open`,
       };
     }
     return {
