@@ -10649,9 +10649,16 @@ async function pauseCloudCampaignUI(id, isPaused) {
     const d = await res.json();
     if (d.error) { alert(`Could not ${verb}: ` + d.error); return; }
     if (typeof showCampaignToast === 'function') {
-      showCampaignToast(isPaused ? 'Resuming…' : 'Pausing — sending stops after the current lead.', 4000);
+      // The 48h rule is said HERE, at the press, as well as on the card. A rule
+      // the operator only meets when their campaign is already gone is not a
+      // rule they were told. Cloud only — a local pause has no such deadline.
+      showCampaignToast(isPaused
+        ? 'Resuming…'
+        : 'Pausing — sending stops after the current lead. Left paused for 48h it stops for good and releases its accounts.', 7000);
     }
-    _pushCloudEvent(id, isPaused ? '▶️ Resumed' : '⏸️ Paused — sending stops after the current lead');
+    _pushCloudEvent(id, isPaused
+      ? '▶️ Resumed'
+      : '⏸️ Paused — sending stops after the current lead. Auto-stops after 48h paused.');
   } catch (e) { alert(`Could not ${verb}: ` + e.message); return; }
   // Refresh the viewed card immediately, plus the board.
   if (typeof _refreshCloudActiveStatus === 'function' && _viewingCloudId === id) { try { await _refreshCloudActiveStatus(id); } catch {} }
