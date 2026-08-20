@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { buildLiveActivity } from '../public/js/live-activity.mjs';
+import { buildLiveActivity, pauseAutoStop, PAUSE_MAX_MS } from '../public/js/live-activity.mjs';
 
 // buildLiveActivity turns an /api/campaign/status snapshot into the card's
 // "live line" — WHAT the campaign is doing right now. Mode-agnostic: it reads
@@ -144,4 +144,54 @@ test('every account capped/benched → says so, never "Working…"', () => {
   assert.notEqual(r.l1, 'Working…');
   assert.match(r.verb, /free account/i);
   assert.match(r.sub, /daily limit/);
+});
+
+// ── The 48h pause deadline ──────────────────────────────────────────────────
+// A pause holds the campaign's accounts and freezes its unsent leads, so the
+// engine cancels it after 48h. The card has to SAY so at the moment it is
+// paused — a rule the operator only discovers when their campaign is gone is
+// worse than no rule.
+
+test('a paused cloud campaign says when it will auto-stop', () => {
+  const now = Date.parse('2026-08-20T10:00:00Z');
+  const r = buildLiveActivity(
+    { running: true, paused: true, pausedAt: '2026-08-20T09:00:00Z' }, now,
+  );
+  assert.equal(r.state, 'paused');
+  assert.equal(r.l2, 'auto-stops in 47h · resumes instantly, browsers stay open');
+});
+
+test('a local pause makes no promise it cannot keep', () => {
+  // No pausedAt: the local pause lives in memory and dies with the app, and
+  // nothing enforces 48h for it. The old wording, unchanged.
+  const r = buildLiveActivity({ running: true, paused: true });
+  assert.equal(r.state, 'paused');
+  assert.equal(r.l2, 'resumes instantly · browsers stay open');
+});
+
+test('the deadline counts in hours far out, minutes when it is close', () => {
+  const at = '2026-08-20T00:00:00Z';
+  const T = (iso) => Date.parse(iso);
+  assert.equal(pauseAutoStop(at, T('2026-08-20T00:00:00Z')), 'auto-stops in 48h');
+  assert.equal(pauseAutoStop(at, T('2026-08-21T23:00:00Z')), 'auto-stops in 1h 0m',
+    'under two hours the minutes matter — it is about to happen');
+  assert.equal(pauseAutoStop(at, T('2026-08-21T23:30:00Z')), 'auto-stops in 30 min');
+});
+
+test('past the deadline it never counts down through zero', () => {
+  // The engine cancels on its next tick; a negative countdown would read as a
+  // campaign that is still safely paused.
+  const r = pauseAutoStop('2026-08-18T00:00:00Z', Date.parse('2026-08-20T10:00:00Z'));
+  assert.equal(r, 'auto-stopping now — paused too long');
+});
+
+test('an unparseable or missing stamp renders nothing, never NaN', () => {
+  assert.equal(pauseAutoStop(null), '');
+  assert.equal(pauseAutoStop(''), '');
+  assert.equal(pauseAutoStop('not a date'), '');
+});
+
+test('the app and the engine agree on 48 hours', () => {
+  // If these ever diverge the card counts down to a moment nothing acts on.
+  assert.equal(PAUSE_MAX_MS, 48 * 60 * 60 * 1000);
 });

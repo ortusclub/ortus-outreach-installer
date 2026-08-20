@@ -7602,6 +7602,10 @@ function _buildCloudActiveStatus(c, leads, counts) {
   } catch (_) { /* the log line must never break the status render */ }
   return {
     _cloud: true, id: c.id, running: c.status === 'running' || c.status === 'paused', paused: c.status === 'paused',
+    // When the pause started, so the card can say when the engine will stop it
+    // for good (48h). Absent on an older engine build — pauseAutoStop then
+    // renders nothing rather than a made-up deadline.
+    pausedAt: c.paused_at || null,
     state: isMon ? 'monitoring' : undefined, queued: isQueued,
     // Why it hasn't started, in the same words the board strip uses — card #2
     // and the board are two render paths over one campaign, and an operator who
@@ -10224,6 +10228,7 @@ async function _renderCampaignsBoardInner() {
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
         paused: c.status === 'paused',
+        pausedAt: c.paused_at || null,
         // Live-browser flag from the engine (top-level of the /:id detail, NOT
         // inside d.campaign) — drives the green LIVE dot on the Show button.
         live: !!(d && d.live), liveAccount: (d && d.liveAccount) || '',

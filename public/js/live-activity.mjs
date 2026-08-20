@@ -130,6 +130,37 @@ export function monitorTickText({ nextCheckAt, busy, fmtCountdown, now = Date.no
  * would be claiming knowledge nothing has; elapsed seconds is the only honest
  * number and the stage shows that instead.
  */
+
+/** How long a pause may last before the engine stops the campaign for good.
+ * Mirrors PAUSE_MAX_MS in the engine's campaign-store.js. A pause holds the
+ * campaign's accounts — nobody else can send from them — and freezes its unsent
+ * leads, which is fine for a coffee break and wrong for a week. */
+export const PAUSE_MAX_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * The paused card's second line: when this pause stops being a pause.
+ *
+ * Returns '' when `pausedAt` is missing or unparseable — a local campaign has no
+ * stamp at all, and a cloud campaign paused by an older engine build may not
+ * either. Inventing a deadline for those would be a countdown to a moment
+ * nothing acts on.
+ */
+export function pauseAutoStop(pausedAt, now = Date.now()) {
+  const started = Date.parse(pausedAt || '');
+  if (!Number.isFinite(started)) return '';
+  const left = started + PAUSE_MAX_MS - now;
+  // Past the deadline the engine's next tick cancels it. Say that, rather than
+  // counting down through zero into negative hours.
+  if (left <= 0) return 'auto-stopping now — paused too long';
+  const mins = Math.floor(left / 60000);
+  if (mins < 60) return `auto-stops in ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  // Under two hours the minutes matter — it is about to happen. Above that they
+  // are noise on a 48-hour clock.
+  return hrs < 2 ? `auto-stops in ${hrs}h ${rem}m` : `auto-stops in ${hrs}h`;
+}
+
 export const LIVE_PHASES = {
   sending:     { verb: 'Sending connection',   icon: '➤', state: 'sending',  glyph: 'fly' },
   introducing: { verb: 'Writing introduction', icon: '✎', state: 'sending',  glyph: 'typ' },
@@ -142,7 +173,7 @@ export const LIVE_PHASES = {
   waiting:     { verb: 'Waiting for a free account', icon: '◷', state: 'waiting', glyph: 'wait' },
 };
 
-export function buildLiveActivity(status) {
+export function buildLiveActivity(status, now = Date.now()) {
   if (!status) return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
 
   if (status.phase === 'preflight') {
@@ -215,11 +246,18 @@ export function buildLiveActivity(status) {
 
   if (status.running) {
     if (paused) {
+      const stop = pauseAutoStop(status.pausedAt, now);
       return {
         state: 'paused',
         icon: '‖',
         l1: 'Paused — finishes the current lead, then waits',
-        l2: 'resumes instantly · browsers stay open',
+        // The deadline only appears when we know WHEN the pause started. A local
+        // campaign has no pausedAt — its pause lives in memory and dies with the
+        // app — so it keeps the old wording rather than being told about a 48h
+        // rule that nothing enforces for it.
+        l2: stop
+          ? `${stop} · resumes instantly, browsers stay open`
+          : 'resumes instantly · browsers stay open',
       };
     }
     return {
