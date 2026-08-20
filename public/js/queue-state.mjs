@@ -123,6 +123,20 @@ function ordinal(n) {
  */
 export function vmCapacityTile(capacity = {}, live = false) {
   const cap = capacity || {};
+  // Checked BEFORE `live`, because when the campaign list itself failed we do
+  // not know whether anything is live — and the honest answer must not be the
+  // reassuring one. A 502 from /api/campaign/cloud-list used to leave the caller
+  // with zero campaigns, which read as `live: false`, which printed ASLEEP: "no
+  // cloud campaign is running, so the VM scaled to zero." That is the exact
+  // opposite of what is known. Campaigns could be sending the whole time.
+  //
+  // Distinct from `unavailable`, which is the narrower "the list arrived but the
+  // capacity call did not" — there the board is still true and only this tile is
+  // blind.
+  if (cap.unreachable) {
+    return { text: 'NO LINK', cls: 'err',
+      title: 'Cannot reach the cloud engine. The board below is the last state we saw, not live — campaigns may still be running normally.' };
+  }
   if (!live) {
     return { text: 'ASLEEP', cls: 'small',
       title: 'No cloud campaign is running, so the VM has scaled to zero. It wakes by itself when one starts.' };

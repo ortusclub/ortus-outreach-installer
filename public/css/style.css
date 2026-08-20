@@ -3706,6 +3706,19 @@ body.theme-light .launch-actions.launch-actions--four #btn-start {
 .preview-card__warnings ul { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--ink); }
 
 /* Phase 11.1 — Slow-mode banner (shown when throttle.active) */
+/* Cloud engine unreachable — the board below is a stale snapshot. Same shape as
+   #throttle-banner, hairline rule instead of the amber bar (the design system
+   has no second accent), and `hidden` does the toggling. */
+#cloud-offline-banner {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--red);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
 #throttle-banner {
   margin: 8px 0;
   padding: 8px 12px;

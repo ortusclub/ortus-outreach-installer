@@ -140,6 +140,18 @@ test('never claims the VM is idle when it simply could not be reached', () => {
   assert.match(t.title, /says nothing about whether your campaigns are running/);
 });
 
+test('an unreachable engine outranks the asleep tile, which it would otherwise fake', () => {
+  // A 502 from /api/campaign/cloud-list leaves the caller with zero campaigns,
+  // so `live` arrives false — the same input as a genuinely idle VM. Without the
+  // unreachable branch taking precedence, the tile printed ASLEEP and told the
+  // operator the VM had scaled to zero while campaigns were possibly sending.
+  const t = vmCapacityTile({ unreachable: true }, false);
+  assert.equal(t.text, 'NO LINK');
+  assert.equal(t.cls, 'err', 'not the quiet "small" class — this one is worth looking at');
+  assert.doesNotMatch(t.title, /scaled to zero/);
+  assert.match(t.title, /last state we saw/);
+});
+
 test('does not invent a ratio when the engine reports no maximum', () => {
   assert.equal(vmCapacityTile({ podsBusy: 0 }, true).text, '—',
     'a "0/0" tile would read as a broken VM');

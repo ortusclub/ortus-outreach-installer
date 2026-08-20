@@ -10033,11 +10033,30 @@ async function _mapLimit(items, limit, fn) {
 }
 const CLOUD_FANOUT_LIMIT = 3;
 
+// When the cloud engine first stopped answering, 0 while it is answering. Drives
+// both the NO LINK tile and the banner; reset on the first successful list.
+let _cloudOfflineSince = 0;
+
 async function _refreshCloudItems() {
   if (_cloudRefreshInFlight) return;
   _cloudRefreshInFlight = true;
+  // Only the LIST decides reachability. Everything after it is per-campaign
+  // detail with its own fallback, and a throw from one of those says nothing
+  // about the engine being up — flagging it offline would put a false banner
+  // over a board that is perfectly live.
+  let listOk = false;
   try {
-    const cl = await (await fetch('/api/campaign/cloud-list')).json();
+    const _res = await fetch('/api/campaign/cloud-list');
+    const cl = await _res.json();
+    // The engine answers a failed list with 502 + {error}, which fetch does NOT
+    // throw on. Reading `.campaigns` off it yields undefined, and the old `|| []`
+    // turned that into "there are no cloud campaigns": every strip vanished from
+    // the board and the VM tile printed ASLEEP. An unreachable engine rendered as
+    // everything-is-fine. Throw instead, so the catch below keeps the last good
+    // snapshot on screen, and flag it so the tile and banner say it is stale.
+    if (!_res.ok || (cl && cl.error)) throw new Error((cl && cl.error) || `engine ${_res.status}`);
+    listOk = true;
+    _cloudOfflineSince = 0;
     const cloudCamps = (cl && cl.campaigns) || [];
     // One reading per poll for the whole board: the queue is global, so every
     // waiting strip asks the same question and the answer is memoised server
@@ -10119,9 +10138,34 @@ async function _refreshCloudItems() {
       }
       return d;
     });
-  } catch (_) { /* keep last snapshot on engine hiccup */ }
+  } catch (_) {
+    // Keep the last snapshot — a stale board is far more useful than an empty
+    // one — but never let it pass for live. Both signals are the same fact said
+    // twice: the tile for whoever is looking at the header, the banner for
+    // whoever is looking at the strips.
+    if (!listOk) {
+      if (!_cloudOfflineSince) _cloudOfflineSince = Date.now();
+      _cloudCapacity = { unreachable: true };
+      try { renderVmTile(true); } catch { /* */ }
+    }
+  }
   finally { _cloudRefreshInFlight = false; }
+  try { _renderCloudOfflineBanner(); } catch { /* */ }
   try { renderCampaignsBoard(); } catch { /* */ }
+}
+
+
+function _renderCloudOfflineBanner() {
+  const el = document.getElementById('cloud-offline-banner');
+  if (!el) return;
+  if (!_cloudOfflineSince) { el.hidden = true; el.textContent = ''; return; }
+  const since = new Date(_cloudOfflineSince)
+    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Says what is known and what is not. It deliberately does NOT claim the
+  // campaigns have stopped: the engine runs on the VM and keeps sending whether
+  // or not this laptop can reach it.
+  el.textContent = `⚠ Can't reach the cloud engine since ${since} — showing the last state we saw. Campaigns on the VM keep running; this board is not live.`;
+  el.hidden = false;
 }
 window._refreshCloudItems = _refreshCloudItems;
 
