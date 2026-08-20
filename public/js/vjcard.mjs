@@ -47,6 +47,16 @@ export function statusFromItem(it = {}) {
     followUp: it.followUp,
     autoChecksEnabled: it.autoChecksEnabled,
     checkIntervalMinutes: Number(it.checkIntervalMinutes) || 60,
+    // The adaptive check cadence. checkSlowdown() is `effective > base`, nothing
+    // else — so BOTH numbers have to survive this whitelist or the board's card
+    // says "checks every 4h · nothing running right now" and presents a
+    // temporary slowdown as the operator's own setting.
+    //
+    // Base falls back to the effective interval, NOT to 60: a local campaign set
+    // to 2h carries no base at all, and defaulting it to 60 would report a
+    // slowdown that isn't happening. Equal ⇒ not slowed, which is the truth.
+    checkIntervalBaseMinutes: Number(it.checkIntervalBaseMinutes) || Number(it.checkIntervalMinutes) || 60,
+    emptyCheckStreak: Number(it.emptyCheckStreak) || 0,
     // The finished-FG reason line reads all three of these. Leaving them out of
     // this whitelist is why a done FG card on the board never explained itself:
     // _fgFinishedNote returns null the moment `bucket` is undefined, so the

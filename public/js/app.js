@@ -28,7 +28,7 @@ import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { fgActiveDoor, fgActivePayload } from '/js/fg-source.mjs';
 import { fgEyebrowWithPage } from '/js/fg-eyebrow.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText } from '/js/live-activity.mjs';
+import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
@@ -9405,9 +9405,14 @@ function renderUnifiedStrip(it) {
       const d1 = Math.floor(ms / 86400000), h1 = Math.floor((ms % 86400000) / 3600000), m1 = Math.floor((ms % 3600000) / 60000);
       return d1 > 0 ? `${d1}d ${h1}h` : h1 > 0 ? `${h1}h ${m1}m` : `${m1}m`;
     };
+    // `every 60m` when the campaign is on the operator's own interval (unchanged
+    // wording), `slowed to 4h` when the engine has backed the cadence off — the
+    // hero caption's words, from the same helper, so the strip can't state a
+    // temporary slowdown as if the operator had chosen it.
+    const cad = stripCadence(it);
     const line = endingSoon
       ? `Window ends in <b>${fmtRem(remMs)}</b> — then still-pending leads stay <i>Connection Request Sent</i>`
-      : `Next check <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(fmtRem(remMs))}</b> · every <b>${it.checkIntervalMinutes || 60}m</b>`;
+      : `Next check <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(fmtRem(remMs))}</b> · ${cad.label} <b>${escHtml(cad.value)}</b>`;
     monBlock = `<div class="sn-mon${endingSoon ? ' ending' : ''}">`
       + `<span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span>`
       + `<span class="sn-mon-line">${line}</span>`

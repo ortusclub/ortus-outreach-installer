@@ -51,6 +51,23 @@ export function checkSlowdown(status) {
   return { eff, base, streak: Math.max(0, Number(status.emptyCheckStreak) || 0) };
 }
 
+/**
+ * The cadence phrase for the COLLAPSED board strip's one-line monitoring
+ * summary — `{label} {value}`, so the caller can bold the value as it always has.
+ *
+ * Not slowed → byte-identical to what that line has always printed
+ * (`every 60m`). Slowed → the hero caption's own words (`slowed to 4h`), because
+ * the strip used to print the slowed interval as `every 4h` and there is nothing
+ * in that sentence to tell the operator it wasn't the setting they chose.
+ * Same checkSlowdown / cadenceLabel as the hero — no second copy of anything.
+ */
+export function stripCadence(status) {
+  const slow = checkSlowdown(status);
+  return slow
+    ? { label: 'slowed to', value: cadenceLabel(slow.eff) }
+    : { label: 'every', value: `${Number(status && status.checkIntervalMinutes) || 60}m` };
+}
+
 export function monitorHeroState(status, now = Date.now()) {
   if (!status) return { state: 'counting', overrun: false };
 
