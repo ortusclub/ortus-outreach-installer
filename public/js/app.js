@@ -5869,9 +5869,20 @@ async function previewSheet() {
       'sender', 'linkedin 1st connections', 'linkedin 1st connection',
       'account used', 'account', 'owner',
     ];
+    // A header can match by name and still hold nothing. Ortus sheets carry a
+    // legacy blank `Sender` column (sometimes two — a later duplicate header
+    // blanks the first one at parse time), and 'sender' outranks every other
+    // candidate here. Auto-picking it sends every row to a blank sender, which
+    // only surfaces at launch as "No sender column selected". Require sample
+    // values before accepting a name match.
+    const _colHasValues = (col) => {
+      const rows = data.preview || [];
+      if (rows.length === 0) return true; // nothing to judge on — trust the header
+      return rows.some((r) => String((r && r[col]) || '').trim() !== '');
+    };
     for (const wanted of SENDER_HEADER_PRIORITY) {
       const found = data.columns.find((c) => (c || '').toString().trim().toLowerCase() === wanted);
-      if (found && found !== autoDetectCol) { autoSenderCol = found; break; }
+      if (found && found !== autoDetectCol && _colHasValues(found)) { autoSenderCol = found; break; }
     }
     if (!autoSenderCol && data.preview && data.preview.length > 0) {
       for (const col of data.columns) {
@@ -11457,9 +11468,12 @@ function _icSenderColManualPick() {
 
 function _icPreflightScrollToColumnPicker() {
   const sel = document.getElementById('ic-sender-col-select');
-  if (!sel) {
-    // The IC extras block is rendered by previewSheet(); if not present,
-    // scroll to the sheet section so the operator can press Preview first.
+  // The select is always in the DOM; what matters is whether its card is
+  // showing — it stays hidden until previewSheet() has run. Scrolling to a
+  // hidden element lands the operator on nothing, which is how this modal's
+  // one button became a dead end.
+  const filled = document.getElementById('ic-extras-filled');
+  if (!sel || (filled && filled.classList.contains('hidden'))) {
     document.getElementById('nav-sheet')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
@@ -19686,8 +19700,13 @@ async function startNewCampaign() {
   const _icExtras = document.getElementById('ic-extras');
   const _icExtrasEmpty = document.getElementById('ic-extras-empty');
   const _icExtrasFilled = document.getElementById('ic-extras-filled');
-  if (_icExtrasFilled) _icExtrasFilled.style.display = 'none';
-  if (_icExtrasEmpty) _icExtrasEmpty.style.display = '';
+  // Reset via the SAME mechanism previewSheet() uses (the .hidden class).
+  // An inline display:none here outranks classList.remove('hidden'), so the
+  // sender-column picker stayed invisible for the rest of the session once
+  // the operator pressed "+ New campaign" — IC then launched with a blank
+  // sender and no way to correct it (operator report, 20 Aug 2026).
+  if (_icExtrasFilled) { _icExtrasFilled.classList.add('hidden'); _icExtrasFilled.style.display = ''; }
+  if (_icExtrasEmpty) { _icExtrasEmpty.classList.remove('hidden'); _icExtrasEmpty.style.display = ''; }
   selectedProfileIds = [];
   selectedProfileNames = {};
   if (typeof renderProfiles === 'function' && Array.isArray(allProfilesData)) renderProfiles(allProfilesData);
