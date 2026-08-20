@@ -7632,6 +7632,12 @@ function _buildCloudActiveStatus(c, leads, counts) {
     monitorTaskDueAt: c.monitorTaskDueAt || null,
     monitorCheckStartedAt: c.monitor_check_started_at || null,
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
+    // The engine sends check_interval_minutes as the EFFECTIVE cadence and the
+    // operator's own setting beside it; the difference is what makes the card say
+    // "slowed to 4h". An engine that predates this sends neither, and
+    // checkSlowdown() then reports no slowdown — today's wording exactly.
+    checkIntervalBaseMinutes: c.check_interval_base_minutes || c.check_interval_minutes || 60,
+    emptyCheckStreak: c.empty_check_streak || 0,
     // Task 9 — primary needs-login surfacing on card #2 (Task 5's c.primarySession).
     primarySession: c.primarySession,
     // Needed to run the local primary handshake for an account ADDED to a paused
@@ -10311,6 +10317,8 @@ async function _renderCampaignsBoardInner() {
         nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
         autoChecksEnabled: c.auto_checks_enabled !== false,
         checkIntervalMinutes: c.check_interval_minutes || 60,
+        checkIntervalBaseMinutes: c.check_interval_base_minutes || c.check_interval_minutes || 60,
+        emptyCheckStreak: c.empty_check_streak || 0,
         // v2.160.35: follow-up dual countdown — lights up once the engine
         // exposes c.follow_up {count,dueAt,sender} on the cloud detail.
         followUp: c.follow_up || null,
