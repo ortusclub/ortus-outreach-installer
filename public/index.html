@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.28" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.29" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.18" />
 </head>
 <body data-dashboard="v3">
@@ -3711,6 +3711,29 @@
   <!-- v2.14.x: Resume-choice modal — opens when operator clicks Resume on a
        stopped campaign (from past-list row or runbar). Two paths: instant
        resume with same settings, or pre-fill the wizard for tweaks. -->
+  <!-- First pause of a campaign: the 48h auto-stop, said once. Later pauses fall
+       back to the toast — the rule matters when you first pause a campaign, and
+       a dialog on every press of a reversible action just trains you to dismiss
+       it. Opened by _confirmFirstPause() in app.js. -->
+  <div id="pause-warn-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closePauseWarnModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pause-warn-title">
+      <span class="ptm-pill">FIRST PAUSE</span>
+      <h3 id="pause-warn-title" class="modal-title">Pause this campaign?</h3>
+      <div class="modal-body">
+        Sending stops after the lead in flight. <b>If it is still paused in 48 hours it stops
+        for good</b> and releases its accounts — the unsent leads stay queued.
+        <br /><br />
+        You will not be asked again for this campaign; the card shows the countdown.
+      </div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-primary" id="pause-warn-confirm">Pause · got it</button>
+      </div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" onclick="closePauseWarnModal()">Keep sending</button>
+      </div>
+    </div>
+  </div>
+
   <div id="resume-choice-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeResumeChoiceModal()">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="resume-choice-title">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeResumeChoiceModal()">&times;</button>
@@ -4119,7 +4142,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.28"></script>
+  <script type="module" src="/js/app.js?v=3.1.29"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before

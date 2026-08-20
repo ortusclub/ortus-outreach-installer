@@ -10641,9 +10641,80 @@ async function _doStopCloud(id, { keepMonitoring = false } = {}) {
 // the CURRENT state: true → resume (paused→running, scheduler continues from
 // where it left off); false → pause (stop?pause=1; the engine worker re-checks
 // status between leads, so sending stops after the lead in flight).
+// Which campaigns have already had the 48h warning. Per machine, not per
+// engine: it is a fact about what this operator has been told, and the operator
+// is the one sitting at this laptop.
+const PAUSE_WARNED_KEY = 'pauseWarnedCampaigns';
+function _pauseWarned() {
+  try { return new Set(JSON.parse(localStorage.getItem(PAUSE_WARNED_KEY) || '[]')); }
+  catch (_) { return new Set(); }
+}
+function _markPauseWarned(id) {
+  try {
+    const seen = _pauseWarned();
+    seen.add(String(id));
+    // Bounded: the newest 200 campaigns is far more than anyone pauses, and it
+    // stops a years-old board from growing this key without limit.
+    localStorage.setItem(PAUSE_WARNED_KEY, JSON.stringify([...seen].slice(-200)));
+  } catch (_) { /* private mode / quota — the toast still says it */ }
+}
+
+/**
+ * The first time a campaign is paused, say the 48h rule in a dialog that has to
+ * be acknowledged. Every pause after that gets the toast instead: the rule is
+ * worth one interruption per campaign, and a modal on every press of a
+ * reversible action only teaches the operator to click through it.
+ *
+ * Resolves true to go ahead, false if they chose Keep sending. Missing markup
+ * (older shell) resolves true — a warning that cannot render must never be the
+ * reason a pause does not happen.
+ */
+function _confirmFirstPause(id) {
+  const modal = document.getElementById('pause-warn-modal');
+  const ok = document.getElementById('pause-warn-confirm');
+  if (!modal || !ok || _pauseWarned().has(String(id))) return Promise.resolve(true);
+
+  // What the operator is really asking about: the leads that have not gone out.
+  const pending = Number(((_cloudDetailCache.get(id) || {}).leadCounts || {}).pending) || 0;
+  ok.textContent = pending
+    ? `Pause · ${pending.toLocaleString()} lead${pending === 1 ? '' : 's'} stay queued`
+    : 'Pause · got it';
+
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (val) => {
+      if (done) return;
+      done = true;
+      modal.classList.add('hidden');
+      ok.onclick = null;
+      modal.removeEventListener('click', onScrim);
+      document.removeEventListener('keydown', onKey);
+      window.closePauseWarnModal = _closePauseWarnModal;
+      resolve(val);
+    };
+    // Scrim, Escape and "Keep sending" all mean the same thing: do not pause.
+    // Answering the dialog by dismissing it must never be read as consent.
+    const onScrim = (e) => { if (e.target === modal) finish(false); };
+    const onKey = (e) => { if (e.key === 'Escape') finish(false); };
+    ok.onclick = () => { _markPauseWarned(id); finish(true); };
+    modal.addEventListener('click', onScrim);
+    document.addEventListener('keydown', onKey);
+    window.closePauseWarnModal = () => finish(false);
+    modal.classList.remove('hidden');
+    ok.focus();
+  });
+}
+
+function _closePauseWarnModal() {
+  const m = document.getElementById('pause-warn-modal');
+  if (m) m.classList.add('hidden');
+}
+window.closePauseWarnModal = _closePauseWarnModal;
+
 async function pauseCloudCampaignUI(id, isPaused) {
   const path = isPaused ? 'resume' : 'stop?pause=1';
   const verb = isPaused ? 'resume' : 'pause';
+  if (!isPaused && !(await _confirmFirstPause(id))) return;   // they chose to keep sending
   try {
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/${path}`, { method: 'POST' });
     const d = await res.json();
