@@ -52,7 +52,7 @@ import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
-import { checkCadenceMin, nextEmptyStreak } from './monitoring-cadence.js';
+import { checkCadenceMin, nextEmptyStreak, summarizeMonitoringSweep } from './monitoring-cadence.js';
 import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
 import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
@@ -5761,7 +5761,19 @@ export function getCampaignStatus() {
     // the dashboard Monitoring tab show the ACTUAL running value, not the
     // wizard dropdown's default. Was missing entirely → tips fell back to
     // the wizard's HTML default (60 min) regardless of campaign reality.
-    checkIntervalMinutes: campaign.checkIntervalMinutes || null,
+    //
+    // Review finding 4: checkIntervalMinutes here is the EFFECTIVE (possibly
+    // stretched) cadence, checkIntervalBaseMinutes the operator's own setting
+    // — same pair the engine's buildCadenceFields sends (campaign-api.js), so
+    // public/js/live-activity.mjs's checkSlowdown() reads one shape for both
+    // cloud and local. campaign.checkIntervalMinutes itself is NEVER the
+    // stretched value (see tickMonitoringNow) — this is where the two are
+    // combined for display only.
+    checkIntervalMinutes: campaign.checkIntervalMinutes
+      ? checkCadenceMin({ baseMin: campaign.checkIntervalMinutes, emptyStreak: campaign.emptyCheckStreak })
+      : null,
+    checkIntervalBaseMinutes: campaign.checkIntervalMinutes || null,
+    emptyCheckStreak: Math.max(0, Number(campaign.emptyCheckStreak) || 0),
     // v2.14.x: surface the tick re-entrancy guard so the cockpit + run-bar
     // can flip to "Checking now…" while a bulk-check is mid-fire.
     monitoringCheckInProgress: _checkInProgress,
@@ -6033,17 +6045,22 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
     campaign.logs = campaign.logs || [];
     campaign.logs.push(`${ts} 🛏 Monitoring · auto-check starting (cadence=${cadenceMin}m)`);
 
+    // Reset before the sweep, not after: if the try below throws, the catch
+    // must not leave the PREVIOUS sweep's count sitting here for the finally
+    // to read. Without this, one successful sweep followed by a run of
+    // throwing ones pins the streak at 0 forever (finding 5).
+    campaign._lastCheckNewlyAccepted = 0;
+    campaign._lastCheckLooked = false;
+
     try {
       if (_testStub) {
         await _testStub();
       } else {
         const checkOutcome = await runMonitoringCheckAll();
-        // Sum of per-account newly-Connected leads this sweep (bulkCheckConnections'
-        // `matched` excludes rows already stamped Connected, so this is a true
-        // "found something new" count, not a re-count of known connections).
-        campaign._lastCheckNewlyAccepted = (checkOutcome && Array.isArray(checkOutcome.results))
-          ? checkOutcome.results.reduce((sum, r) => sum + (r.ok ? (r.matched || 0) : 0), 0)
-          : 0;
+        const results = (checkOutcome && Array.isArray(checkOutcome.results)) ? checkOutcome.results : [];
+        const summary = summarizeMonitoringSweep(results);
+        campaign._lastCheckNewlyAccepted = summary.newlyAccepted;
+        campaign._lastCheckLooked = summary.looked;
       }
     } catch (err) {
       console.warn('[monitoring-tick] runMonitoringCheckAll threw:', err.message);
@@ -6053,12 +6070,16 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
         // Adaptive cadence, mirroring the VM: consecutive sweeps that find nobody
         // stretch the interval, any acceptance snaps it straight back. The base is
         // always the operator's own setting, never the stretched value, or the
-        // slowdown would compound every cycle.
+        // slowdown would compound every cycle. A sweep that never actually looked
+        // (all accounts need re-login, everything busy, aborted) leaves the streak
+        // untouched instead of advancing it — see the `looked` guard above.
         const baseMin = campaign.checkIntervalMinutes || 60;
-        campaign.emptyCheckStreak = nextEmptyStreak({
-          newlyAccepted: campaign._lastCheckNewlyAccepted || 0,
-          current: campaign.emptyCheckStreak,
-        });
+        if (campaign._lastCheckLooked) {
+          campaign.emptyCheckStreak = nextEmptyStreak({
+            newlyAccepted: campaign._lastCheckNewlyAccepted || 0,
+            current: campaign.emptyCheckStreak,
+          });
+        }
         const cadenceMin = checkCadenceMin({ baseMin, emptyStreak: campaign.emptyCheckStreak });
         const ms = cadenceMin * 60_000;
         // v2.14.x: schedule the next tick from the PREVIOUS nextCheckAt
@@ -6285,7 +6306,10 @@ export async function runMonitoringCheck(profileId, profileName) {
     await writeBulkCheckCooldown(cooldown);
 
     await writeMonitoringState(campaign);
-    return { ok: true, matched: r.matched, stamped: r.stamped, connectedUrls: r.connectedUrls || [] };
+    // freshConnected + error forwarded so the monitoring tick can tell "looked
+    // and found nobody" from "session expired / write failed, didn't really
+    // check" — see monitoring-cadence.js and its caller in tickMonitoringNow.
+    return { ok: true, matched: r.matched, freshConnected: r.freshConnected || 0, error: r.error || null, stamped: r.stamped, connectedUrls: r.connectedUrls || [] };
   } catch (err) {
     const ts4 = `[${new Date().toISOString()}]`;
     campaign.logs = campaign.logs || [];

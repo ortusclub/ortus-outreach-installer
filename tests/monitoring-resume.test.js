@@ -31,6 +31,23 @@ test('decideResumeAction: honours checkIntervalMinutes for 15min cadence (regres
   assert.equal(r.recomputedNextCheckAt.toISOString(), '2026-05-15T10:15:00.000Z');
 });
 
+// Review finding 3: the streak survives a restart but pre-fix decideResumeAction
+// ignored it, snapping a quiet campaign back to hourly on every boot/wake.
+test('decideResumeAction: honours a restored emptyCheckStreak, not just the base cadence', () => {
+  const c = {
+    state: 'monitoring',
+    sendingEndedAt: '2026-05-15T09:00:00Z',
+    monitoringUntil: '2026-05-22T09:00:00Z',
+    nextCheckAt: '2026-05-15T10:00:00Z',
+    checkIntervalMinutes: 60,
+    emptyCheckStreak: 6, // >=6 → x4 → 240min cadence, not 60
+  };
+  const r = decideResumeAction(c, FIXED_NOW);
+  assert.equal(r.action, 'resume');
+  // 1h elapsed since sendingEndedAt → next 240min boundary > now = 13:00.
+  assert.equal(r.recomputedNextCheckAt.toISOString(), '2026-05-15T13:00:00.000Z');
+});
+
 test('decideResumeAction: state=monitoring + monitoringUntil <= now → "expire"', () => {
   const c = { state: 'monitoring', sendingEndedAt: '2026-05-01T01:00:00Z', monitoringUntil: '2026-05-08T01:00:00Z' };
   const r = decideResumeAction(c, FIXED_NOW);

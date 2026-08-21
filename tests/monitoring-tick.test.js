@@ -39,6 +39,37 @@ test('tickMonitoringNow fires when overdue and reschedules by the EXACT cadence 
   assert.ok(nextMs <= Date.now() + 31 * 60_000, 'nextCheckAt should not exceed 30 min + slack');
 });
 
+// Review finding 6 — the real (non-stub) tick path was never exercised, and
+// it is the only path that runs the adaptive-cadence wiring: _testStub
+// replaces the whole check call, so campaign._lastCheckNewlyAccepted is
+// never set under it. participatingProfileIds=[] drives the REAL
+// runMonitoringCheckAll() → it loops zero accounts → a genuine "nothing
+// looked" sweep, with no browser/network involved.
+test('a real tick with zero participating accounts does not advance the streak, and never writes the stretched cadence back into checkIntervalMinutes', async () => {
+  const past = new Date(Date.now() - 1000);
+  _setTestState({
+    state: 'monitoring',
+    nextCheckAt: past.toISOString(),
+    monitoringUntil: new Date(Date.now() + 86400_000).toISOString(),
+    checkIntervalMinutes: 60,
+    emptyCheckStreak: 6, // already stretched — x4 → 240min
+    participatingProfileIds: [],
+    logs: [],
+  });
+  await tickMonitoringNow(); // no _testStub — real runMonitoringCheckAll()
+  const s = getCampaignState();
+  // Finding 1: zero accounts swept = nothing looked = streak untouched.
+  assert.equal(s.emptyCheckStreak, 6, 'a sweep that looked at nobody must not advance the streak');
+  // Finding 6 / the planted compounding bug: the operator's OWN setting must
+  // survive the tick unchanged — only the (separate) status payload may show
+  // the stretched effective value.
+  assert.equal(s.checkIntervalMinutes, 60, 'the base cadence must never be overwritten with the stretched value');
+  // The schedule still honors the (unchanged) stretched cadence: 240min out.
+  const nextMs = new Date(s.nextCheckAt).getTime();
+  assert.ok(nextMs > Date.now() + 239 * 60_000, 'nextCheckAt should be ~240 min out (still-stretched cadence)');
+  assert.ok(nextMs <= Date.now() + 241 * 60_000, 'nextCheckAt should not exceed 240 min + slack');
+});
+
 test('tickMonitoringNow does not reschedule when state changes during fire', async () => {
   const past = new Date(Date.now() - 1000);
   _setTestState({

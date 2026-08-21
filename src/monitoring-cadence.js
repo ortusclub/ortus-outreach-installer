@@ -27,3 +27,26 @@ export function nextEmptyStreak({ newlyAccepted = 0, current = 0 } = {}) {
   if ((Number(newlyAccepted) || 0) > 0) return 0;
   return Math.max(0, Number(current) || 0) + 1;
 }
+
+// Reduces runMonitoringCheckAll()'s per-account results into what
+// nextEmptyStreak needs. Pulled out of tickMonitoringNow so the aggregation
+// is unit-testable without a browser (see tests/monitoring-cadence.test.js).
+//
+// Two things a naive `results.reduce((s, r) => s + r.matched, 0)` gets wrong:
+//   - `looked`: a result is only a genuine "checked and found nobody" when
+//     `r.ok && !r.error`. `ok:false` is launch failure / needs-login / abort;
+//     `ok:true` with `error` set is bulkCheckConnections failing mid-flight
+//     (session-expired, sheet-fetch, batch-update) while still returning
+//     ok:true. Either way nothing was actually looked at, so the streak must
+//     not advance — a campaign whose accounts all need re-login must not
+//     silently stretch to 4h with nothing flagged.
+//   - `newlyAccepted`: sums `freshConnected`, not `matched`. `matched` also
+//     counts pre-existing 1st-degree connections re-queued for a retried
+//     intro (stamped 'Already connected', not new) — see
+//     tests/bulk-check-fresh-count.test.js. Using `matched` would let those
+//     re-queues reset the streak every sweep, same as if nobody ever slowed.
+export function summarizeMonitoringSweep(results = []) {
+  const looked = (Array.isArray(results) ? results : []).filter((r) => r && r.ok && !r.error);
+  const newlyAccepted = looked.reduce((sum, r) => sum + (Number(r.freshConnected) || 0), 0);
+  return { looked: looked.length > 0 || newlyAccepted > 0, newlyAccepted };
+}

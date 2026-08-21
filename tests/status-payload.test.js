@@ -39,3 +39,33 @@ test('resources payload shape matches when sample present', () => {
   // Reset state so other tests aren't polluted
   _setTestState({ _lastSample: null, _throttle: null });
 });
+
+// Review finding 4: the local status payload must carry the SAME cadence
+// shape the cloud path sends (checkIntervalMinutes=effective,
+// checkIntervalBaseMinutes=base, emptyCheckStreak), so
+// public/js/live-activity.mjs's checkSlowdown() reads one shape for both —
+// not a second local-only display rule.
+test('status cadence fields: no streak → effective equals base, not slowed', () => {
+  _setTestState({ checkIntervalMinutes: 60, emptyCheckStreak: 0 });
+  const s = getCampaignStatus();
+  assert.equal(s.checkIntervalMinutes, 60);
+  assert.equal(s.checkIntervalBaseMinutes, 60);
+  assert.equal(s.emptyCheckStreak, 0);
+});
+
+test('status cadence fields: a stretched streak surfaces the EFFECTIVE cadence, base stays the operator setting', () => {
+  _setTestState({ checkIntervalMinutes: 60, emptyCheckStreak: 6 });
+  const s = getCampaignStatus();
+  assert.equal(s.checkIntervalMinutes, 240, 'effective — what the card should show as "next check"');
+  assert.equal(s.checkIntervalBaseMinutes, 60, 'base — the operator setting, unaffected by the streak');
+  assert.equal(s.emptyCheckStreak, 6);
+  _setTestState({ checkIntervalMinutes: null, emptyCheckStreak: 0 });
+});
+
+test('status cadence fields: campaign never started → all null/0, not a fabricated 60', () => {
+  _setTestState({ checkIntervalMinutes: null, emptyCheckStreak: 0 });
+  const s = getCampaignStatus();
+  assert.equal(s.checkIntervalMinutes, null);
+  assert.equal(s.checkIntervalBaseMinutes, null);
+  assert.equal(s.emptyCheckStreak, 0);
+});

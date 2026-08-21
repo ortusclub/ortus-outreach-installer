@@ -653,11 +653,11 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     });
     postNavUrl = page.url() || '';
   } catch (err) {
-    return { matched: 0, fetched: 0, error: `navigation-failed: ${err.message}` };
+    return { matched: 0, freshConnected: 0, fetched: 0, error: `navigation-failed: ${err.message}` };
   }
   // Quick auth check before burning cycles on Voyager calls that will 404.
   if (/\/login|\/uas\/|\/checkpoint/.test(postNavUrl)) {
-    return { matched: 0, fetched: 0, error: `session-expired (redirected to ${postNavUrl})` };
+    return { matched: 0, freshConnected: 0, fetched: 0, error: `session-expired (redirected to ${postNavUrl})` };
   }
 
   // 2) Fetch recent connections. We pass sinceMs=0 so all pages are fetched
@@ -669,7 +669,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     // something specific (no-csrf, http-XXX, empty-elements, etc.). Surface
     // it so the operator can see exactly why the fetch produced nothing.
     const reason = conns.error || 'no-connections-fetched';
-    return { matched: 0, fetched: 0, error: reason };
+    return { matched: 0, freshConnected: 0, fetched: 0, error: reason };
   }
 
   // 3) Read the sheet. Done BEFORE the sidecar write so we can extract the
@@ -679,7 +679,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   try {
     rows = await fetchSheet(sheetUrl);
   } catch (err) {
-    return { matched: 0, fetched: conns.length, error: `sheet-fetch: ${err.message}` };
+    return { matched: 0, freshConnected: 0, fetched: conns.length, error: `sheet-fetch: ${err.message}` };
   }
 
   // v2.62: active senders for this campaign — distinct values in the Sender
@@ -737,7 +737,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   const pad = (n) => String(n).padStart(2, '0');
   const stillPendingLabel = `Still Pending (${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())})`;
 
-  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+  const { updates, connectedUrls, freshConnected, diag } = computeBulkCheckUpdates(
     rows,
     matchSet,
     linkedinColumn,
@@ -770,7 +770,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   }
 
   if (updates.length === 0) {
-    return { matched: 0, fetched: conns.length, diag: diagSummary, connectedUrls };
+    return { matched: 0, freshConnected: 0, fetched: conns.length, diag: diagSummary, connectedUrls };
   }
 
   // Batch-update via the existing Apps Script bridge. cc → 'Connected
@@ -778,12 +778,20 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   try {
     await batchUpdateSheet(sheetUrl, updates);
   } catch (err) {
-    return { matched: 0, fetched: conns.length, error: `batch-update: ${err.message}`, diag: diagSummary, connectedUrls };
+    // Write failed — nothing is confirmed persisted, so freshConnected is 0
+    // too, same reasoning as matched:0 below: an unconfirmed acceptance must
+    // never reset the caller's empty-check streak.
+    return { matched: 0, freshConnected: 0, fetched: conns.length, error: `batch-update: ${err.message}`, diag: diagSummary, connectedUrls };
   }
 
   const matchedCount = updates.filter((u) => u.cc === 'Connected').length;
   const pendingCount = updates.length - matchedCount;
   // connectedUrls comes from computeBulkCheckUpdates — includes matched URLs
   // regardless of suppressAcceptedStamp, so callers can fire auto-intros.
-  return { matched: matchedCount, fetched: conns.length, stamped: pendingCount, diag: diagSummary, connectedUrls };
+  // freshConnected (not matched) is the true "accepted THIS sweep" count —
+  // matched also includes pre-existing 1st-degree connections re-queued for
+  // an intro retry, which are 'Already connected', not new (see
+  // tests/bulk-check-fresh-count.test.js). Callers driving the adaptive
+  // check cadence must use freshConnected, mirroring the engine.
+  return { matched: matchedCount, freshConnected, fetched: conns.length, stamped: pendingCount, diag: diagSummary, connectedUrls };
 }
