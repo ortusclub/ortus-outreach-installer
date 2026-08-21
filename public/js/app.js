@@ -11555,9 +11555,19 @@ async function cloudCheckLocal(id, btn, scope) {
     };
     if (scope === 'all') body.allSenders = true;
     else body.profileIds = camp.profile_ids || camp.profileIds || [];
-    const res = await fetch('/api/bulk-check-now', {
+    const _sweepReq = fetch('/api/bulk-check-now', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
+    // The request above is dispatched, not awaited yet: the sweep runs for
+    // 30-120s and the card must not wait that long to admit it started. The
+    // server flips its checking flag on route entry, so a short burst of polls
+    // catches it within a few hundred ms instead of on the next 2s tick. These
+    // ask the server what is true, they do not paint an optimistic guess, so a
+    // request that fails simply never flips the card.
+    [120, 400, 900, 1800].forEach((ms) => setTimeout(() => {
+      try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* */ }
+    }, ms));
+    const res = await _sweepReq;
     const j = await res.json().catch(() => ({}));
     if (!res.ok || j.error) {
       showCampaignToast('Local check failed: ' + (j.error || `HTTP ${res.status}`), 9000);

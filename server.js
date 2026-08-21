@@ -5883,6 +5883,13 @@ app.post('/api/bulk-check-now', async (req, res) => {
   }
   _manualSweepRunning = true;
   _manualSweepAbort = false;
+  // Say "checking" the INSTANT the click is accepted, not 180 lines later.
+  // The flag used to be set down at the sweep loop, after account resolution and
+  // a sheet read over the network, so the operator pressed the button and the
+  // card sat on "Waiting for next check" for seconds while browsers were already
+  // being opened. The sweep genuinely starts here: this is the truthful moment.
+  // Cleared in the outer finally below, so a throw during setup cannot leak it.
+  setBulkCheckInProgress(true);
   // v2.71: pause-if-running coordination. Captured before mutating campaign
   // state so the finally block knows whether to resume.
   const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
@@ -6229,6 +6236,10 @@ app.post('/api/bulk-check-now', async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     _manualSweepRunning = false;
+    // Pairs with the early set at the top of this route. A throw during setup
+    // would otherwise leave the card claiming a check is running forever, and a
+    // stuck flag also blocks every scheduled tick.
+    setBulkCheckInProgress(false);
     // v2.71: ALWAYS resume if we were the ones who paused, even on error.
     // Operator-initiated pauses are left in place — we only undo our own.
     if (_weShouldAutoResume && campaign.running) {
