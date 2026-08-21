@@ -188,6 +188,16 @@
   .ck-right span { display: block; font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
                    color: var(--gray); margin-top: 3px; }
 
+  /* Sending wears the same banner in the card's existing green. */
+  body[data-dashboard='v3'] .vj-live.is-sending { border-color: var(--green); animation-name: sndbreathe; }
+  @keyframes sndbreathe {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--green) 9%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon { background: var(--green); }
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon::before,
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon::after { border-color: var(--green); }
+
   /* Log: the real .vj-log-line plus one new WHERE column. */
   body[data-dashboard='v3'] .vj-log-line { grid-template-columns: 62px 36px 66px 1fr; }
   body[data-dashboard='v3'] .vj-log-line .where { font-family: var(--mono); font-size: .62rem;
@@ -328,6 +338,7 @@ function baseCard({ tag, count, cap, l1, l2, line, log, hero, checking }) {
   live.querySelector('.vj-live-l2').textContent = l2;
   if (checking) {
     live.classList.add('is-checking');
+    if (checking.tone === 'send') live.classList.add('is-sending');
     const beacon = document.createElement('i');
     beacon.className = 'ck-beacon';
     live.prepend(beacon);
@@ -419,8 +430,9 @@ section(
   (wrap) => {
     const s = baseCard({
       tag: 'SENDING', hero: 'send', count: '16', cap: '16%',
-      l1: { ico: '→', t: 'Sending a connection request' },
-      l2: 'camillec@ortus.solutions · Rina Chandran · Reuters',
+      checking: { tone: 'send', big: '6 of 8', cap: 'this batch · 00:12 elapsed' },
+      l1: { ico: '→', t: 'Sending right now' },
+      l2: 'Rina Chandran · Reuters · from camillec@ortus.solutions · on this Mac',
       line: '<span><b>47</b> of 300 sent</span><span>Next batch in <b>39m 15s</b></span>',
       log: [
         { t: '12:31:02', where: 'MAC', evt: 'info', what: '▶️ Sending started · 3 accounts · 253 leads to go' },
@@ -556,8 +568,9 @@ section(
     });
     const c = baseCard({
       tag: 'SENDING', hero: 'send', count: '73', cap: '73%',
-      l1: { ico: '→', t: 'Sending a connection request' },
-      l2: 'karen.d@ortus.solutions · Rina Chandran · Reuters',
+      checking: { tone: 'send', big: '6 of 8', cap: 'this batch · account 7 of 13' },
+      l1: { ico: '→', t: 'Sending right now' },
+      l2: 'Rina Chandran · Reuters · from karen.d@ortus.solutions · on the Cloud VM',
       line: '<span><b>1095</b> of 1497 sent</span><span>Next batch in <b>12m 04s</b></span>',
       log: [
         { t: '12:41:02', where: 'VM', evt: 'info', what: '▶️ Sending started · 13 accounts · 402 leads to go' },
