@@ -52,6 +52,7 @@ import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
+import { computeMonitoringUntil } from './monitoring-time.js';
 import { checkCadenceMin, nextEmptyStreak, summarizeMonitoringSweep } from './monitoring-cadence.js';
 import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
 import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.js';
@@ -6173,6 +6174,63 @@ export async function resumeMonitoringFromDisk() {
     return { action: 'resume' };
   }
   return { action: 'noop' };
+}
+
+/**
+ * Adopt a campaign that has finished sending into monitoring ON THIS MACHINE.
+ *
+ * Same rehydration resumeMonitoringFromDisk does at boot, but the slice comes
+ * from a handover (the VM's campaign record) instead of from disk. It exists
+ * because routing such a campaign through startCampaign does NOT work: with
+ * every lead already sent the loop finds 0 targets, profilesThatSentAtLeastOne
+ * stays empty, and transitionToMonitoring drops it straight to 'done'
+ * (campaign-state-transitions.js) — the campaign would be stranded on a Mac
+ * doing nothing while the VM had already let go of it.
+ *
+ * `slice` is MONITORING_FIELDS-shaped (monitoring-persistence.js). Two fields
+ * are decided here rather than carried:
+ *   - emptyCheckStreak resets to 0, because the adaptive backoff re-earns
+ *     itself on every switch (operator decision, 2026-08-21).
+ *   - nextCheckAt is the base cadence from NOW, not the old side's boundary:
+ *     an operator who moves a campaign wants to see a check happen.
+ * monitoringUntil IS carried: the 7-day window belongs to the campaign, not to
+ * the side running it.
+ */
+export async function adoptMonitoring(slice = {}) {
+  if (campaign.running) return { ok: false, error: 'A campaign is still running on this machine.' };
+  const now = new Date();
+  const cadence = clampCadenceMinutes(slice.checkIntervalMinutes);
+  const sendingEndedAt = slice.sendingEndedAt || now.toISOString();
+  Object.assign(campaign, slice, {
+    state: 'monitoring',
+    checkIntervalMinutes: cadence,
+    emptyCheckStreak: 0,
+    sendingEndedAt,
+    nextCheckAt: new Date(now.getTime() + cadence * 60_000).toISOString(),
+    monitoringUntil: slice.monitoringUntil || computeMonitoringUntil(sendingEndedAt).toISOString(),
+    autoChecksEnabled: slice.autoChecksEnabled !== false,
+    _abort: false,
+  });
+  campaign.logs = campaign.logs || [];
+  campaign.logs.push(`[${now.toISOString()}] 🛏 Monitoring adopted on this Mac · next check in ${cadence} min · ends ${campaign.monitoringUntil}`);
+
+  // Log bus, same registration resume does, so sheet writes narrate into this
+  // campaign's log instead of disappearing.
+  try {
+    const _sheetId = _extractSheetIdFromUrl(campaign.sheetUrl);
+    const _appender = buildAppendLogger({ logs: campaign.logs, capLines: 5000 });
+    for (const _pid of (campaign.participatingProfileIds || [])) {
+      registerAppender(_sheetId, _pid, _appender);
+    }
+  } catch (busErr) {
+    console.warn('[monitoring-adopt] log bus registration failed:', busErr.message);
+  }
+
+  _preFireNotifiedFor = null;
+  schedulePreFireHeadsUp();
+  try { await writeMonitoringState(campaign); } catch (e) { console.warn('[monitoring-adopt] persistence write failed:', e.message); }
+  startMonitoringWatcher();
+  return { ok: true, nextCheckAt: campaign.nextCheckAt, monitoringUntil: campaign.monitoringUntil, checkIntervalMinutes: cadence };
 }
 
 /**

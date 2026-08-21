@@ -15,6 +15,20 @@ export function processedLeadUrls(leads) {
     .map((l) => l.leadUrl);
 }
 
+// Which local path a moved campaign belongs on.
+//
+// Routed on what the campaign has LEFT, never on its status string: a campaign
+// moved mid-send must carry on sending here, and a campaign that has sent
+// everything must be adopted straight into monitoring. Sending a campaign with
+// nothing left through startCampaign is not a no-op, it is a stranding: the loop
+// finds 0 targets, transitionToMonitoring sees nobody sent, and the campaign
+// lands on 'done' while the VM has already released it.
+export function handoverTarget(leads) {
+  const stillToDo = (Array.isArray(leads) ? leads : [])
+    .filter((l) => l && (l.status === 'pending' || l.status === 'in_progress'));
+  return stillToDo.length > 0 ? 'send' : 'monitor';
+}
+
 // The same question for the other direction. A local campaign keeps no per-lead
 // table the way the engine does: the SHEET is its ledger, stamped as it goes. So
 // "what did this Mac already do" is "which rows carry a status".

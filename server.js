@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
@@ -53,7 +53,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { processedLeadUrls, sheetProcessedUrls } from './src/handover.js';
+import { processedLeadUrls, sheetProcessedUrls, handoverTarget } from './src/handover.js';
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, releaseCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
@@ -2208,9 +2208,47 @@ async function handoverToLocal(id, req, res) {
   const allLeads = (got && got.leads) || [];
   const excluded = processedLeadUrls(allLeads);
   const remaining = allLeads.length - excluded.length;
+  const profileIds = Array.isArray(camp.profile_ids) ? camp.profile_ids : [];
+
+  // A campaign with nothing left to send is the case this whole feature was
+  // asked for: everything is out, the operator wants the ACCEPTANCE CHECKS on
+  // his own machine. It must be adopted straight into local monitoring —
+  // startCampaign would find 0 targets and land it on 'done', stranded.
+  if (handoverTarget(allLeads) === 'monitor') {
+    let profileNames = [];
+    try {
+      const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+      const byId = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
+      profileNames = profileIds.map((pid) => byId.get(pid) || pid);
+    } catch { profileNames = profileIds.slice(); }
+    const adopted = await adoptMonitoring({
+      id,
+      name: camp.name || '',
+      mode: camp.mode,
+      sheetUrl: camp.sheet_url,
+      sheetGid: cfg.sheetGid || '',
+      linkedinColumn: cfg.linkedinColumn || '',
+      profileIds,
+      profileNames,
+      participatingProfileIds: profileIds,
+      sendingEndedAt: camp.sending_ended_at || null,
+      monitoringUntil: camp.monitoring_until || null,
+      templates: cfg,
+      senderFirstNames: cfg.senderFirstNames || {},
+      checkIntervalMinutes: cfg.checkIntervalMinutes,
+      autoChecksEnabled: camp.auto_checks_enabled !== false,
+    });
+    if (!adopted.ok) {
+      return res.status(409).json({ error: `${adopted.error} The campaign is now waiting on this Mac: move it back, or free this machine and try again.` });
+    }
+    campaign.runsOn = 'local';
+    campaign.handoverAt = Date.now();
+    cloudLog(`[cloud] handover: ${id} → local (monitoring adopted, next check ${adopted.nextCheckAt})`);
+    return res.json({ ok: true, to: 'local', id, remaining: 0, excluded: excluded.length, adopted: 'monitoring', nextCheckAt: adopted.nextCheckAt });
+  }
 
   const config = buildCampaignConfig({
-    profileIds: Array.isArray(camp.profile_ids) ? camp.profile_ids : [],
+    profileIds,
     sheetUrl: camp.sheet_url,
     sheetGid: cfg.sheetGid,
     templates: cfg,
