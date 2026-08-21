@@ -113,8 +113,22 @@
   .sp-count b { font-family: var(--display); font-size: 1.5rem; letter-spacing: .02em; color: var(--ink); font-weight: 400; }
   .sp-count span { font-family: var(--mono); font-size: .64rem; letter-spacing: .12em;
                    text-transform: uppercase; color: var(--gray); }
-  .sp-cbar { height: 2px; background: var(--hairline); margin-top: 7px; }
-  .sp-cbar i { display: block; height: 100%; background: var(--ink); }
+  .sp-cbar { height: 2px; background: var(--hairline); margin-top: 7px; display: flex; gap: 2px; }
+  .sp-cbar i { flex: 1 1 0; height: 100%; background: var(--hairline); }
+  .sp-cbar i.on { background: var(--ink); }
+  .sp-cbar i.now { background: var(--blue); }
+  .sp-csub { font-family: var(--mono); font-size: .66rem; color: var(--gray); margin-top: 6px; }
+
+  /* Who actually got a request. The counterpart of "Nobody reached, and why" —
+     the app knows every name and shows none of them. */
+  .sp-got { border-top: 1px solid var(--hairline-soft); margin-top: 11px; padding-top: 9px; }
+  .sp-got-h { font-family: var(--mono); font-size: .58rem; letter-spacing: .14em;
+              text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .sp-got-r { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px;
+              font-family: var(--mono); font-size: .67rem; line-height: 1.5; color: var(--gray); padding: 2px 0; }
+  .sp-got-r b { color: var(--ink); font-weight: 500; }
+  .sp-got-r.now b { color: var(--blue); }
+  .sp-got-more { font-family: var(--mono); font-size: .63rem; color: var(--gray); margin-top: 5px; }
 
   /* Why a lead was not hit. Reasons are normalizeSkipReason()'s own strings,
      verbatim — the app already computes them and writes them to the sheet's
@@ -204,12 +218,17 @@ function panel({ verb, meta, sub, still, cols, why }) {
       <div class="sp-col${c.live ? ' is-live' : ''}">
         <div class="sp-who" title="${c.who}">${c.live ? '<i class="sp-dot"></i>' : ''}${c.who}</div>
         <div class="sp-state">${c.state}${c.live ? '<span class="sp-live">Live</span>' : ''}</div>
-        ${c.count ? `<div class="sp-count"><b>${c.count.done}/${c.count.of}</b><span>${c.count.label}</span></div>
-          <div class="sp-cbar"><i style="width:${Math.round((c.count.done / c.count.of) * 100)}%"></i></div>` : ''}
+        ${c.count ? `<div class="sp-count"><b>${c.count.done} of ${c.count.of}</b><span>${c.count.label}</span></div>
+          <div class="sp-cbar">${Array.from({ length: c.count.of }, (_, k) =>
+            `<i class="${k < c.count.done ? 'on' : (c.live && k === c.count.done ? 'now' : '')}"></i>`).join('')}</div>
+          <div class="sp-csub">${c.count.sub}</div>` : ''}
         <div class="sp-steps">${c.steps.map((s) => `
           <div class="sp-step ${s[0]}"><i class="sp-mk"></i><span>${s[1]}</span><span class="sp-t">${s[2] || ''}</span></div>`).join('')}
         </div>
         ${c.res ? `<div class="sp-res">${c.res}</div>` : ''}
+        ${c.got ? `<div class="sp-got"><div class="sp-got-h">${c.got.head}</div>${c.got.rows.map((g) =>
+          `<div class="sp-got-r${g[2] === 'now' ? ' now' : ''}"><span><b>${g[0]}</b></span><span>${g[1]}</span></div>`).join('')}
+          ${c.got.more ? `<div class="sp-got-more">${c.got.more}</div>` : ''}</div>` : ''}
         ${c.miss ? `<div class="sp-miss"><div class="sp-miss-h">${c.miss.head}</div>${c.miss.rows.map((m) =>
           `<div class="sp-miss-r"><span><b>${m[0]}</b> &middot; ${m[1]}</span><span>${m[2]}</span></div>`).join('')}</div>` : ''}
       </div>`).join('')}
@@ -365,49 +384,61 @@ section(
     });
     s.append(panel({
       verb: 'Sending connection requests',
-      meta: '💻 This Mac · 47 of 300 today · 253 leads to go',
+      meta: '💻 This Mac · 16 of 24 requests sent today · 253 leads still to go',
       sub: 'Each account works its own person, about a minute between requests. '
         + '47 of the 300 were left out before the run started: already contacted, already done, or no LinkedIn link.',
       cols: [
-        { who: NAMES[0], state: 'Sent · next one in 48s',
-          count: { done: 19, of: 100, label: 'this account' },
-          res: '<b>19</b> sent · <b>2</b> not hit · 0 errors', steps: [
+        { who: NAMES[0], state: 'Waiting · next request in 48s',
+          count: { done: 7, of: 8, label: 'sent today', sub: '8 requests a day from this account · 1 left after this' },
+          got: { head: 'Reached today', rows: [
+            ['Josephine Okonkwo', '12:32', ''], ['Hanne Nielsen', '12:29', ''],
+            ['Thomas Krauss', '12:25', ''], ['Marta Oliveira', '12:21', ''],
+          ], more: '+ 3 more · Yuki Matsuda, Aisha Bello, Sven Larsson' },
+          res: '<b>7</b> sent · <b>2</b> not reached · 0 errors', steps: [
           ['ok', 'Browser open', '11.2s'], ['ok', 'Profile open', '9.4s'],
           ['ok', 'Confirmed the right person', '2.1s'], ['ok', 'Request sent with note', '3.7s'],
           ['ok', 'Written to the sheet, row 118', '0.6s'], ['now', 'Pausing before the next one', '48s'],
         ], miss: { head: 'Nobody reached, and why', rows: [
-          ['Marcus Ilori', 'Skipped: Profile not found (404)', '12:19'],
-          ['Aiko Tanaka', 'Skipped: Connect button not found', '12:07'],
+          ['Marcus Ilori', 'his profile no longer exists', '12:19'],
+          ['Aiko Tanaka', 'no Connect button on her profile', '12:07'],
         ] } },
-        { who: NAMES[1], state: 'Sending', live: true,
-          count: { done: 16, of: 100, label: 'this account' },
-          res: '<b>16</b> sent · <b>1</b> not hit · 0 errors', steps: [
+        { who: NAMES[1], state: 'Sending to Rina Chandran', live: true,
+          count: { done: 5, of: 8, label: 'sent today', sub: 'request 6 of 8 going out now · 2 left after this' },
+          got: { head: 'Reached today', rows: [
+            ['Rina Chandran', 'sending now', 'now'], ['Diego Fernández', '12:30', ''],
+            ['Amara Nwosu', '12:26', ''], ['Kenji Sato', '12:22', ''],
+          ], more: '+ 2 more · Elif Demir, Paulo Santos' },
+          res: '<b>5</b> sent · <b>1</b> not reached · 0 errors', steps: [
           ['ok', 'Browser open', '13.9s'], ['ok', 'Profile open', '8.8s'],
           ['now', 'Confirming the right person', '…'], ['wait', 'Request sent', ''],
           ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
         ], miss: { head: 'Nobody reached, and why', rows: [
-          ['Priya Raman', 'Skipped: Lead timed out', '12:11'],
+          ['Priya Raman', 'her profile never finished loading', '12:11'],
         ] } },
         { who: NAMES[2], state: 'Waiting for LinkedIn · back in 1m 22s',
-          count: { done: 12, of: 100, label: 'this account' },
-          res: '<b>12</b> sent · <b>4</b> not hit · one more push-back and it stops for the week', steps: [
+          count: { done: 4, of: 8, label: 'sent today', sub: '4 left · they go out once LinkedIn eases off' },
+          got: { head: 'Reached today', rows: [
+            ['Ana Lucía Vega', '12:12', ''], ['Omar Haddad', '12:08', ''],
+            ['Freya Lindqvist', '12:03', ''], ['Ibrahim Toure', '11:58', ''],
+          ] },
+          res: '<b>4</b> sent · <b>4</b> not reached · one more push-back and it stops for the week', steps: [
           ['ok', 'Browser open', '15.1s'], ['ok', 'Profile open', '10.2s'],
           ['ok', 'Confirmed the right person', '1.8s'], ['miss', 'Request not sent · LinkedIn pushed back', '—'],
           ['miss', 'Not written to the sheet', '—'], ['now', 'Waiting for LinkedIn to ease off', '1m 22s'],
         ], miss: { head: 'Nobody reached, and why', rows: [
-          ['Tomás Rivera', 'Skipped: Rate-limited (HTTP 429) — confirming…', '12:33'],
-          ['Nadia Haddad', 'Skipped: Rate-limited (HTTP 429) — confirming…', '12:30'],
-          ['Sven Larsson', 'Skipped: Profile not premium, custom notes limit', '12:24'],
-          ['Grace Mwangi', 'Skipped: Send not confirmed', '12:16'],
+          ['Tomás Rivera', 'LinkedIn pushed back, will retry', '12:33'],
+          ['Nadia Haddad', 'LinkedIn pushed back, will retry', '12:30'],
+          ['Sven Larsson', 'note too long for a non-Premium account', '12:24'],
+          ['Grace Mwangi', 'LinkedIn never confirmed the send', '12:16'],
         ] } },
       ],
       why: { head: 'Nobody reached, and why · 7 of the 54 tried', rows: [
-        ['Rate-limited (HTTP 429)', 2],
-        ['Profile not found (404)', 1],
-        ['Connect button not found', 1],
-        ['Lead timed out', 1],
-        ['Profile not premium, custom notes limit', 1],
-        ['Send not confirmed', 1],
+        ['LinkedIn pushed back', 2],
+        ['Profile no longer exists', 1],
+        ['No Connect button on their profile', 1],
+        ['Profile never finished loading', 1],
+        ['Note too long for a non-Premium account', 1],
+        ['LinkedIn never confirmed the send', 1],
       ] },
     }));
     wrap.append(s);
@@ -440,29 +471,37 @@ section(
     const LIVE_AT = 6; // account 7 of 13
     const cols = MAEN.map((who, i) => {
       if (i < LIVE_AT) {
-        return { who, state: 'Sent · pausing before the next one',
-          count: { done: 19 - (LIVE_AT - i), of: 100, label: 'this account' },
+        return { who, state: 'Done for today · 8 of 8 sent',
+          count: { done: 8, of: 8, label: 'sent today', sub: 'daily batch finished · resumes after midnight UTC' },
           steps: DONE_STEPS('11.2s', '9.4s', '2.1s', '3.7s', '0.6s'),
-          res: `<b>${19 - (LIVE_AT - i)}</b> sent · <b>${i % 3}</b> not hit`,
+          got: { head: 'Reached today', rows: [
+            ['Josephine Okonkwo', '12:32', ''], ['Hanne Nielsen', '12:29', ''],
+            ['Thomas Krauss', '12:25', ''],
+          ], more: '+ 5 more' },
+          res: `<b>8</b> sent · <b>${i % 3}</b> not reached`,
           miss: i % 3 ? { head: 'Nobody reached, and why', rows: [
-            ['Marcus Ilori', 'Skipped: Profile not found (404)', '12:19'],
+            ['Marcus Ilori', 'his profile no longer exists', '12:19'],
           ] } : null };
       }
       if (i === LIVE_AT) {
-        return { who, state: 'Sending', live: true,
-          count: { done: 16, of: 100, label: 'this account' },
+        return { who, state: 'Sending to Rina Chandran', live: true,
+          count: { done: 5, of: 8, label: 'sent today', sub: 'request 6 of 8 going out now · 2 left after this' },
+          got: { head: 'Reached today', rows: [
+            ['Rina Chandran', 'sending now', 'now'], ['Diego Fernández', '12:30', ''],
+            ['Amara Nwosu', '12:26', ''],
+          ], more: '+ 2 more' },
           steps: [
             ['ok', 'Browser open', '13.9s'], ['ok', 'Profile open', '8.8s'],
             ['now', 'Confirming the right person', '…'], ['wait', 'Request sent', ''],
             ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
           ],
-          res: '<b>16</b> sent · <b>1</b> not hit · 0 errors',
+          res: '<b>5</b> sent · <b>1</b> not reached · 0 errors',
           miss: { head: 'Nobody reached, and why', rows: [
-            ['Priya Raman', 'Skipped: Lead timed out', '12:11'],
+            ['Priya Raman', 'her profile never finished loading', '12:11'],
           ] } };
       }
       return { who, state: 'Waiting its turn',
-        count: { done: 0, of: 100, label: 'this account' },
+        count: { done: 0, of: 8, label: 'sent today', sub: '8 requests a day · none sent yet' },
         steps: WAIT_STEPS, res: 'has not started yet' };
     });
     const c = baseCard({
@@ -479,12 +518,12 @@ section(
     });
     c.append(panel({
       verb: 'Sending connection requests',
-      meta: '☁︎ Cloud VM · 1095 of 1497 sent · 402 leads to go',
+      meta: '☁︎ Cloud VM · 53 of 104 requests sent today · 402 leads still to go',
       sub: '13 accounts · about a minute between requests · nobody was left out before the run',
       cols,
       why: { head: 'Nobody reached, and why · 11 of the 1106 tried', rows: [
-        ['Rate-limited (HTTP 429)', 4], ['Profile not found (404)', 3],
-        ['Lead timed out', 2], ['Send not confirmed', 1], ['Weekly limit reached', 1],
+        ['LinkedIn pushed back', 4], ['Profile no longer exists', 3],
+        ['Profile never finished loading', 2], ['LinkedIn never confirmed the send', 1], ['Weekly invitation limit reached', 1],
       ] },
     }));
     wrap.append(c);
