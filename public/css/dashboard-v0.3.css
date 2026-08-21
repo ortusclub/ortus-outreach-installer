@@ -391,6 +391,122 @@
   }
   body[data-dashboard='v3'] .vj-live-l2:empty { display: none; }
 
+  /* ── THE CHECKING BANNER ─────────────────────────────────────────────────
+     Same .vj-live element the card already has, promoted while a sweep runs.
+     Only the monitoring blue is used; gold stays reserved for Start. */
+  body[data-dashboard='v3'] .vj-live.is-checking {
+    border: 2px solid var(--blue); padding: 20px 24px; align-items: center; gap: 20px;
+    animation: ckbreathe 2.2s ease-in-out infinite;
+  }
+  @keyframes ckbreathe {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--blue) 9%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-ico { display: none; }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l1 {
+    font-family: var(--display); font-size: 2.1rem; line-height: 1.05; letter-spacing: .02em;
+    font-weight: 400; color: var(--ink); text-transform: uppercase;
+  }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l2 {
+    font-family: var(--mono); font-size: .86rem; color: var(--gray); margin-top: 5px;
+  }
+  /* The light. Core, ring, and a second slower ring so it never reads as static. */
+  .ck-beacon { position: relative; flex: 0 0 auto; width: 16px; height: 16px; border-radius: 9999px;
+               background: var(--blue); margin-right: 4px; }
+  .ck-beacon::before, .ck-beacon::after {
+    content: ""; position: absolute; inset: -8px; border-radius: 9999px; border: 2px solid var(--blue);
+    animation: ckring 1.6s cubic-bezier(.2,.6,.3,1) infinite;
+  }
+  .ck-beacon::after { animation-delay: .8s; }
+  @keyframes ckring { 0% { transform: scale(.5); opacity: .95 } 100% { transform: scale(2.1); opacity: 0 } }
+  /* Right-hand readout inside the banner: where, elapsed, position. */
+  .ck-right { margin-left: auto; text-align: right; font-family: var(--mono); }
+  .ck-right b { display: block; font-family: var(--display); font-size: 1.5rem; font-weight: 400;
+                letter-spacing: .02em; color: var(--ink); }
+  .ck-right span { display: block; font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+                   color: var(--gray); margin-top: 3px; }
+
+  /* Sending wears the same banner in the card's existing green. */
+  body[data-dashboard='v3'] .vj-live.is-sending { border-color: var(--green); animation-name: sndbreathe; }
+  @keyframes sndbreathe {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--green) 9%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon { background: var(--green); }
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon::before,
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon::after { border-color: var(--green); }
+
+  /* ══ AFTER: the handover wears the SAME banner as checking and sending ═══
+     One component, three tones. Built on .vj-live, which every card already
+     has, so it lands on the dashboard card and the board card at once — the
+     board card is a clone of the dashboard card, not a second component.
+
+     NOT named .sn-switch: that class is already the Log/Counts tab switcher
+     (app.js:9416). Reusing it would collide the way .skip did. */
+  body[data-dashboard='v3'] .vj-live.is-handover {
+    border: 2px solid var(--ink); padding: 22px 24px; align-items: center; gap: 20px;
+    animation: hobreathe 2.2s ease-in-out infinite;
+  }
+  @keyframes hobreathe {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-handover .vj-live-ico { display: none; }
+  body[data-dashboard='v3'] .vj-live.is-handover .vj-live-l1 {
+    font-family: var(--display); font-size: 2.1rem; line-height: 1.05; letter-spacing: .02em;
+    font-weight: 400; color: var(--ink); text-transform: uppercase;
+  }
+  body[data-dashboard='v3'] .vj-live.is-handover .vj-live-l2 {
+    font-family: var(--mono); font-size: .88rem; color: var(--gray); margin-top: 6px; line-height: 1.5;
+    /* The card's own .vj-live-l2 truncates to one line with an ellipsis, which
+       is right for a status line and wrong for the sentence that explains what
+       is happening to the operator's run. It wraps here instead. */
+    white-space: normal; overflow: visible; text-overflow: clip;
+  }
+  body[data-dashboard='v3'] .vj-live.is-handover .vj-live-txt { flex: 1 1 auto; min-width: 0; }
+  /* Direction tones reuse the colours the where-pill already uses. No new colour. */
+  body[data-dashboard='v3'] .vj-live.is-handover.to-cloud { border-color: var(--green); animation-name: hobreathe-g; }
+  @keyframes hobreathe-g {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--green) 9%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-handover.to-local { border-color: var(--blue); animation-name: hobreathe-b; }
+  @keyframes hobreathe-b {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--blue) 9%, transparent); }
+  }
+  /* Landed: one beat of confirmation before it steps aside, so the banner does
+     not simply blink out of existence and leave the operator wondering. */
+  body[data-dashboard='v3'] .vj-live.is-handover.landed { animation: none; background: transparent; }
+  /* Nothing is travelling any more, so the shuttle goes. Leaving it parked at
+     one end reads as a smudge on the glyph, not as an arrival. */
+  body[data-dashboard='v3'] .vj-live.is-handover.landed .ho-dot { display: none; }
+  body[data-dashboard='v3'] .vj-live.is-handover.landed .ho-rail { background: var(--hairline); }
+  .vj-live.is-handover { transition: opacity .45s ease; }
+  .vj-live.is-handover.out { opacity: 0; }
+
+  /* The moving mark. Two ends and a shuttle that travels between them, so the
+     banner shows DIRECTION, not just activity. A spinner only says "busy". */
+  .ho-track { position: relative; flex: 0 0 auto; width: 132px; height: 40px; }
+  .ho-end { position: absolute; top: 50%; transform: translateY(-50%); font-family: var(--mono);
+            font-size: 1.25rem; line-height: 1; color: var(--gray); transition: color .3s ease; }
+  .ho-end.a { left: 0; } .ho-end.b { right: 0; }
+  .ho-end.lit { color: var(--ink); }
+  .ho-rail { position: absolute; left: 26px; right: 26px; top: 50%; height: 1px; background: var(--hairline); }
+  .ho-dot { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 9999px;
+            background: var(--ink); margin-top: -4px; animation: hoslide 1.9s cubic-bezier(.5,0,.5,1) infinite; }
+  .to-cloud .ho-dot { background: var(--green); }
+  .to-local .ho-dot { background: var(--blue); animation-name: hoslide-rev; }
+  @keyframes hoslide     { 0% { left: 26px; opacity: 0 } 15% { opacity: 1 } 85% { opacity: 1 } 100% { left: 118px; opacity: 0 } }
+  @keyframes hoslide-rev { 0% { left: 118px; opacity: 0 } 15% { opacity: 1 } 85% { opacity: 1 } 100% { left: 26px; opacity: 0 } }
+
+  /* Right-hand readout: what the operator should DO. Not a percentage and not an
+     ETA we cannot honestly promise. An instruction. */
+  .ho-right { margin-left: auto; text-align: right; font-family: var(--mono); max-width: 22ch; }
+  .ho-right b { display: block; font-family: var(--display); font-size: 1.05rem; font-weight: 400;
+                letter-spacing: .02em; color: var(--ink); text-transform: uppercase; line-height: 1.2; }
+  .ho-right span { display: block; font-size: .7rem; letter-spacing: .06em; color: var(--gray); margin-top: 5px; line-height: 1.5; }
+
   /* ── Live stage (v2.160.128) ────────────────────────────────────────────
      What the VM is doing RIGHT NOW, in the same grid slot as .vj-live — the
      two are mutually exclusive: with a real per-person phase tick from the
@@ -680,10 +796,10 @@
   /* Bug 12: CHECKING NOW — shrink the big count so "CHECKING" fits the hero,
      tint it gold and pulse while the check runs. */
   body[data-dashboard='v3'] .vj-mon-hero.is-checking .vj-mon-count {
-    font-size: 1.5rem; color: var(--gold); letter-spacing: 0.07em;
+    font-size: 1.5rem; color: var(--blue); letter-spacing: 0.07em;
     animation: vj-checking-pulse 1.3s ease-in-out infinite;
   }
-  body[data-dashboard='v3'] .vj-mon-hero.is-checking .vj-mon-cap { color: var(--gold); }
+  body[data-dashboard='v3'] .vj-mon-hero.is-checking .vj-mon-cap { color: var(--blue); }
   @keyframes vj-checking-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
   /* WAKING — the scale-to-zero worker is booting (65-98s measured). Sized like
      .is-checking so the three hero states read as one family, but BOLD and
