@@ -53,7 +53,8 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { processedLeadUrls, sheetProcessedUrls } from './src/handover.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, releaseCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -2135,6 +2136,189 @@ app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
     return handleStartCloud(req, res);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Handover: move a live campaign between the Cloud VM and this Mac ────────
+// Same shape as edit-redispatch above (stop one side, resume the remainder on
+// the other with the already-processed leads excluded), generalised into a
+// durable ownership change in either direction.
+//
+// THE RULE, and it is not negotiable for speed: the target side may not begin
+// while the source might still be working the same leads. Two sides sweeping at
+// once both read a blank Introduction Status and both fire an intro DM to the
+// same person. So every failure here ABORTS and leaves the campaign where it
+// was. A 409 from the engine means abort, never retry-anyway.
+//
+// Order of operations (src/handover.js handoverPlan encodes it, and its test
+// fails if it is ever reversed): confirm the target can take the campaign,
+// release the source, read what is already done, start the target, reset the
+// adaptive check cadence.
+
+// Stop whatever this Mac is doing for the current campaign and WAIT until it is
+// observably finished: not running, not monitoring, no bulk check in flight.
+// Reuses the existing stop paths rather than adding a new one. stopMonitoring
+// stamps nothing in the sheet (see its comment), so a monitoring campaign can
+// leave this Mac without its still-pending leads being closed off.
+async function stopLocalAndConfirm({ timeoutMs = 120000 } = {}) {
+  if (campaign.running) stopCampaign({ full: true });
+  else if (campaign.state === 'monitoring') await stopMonitoring({ reason: 'handover-to-vm' });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const s = getCampaignStatus();
+    if (!s.running && s.state !== 'monitoring' && !s.monitoringCheckInProgress) return { ok: true };
+    if (Date.now() >= deadline) return { ok: false };
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+// VM → this Mac. `id` is the cloud campaign id.
+async function handoverToLocal(id, req, res) {
+  // One campaign at a time on this Mac. Checked BEFORE the release, or the
+  // engine hands ownership to a machine that cannot actually run it and the
+  // campaign sits released and idle.
+  if (campaign.running || campaign.state === 'monitoring') {
+    return res.status(409).json({ error: 'This Mac is already running a campaign. Finish or stop that one first, then move this campaign here.' });
+  }
+  const cur = await getCloudCampaign(id);
+  if (cur && cur.error) return res.status(502).json({ error: `Could not read the campaign on the VM: ${cur.error}` });
+  const camp = (cur && cur.campaign) || cur || {};
+  const cfg = camp.config || {};
+  if (!camp.sheet_url) return res.status(400).json({ error: 'That cloud campaign has no source sheet, so it cannot be rebuilt here.' });
+
+  // Release FIRST. Fails closed: a live sweep, a lost race, or an engine too old
+  // to know the route all answer 409 and the campaign stays on the VM.
+  const rel = await releaseCloudCampaign(id);
+  if (!rel || rel.error || !rel.released) {
+    if (rel && rel.status === 409) {
+      return res.status(409).json({
+        reason: 'sweep_in_flight',
+        error: 'The VM is part-way through a check on this campaign, so it will not hand it over yet. Wait for that check to finish, then move it again.',
+      });
+    }
+    return res.status(502).json({ error: `The VM would not hand this campaign over: ${(rel && rel.error) || 'no confirmation'}. It is still running there.` });
+  }
+
+  // What the VM already did. The engine's per-lead table is its ledger; the
+  // in-flight lead reads as still-to-do and is retried here on purpose.
+  const got = await getCloudCampaignLeads(id);
+  if (got && got.error) {
+    return res.status(502).json({ error: `The VM released the campaign but its lead list could not be read (${got.error}), so nothing was started here. The campaign is now waiting on this Mac: move it back, or start it here yourself.` });
+  }
+  const allLeads = (got && got.leads) || [];
+  const excluded = processedLeadUrls(allLeads);
+  const remaining = allLeads.length - excluded.length;
+
+  const config = buildCampaignConfig({
+    profileIds: Array.isArray(camp.profile_ids) ? camp.profile_ids : [],
+    sheetUrl: camp.sheet_url,
+    sheetGid: cfg.sheetGid,
+    templates: cfg,
+    dailyLimit: camp.daily_limit,
+    mode: camp.mode,
+    linkedinColumn: cfg.linkedinColumn || '',
+    senderColumn: cfg.senderColumn || '',
+    name: camp.name || '',
+    delayMin: cfg.delayMin,
+    delayMax: cfg.delayMax,
+    checkIntervalMinutes: cfg.checkIntervalMinutes,
+    primaryCheckTiming: cfg.primaryCheckTiming,
+    // The hard exclusion list startCampaign already honours and persists for a
+    // restore. Named for the pre-flight gate that usually fills it; here it
+    // carries what the VM finished.
+    _preflightExcludedUrls: excluded,
+    // This is a continuation, not a new run: keeps the campaign's log, its
+    // Recent Connections tab and its counters instead of wiping them.
+    resumeContext: { totalProcessed: excluded.length },
+  });
+
+  // Decision 2: an operator who moves a campaign wants to see something happen,
+  // so the adaptive backoff re-earns itself from scratch on this side too. The
+  // engine reset its own streak inside handover-release.
+  campaign.emptyCheckStreak = 0;
+  campaign.runsOn = 'local';
+  campaign.handoverAt = Date.now();
+  campaignLog(`⇄ Moved here from the Cloud VM: ${remaining} lead(s) still to do, ${excluded.length} already done there. Acceptance checks restart at ${config.checkIntervalMinutes} min.`);
+  cloudLog(`[cloud] handover: ${id} → local (${remaining} remaining, ${excluded.length} excluded)`);
+  launchCampaign(config, req.user);
+  return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length });
+}
+
+// This Mac → VM. The local campaign is the singleton, so `id` is only used for
+// the log line: what moves is whatever is running here.
+async function handoverToVm(id, req, res) {
+  const running = campaign.running;
+  const monitoring = !running && campaign.state === 'monitoring';
+  if (!running && !monitoring) return res.status(409).json({ error: 'Nothing is running on this Mac, so there is nothing to move to the VM.' });
+
+  const last = getLastRunSettings();
+  if (!last || !last.sheetUrl) {
+    return res.status(409).json({ error: 'This Mac has no record of how this campaign was launched, so the VM cannot be given the same settings. Stop it here and start it in the cloud instead.' });
+  }
+  if (!isCloudMode(last.mode)) return res.status(400).json({ error: `Mode "${last.mode}" cannot run in the cloud, so this campaign has to stay on this Mac.` });
+
+  // What this Mac already did. The local side keeps no per-lead table: the sheet
+  // is its ledger, stamped as it goes, so that is what the VM must skip.
+  const gid = String(last.sheetGid || '').replace(/\D/g, '');
+  const rows = await fetchSheet(withGid(last.sheetUrl, gid));
+  const urlOf = (row) => extractLinkedInUrl(row, last.linkedinColumn || '');
+  const excluded = sheetProcessedUrls(rows, urlOf);
+  const excludedSet = new Set(excluded);
+  const remaining = rows.filter((r) => { const u = urlOf(r); return u && !excludedSet.has(String(u).trim()); }).length;
+  if (!remaining) {
+    // Everything is sent, so a cloud campaign would have nothing to run: the
+    // engine only takes campaigns that have leads. Refuse BEFORE stopping
+    // anything, so a check-only campaign is never stranded half-moved.
+    return res.status(409).json({ error: 'Every lead in the sheet has already been sent, so there is nothing for the VM to run. Keep the acceptance checks on this Mac.' });
+  }
+
+  const cloudBody = {
+    profileIds: Array.isArray(last.profileIds) ? last.profileIds : [],
+    sheetUrl: last.sheetUrl,
+    sheetGid: gid,
+    linkedinColumn: last.linkedinColumn || '',
+    mode: last.mode,
+    dailyLimit: last.dailyLimit,
+    templates: last.templates || {},
+    name: last.name || '',
+    senderColumn: last.senderColumn || '',
+    senderFirstNames: last.senderFirstNames || {},
+    delayMin: last.delayMin,
+    delayMax: last.delayMax,
+    excludeLeadUrls: excluded,
+  };
+  req.body = cloudBody;
+  // Run the same gate the cloud launch will run, BEFORE stopping this Mac. If
+  // the sheet has unacknowledged blockers the gate answers the operator itself
+  // and the local campaign carries on untouched.
+  if (!await runPreflightGate(req, res)) return;
+
+  // Now, and only now, stop this side, and prove it stopped.
+  const stopped = await stopLocalAndConfirm();
+  if (!stopped.ok) {
+    return res.status(409).json({
+      reason: 'source_still_running',
+      error: 'This Mac has not finished stopping the campaign, so it was not moved. Nothing was started on the VM. Wait for the browsers to close, then try again.',
+    });
+  }
+
+  campaign.emptyCheckStreak = 0;
+  campaign.runsOn = 'vm';
+  campaign.handoverAt = Date.now();
+  campaignLog(`⇄ Moved to the Cloud VM: ${remaining} lead(s) still to do, ${excluded.length} already done here.`);
+  cloudLog(`[cloud] handover: ${id} → vm (${remaining} remaining, ${excluded.length} excluded)`);
+  return handleStartCloud(req, res);
+}
+
+app.post('/api/campaign/:id/handover', async (req, res) => {
+  const to = String((req.body && req.body.to) || '');
+  if (to !== 'local' && to !== 'vm') return res.status(400).json({ error: 'Say which side to move to: "local" or "vm".' });
+  try {
+    return to === 'local'
+      ? await handoverToLocal(req.params.id, req, res)
+      : await handoverToVm(req.params.id, req, res);
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
 // Monitoring controls (Task 3 Part B) — proxy ⚡ Check now / auto-checks toggle to

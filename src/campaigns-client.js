@@ -367,6 +367,15 @@ export function setCloudAutoChecks(id, enabled) {
 export function setCloudCampaignAccounts(id, { add = [], remove = [] } = {}) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts`, { add, remove });
 }
+// Handover, VM → this Mac: ask the engine to give up ownership of a campaign.
+// The engine flips runs_on to 'local', stops claiming work and resets its
+// empty-check streak — but ONLY if it can prove nothing is mid-sweep. It fails
+// CLOSED: a live sweep, a lost race, or an engine too old to know the route all
+// answer HTTP 409, which the caller must treat as ABORT, never as retry-anyway.
+// Single attempt on purpose: withWriteRetry would re-POST a refusal.
+export function releaseCloudCampaign(id) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/handover-release`, {});
+}
 // Un-bench a weekly-capped account (operator Retry in the Accounts panel).
 export function unbenchCloudAccount(id, profileId) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/unbench`, {});
