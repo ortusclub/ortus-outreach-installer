@@ -11402,6 +11402,12 @@ window.restartCloudCampaignUI = restartCloudCampaignUI;
 // 404/HTTP error → a clear "engine update pending" toast, no throw.
 async function cloudCheckNow(id, btn, scope) {
   scope = scope === 'all' ? 'all' : 'campaign';
+  // A check runs where the campaign runs. The guard lives HERE, not in each
+  // caller, because a caller that forgets it fires a VM sweep on a campaign
+  // sitting on this Mac: the card said RUNNING ON = THIS MAC while the toast
+  // said "the VM is opening a browser". Worse than cosmetic for CC+IC, where
+  // two sweeps both read a blank Introduction Status and send two intro DMs.
+  if (_checkRunsLocally(id)) return cloudCheckLocal(id, btn, scope);
   if (btn) btn.disabled = true;
   let queued = false;
   try {

@@ -189,7 +189,7 @@ export function vjCardControlsFor(status = {}) {
     c.bulk = { label: 'Run check now', onclick: 'window.dashRunCheck && window.dashRunCheck()' };
   } else if (monitor && cloud) {
     c.stop = { tip: 'Stop monitoring', onclick: `stopCloudCampaignUI('${id}')` };
-    c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}')` };
+    c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}',this)` };
     c.monAuto = { checked: s.autoChecksEnabled !== false, onclick: `setCloudAutoChecks('${id}',this.checked,this)` };
     // A campaign that switched to monitoring because nothing could send still has
     // leads waiting. The engine already accepts a restart in this state (it only

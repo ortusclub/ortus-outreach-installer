@@ -87,7 +87,10 @@ test('controls: monitoring cloud → check-now bulk + auto toggle + stop monitor
   // Same OPEN handler as a sending cloud campaign — monitoring is still live, so
   // it must bind card #2, not drop into the cockpit view.
   assert.match(c.open.onclick, /openRunningCampaignReadOnly\('c9'\)/);
-  assert.match(c.bulk.onclick, /cloudCheckNow\('c9'\)/);
+  // `this` is passed so the button disables while the check runs. cloudCheckNow
+  // itself routes to the local check when the campaign has been handed to this
+  // Mac — the ownership gate lives in that function, not in this onclick.
+  assert.match(c.bulk.onclick, /cloudCheckNow\('c9',this\)/);
   assert.ok(c.monAuto && c.monAuto.checked === true);
   assert.match(c.monAuto.onclick, /setCloudAutoChecks\('c9'/);
   assert.match(c.stop.tip, /monitoring/i);
