@@ -981,6 +981,7 @@
         </div>
         <div id="sn-setup-body"></div>
       </div>
+      <div id="sn-handover" class="sn-handover"><span class="spin"></span><span class="txt" id="sn-handover-txt"></span></div>
       <div id="sn-board" class="sn-board"></div>
     </div>
 
@@ -1684,9 +1685,16 @@
   .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
   .sn-empty{font-size:12px;color:var(--gray);padding:18px 0;}
 
-  /* The handover banner lives on the card now (.vj-live.is-handover in
-     dashboard-v0.3.css), so it reaches the dashboard and the board strip alike
-     and holds until the switch actually finishes. */
+  /* handover banner */
+  .sn-handover{display:none;align-items:center;gap:14px;margin:18px 0 4px;padding:14px 18px;border-radius:12px;border:1px solid var(--hairline);background:var(--hairline-soft);}
+  .sn-handover.show{display:flex;}
+  .sn-handover .spin{width:16px;height:16px;border-radius:9999px;border:2px solid var(--hairline);border-top-color:var(--ink);animation:sn-spin .8s linear infinite;flex:none;}
+  @keyframes sn-spin{to{transform:rotate(360deg);}}
+  .sn-handover .txt{font-size:12.5px;color:var(--gray);}
+  .sn-handover .txt b{color:var(--ink);font-weight:600;}
+  .sn-handover.stopping{border-left:3px solid var(--red);}
+  .sn-handover.launching{border-left:3px solid var(--green);}
+  .sn-handover.launching .spin{border-top-color:var(--green);}
 
   #sn-setup{margin:32px 0 28px;padding:32px 0 8px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
   .sn-setup-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 26px;}

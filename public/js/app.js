@@ -210,7 +210,41 @@ function _snStampFinished(campaigns) {
     if (isDoneNow && wasLive && !_snDoneSeen[c.id]) { _snDoneSeen[c.id] = Date.now(); stampedAny = true; }
   }
   if (stampedAny) _snSaveDoneSeen();
+  // Scrape ROLLOVER on the Sales Nav board: one scrape finishing as the next one
+  // starts. This is a different event from the campaign's local/VM handover
+  // (which lives on the card as .vj-live.is-handover), and it shares only the
+  // word. It was removed by mistake while moving that other banner and is
+  // restored here: without it the board says nothing when the queue advances.
+  let stopped = null, started = null;
+  for (const [cid, prev] of _snPrevStatus) {
+    const cur = nowStatus.get(cid);
+    if (prev === 'running' && (cur === 'done' || cur === 'error' || cur === undefined)) stopped = cid;
+  }
+  for (const c of campaigns) {
+    if (_snPrevStatus.get(c.id) === 'queued' && c.status === 'running') started = c.id;
+  }
   _snPrevStatus = nowStatus;
+  if (stopped || started) _snShowScrapeRollover(campaigns, stopped, started);
+}
+function _snName(campaigns, cid) { const c = campaigns.find((x) => x.id === cid); return c ? (c.name || 'a scrape') : 'a scrape'; }
+function _snShowScrapeRollover(campaigns, stopped, started) {
+  const ho = document.getElementById('sn-handover'), txt = document.getElementById('sn-handover-txt');
+  if (!ho || !txt) return;
+  if (stopped && started) {
+    ho.className = 'sn-handover show launching';
+    txt.innerHTML = `<b>${escHtml(_snName(campaigns, stopped))}</b> finished, now starting <b>${escHtml(_snName(campaigns, started))}</b>.`;
+  } else if (stopped) {
+    ho.className = 'sn-handover show stopping';
+    txt.innerHTML = `<b>Stopped</b> ${escHtml(_snName(campaigns, stopped))}.`;
+  } else {
+    ho.className = 'sn-handover show launching';
+    txt.innerHTML = `<b>Starting</b> ${escHtml(_snName(campaigns, started))}…`;
+  }
+  // A scrape rollover is a moment, not a state: it has already happened by the
+  // time it is announced, so a timed dismissal is right here. That is the
+  // opposite of the campaign handover on the card, which describes something
+  // still in progress and so must hold until it genuinely finishes.
+  clearTimeout(ho._t); ho._t = setTimeout(() => { ho.className = 'sn-handover'; }, 5000);
 }
 
 // cid → { profileIds, tabName, owner, mine } from the last render, so the
