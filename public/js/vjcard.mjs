@@ -81,6 +81,9 @@ export function statusFromItem(it = {}) {
     sentToday: Number(it.sentToday) || 0,
     dailyLimit: Number(it.dailyLimit) || 0,
     elapsedSec: it.elapsedSec == null ? null : Number(it.elapsedSec),
+    // The per-account panel. Absent from this whitelist it never reaches the
+    // board's card and the panel is dashboard-only for no visible reason.
+    accountPanel: Array.isArray(it.accountPanel) ? it.accountPanel : [],
     monitorTaskStatus: it.monitorTaskStatus || null,
     monitorTaskDueAt: it.monitorTaskDueAt || null,
     monitorCheckStartedAt: it.monitorCheckStartedAt || null,

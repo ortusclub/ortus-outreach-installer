@@ -139,3 +139,50 @@ export function handoverBanner({ to, name, landed = false }) {
     landed,
   };
 }
+
+/**
+ * Which column the rail scrolls to. The account that is working sits in the
+ * CENTRE, so the previous one is visible to its left and the next to its right.
+ * The first account is the exception: it sits flush left, because there is no
+ * previous one to show.
+ */
+export function railIndex(cols) {
+  const i = (cols || []).findIndex((c) => c && c.live);
+  return i > 0 ? i : 0;
+}
+
+/** One mark per lead in the turn: done, the one going out now, or still to come. */
+export function batchPips(done, size, live) {
+  const d = Math.max(0, Number(done) || 0);
+  const n = Math.max(0, Number(size) || 0);
+  return Array.from({ length: n }, (_, k) => (k < d ? 'on' : (live && k === d ? 'now' : '')));
+}
+
+/**
+ * One column per account.
+ *
+ * Steps are dropped from every column except the one that is working. An idle
+ * account showing a frozen checklist reads as if it were live, which is the
+ * same lie the frozen card told.
+ */
+export function accountColumns(status) {
+  const rows = (status && Array.isArray(status.accountPanel)) ? status.accountPanel : [];
+  return rows.map((a) => ({
+    email: a.email || '',
+    state: a.state || '',
+    live: !!a.live,
+    // Two numbers that must never be read as one. batchDone/batchSize is this
+    // account's position in ONE turn; sentToday/dailyLimit is its whole day.
+    batchDone: Number(a.batchDone) || 0,
+    // A mode that drains every row in one go has no turn size at all, so an
+    // absent size stays absent instead of borrowing the eight.
+    batchSize: a.batchSize == null ? null : Number(a.batchSize) || 0,
+    sentToday: Number(a.sentToday) || 0,
+    dailyLimit: Number(a.dailyLimit) || 0,
+    sub: a.sub || '',
+    reached: Array.isArray(a.reached) ? a.reached : [],
+    missed: Array.isArray(a.missed) ? a.missed : [],
+    steps: a.live && Array.isArray(a.steps) ? a.steps : [],
+    result: a.result || '',
+  }));
+}

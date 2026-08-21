@@ -130,6 +130,11 @@ export function resolveBulkCheckIntervalMs(checkIntervalMinutes, fallbackMs = BU
 }
 const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined', 'already_connected']);
 
+// The subset of SUCCESS_ACTIONS where somebody was genuinely written to. The
+// per-account panel lists these people by name; a status check that merely
+// confirmed a connection reached nobody and must not appear there.
+const SENT_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent']);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 11.2: batch-loop constants + pure helpers
 // ═══════════════════════════════════════════════════════════════════════════
@@ -475,6 +480,109 @@ export function normalizeSkipReason(msg) {
   if (lower.includes('connect failed')) return 'Skipped: Connect failed';
   // Fallback for unknown errors — still prefix
   return `Skipped: ${s}`;
+}
+
+// ── The per-account panel's words ────────────────────────────────────────────
+// Everything below turns an internal reason into one sentence an operator can
+// read out loud. The vocabulary is the one that already exists: the reasons
+// normalizeSkipReason() produces, the reasons recordProfileEnd() records, and
+// the errors a monitoring sweep returns. Nothing here invents a new reason.
+
+const NEEDS_LOGIN_LINE = 'This account needs to be logged in again in GoLogin.';
+const SLOW_DOWN_LINE = 'LinkedIn asked this account to slow down.';
+const WEEKLY_LINE = 'This account has used up its invitations for the week.';
+
+/**
+ * What a monitoring sweep just learned about one account, or null when the
+ * sweep worked.
+ *
+ * A sweep that failed for one account used to push a single line into a log
+ * that scrolls away, after which the account looked healthy for the rest of
+ * the run. The card needs a state that stays put until that account's next
+ * check succeeds.
+ */
+export function sweepHealth(error) {
+  if (!error) return null;
+  const s = String(error).toLowerCase();
+  if (/session-expired|session expired|\/login|\/uas\/|checkpoint|no-csrf/.test(s)) {
+    return { state: 'needs-login', note: NEEDS_LOGIN_LINE };
+  }
+  if (/navigation-failed|launch|browser|timeout|closed|crash/.test(s)) {
+    return { state: 'cannot-open', note: 'The browser for this account would not open, so it was not checked.' };
+  }
+  if (/429|999|rate.?limit|throttl/.test(s)) {
+    return { state: 'rate-limited', note: SLOW_DOWN_LINE };
+  }
+  if (/stopped by you/.test(s)) {
+    return { state: 'trouble', note: 'You stopped the check before this account finished.' };
+  }
+  return { state: 'trouble', note: 'The last check did not finish for this account.' };
+}
+
+// Skip-ledger reason slugs (src/skip-ledger.js) as sentences.
+const MISS_BY_SLUG = {
+  already_processed: 'Already contacted from this app before.',
+  identity_unconfirmed: 'The profile that opened was not this person, so nothing was sent.',
+  watchdog_timeout: 'Their page took too long to load, so this account moved on.',
+  malformed_url: 'That row has no usable LinkedIn address.',
+  duplicate_row: 'The same person appears more than once in the sheet.',
+  failed_repeatedly: 'Tried more than once and it kept failing.',
+  terminal_stage: 'The sheet already says this one is done.',
+};
+
+// The wording normalizeSkipReason() produces, matched loosely, as sentences.
+// Order matters: the first match wins, so the specific cases come first.
+const MISS_BY_DETAIL = [
+  [/session expired|login page/, NEEDS_LOGIN_LINE],
+  [/weekly/, WEEKLY_LINE],
+  [/429|rate.?limit/, SLOW_DOWN_LINE],
+  [/inmail credits/, 'This account has no InMail credits left.'],
+  [/not premium|notes limit|note_too_long/, 'The note was longer than a non-Premium account is allowed to send.'],
+  [/not found|404/, 'That LinkedIn profile no longer exists.'],
+  [/legacy sales nav/, 'The sheet has an old Sales Navigator address for them, which cannot be opened.'],
+  [/email required/, 'LinkedIn wanted their email address before it would connect.'],
+  [/not open profile/, 'They are not open to messages from outside their network.'],
+  [/not yet connected|not confirmed connected/, 'They have not accepted the invitation yet.'],
+  [/wrong person/, 'The connect window opened on somebody else, so nothing was sent.'],
+  [/connect button|modal/, 'LinkedIn did not offer a connect button on their profile.'],
+  [/send not confirmed/, 'LinkedIn never confirmed the send, so it was not counted.'],
+  [/timed out|timeout/, 'Their page took too long to load, so this account moved on.'],
+  [/error toast/, 'LinkedIn showed an error on their profile.'],
+];
+
+/** Why one person was not reached, as a sentence. Never a reason key. */
+export function missReason(slug, detail) {
+  const known = MISS_BY_SLUG[slug];
+  if (known) return known;
+  const d = String(detail || '').toLowerCase();
+  for (const [re, line] of MISS_BY_DETAIL) if (re.test(d)) return line;
+  return 'Something went wrong on their profile, so nothing was sent.';
+}
+
+// The reasons recordProfileEnd() stores carry version notes, counters and code
+// words. Rewritten here so the card never prints them raw.
+const PARK_LINES = [
+  [/session expired/, NEEDS_LOGIN_LINE],
+  [/weekly/, WEEKLY_LINE],
+  [/note credits/, 'This account has run out of invitations that carry a note.'],
+  [/not premium/, 'The note was longer than a non-Premium account is allowed to send.'],
+  [/inmail/, 'This account has no InMail credits left.'],
+  [/campaign limit/, 'This account reached the limit you set for the day.'],
+  [/checkpoint|challenge/, 'LinkedIn wants a person to confirm this account before it can carry on.'],
+  [/throttl/, 'Paused while this Mac was under strain. It picks up again on the next run.'],
+  [/identity/, 'Stopped early because the profiles opening were not the people in the sheet.'],
+  [/consecutive skips/, 'Stopped early after several people in a row could not be reached.'],
+  [/complete/, 'Finished every row it was given.'],
+];
+
+/** A park reason as a sentence. '' when there is no reason to explain. */
+export function parkSentence(reason) {
+  if (!reason) return '';
+  // Park reasons arrive both as prose ('Session expired — log in again') and as
+  // code words ('session_expired'), so flatten the underscores before matching.
+  const r = String(reason).toLowerCase().replace(/_/g, ' ');
+  for (const [re, line] of PARK_LINES) if (re.test(r)) return line;
+  return 'This account stopped early.';
 }
 
 export function extractLinkedInUrl(row, linkedinColumn) {
@@ -919,6 +1027,32 @@ function recordProfileEnd(profileId, profileName, reason) {
     reason,
     at: Date.now(),
   });
+}
+
+/**
+ * Record what a monitoring sweep just learned about ONE account, or clear it
+ * when that account's check succeeded.
+ *
+ * During sending, an account that is logged out gets parked and the card shows
+ * it. During monitoring, the same account only produced a log line that
+ * scrolled out of view, after which it looked healthy forever. This is the
+ * durable half of that: it survives until the account's next successful check.
+ *
+ * A sweep can cover accounts that are NOT in this campaign (the "all senders"
+ * scope resolves them from the sheet's Sender column), so the name is stored
+ * alongside the state rather than looked up from the campaign's own lists.
+ */
+function noteAccountHealth(profileId, profileName, error) {
+  if (!profileId) return;
+  campaign.accountHealth = campaign.accountHealth || {};
+  const h = sweepHealth(error);
+  if (!h) { delete campaign.accountHealth[profileId]; return; }
+  campaign.accountHealth[profileId] = {
+    profileName: profileName || '',
+    state: h.state,
+    note: h.note,
+    at: Date.now(),
+  };
 }
 
 // Phase 2.8.12: tiny helper — sets the action shown in the dashboard cockpit.
@@ -2014,6 +2148,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   // field default ON (back-compat). Challenges always halt regardless.
   campaign.pauseOnThrottle = pauseOnThrottle !== false;
   campaign.dailyLimit = dailyLimit;
+  // The per-account panel's own state, keyed by profile id. Reset per run:
+  //   accountHealth  — what the last monitoring sweep learned about an account
+  //                    (cleared for that account the moment its next check
+  //                    succeeds). Kept in memory only, like campaignCounts.
+  //   _turnByProfile — where an account is in its CURRENT turn (leads per turn),
+  //                    which is not its daily cap.
+  //   _reachedByProfile — the people each account actually sent to this run.
+  campaign.accountHealth = {};
+  campaign._turnByProfile = {};
+  campaign._reachedByProfile = {};
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
   _resetSampleCache();           // clear module-level cache so first sample() is fresh
@@ -3378,6 +3522,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // still re-enqueued at ~4671 and re-picked after the cooldown window).
         let cooling429 = false;
         for (let leadInBatch = 0; leadInBatch < innerLimit && shouldContinueTurn({ abort: campaign._abort, orphan: isOrphan(), weeklyLimited: weeklyLimited.has(profileId), benched: campaign._skippedProfiles?.has(profileId) }); leadInBatch++) {
+        // Where this account is in its TURN, for the per-account panel. `done`
+        // is how many leads of this turn are behind it; `size` is how many the
+        // turn holds, and is null for the modes that drain every remaining row
+        // in one go (they have no turn size to show).
+        campaign._turnByProfile = campaign._turnByProfile || {};
+        campaign._turnByProfile[profileId] = {
+          done: leadInBatch,
+          size: Number.isFinite(innerLimit) ? innerLimit : null,
+        };
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
         await awaitUnpause(myGen);
         // v2.112 (#2a): also bail if the operator benched this account while paused — without
@@ -4185,6 +4338,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), sheetData, linkedinColumn);
 
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
+            // The people this account actually reached, by name, for the
+            // per-account panel. Only real sends count: a status check that
+            // confirmed somebody is not somebody who was written to.
+            if (SENT_ACTIONS.has(result.action)) {
+              const _who = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+              if (_who) {
+                campaign._reachedByProfile = campaign._reachedByProfile || {};
+                const _list = campaign._reachedByProfile[profileId] || (campaign._reachedByProfile[profileId] = []);
+                _list.push(_who);
+                if (_list.length > 200) _list.splice(0, _list.length - 200);
+              }
+            }
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
             cooldowns429.set(profileId, 0);
@@ -5744,13 +5909,138 @@ export function getLastRunSettings() {
   return fromDisk ? { ...fromDisk } : null;
 }
 
+/** mm:ss for the one live step. */
+function _mmss(ms) {
+  const n = Math.max(0, Math.floor(Number(ms) || 0) / 1000);
+  return `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
+}
+
+/**
+ * One entry per account for the per-account panel.
+ *
+ * Scope: the campaign's own accounts, PLUS any account a monitoring sweep found
+ * a problem with. A sweep run with the "all senders" scope resolves its
+ * accounts from the sheet's Sender column, so it can hit accounts this campaign
+ * never selected. Dropping those would hide exactly the failure this panel
+ * exists to show, so they are appended at the end.
+ *
+ * Every number here is one of two, and they are never mixed: batchDone against
+ * batchSize is this account's position in ONE turn, sentToday against
+ * dailyLimit is its whole day.
+ */
+function buildAccountPanel() {
+  const ids = (campaign.profileIds && campaign.profileIds.length)
+    ? campaign.profileIds.slice()
+    : (campaign.participatingProfileIds || []).slice();
+  const health = campaign.accountHealth || {};
+  for (const pid of Object.keys(health)) if (!ids.includes(pid)) ids.push(pid);
+  if (!ids.length) return [];
+
+  const names = campaign.profileNames || [];
+  const skips = getSkips();
+  const parked = campaign.parkedProfiles || [];
+  const ends = campaign.profileEndReasons || [];
+  const benched = campaign._skippedProfiles || new Set();
+  const cooldowns = campaign._cooldown429 || new Map();
+  const turns = campaign._turnByProfile || {};
+  const reachedBy = campaign._reachedByProfile || {};
+  const liveName = campaign.currentProfile || '';
+  const action = campaign.currentAction || null;
+
+  return ids.map((pid) => {
+    const idx = (campaign.profileIds || []).indexOf(pid);
+    // The account's display name (operators name their GoLogin profiles by
+    // email), never the raw profile id, which means nothing to anybody.
+    const email = (idx >= 0 && names[idx]) || (health[pid] && health[pid].profileName) || profileNameCache[pid] || '';
+    const live = !!(campaign.running && !campaign._paused && email && email === liveName);
+
+    const cool = cooldowns.get ? cooldowns.get(pid) : null;
+    const end = ends.find((e) => e.profileId === pid);
+    const park = parked.find((p) => p.profileId === pid);
+    const h = health[pid];
+
+    let state = 'idle';
+    let sub = '';
+    if (campaign.awaitingLogin && campaign.awaitingLogin.profileId === pid) {
+      state = 'needs-login'; sub = NEEDS_LOGIN_LINE;
+    } else if (h) {
+      state = h.state; sub = h.note;
+    } else if (end || park) {
+      state = 'stopped'; sub = parkSentence((end && end.reason) || (park && park.reason));
+    } else if (cool && cool.until > Date.now()) {
+      state = 'rate-limited'; sub = SLOW_DOWN_LINE;
+    } else if (benched.has && benched.has(pid)) {
+      state = 'benched'; sub = 'You took this account out of the rotation.';
+    } else if (live) {
+      state = 'working'; sub = 'Working now.';
+    } else if (campaign.running) {
+      state = 'waiting'; sub = 'Waiting for its turn.';
+    }
+
+    const turn = turns[pid] || {};
+    const mine = skips.filter((s) => s.profileId === pid);
+    // The panel lists the most recent misses; the result line below carries the
+    // true total, so a long list is never mistaken for the whole story.
+    const missed = mine.slice(-25).map((s) => ({
+      who: s.leadName || 'someone in the sheet',
+      why: missReason(s.reason, s.detail),
+    }));
+
+    // What the counters cannot say: how many were missed, and whether anything
+    // is wrong. Never the sent count, which the counters already show.
+    const problem = (state === 'needs-login' || state === 'cannot-open' || state === 'rate-limited' || state === 'trouble') ? sub : '';
+    const missedLine = mine.length
+      ? `${mine.length} ${mine.length === 1 ? 'person was' : 'people were'} not reached.`
+      : '';
+    const result = [missedLine, problem].filter(Boolean).join(' ');
+
+    return {
+      email,
+      state,
+      live,
+      batchDone: turn.done == null ? null : turn.done,
+      batchSize: turn.size == null ? null : turn.size,
+      sentToday: getCampaignCount(pid),
+      // An account a sweep found but that this campaign never selected has no
+      // cap of its own here, so it shows none rather than borrowing this
+      // campaign's.
+      dailyLimit: idx >= 0 ? (campaign.dailyLimit || 0) : 0,
+      sub,
+      reached: (reachedBy[pid] || []).slice(),
+      missed,
+      // Only the working account carries steps, and the only step with a real
+      // source is what it is doing right now. A six-row checklist would have to
+      // be invented, and an invented checklist on an idle account is the frozen
+      // card all over again.
+      steps: (live && action && action.label)
+        ? [['now', action.label, _mmss(Date.now() - (action.startedAt || Date.now()))]]
+        : [],
+      result,
+    };
+  });
+}
+
 export function getCampaignStatus() {
   // Prefer campaign-loop samples (include browser PIDs) but fall back to the
   // ambient sampler so tiles populate the moment the server starts.
   const amb = getAmbient();
   const smp = campaign._lastSample || amb.sample;
   const thr = campaign._throttle   || amb.throttle;
+  const panel = buildAccountPanel();
+  const working = panel.find((a) => a.live) || null;
   return {
+    // The per-account panel, and the three live fields the sending banner reads.
+    // Until now only the cloud engine produced them, so a run on this Mac could
+    // never say who was being contacted from which account.
+    accountPanel: panel,
+    live: !!working,
+    liveAccount: working ? working.email : '',
+    // This account's position in its CURRENT turn. Absent stays absent: a
+    // confident "1 of 8" on an account that has not started is worse than a
+    // blank. dailyLimit below is the other number, the whole day's cap.
+    batchDone: working ? working.batchDone : null,
+    batchSize: working ? working.batchSize : null,
+    sentToday: working ? working.sentToday : 0,
     running: campaign.running,
     // The cloud id when this Mac ADOPTED a cloud campaign's monitoring; the
     // singleton id otherwise. The board needs it to tell "a local campaign" from
@@ -6379,9 +6669,14 @@ export async function runMonitoringCheck(profileId, profileName) {
     const ts2 = `[${new Date().toISOString()}]`;
     if (r.error) {
       campaign.logs.push(`${ts2} ⚠ [${profileName}] Check now: ${r.error}`);
+      // The log line scrolls away within a minute and the account then reads
+      // as healthy for the rest of the run. Keep the finding where the card
+      // can see it until this account's next check succeeds.
+      noteAccountHealth(profileId, profileName, r.error);
     } else {
       const stamped = r.stamped || 0;
       campaign.logs.push(`${ts2} 📡 [${profileName}] Check now: ${r.matched} Connected, ${stamped} Still Pending (of ${r.fetched})`);
+      noteAccountHealth(profileId, profileName, null);
     }
 
     if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
@@ -6431,6 +6726,9 @@ export async function runMonitoringCheck(profileId, profileName) {
     const ts4 = `[${new Date().toISOString()}]`;
     campaign.logs = campaign.logs || [];
     campaign.logs.push(`${ts4} ⚠ [${profileName}] Check now failed: ${err.message}`);
+    // Same reason as the soft failure above: a thrown launch failure left the
+    // card with nothing at all to show for this account.
+    noteAccountHealth(profileId, profileName, err.message || 'check failed');
     return { ok: false, error: err.message };
   } finally {
     activeBulkChecks.delete(profileId);
