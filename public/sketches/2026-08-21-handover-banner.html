@@ -1,0 +1,381 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sketch: E · handover banner, interactive, on both strips</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  /* Real card CSS is scoped to body[data-dashboard=v3] > main.main > .container,
+     so the sketch reproduces that chain exactly and restyles nothing. */
+  .container { max-width: 1100px; }
+  .main { padding: 32px 40px 90px; }
+  h1 { font-family: var(--display); font-size: 2rem; margin: 0 0 4px; }
+  .lede { font-family: var(--mono); font-size: .82rem; color: var(--gray); max-width: 78ch; line-height: 1.55; margin: 0 0 18px; }
+  .vtitle { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--gray); margin: 42px 0 10px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+  .vnote { font-family: var(--mono); font-size: .76rem; color: var(--gray); max-width: 82ch; line-height: 1.55; margin: 10px 0 0; }
+  .themebar { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+              color: var(--gray); margin-bottom: 24px; }
+  .themebar button { font: inherit; padding: 5px 14px; border: 1px solid var(--hairline);
+                     border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; margin-left: 6px; }
+  .themebar button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  /* ══ THE DRIVER ══ Not part of the design. It stands in for the events the
+     real app already emits, so the behaviour can be watched instead of described. */
+  .drive { position: sticky; top: 0; z-index: 20; background: var(--bg);
+           border: 1px solid var(--hairline); padding: 14px 18px; margin: 0 0 8px;
+           display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .drive .lbl { font-family: var(--mono); font-size: .66rem; letter-spacing: .12em;
+                text-transform: uppercase; color: var(--gray); margin-right: 4px; }
+  .drive button { font-family: var(--mono); font-size: .74rem; padding: 7px 14px;
+                  border: 1px solid var(--hairline); border-radius: 9999px;
+                  background: transparent; color: var(--ink); cursor: pointer; }
+  .drive button:hover { border-color: var(--ink); }
+  .drive button:disabled { opacity: .35; cursor: default; border-color: var(--hairline); }
+  .drive .sep { width: 1px; height: 22px; background: var(--hairline); margin: 0 6px; }
+  .drive .state { font-family: var(--mono); font-size: .7rem; color: var(--gray); margin-left: auto; }
+  .drive .state b { color: var(--ink); font-weight: 600; }
+
+  /* ══ BEFORE: the real .sn-handover, copied verbatim from index.html:1689 ══
+     Reproduced at its true size so the comparison is honest. */
+  .sn-handover{display:none;align-items:center;gap:14px;margin:14px 0 4px;padding:14px 18px;border-radius:12px;border:1px solid var(--hairline);background:var(--hairline-soft);}
+  .sn-handover.show{display:flex;}
+  .sn-handover .spin{width:16px;height:16px;border-radius:9999px;border:2px solid var(--hairline);border-top-color:var(--ink);animation:sn-spin .8s linear infinite;flex:none;}
+  .sn-handover .txt{font-size:12.5px;color:var(--gray);}
+  .sn-handover .txt b{color:var(--ink);font-weight:600;}
+  .sn-handover.launching{border-left:3px solid var(--green);}
+  .sn-handover.launching .spin{border-top-color:var(--green);}
+  @keyframes sn-spin { to { transform: rotate(360deg) } }
+  .ghost { font-family: var(--mono); font-size: .74rem; color: var(--gray);
+           border: 1px dashed var(--hairline); padding: 13px 18px; margin: 14px 0 4px; }
+
+  /* ══ AFTER: the handover wears the SAME banner as checking and sending ═══
+     One component, three tones. Built on .vj-live, which every card already
+     has, so it lands on the dashboard card and the board card at once — the
+     board card is a clone of the dashboard card, not a second component.
+
+     NOT named .sn-switch: that class is already the Log/Counts tab switcher
+     (app.js:9416). Reusing it would collide the way .skip did. */
+  body[data-dashboard='v3'] .vj-live.is-handover {
+    border: 2px solid var(--ink); padding: 22px 24px; align-items: center; gap: 20px;
+    animation: hobreathe 2.2s ease-in-out infinite;
+  }
+  @keyframes hobreathe {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-handover .vj-live-ico { display: none; }
+  body[data-dashboard='v3'] .vj-live.is-handover .vj-live-l1 {
+    font-family: var(--display); font-size: 2.1rem; line-height: 1.05; letter-spacing: .02em;
+    font-weight: 400; color: var(--ink); text-transform: uppercase;
+  }
+  body[data-dashboard='v3'] .vj-live.is-handover .vj-live-l2 {
+    font-family: var(--mono); font-size: .88rem; color: var(--gray); margin-top: 6px; line-height: 1.5;
+    /* The card's own .vj-live-l2 truncates to one line with an ellipsis, which
+       is right for a status line and wrong for the sentence that explains what
+       is happening to the operator's run. It wraps here instead. */
+    white-space: normal; overflow: visible; text-overflow: clip;
+  }
+  body[data-dashboard='v3'] .vj-live.is-handover .vj-live-txt { flex: 1 1 auto; min-width: 0; }
+  /* Direction tones reuse the colours the where-pill already uses. No new colour. */
+  body[data-dashboard='v3'] .vj-live.is-handover.to-cloud { border-color: var(--green); animation-name: hobreathe-g; }
+  @keyframes hobreathe-g {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--green) 9%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-handover.to-local { border-color: var(--blue); animation-name: hobreathe-b; }
+  @keyframes hobreathe-b {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--blue) 9%, transparent); }
+  }
+  /* Landed: one beat of confirmation before it steps aside, so the banner does
+     not simply blink out of existence and leave the operator wondering. */
+  body[data-dashboard='v3'] .vj-live.is-handover.landed { animation: none; background: transparent; }
+  /* Nothing is travelling any more, so the shuttle goes. Leaving it parked at
+     one end reads as a smudge on the glyph, not as an arrival. */
+  body[data-dashboard='v3'] .vj-live.is-handover.landed .ho-dot { display: none; }
+  body[data-dashboard='v3'] .vj-live.is-handover.landed .ho-rail { background: var(--hairline); }
+  .vj-live.is-handover { transition: opacity .45s ease; }
+  .vj-live.is-handover.out { opacity: 0; }
+
+  /* The moving mark. Two ends and a shuttle that travels between them, so the
+     banner shows DIRECTION, not just activity. A spinner only says "busy". */
+  .ho-track { position: relative; flex: 0 0 auto; width: 132px; height: 40px; }
+  .ho-end { position: absolute; top: 50%; transform: translateY(-50%); font-family: var(--mono);
+            font-size: 1.25rem; line-height: 1; color: var(--gray); transition: color .3s ease; }
+  .ho-end.a { left: 0; } .ho-end.b { right: 0; }
+  .ho-end.lit { color: var(--ink); }
+  .ho-rail { position: absolute; left: 26px; right: 26px; top: 50%; height: 1px; background: var(--hairline); }
+  .ho-dot { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 9999px;
+            background: var(--ink); margin-top: -4px; animation: hoslide 1.9s cubic-bezier(.5,0,.5,1) infinite; }
+  .to-cloud .ho-dot { background: var(--green); }
+  .to-local .ho-dot { background: var(--blue); animation-name: hoslide-rev; }
+  @keyframes hoslide     { 0% { left: 26px; opacity: 0 } 15% { opacity: 1 } 85% { opacity: 1 } 100% { left: 118px; opacity: 0 } }
+  @keyframes hoslide-rev { 0% { left: 118px; opacity: 0 } 15% { opacity: 1 } 85% { opacity: 1 } 100% { left: 26px; opacity: 0 } }
+
+  /* Right-hand readout: what the operator should DO. Not a percentage and not an
+     ETA we cannot honestly promise. An instruction. */
+  .ho-right { margin-left: auto; text-align: right; font-family: var(--mono); max-width: 22ch; }
+  .ho-right b { display: block; font-family: var(--display); font-size: 1.05rem; font-weight: 400;
+                letter-spacing: .02em; color: var(--ink); text-transform: uppercase; line-height: 1.2; }
+  .ho-right span { display: block; font-size: .7rem; letter-spacing: .06em; color: var(--gray); margin-top: 5px; line-height: 1.5; }
+
+  /* Board strip chrome, so surface 2 reads as the board and not a second dashboard. */
+  .sn-strip { border: 1px solid var(--hairline); padding: 18px 20px; margin: 0; }
+  .sn-top { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: .7rem;
+            letter-spacing: .1em; text-transform: uppercase; color: var(--gray); }
+  .sn-you, .sn-where { border: 1px solid var(--hairline); padding: 2px 8px; border-radius: 9999px; }
+  .sn-name { font-family: var(--display); font-size: 1.3rem; margin: 8px 0 0; }
+  .sn-strip .vj-card { margin-top: 16px; }
+  .surface { font-family: var(--mono); font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
+             color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px;
+             padding: 4px 12px; display: inline-block; margin-bottom: 12px; }
+  .elapsed { font-family: var(--mono); font-size: .7rem; color: var(--gray); margin-top: 8px; }
+  .elapsed b { color: var(--ink); }
+</style>
+
+<body data-dashboard="v3">
+<main class="main">
+<div class="container">
+
+  <div class="themebar">Theme
+    <button class="on" onclick="document.body.classList.remove('light');this.classList.add('on');this.nextElementSibling.classList.remove('on')">Dark</button><button onclick="document.body.classList.add('light');this.classList.add('on');this.previousElementSibling.classList.remove('on')">Light</button>
+  </div>
+
+  <h1>E · the handover banner</h1>
+  <p class="lede">
+    The moment a run moves between this Mac and the Cloud VM is the moment the operator
+    is most likely to think the app has hung and start clicking. Today that moment is
+    announced in 12.5px grey text that hides itself after five seconds, on one surface
+    only. Drive it below and watch both behave.
+  </p>
+
+  <!-- ───────────────────────────────────────────────────────── DRIVER ── -->
+  <div class="drive">
+    <span class="lbl">Start a handover</span>
+    <button id="b-cloud">💻 → ☁︎ Move to the VM</button>
+    <button id="b-local">☁︎ → 💻 Bring back to this Mac</button>
+    <span class="sep"></span>
+    <span class="lbl">Then</span>
+    <button id="b-done" disabled>Handover finishes</button>
+    <button id="b-slow" disabled>Make it take 25s</button>
+    <span class="state" id="state">idle</span>
+  </div>
+  <p class="vnote">
+    Nothing above is part of the design. It stands in for the events the app already
+    emits, so the behaviour can be watched rather than described. Start a handover, then
+    <b>wait past five seconds without pressing "Handover finishes"</b>: that is the whole
+    bug, and the two panels below diverge exactly there.
+  </p>
+
+  <!-- ─────────────────────────────────────────────────────────── BEFORE ── -->
+  <div class="vtitle">Before · what ships today</div>
+  <div class="ghost" id="ghost">Nothing showing. The dashboard never gets this banner at all: it lives above the board only.</div>
+  <div class="sn-handover" id="old"><span class="spin"></span><span class="txt" id="old-txt"></span></div>
+  <div class="elapsed" id="old-el"></div>
+  <p class="vnote">
+    Real markup and real CSS, copied from <code>index.html:1689</code>, at true size.
+    It says "Handover" without saying which way or what to do, and
+    <code>app.js:236</code> removes it after 5s whether or not the switch has finished.
+    A handover that outlives its own banner is the frozen-card bug again: the UI
+    reporting a state it has not verified.
+  </p>
+
+  <!-- ────────────────────────────────────────── AFTER · DASHBOARD CARD ── -->
+  <div class="vtitle">After · surface 1, the dashboard card</div>
+  <span class="surface">#active-card</span>
+  <div id="s1"></div>
+  <p class="vnote">
+    Same <code>.vj-live</code> band the CHECKING and SENDING banners promote, so this is
+    one component with three tones, not a third thing to maintain. The mark is a shuttle
+    travelling between two ends, so the banner carries <b>direction</b>. It holds until
+    the handover actually finishes, shows one beat of confirmation, then steps aside.
+  </p>
+
+  <!-- ────────────────────────────────────────────── AFTER · BOARD STRIP ── -->
+  <div class="vtitle">After · surface 2, the campaign board strip</div>
+  <span class="surface">.sn-strip › .sn-vjcard</span>
+  <div id="s2"></div>
+  <p class="vnote">
+    The board's card is a clone of the dashboard's card, so building the banner into
+    <code>.vj-card</code> lands it on both surfaces at once. Nothing here is a second
+    implementation, which is why both panels above move together. The strip keeps its own
+    header untouched. The old standalone <code>#sn-handover</code> is deleted, not left
+    running alongside, or the operator gets told twice in two different voices.
+  </p>
+
+  <div class="vtitle">Rules this banner follows</div>
+  <p class="vnote">
+    1. It stays up until the handover is actually finished. No timeout.<br>
+    2. It names both ends, every time. Never a bare "Handover".<br>
+    3. It says what the operator does, and the answer is always: nothing, wait.<br>
+    4. It is the same component as CHECKING and SENDING, so all three read alike.<br>
+    5. No em dashes. The three copy branches at <code>app.js:227-235</code> lose theirs.<br>
+    6. It is not called <code>.sn-switch</code>. That name is taken by the Log/Counts
+       tab switcher at <code>app.js:9416</code>.
+  </p>
+
+</div>
+</main>
+
+<script>
+// ── The real card, cloned. Only the .vj-live band differs from what ships,
+//    which is exactly what the change is in the real card.
+function card(name) {
+  const el = document.createElement('section');
+  el.className = 'vj-card is-running';
+  el.innerHTML = `
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span class="c-tag">Sending connection requests</span></span>
+      <span class="vj-when">just now</span>
+    </div>
+    <div class="vj-glyph-circle" aria-hidden="true"></div>
+    <h2 class="vj-name"><span>${name}</span></h2>
+    <div class="vj-live is-handover" aria-live="polite" hidden>
+      <div class="ho-track">
+        <span class="ho-end a">💻</span>
+        <span class="ho-rail"></span><span class="ho-dot"></span>
+        <span class="ho-end b">☁︎</span>
+      </div>
+      <span class="vj-live-ico"></span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1"></span>
+        <span class="vj-live-l2"></span>
+      </span>
+      <div class="ho-right"><b></b><span></span></div>
+    </div>
+    <div class="vj-hbar" role="progressbar"><i style="width:57%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span>57</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>171</b> of 300 sent</span>
+          <span>Next batch in <b>4m 12s</b></span>
+        </div>
+      </div>
+      <div class="vj-stats" aria-live="polite">
+        <span><b>3</b> accounts</span><span><b>24</b> accepted</span>
+        <span>· <b class="c-send">Sending</b> ·</span>
+      </div>
+    </div>
+    <div class="vj-controls"><button class="btn-pill">Open</button></div>`;
+  return el;
+}
+
+const COPY = {
+  cloud: {
+    tone: 'to-cloud',
+    l1: 'Moving to the Cloud VM',
+    l2: (n) => `Taking ${n} off this Mac and handing it to the VM, so it keeps going after you close the app.`,
+    right: ['Leave it open', 'This takes a moment. Nothing is lost if you wait.'],
+    lit: 'a', tag: 'Moving to the Cloud VM', where: '☁︎ VM',
+    doneL1: 'Now running on the VM',
+    doneL2: (n) => `${n} is on the Cloud VM. You can close the app, it keeps going.`,
+    doneRight: ['Done', 'Safe to close the app now.'],
+  },
+  local: {
+    tone: 'to-local',
+    l1: 'Coming back to this Mac',
+    l2: (n) => `Taking ${n} off the Cloud VM so it runs here, in your own browsers.`,
+    right: ['Leave it open', 'This takes a moment. Closing now stops the run.'],
+    lit: 'b', tag: 'Coming back to this Mac', where: '💻 This machine',
+    doneL1: 'Now running on this Mac',
+    doneL2: (n) => `${n} is running here. Closing the app now stops it.`,
+    doneRight: ['Done', 'Keep the app open to keep it running.'],
+  },
+};
+
+const NAME = 'MAEN_ANZ_HOB';
+const cards = [];
+document.getElementById('s1').append(cards[0] = card(NAME));
+
+const strip = document.createElement('div');
+strip.className = 'sn-strip';
+strip.innerHTML = `
+  <div class="sn-top"><span>Campaign · Connect + Introduce</span><span class="sn-you">You</span>
+    <span class="sn-where" id="wherepill">💻 This machine</span></div>
+  <div class="sn-name">${NAME}</div>`;
+strip.append(cards[1] = card(NAME));
+document.getElementById('s2').append(strip);
+
+// ── State. One handover at a time, exactly like the app.
+let dir = null, t0 = 0, tick = null, oldTimer = null;
+const $ = (id) => document.getElementById(id);
+
+function paint(c, kind, landed) {
+  const live = c.querySelector('.vj-live');
+  const k = COPY[kind];
+  live.hidden = false;
+  live.className = `vj-live is-handover ${k.tone}` + (landed ? ' landed' : '');
+  live.querySelector('.vj-live-l1').textContent = landed ? k.doneL1 : k.l1;
+  live.querySelector('.vj-live-l2').textContent = (landed ? k.doneL2 : k.l2)(NAME);
+  const r = landed ? k.doneRight : k.right;
+  live.querySelector('.ho-right b').textContent = r[0];
+  live.querySelector('.ho-right span').textContent = r[1];
+  live.querySelectorAll('.ho-end').forEach((e) => e.classList.remove('lit'));
+  // While moving, the origin is lit. Once landed, the destination is.
+  const litSel = landed ? (kind === 'cloud' ? '.b' : '.a') : (kind === 'cloud' ? '.a' : '.b');
+  live.querySelector('.ho-end' + litSel).classList.add('lit');
+  c.querySelector('.c-tag').textContent = landed ? 'Sending connection requests' : k.tag;
+  c.querySelector('.c-send').textContent = landed ? 'Sending' : 'Switching';
+}
+
+function start(kind) {
+  dir = kind; t0 = Date.now();
+  cards.forEach((c) => paint(c, kind, false));
+
+  // BEFORE, faithfully: one line, no direction, and a hard 5s self-destruct.
+  $('ghost').style.display = 'none';
+  $('old').className = 'sn-handover show launching';
+  $('old-txt').innerHTML = `<b>Handover</b> — ${NAME} stopped, now launching <b>${NAME}</b>.`;
+  clearTimeout(oldTimer);
+  oldTimer = setTimeout(() => {
+    $('old').className = 'sn-handover';
+    $('ghost').style.display = '';
+    $('ghost').textContent = 'Banner gone at 5s. The handover below is still running.';
+  }, 5000);
+
+  $('b-done').disabled = false; $('b-slow').disabled = false;
+  $('b-cloud').disabled = true; $('b-local').disabled = true;
+
+  clearInterval(tick);
+  tick = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    $('state').innerHTML = `switching · <b>${s}s</b> elapsed`;
+    $('old-el').innerHTML = s >= 5
+      ? `Old banner has been gone for <b>${s - 5}s</b> while the switch is still running.`
+      : `Old banner disappears in <b>${5 - s}s</b>.`;
+  }, 250);
+}
+
+function finish() {
+  if (!dir) return;
+  clearInterval(tick);
+  const s = Math.floor((Date.now() - t0) / 1000);
+  $('state').innerHTML = `landed after <b>${s}s</b>`;
+  $('old-el').innerHTML = s > 5
+    ? `The switch took <b>${s}s</b>. The old banner told the operator nothing for the last <b>${s - 5}s</b> of it.`
+    : `The switch took <b>${s}s</b>.`;
+  cards.forEach((c) => paint(c, dir, true));
+  $('wherepill').textContent = COPY[dir].where;
+
+  // One beat of confirmation, then it steps aside. It does not blink out.
+  setTimeout(() => {
+    cards.forEach((c) => {
+      const live = c.querySelector('.vj-live');
+      live.classList.add('out');
+      setTimeout(() => { live.hidden = true; live.classList.remove('out'); }, 460);
+    });
+    $('b-cloud').disabled = false; $('b-local').disabled = false;
+    $('b-done').disabled = true; $('b-slow').disabled = true;
+    $('state').textContent = 'idle';
+    dir = null;
+  }, 2600);
+}
+
+$('b-cloud').onclick = () => start('cloud');
+$('b-local').onclick = () => start('local');
+$('b-done').onclick = finish;
+// A handover that runs long is the case the 5s timeout gets wrong. Make it easy to see.
+$('b-slow').onclick = () => { $('b-slow').disabled = true; setTimeout(finish, 25000); };
+</script>
+</body>
