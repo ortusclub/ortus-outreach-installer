@@ -59,9 +59,12 @@ export function statusFromItem(it = {}) {
     emptyCheckStreak: Number(it.emptyCheckStreak) || 0,
     // Which side owns the campaign + when it last changed hands, for the card's
     // RUNNING ON control. Whitelisted here so a board item that carries them
-    // reaches the card; absent ⇒ the control falls back to where the campaign
-    // lives (cloud ⇒ the VM, local ⇒ this Mac).
-    runsOn: it.runsOn || '',
+    // reaches the card. Every campaign that existed before this feature was
+    // cloud-dispatched, so an absent value must read as the VM, never as ''
+    // (which _whSide would otherwise have to re-guess from `_cloud`, and a
+    // board item builder that forgets to set runsOn on a LOCAL item would then
+    // silently show the control in the wrong position).
+    runsOn: it.runsOn || 'vm',
     handoverAt: it.handoverAt || null,
     // The finished-FG reason line reads all three of these. Leaving them out of
     // this whitelist is why a done FG card on the board never explained itself:

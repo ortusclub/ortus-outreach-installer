@@ -10236,6 +10236,13 @@ async function _renderCampaignsBoardInner() {
         // v2.160.35: carry the follow-up summary so the strip clone's monitor
         // hero shows the same dual countdown as card #2.
         followUp: s.followUp || null,
+        // statusFromItem now defaults an absent runsOn to 'vm' (every campaign
+        // that pre-dates this feature was cloud-dispatched) — a genuinely local
+        // campaign MUST say so explicitly here or the board's RUNNING ON control
+        // would show it as VM-owned while it is actually running on this Mac.
+        // The server already defaults this to 'local'; this just carries it.
+        runsOn: s.runsOn || 'local',
+        handoverAt: s.handoverAt || null,
       });
     }
   } catch (_) { /* local status best-effort */ }
@@ -10337,6 +10344,11 @@ async function _renderCampaignsBoardInner() {
         // v2.160.35: follow-up dual countdown — lights up once the engine
         // exposes c.follow_up {count,dueAt,sender} on the cloud detail.
         followUp: c.follow_up || null,
+        // Which side owns it, mirrors _buildCloudActiveStatus. Absent on an
+        // older engine ⇒ the VM owns it, which is also statusFromItem's default,
+        // but set it explicitly here rather than leaning on that default.
+        runsOn: c.runs_on || 'vm',
+        handoverAt: c.handover_at || null,
       });
     }
   } catch (_) { /* cloud best-effort */ }
