@@ -117,7 +117,11 @@
   .sp-cbar i { flex: 1 1 0; height: 100%; background: var(--hairline); }
   .sp-cbar i.on { background: var(--ink); }
   .sp-cbar i.now { background: var(--blue); }
-  .sp-csub { font-family: var(--mono); font-size: .66rem; color: var(--gray); margin-top: 6px; }
+  /* The day, under the batch. Two questions, two answers: how far through this
+     turn of 8, and how much of today's allowance is spent. */
+  .sp-day { font-family: var(--mono); font-size: .72rem; color: var(--gray); margin-top: 8px; }
+  .sp-day b { color: var(--ink); font-weight: 600; }
+  .sp-day span { display: block; font-size: .66rem; margin-top: 3px; }
 
   /* Who actually got a request. The counterpart of "Nobody reached, and why" —
      the app knows every name and shows none of them. */
@@ -218,13 +222,13 @@ function panel({ verb, meta, sub, still, cols, why }) {
       <div class="sp-col${c.live ? ' is-live' : ''}">
         <div class="sp-who" title="${c.who}">${c.live ? '<i class="sp-dot"></i>' : ''}${c.who}</div>
         <div class="sp-state">${c.state}${c.live ? '<span class="sp-live">Live</span>' : ''}</div>
-        ${c.count ? `<div class="sp-count"><b>${c.count.done} of ${c.count.of}</b><span>${c.count.label}</span></div>
+        ${c.count ? `<div class="sp-count"><b>${c.count.done} of ${c.count.of}</b><span>this batch</span></div>
           <div class="sp-cbar">${Array.from({ length: c.count.of }, (_, k) =>
             `<i class="${k < c.count.done ? 'on' : (c.live && k === c.count.done ? 'now' : '')}"></i>`).join('')}</div>
-          <div class="sp-csub">${c.count.sub}</div>` : ''}
-        <div class="sp-steps">${c.steps.map((s) => `
+          <div class="sp-day"><b>${c.count.today}</b> of <b>${c.count.limit}</b> sent today<span>${c.count.sub}</span></div>` : ''}
+        ${c.live ? `<div class="sp-steps">${c.steps.map((s) => `
           <div class="sp-step ${s[0]}"><i class="sp-mk"></i><span>${s[1]}</span><span class="sp-t">${s[2] || ''}</span></div>`).join('')}
-        </div>
+        </div>` : ''}
         ${c.res ? `<div class="sp-res">${c.res}</div>` : ''}
         ${c.got ? `<div class="sp-got"><div class="sp-got-h">${c.got.head}</div>${c.got.rows.map((g) =>
           `<div class="sp-got-r${g[2] === 'now' ? ' now' : ''}"><span><b>${g[0]}</b></span><span>${g[1]}</span></div>`).join('')}
@@ -337,12 +341,12 @@ section(
       meta: '💻 This Mac · 00:41 elapsed · account 2 of 3',
       sub: 'Looking at 66 invitations across this campaign’s 3 accounts',
       cols: [
-        { who: NAMES[0], state: 'Done · 18.2s', count: { done: 22, of: 22, label: 'scanned' }, res: 'Looked at <b>22</b> · <b>nobody new</b> accepted · nothing written', steps: [
+        { who: NAMES[0], state: 'Done · 18.2s', count: { done: 22, of: 22, today: 22, limit: 22, sub: 'every invitation this account has out' }, res: '<b>Nobody new</b> accepted · nothing to write', steps: [
           ['ok', 'Browser open', '12.4s'], ['ok', 'Read its 22 sent invitations', '1.9s'],
           ['ok', 'Found in the sheet · 0', '0.4s'], ['ok', 'Written to the sheet · nothing', '—'],
           ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.1s'],
         ] },
-        { who: NAMES[1], state: 'Checking', live: true, count: { done: 14, of: 22, label: 'scanned' }, res: 'result appears when this account finishes', steps: [
+        { who: NAMES[1], state: 'Checking', live: true, count: { done: 14, of: 22, today: 14, limit: 22, sub: 'reading its invitations now' }, res: 'result appears when this account finishes', steps: [
           ['ok', 'Browser open', '14.8s'], ['now', 'Read its 22 sent invitations', '…'],
           ['wait', 'Found in the sheet', ''], ['wait', 'Written to the sheet', ''],
           ['wait', 'Introductions', ''], ['wait', 'Browser closed', ''],
@@ -384,17 +388,17 @@ section(
     });
     s.append(panel({
       verb: 'Sending connection requests',
-      meta: '💻 This Mac · 16 of 24 requests sent today · 253 leads still to go',
-      sub: 'Each account works its own person, about a minute between requests. '
+      meta: '💻 This Mac · 57 of 150 sent today · 253 leads still to go',
+      sub: 'Each account sends 8 in a turn, about a minute apart, then waits its next turn. '
         + '47 of the 300 were left out before the run started: already contacted, already done, or no LinkedIn link.',
       cols: [
         { who: NAMES[0], state: 'Waiting · next request in 48s',
-          count: { done: 7, of: 8, label: 'sent today', sub: '8 requests a day from this account · 1 left after this' },
+          count: { done: 8, of: 8, today: 24, limit: 50, sub: 'batch done · next batch of 8 in 39m 15s' },
           got: { head: 'Reached today', rows: [
             ['Josephine Okonkwo', '12:32', ''], ['Hanne Nielsen', '12:29', ''],
             ['Thomas Krauss', '12:25', ''], ['Marta Oliveira', '12:21', ''],
           ], more: '+ 3 more · Yuki Matsuda, Aisha Bello, Sven Larsson' },
-          res: '<b>7</b> sent · <b>2</b> not reached · 0 errors', steps: [
+          res: '<b>2</b> not reached today · no errors', steps: [
           ['ok', 'Browser open', '11.2s'], ['ok', 'Profile open', '9.4s'],
           ['ok', 'Confirmed the right person', '2.1s'], ['ok', 'Request sent with note', '3.7s'],
           ['ok', 'Written to the sheet, row 118', '0.6s'], ['now', 'Pausing before the next one', '48s'],
@@ -403,12 +407,12 @@ section(
           ['Aiko Tanaka', 'no Connect button on her profile', '12:07'],
         ] } },
         { who: NAMES[1], state: 'Sending to Rina Chandran', live: true,
-          count: { done: 5, of: 8, label: 'sent today', sub: 'request 6 of 8 going out now · 2 left after this' },
+          count: { done: 5, of: 8, today: 21, limit: 50, sub: 'request 6 of this batch going out now · 29 left today' },
           got: { head: 'Reached today', rows: [
             ['Rina Chandran', 'sending now', 'now'], ['Diego Fernández', '12:30', ''],
             ['Amara Nwosu', '12:26', ''], ['Kenji Sato', '12:22', ''],
           ], more: '+ 2 more · Elif Demir, Paulo Santos' },
-          res: '<b>5</b> sent · <b>1</b> not reached · 0 errors', steps: [
+          res: '<b>1</b> not reached today · no errors', steps: [
           ['ok', 'Browser open', '13.9s'], ['ok', 'Profile open', '8.8s'],
           ['now', 'Confirming the right person', '…'], ['wait', 'Request sent', ''],
           ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
@@ -416,12 +420,12 @@ section(
           ['Priya Raman', 'her profile never finished loading', '12:11'],
         ] } },
         { who: NAMES[2], state: 'Waiting for LinkedIn · back in 1m 22s',
-          count: { done: 4, of: 8, label: 'sent today', sub: '4 left · they go out once LinkedIn eases off' },
+          count: { done: 4, of: 8, today: 12, limit: 50, sub: 'batch paused · the other 4 go out once LinkedIn eases off' },
           got: { head: 'Reached today', rows: [
             ['Ana Lucía Vega', '12:12', ''], ['Omar Haddad', '12:08', ''],
             ['Freya Lindqvist', '12:03', ''], ['Ibrahim Toure', '11:58', ''],
           ] },
-          res: '<b>4</b> sent · <b>4</b> not reached · one more push-back and it stops for the week', steps: [
+          res: '<b>4</b> not reached today · one more push-back and this account stops for the week', steps: [
           ['ok', 'Browser open', '15.1s'], ['ok', 'Profile open', '10.2s'],
           ['ok', 'Confirmed the right person', '1.8s'], ['miss', 'Request not sent · LinkedIn pushed back', '—'],
           ['miss', 'Not written to the sheet', '—'], ['now', 'Waiting for LinkedIn to ease off', '1m 22s'],
@@ -471,21 +475,21 @@ section(
     const LIVE_AT = 6; // account 7 of 13
     const cols = MAEN.map((who, i) => {
       if (i < LIVE_AT) {
-        return { who, state: 'Done for today · 8 of 8 sent',
-          count: { done: 8, of: 8, label: 'sent today', sub: 'daily batch finished · resumes after midnight UTC' },
+        return { who, state: 'Done for today · 50 of 50 sent',
+          count: { done: 8, of: 8, today: 50, limit: 50, sub: 'done for today · resumes after midnight UTC' },
           steps: DONE_STEPS('11.2s', '9.4s', '2.1s', '3.7s', '0.6s'),
           got: { head: 'Reached today', rows: [
             ['Josephine Okonkwo', '12:32', ''], ['Hanne Nielsen', '12:29', ''],
             ['Thomas Krauss', '12:25', ''],
           ], more: '+ 5 more' },
-          res: `<b>8</b> sent · <b>${i % 3}</b> not reached`,
+          res: `<b>${i % 3}</b> not reached today`,
           miss: i % 3 ? { head: 'Nobody reached, and why', rows: [
             ['Marcus Ilori', 'his profile no longer exists', '12:19'],
           ] } : null };
       }
       if (i === LIVE_AT) {
         return { who, state: 'Sending to Rina Chandran', live: true,
-          count: { done: 5, of: 8, label: 'sent today', sub: 'request 6 of 8 going out now · 2 left after this' },
+          count: { done: 5, of: 8, today: 21, limit: 50, sub: 'request 6 of this batch going out now · 29 left today' },
           got: { head: 'Reached today', rows: [
             ['Rina Chandran', 'sending now', 'now'], ['Diego Fernández', '12:30', ''],
             ['Amara Nwosu', '12:26', ''],
@@ -495,13 +499,13 @@ section(
             ['now', 'Confirming the right person', '…'], ['wait', 'Request sent', ''],
             ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
           ],
-          res: '<b>5</b> sent · <b>1</b> not reached · 0 errors',
+          res: '<b>1</b> not reached today · no errors',
           miss: { head: 'Nobody reached, and why', rows: [
             ['Priya Raman', 'her profile never finished loading', '12:11'],
           ] } };
       }
       return { who, state: 'Waiting its turn',
-        count: { done: 0, of: 8, label: 'sent today', sub: '8 requests a day · none sent yet' },
+        count: { done: 0, of: 8, today: 16, limit: 50, sub: 'waiting for its turn in the rotation' },
         steps: WAIT_STEPS, res: 'has not started yet' };
     });
     const c = baseCard({
@@ -518,8 +522,8 @@ section(
     });
     c.append(panel({
       verb: 'Sending connection requests',
-      meta: '☁︎ Cloud VM · 53 of 104 requests sent today · 402 leads still to go',
-      sub: '13 accounts · about a minute between requests · nobody was left out before the run',
+      meta: '☁︎ Cloud VM · 402 of 650 sent today · 402 leads still to go',
+      sub: '13 accounts · 8 requests per turn, about a minute apart · nobody was left out before the run',
       cols,
       why: { head: 'Nobody reached, and why · 11 of the 1106 tried', rows: [
         ['LinkedIn pushed back', 4], ['Profile no longer exists', 3],
@@ -554,17 +558,17 @@ section(
       meta: '💻 This Mac · took 65s · next at 13:35',
       sub: 'Looked at 66 invitations across 3 accounts · nobody new accepted',
       cols: [
-        { who: NAMES[0], state: 'Clean · 18.2s', count: { done: 22, of: 22, label: 'scanned' }, res: 'Looked at <b>22</b> · <b>nobody new</b> accepted', steps: [
+        { who: NAMES[0], state: 'Clean · 18.2s', count: { done: 22, of: 22, today: 22, limit: 22, sub: 'every invitation this account has out' }, res: '<b>Nobody new</b> accepted', steps: [
           ['ok', 'Browser open', '12.4s'], ['ok', 'Read its 22 sent invitations', '1.9s'],
           ['ok', 'Found in the sheet · 0', '0.4s'], ['ok', 'Written to the sheet · nothing', '—'],
           ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.1s'],
         ] },
-        { who: NAMES[1], state: 'Clean · 22.6s', count: { done: 22, of: 22, label: 'scanned' }, res: 'Looked at <b>22</b> · <b>nobody new</b> accepted', steps: [
+        { who: NAMES[1], state: 'Clean · 22.6s', count: { done: 22, of: 22, today: 22, limit: 22, sub: 'every invitation this account has out' }, res: '<b>Nobody new</b> accepted', steps: [
           ['ok', 'Browser open', '14.8s'], ['ok', 'Read its 22 sent invitations', '2.2s'],
           ['ok', 'Found in the sheet · 0', '0.5s'], ['ok', 'Written to the sheet · nothing', '—'],
           ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.3s'],
         ] },
-        { who: NAMES[2], state: 'Clean · 24.1s', count: { done: 22, of: 22, label: 'scanned' }, res: 'Looked at <b>22</b> · <b>nobody new</b> accepted', steps: [
+        { who: NAMES[2], state: 'Clean · 24.1s', count: { done: 22, of: 22, today: 22, limit: 22, sub: 'every invitation this account has out' }, res: '<b>Nobody new</b> accepted', steps: [
           ['ok', 'Browser open', '15.9s'], ['ok', 'Read its 22 sent invitations', '2.4s'],
           ['ok', 'Found in the sheet · 0', '0.6s'], ['ok', 'Written to the sheet · nothing', '—'],
           ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.2s'],
