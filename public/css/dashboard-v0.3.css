@@ -1551,13 +1551,11 @@ body[data-dashboard='v3'] .vj-card:has(.sp) .vj-details { grid-row: 8; }
 .sp-nav button:hover { color: var(--ink); border-color: var(--ink); }
 .sp-pos { font-family: var(--mono); font-size: .62rem; letter-spacing: .12em;
           text-transform: uppercase; color: var(--gray); }
-.sp-col.is-live { background: var(--hairline-soft); box-shadow: inset 2px 0 0 var(--blue); }
 
 .sp-who { font-family: var(--body); font-size: .82rem; color: var(--ink);
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-state { font-family: var(--mono); font-size: .6rem; letter-spacing: .14em; text-transform: uppercase;
             color: var(--gray); margin-top: 5px; }
-.sp-col.is-live .sp-state { color: var(--ink); }
 
 .sp-steps { margin-top: 12px; }
 .sp-step { display: grid; grid-template-columns: 13px minmax(0,1fr) auto; align-items: baseline; gap: 9px;
@@ -1594,10 +1592,32 @@ body[data-dashboard='v3'] .vj-card:has(.sp) .vj-details { grid-row: 8; }
 .sp-day b { color: var(--ink); font-weight: 600; }
 .sp-day span { display: block; font-size: .66rem; margin-top: 3px; }
 
+/* Who actually got a request. The counterpart of "Nobody reached, and why" —
+   the app knows every name and shows none of them. Copied verbatim from the
+   approved sketch; Task 7 stopped at .sp-day and left these behind. */
+.sp-got { border-top: 1px solid var(--hairline-soft); margin-top: 11px; padding-top: 9px; }
+.sp-got-h { font-family: var(--mono); font-size: .58rem; letter-spacing: .14em;
+            text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+.sp-got-r { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px;
+            font-family: var(--mono); font-size: .67rem; line-height: 1.5; color: var(--gray); padding: 2px 0; }
+.sp-got-r b { color: var(--ink); font-weight: 500; }
+.sp-got-r.now b { color: var(--blue); }
+.sp-got-more { font-family: var(--mono); font-size: .63rem; color: var(--gray); margin-top: 5px; }
+
+/* Why a lead was not hit. Reasons are normalizeSkipReason()'s own strings,
+   verbatim — the app already computes them and writes them to the sheet's
+   Stage column, then throws the reason away on the card. */
+.sp-miss { border-top: 1px solid var(--hairline-soft); margin-top: 10px; padding-top: 9px; }
+.sp-miss-h { font-family: var(--mono); font-size: .58rem; letter-spacing: .14em;
+             text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+.sp-miss-r { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px;
+             font-family: var(--mono); font-size: .67rem; line-height: 1.5; color: var(--gray); padding: 2px 0; }
+.sp-miss-r b { color: var(--ink); font-weight: 500; }
+
 /* ── Account state vocabulary (Task 6) on .sp-col — added in Task 7 ────────
-   `working` is the emphasised one: same treatment the sketch gave its single
-   centred "is-live" column (kept above, unused by Task 8's class names but
-   harmless). `needs-login` / `cannot-open` / `rate-limited` / `trouble` are
+   `working` is the emphasised one: it inherited the treatment the sketch gave
+   its single centred column, and the sketch's own `.sp-col.is-live` rule was
+   deleted because nothing ever sets that class. `needs-login` / `cannot-open` / `rate-limited` / `trouble` are
    the ones an operator must not miss — a logged-out account currently looks
    healthy on the card, which is the bug this panel exists to fix, so those
    four get the card's one reserved trouble colour, --red, never used

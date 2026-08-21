@@ -33,7 +33,7 @@ import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
-import { bannerFor, handoverBanner } from '/js/runpanel.mjs';
+import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
@@ -7960,6 +7960,9 @@ async function _refreshCloudActiveStatus(id) {
         window.__cloudActiveStatus.monitoringCheckInProgress = !!_localLive.monitoringCheckInProgress;
         if (_localLive.nextCheckAt) window.__cloudActiveStatus.nextCheckAt = _localLive.nextCheckAt;
         if (_localLive.emptyCheckStreak != null) window.__cloudActiveStatus.emptyCheckStreak = _localLive.emptyCheckStreak;
+        // Same for the per-account panel: only this Mac knows what its own
+        // accounts are doing, so its snapshot owns that field too.
+        if (Array.isArray(_localLive.accountPanel)) window.__cloudActiveStatus.accountPanel = _localLive.accountPanel;
       }
       _cloudPolledAt.set(id, Date.now());
     }
@@ -9038,6 +9041,9 @@ function vjCardSkeleton(cid) {
     const _cd = _cstage.querySelector('[data-f="stageDrawer"]'); if (_cd) _cd.innerHTML = '';
     const _cf = _cstage.querySelector('[data-f="stageFix"]'); if (_cf) _cf.innerHTML = '';
   }
+  // Same reason: the clone arrives carrying the local campaign's account
+  // columns. Blank + hide them so renderRunPanel redraws from THIS campaign.
+  const _cpanel = clone.querySelector('.sp'); if (_cpanel) { _cpanel.hidden = true; _cpanel.innerHTML = ''; }
   const _cbar = clone.querySelector('[data-f="activeBar"]'); if (_cbar) _cbar.style.width = '0%';
   const _clog = clone.querySelector('[data-f="active-log"]'); if (_clog) _clog.innerHTML = '';
   const _cctrl = clone.querySelector('.vj-controls'); if (_cctrl) _cctrl.innerHTML = '';
@@ -9175,6 +9181,111 @@ function applyLiveBanner(live, status) {
   }
 }
 
+// ── The per-account panel ───────────────────────────────────────────────────
+// One column per account, three visible, the account that is working centred.
+// Both card fillers call this one function, exactly like applyLiveBanner above:
+// #active-card and the board strip's clone are the same markup, so the two
+// surfaces cannot drift.
+//
+// Everything here comes from accountColumns(); nothing is invented. An account
+// with no turn size shows no batch counter at all rather than a confident "of
+// 8", and an account this campaign never selected shows no daily cap rather
+// than "0 of 0 sent today".
+
+// Only these four step marks have a mark glyph in the CSS. The engine only ever
+// sends 'now' today, but a class straight off the payload could land unstyled.
+const SP_STEP_MARKS = new Set(['ok', 'now', 'wait', 'miss']);
+
+function _spStateClass(state) {
+  // The state vocabulary is a fixed set of lowercase words; anything else would
+  // be an unstyled class at best and a broken attribute at worst.
+  return String(state || '').toLowerCase().replace(/[^a-z-]/g, '');
+}
+
+function _spColHtml(c) {
+  const cls = _spStateClass(c.state);
+  const steps = c.steps.length
+    ? `<div class="sp-steps">${c.steps.map((s) => {
+        const mark = SP_STEP_MARKS.has(s[0]) ? s[0] : 'now';
+        return `<div class="sp-step ${mark}"><i class="sp-mk"></i><span>${escHtml(s[1] || '')}</span>`
+          + `<span class="sp-t">${escHtml(s[2] || '')}</span></div>`;
+      }).join('')}</div>`
+    : '';
+  // The turn. An absent size means the mode drains everything in one go, so
+  // there is no turn to be N of, and the day counter carries the whole story.
+  const batch = c.batchSize == null ? '' :
+    `<div class="sp-count"><b>${c.batchDone} of ${c.batchSize}</b><span>this batch</span></div>`
+    + `<div class="sp-cbar">${batchPips(c.batchDone, c.batchSize, c.live).map((k) => `<i class="${k}"></i>`).join('')}</div>`;
+  // The day. A zero cap means a sweep found this account but the campaign never
+  // selected it, so it gets said plainly instead of an invented "0 of 0".
+  const day = c.dailyLimit > 0
+    ? `<div class="sp-day"><b>${c.sentToday}</b> of <b>${c.dailyLimit}</b> sent today<span>${escHtml(c.sub)}</span></div>`
+    : `<div class="sp-day"><span>Not one of this campaign's accounts.</span><span>${escHtml(c.sub)}</span></div>`;
+  const got = c.reached.length
+    ? `<div class="sp-got"><div class="sp-got-h">Reached today</div>${c.reached.map((w) =>
+        `<div class="sp-got-r"><b>${escHtml(w)}</b></div>`).join('')}</div>`
+    : '';
+  const miss = c.missed.length
+    ? `<div class="sp-miss"><div class="sp-miss-h">Nobody reached, and why</div>${c.missed.map((m) =>
+        `<div class="sp-miss-r"><b>${escHtml(m.who)}</b><span>${escHtml(m.why)}</span></div>`).join('')}</div>`
+    : '';
+  const res = c.result ? `<div class="sp-res">${escHtml(c.result)}</div>` : '';
+  return `<div class="sp-col ${cls}">`
+    + `<div class="sp-who">${escHtml(c.email)}</div>`
+    + `<div class="sp-state">${escHtml(c.state)}</div>`
+    + steps + batch + day + got + miss + res
+    + '</div>';
+}
+
+function renderRunPanel(card, status) {
+  const panel = card && card.querySelector('.sp');
+  if (!panel) return;
+  const cols = accountColumns(status);
+  if (!cols.length) {
+    panel.hidden = true;
+    if (panel.innerHTML) panel.innerHTML = '';
+    panel._spHtml = ''; panel._spIdx = null;
+    return;
+  }
+  panel.hidden = false;
+
+  const idx = railIndex(cols);
+  const html = `<div class="sp-head"><span class="sp-pos">‹ ${idx + 1} of ${cols.length} ›</span></div>`
+    + `<div class="sp-grid">${cols.map(_spColHtml).join('')}</div>`;
+
+  // This runs on every 2s poll. Rebuilding identical markup would drop the
+  // operator's scroll on the floor for nothing, so an unchanged panel is left
+  // completely alone.
+  if (panel._spHtml !== html) {
+    // The working account's timer ticks, so the panel DOES change on most
+    // polls. Carry the operator's scroll across the rebuild; only the centring
+    // below may move it, and only when the working account changes.
+    const prev = panel.querySelector('.sp-grid');
+    const keep = prev ? prev.scrollLeft : 0;
+    panel.innerHTML = html;
+    panel._spHtml = html;
+    const railNow = panel.querySelector('.sp-grid');
+    // The rail's CSS scroll-behavior is smooth, which is right for a drag and
+    // wrong for us: every scrollLeft we set below would animate from 0, once a
+    // second, and read as the panel twitching. Ours are instant.
+    if (railNow) railNow.style.scrollBehavior = 'auto';
+    if (railNow && keep) railNow.scrollLeft = keep;
+  }
+
+  // Centre the working account. The first one sits flush left instead, because
+  // there is no previous account to show beside it. Done only when the working
+  // account CHANGES: doing it every poll would drag the rail back every two
+  // seconds while the operator was scrolling through the other accounts.
+  if (panel._spIdx !== idx) {
+    const rail = panel.querySelector('.sp-grid');
+    if (rail) {
+      const w = rail.scrollWidth / cols.length;
+      rail.scrollLeft = idx <= 0 ? 0 : Math.max(0, (idx - 1) * w);
+    }
+    panel._spIdx = idx;
+  }
+}
+
 function fillVjCard(root, status) {
   if (!root || !status) return;
   const f = vjCardFields(status);
@@ -9222,6 +9333,9 @@ function fillVjCard(root, status) {
     // unconditional so a finished card clears the beacon a running one left.
     applyLiveBanner(live, status);
   } catch (_) { /* live line best-effort */ }
+
+  // The per-account panel, from the same builder the dashboard card uses.
+  try { renderRunPanel(root, status); } catch (_) { /* panel is best-effort */ }
 
   if (f.isMonitor) _fillVjMonitorHero(root, status);
 
@@ -10363,6 +10477,9 @@ async function _renderCampaignsBoardInner() {
         // The server already defaults this to 'local'; this just carries it.
         runsOn: s.runsOn || 'local',
         handoverAt: s.handoverAt || null,
+        // The per-account panel. statusFromItem whitelists it, so without this
+        // line the board strip's card renders no panel at all.
+        accountPanel: Array.isArray(s.accountPanel) ? s.accountPanel : [],
       });
     }
   } catch (_) { /* local status best-effort */ }
@@ -10478,6 +10595,7 @@ async function _renderCampaignsBoardInner() {
         if (_localLive.nextCheckAt) _row.nextCheckAt = _localLive.nextCheckAt;
         if (_localLive.emptyCheckStreak != null) _row.emptyCheckStreak = _localLive.emptyCheckStreak;
         if (Array.isArray(_localLive.logs) && _localLive.logs.length) _row.logs = _localLive.logs;
+        if (Array.isArray(_localLive.accountPanel)) _row.accountPanel = _localLive.accountPanel;
       }
     }
   } catch (_) { /* cloud best-effort */ }
@@ -25709,6 +25827,10 @@ window.renderActiveCard = function(status) {
   // a sending, checking or monitoring campaign, and it removes itself for any
   // state that has no side to name.
   try { renderWhereControl(card, status); } catch (_) { /* handover control is best-effort */ }
+  // The per-account panel. Painted here rather than inside a state branch: the
+  // finished and idle branches below return early, and an empty accountPanel
+  // hides the panel by itself, so one call covers every state.
+  try { renderRunPanel(card, status); } catch (_) { /* panel is best-effort */ }
   // A campaign in the monitoring phase has running:false but is NOT idle —
   // it's watching for acceptances. The card must render it, not fall through
   // to "No campaign running" (the dashboard's half of the CC+IC/CC+DM

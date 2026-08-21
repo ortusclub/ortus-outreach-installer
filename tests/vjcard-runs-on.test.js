@@ -51,3 +51,33 @@ test("the board's CLOUD item carries runsOn/handoverAt to statusFromItem", () =>
   assert.match(block, /runsOn:\s*c\.runs_on/, 'cloud board item must bridge the engine\'s snake_case runs_on');
   assert.match(block, /handoverAt:\s*c\.handover_at/);
 });
+
+// Same trap, same shape, one feature later: statusFromItem whitelists
+// accountPanel, but the board item builder has to hand it over or the
+// per-account panel is dashboard-only for no visible reason.
+test("the board's LOCAL running item carries accountPanel to statusFromItem", () => {
+  const block = pushBlock("id: 'local-active'");
+  assert.match(block, /accountPanel:\s*Array\.isArray\(s\.accountPanel\)/,
+    'without this the board strip\'s card renders no per-account panel at all');
+  const s = statusFromItem({ id: 'local-active', bucket: 'running',
+    accountPanel: [{ email: 'a@b.co', state: 'working', live: true }] });
+  assert.equal(s.accountPanel.length, 1);
+  assert.equal(s.accountPanel[0].email, 'a@b.co');
+});
+
+// A campaign handed to this Mac keeps its Postgres row, so it is built by the
+// CLOUD push site, which the engine cannot fill: only this Mac knows what its
+// own accounts are doing. The local overlay is where that field arrives.
+test('an adopted (runs_on local) campaign overlays the local accountPanel', () => {
+  assert.match(appJs, /_row\.accountPanel = _localLive\.accountPanel/);
+  assert.match(appJs, /window\.__cloudActiveStatus\.accountPanel = _localLive\.accountPanel/);
+});
+
+// The panel is rendered by ONE function called from both card fillers. If a
+// call site is dropped, one of the two surfaces silently loses the panel.
+test('renderRunPanel is called from both card fillers, like applyLiveBanner', () => {
+  const calls = appJs.match(/(?<!function )renderRunPanel\(\w+, status\)/g) || [];
+  assert.equal(calls.length, 2, 'exactly two call sites: renderActiveCard and fillVjCard');
+  assert.equal((appJs.match(/function renderRunPanel\(/g) || []).length, 1,
+    'one renderer, never a second copy');
+});
