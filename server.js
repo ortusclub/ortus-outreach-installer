@@ -4792,14 +4792,25 @@ app.post('/api/queue/run-next', async (_req, res) => {
 
 app.post('/api/monitoring/check-now', async (req, res) => {
   try {
-    const { runMonitoringCheckAll, getCampaignState } = await import('./src/campaign.js');
+    const { runMonitoringCheckAll, getCampaignState, setBulkCheckInProgress } = await import('./src/campaign.js');
     const state = getCampaignState();
     if (state.state !== 'monitoring') {
       return res.status(400).json({ error: 'Campaign is not in monitoring state' });
     }
     // Fire and forget — the operator wants the button to feel responsive,
     // but the actual bulk-check pass takes 30-120s.
-    runMonitoringCheckAll().catch((err) => console.warn('[check-now] threw:', err.message));
+    //
+    // The flag is what MAKES the sweep visible. Without it
+    // getCampaignStatus().monitoringCheckInProgress stayed false for the whole
+    // manual sweep, so the card had nothing to render "checking" from: the
+    // operator pressed Run check now, browsers opened, and the card went on
+    // reading a countdown to the next check. It also gates Stop, which could
+    // only ever no-op on a sweep it did not know was running. The scheduled
+    // tick has always set it; this route never did.
+    setBulkCheckInProgress(true);
+    runMonitoringCheckAll()
+      .catch((err) => console.warn('[check-now] threw:', err.message))
+      .finally(() => setBulkCheckInProgress(false));
     res.json({ ok: true, started: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
