@@ -7616,6 +7616,12 @@ function _buildCloudActiveStatus(c, leads, counts) {
     // Raw engine status ('cancelled'/'error'/'done'/…) — drives the live-status
     // card's ▶ Continue / ⟲ Restart swap for stopped campaigns.
     engineStatus: c.status || '',
+    // Which side owns it. The engine's own column, so it survives this app being
+    // closed and reopened: a campaign released to this Mac still reads 'local'
+    // here, which is what lets the card say it is WAITING on the laptop instead
+    // of looking stalled. Absent on an older engine ⇒ the VM owns it.
+    runsOn: c.runs_on || 'vm',
+    handoverAt: c.handover_at || null,
     name: c.name || '(unnamed)', mode: c.mode,
     totalTargets: total, totalProcessed: sent,
     // Leads that still have to be sent. 'claimed' is counted with 'pending': a
@@ -9122,6 +9128,10 @@ function fillVjCard(root, status) {
   } catch (_) { /* live line best-effort */ }
 
   if (f.isMonitor) _fillVjMonitorHero(root, status);
+
+  // Same RUNNING ON control as #active-card — the board strip's clone is the
+  // other place an operator asks "which machine is doing this".
+  try { renderWhereControl(root, status); } catch (_) { /* handover control is best-effort */ }
 
   const logEl = root.querySelector('[data-f="active-log"]');
   if (logEl) {
@@ -25225,6 +25235,203 @@ function _tickLiveStages() {
 }
 setInterval(_tickLiveStages, 1000);
 
+// ── RUNNING ON: which side a live campaign runs on, and moving it ───────────
+// Design: public/sketches/2026-08-21-vm-local-handover.html, variant C — the
+// switch ASKS FIRST, inline on the card, never a modal, and names what the move
+// costs before it happens. One renderer for both card surfaces (#active-card
+// and the board strip's clone), same as fillVjCard/renderActiveCard.
+//
+// The three states the operator must never be without (the incident this whole
+// feature came from was an operator who could not tell which machine was doing
+// the work): HANDING OVER (both sides locked), MOVED (new side filled, "moved N
+// min ago"), and WAITING FOR THIS MAC (owned here, nothing running — stated as
+// waiting, never as stalled).
+let _whAsk = null;   // { id, to } — the open confirm strip
+let _whBusy = null;  // { id, to } — a move in flight; both sides locked
+let _whMsg = null;   // { id, text } — the last refusal, shown until dismissed
+
+// Which side owns it. An absent runsOn means nobody has moved this campaign:
+// a cloud campaign is on the VM, a local one is on this Mac.
+function _whSide(status) {
+  const r = String((status && status.runsOn) || '').toLowerCase();
+  if (r === 'vm' || r === 'local') return r;
+  return (status && status._cloud) ? 'vm' : 'local';
+}
+
+// Leads still to send. Real, never a placeholder: pendingCount is the cloud
+// detail's number, pending the board item's, and totals are the local pair.
+function _whPending(status) {
+  const c = Number(status && status.pendingCount);
+  if (Number.isFinite(c)) return c;
+  const p = Number(status && status.pending);
+  if (Number.isFinite(p) && p > 0) return p;
+  return Math.max(0, (Number(status && status.totalTargets) || 0) - (Number(status && status.totalProcessed) || 0));
+}
+
+// The operator's OWN cadence, not the adaptive one — a switch resets the
+// stretch, so the sentence has to name the interval it goes back to.
+function _whBaseMins(status) {
+  const m = Number((status && status.checkIntervalBaseMinutes) || (status && status.checkIntervalMinutes)) || 0;
+  if (!m) return 'the base interval';
+  if (m % 60 === 0) return (m / 60) + 'h';
+  return m + ' min';
+}
+
+function _whAgo(ts) {
+  const min = Math.floor(Math.max(0, Date.now() - Number(ts)) / 60000);
+  if (min < 1) return 'moved just now';
+  if (min < 60) return `moved ${min} min ago`;
+  const h = Math.floor(min / 60);
+  return `moved ${h}h ago`;
+}
+
+function _whConfirmHtml(id, to, status) {
+  const n = _whPending(status);
+  const leads = `${n} lead${n === 1 ? '' : 's'}`;
+  const every = _whBaseMins(status);
+  if (to === 'local') {
+    return `<div class="wh-confirm">
+      Move this campaign to <b>this Mac</b>?<br>
+      · The VM stops now. ${leads} still to send continue here.<br>
+      · The lead being sent right now is retried here, so that one person may get a second request.<br>
+      · GoLogin browsers open on this Mac. Keep the app open or the campaign waits.<br>
+      · Acceptance checks go back to every ${every} from the switch.
+      <span class="row"><button type="button" class="go" onclick="campaignHandover('${escHtml(id)}','local',this)">Move it here</button><button type="button" onclick="whereCancel()">Stay on the VM</button></span>
+    </div>`;
+  }
+  return `<div class="wh-confirm">
+    Move this campaign to the <b>Cloud VM</b>?<br>
+    · This Mac stops now and its GoLogin browsers close. ${leads} still to send continue on the VM.<br>
+    · The lead being sent right now is retried there, so that one person may get a second request.<br>
+    · The VM keeps going with this app closed, so the laptop can sleep.<br>
+    · Acceptance checks go back to every ${every} from the switch.
+    <span class="row"><button type="button" class="go" onclick="campaignHandover('${escHtml(id)}','vm',this)">Move it to the VM</button><button type="button" onclick="whereCancel()">Stay on this Mac</button></span>
+  </div>`;
+}
+
+// The whole block as one string, so the render path can skip a rewrite when
+// nothing changed (a 2s poll that re-wrote it would eat the operator's click).
+// Returns '' when the control does not belong on this card at all.
+function whereBlockHtml(status) {
+  if (!status) return '';
+  const id = String(status.id || status.rawId || '');
+  if (!id) return '';
+  const side = _whSide(status);
+  const running = !!status.running;
+  const monitoring = status.state === 'monitoring';
+  // Owned here but nothing is running here: the app was closed, or the campaign
+  // was stopped. This is the load-bearing state — it must read as waiting on
+  // this Mac, not as a stalled or broken campaign.
+  const waiting = side === 'local' && !running && !monitoring && !status.queued
+    && (status._cloud || !!status.handoverAt);
+  if (!running && !monitoring && !waiting) return '';
+
+  const busy = _whBusy && _whBusy.id === id ? _whBusy.to : '';
+  const ask = _whAsk && _whAsk.id === id ? _whAsk.to : '';
+  const msg = _whMsg && _whMsg.id === id ? _whMsg.text : '';
+
+  let tail;
+  if (busy) tail = '<span class="wh-warn">moving, both locked</span>';
+  else if (msg) tail = '<span class="wh-warn">not moved</span>';
+  else if (ask) tail = '<span class="wh-warn">confirm below</span>';
+  else if (waiting) tail = '<span class="wh-warn">waiting on this Mac, nothing running here</span>';
+  else if (status.handoverAt) tail = `<span class="wh-note">${_whAgo(status.handoverAt)}</span>`;
+  else if (side === 'vm') tail = '<span class="wh-note">tap to move it here</span>';
+  else tail = '<span class="wh-note">keep the app open</span>';
+
+  const btn = (to, label) => {
+    const on = side === to ? ' on' : '';
+    const bz = busy === to ? ' busy' : '';
+    const dis = busy || side === to ? ' disabled' : '';
+    return `<button type="button" class="${(on + bz).trim()}"${dis} onclick="whereAsk('${escHtml(id)}','${to}')">${label}</button>`;
+  };
+  let html = `<div class="wh">
+    <span class="wh-lab">Running on</span>
+    <span class="wh-seg">${btn('vm', 'Cloud VM')}${btn('local', 'This Mac')}</span>
+    ${tail}
+  </div>`;
+  // A refusal is never a bare "failed": the server's sentence says what the VM
+  // did, and both sides stay exactly where they were.
+  if (msg) html += `<div class="wh-confirm">${escHtml(msg)}<span class="row"><button type="button" onclick="whereCancel()">OK</button></span></div>`;
+  else if (ask && !busy) html += _whConfirmHtml(id, ask, status);
+  return html;
+}
+
+// Paint the control into a card. Keeps the status it drew from on the host node
+// so a click can repaint immediately instead of waiting for the next poll.
+function renderWhereControl(root, status) {
+  if (!root) return;
+  let slot = root.querySelector(':scope > .wh-host');
+  let markup = '';
+  try { markup = whereBlockHtml(status); } catch (_) { markup = ''; }
+  if (!markup) { if (slot) slot.remove(); return; }
+  if (!slot) {
+    slot = document.createElement('div');
+    slot.className = 'wh-host';
+    const anchor = root.querySelector('.vj-controls') || root.querySelector('.vj-details');
+    if (anchor && anchor.parentNode === root) root.insertBefore(slot, anchor);
+    else root.appendChild(slot);
+  }
+  slot._status = status;
+  // Written ONLY when the markup actually changes: both surfaces re-render on a
+  // poll, and a blind rewrite would eat the operator's click on the confirm.
+  if (slot.dataset.h !== markup) { slot.innerHTML = markup; slot.dataset.h = markup; }
+}
+
+function whereRepaint() {
+  document.querySelectorAll('.wh-host').forEach((h) => {
+    const card = h.parentElement;
+    if (card && h._status) renderWhereControl(card, h._status);
+  });
+}
+
+window.whereAsk = function(id, to) {
+  if (_whBusy) return;
+  _whMsg = null;
+  _whAsk = { id: String(id), to };
+  whereRepaint();
+};
+
+window.whereCancel = function() {
+  _whAsk = null; _whMsg = null;
+  whereRepaint();
+};
+
+// The move itself. NO client-side timeout on purpose: the local → VM direction
+// can take up to 120s while the send loop unwinds, and a client that gives up
+// early reports a failure for a move that actually succeeded — which is the
+// exact bug this feature exists to end.
+window.campaignHandover = async function(id, to, btn) {
+  if (_whBusy) return;
+  _whAsk = null; _whMsg = null;
+  _whBusy = { id: String(id), to };
+  whereRepaint();
+  try {
+    const r = await fetch(`/api/campaign/${encodeURIComponent(id)}/handover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to }),
+    });
+    let d = {};
+    try { d = await r.json(); } catch (_) { d = {}; }
+    if (!r.ok) {
+      // Every refusal the server sends carries its own sentence (sweep_in_flight,
+      // not_local, not_resumable, source_still_running all do). Only a server
+      // that answered nothing at all falls back, and even that says where the
+      // campaign is.
+      _whMsg = { id: String(id), text: d.error || `The move was refused (HTTP ${r.status}), so the campaign is still where it was.` };
+    }
+  } catch (e) {
+    _whMsg = { id: String(id), text: `This app could not reach the server to move the campaign (${e && e.message ? e.message : 'no answer'}). Nothing was moved.` };
+  } finally {
+    _whBusy = null;
+    whereRepaint();
+    // Both surfaces re-poll on their own (2s local, 5s cloud); this just stops
+    // the card sitting on a stale side for a tick.
+    try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* best-effort */ }
+  }
+};
+
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
@@ -25251,6 +25458,11 @@ window.renderActiveCard = function(status) {
     }
   }
   try { _adaptActiveCardControls(card, status); } catch (_) { /* control adaptation is best-effort */ }
+  // Which side is doing the work, and the control that moves it. Painted once
+  // here rather than inside each state branch below: it is the same answer for
+  // a sending, checking or monitoring campaign, and it removes itself for any
+  // state that has no side to name.
+  try { renderWhereControl(card, status); } catch (_) { /* handover control is best-effort */ }
   // A campaign in the monitoring phase has running:false but is NOT idle —
   // it's watching for acceptances. The card must render it, not fall through
   // to "No campaign running" (the dashboard's half of the CC+IC/CC+DM
@@ -25309,26 +25521,40 @@ window.renderActiveCard = function(status) {
     return;
   }
   card.classList.remove('is-queued');
+  // Handed to this Mac, and nothing is running here: the app was closed, or the
+  // move landed on an idle machine. "Finished" is a lie in that state, and it is
+  // exactly the lie that makes an operator stop a campaign that was still owed
+  // work. The card says WAITING, and the RUNNING ON control below it says which
+  // side has to move for it to carry on.
+  const isWaitingHere = isFinished && _whSide(status) === 'local' && (status._cloud || !!status.handoverAt);
   if (isFinished) {
     card.classList.remove('is-empty', 'is-monitor');
     const total = Number(status.totalTargets) || 0;
     const done = Number(status.totalProcessed) || 0;
     const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
     v3SetText('activeName', status.name || '(unnamed)');
-    v3SetText('activeEyebrow', 'Finished');
+    v3SetText('activeEyebrow', isWaitingHere ? 'Waiting for this Mac' : 'Finished');
     v3SetText('activePct', String(pct));
     v3SetText('activeSent', String(done));
     v3SetText('activeTotal', String(total));
     v3SetText('activeAccounts', String((status.profileIds || []).length));
     v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
-    v3SetText('sendingLbl', 'Finished');
+    v3SetText('sendingLbl', isWaitingHere ? 'Waiting' : 'Finished');
     v3SetText('batchEta', '—');
     const glyph = document.getElementById('activeGlyph');
     if (glyph) glyph.textContent = (typeof v3ModeBadge === 'function') ? v3ModeBadge(status.mode) : '';
     const bar = card.querySelector('.vj-hbar > i');
     if (bar) bar.style.width = pct + '%';
     const liveEl = document.getElementById('active-live');
-    if (liveEl) liveEl.hidden = true;
+    if (liveEl && isWaitingHere) {
+      // Waiting is a state, not a silence: say what stopped and what starts it
+      // again. Wording from the signed-off sketch's waiting card.
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-checking', 'is-waking', 'is-paused', 'is-outcome');
+      v3SetText('activeLiveIco', '◷');
+      v3SetText('activeLiveL1', 'Waiting for this Mac');
+      v3SetText('activeLiveL2', 'the app was closed · nothing is running · move it to the VM to keep going');
+    } else if (liveEl) liveEl.hidden = true;
     // A finished run keeps its account pills. They are the only surface carrying
     // per-account state - sent counts, No credits / Logged out / Weekly cap - and
     // hiding the stage outright here is what made this card differ from the
@@ -25346,7 +25572,7 @@ window.renderActiveCard = function(status) {
       const lastN = status.logs.slice(-200);
       logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
       const head = card.querySelector('.vj-log-head .vj-details-head');
-      if (head) head.textContent = `Live log · ${lastN.length} events (finished)`;
+      if (head) head.textContent = `Live log · ${lastN.length} events${isWaitingHere ? ' (waiting)' : ' (finished)'}`;
       const moreBtn = document.getElementById('wiz-log-more');
       if (moreBtn) moreBtn.hidden = true;
     }

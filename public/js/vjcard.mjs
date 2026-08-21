@@ -57,6 +57,12 @@ export function statusFromItem(it = {}) {
     // slowdown that isn't happening. Equal ⇒ not slowed, which is the truth.
     checkIntervalBaseMinutes: Number(it.checkIntervalBaseMinutes) || Number(it.checkIntervalMinutes) || 60,
     emptyCheckStreak: Number(it.emptyCheckStreak) || 0,
+    // Which side owns the campaign + when it last changed hands, for the card's
+    // RUNNING ON control. Whitelisted here so a board item that carries them
+    // reaches the card; absent ⇒ the control falls back to where the campaign
+    // lives (cloud ⇒ the VM, local ⇒ this Mac).
+    runsOn: it.runsOn || '',
+    handoverAt: it.handoverAt || null,
     // The finished-FG reason line reads all three of these. Leaving them out of
     // this whitelist is why a done FG card on the board never explained itself:
     // _fgFinishedNote returns null the moment `bucket` is undefined, so the

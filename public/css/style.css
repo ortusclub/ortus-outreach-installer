@@ -8484,3 +8484,31 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
   .mg-led { border-left: none; border-top: 1px solid var(--hairline); }
   .mg-led:first-child { border-top: none; }
 }
+
+/* ── Handover: which side a live campaign runs on ───────────────────────────
+   Ported verbatim from public/sketches/2026-08-21-vm-local-handover.html
+   (variant C, signed off). Tokens only — hairlines, mono type, radius 9999 on
+   the pill. No new colour: gold stays reserved for the Start CTA. */
+.wh { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      border-top: 1px solid var(--hairline); }
+.wh-lab { font-family: var(--mono); font-size: .64rem; letter-spacing: .14em;
+          text-transform: uppercase; color: var(--gray); }
+.wh-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; overflow: hidden; }
+.wh-seg button { font-family: var(--mono); font-size: .68rem; letter-spacing: .08em;
+                 text-transform: uppercase; padding: 5px 14px; border: 0; background: transparent;
+                 color: var(--gray); cursor: pointer; }
+.wh-seg button.on { background: var(--ink); color: var(--bg); }
+.wh-seg button.busy { color: var(--ink); }
+.wh-seg button[disabled] { cursor: default; }
+.wh-note { font-family: var(--mono); font-size: .7rem; color: var(--gray); margin-left: auto; }
+.wh-warn { font-family: var(--mono); font-size: .7rem; color: var(--ink); margin-left: auto; }
+
+/* Variant C's inline confirm strip — same hairline language. */
+.wh-confirm { border-top: 1px solid var(--hairline); padding: 12px 14px;
+              font-family: var(--mono); font-size: .74rem; line-height: 1.6; }
+.wh-confirm b { font-weight: 600; }
+.wh-confirm .row { display: flex; gap: 8px; margin-top: 10px; }
+.wh-confirm button { font-family: var(--mono); font-size: .68rem; letter-spacing: .08em;
+                     text-transform: uppercase; padding: 6px 16px; border: 1px solid var(--hairline);
+                     border-radius: 9999px; background: transparent; cursor: pointer; }
+.wh-confirm button.go { background: var(--ink); color: var(--bg); border-color: var(--ink); }

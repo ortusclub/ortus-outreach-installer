@@ -5780,6 +5780,12 @@ export function getCampaignStatus() {
       : null,
     checkIntervalBaseMinutes: campaign.checkIntervalMinutes || null,
     emptyCheckStreak: Math.max(0, Number(campaign.emptyCheckStreak) || 0),
+    // Which side owns this campaign, and when it last changed hands. Stamped by
+    // the handover routes in server.js (and by launchCampaign for any run that
+    // starts here). The card's RUNNING ON control reads exactly these two: an
+    // absent runsOn means nobody has ever moved this campaign, which is 'local'.
+    runsOn: campaign.runsOn || 'local',
+    handoverAt: campaign.handoverAt || null,
     // v2.14.x: surface the tick re-entrancy guard so the cockpit + run-bar
     // can flip to "Checking now…" while a bulk-check is mid-fire.
     monitoringCheckInProgress: _checkInProgress,

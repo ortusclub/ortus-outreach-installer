@@ -1189,6 +1189,13 @@ function launchCampaign(config, owner) {
   // Central operator-identity gate — both the HTTP start route AND the ungated
   // queue drain (runNextFromQueue) funnel through here. No identity → refuse.
   if (blockIfNoOperatorEmail(`campaign "${(config && config.name) || ''}"`, owner)) return;
+  // Anything that launches HERE runs here. Without this a campaign moved to the
+  // VM leaves campaign.runsOn === 'vm' behind, and the next local run would show
+  // the card's RUNNING ON control filled on the wrong side. handoverToLocal
+  // re-stamps both fields immediately after it calls this, so "moved N min ago"
+  // survives the reset.
+  campaign.runsOn = 'local';
+  campaign.handoverAt = null;
   preventSleep('campaign');
   startCampaign({ ...config, createdBy: owner }).then(() => {
     const status = getCampaignStatus();
@@ -2274,11 +2281,13 @@ async function handoverToLocal(id, req, res) {
   // so the adaptive backoff re-earns itself from scratch on this side too. The
   // engine reset its own streak inside handover-release.
   campaign.emptyCheckStreak = 0;
-  campaign.runsOn = 'local';
-  campaign.handoverAt = Date.now();
   campaignLog(`⇄ Moved here from the Cloud VM: ${remaining} lead(s) still to do, ${excluded.length} already done there. Acceptance checks restart at ${config.checkIntervalMinutes} min.`);
   cloudLog(`[cloud] handover: ${id} → local (${remaining} remaining, ${excluded.length} excluded)`);
+  // After launchCampaign, which stamps local ownership itself and would clear
+  // handoverAt: this is the move, so it keeps the timestamp.
   launchCampaign(config, req.user);
+  campaign.runsOn = 'local';
+  campaign.handoverAt = Date.now();
   return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length });
 }
 
