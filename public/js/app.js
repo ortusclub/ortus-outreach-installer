@@ -32,6 +32,7 @@ import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, 
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
+import { shouldPoll } from '/js/pollgate.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
@@ -1706,7 +1707,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // already-running campaign across page refreshes. If a campaign is live,
   // this also kickstarts continuous polling via the running-detect path.
   pollStatus().then(() => {
-    if (__cockpit.running) startPolling();
+    // Monitoring campaigns poll too. See pollgate.mjs for why this used to
+    // render once and freeze.
+    if (shouldPoll(__cockpit)) startPolling();
   }).catch(() => {});
 
   // Phase 2.8.14: relocate the Throughput section (#nav-pace) to sit right
