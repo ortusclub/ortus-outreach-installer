@@ -7254,6 +7254,26 @@ function _cloudSaveDismissed() {
 // the source Google Sheet.
 const _cloudSheetUrls = new Map();
 
+// campaign id → when the operator asked the VM for a sweep. The engine only
+// stamps monitor_check_started_at once a worker claims the task, and the board's
+// cloud snapshot refreshes on its own timer, so between the click and that
+// moment the card still read "nothing running right now" — directly under a
+// button the operator had just pressed. This bridges exactly that gap: the
+// engine's own started/completed pair takes over the instant it arrives, and the
+// marker expires by itself so a sweep that never starts cannot leave the card
+// claiming one is.
+const _cloudCheckAsked = new Map();
+const CLOUD_CHECK_ASK_TTL_MS = 90000;
+function _cloudCheckAskedActive(c) {
+  const asked = _cloudCheckAsked.get(c.id);
+  if (!asked) return false;
+  // The engine has spoken since we asked — its answer wins, either way.
+  const done = Date.parse(c.monitor_check_completed_at || '');
+  if (Number.isFinite(done) && done >= asked) { _cloudCheckAsked.delete(c.id); return false; }
+  if (Date.now() - asked > CLOUD_CHECK_ASK_TTL_MS) { _cloudCheckAsked.delete(c.id); return false; }
+  return true;
+}
+
 // Reconstruct a per-lead log (parity with a local campaign's live log) from the
 // cloud engine's per-lead status rows (GET /api/campaign/:id/leads). Ordered
 // chronologically (oldest → newest) so the render's slice(-8) shows the most
@@ -10595,7 +10615,8 @@ async function _renderCampaignsBoardInner() {
         monitorTaskStatus: c.monitorTaskStatus || null,
         monitorTaskDueAt: c.monitorTaskDueAt || null,
         monitorCheckStartedAt: c.monitor_check_started_at || null,
-        monitoringCheckInProgress: !!(c.monitor_check_started_at && !c.monitor_check_completed_at),
+        monitoringCheckInProgress: !!(c.monitor_check_started_at && !c.monitor_check_completed_at)
+          || _cloudCheckAskedActive(c),
       });
       // Handed to this Mac: the checks run HERE, so the engine's copy of the
       // monitor state froze at handover. Same overlay card #2 gets.
@@ -11629,6 +11650,10 @@ async function cloudCheckNow(id, btn, scope) {
       showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Check now isn’t live yet — engine update pending.', 6000);
     } else {
       queued = true;
+      // Say so on the card in the same tick as the toast, not on whatever the
+      // background cloud snapshot next brings back.
+      _cloudCheckAsked.set(id, Date.now());
+      try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* the next repaint still shows it */ }
       _pushCloudEvent(id, scope === 'all' ? '⚡ Check now — every account in the Account Used column' : '⚡ Check now — this campaign’s accounts');
       showCampaignToast(scope === 'all'
         ? '⚡ Check queued — the VM will sweep every account in the sheet’s Account Used column…'
