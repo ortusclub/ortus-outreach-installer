@@ -46,7 +46,9 @@ The same answers, in the same shapes, for local and cloud runs.
 - A per-account panel on the campaign card, in the three states: sending,
   checking, monitoring.
 - A loud banner on the card while a sweep or a send is actually in flight.
+- A Stop button that kills a check in progress immediately.
 - Continuous polling for monitoring campaigns.
+- Enlarging and correcting the VM/local handover banner.
 - Filling the gaps in the operator-facing log, on both sides.
 - Promoting existing `console.log` calls in `src/linkedin/outreach.js` and
   `src/linkedin/actions.js` onto the campaign log bus. Logging only. No logic,
@@ -161,7 +163,65 @@ when the campaign reaches a terminal state so an idle tab does not poll forever.
 This fix is load bearing. Without it every other change in this spec renders
 once and then freezes, which is indistinguishable from the bug we are fixing.
 
-### D. Log completeness
+### D. Stop the check
+
+Today a check cannot be stopped. `src/campaign.js:6059` sets `_checkInProgress`
+and then sits on a single long `await runMonitoringCheckAll()` that walks every
+account, opening a GoLogin browser for each. No flag is read mid-sweep. The only
+exit is quitting the app, which is what the operator has actually been doing.
+
+While the banner from section B is up, it carries a Stop control. Pressing it
+stops the sweep immediately, mid-lead. The browsers close, the sweep does not
+advance to the next account, and the card returns to the normal monitoring band
+with the next check still scheduled. Stopping a check never stops monitoring
+itself.
+
+Immediate means immediate, by the operator's explicit decision. The cost is
+accepted and handled rather than designed around: a lead whose check was already
+in flight can be left read but not stamped. The mitigation is not to soften the
+kill, it is to remember it. On stop, the interrupted person is named in the log
+("stopped while checking Rina Chandran, she will be checked again next sweep")
+and is left unstamped so the next sweep re-reads her. A half-read lead must never
+be recorded as a finished one.
+
+The abort flag is checked at every point the sweep is about to start new work, so
+a stop lands within one lead rather than at the end of the account. The `finally`
+block at `src/campaign.js:6085` already reschedules only when
+`campaign.state === 'monitoring'`; a stopped check must clear `_checkInProgress`
+and leave `nextCheckAt` alone, so the cadence is unchanged by the interruption.
+
+The same control appears for cloud checks. A stop on a VM campaign sets the
+abort on the engine side; the worker checks it between leads exactly as local
+does.
+
+### E. The handover banner
+
+`.sn-handover` (`public/index.html:1689`) is the banner that says the run is
+moving between this Mac and the VM. It is 12.5px grey text beside a 16px
+spinner, and `app.js:236` hides it after five seconds whether or not the switch
+has finished.
+
+Both of those are wrong for what it has to communicate. It gets the same
+treatment as the section B banner, for the same reason: this is the moment the
+operator is most likely to think the app has hung and start clicking.
+
+- Display type, uppercase, at the same weight as the checking banner. Readable
+  from across the room, unmissable to someone with no patience.
+- The spinner scales with it.
+- It stays up until the handover is genuinely finished, then clears itself. The
+  five-second timeout goes. A banner that disappears while the switch is still
+  running is the same class of bug as the frozen card in section C: the UI
+  reporting a state it has not verified.
+- The copy says plainly which way it is moving and what the operator should do,
+  which is wait. It names both ends: "moving this campaign from your Mac to the
+  Cloud VM, this takes a moment, leave the app open."
+- The existing em dashes in the three copy branches at `app.js:227-235` are
+  replaced. House rule, and they read badly at display size.
+
+Colour stays inside the system: the existing red left border for the stopping
+branch, the existing green for launching.
+
+### F. Log completeness
 
 Both sides already have a plain-English feed. The work is filling the holes in
 it, not replacing it.
@@ -204,6 +264,12 @@ next, and reads as a sentence.
 - Log lines are verified by reading the actual feed off a live campaign, local
   and cloud, and confirming no line contains a bare counter, a field dump, or an
   internal name.
+- Stop is verified against a real sweep, not a stub: start a check across
+  several accounts, press Stop mid-account, and confirm the browsers close, the
+  sweep does not touch the next account, `nextCheckAt` is unchanged, and the
+  interrupted person is named in the log and re-checked on the following sweep.
+- The handover banner is verified by triggering a real local-to-VM switch and
+  confirming it is still up when the switch completes, not gone at five seconds.
 - Engine work is verified after `./deploy.sh`, against the live feed.
 
 ## Risks
@@ -212,6 +278,14 @@ next, and reads as a sentence.
   panel consumes gets added there in the same task that introduces it.
 - The rail centring maths runs off `scrollWidth / columns`; a column whose
   content changes height must not change its width, or centring drifts.
+- A mid-lead kill can leave a lead read but not stamped. This is the operator's
+  chosen trade and is handled by leaving the lead unstamped and naming it in the
+  log, so the next sweep re-reads it. The failure mode to watch for in review is
+  the opposite one: a partially-read lead being written as finished.
+- Closing a GoLogin browser mid-operation is not the same as closing it between
+  leads. The stop path must close cleanly enough that the profile is reusable on
+  the next sweep, or a stop costs the operator an account until they reopen it in
+  GoLogin.
 - Raising the Redis log cap raises memory per campaign. The TTL bounds it, but
   the new cap should be chosen against the real per-turn line count, measured,
   not guessed.
