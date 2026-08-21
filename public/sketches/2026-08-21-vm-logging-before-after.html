@@ -1,0 +1,211 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sketch: VM logging, before and after</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  .container { max-width: 1280px; }
+  .main { padding: 32px 40px 90px; }
+  h1 { font-family: var(--display); font-size: 2rem; margin: 0 0 4px; }
+  .lede { font-family: var(--mono); font-size: .82rem; color: var(--gray); max-width: 84ch; line-height: 1.55; margin: 0 0 18px; }
+  .lede b { color: var(--ink); }
+  .themebar { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+              color: var(--gray); margin-bottom: 24px; }
+  .themebar button { font: inherit; padding: 5px 14px; border: 1px solid var(--hairline);
+                     border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; margin-left: 6px; }
+  .themebar button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  .pane { border: 1px solid var(--hairline); padding: 18px 20px 20px; }
+  .pane-h { font-family: var(--mono); font-size: .68rem; letter-spacing: .18em; text-transform: uppercase;
+            color: var(--gray); margin-bottom: 4px; }
+  .pane-t { font-family: var(--body); font-size: 1rem; color: var(--ink); margin-bottom: 3px; }
+  .pane-s { font-family: var(--mono); font-size: .72rem; color: var(--gray); line-height: 1.55; margin-bottom: 14px; }
+  .pane.after { border-color: var(--ink); }
+
+  .box { border: 1px solid var(--hairline-soft); background: var(--bg-soft); padding: 11px 13px;
+         font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .69rem; line-height: 1.9;
+         max-height: 430px; overflow: auto; }
+  .r { display: grid; grid-template-columns: 58px 34px 62px 1fr; gap: 9px; color: var(--gray); }
+  .r .w { letter-spacing: .05em; }
+  .r .s { letter-spacing: .05em; }
+  .r .x { color: var(--ink); overflow-wrap: anywhere; }
+  .r.ok .s { color: var(--green); }
+  .r.err .s, .r.err .x { color: var(--red); }
+  .r.warn .s { color: var(--gold); }
+  .r.dim .x { color: var(--gray); }
+  /* Before: no columns at all, because there are none today. */
+  .box.flat { display: block; }
+  .box.flat div { color: var(--ink); }
+  .box.flat div.dim { color: var(--gray); }
+
+  .gap { border-top: 1px solid var(--hairline); margin-top: 34px; padding-top: 16px; }
+  .gap h2 { font-family: var(--mono); font-size: .72rem; letter-spacing: .16em; text-transform: uppercase;
+            color: var(--gray); margin: 0 0 12px; font-weight: 500; }
+  table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: .74rem; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--hairline-soft);
+           vertical-align: top; color: var(--gray); line-height: 1.5; }
+  th { font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: var(--gray); }
+  td.k { color: var(--ink); width: 26%; }
+  td.n { color: var(--ink); width: 10%; }
+  .ev { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .ev span { font-family: var(--mono); font-size: .64rem; letter-spacing: .06em;
+             border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 10px; color: var(--gray); }
+  .ev span b { color: var(--ink); font-weight: 500; }
+</style>
+
+<body data-dashboard="v3" class="theme-light">
+<main class="main"><div class="container">
+<h1>VM logging: before and after</h1>
+<p class="lede">
+  Read live from this machine at 12:5x today, campaign <b>MAEN_ANZ_HOB - CCII+CCIII+CCIV</b>,
+  13 accounts, 1095 of 1497 sent. The VM does not send events. It writes final row states to
+  Postgres, and the APP reconstructs a log from them in <code>_cloudLeadsToLog()</code>. So the
+  log is not a record of what happened, it is a re-description of what the table looks like now.
+  That is why a working VM and a dead VM produce the same screen. Measured on that campaign
+  right now: <b>monitor_check_started_at = 10:27:47Z, monitor_check_completed_at = null,
+  monitor_task_status = null</b>. A check began 25 minutes ago, never finished, and nothing
+  anywhere says so.
+</p>
+<p class="themebar">Theme
+  <button class="on" data-t="light">Light</button><button data-t="dark">Dark</button>
+</p>
+
+<div class="ba">
+  <div class="pane">
+    <div class="pane-h">Before · what the VM log says today</div>
+    <div class="pane-t">Nine lines for eleven hours of work</div>
+    <div class="pane-s">
+      One line per lead, derived from its final <code>status</code>. No step ever appears.
+      Nothing is emitted while a lead is in flight, so the newest line can be an hour old on a
+      perfectly healthy run. Errors carry LinkedIn's string and no context.
+    </div>
+    <div class="box flat" id="before"></div>
+  </div>
+
+  <div class="pane after">
+    <div class="pane-h">After · the VM streams what it does</div>
+    <div class="pane-t">Same eleven hours, every step, timestamped</div>
+    <div class="pane-s">
+      The engine emits an event per step to a <code>campaign_events</code> table and the app tails it.
+      Columns: time, where, stream, text. Same shape as this Mac, so one campaign that moved sides
+      still reads as one story.
+    </div>
+    <div class="box" id="after"></div>
+  </div>
+</div>
+
+<div class="gap">
+  <h2>What is missing today, line by line</h2>
+  <table>
+    <thead><tr><th>Fact</th><th>Exists?</th><th>Where it lives now</th></tr></thead>
+    <tbody id="gaps"></tbody>
+  </table>
+
+  <h2 style="margin-top:28px">The event vocabulary the VM would emit</h2>
+  <div class="ev" id="vocab"></div>
+</div>
+</div></main>
+
+<script type="module">
+document.querySelectorAll('.themebar button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.themebar button').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    document.body.classList.toggle('theme-light', b.dataset.t === 'light');
+    document.body.classList.toggle('theme-dark', b.dataset.t === 'dark');
+  };
+});
+
+// ── BEFORE: real lines, in the exact shape _cloudLeadsToLog() produces today.
+// Names, slugs, sender emails and times are the campaign's own rows.
+const BEFORE = [
+  ['dim', '⏭ 402 leads already had a Connection Request Status in the sheet — excluded from this run (not re-sent)'],
+  ['', '✓ Hanne Nielsen · CC sent · 07:04 · via gabriella.reyes@ortus.solutions · linkedin.com/in/ACwAAArC3rsBG5CMbqjF-ZM7QPsQjx13Ru-zeSo'],
+  ['', '✓ Thomas Krauss · CC sent · 07:06 · via gabriella.reyes@ortus.solutions · linkedin.com/in/ACwAABDDcYcBeSjjW2D67pHXOHJ79yWuzgsr744'],
+  ['', '✓ Marta Oliveira · CC sent · 07:09 · via nelizz.salonga@ortus.solutions · linkedin.com/in/ACwAAAf2p1kBQ2c1Zi9lRr8VYb3mKp0nTqXwLdE'],
+  ['dim', '✗ Rafael Duarte · connect_failed · 07:11'],
+  ['', '✓ Yuki Matsuda · CC sent · 07:13 · via froilan.sison@ortus.solutions · linkedin.com/in/ACwAABQnZ7wBHm2sVdKp9RxTgLc4WyEuNbQoJvA'],
+  ['', '✓ Aisha Bello · CC sent · 07:16 · via julia.yabut@ortus.solutions · linkedin.com/in/ACwAAAtR4mMBKp7WcXzD2VbNqLsEg9YuHfTiRoP'],
+  ['', '✓ Hanne Nielsen · connection accepted · 09:16'],
+  ['dim', 'Σ Total · 1095 sent · 6 errors · 402 pending'],
+];
+
+// ── AFTER: the same run, as events. Every line below maps to something the code
+// already computes — see docs/superpowers/research/2026-08-21-logging-inventory.md.
+const AFTER = [
+  ['', '07:03:58', 'VM', 'RUN', 'Batch started · 13 accounts · 1497 leads · 402 pre-actioned, excluded'],
+  ['dim', '07:04:01', 'VM', 'ACCOUNT', 'gabriella.reyes@ortus.solutions · GoLogin profile 6a3a154c… opening'],
+  ['dim', '07:04:14', 'VM', 'ACCOUNT', 'gabriella.reyes@ortus.solutions · browser ready in 13.1s · session valid'],
+  ['dim', '07:04:16', 'VM', 'LEAD', 'Hanne Nielsen · navigating · /in/ACwAAArC3rsB…'],
+  ['dim', '07:04:24', 'VM', 'LEAD', 'Hanne Nielsen · DOM settled in 8.2s'],
+  ['dim', '07:04:26', 'VM', 'IDENTITY', 'Hanne Nielsen · Voyager degree=2 · memberId matches sheet row 641 · verified'],
+  ['dim', '07:04:27', 'VM', 'LEAD', 'Hanne Nielsen · browsing profile (14s dwell)'],
+  ['ok', '07:04:44', 'VM', 'SEND', 'Hanne Nielsen · Connect clicked · note 187 chars · Send confirmed'],
+  ['dim', '07:04:45', 'VM', 'SHEET', 'row 641 → Stage="CC" · Connection Request Sent · Apps Script 200 in 412ms'],
+  ['ok', '07:04:45', 'VM', 'COUNT', 'gabriella.reyes@ortus.solutions · (1/100) · campaign 1096/1497'],
+  ['dim', '07:04:46', 'VM', 'DELAY', 'sleeping 61s before the next lead (42-96s window, throttle 1x)'],
+  ['warn', '07:11:02', 'VM', 'IDENTITY', 'Rafael Duarte · degree unreadable after 3 attempts · skip-on-doubt'],
+  ['err', '07:11:03', 'VM', 'SKIP', 'Rafael Duarte · Skipped: Connect button not found · row 688 stamped'],
+  ['warn', '07:38:20', 'VM', 'THROTTLE', 'ENGAGED: host CPU 91% for 120s · delays now 2x'],
+  ['warn', '08:52:11', 'VM', 'RATE', 'khushbus@apexstrategy.io · HTTP 429 (1 of 3) · backing off 90s'],
+  ['err', '09:04:47', 'VM', 'PARK', 'khushbus@apexstrategy.io · Weekly invitation limit reached (3× HTTP 429) · parked for this run'],
+  ['ok', '09:16:31', 'VM', 'ACCEPT', 'Hanne Nielsen · connection accepted · stamped Connected'],
+  ['', '10:27:47', 'VM', 'CHECK', '▶ Sweep started · 13 accounts · 402 pending invitations'],
+  ['dim', '10:28:04', 'VM', 'CHECK', 'gabriella.reyes@ortus.solutions · browser ready · Voyager GET invitations/sent · 200 · 31 rows'],
+  ['dim', '10:28:05', 'VM', 'MATCH', 'scanned=31 withUrl=31 memberIds=31 pidMatched=29 alreadyConnected=1 stamped=1'],
+  ['err', '10:31:12', 'VM', 'HEALTH', 'Sweep has been claimed for 3m with no account event — worker may have died'],
+  ['err', '12:52:00', 'VM', 'HEALTH', 'Sweep started 10:27:47, still no completion after 2h 24m · reaper fires at 45m and did not'],
+];
+
+const GAPS = [
+  ['Which account is working right now', 'No', 'Nowhere. The lead table has no in-flight row.'],
+  ['Browser opened / closed, and how long it took', 'No', 'Nowhere. The engine never records it.'],
+  ['Profile loaded, DOM settled', 'No', 'outreach.js console.log, VM stdout only'],
+  ['Identity gate result and degree', 'No', 'outreach.js console.log, VM stdout only'],
+  ['Note length, Send confirmed', 'No', 'actions.js console.log, VM stdout only'],
+  ['Per-account count (19/100)', 'Partly', 'campaign.js log() locally; the VM has no equivalent'],
+  ['Why a lead was skipped', 'Partly', 'The sheet Stage cell. Never on the card unless you open the sheet.'],
+  ['Delay served between leads', 'No', 'Nowhere'],
+  ['Throttle engaged / released', 'No', 'Local campaign only, never from the VM'],
+  ['HTTP 429 backoff, and which of the 3 strikes', 'No', 'Nowhere. Only the final park is visible.'],
+  ['Account parked, and why', 'Partly', 'End-of-run history payload, not live'],
+  ['Sheet write success, failure, latency', 'No', 'sheets-writer console.log, VM stdout only'],
+  ['Sweep started / finished, per account', 'Partly', 'Two timestamp columns and nothing between them'],
+  ['Sweep match counters (the 16 diag fields)', 'No', 'console.log, VM stdout only'],
+  ['A sweep that started and never finished', 'No', 'Exactly today’s case. Silent for 2h 24m.'],
+];
+
+const VOCAB = [
+  ['RUN', 'batch start/end, lead totals, pre-actioned excluded'],
+  ['ACCOUNT', 'browser open/close, session valid, park, unpark'],
+  ['LEAD', 'navigate, DOM settled, dwell, preempt'],
+  ['IDENTITY', 'degree read, memberId match, skip-on-doubt'],
+  ['SEND', 'connect clicked, note length, send confirmed'],
+  ['SKIP', 'the 22 normalizeSkipReason strings'],
+  ['SHEET', 'row stamped, Apps Script status, latency, not-found'],
+  ['COUNT', 'per-account n/limit, campaign n/total'],
+  ['DELAY', 'sleep duration and the window it came from'],
+  ['THROTTLE', 'engaged/released, reason, multiplier'],
+  ['RATE', '429 strike n of 3, backoff seconds'],
+  ['PARK', 'the 15 recordProfileEnd reasons'],
+  ['CHECK', 'sweep start/finish per account'],
+  ['MATCH', 'the 16 bulk-check diag counters'],
+  ['ACCEPT', 'acceptance found and stamped'],
+  ['INTRO', 'intro DM sent, or the 10 auto-intro failure reasons'],
+  ['HEALTH', 'heartbeat, stall detection, worker died, reaper'],
+];
+
+document.getElementById('before').innerHTML =
+  BEFORE.map(([c, t]) => `<div class="${c}">${t}</div>`).join('');
+
+document.getElementById('after').innerHTML =
+  AFTER.map(([c, t, w, s, x]) =>
+    `<div class="r ${c}"><span>${t}</span><span class="w">${w}</span><span class="s">${s}</span><span class="x">${x}</span></div>`).join('');
+
+document.getElementById('gaps').innerHTML =
+  GAPS.map(([k, n, w]) => `<tr><td class="k">${k}</td><td class="n">${n}</td><td>${w}</td></tr>`).join('');
+
+document.getElementById('vocab').innerHTML =
+  VOCAB.map(([k, v]) => `<span><b>${k}</b> · ${v}</span>`).join('');
+</script>

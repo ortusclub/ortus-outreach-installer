@@ -56,11 +56,31 @@
   .sp-meta { margin-left: auto; font-family: var(--mono); font-size: .7rem; color: var(--gray); letter-spacing: .03em; }
   .sp-sub { font-family: var(--mono); font-size: .71rem; color: var(--gray); padding: 5px 16px 0; letter-spacing: .02em; }
 
-  .sp-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 13px; }
-  .sp-col { border-top: 1px solid var(--hairline-soft); border-right: 1px solid var(--hairline-soft);
+  /* Three columns visible, the live account CENTRED, the one before it on the
+     left and the one after on the right. Scrolls horizontally for the rest —
+     a 13-account campaign is 13 columns, not 13 stacked blocks. When the live
+     account is the first, it sits leftmost instead (nothing precedes it). */
+  .sp-grid { display: flex; margin-top: 13px; overflow-x: auto; scroll-behavior: smooth;
+             scroll-snap-type: x mandatory; scrollbar-width: thin; }
+  .sp-col { flex: 0 0 33.3333%; scroll-snap-align: center;
+            border-top: 1px solid var(--hairline-soft); border-right: 1px solid var(--hairline-soft);
             padding: 14px 16px 12px; min-width: 0; }
+  .sp-col:first-child { scroll-snap-align: start; }
   .sp-col:last-child { border-right: 0; }
-  .sp-col.is-live { background: var(--hairline-soft); }
+  /* The rail's own hairline scrollbar — the design system has no other. */
+  .sp-grid::-webkit-scrollbar { height: 3px; }
+  .sp-grid::-webkit-scrollbar-thumb { background: var(--hairline); }
+  .sp-grid::-webkit-scrollbar-track { background: transparent; }
+
+  /* Position readout + arrows, only when there is more than one screenful. */
+  .sp-nav { display: flex; align-items: center; gap: 8px; margin-left: 14px; }
+  .sp-nav button { font-family: var(--mono); font-size: .7rem; line-height: 1; width: 24px; height: 24px;
+                   border: 1px solid var(--hairline); border-radius: 9999px; background: transparent;
+                   color: var(--gray); cursor: pointer; }
+  .sp-nav button:hover { color: var(--ink); border-color: var(--ink); }
+  .sp-pos { font-family: var(--mono); font-size: .62rem; letter-spacing: .12em;
+            text-transform: uppercase; color: var(--gray); }
+  .sp-col.is-live { background: var(--hairline-soft); box-shadow: inset 2px 0 0 var(--blue); }
 
   .sp-who { font-family: var(--body); font-size: .82rem; color: var(--ink);
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -172,14 +192,17 @@ function panel({ verb, meta, sub, still, cols, why }) {
   el.className = 'sp';
   el.innerHTML = `
     <div class="sp-head">
-      <span class="sp-verb"><i class="sp-dot${still ? ' still' : ''}"></i>${verb}${still ? '' : '<span class="sp-live">Live</span>'}</span>
+      <span class="sp-verb"><i class="sp-dot${still ? ' still' : ''}"></i>${verb}</span>
       <span class="sp-meta">${meta}</span>
+      ${cols.length > 3 ? `<span class="sp-nav"><button data-d="-1">&lsaquo;</button>`
+        + `<span class="sp-pos">${(cols.findIndex((c) => c.live) + 1) || 1} of ${cols.length}</span>`
+        + `<button data-d="1">&rsaquo;</button></span>` : ''}
     </div>
     <div class="sp-sub">${sub}</div>
     <div class="sp-grid">${cols.map((c) => `
       <div class="sp-col${c.live ? ' is-live' : ''}">
-        <div class="sp-who" title="${c.who}">${c.who}</div>
-        <div class="sp-state">${c.state}</div>
+        <div class="sp-who" title="${c.who}">${c.live ? '<i class="sp-dot"></i>' : ''}${c.who}</div>
+        <div class="sp-state">${c.state}${c.live ? '<span class="sp-live">Live</span>' : ''}</div>
         ${c.count ? `<div class="sp-count"><b>${c.count.done}/${c.count.of}</b><span>${c.count.label}</span></div>
           <div class="sp-cbar"><i style="width:${Math.round((c.count.done / c.count.of) * 100)}%"></i></div>` : ''}
         <div class="sp-steps">${c.steps.map((s) => `
@@ -192,6 +215,19 @@ function panel({ verb, meta, sub, still, cols, why }) {
     </div>
     ${why ? `<div class="sp-why"><span class="sp-why-h">${why.head}</span>${why.rows.map((r) =>
       `<span class="r">${r[0]} <b>${r[1]}</b></span>`).join('')}</div>` : ''}`;
+
+  // Centre the rail on the live account. Index 0 stays flush left: there is no
+  // previous account to show beside it, and half a blank column reads as broken.
+  const rail = el.querySelector('.sp-grid');
+  const liveIdx = cols.findIndex((c) => c.live);
+  const centreOn = (i) => {
+    const w = rail.scrollWidth / cols.length;
+    rail.scrollLeft = i <= 0 ? 0 : Math.max(0, (i - 1) * w);
+  };
+  requestAnimationFrame(() => centreOn(liveIdx));
+  el.querySelectorAll('.sp-nav button').forEach((b) => {
+    b.onclick = () => { rail.scrollLeft += Number(b.dataset.d) * (rail.scrollWidth / cols.length); };
+  });
   return el;
 }
 
@@ -374,6 +410,83 @@ section(
       ] },
     }));
     wrap.append(s);
+  }
+);
+
+// ══ 2b. THIRTEEN ACCOUNTS — the rail ══════════════════════════════════════
+const MAEN = [
+  'adri@ortusclub.com', 'rein@ortusclub.com', 'mefanier@ortus.solutions',
+  'camillec@ortus.solutions', 'selassie.a@ortus.solutions', 'joyce.n@ortus.solutions',
+  'karen.d@ortus.solutions', 'tricia@ortus.solutions', 'mark.b@ortus.solutions',
+  'lian@ortus.solutions', 'grace.o@ortus.solutions', 'devon.k@ortus.solutions',
+  'ruth.a@ortus.solutions',
+];
+const DONE_STEPS = (b, pl, id, cs, sh) => [
+  ['ok', 'Browser opened', b], ['ok', 'Profile loaded', pl],
+  ['ok', 'Identity verified · degree 2', id], ['ok', 'Connect sent with note', cs],
+  ['ok', 'Sheet stamped', sh], ['ok', 'Delay served', '—'],
+];
+const WAIT_STEPS = [
+  ['wait', 'Browser opened', ''], ['wait', 'Profile loaded', ''],
+  ['wait', 'Identity check', ''], ['wait', 'Connect sent', ''],
+  ['wait', 'Sheet stamped', ''], ['wait', 'Delay', ''],
+];
+
+section(
+  'State 2b — thirteen accounts, and the rail',
+  'MAEN_ANZ_HOB runs 13 accounts. The rail shows three at a time with the LIVE one centred, the previous on its left and the next on its right, and scrolls for the rest. The exception is account 1: nothing precedes it, so it sits flush left rather than leaving half a blank column. Position reads "7 of 13" beside the arrows.',
+  (wrap) => {
+    const LIVE_AT = 6; // account 7 of 13
+    const cols = MAEN.map((who, i) => {
+      if (i < LIVE_AT) {
+        return { who, state: 'Sent · waiting out the delay',
+          count: { done: 19 - (LIVE_AT - i), of: 100, label: 'this account' },
+          steps: DONE_STEPS('11.2s', '9.4s', '2.1s', '3.7s', '0.6s'),
+          res: `<b>${19 - (LIVE_AT - i)}</b> sent · <b>${i % 3}</b> not hit`,
+          miss: i % 3 ? { head: 'Not hit, and why', rows: [
+            ['Marcus Ilori', 'Skipped: Profile not found (404)', '12:19'],
+          ] } : null };
+      }
+      if (i === LIVE_AT) {
+        return { who, state: 'Sending', live: true,
+          count: { done: 16, of: 100, label: 'this account' },
+          steps: [
+            ['ok', 'Browser opened', '13.9s'], ['ok', 'Profile loaded', '8.8s'],
+            ['now', 'Identity check · reading degree', '…'], ['wait', 'Connect sent', ''],
+            ['wait', 'Sheet stamped', ''], ['wait', 'Delay', ''],
+          ],
+          res: '<b>16</b> sent · <b>1</b> not hit · 0 errors',
+          miss: { head: 'Not hit, and why', rows: [
+            ['Priya Raman', 'Skipped: Lead timed out', '12:11'],
+          ] } };
+      }
+      return { who, state: 'Queued · waiting for a browser slot',
+        count: { done: 0, of: 100, label: 'this account' },
+        steps: WAIT_STEPS, res: 'not started this round' };
+    });
+    const c = baseCard({
+      tag: 'SENDING', hero: 'send', count: '73', cap: '73%',
+      l1: { ico: '→', t: 'Sending a connection request' },
+      l2: 'karen.d@ortus.solutions · Rina Chandran · Reuters',
+      line: '<span><b>1095</b> of 1497 sent</span><span>Next batch in <b>12m 04s</b></span>',
+      log: [
+        { t: '12:41:02', where: 'VM', evt: 'info', what: '▶ Batch started · 13 accounts · 402 leads to go' },
+        { t: '12:41:44', where: 'VM', evt: 'ok', what: 'joyce.n@ortus.solutions · connect sent with note · (18/100)', cls: 'is-ok' },
+        { t: '12:41:45', where: 'VM', evt: 'log', what: 'sheet: row 892 → "Connection Request Sent" · Apps Script 200' },
+        { t: '12:41:52', where: 'VM', evt: 'log', what: 'karen.d@ortus.solutions · profile loaded · identity check' },
+      ],
+    });
+    c.append(panel({
+      verb: 'Sending connection requests',
+      meta: '☁︎ Cloud VM · 1095 of 1497 sent · 402 leads to go',
+      sub: '13 accounts · delay 42-96s between sends · pre-filter dropped 0 rows',
+      cols,
+      why: { head: 'Not hit this run · 11 of 1106 attempted', rows: [
+        ['Rate-limited (HTTP 429)', 4], ['Profile not found (404)', 3],
+        ['Lead timed out', 2], ['Send not confirmed', 1], ['Weekly limit reached', 1],
+      ] },
+    }));
+    wrap.append(c);
   }
 );
 
