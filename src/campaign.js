@@ -52,6 +52,7 @@ import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
+import { checkCadenceMin, nextEmptyStreak } from './monitoring-cadence.js';
 import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
 import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
@@ -6036,16 +6037,29 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
       if (_testStub) {
         await _testStub();
       } else {
-        await runMonitoringCheckAll();
+        const checkOutcome = await runMonitoringCheckAll();
+        // Sum of per-account newly-Connected leads this sweep (bulkCheckConnections'
+        // `matched` excludes rows already stamped Connected, so this is a true
+        // "found something new" count, not a re-count of known connections).
+        campaign._lastCheckNewlyAccepted = (checkOutcome && Array.isArray(checkOutcome.results))
+          ? checkOutcome.results.reduce((sum, r) => sum + (r.ok ? (r.matched || 0) : 0), 0)
+          : 0;
       }
     } catch (err) {
       console.warn('[monitoring-tick] runMonitoringCheckAll threw:', err.message);
     } finally {
       // Reschedule ONLY if still in monitoring state (operator may have stopped mid-fire)
       if (campaign.state === 'monitoring') {
-        // Honor the operator cadence exactly — no floor here. The value was
-        // clamped to >= MIN_CADENCE_MINUTES at startCampaign intake.
-        const cadenceMin = campaign.checkIntervalMinutes || 60;
+        // Adaptive cadence, mirroring the VM: consecutive sweeps that find nobody
+        // stretch the interval, any acceptance snaps it straight back. The base is
+        // always the operator's own setting, never the stretched value, or the
+        // slowdown would compound every cycle.
+        const baseMin = campaign.checkIntervalMinutes || 60;
+        campaign.emptyCheckStreak = nextEmptyStreak({
+          newlyAccepted: campaign._lastCheckNewlyAccepted || 0,
+          current: campaign.emptyCheckStreak,
+        });
+        const cadenceMin = checkCadenceMin({ baseMin, emptyStreak: campaign.emptyCheckStreak });
         const ms = cadenceMin * 60_000;
         // v2.14.x: schedule the next tick from the PREVIOUS nextCheckAt
         // boundary, not from "now" (which is whenever the bulk-check
