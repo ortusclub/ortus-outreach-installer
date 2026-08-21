@@ -54,7 +54,7 @@ import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSal
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, handoverTarget, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -2399,6 +2399,13 @@ app.post('/api/campaign/:id/handover', async (req, res) => {
 // so the client degrades gracefully rather than throwing.
 app.post('/api/campaign/cloud/:id/check-now', async (req, res) => {
   const r = await cloudCheckNow(req.params.id, (req.body && req.body.scope) === 'all' ? 'all' : 'campaign');
+  if (r && r.error) return res.status(r.status || 502).json(r);
+  res.json(r);
+});
+// Stop the sweep running on the VM. Counterpart to check-now above; the engine
+// halts at its next account boundary and leaves the campaign alone.
+app.post('/api/campaign/cloud/:id/check/stop', async (req, res) => {
+  const r = await cloudCheckStop(req.params.id);
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });

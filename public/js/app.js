@@ -9187,17 +9187,46 @@ function applyLiveBanner(live, status) {
     right.innerHTML = `<b>${escHtml(b.big)}</b><span>${escHtml(b.cap)}</span>`;
     live.append(right);
   }
-  // Stop is a LOCAL route (it reaches into this Mac's own campaign), so it is
-  // only offered on a campaign running here.
-  if (b.tone === 'check' && !(status && status._cloud)) {
-    const stop = document.createElement('button');
-    stop.className = 'btn-pill ck-stop';
-    stop.textContent = 'Stop the check';
-    stop.onclick = async () => {
-      stop.disabled = true;
-      try { await fetch('/api/campaign/check/stop', { method: 'POST' }); } catch (_) { stop.disabled = false; }
-    };
-    live.append(stop);
+  // A check can be stopped wherever it runs. The local route reaches into this
+  // Mac's own campaign; the cloud one raises a flag the VM's sweep consumes at
+  // its next account boundary. Offering it only on local was why the button was
+  // missing on exactly the campaigns most operators watch — the ones on the VM.
+  if (b.tone === 'check') {
+    const onCloud = !!(status && status._cloud);
+    const cid = String((status && (status.rawId || status.id)) || '');
+    if (!onCloud || cid) {
+      const stop = document.createElement('button');
+      stop.className = 'btn-pill ck-stop';
+      stop.textContent = 'Stop the check';
+      stop.onclick = async () => {
+        stop.disabled = true;
+        const url = onCloud
+          ? `/api/campaign/cloud/${encodeURIComponent(cid)}/check/stop`
+          : '/api/campaign/check/stop';
+        try {
+          const r = await fetch(url, { method: 'POST' });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok || d.error) {
+            stop.disabled = false;
+            if (typeof showCampaignToast === 'function') {
+              showCampaignToast(d.error && !/HTTP 404/.test(d.error)
+                ? d.error
+                : 'Stopping a VM check isn’t live yet — engine update pending.', 6000);
+            }
+            return;
+          }
+          // The VM finishes the account it is on before it stops, so say that
+          // rather than letting a dead button imply it already has.
+          if (onCloud && typeof showCampaignToast === 'function') {
+            showCampaignToast(d.wasRunning === false
+              ? 'Nothing was running — no check to stop.'
+              : '🛑 Stopping — the VM will finish the account it is on, then stop.', 5000);
+          }
+          if (onCloud) _cloudCheckAsked.delete(cid);
+        } catch (_) { stop.disabled = false; }
+      };
+      live.append(stop);
+    }
   }
 }
 

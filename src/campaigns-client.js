@@ -362,6 +362,11 @@ export function restartCloudCampaign(id, { fromStart = false, dailyLimit, startA
 export function cloudCheckNow(id, scope = 'campaign') {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check-now`, { scope: scope === 'all' ? 'all' : 'campaign' });
 }
+// Stop the sweep the VM is running right now. The engine raises a flag its
+// sweep consumes at the next account boundary; the campaign itself is untouched.
+export function cloudCheckStop(id) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check/stop`, {});
+}
 export function setCloudAutoChecks(id, enabled) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });
 }
