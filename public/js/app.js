@@ -10484,7 +10484,6 @@ async function _renderCampaignsBoardInner() {
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
-  _renderPrimaryNudge(items);
 }
 
 // Lazy-fill done-strip log boxes from the persisted campaign log. Cached per
