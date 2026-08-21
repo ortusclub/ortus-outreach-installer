@@ -1,0 +1,349 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sketch: B — per-account step panel, in three states</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  /* Real card CSS is scoped to body[data-dashboard=v3] > main.main > .container,
+     so the sketch reproduces that chain exactly and restyles nothing. */
+  .container { max-width: 1100px; }
+  .main { padding: 32px 40px 90px; }
+  h1 { font-family: var(--display); font-size: 2rem; margin: 0 0 4px; }
+  .lede { font-family: var(--mono); font-size: .82rem; color: var(--gray); max-width: 78ch; line-height: 1.55; margin: 0 0 18px; }
+  .vtitle { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--gray); margin: 38px 0 10px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+  .vnote { font-family: var(--mono); font-size: .76rem; color: var(--gray); max-width: 82ch; line-height: 1.55; margin: 10px 0 0; }
+  .themebar { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+              color: var(--gray); margin-bottom: 24px; }
+  .themebar button { font: inherit; padding: 5px 14px; border: 1px solid var(--hairline);
+                     border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; margin-left: 6px; }
+  .themebar button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  body[data-dashboard='v3'] .vj-log-head { flex-wrap: wrap; row-gap: 6px; }
+
+  /* ══ THE ONE NEW COMPONENT: the per-account step panel ═══════════════════
+     One column per account, divided by the same hairline the card already
+     uses everywhere. Built only from existing tokens: mono caps labels, ink
+     for what has happened, gray for what has not, no colour that is not
+     already on the card, radius 0 or 9999 only. Gold stays reserved for Start. */
+  /* The card is a named-area grid (eyebrow / name / live / bar / hero /
+     stats+controls). The panel is a NEW ROW between the hero and the controls,
+     which is exactly what the change would be in the real card. Everything
+     else keeps its area. */
+  body[data-dashboard='v3'] .vj-card:has(.sp) {
+    grid-template-areas:
+      "eyebrow eyebrow" "name name" "live live" "bar bar"
+      "hero hero" "panel panel" "stats controls";
+  }
+  body[data-dashboard='v3'] .sp { grid-area: panel; border-top: 1px solid var(--hairline); }
+  body[data-dashboard='v3'] .vj-card:has(.sp) .vj-details { grid-row: 8; }
+
+  .sp-head { display: flex; align-items: baseline; gap: 12px; padding: 13px 16px 0; }
+  .sp-verb { font-family: var(--body); font-size: .95rem; color: var(--ink); }
+  .sp-dot { display: inline-block; width: 7px; height: 7px; border-radius: 9999px;
+            background: var(--ink); margin-right: 9px; animation: sppulse 1.15s ease-in-out infinite; }
+  .sp-dot.still { animation: none; opacity: .35; }
+  @keyframes sppulse { 0%,100% { opacity: 1 } 50% { opacity: .22 } }
+  .sp-meta { margin-left: auto; font-family: var(--mono); font-size: .7rem; color: var(--gray); letter-spacing: .03em; }
+  .sp-sub { font-family: var(--mono); font-size: .71rem; color: var(--gray); padding: 5px 16px 0; letter-spacing: .02em; }
+
+  .sp-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 13px; }
+  .sp-col { border-top: 1px solid var(--hairline-soft); border-right: 1px solid var(--hairline-soft);
+            padding: 14px 16px 12px; min-width: 0; }
+  .sp-col:last-child { border-right: 0; }
+  .sp-col.is-live { background: var(--hairline-soft); }
+
+  .sp-who { font-family: var(--body); font-size: .82rem; color: var(--ink);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-state { font-family: var(--mono); font-size: .6rem; letter-spacing: .14em; text-transform: uppercase;
+              color: var(--gray); margin-top: 5px; }
+  .sp-col.is-live .sp-state { color: var(--ink); }
+
+  .sp-steps { margin-top: 12px; }
+  .sp-step { display: grid; grid-template-columns: 13px minmax(0,1fr) auto; align-items: baseline; gap: 9px;
+             font-family: var(--mono); font-size: .71rem; line-height: 1.5; color: var(--gray); padding: 3px 0; }
+  .sp-mk { font-size: .68rem; }
+  .sp-step.ok, .sp-step.now { color: var(--ink); }
+  .sp-step.ok .sp-mk::before { content: "✓"; }
+  .sp-step.now .sp-mk::before { content: "▸"; }
+  .sp-step.wait .sp-mk::before { content: "·"; }
+  /* NOT ".skip": the app already owns that class for the off-screen
+     skip-to-content link, which positioned these rows at left:-9999px. */
+  .sp-step.miss .sp-mk::before { content: "–"; }
+  .sp-t { color: var(--gray); font-size: .66rem; }
+
+  /* Result line under the steps — the fact the app has and never showed. */
+  .sp-res { font-family: var(--mono); font-size: .69rem; color: var(--gray);
+            border-top: 1px solid var(--hairline-soft); margin-top: 11px; padding-top: 9px; letter-spacing: .02em; }
+  .sp-res b { color: var(--ink); font-weight: 600; }
+
+  /* Log: the real .vj-log-line plus one new WHERE column. */
+  body[data-dashboard='v3'] .vj-log-line { grid-template-columns: 62px 36px 66px 1fr; }
+  body[data-dashboard='v3'] .vj-log-line .where { font-family: var(--mono); font-size: .62rem;
+            color: var(--gray); letter-spacing: .06em; }
+  .lgf { display: flex; gap: 5px; }
+  .lgf span { font-family: var(--mono); font-size: .6rem; letter-spacing: .1em; text-transform: uppercase;
+              padding: 4px 9px; border: 1px solid var(--hairline); border-radius: 9999px;
+              color: var(--gray); cursor: pointer; }
+  .lgf span.on { border-color: var(--ink); color: var(--ink); }
+</style>
+
+<body data-dashboard="v3" class="theme-light">
+<main class="main"><div class="container">
+<h1>B — the per-account step panel, in every state</h1>
+<p class="lede">
+  One panel, one column per account, divided by the hairline the card already uses.
+  The steps are the ones the code actually walks, so a stall reads as the step that
+  never ticked rather than a spinner that never stops. Same panel on the VM and on
+  this Mac; only the RUNS ON line differs. Every card below is the real
+  <code>#active-card</code> cloned out of the shipping index.html, with its accounts,
+  its controls and its details panel left exactly as they are.
+</p>
+<p class="themebar">Theme
+  <button class="on" data-t="light">Light</button><button data-t="dark">Dark</button>
+</p>
+
+<div id="out"></div>
+</div></main>
+
+<script type="module">
+const OUT = document.getElementById('out');
+const doc = new DOMParser().parseFromString(await (await fetch('/index.html')).text(), 'text/html');
+const TEMPLATE = doc.getElementById('active-card');
+
+document.querySelectorAll('.themebar button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.themebar button').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    document.body.classList.toggle('theme-light', b.dataset.t === 'light');
+    document.body.classList.toggle('theme-dark', b.dataset.t === 'dark');
+  };
+});
+
+const NAMES = ['mefanier@ortus.solutions', 'camillec@ortus.solutions', 'selassie.a@ortus.solutions'];
+
+function logLine({ t, where, evt, what, cls = '' }) {
+  return `<div class="vj-log-line ${cls}"><span class="time">${t}</span>`
+    + `<span class="where">${where}</span><span class="evt">${evt}</span>`
+    + `<span class="what">${what}</span></div>`;
+}
+
+// The step panel.
+function panel({ verb, meta, sub, still, cols }) {
+  const el = document.createElement('div');
+  el.className = 'sp';
+  el.innerHTML = `
+    <div class="sp-head">
+      <span class="sp-verb"><i class="sp-dot${still ? ' still' : ''}"></i>${verb}</span>
+      <span class="sp-meta">${meta}</span>
+    </div>
+    <div class="sp-sub">${sub}</div>
+    <div class="sp-grid">${cols.map((c) => `
+      <div class="sp-col${c.live ? ' is-live' : ''}">
+        <div class="sp-who" title="${c.who}">${c.who}</div>
+        <div class="sp-state">${c.state}</div>
+        <div class="sp-steps">${c.steps.map((s) => `
+          <div class="sp-step ${s[0]}"><i class="sp-mk"></i><span>${s[1]}</span><span class="sp-t">${s[2] || ''}</span></div>`).join('')}
+        </div>
+        ${c.res ? `<div class="sp-res">${c.res}</div>` : ''}
+      </div>`).join('')}</div>`;
+  return el;
+}
+
+function baseCard({ tag, count, cap, l1, l2, line, log, hero }) {
+  const el = TEMPLATE.cloneNode(true);
+  el.removeAttribute('id');
+  el.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+  el.querySelector('.vj-name').textContent = 'TEST_FOR_CCLAUDE';
+  const tagEl = el.querySelector('.vj-tag .dot')?.parentElement.querySelector('span:last-child');
+  if (tagEl) tagEl.textContent = tag;
+  el.classList.add('is-detailed');
+
+  if (hero === 'monitor') {
+    el.classList.add('is-monitor');
+    const mon = el.querySelector('.vj-monitor');
+    mon.removeAttribute('aria-hidden');
+    el.querySelector('.vj-hero')?.remove();
+    el.querySelector('.vj-hbar')?.remove();
+    el.querySelector('.fu-dual')?.remove();
+    mon.querySelector('.vj-mon-count').textContent = count;
+    mon.querySelector('.vj-mon-cap').textContent = cap;
+    mon.querySelector('.vj-mon-line').textContent = line;
+  } else {
+    el.querySelector('.vj-monitor')?.remove();
+    el.querySelector('.vj-hero .num span:first-child').textContent = count;
+    const meta = el.querySelector('.vj-hero .vj-meta');
+    meta.innerHTML = line;
+    el.querySelector('.vj-stats').innerHTML =
+      '<span><b>3</b> accounts</span><span><b>0</b> accepted</span>'
+      + '<span>· <b>Sending</b> · <a style="text-decoration:underline;text-decoration-color:var(--hairline);'
+      + 'text-underline-offset:3px;cursor:pointer">batch settings</a></span>';
+    el.querySelector('.vj-hbar i').style.width = cap;
+  }
+
+  const live = el.querySelector('.vj-live');
+  live.hidden = false;
+  live.querySelector('.vj-live-ico').textContent = l1.ico;
+  live.querySelector('.vj-live-l1').textContent = l1.t;
+  live.querySelector('.vj-live-l2').textContent = l2;
+
+  // The account rows the card already has stay put; the step panel is what is new.
+  el.querySelector('.vj-profiles')?.remove();
+
+  const logEl = el.querySelector('.vj-log');
+  logEl.innerHTML = log.map(logLine).join('');
+  const acts = el.querySelector('.vj-log-acts');
+  const chips = document.createElement('span');
+  chips.className = 'lgf';
+  chips.innerHTML = ['All', 'Check', 'Send', 'Sheet', 'Errors', 'Verbose']
+    .map((f, i) => `<span class="${i === 0 ? 'on' : ''}">${f}</span>`).join('');
+  acts.prepend(chips);
+  return el;
+}
+
+function section(title, note, build) {
+  const h = document.createElement('div');
+  h.className = 'vtitle'; h.textContent = title; OUT.append(h);
+  const wrap = document.createElement('div');
+  build(wrap);
+  OUT.append(wrap);
+  const n = document.createElement('p'); n.className = 'vnote'; n.textContent = note; OUT.append(n);
+}
+
+// ══ 1. CHECKING — a sweep in flight ═══════════════════════════════════════
+section(
+  'State 1 — a check is running',
+  'Six steps, the ones the sweep actually walks. Account 1 is done and carries its result; account 2 is live and its column is tinted; account 3 has not started. The step that never ticks is the diagnosis, on the VM as much as here.',
+  (wrap) => {
+    const c = baseCard({
+      tag: 'CHECKING', hero: 'monitor', count: '20:56', cap: 'until next check',
+      l1: { ico: '↻', t: 'Checking for new acceptances…' },
+      l2: 'camillec@ortus.solutions · sweeping recent connections',
+      line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
+      log: [
+        { t: '12:34:17', where: 'MAC', evt: 'info', what: '▶ Check started · scope=campaign · 3 accounts · 66 pending' },
+        { t: '12:34:29', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · browser ready in 12.4s' },
+        { t: '12:34:31', where: 'MAC', evt: 'log', what: 'Voyager GET invitations/sent · 200 · 22 rows' },
+        { t: '12:34:32', where: 'MAC', evt: 'log', what: 'match: scanned=22 withUrl=0 slugs=379 memberIds=381 names=379 pidMatched=0' },
+        { t: '12:34:32', where: 'MAC', evt: 'log', what: 'match: alreadyConnected=0 alreadyIntroduced=0 crossSender=0 alreadyDeclined=0 stamped=0' },
+        { t: '12:34:33', where: 'MAC', evt: 'log', what: 'sheet: 0 rows to write · nothing sent to Apps Script' },
+        { t: '12:34:35', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · finished · 0 newly accepted · browser closed', cls: 'is-ok' },
+        { t: '12:34:36', where: 'MAC', evt: 'log', what: 'camillec@ortus.solutions · opening GoLogin profile 686c6a33…' },
+      ],
+    });
+    c.append(panel({
+      verb: 'Checking for new acceptances',
+      meta: '💻 This Mac · 00:41 elapsed · account 2 of 3',
+      sub: 'Scope: this campaign’s 3 accounts · 66 pending connection requests to scan',
+      cols: [
+        { who: NAMES[0], state: 'Done · 18.2s', res: '<b>22</b> scanned · <b>0</b> newly accepted · 0 stamped · 0 intro DMs', steps: [
+          ['ok', 'Browser opened', '12.4s'], ['ok', 'Voyager read · 22 sent', '1.9s'],
+          ['ok', 'Matched to sheet · 0', '0.4s'], ['ok', 'Sheet write · 0 rows', '—'],
+          ['ok', 'Intro DMs · 0 sent', '—'], ['ok', 'Browser closed', '1.1s'],
+        ] },
+        { who: NAMES[1], state: 'Checking', live: true, res: 'result appears when this account finishes', steps: [
+          ['ok', 'Browser opened', '14.8s'], ['now', 'Voyager read · 22 sent', '…'],
+          ['wait', 'Matched to sheet', ''], ['wait', 'Sheet write', ''],
+          ['wait', 'Intro DMs', ''], ['wait', 'Browser closed', ''],
+        ] },
+        { who: NAMES[2], state: 'Queued · waiting for a browser slot', res: 'not started', steps: [
+          ['wait', 'Browser opened', ''], ['wait', 'Voyager read', ''],
+          ['wait', 'Matched to sheet', ''], ['wait', 'Sheet write', ''],
+          ['wait', 'Intro DMs', ''], ['wait', 'Browser closed', ''],
+        ] },
+      ],
+    }));
+    wrap.append(c);
+  }
+);
+
+// ══ 2. SENDING — connection requests going out ════════════════════════════
+section(
+  'State 2 — sending connection requests',
+  'Same panel, the steps the send path walks instead. The percentage hero and progress bar are untouched; the panel sits under them and says which lead each account is on and how far through it is. The identity gate gets its own step, because "sent to the wrong person" is exactly the failure it exists to prevent.',
+  (wrap) => {
+    const s = baseCard({
+      tag: 'SENDING', hero: 'send', count: '16', cap: '16%',
+      l1: { ico: '→', t: 'Sending a connection request' },
+      l2: 'camillec@ortus.solutions · Rina Chandran · Reuters',
+      line: '<span><b>47</b> of 300 sent</span><span>Next batch in <b>39m 15s</b></span>',
+      log: [
+        { t: '12:31:02', where: 'MAC', evt: 'info', what: '▶ Batch started · 3 accounts · 253 leads to go' },
+        { t: '12:31:44', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · profile loaded · /in/j-okonkwo · DOM settled' },
+        { t: '12:31:52', where: 'MAC', evt: 'log', what: 'identity: Voyager degree=2 · slug matches sheet row 118 · verified' },
+        { t: '12:32:04', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · connect sent with note · Josephine Okonkwo', cls: 'is-ok' },
+        { t: '12:32:05', where: 'MAC', evt: 'log', what: 'sheet: row 118 → "Connection Request Sent" · Apps Script 200' },
+        { t: '12:32:06', where: 'MAC', evt: 'log', what: 'delay 48s before the next lead (42-96s window)' },
+        { t: '12:33:10', where: 'VM', evt: 'warn', what: 'selassie.a@ortus.solutions · 429 · backing off 90s', cls: 'is-warn' },
+      ],
+    });
+    s.append(panel({
+      verb: 'Sending connection requests',
+      meta: '💻 This Mac · 47 of 300 today · 253 leads to go',
+      sub: 'Each account works its own lead. Delay 42-96s between sends.',
+      cols: [
+        { who: NAMES[0], state: 'Sent · lead 19 of 100', res: '<b>19</b> sent today · 0 errors · next lead in 48s', steps: [
+          ['ok', 'Browser opened', '11.2s'], ['ok', 'Profile loaded', '9.4s'],
+          ['ok', 'Identity verified · degree 2', '2.1s'], ['ok', 'Connect sent with note', '3.7s'],
+          ['ok', 'Sheet stamped · row 118', '0.6s'], ['now', 'Waiting out the delay', '48s'],
+        ] },
+        { who: NAMES[1], state: 'Sending · lead 16 of 100', live: true, res: '<b>16</b> sent today · 0 errors', steps: [
+          ['ok', 'Browser opened', '13.9s'], ['ok', 'Profile loaded', '8.8s'],
+          ['now', 'Identity check · reading degree', '…'], ['wait', 'Connect sent', ''],
+          ['wait', 'Sheet stamped', ''], ['wait', 'Delay', ''],
+        ] },
+        { who: NAMES[2], state: 'Backing off · 429 from LinkedIn', res: '<b>12</b> sent today · resumes in 1m 22s', steps: [
+          ['ok', 'Browser opened', '15.1s'], ['ok', 'Profile loaded', '10.2s'],
+          ['ok', 'Identity verified · degree 2', '1.8s'], ['miss', 'Connect sent · 429', '—'],
+          ['miss', 'Sheet stamped · not written', '—'], ['now', 'Backing off', '1m 22s'],
+        ] },
+      ],
+    }));
+    wrap.append(s);
+  }
+);
+
+// ══ 3. MONITORING — between checks ════════════════════════════════════════
+section(
+  'State 3 — monitoring, between checks',
+  'The panel does not disappear when nothing is running, it goes still: the dot stops pulsing, the steps carry the LAST sweep with its timings, and each column keeps its result. That is the fix for the sentence the card used to print, "nothing running right now", while three browsers were open. The countdown keeps its place above.',
+  (wrap) => {
+    const m = baseCard({
+      tag: 'MONITORING', hero: 'monitor', count: '20:56', cap: 'until next check',
+      l1: { ico: '◷', t: 'Waiting for next check' },
+      l2: '3 accounts · 💻 This Mac · last sweep 12:34 · 66 scanned · 0 newly accepted',
+      line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
+      log: [
+        { t: '12:34:35', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
+        { t: '12:34:58', where: 'MAC', evt: 'ok', what: 'camillec@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
+        { t: '12:35:21', where: 'MAC', evt: 'ok', what: 'selassie.a@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
+        { t: '12:35:22', where: 'MAC', evt: 'sum', what: '— Check finished · 66 scanned · 0 newly accepted · 0 intro DMs · 65s' },
+        { t: '12:35:22', where: 'MAC', evt: 'info', what: 'Next check at 13:35 · every 1h · ends Fri, 28 Aug' },
+      ],
+    });
+    m.append(panel({
+      verb: 'Last check · 12:34',
+      still: true,
+      meta: '💻 This Mac · took 65s · next at 13:35',
+      sub: '66 pending connection requests scanned · 0 newly accepted · 0 intro DMs sent',
+      cols: [
+        { who: NAMES[0], state: 'Clean · 18.2s', res: '<b>22</b> scanned · <b>0</b> newly accepted', steps: [
+          ['ok', 'Browser opened', '12.4s'], ['ok', 'Voyager read · 22 sent', '1.9s'],
+          ['ok', 'Matched to sheet · 0', '0.4s'], ['ok', 'Sheet write · 0 rows', '—'],
+          ['ok', 'Intro DMs · 0 sent', '—'], ['ok', 'Browser closed', '1.1s'],
+        ] },
+        { who: NAMES[1], state: 'Clean · 22.6s', res: '<b>22</b> scanned · <b>0</b> newly accepted', steps: [
+          ['ok', 'Browser opened', '14.8s'], ['ok', 'Voyager read · 22 sent', '2.2s'],
+          ['ok', 'Matched to sheet · 0', '0.5s'], ['ok', 'Sheet write · 0 rows', '—'],
+          ['ok', 'Intro DMs · 0 sent', '—'], ['ok', 'Browser closed', '1.3s'],
+        ] },
+        { who: NAMES[2], state: 'Clean · 24.1s', res: '<b>22</b> scanned · <b>0</b> newly accepted', steps: [
+          ['ok', 'Browser opened', '15.9s'], ['ok', 'Voyager read · 22 sent', '2.4s'],
+          ['ok', 'Matched to sheet · 0', '0.6s'], ['ok', 'Sheet write · 0 rows', '—'],
+          ['ok', 'Intro DMs · 0 sent', '—'], ['ok', 'Browser closed', '1.2s'],
+        ] },
+      ],
+    }));
+    wrap.append(m);
+  }
+);
+</script>
