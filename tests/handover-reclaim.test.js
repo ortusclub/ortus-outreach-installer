@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { reclaimableCloudId, reclaimRefusal } from '../src/handover.js';
 
 process.env.ORTUS_DATA_DIR = await mkdtemp(join(tmpdir(), 'ortus-reclaim-'));
-const { adoptMonitoring, campaign, SINGLETON_CAMPAIGN_ID, getCampaignStatus, stopMonitoringWatcher, stopMonitoring } =
+const { adoptMonitoring, startCampaign, campaign, SINGLETON_CAMPAIGN_ID, getCampaignStatus, stopMonitoringWatcher, stopMonitoring } =
   await import('../src/campaign.js');
 
 const adopt = () => adoptMonitoring({
@@ -65,4 +65,35 @@ test('a refusal leaves this Mac monitoring, except when the VM already owns it',
   assert.match(nl.error, /already running on the Cloud VM/);
   if (nl.stopLocal) await stopMonitoring({ reason: 'test' });
   assert.equal(getCampaignStatus().state, 'done', 'this Mac stops watching a campaign the VM owns');
+});
+
+// The safety line this whole helper depends on, driven through the REAL
+// startCampaign rather than asserted about it. Without the id reset in
+// startCampaign, an adopted campaign's cloud id survives on the campaign global
+// forever, and the next unrelated local campaign looks cloud-origin: moving THAT
+// to the VM would reclaim a different campaign's engine row, possibly someone
+// else's, and restart it.
+//
+// startCampaign is reachable here because the reset happens before the campaign
+// touches the network or a browser: this run dies at the sheet fetch (a sheet id
+// that does not exist), which is well past the reset and well before any GoLogin
+// launch. It takes a few seconds, which is the price of testing the real
+// function instead of a paraphrase of it.
+test('a fresh local run drops the adopted campaign\'s cloud id', async (t) => {
+  t.after(() => stopMonitoringWatcher());
+  await adopt();
+  assert.equal(reclaimableCloudId(campaign, SINGLETON_CAMPAIGN_ID), 'cloud-42');
+
+  await startCampaign({
+    profileIds: [],
+    sheetUrl: 'https://docs.google.com/spreadsheets/d/does-not-exist/edit',
+    mode: 'connect_only',
+    templates: {},
+    resumeContext: { totalProcessed: 0 },   // skips the Recent Connections wipe
+  });
+
+  assert.equal(campaign.running, false, 'the run ended (it died at the sheet fetch, as intended)');
+  assert.equal(campaign.id, SINGLETON_CAMPAIGN_ID, 'startCampaign must restore the singleton id');
+  assert.equal(reclaimableCloudId(campaign, SINGLETON_CAMPAIGN_ID), '',
+    'a later local campaign must never be able to hand back the adopted campaign\'s engine row');
 });
