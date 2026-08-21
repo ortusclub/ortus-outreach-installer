@@ -774,6 +774,21 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   // Log to stdout for forensic deep-dives, AND also surface in the return
   // so the campaign loop can pipe it into the dashboard-visible log.
   console.log(`[bulk-check] diag: ${diagSummary}`);
+  // 2026-08-21: a live sweep reported withUrl=0 across 66 rows while the very
+  // same sheet, tab and column yielded 66 of 66 when read offline. Nothing in
+  // the static code explains the difference, so record the three runtime inputs
+  // that could: which sheet was actually read, what column name arrived, and
+  // what the first row's keys and lead cell really look like. Diagnostic only,
+  // and it goes when this whole diag line is rewritten in plain English.
+  if (diag.rowsScanned > 0 && diag.withUrl === 0) {
+    const r0 = rows[0] || {};
+    console.log(`[bulk-check] withUrl=0 INPUTS: sheet=${sheetUrl}`
+      + ` | column=${JSON.stringify(linkedinColumn)}`
+      + ` | columnPresentInRow=${Object.prototype.hasOwnProperty.call(r0, linkedinColumn)}`
+      + ` | firstRowKeys=${JSON.stringify(Object.keys(r0).slice(0, 20))}`
+      + ` | firstRowLeadCell=${JSON.stringify(String(r0[linkedinColumn] ?? '').slice(0, 80))}`
+      + ` | anyCellHasLinkedinCom=${Object.values(r0).some((v) => String(v || '').includes('linkedin.com'))}`);
+  }
   if (diag.duplicateCollapsed > 0) {
     console.log(`[bulk-check] ⚠ Collapsed ${diag.duplicateCollapsed} duplicate profile(s) — same person appeared on more than one row; introduced once, the extra row(s) stamped "Skipped — duplicate".`);
   }
