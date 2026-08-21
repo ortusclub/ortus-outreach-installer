@@ -152,7 +152,8 @@
 <p class="lede">
   One panel, one column per account, divided by the hairline the card already uses.
   The steps are the ones the code actually walks, so a stall reads as the step that
-  never ticked rather than a spinner that never stops. Same panel on the VM and on
+  never ticked rather than a spinner that never stops. Every line reads out loud:
+  no field dumps, no counters an operator cannot act on. Those stay in Cloud Logging. Same panel on the VM and on
   this Mac; only the RUNS ON line differs. Every card below is the real
   <code>#active-card</code> cloned out of the shipping index.html, with its accounts,
   its controls and its details panel left exactly as they are.
@@ -302,40 +303,40 @@ section(
       l2: 'camillec@ortus.solutions · sweeping recent connections',
       line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
       log: [
-        { t: '12:34:17', where: 'MAC', evt: 'info', what: '▶ Check started · scope=campaign · 3 accounts · 66 pending' },
-        { t: '12:34:29', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · browser ready in 12.4s' },
-        { t: '12:34:31', where: 'MAC', evt: 'log', what: 'Voyager GET invitations/sent · 200 · 22 rows' },
-        { t: '12:34:32', where: 'MAC', evt: 'log', what: 'match: scanned=22 withUrl=0 slugs=379 memberIds=381 names=379 pidMatched=0' },
-        { t: '12:34:32', where: 'MAC', evt: 'log', what: 'match: alreadyConnected=0 alreadyIntroduced=0 crossSender=0 alreadyDeclined=0 stamped=0' },
-        { t: '12:34:33', where: 'MAC', evt: 'log', what: 'sheet: 0 rows to write · nothing sent to Apps Script' },
+        { t: '12:34:17', where: 'MAC', evt: 'info', what: '▶️ Check started · this campaign\u2019s 3 accounts · 66 invitations to look at' },
+        { t: '12:34:29', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · browser open, logged in' },
+        { t: '12:34:31', where: 'MAC', evt: 'log', what: 'read its 22 sent invitations' },
+        { t: '12:34:32', where: 'MAC', evt: 'log', what: 'none of its 22 invitations matched a lead in the sheet' },
+        { t: '12:34:32', where: 'MAC', evt: 'log', what: 'nobody new accepted, nothing to write' },
+        { t: '12:34:33', where: 'MAC', evt: 'log', what: 'nothing to write to the sheet' },
         { t: '12:34:35', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · finished · 0 newly accepted · browser closed', cls: 'is-ok' },
-        { t: '12:34:36', where: 'MAC', evt: 'log', what: 'camillec@ortus.solutions · opening GoLogin profile 686c6a33…' },
+        { t: '12:34:36', where: 'MAC', evt: 'log', what: 'camillec@ortus.solutions · opening its browser' },
       ],
     });
     c.append(panel({
       verb: 'Checking for new acceptances',
       meta: '💻 This Mac · 00:41 elapsed · account 2 of 3',
-      sub: 'Scope: this campaign’s 3 accounts · 66 pending connection requests to scan',
+      sub: 'Looking at 66 invitations across this campaign’s 3 accounts',
       cols: [
-        { who: NAMES[0], state: 'Done · 18.2s', count: { done: 22, of: 22, label: 'scanned' }, res: '<b>22</b> scanned · <b>0</b> newly accepted · 0 stamped · 0 intro DMs', steps: [
-          ['ok', 'Browser opened', '12.4s'], ['ok', 'Voyager read · 22 sent', '1.9s'],
-          ['ok', 'Matched to sheet · 0', '0.4s'], ['ok', 'Sheet write · 0 rows', '—'],
-          ['ok', 'Intro DMs · 0 sent', '—'], ['ok', 'Browser closed', '1.1s'],
+        { who: NAMES[0], state: 'Done · 18.2s', count: { done: 22, of: 22, label: 'scanned' }, res: 'Looked at <b>22</b> · <b>nobody new</b> accepted · nothing written', steps: [
+          ['ok', 'Browser open', '12.4s'], ['ok', 'Read its 22 sent invitations', '1.9s'],
+          ['ok', 'Found in the sheet · 0', '0.4s'], ['ok', 'Written to the sheet · nothing', '—'],
+          ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.1s'],
         ] },
         { who: NAMES[1], state: 'Checking', live: true, count: { done: 14, of: 22, label: 'scanned' }, res: 'result appears when this account finishes', steps: [
-          ['ok', 'Browser opened', '14.8s'], ['now', 'Voyager read · 22 sent', '…'],
-          ['wait', 'Matched to sheet', ''], ['wait', 'Sheet write', ''],
-          ['wait', 'Intro DMs', ''], ['wait', 'Browser closed', ''],
+          ['ok', 'Browser open', '14.8s'], ['now', 'Read its 22 sent invitations', '…'],
+          ['wait', 'Found in the sheet', ''], ['wait', 'Written to the sheet', ''],
+          ['wait', 'Introductions', ''], ['wait', 'Browser closed', ''],
         ] },
-        { who: NAMES[2], state: 'Queued · waiting for a browser slot', res: 'not started', steps: [
-          ['wait', 'Browser opened', ''], ['wait', 'Voyager read', ''],
-          ['wait', 'Matched to sheet', ''], ['wait', 'Sheet write', ''],
-          ['wait', 'Intro DMs', ''], ['wait', 'Browser closed', ''],
+        { who: NAMES[2], state: 'Waiting its turn', res: 'has not started yet', steps: [
+          ['wait', 'Browser open', ''], ['wait', 'Read its sent invitations', ''],
+          ['wait', 'Found in the sheet', ''], ['wait', 'Written to the sheet', ''],
+          ['wait', 'Introductions', ''], ['wait', 'Browser closed', ''],
         ] },
       ],
-      why: { head: 'Why nothing was stamped · the sweep\'s own counters', rows: [
-        ['scanned', 22], ['matched to a sheet row', 0], ['already connected', 0],
-        ['already introduced', 0], ['another sender\'s lead', 0], ['declined', 0], ['stamped', 0],
+      why: { head: 'Nothing to stamp, and here is why', rows: [
+        ['invitations looked at', 22], ['found in the sheet', 0],
+        ['accepted since last time', 0], ['already introduced', 0], ['written to the sheet', 0],
       ] },
     }));
     wrap.append(c);
@@ -353,54 +354,54 @@ section(
       l2: 'camillec@ortus.solutions · Rina Chandran · Reuters',
       line: '<span><b>47</b> of 300 sent</span><span>Next batch in <b>39m 15s</b></span>',
       log: [
-        { t: '12:31:02', where: 'MAC', evt: 'info', what: '▶ Batch started · 3 accounts · 253 leads to go' },
-        { t: '12:31:44', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · profile loaded · /in/j-okonkwo · DOM settled' },
-        { t: '12:31:52', where: 'MAC', evt: 'log', what: 'identity: Voyager degree=2 · slug matches sheet row 118 · verified' },
-        { t: '12:32:04', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · connect sent with note · Josephine Okonkwo', cls: 'is-ok' },
-        { t: '12:32:05', where: 'MAC', evt: 'log', what: 'sheet: row 118 → "Connection Request Sent" · Apps Script 200' },
-        { t: '12:32:06', where: 'MAC', evt: 'log', what: 'delay 48s before the next lead (42-96s window)' },
-        { t: '12:33:10', where: 'VM', evt: 'warn', what: 'selassie.a@ortus.solutions · 429 · backing off 90s', cls: 'is-warn' },
+        { t: '12:31:02', where: 'MAC', evt: 'info', what: '▶️ Sending started · 3 accounts · 253 leads to go' },
+        { t: '12:31:44', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · Josephine Okonkwo · profile open' },
+        { t: '12:31:52', where: 'MAC', evt: 'log', what: 'confirmed it is the right Josephine Okonkwo, not already connected' },
+        { t: '12:32:04', where: 'MAC', evt: 'ok', what: 'request sent to Josephine Okonkwo (19 of 100 today)', cls: 'is-ok' },
+        { t: '12:32:05', where: 'MAC', evt: 'log', what: 'written to the sheet, row 118' },
+        { t: '12:32:06', where: 'MAC', evt: 'log', what: 'next request in about a minute' },
+        { t: '12:33:10', where: 'VM', evt: 'warn', what: 'selassie.a@ortus.solutions · LinkedIn is pushing back, waiting 90 seconds', cls: 'is-warn' },
       ],
     });
     s.append(panel({
       verb: 'Sending connection requests',
       meta: '💻 This Mac · 47 of 300 today · 253 leads to go',
-      sub: 'Each account works its own lead. Delay 42-96s between sends. '
-        + 'Pre-filter dropped 47 of 300 rows before the run: terminal Stage, blank URL, or already done.',
+      sub: 'Each account works its own person, about a minute between requests. '
+        + '47 of the 300 were left out before the run started: already contacted, already done, or no LinkedIn link.',
       cols: [
-        { who: NAMES[0], state: 'Sent · next lead in 48s',
+        { who: NAMES[0], state: 'Sent · next one in 48s',
           count: { done: 19, of: 100, label: 'this account' },
           res: '<b>19</b> sent · <b>2</b> not hit · 0 errors', steps: [
-          ['ok', 'Browser opened', '11.2s'], ['ok', 'Profile loaded', '9.4s'],
-          ['ok', 'Identity verified · degree 2', '2.1s'], ['ok', 'Connect sent with note', '3.7s'],
-          ['ok', 'Sheet stamped · row 118', '0.6s'], ['now', 'Waiting out the delay', '48s'],
-        ], miss: { head: 'Not hit, and why', rows: [
+          ['ok', 'Browser open', '11.2s'], ['ok', 'Profile open', '9.4s'],
+          ['ok', 'Confirmed the right person', '2.1s'], ['ok', 'Request sent with note', '3.7s'],
+          ['ok', 'Written to the sheet, row 118', '0.6s'], ['now', 'Pausing before the next one', '48s'],
+        ], miss: { head: 'Nobody reached, and why', rows: [
           ['Marcus Ilori', 'Skipped: Profile not found (404)', '12:19'],
           ['Aiko Tanaka', 'Skipped: Connect button not found', '12:07'],
         ] } },
         { who: NAMES[1], state: 'Sending', live: true,
           count: { done: 16, of: 100, label: 'this account' },
           res: '<b>16</b> sent · <b>1</b> not hit · 0 errors', steps: [
-          ['ok', 'Browser opened', '13.9s'], ['ok', 'Profile loaded', '8.8s'],
-          ['now', 'Identity check · reading degree', '…'], ['wait', 'Connect sent', ''],
-          ['wait', 'Sheet stamped', ''], ['wait', 'Delay', ''],
-        ], miss: { head: 'Not hit, and why', rows: [
+          ['ok', 'Browser open', '13.9s'], ['ok', 'Profile open', '8.8s'],
+          ['now', 'Confirming the right person', '…'], ['wait', 'Request sent', ''],
+          ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
+        ], miss: { head: 'Nobody reached, and why', rows: [
           ['Priya Raman', 'Skipped: Lead timed out', '12:11'],
         ] } },
-        { who: NAMES[2], state: 'Backing off · resumes in 1m 22s',
+        { who: NAMES[2], state: 'Waiting for LinkedIn · back in 1m 22s',
           count: { done: 12, of: 100, label: 'this account' },
-          res: '<b>12</b> sent · <b>4</b> not hit · 3× HTTP 429 parks at 4', steps: [
-          ['ok', 'Browser opened', '15.1s'], ['ok', 'Profile loaded', '10.2s'],
-          ['ok', 'Identity verified · degree 2', '1.8s'], ['miss', 'Connect sent · HTTP 429', '—'],
-          ['miss', 'Sheet stamped · not written', '—'], ['now', 'Backing off', '1m 22s'],
-        ], miss: { head: 'Not hit, and why', rows: [
+          res: '<b>12</b> sent · <b>4</b> not hit · one more push-back and it stops for the week', steps: [
+          ['ok', 'Browser open', '15.1s'], ['ok', 'Profile open', '10.2s'],
+          ['ok', 'Confirmed the right person', '1.8s'], ['miss', 'Request not sent · LinkedIn pushed back', '—'],
+          ['miss', 'Not written to the sheet', '—'], ['now', 'Waiting for LinkedIn to ease off', '1m 22s'],
+        ], miss: { head: 'Nobody reached, and why', rows: [
           ['Tomás Rivera', 'Skipped: Rate-limited (HTTP 429) — confirming…', '12:33'],
           ['Nadia Haddad', 'Skipped: Rate-limited (HTTP 429) — confirming…', '12:30'],
           ['Sven Larsson', 'Skipped: Profile not premium, custom notes limit', '12:24'],
           ['Grace Mwangi', 'Skipped: Send not confirmed', '12:16'],
         ] } },
       ],
-      why: { head: 'Not hit this run · 7 of 54 attempted', rows: [
+      why: { head: 'Nobody reached, and why · 7 of the 54 tried', rows: [
         ['Rate-limited (HTTP 429)', 2],
         ['Profile not found (404)', 1],
         ['Connect button not found', 1],
@@ -422,14 +423,14 @@ const MAEN = [
   'ruth.a@ortus.solutions',
 ];
 const DONE_STEPS = (b, pl, id, cs, sh) => [
-  ['ok', 'Browser opened', b], ['ok', 'Profile loaded', pl],
-  ['ok', 'Identity verified · degree 2', id], ['ok', 'Connect sent with note', cs],
-  ['ok', 'Sheet stamped', sh], ['ok', 'Delay served', '—'],
+  ['ok', 'Browser open', b], ['ok', 'Profile open', pl],
+  ['ok', 'Confirmed the right person', id], ['ok', 'Request sent with note', cs],
+  ['ok', 'Written to the sheet', sh], ['ok', 'Paused before the next one', '—'],
 ];
 const WAIT_STEPS = [
-  ['wait', 'Browser opened', ''], ['wait', 'Profile loaded', ''],
-  ['wait', 'Identity check', ''], ['wait', 'Connect sent', ''],
-  ['wait', 'Sheet stamped', ''], ['wait', 'Delay', ''],
+  ['wait', 'Browser open', ''], ['wait', 'Profile open', ''],
+  ['wait', 'Confirming the right person', ''], ['wait', 'Request sent', ''],
+  ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
 ];
 
 section(
@@ -439,11 +440,11 @@ section(
     const LIVE_AT = 6; // account 7 of 13
     const cols = MAEN.map((who, i) => {
       if (i < LIVE_AT) {
-        return { who, state: 'Sent · waiting out the delay',
+        return { who, state: 'Sent · pausing before the next one',
           count: { done: 19 - (LIVE_AT - i), of: 100, label: 'this account' },
           steps: DONE_STEPS('11.2s', '9.4s', '2.1s', '3.7s', '0.6s'),
           res: `<b>${19 - (LIVE_AT - i)}</b> sent · <b>${i % 3}</b> not hit`,
-          miss: i % 3 ? { head: 'Not hit, and why', rows: [
+          miss: i % 3 ? { head: 'Nobody reached, and why', rows: [
             ['Marcus Ilori', 'Skipped: Profile not found (404)', '12:19'],
           ] } : null };
       }
@@ -451,18 +452,18 @@ section(
         return { who, state: 'Sending', live: true,
           count: { done: 16, of: 100, label: 'this account' },
           steps: [
-            ['ok', 'Browser opened', '13.9s'], ['ok', 'Profile loaded', '8.8s'],
-            ['now', 'Identity check · reading degree', '…'], ['wait', 'Connect sent', ''],
-            ['wait', 'Sheet stamped', ''], ['wait', 'Delay', ''],
+            ['ok', 'Browser open', '13.9s'], ['ok', 'Profile open', '8.8s'],
+            ['now', 'Confirming the right person', '…'], ['wait', 'Request sent', ''],
+            ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
           ],
           res: '<b>16</b> sent · <b>1</b> not hit · 0 errors',
-          miss: { head: 'Not hit, and why', rows: [
+          miss: { head: 'Nobody reached, and why', rows: [
             ['Priya Raman', 'Skipped: Lead timed out', '12:11'],
           ] } };
       }
-      return { who, state: 'Queued · waiting for a browser slot',
+      return { who, state: 'Waiting its turn',
         count: { done: 0, of: 100, label: 'this account' },
-        steps: WAIT_STEPS, res: 'not started this round' };
+        steps: WAIT_STEPS, res: 'has not started yet' };
     });
     const c = baseCard({
       tag: 'SENDING', hero: 'send', count: '73', cap: '73%',
@@ -470,18 +471,18 @@ section(
       l2: 'karen.d@ortus.solutions · Rina Chandran · Reuters',
       line: '<span><b>1095</b> of 1497 sent</span><span>Next batch in <b>12m 04s</b></span>',
       log: [
-        { t: '12:41:02', where: 'VM', evt: 'info', what: '▶ Batch started · 13 accounts · 402 leads to go' },
-        { t: '12:41:44', where: 'VM', evt: 'ok', what: 'joyce.n@ortus.solutions · connect sent with note · (18/100)', cls: 'is-ok' },
-        { t: '12:41:45', where: 'VM', evt: 'log', what: 'sheet: row 892 → "Connection Request Sent" · Apps Script 200' },
-        { t: '12:41:52', where: 'VM', evt: 'log', what: 'karen.d@ortus.solutions · profile loaded · identity check' },
+        { t: '12:41:02', where: 'VM', evt: 'info', what: '▶️ Sending started · 13 accounts · 402 leads to go' },
+        { t: '12:41:44', where: 'VM', evt: 'ok', what: 'joyce.n@ortus.solutions · request sent to Rina Chandran (18 of 100 today)', cls: 'is-ok' },
+        { t: '12:41:45', where: 'VM', evt: 'log', what: 'written to the sheet, row 892' },
+        { t: '12:41:52', where: 'VM', evt: 'log', what: 'karen.d@ortus.solutions · checking it is the right person' },
       ],
     });
     c.append(panel({
       verb: 'Sending connection requests',
       meta: '☁︎ Cloud VM · 1095 of 1497 sent · 402 leads to go',
-      sub: '13 accounts · delay 42-96s between sends · pre-filter dropped 0 rows',
+      sub: '13 accounts · about a minute between requests · nobody was left out before the run',
       cols,
-      why: { head: 'Not hit this run · 11 of 1106 attempted', rows: [
+      why: { head: 'Nobody reached, and why · 11 of the 1106 tried', rows: [
         ['Rate-limited (HTTP 429)', 4], ['Profile not found (404)', 3],
         ['Lead timed out', 2], ['Send not confirmed', 1], ['Weekly limit reached', 1],
       ] },
@@ -504,30 +505,30 @@ section(
         { t: '12:34:35', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
         { t: '12:34:58', where: 'MAC', evt: 'ok', what: 'camillec@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
         { t: '12:35:21', where: 'MAC', evt: 'ok', what: 'selassie.a@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
-        { t: '12:35:22', where: 'MAC', evt: 'sum', what: '— Check finished · 66 scanned · 0 newly accepted · 0 intro DMs · 65s' },
-        { t: '12:35:22', where: 'MAC', evt: 'info', what: 'Next check at 13:35 · every 1h · ends Fri, 28 Aug' },
+        { t: '12:35:22', where: 'MAC', evt: 'sum', what: '— Check finished · nobody new accepted · took 65 seconds' },
+        { t: '12:35:22', where: 'MAC', evt: 'info', what: '🕑 Next check at 13:35' },
       ],
     });
     m.append(panel({
       verb: 'Last check · 12:34',
       still: true,
       meta: '💻 This Mac · took 65s · next at 13:35',
-      sub: '66 pending connection requests scanned · 0 newly accepted · 0 intro DMs sent',
+      sub: 'Looked at 66 invitations across 3 accounts · nobody new accepted',
       cols: [
-        { who: NAMES[0], state: 'Clean · 18.2s', count: { done: 22, of: 22, label: 'scanned' }, res: '<b>22</b> scanned · <b>0</b> newly accepted', steps: [
-          ['ok', 'Browser opened', '12.4s'], ['ok', 'Voyager read · 22 sent', '1.9s'],
-          ['ok', 'Matched to sheet · 0', '0.4s'], ['ok', 'Sheet write · 0 rows', '—'],
-          ['ok', 'Intro DMs · 0 sent', '—'], ['ok', 'Browser closed', '1.1s'],
+        { who: NAMES[0], state: 'Clean · 18.2s', count: { done: 22, of: 22, label: 'scanned' }, res: 'Looked at <b>22</b> · <b>nobody new</b> accepted', steps: [
+          ['ok', 'Browser open', '12.4s'], ['ok', 'Read its 22 sent invitations', '1.9s'],
+          ['ok', 'Found in the sheet · 0', '0.4s'], ['ok', 'Written to the sheet · nothing', '—'],
+          ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.1s'],
         ] },
-        { who: NAMES[1], state: 'Clean · 22.6s', count: { done: 22, of: 22, label: 'scanned' }, res: '<b>22</b> scanned · <b>0</b> newly accepted', steps: [
-          ['ok', 'Browser opened', '14.8s'], ['ok', 'Voyager read · 22 sent', '2.2s'],
-          ['ok', 'Matched to sheet · 0', '0.5s'], ['ok', 'Sheet write · 0 rows', '—'],
-          ['ok', 'Intro DMs · 0 sent', '—'], ['ok', 'Browser closed', '1.3s'],
+        { who: NAMES[1], state: 'Clean · 22.6s', count: { done: 22, of: 22, label: 'scanned' }, res: 'Looked at <b>22</b> · <b>nobody new</b> accepted', steps: [
+          ['ok', 'Browser open', '14.8s'], ['ok', 'Read its 22 sent invitations', '2.2s'],
+          ['ok', 'Found in the sheet · 0', '0.5s'], ['ok', 'Written to the sheet · nothing', '—'],
+          ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.3s'],
         ] },
-        { who: NAMES[2], state: 'Clean · 24.1s', count: { done: 22, of: 22, label: 'scanned' }, res: '<b>22</b> scanned · <b>0</b> newly accepted', steps: [
-          ['ok', 'Browser opened', '15.9s'], ['ok', 'Voyager read · 22 sent', '2.4s'],
-          ['ok', 'Matched to sheet · 0', '0.6s'], ['ok', 'Sheet write · 0 rows', '—'],
-          ['ok', 'Intro DMs · 0 sent', '—'], ['ok', 'Browser closed', '1.2s'],
+        { who: NAMES[2], state: 'Clean · 24.1s', count: { done: 22, of: 22, label: 'scanned' }, res: 'Looked at <b>22</b> · <b>nobody new</b> accepted', steps: [
+          ['ok', 'Browser open', '15.9s'], ['ok', 'Read its 22 sent invitations', '2.4s'],
+          ['ok', 'Found in the sheet · 0', '0.6s'], ['ok', 'Written to the sheet · nothing', '—'],
+          ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.2s'],
         ] },
       ],
     }));
