@@ -3991,14 +3991,16 @@ function openCloudCampaignView(id, label) {
     // Opened from a click (scope is the event object, not a valid scope) → ask the
     // same scope question as the local check, then re-enter with the choice.
     if (scope !== 'campaign' && scope !== 'all') {
-      // Two-step (v2.160.87): scope, then where (VM vs this machine) — matching
-      // the board strip's Check-now flow. 'vm' re-enters with a valid scope.
+      // Scope only. The old second step asked WHERE to run the check, which is
+      // now a question the card already answers: RUNNING ON says which side owns
+      // the campaign, and a check runs where the campaign runs. Asking again made
+      // the two disagreeable (an operator could run a VM check on a campaign
+      // sitting on their Mac) and put a modal in front of the one button people
+      // press when they are already unsure the app is working.
       _soloCheckHandler = (mode) => {
         const sc = mode === 'sheet' ? 'all' : 'campaign';
-        _checkWhereHandler = (where) => (where === 'local'
-          ? cloudCheckLocal(id, document.getElementById('cloud-cv-check-now'), sc)
-          : queueCheckNow(sc));
-        _showCheckWhereModal();
+        if (_checkRunsLocally(id)) cloudCheckLocal(id, document.getElementById('cloud-cv-check-now'), sc);
+        else queueCheckNow(sc);
       };
       _showSoloCheckModal();
       return;
@@ -7934,6 +7936,18 @@ async function _refreshCloudActiveStatus(id) {
       window.__cloudActiveStatus.liveAccount = (d && d.liveAccount) || '';
       window.__cloudActiveStatus.paused = !!(d && d.campaign && d.campaign.status === 'paused');
       window.__cloudActiveStatus.currentAction = _cloudCurrentAction(d);
+      // Handed to this Mac: the checks run HERE, so the engine's view of them is
+      // stale by definition. Its monitor task was retired at handover and
+      // monitor_check_started_at stays null, so without this overlay the card
+      // reads "nothing running right now" while a GoLogin browser is open on
+      // screen. That exact lie is what this whole feature was built to end, so
+      // the local snapshot wins for the fields it owns.
+      if (String((d && d.campaign && d.campaign.runs_on) || '') === 'local' && _localLive) {
+        window.__cloudActiveStatus.runsOn = 'local';
+        window.__cloudActiveStatus.monitoringCheckInProgress = !!_localLive.monitoringCheckInProgress;
+        if (_localLive.nextCheckAt) window.__cloudActiveStatus.nextCheckAt = _localLive.nextCheckAt;
+        if (_localLive.emptyCheckStreak != null) window.__cloudActiveStatus.emptyCheckStreak = _localLive.emptyCheckStreak;
+      }
       _cloudPolledAt.set(id, Date.now());
     }
   } catch (_) { if (!window.__cloudActiveStatus) window.__cloudActiveStatus = { _cloud: true, id, name: 'Cloud campaign', running: true, logs: [] }; }
@@ -10028,6 +10042,18 @@ let _boardRenderInFlight = false;     // don't stack renders (each does N cloud 
 let _cloudRaw = [];                   // background snapshot of cloud details; render builds from this
 let _cloudRefreshInFlight = false;
 
+// Does a Check now for this cloud campaign run on THIS Mac? A check runs where
+// the campaign runs, so this reads the same ownership field the card's RUNNING ON
+// control shows. Absent means the VM: every campaign that predates the handover
+// feature was cloud-dispatched, and it is also the safe default, since a check
+// that opens no browser here is a wasted click rather than a surprise.
+function _checkRunsLocally(id) {
+  const hit = (_cloudRaw || []).find((c) => c && (c.id === id || (c.campaign && c.campaign.id === id)));
+  const c = hit && hit.campaign ? hit.campaign : hit;
+  const side = String((c && (c.runs_on || c.runsOn)) || "").toLowerCase();
+  return side === "local";
+}
+
 // Cloud data comes from the remote engine (0.5–2s per call) — fetching it inside
 // the 4s render made every render block ~1.5s. Fetch it on a BACKGROUND timer
 // into _cloudRaw instead; the render builds cloud strips from that cache with no
@@ -11484,15 +11510,13 @@ window.cloudCheckLocal = cloudCheckLocal;
 // 'all' scope (Account Used column) and 'campaign' to this campaign's accounts.
 function promptCloudCheckScope(id, btn) {
   if (!id) return;
-  // Two-step prompt (v2.160.87): scope (this campaign / all senders), THEN
-  // where (cloud VMs / this machine). 'local' runs the app's own GoLogin sweep
-  // — the exact engine local campaigns use — against this cloud campaign.
+  // Scope only: this campaign's accounts, or every account in the sheet's
+  // Account Used column. WHERE it runs is no longer asked, it follows the
+  // campaign's own side. See _checkRunsLocally.
   _soloCheckHandler = (mode) => {
     const scope = mode === 'sheet' ? 'all' : 'campaign';
-    _checkWhereHandler = (where) => (where === 'local'
-      ? cloudCheckLocal(id, btn, scope)
-      : cloudCheckNow(id, btn, scope));
-    _showCheckWhereModal();
+    if (_checkRunsLocally(id)) cloudCheckLocal(id, btn, scope);
+    else cloudCheckNow(id, btn, scope);
   };
   _showSoloCheckModal();
 }
@@ -13746,10 +13770,17 @@ function stopPolling() {
   pollInterval = null;
 }
 
+// Last /api/campaign/status payload. A campaign handed to this Mac RUNS here,
+// but card #2 for a cloud campaign is built from ENGINE data, so anything that
+// only exists locally, above all a sweep in flight, is invisible to it. This is
+// the snapshot that overlay reads.
+let _localLive = null;
+
 async function pollStatus() {
   try {
     const res = await fetch('/api/campaign/status');
     const s = await res.json();
+    _localLive = s;
 
     // 2.9.7: Check DMs runs as a separate flow with its own state. When a
     // Check DMs scan is active, overlay its status onto the cockpit so the

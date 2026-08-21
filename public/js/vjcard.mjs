@@ -64,6 +64,14 @@ export function statusFromItem(it = {}) {
     // (which _whSide would otherwise have to re-guess from `_cloud`, and a
     // board item builder that forgets to set runsOn on a LOCAL item would then
     // silently show the control in the wrong position).
+    // monitorHeroState reads these three to decide CHECKING vs waking vs a plain
+    // countdown. statusFromItem is a whitelist, so leaving them out meant a board
+    // strip could never show a sweep in progress: it said "nothing running right
+    // now" with a browser open. Same trap that dropped the cadence fields.
+    monitoringCheckInProgress: !!it.monitoringCheckInProgress,
+    monitorTaskStatus: it.monitorTaskStatus || null,
+    monitorTaskDueAt: it.monitorTaskDueAt || null,
+    monitorCheckStartedAt: it.monitorCheckStartedAt || null,
     runsOn: it.runsOn || 'vm',
     handoverAt: it.handoverAt || null,
     // The finished-FG reason line reads all three of these. Leaving them out of
