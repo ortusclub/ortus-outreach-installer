@@ -33,7 +33,7 @@ import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
-import { bannerFor } from '/js/runpanel.mjs';
+import { bannerFor, handoverBanner } from '/js/runpanel.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
@@ -198,16 +198,8 @@ function _snStatusDot(status) {
 }
 
 let _snPrevStatus = new Map(); // cid -> status
-function _snDetectHandover(campaigns) {
+function _snStampFinished(campaigns) {
   const nowStatus = new Map(campaigns.map((c) => [c.id, c.status]));
-  let stopped = null, started = null;
-  for (const [cid, prev] of _snPrevStatus) {
-    const cur = nowStatus.get(cid);
-    if (prev === 'running' && (cur === 'done' || cur === 'error' || cur === undefined)) stopped = cid;
-  }
-  for (const c of campaigns) {
-    if (_snPrevStatus.get(c.id) === 'queued' && c.status === 'running') started = c.id;
-  }
   // Stamp the finish time ONLY when we witness a live scrape turn done/error this
   // session (so pre-existing done scrapes stay time-less instead of "just now").
   let stampedAny = false;
@@ -219,23 +211,6 @@ function _snDetectHandover(campaigns) {
   }
   if (stampedAny) _snSaveDoneSeen();
   _snPrevStatus = nowStatus;
-  if (stopped || started) _snShowHandover(campaigns, stopped, started);
-}
-function _snName(campaigns, cid) { const c = campaigns.find((x) => x.id === cid); return c ? (c.name || 'a scrape') : 'a scrape'; }
-function _snShowHandover(campaigns, stopped, started) {
-  const ho = document.getElementById('sn-handover'), txt = document.getElementById('sn-handover-txt');
-  if (!ho || !txt) return;
-  if (stopped && started) {
-    ho.className = 'sn-handover show launching';
-    txt.innerHTML = `<b>Handover</b> — ${escHtml(_snName(campaigns, stopped))} stopped, now launching <b>${escHtml(_snName(campaigns, started))}</b>.`;
-  } else if (stopped) {
-    ho.className = 'sn-handover show stopping';
-    txt.innerHTML = `<b>Stopped</b> ${escHtml(_snName(campaigns, stopped))}.`;
-  } else {
-    ho.className = 'sn-handover show launching';
-    txt.innerHTML = `<b>Launching</b> ${escHtml(_snName(campaigns, started))}…`;
-  }
-  clearTimeout(ho._t); ho._t = setTimeout(() => { ho.className = 'sn-handover'; }, 5000);
 }
 
 // cid → { profileIds, tabName, owner, mine } from the last render, so the
@@ -247,7 +222,7 @@ let _snLastCampaigns = null; // last rendered board data — for optimistic re-r
 function renderSalesNavBoard(campaigns) {
   campaigns = (campaigns || []).map(_snEnrich); // backfill name/owner/profiles the engine dropped
   _snLastCampaigns = campaigns;
-  _snDetectHandover(campaigns);
+  _snStampFinished(campaigns);
   _snStrips.clear();
   for (const c of campaigns) _snStrips.set(c.id, { profileIds: c.profileIds || [], tabName: c.tabName || '', owner: c.owner || '', mine: !!c.mine });
   const host = document.getElementById('sn-board');
@@ -481,7 +456,7 @@ function _snSaveDoneSeen() {
   try { localStorage.setItem('snDoneSeen2', JSON.stringify(_snDoneSeen)); } catch (_) { /* */ }
 }
 // The ONLY trustworthy finish time: the moment we witnessed this scrape turn
-// done this session (set in _snDetectHandover). We deliberately do NOT read
+// done this session (set in _snStampFinished). We deliberately do NOT read
 // timestamps off the engine jobs — the engine sends no reliable finish epoch,
 // and guessing fields produced garbage ("20636d ago"). Unknown → 0 → plain "Done".
 function _snDoneTs(c) {
@@ -9118,12 +9093,23 @@ function _vjControlsHtml(c, status) {
 // mutually exclusive, so whichever the caller chose stays chosen.
 function applyLiveBanner(live, status) {
   if (!live) return;
+  const move = _hoFor(status);
+  // Mid-fade: leave the banner exactly where it is. A poll landing inside the
+  // 460ms fade would otherwise rebuild it and restart the animation.
+  if (move && move.out && live.classList.contains('is-handover')) return;
   // Torn down and rebuilt every render, never reused: the fillers run on every
   // 2s poll, and appending without removing stacks a new beacon every 2 seconds.
-  live.classList.remove('is-checking', 'is-sending', 'is-waking');
+  live.classList.remove('is-checking', 'is-sending', 'is-waking',
+    'is-handover', 'to-cloud', 'to-local', 'landed', 'out');
   live.querySelector('.ck-beacon')?.remove();
   live.querySelector('.ck-right')?.remove();
   live.querySelector('.ck-stop')?.remove();
+  live.querySelector('.ho-track')?.remove();
+  live.querySelector('.ho-right')?.remove();
+  // A move between this Mac and the VM outranks every other tone: it is the
+  // moment the operator is most likely to think the app has hung, and while it
+  // is on the wire nothing else on the card is true yet.
+  if (move) { _paintHandover(live, move); return; }
   const b = bannerFor(status);
   if (!b) return;
   const l1 = live.querySelector('.vj-live-l1');
@@ -25538,6 +25524,79 @@ window.whereCancel = function() {
   whereRepaint();
 };
 
+// ── The handover banner ───────────────────────────────────────────────────
+// Design: public/sketches/2026-08-21-handover-banner.html. It is the SAME
+// .vj-live band the checking and sending banners promote, so it lands on the
+// dashboard's #active-card and on the board strip's clone through the one
+// applyLiveBanner painter. The standalone #sn-handover strip above the scrape
+// board is gone: it only ever showed on one surface, in one voice.
+//
+// It is deliberately NOT named .sn-switch. That class is the Log/Counts tab
+// switcher already.
+//
+// One campaign moves at a time (campaignHandover refuses a second while one is
+// in flight, and the server refuses it again), so a single slot is enough.
+let _hoMove = null; // { id, to: 'cloud'|'local', name, landed, out }
+
+function _hoFor(status) {
+  if (!_hoMove || !status) return null;
+  const id = String(status.id || status.rawId || '');
+  return id && id === _hoMove.id ? _hoMove : null;
+}
+
+function _paintHandover(live, m) {
+  const b = handoverBanner({ to: m.to, name: m.name, landed: m.landed });
+  live.hidden = false;
+  live.classList.add('is-handover', b.tone);
+  if (m.landed) live.classList.add('landed');
+  if (m.out) live.classList.add('out');
+  const l1 = live.querySelector('.vj-live-l1');
+  const l2 = live.querySelector('.vj-live-l2');
+  if (l1) l1.textContent = b.l1;
+  if (l2) l2.textContent = b.l2;
+  // The shuttle carries DIRECTION, which a spinner cannot: 💻 is this Mac, ☁︎ is
+  // the VM. While it is travelling the origin end is lit; once it has landed the
+  // destination is.
+  const lit = m.landed ? (m.to === 'cloud' ? 'b' : 'a') : (m.to === 'cloud' ? 'a' : 'b');
+  const track = document.createElement('div');
+  track.className = 'ho-track';
+  track.innerHTML = `<span class="ho-end a${lit === 'a' ? ' lit' : ''}">💻</span>`
+    + '<span class="ho-rail"></span><span class="ho-dot"></span>'
+    + `<span class="ho-end b${lit === 'b' ? ' lit' : ''}">☁︎</span>`;
+  live.prepend(track);
+  // What the operator DOES. Not a percentage and not an ETA we cannot honestly
+  // promise.
+  const right = document.createElement('div');
+  right.className = 'ho-right';
+  right.innerHTML = `<b>${escHtml(b.right[0])}</b><span>${escHtml(b.right[1])}</span>`;
+  live.append(right);
+}
+
+// Both card surfaces repaint off their own polls (2s local, 5s cloud); this
+// just stops them sitting a tick behind the move.
+function _hoRefresh() {
+  try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* best-effort */ }
+}
+
+// The handover is finished when the SERVER says so, never when a timer says so.
+// POST /api/campaign/:id/handover answers only after stopLocalAndConfirm has
+// watched this Mac actually stop and the target side has actually started, so
+// its 2xx is the one honest completion signal available. The old banner removed
+// itself after five seconds whether or not the switch had finished, which is
+// the UI reporting a state it has not verified.
+function _hoLanded() {
+  if (!_hoMove) return;
+  _hoMove.landed = true;
+  _hoRefresh();
+  // One beat of confirmation, then it steps aside. It does not blink out.
+  setTimeout(() => {
+    if (!_hoMove) return;
+    _hoMove.out = true;
+    document.querySelectorAll('.vj-live.is-handover').forEach((el) => el.classList.add('out'));
+    setTimeout(() => { _hoMove = null; _hoRefresh(); }, 460);
+  }, 2600);
+}
+
 // The move itself. NO client-side timeout on purpose: the local → VM direction
 // can take up to 120s while the send loop unwinds, and a client that gives up
 // early reports a failure for a move that actually succeeded — which is the
@@ -25546,7 +25605,15 @@ window.campaignHandover = async function(id, to, btn) {
   if (_whBusy) return;
   _whAsk = null; _whMsg = null;
   _whBusy = { id: String(id), to };
+  // The card that was clicked knows the campaign's name, so the banner can say
+  // it out loud instead of "this campaign".
+  const _hoName = (() => {
+    try { return (btn && btn.closest('.wh-host') && btn.closest('.wh-host')._status || {}).name || ''; }
+    catch (_) { return ''; }
+  })();
+  _hoMove = { id: String(id), to: to === 'local' ? 'local' : 'cloud', name: _hoName, landed: false, out: false };
   whereRepaint();
+  _hoRefresh();
   try {
     const r = await fetch(`/api/campaign/${encodeURIComponent(id)}/handover`, {
       method: 'POST',
@@ -25561,9 +25628,13 @@ window.campaignHandover = async function(id, to, btn) {
       // that answered nothing at all falls back, and even that says where the
       // campaign is.
       _whMsg = { id: String(id), text: d.error || `The move was refused (HTTP ${r.status}), so the campaign is still where it was.` };
-    }
+      // Refused: nothing moved, so there is nothing to confirm. The banner goes
+      // at once and the server's own sentence takes over on the control.
+      _hoMove = null;
+    } else _hoLanded();
   } catch (e) {
     _whMsg = { id: String(id), text: `This app could not reach the server to move the campaign (${e && e.message ? e.message : 'no answer'}). Nothing was moved.` };
+    _hoMove = null;
   } finally {
     _whBusy = null;
     whereRepaint();

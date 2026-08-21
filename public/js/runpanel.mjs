@@ -98,3 +98,44 @@ export function bannerFor(status) {
 
   return null;
 }
+
+// Copy is verbatim from the approved interactive sketch
+// public/sketches/2026-08-21-handover-banner.html. It names BOTH ends every
+// time: the shipped banner said only "Handover", which told the operator
+// neither direction nor what to do.
+const HANDOVER = {
+  cloud: {
+    tone: 'to-cloud',
+    l1: 'Moving to the Cloud VM',
+    l2: (n) => `Taking ${n} off this Mac and handing it to the VM, so it keeps going after you close the app.`,
+    right: ['Leave it open', 'This takes a moment. Nothing is lost if you wait.'],
+    doneL1: 'Now running on the VM',
+    doneL2: (n) => `${n} is on the Cloud VM. You can close the app, it keeps going.`,
+    doneRight: ['Done', 'Safe to close the app now.'],
+  },
+  local: {
+    tone: 'to-local',
+    l1: 'Coming back to this Mac',
+    l2: (n) => `Taking ${n} off the Cloud VM so it runs here, in your own browsers.`,
+    right: ['Leave it open', 'This takes a moment. Closing now stops the run.'],
+    doneL1: 'Now running on this Mac',
+    doneL2: (n) => `${n} is running here. Closing the app now stops it.`,
+    doneRight: ['Done', 'Keep the app open to keep it running.'],
+  },
+};
+
+/**
+ * The banner for a campaign that is moving between this Mac and the Cloud VM.
+ * `to` is 'cloud' or 'local'. `landed` swaps it to the confirmation beat.
+ */
+export function handoverBanner({ to, name, landed = false }) {
+  const k = HANDOVER[to === 'local' ? 'local' : 'cloud'];
+  const n = name || 'this campaign';
+  return {
+    tone: k.tone,
+    l1: landed ? k.doneL1 : k.l1,
+    l2: (landed ? k.doneL2 : k.l2)(n),
+    right: landed ? k.doneRight : k.right,
+    landed,
+  };
+}
