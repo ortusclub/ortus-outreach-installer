@@ -90,7 +90,12 @@ async function requestOnce(method, path, body) {
     try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
     if (!res.ok) {
       const detail = parsed && parsed.error ? `: ${parsed.error}` : '';
-      return { error: `HTTP ${res.status}${detail}`, status: res.status };
+      // Carry `reason` through. The handover routes refuse with a reason and no
+      // `error` field ({ ok:false, reason:'sweep_in_flight' | 'not_local' |
+      // 'not_resumable' }), and the caller has to tell those apart to say
+      // anything honest to the operator.
+      const reason = parsed && parsed.reason ? { reason: parsed.reason } : {};
+      return { error: `HTTP ${res.status}${detail}`, status: res.status, ...reason };
     }
     return parsed;
   } catch (err) {
@@ -375,6 +380,19 @@ export function setCloudCampaignAccounts(id, { add = [], remove = [] } = {}) {
 // Single attempt on purpose: withWriteRetry would re-POST a refusal.
 export function releaseCloudCampaign(id) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/handover-release`, {});
+}
+// Handover, this Mac → VM, for a campaign the VM never destroyed: a MONITORING
+// campaign kept status='monitoring' through handover-release (only a running or
+// paused one was cancelled), so its engine row is still intact and can simply be
+// taken back rather than re-dispatched as a new campaign with a new id. The
+// engine sets runs_on='vm', resets empty_check_streak and re-arms the monitor
+// task one base interval out.
+// Two refusals, both HTTP 409: `not_local` (the VM already owns it) and
+// `not_resumable` (its status is not 'monitoring', so a done or cancelled
+// campaign is never quietly revived by a handover). Single attempt for the same
+// reason as releaseCloudCampaign: a retry would re-POST a refusal.
+export function reclaimCloudCampaign(id) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/handover-reclaim`, {});
 }
 // Un-bench a weekly-capped account (operator Retry in the Accounts panel).
 export function unbenchCloudAccount(id, profileId) {

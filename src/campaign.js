@@ -1912,6 +1912,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign._endNotice = null;
   campaign.monitoringUntil = null;
   campaign.nextCheckAt = null;
+  // A fresh local run is NOT the campaign a handover adopted, so it must not
+  // keep that campaign's cloud id: server.js reads campaign.id to decide whether
+  // there is an engine row to hand back, and a stale one would hand back the
+  // wrong campaign. Only adoptMonitoring ever sets a non-singleton id.
+  campaign.id = SINGLETON_CAMPAIGN_ID;
   campaign.participatingProfileIds = [];
   campaign.introducedInRun = new Set();
   campaign.dmSentInRun = new Set();

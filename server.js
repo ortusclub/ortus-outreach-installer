@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
@@ -53,8 +53,8 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { processedLeadUrls, sheetProcessedUrls, handoverTarget } from './src/handover.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, releaseCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { processedLeadUrls, sheetProcessedUrls, handoverTarget, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -2289,6 +2289,32 @@ async function handoverToVm(id, req, res) {
   const monitoring = !running && campaign.state === 'monitoring';
   if (!running && !monitoring) return res.status(409).json({ error: 'Nothing is running on this Mac, so there is nothing to move to the VM.' });
 
+  // A campaign this Mac ADOPTED from the VM still has its engine row intact:
+  // handover-release never cancelled it, because it was monitoring rather than
+  // running. So hand that row back rather than dispatching a new campaign, which
+  // would be impossible anyway (nothing left to send) and would mint a second
+  // card on the board. Checked FIRST: an adopted campaign has no local launch
+  // snapshot, so the settings check below would refuse it.
+  const cloudId = monitoring ? reclaimableCloudId(campaign, SINGLETON_CAMPAIGN_ID) : '';
+  if (cloudId) {
+    const rec = await reclaimCloudCampaign(cloudId);
+    if (!rec || rec.error || !rec.reclaimed) {
+      const r = reclaimRefusal(rec && rec.reason);
+      // Only the VM-already-owns-it case touches this side, and it does so to
+      // remove an owner, never to half-move a campaign.
+      if (r.stopLocal) await stopMonitoring({ reason: 'handover-vm-already-owns' });
+      return res.status(rec && rec.status === 409 ? 409 : 502).json({ reason: (rec && rec.reason) || undefined, error: r.error });
+    }
+    // Reclaimed. The engine armed its own sweep one base interval out, so stop
+    // this side now: two armed watchers is the two-intros case.
+    await stopMonitoring({ reason: 'handover-to-vm' });
+    campaign.emptyCheckStreak = 0;
+    campaign.runsOn = 'vm';
+    campaign.handoverAt = Date.now();
+    cloudLog(`[cloud] handover: ${cloudId} → vm (monitoring reclaimed, status ${rec.status})`);
+    return res.json({ ok: true, to: 'vm', id: cloudId, reclaimed: true, status: rec.status });
+  }
+
   const last = getLastRunSettings();
   if (!last || !last.sheetUrl) {
     return res.status(409).json({ error: 'This Mac has no record of how this campaign was launched, so the VM cannot be given the same settings. Stop it here and start it in the cloud instead.' });
@@ -2304,9 +2330,9 @@ async function handoverToVm(id, req, res) {
   const excludedSet = new Set(excluded);
   const remaining = rows.filter((r) => { const u = urlOf(r); return u && !excludedSet.has(String(u).trim()); }).length;
   if (!remaining) {
-    // Everything is sent, so a cloud campaign would have nothing to run: the
-    // engine only takes campaigns that have leads. Refuse BEFORE stopping
-    // anything, so a check-only campaign is never stranded half-moved.
+    // Started here and finished sending here: there is no engine row to reclaim
+    // (the reclaim path above already handled the ones that have one), and the
+    // engine only takes campaigns that have leads.
     return res.status(409).json({ error: 'Every lead in the sheet has already been sent, so there is nothing for the VM to run. Keep the acceptance checks on this Mac.' });
   }
 

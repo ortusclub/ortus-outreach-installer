@@ -59,6 +59,39 @@ export function sheetProcessedUrls(rows, urlOf) {
   return out;
 }
 
+// Does this Mac hold a campaign the VM can take BACK, rather than one it would
+// have to be given from scratch? adoptMonitoring stamps the engine's campaign id
+// onto the campaign global (it is one of MONITORING_FIELDS); a campaign started
+// here keeps the singleton id, and startCampaign restores that id on every fresh
+// run, so a stale cloud id can never leak into a later local campaign.
+export function reclaimableCloudId(campaign, singletonId) {
+  const id = campaign && campaign.id;
+  return id && id !== singletonId ? String(id) : '';
+}
+
+// The engine's two refusals, and what this side does about each.
+//
+// A refusal must leave the campaign exactly where it was, so the default is to
+// keep monitoring here. `not_local` is the one exception and it is not really a
+// refusal: the VM already owns the campaign, so it is THIS side that is the
+// extra owner, and leaving both armed is the two-sweeps-one-intro case the whole
+// feature exists to prevent.
+export function reclaimRefusal(reason) {
+  if (reason === 'not_local') {
+    return {
+      stopLocal: true,
+      error: 'That campaign is already running on the Cloud VM, so there was nothing to move. This Mac has stopped watching it, so the two sides cannot check the same leads at once.',
+    };
+  }
+  if (reason === 'not_resumable') {
+    return {
+      stopLocal: false,
+      error: 'The VM will not take that campaign back: it is finished or cancelled there, so it cannot be resumed. Start a fresh campaign on the VM instead. Nothing changed here.',
+    };
+  }
+  return { stopLocal: false, error: 'The VM did not take the campaign back, so nothing changed here.' };
+}
+
 // The fixed sequence. Returned as data so a test can assert the order without
 // running any of it.
 export function handoverPlan({ from, to }) {
