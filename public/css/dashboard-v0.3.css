@@ -394,7 +394,8 @@
   /* ── THE CHECKING BANNER ─────────────────────────────────────────────────
      Same .vj-live element the card already has, promoted while a sweep runs.
      Only the monitoring blue is used; gold stays reserved for Start. */
-  body[data-dashboard='v3'] .vj-live.is-checking {
+  body[data-dashboard='v3'] .vj-live.is-checking,
+  body[data-dashboard='v3'] .vj-live.is-waking {
     border: 2px solid var(--blue); padding: 20px 24px; align-items: center; gap: 20px;
     animation: ckbreathe 2.2s ease-in-out infinite;
   }
@@ -402,14 +403,19 @@
     0%, 100% { background: transparent; }
     50% { background: color-mix(in srgb, var(--blue) 9%, transparent); }
   }
-  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-ico { display: none; }
-  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l1 {
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-ico,
+  body[data-dashboard='v3'] .vj-live.is-waking .vj-live-ico { display: none; }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l1,
+  body[data-dashboard='v3'] .vj-live.is-waking .vj-live-l1 {
     font-family: var(--display); font-size: 2.1rem; line-height: 1.05; letter-spacing: .02em;
     font-weight: 400; color: var(--ink); text-transform: uppercase;
   }
-  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l2 {
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l2,
+  body[data-dashboard='v3'] .vj-live.is-waking .vj-live-l2 {
     font-family: var(--mono); font-size: .86rem; color: var(--gray); margin-top: 5px;
   }
+  /* The band's Stop control, inside the banner beside the readout. */
+  body[data-dashboard='v3'] .vj-live .ck-stop { flex: 0 0 auto; margin-left: 16px; }
   /* The light. Core, ring, and a second slower ring so it never reads as static. */
   .ck-beacon { position: relative; flex: 0 0 auto; width: 16px; height: 16px; border-radius: 9999px;
                background: var(--blue); margin-right: 4px; }
@@ -809,7 +815,10 @@
     font-size: 1.5rem; font-weight: 700; color: var(--gold); letter-spacing: 0.07em;
   }
   body[data-dashboard='v3'] .vj-mon-hero.is-waking .vj-mon-cap { color: var(--gold); font-weight: 600; }
-  body[data-dashboard='v3'] .vj-live.is-waking .vj-live-l2 { color: var(--gold); font-weight: 700; }
+  /* The .vj-live half of WAKING used to be a small bold gold line, so a run went
+     banner, tiny gold line, banner as it woke and checked. It wears the checking
+     banner now (see THE CHECKING BANNER above): same family, monitoring blue,
+     and gold goes back to being the Start button's alone. */
   body[data-dashboard='v3'] .vj-mon-line {
     font-family: var(--mono); font-size: 0.82rem; color: var(--gray); margin-top: 14px;
   }

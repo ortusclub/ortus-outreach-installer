@@ -69,6 +69,18 @@ export function statusFromItem(it = {}) {
     // strip could never show a sweep in progress: it said "nothing running right
     // now" with a browser open. Same trap that dropped the cadence fields.
     monitoringCheckInProgress: !!it.monitoringCheckInProgress,
+    // The stop flag and the banner's counters. Same whitelist trap: every one of
+    // these is invisible on the board's card unless it is named here.
+    checkStopping: !!it.checkStopping,
+    // Absent stays absent, never 0: a sweep on its third account would read
+    // "1 of 3" and the operator has no way to know the number is a placeholder.
+    accountsDone: it.accountsDone == null ? null : Number(it.accountsDone) || 0,
+    accountsTotal: Number(it.accountsTotal) || Number(it.accounts) || 0,
+    batchDone: it.batchDone == null ? null : Number(it.batchDone) || 0,
+    batchSize: Number(it.batchSize) || 8,
+    sentToday: Number(it.sentToday) || 0,
+    dailyLimit: Number(it.dailyLimit) || 0,
+    elapsedSec: it.elapsedSec == null ? null : Number(it.elapsedSec),
     monitorTaskStatus: it.monitorTaskStatus || null,
     monitorTaskDueAt: it.monitorTaskDueAt || null,
     monitorCheckStartedAt: it.monitorCheckStartedAt || null,

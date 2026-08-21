@@ -33,6 +33,7 @@ import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
+import { bannerFor } from '/js/runpanel.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
@@ -9108,6 +9109,52 @@ function _vjControlsHtml(c, status) {
   return `${openHtml}<div class="dock" role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`;
 }
 
+// The banner is the SAME .vj-live band, promoted. One component, four tones, so
+// checking, waking, stopping and sending all read alike. Both card fillers call
+// this one function (#active-card and the board strip's clone are the same
+// markup) so the two surfaces cannot drift.
+//
+// It never un-hides the band: .vj-live and .vj-stage share one grid slot and are
+// mutually exclusive, so whichever the caller chose stays chosen.
+function applyLiveBanner(live, status) {
+  if (!live) return;
+  // Torn down and rebuilt every render, never reused: the fillers run on every
+  // 2s poll, and appending without removing stacks a new beacon every 2 seconds.
+  live.classList.remove('is-checking', 'is-sending', 'is-waking');
+  live.querySelector('.ck-beacon')?.remove();
+  live.querySelector('.ck-right')?.remove();
+  live.querySelector('.ck-stop')?.remove();
+  const b = bannerFor(status);
+  if (!b) return;
+  const l1 = live.querySelector('.vj-live-l1');
+  const l2 = live.querySelector('.vj-live-l2');
+  if (l1) l1.textContent = b.l1;
+  if (l2) l2.textContent = b.l2;
+  live.classList.add(b.tone === 'wake' ? 'is-waking' : 'is-checking');
+  if (b.tone === 'send') live.classList.add('is-sending');
+  const beacon = document.createElement('i');
+  beacon.className = 'ck-beacon';
+  live.prepend(beacon);
+  if (b.big) {
+    const right = document.createElement('div');
+    right.className = 'ck-right';
+    right.innerHTML = `<b>${escHtml(b.big)}</b><span>${escHtml(b.cap)}</span>`;
+    live.append(right);
+  }
+  // Stop is a LOCAL route (it reaches into this Mac's own campaign), so it is
+  // only offered on a campaign running here.
+  if (b.tone === 'check' && !(status && status._cloud)) {
+    const stop = document.createElement('button');
+    stop.className = 'btn-pill ck-stop';
+    stop.textContent = 'Stop the check';
+    stop.onclick = async () => {
+      stop.disabled = true;
+      try { await fetch('/api/campaign/check/stop', { method: 'POST' }); } catch (_) { stop.disabled = false; }
+    };
+    live.append(stop);
+  }
+}
+
 function fillVjCard(root, status) {
   if (!root || !status) return;
   const f = vjCardFields(status);
@@ -9150,6 +9197,10 @@ function fillVjCard(root, status) {
       live.classList.add('is-outcome');
       set('activeLiveIco', note.icon); set('activeLiveL1', note.l1); set('activeLiveL2', note.l2);
     } else if (live) live.classList.remove('is-outcome');
+    // Promote the band into the loud banner whenever something is genuinely in
+    // flight. Last, so it wins over the plain one-line text above it, and
+    // unconditional so a finished card clears the beacon a running one left.
+    applyLiveBanner(live, status);
   } catch (_) { /* live line best-effort */ }
 
   if (f.isMonitor) _fillVjMonitorHero(root, status);
@@ -25634,6 +25685,8 @@ window.renderActiveCard = function(status) {
       v3SetText('activeLiveIco', '◷');
       v3SetText('activeLiveL1', 'Waiting for this Mac');
       v3SetText('activeLiveL2', 'the app was closed · nothing is running · move it to the VM to keep going');
+      // Clears any beacon / readout / Stop the running card left behind.
+      applyLiveBanner(liveEl, status);
     } else if (liveEl) liveEl.hidden = true;
     // A finished run keeps its account pills. They are the only surface carrying
     // per-account state - sent counts, No credits / Logged out / Weekly cap - and
@@ -25755,6 +25808,8 @@ window.renderActiveCard = function(status) {
       v3SetText('activeLiveIco', la.icon);
       v3SetText('activeLiveL1', la.l1);
       v3SetText('activeLiveL2', la.l2);
+      // Same promoted band as the board strip's card, same function.
+      applyLiveBanner(liveEl, status);
     }
     // The stage supersedes the one-line version whenever the engine is naming a
     // person — they share the grid slot, so exactly one of them is ever shown.
@@ -25773,6 +25828,7 @@ window.renderActiveCard = function(status) {
       v3SetText('activeLiveIco', '🤝');
       v3SetText('activeLiveL1', status.preflightL1 || 'Sending connections to the primary account');
       v3SetText('activeLiveL2', status.preflightSub || 'Your Mac is doing this locally — the campaign moves to the cloud the moment it finishes.');
+      applyLiveBanner(liveEl, status);
     }
   }
   // Bug 14: once a campaign is launched, keep the live log visible through the
