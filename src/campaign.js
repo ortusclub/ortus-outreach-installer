@@ -811,6 +811,13 @@ export const campaign = {
   id: SINGLETON_CAMPAIGN_ID,
   running: false,
   _abort: false,
+  // Stop THIS acceptance check, not the campaign. _abort tears the whole run
+  // down (stopCampaign sets it with _stoppedManually), so a check that reused
+  // it would end monitoring too. Cleared when the sweep unwinds; state,
+  // nextCheckAt and the monitoring window are never touched by it.
+  _abortCheck: false,
+  // The person the sweep is reading right now, so a stop can name them.
+  _checkingLead: null,
   // v2.78: profileIds the operator has benched from the sending rotation for
   // the rest of THIS run. pickNextProfile skips them; reset each startCampaign
   // so a new campaign starts with every account active. (A Set — never
@@ -5794,6 +5801,9 @@ export function getCampaignStatus() {
     // v2.14.x: surface the tick re-entrancy guard so the cockpit + run-bar
     // can flip to "Checking now…" while a bulk-check is mid-fire.
     monitoringCheckInProgress: _checkInProgress,
+    // The banner shows STOPPING between the press and the browsers actually
+    // closing, so the operator does not press Stop three more times.
+    checkStopping: !!campaign._abortCheck,
     participatingProfileIds: campaign.participatingProfileIds || [],
     currentAction: campaign.currentAction,
     currentProfile: campaign.currentProfile,
@@ -5980,6 +5990,31 @@ let _checkInProgress = false;
  */
 export function setBulkCheckInProgress(on) {
   _checkInProgress = !!on;
+  // A stop belongs to the sweep that was in flight. Clear it as that sweep
+  // unwinds, never before, so the next check can't start already stopped.
+  if (!_checkInProgress) {
+    campaign._abortCheck = false;
+    campaign._checkingLead = null;
+  }
+}
+
+/**
+ * Stop an acceptance check that is in flight. Immediate: the abort is read
+ * between leads inside the sweep, so it lands within one person rather than at
+ * the end of the account.
+ *
+ * The interrupted person is left UNSTAMPED and named in the log. A lead that
+ * was read but not written must never be recorded as finished, or the next
+ * sweep skips them and their acceptance is lost.
+ */
+export function stopMonitoringCheck() {
+  if (!_checkInProgress) return { ok: true, wasRunning: false, interrupted: null };
+  campaign._abortCheck = true;
+  const who = campaign._checkingLead || null;
+  log(who
+    ? `🛑 Check stopped by you while reading ${who}. Nothing was recorded for ${who}, so the next check reads them again.`
+    : '🛑 Check stopped by you. Closing the browsers now.');
+  return { ok: true, wasRunning: true, interrupted: who };
 }
 // v2.14.x: pre-fire heads-up. 15 s before each auto-check, fire a
 // desktop notification + cockpit log line so the operator can context-
@@ -6127,10 +6162,18 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
         campaign.logs.push(`[${new Date().toISOString()}] 🛏 Monitoring · next check at ${hhmm(new Date(campaign.nextCheckAt))}`);
         schedulePreFireHeadsUp();
       }
+      // Clear the stop AFTER the sweep unwinds, never before: an early clear
+      // lets the next account start while the browsers from this one are still
+      // closing. nextCheckAt is deliberately untouched above, so a stopped
+      // check does not shift the cadence.
+      campaign._abortCheck = false;
+      campaign._checkingLead = null;
       _checkInProgress = false;
     }
   } catch (err) {
     console.warn('[monitoring-tick] outer threw:', err.message);
+    campaign._abortCheck = false;
+    campaign._checkingLead = null;
     _checkInProgress = false;
   }
 }
@@ -6412,7 +6455,9 @@ export async function runMonitoringCheckAll() {
     // v2.74: stop sweeping the moment the operator stops monitoring (state
     // flips off 'monitoring') or hits Stop (_abort), instead of walking every
     // remaining account.
-    if (campaign._abort || campaign.state !== 'monitoring') break;
+    // _abortCheck stops only this sweep: monitoring, the cadence and the next
+    // check time all survive it.
+    if (campaign._abort || campaign._abortCheck || campaign.state !== 'monitoring') break;
     const idx = (campaign.profileIds || []).indexOf(pid);
     const pName = idx >= 0 ? (campaign.profileNames || [])[idx] : pid;
     const r = await runMonitoringCheck(pid, pName || pid);

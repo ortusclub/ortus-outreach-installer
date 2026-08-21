@@ -4806,6 +4806,17 @@ app.post('/api/monitoring/check-now', async (req, res) => {
   }
 });
 
+// Stop the acceptance check that is running right now, WITHOUT ending the
+// campaign. Monitoring, the cadence and the next check time are untouched.
+app.post('/api/campaign/check/stop', async (req, res) => {
+  try {
+    const { stopMonitoringCheck } = await import('./src/campaign.js');
+    res.json(stopMonitoringCheck());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/monitoring/auto-checks', async (req, res) => {
   try {
     const { enabled } = req.body || {};
@@ -6052,7 +6063,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
     for (const pid of profileIdsToSweep) {
       // v2.78: stop the sweep the instant the operator hits Stop, instead of
       // grinding through every remaining account.
-      if (_manualSweepAbort || campaign._abort) {
+      if (_manualSweepAbort || campaign._abort || campaign._abortCheck) {
         campaignLog('■ Stop detected — halting bulk check sweep.');
         break;
       }

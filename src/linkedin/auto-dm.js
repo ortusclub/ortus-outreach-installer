@@ -188,6 +188,15 @@ export async function runAutoDms({
   for (let i = 0; i < connectedUrls.length; i++) {
     const url = connectedUrls[i];
 
+    // Stop lands within one person, not at the end of the account. The leads
+    // left over are abandoned WITHOUT a stamp, so the next check reads them
+    // again. Nothing is written here, unlike the Stop branch below, which
+    // marks the rest as Skipped because the whole run is over.
+    if (campaign._abortCheck) {
+      log(`  ■ [${profileName}] Check stopped by you. ${connectedUrls.length - i} person(s) were left untouched, so the next check reads them again.`);
+      break;
+    }
+
     if (campaign._abort) {
       log(`  ■ [${profileName}] Stop detected — marking remaining ${connectedUrls.length - i} DM(s) as Skipped.`);
       await _stampSkipped(connectedUrls.slice(i), 'Stop pressed');
@@ -221,6 +230,8 @@ export async function runAutoDms({
       || row['FIRST NAME'] || row['firstName'] || row['FirstName'] || row['first_name'] || '';
     const leadLastName = row['Last Name'] || row['Last name'] || row['last name']
       || row['LAST NAME'] || row['lastName'] || row['LastName'] || row['last_name'] || '';
+    // Name the person the check is on, so a stop can say who it interrupted.
+    campaign._checkingLead = `${leadFirstName} ${leadLastName}`.trim() || null;
     const data = {
       ...row,
       firstName: leadFirstName,

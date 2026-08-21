@@ -672,6 +672,15 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     return { matched: 0, freshConnected: 0, fetched: 0, error: reason };
   }
 
+  // The operator stopped the check while this account's connections were being
+  // read. Bail out before anything is written: this account is left exactly as
+  // it was, so the next check reads it again from scratch. Deliberately placed
+  // here and not inside the sender scan below, which must see every row or the
+  // stamps it feeds would be computed against a half-built sender list.
+  if (campaign._abortCheck) {
+    return { matched: 0, freshConnected: 0, fetched: conns.length, error: 'stopped by you' };
+  }
+
   // 3) Read the sheet. Done BEFORE the sidecar write so we can extract the
   // active-sender set (distinct Sender column values) — Apps Script needs it
   // to filter out non-campaign accounts from the "Recent Connections" tab.

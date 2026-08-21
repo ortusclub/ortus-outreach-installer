@@ -575,6 +575,15 @@ export async function runAutoIntros({
   for (let i = 0; i < connectedUrls.length; i++) {
     const url = connectedUrls[i];
 
+    // Stop lands within one person, not at the end of the account. The leads
+    // left over are abandoned WITHOUT a stamp, so the next check reads them
+    // again. This is why nothing is written here, unlike the Stop branch
+    // below, which marks the rest as Skipped because the whole run is over.
+    if (campaign._abortCheck) {
+      log(`  ■ [${profileName}] Check stopped by you. ${connectedUrls.length - i} person(s) were left untouched, so the next check reads them again.`);
+      break;
+    }
+
     // v2.14.x: graceful-abort checkpoint. Without this guard, runAutoIntros
     // keeps iterating against a dead page after the operator presses Stop
     // (which force-closes browsers from server.js:/api/campaign/stop) or
@@ -613,6 +622,8 @@ export async function runAutoIntros({
       || row['FIRST NAME'] || row['firstName'] || row['FirstName'] || row['first_name'] || '';
     const leadLastName = row['Last Name'] || row['Last name'] || row['last name']
       || row['LAST NAME'] || row['lastName'] || row['LastName'] || row['last_name'] || '';
+    // Name the person the check is on, so a stop can say who it interrupted.
+    campaign._checkingLead = `${leadFirstName} ${leadLastName}`.trim() || null;
     const data = {
       ...row,
       firstName: leadFirstName,
