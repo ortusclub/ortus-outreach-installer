@@ -25783,7 +25783,26 @@ window.campaignHandover = async function(id, to, btn) {
       // Refused: nothing moved, so there is nothing to confirm. The banner goes
       // at once and the server's own sentence takes over on the control.
       _hoMove = null;
-    } else _hoLanded();
+    } else {
+      _hoLanded();
+      // The card must FOLLOW the campaign, not stay with the corpse it left
+      // behind. A handover to the VM halts the local singleton, so the campaign
+      // tab went on rendering that singleton's end state and announced FINISHED
+      // for a campaign that was alive on the VM with every lead still to do.
+      // Pointing the cloud view at it makes renderActiveCard take over with the
+      // real side's status (it already does this whenever no LOCAL campaign is
+      // running or monitoring). Moving BACK to this Mac drops the cloud view for
+      // the same reason, so the local poll owns the card again.
+      try {
+        if (to === 'local') {
+          if (typeof stopViewingCloudCampaign === 'function') stopViewingCloudCampaign();
+        } else {
+          _viewingCloudId = String(id);
+          await _refreshCloudActiveStatus(String(id));
+          if (typeof _startCloudCardPoll === 'function') _startCloudCardPoll();
+        }
+      } catch (_) { /* the board still shows the truth if this fails */ }
+    }
   } catch (e) {
     _whMsg = { id: String(id), text: `This app could not reach the server to move the campaign (${e && e.message ? e.message : 'no answer'}). Nothing was moved.` };
     _hoMove = null;
