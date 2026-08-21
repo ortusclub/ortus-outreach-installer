@@ -153,6 +153,41 @@
                    border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 10px; }
   .sp-why span.r b { color: var(--ink); font-weight: 600; }
 
+  /* ── THE CHECKING BANNER ─────────────────────────────────────────────────
+     Same .vj-live element the card already has, promoted while a sweep runs.
+     Only the monitoring blue is used; gold stays reserved for Start. */
+  body[data-dashboard='v3'] .vj-live.is-checking {
+    border: 2px solid var(--blue); padding: 20px 24px; align-items: center; gap: 20px;
+    animation: ckbreathe 2.2s ease-in-out infinite;
+  }
+  @keyframes ckbreathe {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--blue) 9%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-ico { display: none; }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l1 {
+    font-family: var(--display); font-size: 2.1rem; line-height: 1.05; letter-spacing: .02em;
+    font-weight: 400; color: var(--ink); text-transform: uppercase;
+  }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l2 {
+    font-family: var(--mono); font-size: .86rem; color: var(--gray); margin-top: 5px;
+  }
+  /* The light. Core, ring, and a second slower ring so it never reads as static. */
+  .ck-beacon { position: relative; flex: 0 0 auto; width: 16px; height: 16px; border-radius: 9999px;
+               background: var(--blue); margin-right: 4px; }
+  .ck-beacon::before, .ck-beacon::after {
+    content: ""; position: absolute; inset: -8px; border-radius: 9999px; border: 2px solid var(--blue);
+    animation: ckring 1.6s cubic-bezier(.2,.6,.3,1) infinite;
+  }
+  .ck-beacon::after { animation-delay: .8s; }
+  @keyframes ckring { 0% { transform: scale(.5); opacity: .95 } 100% { transform: scale(2.1); opacity: 0 } }
+  /* Right-hand readout inside the banner: where, elapsed, position. */
+  .ck-right { margin-left: auto; text-align: right; font-family: var(--mono); }
+  .ck-right b { display: block; font-family: var(--display); font-size: 1.5rem; font-weight: 400;
+                letter-spacing: .02em; color: var(--ink); }
+  .ck-right span { display: block; font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+                   color: var(--gray); margin-top: 3px; }
+
   /* Log: the real .vj-log-line plus one new WHERE column. */
   body[data-dashboard='v3'] .vj-log-line { grid-template-columns: 62px 36px 66px 1fr; }
   body[data-dashboard='v3'] .vj-log-line .where { font-family: var(--mono); font-size: .62rem;
@@ -255,7 +290,7 @@ function panel({ verb, meta, sub, still, cols, why }) {
   return el;
 }
 
-function baseCard({ tag, count, cap, l1, l2, line, log, hero }) {
+function baseCard({ tag, count, cap, l1, l2, line, log, hero, checking }) {
   const el = TEMPLATE.cloneNode(true);
   el.removeAttribute('id');
   el.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
@@ -291,6 +326,16 @@ function baseCard({ tag, count, cap, l1, l2, line, log, hero }) {
   live.querySelector('.vj-live-ico').textContent = l1.ico;
   live.querySelector('.vj-live-l1').textContent = l1.t;
   live.querySelector('.vj-live-l2').textContent = l2;
+  if (checking) {
+    live.classList.add('is-checking');
+    const beacon = document.createElement('i');
+    beacon.className = 'ck-beacon';
+    live.prepend(beacon);
+    const right = document.createElement('div');
+    right.className = 'ck-right';
+    right.innerHTML = `<b>${checking.big}</b><span>${checking.cap}</span>`;
+    live.append(right);
+  }
 
   // The account rows the card already has stay put; the step panel is what is new.
   el.querySelector('.vj-profiles')?.remove();
@@ -322,8 +367,9 @@ section(
   (wrap) => {
     const c = baseCard({
       tag: 'CHECKING', hero: 'monitor', count: '20:56', cap: 'until next check',
-      l1: { ico: '↻', t: 'Checking for new acceptances…' },
-      l2: 'camillec@ortus.solutions · sweeping recent connections',
+      checking: { big: '2 of 3', cap: 'accounts · 00:41 elapsed' },
+      l1: { ico: '↻', t: 'Checking right now' },
+      l2: 'camillec@ortus.solutions · reading its sent invitations · on this Mac',
       line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
       log: [
         { t: '12:34:17', where: 'MAC', evt: 'info', what: '▶️ Check started · this campaign\u2019s 3 accounts · 66 invitations to look at' },
