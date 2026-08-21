@@ -12,6 +12,32 @@ const spawnedPids = new Map(); // profileId → Orbita pid (every spawn, even fa
  * (escaped activeProfiles — e.g. a failed launch, or a close that didn't take).
  * Pure + exported for unit testing; closeAllProfiles wires it to real signals.
  */
+// v3.1.33: hard ceiling on any promise that can hang forever.
+//
+// GoLogin's GL.start() has no internal timeout. When the GoLogin API is
+// unreachable, or a profile is locked by another machine, or the local Orbita
+// download stalls, the returned promise simply never settles. Every await above
+// it parks with it, and a parked await never reaches a `finally` — which is how
+// one unhealthy laptop bricked local bulk checks for its whole session: the
+// sweep's `_manualSweepRunning` flag could never clear, so every later check
+// answered "a bulk check is already running" and both Wait and Stop were dead
+// ends (server.js:5602).
+//
+// Pure + exported so the timing contract is unit-testable without GoLogin.
+// Rejects with `label` in the message; never swallows the original rejection.
+export function withTimeout(promise, ms, label) {
+  let timer;
+  const ceiling = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms);
+  });
+  return Promise.race([promise, ceiling]).finally(() => clearTimeout(timer));
+}
+
+// Generous on purpose: colleagues run this on slow, loaded laptops, and a cold
+// profile has to download before it starts. This is a "something is wrong"
+// ceiling, not a performance target — a healthy launch takes seconds.
+export const LAUNCH_TIMEOUT_MS = 5 * 60 * 1000;
+
 export function selectOrphanPids({ spawned, activePids, isAlive }) {
   const out = [];
   for (const pid of spawned.values()) {
@@ -270,7 +296,19 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
     ],
   });
 
-  const { status, wsUrl } = await GL.start();
+  // Never await GL.start() bare — see withTimeout above. On timeout we still
+  // own whatever Orbita process it managed to spawn, so kill it before
+  // rethrowing; otherwise a stalled launch leaks a headless Chromium per retry.
+  let status, wsUrl;
+  try {
+    ({ status, wsUrl } = await withTimeout(GL.start(), LAUNCH_TIMEOUT_MS, `GoLogin launch for ${profileId}`));
+  } catch (err) {
+    const stalledPid = GL?.processSpawned?.pid;
+    try { GL.killBrowser(); } catch { /* may not have got that far */ }
+    if (stalledPid) { try { process.kill(stalledPid, 'SIGKILL'); } catch { /* already dead */ } }
+    spawnedPids.delete(profileId);
+    throw err;
+  }
 
   const _spawnedPid = GL?.processSpawned?.pid;
   if (_spawnedPid) spawnedPids.set(profileId, _spawnedPid);

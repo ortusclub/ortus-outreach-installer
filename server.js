@@ -5971,6 +5971,20 @@ app.post('/api/bulk-check/stop', (_req, res) => {
   const wasRunning = _manualSweepRunning;
   _manualSweepAbort = true;
   forceCloseActiveBulkChecks();
+  // v3.1.33: release the lock here too, instead of trusting the sweep's own
+  // `finally` to do it. That finally is unreachable when the loop is parked
+  // inside a hung await (a GoLogin launch that never settles), and the abort
+  // flag above cannot help either: it is only read between accounts, and
+  // forceCloseActiveBulkChecks has nothing to close because addActiveBulkCheck
+  // runs only AFTER launchProfile returns. The result was a permanently stuck
+  // flag — every later check answered "a bulk check is already running" with
+  // both Wait and Stop dead ends, until the app was restarted.
+  //
+  // Safe to clear eagerly: this is an explicit operator Stop, not the
+  // accidental double-click v2.78 added the guard for. If the old sweep is
+  // still alive it breaks at its next account boundary, and its finally
+  // setting the flag false again is a no-op.
+  _manualSweepRunning = false;
   if (wasRunning) campaignLog('■ Stop solo check requested — halting sweep.');
   res.json({ ok: true, wasRunning });
 });
