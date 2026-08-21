@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>Check B — step timeline</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { padding: 28px; background: var(--bg); }
+  .sk-wrap { max-width: 1180px; margin: 0 auto; }
+  .sk-note { font: 12px/1.6 var(--mono); color: var(--gray); margin: 0 0 18px; letter-spacing: .04em; }
+  .sk-note b { color: var(--ink); }
+  .sk-card { border: 1px solid var(--hairline); padding: 26px 28px 28px; }
+
+  .tl-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+  .tl-verb { font: 400 26px/1 var(--display); letter-spacing: .04em; }
+  .tl-dot { display: inline-block; width: 9px; height: 9px; border-radius: 9999px; background: var(--ink);
+            animation: tlp 1.1s ease-in-out infinite; margin-right: 9px; vertical-align: 2px; }
+  @keyframes tlp { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  .tl-where { font: 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+              border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 11px; color: var(--gray); }
+  .tl-el { margin-left: auto; font: 12px/1 var(--mono); color: var(--gray); letter-spacing: .06em; }
+  .tl-sub { font: 13px/1.5 var(--body); color: var(--gray); margin-bottom: 20px; }
+
+  /* Every account is a column of steps. A step ticks the moment it happens, so
+     a stall is visible as the step that never ticked. */
+  .tl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--hairline); }
+  .tl-col { border-right: 1px solid var(--hairline-soft); padding: 16px 18px 6px; }
+  .tl-col:last-child { border-right: 0; }
+  .tl-who { font: 13px/1.4 var(--body); margin-bottom: 14px; }
+  .tl-who span { display: block; font: 10px/1 var(--mono); letter-spacing: .12em;
+                 text-transform: uppercase; color: var(--gray); margin-top: 6px; }
+
+  .tl-step { display: grid; grid-template-columns: 16px 1fr auto; align-items: start; gap: 10px;
+             padding: 7px 0; font: 12px/1.45 var(--body); color: var(--gray); }
+  .tl-mark { font: 11px/1.5 ui-monospace, Menlo, monospace; }
+  .tl-step.ok { color: var(--ink); }
+  .tl-step.ok .tl-mark::before { content: "✓"; }
+  .tl-step.now { color: var(--ink); }
+  .tl-step.now .tl-mark::before { content: "▸"; }
+  .tl-step.wait .tl-mark::before { content: "·"; }
+  .tl-ms { font: 10.5px/1.6 ui-monospace, Menlo, monospace; color: var(--gray); }
+
+  .lg { margin-top: 26px; }
+  .lg-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .lg-title { font: 11px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--gray); }
+  .lg-filters { display: flex; gap: 6px; margin-left: auto; }
+  .lg-f { font: 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 6px 11px;
+          border: 1px solid var(--hairline); border-radius: 9999px; color: var(--gray); cursor: pointer; }
+  .lg-f.on { border-color: var(--ink); color: var(--ink); }
+  .lg-box { border: 1px solid var(--hairline-soft); background: var(--bg-soft); padding: 12px 14px;
+            font: 11.5px/1.85 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 260px; overflow: auto; }
+  .lg-r { display: grid; grid-template-columns: 62px 42px 62px 1fr; gap: 10px; }
+  .lg-t, .lg-w, .lg-s { color: var(--gray); }
+</style>
+</head>
+<body>
+<div class="sk-wrap">
+  <p class="sk-note">
+    <b>B — STEP TIMELINE.</b> The sweep is not one spinner, it is a fixed list of steps per account.
+    A stall is readable at a glance: the step that never ticked names it. Same six steps on VM and Mac.
+  </p>
+
+  <div class="sk-card">
+    <div style="font:400 30px/1 var(--display);letter-spacing:.04em;margin-bottom:18px">TEST_FOR_CCLAUDE</div>
+
+    <div class="tl-head">
+      <span class="tl-verb"><span class="tl-dot"></span>Checking for new acceptances</span>
+      <span class="tl-where">💻 This Mac</span>
+      <span class="tl-el">00:41 elapsed</span>
+    </div>
+    <div class="tl-sub">Scope: this campaign’s 3 accounts · 66 pending connection requests</div>
+
+    <div class="tl-grid">
+      <div class="tl-col">
+        <div class="tl-who">mefanier@ortus.solutions <span>Done · 18.2s</span></div>
+        <div class="tl-step ok"><i class="tl-mark"></i><span>Browser opened</span><span class="tl-ms">12.4s</span></div>
+        <div class="tl-step ok"><i class="tl-mark"></i><span>Voyager read · 22 sent invites</span><span class="tl-ms">1.9s</span></div>
+        <div class="tl-step ok"><i class="tl-mark"></i><span>Matched against sheet · 0 hits</span><span class="tl-ms">0.4s</span></div>
+        <div class="tl-step ok"><i class="tl-mark"></i><span>Sheet write · 0 rows</span><span class="tl-ms">—</span></div>
+        <div class="tl-step ok"><i class="tl-mark"></i><span>Intro DMs · 0 sent</span><span class="tl-ms">—</span></div>
+        <div class="tl-step ok"><i class="tl-mark"></i><span>Browser closed</span><span class="tl-ms">1.1s</span></div>
+      </div>
+      <div class="tl-col">
+        <div class="tl-who">camillec@ortus.solutions <span>Checking</span></div>
+        <div class="tl-step ok"><i class="tl-mark"></i><span>Browser opened</span><span class="tl-ms">14.8s</span></div>
+        <div class="tl-step now"><i class="tl-mark"></i><span>Voyager read · 22 sent invites</span><span class="tl-ms">…</span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Matched against sheet</span><span class="tl-ms"></span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Sheet write</span><span class="tl-ms"></span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Intro DMs</span><span class="tl-ms"></span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Browser closed</span><span class="tl-ms"></span></div>
+      </div>
+      <div class="tl-col">
+        <div class="tl-who">selassie.a@ortus.solutions <span>Queued</span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Browser opened</span><span class="tl-ms"></span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Voyager read</span><span class="tl-ms"></span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Matched against sheet</span><span class="tl-ms"></span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Sheet write</span><span class="tl-ms"></span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Intro DMs</span><span class="tl-ms"></span></div>
+        <div class="tl-step wait"><i class="tl-mark"></i><span>Browser closed</span><span class="tl-ms"></span></div>
+      </div>
+    </div>
+
+    <div class="lg">
+      <div class="lg-head">
+        <span class="lg-title">Live log · 214 events</span>
+        <span class="lg-filters">
+          <span class="lg-f on">All</span><span class="lg-f">Check</span><span class="lg-f">Send</span>
+          <span class="lg-f">Sheet</span><span class="lg-f">Errors</span><span class="lg-f">Verbose</span>
+        </span>
+      </div>
+      <div class="lg-box">
+        <div class="lg-r"><span class="lg-t">12:34:17</span><span class="lg-w">MAC</span><span class="lg-s">CHECK</span><span>▶ Local check started · scope=campaign · 3 accounts · 66 pending</span></div>
+        <div class="lg-r"><span class="lg-t">12:34:29</span><span class="lg-w">MAC</span><span class="lg-s">CHECK</span><span>mefanier@ortus.solutions · browser ready in 12.4s</span></div>
+        <div class="lg-r"><span class="lg-t">12:34:31</span><span class="lg-w">MAC</span><span class="lg-s">VOYAGER</span><span>GET invitations/sent · 200 · 22 rows</span></div>
+        <div class="lg-r"><span class="lg-t">12:34:32</span><span class="lg-w">MAC</span><span class="lg-s">MATCH</span><span>scanned=22 withUrl=0 slugs=379 memberIds=381 pidMatched=0 stamped=0</span></div>
+        <div class="lg-r"><span class="lg-t">12:34:35</span><span class="lg-w">MAC</span><span class="lg-s">CHECK</span><span>mefanier@ortus.solutions · finished · 0 newly accepted</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

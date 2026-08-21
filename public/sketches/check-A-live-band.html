@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>Check A — live band</title>
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { padding: 28px; background: var(--bg); }
+  .sk-wrap { max-width: 1180px; margin: 0 auto; }
+  .sk-note { font: 12px/1.6 var(--mono); color: var(--gray); margin: 0 0 18px; letter-spacing: .04em; }
+  .sk-note b { color: var(--ink); }
+  .sk-card { border: 1px solid var(--hairline); padding: 26px 28px 28px; }
+
+  /* ── The band. Replaces the countdown hero for the whole sweep. ───────── */
+  .ck { border: 1px solid var(--ink); padding: 18px 20px; }
+  .ck-top { display: flex; align-items: baseline; gap: 14px; }
+  .ck-verb { font: 400 26px/1 var(--display); letter-spacing: .04em; }
+  .ck-spin { display: inline-block; width: 9px; height: 9px; border-radius: 9999px; background: var(--ink);
+             animation: ckp 1.1s ease-in-out infinite; margin-right: 9px; vertical-align: 2px; }
+  @keyframes ckp { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  .ck-where { font: 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+              border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 11px; color: var(--gray); }
+  .ck-el { margin-left: auto; font: 12px/1 var(--mono); color: var(--gray); letter-spacing: .06em; }
+  .ck-sub { font: 13px/1.5 var(--body); color: var(--gray); margin-top: 7px; }
+
+  .ck-bar { height: 2px; background: var(--hairline-soft); margin: 16px 0 4px; }
+  .ck-bar i { display: block; height: 100%; background: var(--ink); width: 42%; }
+
+  .ck-rows { margin-top: 14px; }
+  .ck-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 16px;
+            padding: 10px 0; border-top: 1px solid var(--hairline-soft); }
+  .ck-row:first-child { border-top: 0; }
+  .ck-who { font: 13px/1.4 var(--body); }
+  .ck-step { font: 12px/1.4 var(--mono); color: var(--gray); letter-spacing: .03em; }
+  .ck-row.is-live .ck-step { color: var(--ink); }
+  .ck-chip { font: 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+             border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 10px; color: var(--gray); }
+  .ck-row.is-live .ck-chip { border-color: var(--ink); color: var(--ink); }
+  .ck-row.is-done .ck-chip { opacity: .45; }
+
+  /* ── Log. Same box, new columns: time · where · stream · text ─────────── */
+  .lg { margin-top: 26px; }
+  .lg-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .lg-title { font: 11px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--gray); }
+  .lg-filters { display: flex; gap: 6px; margin-left: auto; }
+  .lg-f { font: 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 6px 11px;
+          border: 1px solid var(--hairline); border-radius: 9999px; color: var(--gray); cursor: pointer; }
+  .lg-f.on { border-color: var(--ink); color: var(--ink); }
+  .lg-box { border: 1px solid var(--hairline-soft); background: var(--bg-soft); padding: 12px 14px;
+            font: 11.5px/1.85 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 340px; overflow: auto; }
+  .lg-r { display: grid; grid-template-columns: 62px 42px 62px 1fr; gap: 10px; }
+  .lg-t { color: var(--gray); }
+  .lg-w { color: var(--gray); }
+  .lg-s { color: var(--gray); letter-spacing: .06em; }
+  .lg-r.k-check .lg-s { color: var(--ink); }
+  .lg-r.hl { background: rgba(127,127,127,.10); }
+</style>
+</head>
+<body>
+<div class="sk-wrap">
+  <p class="sk-note">
+    <b>A — LIVE BAND.</b> While a check runs, the countdown hero is REPLACED by the band.
+    Nothing to notice, nothing to miss. Each account is a row that moves through its own steps.
+    Identical on VM and this Mac, only the RUNS ON pill differs.
+  </p>
+
+  <div class="sk-card">
+    <div style="font:400 30px/1 var(--display);letter-spacing:.04em;margin-bottom:18px">TEST_FOR_CCLAUDE</div>
+
+    <div class="ck">
+      <div class="ck-top">
+        <span class="ck-verb"><span class="ck-spin"></span>Checking for new acceptances</span>
+        <span class="ck-where">💻 This Mac</span>
+        <span class="ck-el">00:41 elapsed · account 2 of 3</span>
+      </div>
+      <div class="ck-sub">Scope: this campaign’s 3 accounts · 66 pending connection requests to scan</div>
+      <div class="ck-bar"><i></i></div>
+
+      <div class="ck-rows">
+        <div class="ck-row is-done">
+          <span class="ck-who">mefanier@ortus.solutions</span>
+          <span class="ck-step">22 scanned · 0 newly accepted · 0 stamped · 18.2s</span>
+          <span class="ck-chip">Done</span>
+        </div>
+        <div class="ck-row is-live">
+          <span class="ck-who">camillec@ortus.solutions</span>
+          <span class="ck-step">Voyager: reading pending requests (22 of 22)…</span>
+          <span class="ck-chip">Checking</span>
+        </div>
+        <div class="ck-row">
+          <span class="ck-who">selassie.a@ortus.solutions</span>
+          <span class="ck-step">waiting for a browser slot</span>
+          <span class="ck-chip">Queued</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lg">
+      <div class="lg-head">
+        <span class="lg-title">Live log · 214 events</span>
+        <span class="lg-filters">
+          <span class="lg-f on">All</span><span class="lg-f">Check</span><span class="lg-f">Send</span>
+          <span class="lg-f">Sheet</span><span class="lg-f">Errors</span><span class="lg-f">Verbose</span>
+        </span>
+      </div>
+      <div class="lg-box">
+        <div class="lg-r k-check"><span class="lg-t">12:34:17</span><span class="lg-w">MAC</span><span class="lg-s">CHECK</span><span>▶ Local check started · scope=campaign · 3 accounts · 66 pending</span></div>
+        <div class="lg-r k-check"><span class="lg-t">12:34:17</span><span class="lg-w">MAC</span><span class="lg-s">CHECK</span><span>mefanier@ortus.solutions · opening GoLogin profile 686c9573…</span></div>
+        <div class="lg-r k-check"><span class="lg-t">12:34:29</span><span class="lg-w">MAC</span><span class="lg-s">CHECK</span><span>mefanier@ortus.solutions · browser ready in 12.4s</span></div>
+        <div class="lg-r"><span class="lg-t">12:34:31</span><span class="lg-w">MAC</span><span class="lg-s">VOYAGER</span><span>mefanier@ortus.solutions · GET invitations/sent · 200 · 22 rows</span></div>
+        <div class="lg-r"><span class="lg-t">12:34:32</span><span class="lg-w">MAC</span><span class="lg-s">MATCH</span><span>scanned=22 withUrl=0 slugs=379 memberIds=381 names=379 pidMatched=0</span></div>
+        <div class="lg-r"><span class="lg-t">12:34:32</span><span class="lg-w">MAC</span><span class="lg-s">MATCH</span><span>alreadyConnected=0 alreadyIntroduced=0 crossSender=0 alreadyDeclined=0 stamped=0</span></div>
+        <div class="lg-r"><span class="lg-t">12:34:33</span><span class="lg-w">MAC</span><span class="lg-s">SHEET</span><span>mefanier@ortus.solutions · 0 rows to write · nothing sent to Apps Script</span></div>
+        <div class="lg-r k-check"><span class="lg-t">12:34:35</span><span class="lg-w">MAC</span><span class="lg-s">CHECK</span><span>mefanier@ortus.solutions · finished · 0 newly accepted · browser closed</span></div>
+        <div class="lg-r k-check hl"><span class="lg-t">12:34:36</span><span class="lg-w">MAC</span><span class="lg-s">CHECK</span><span>camillec@ortus.solutions · opening GoLogin profile 686c6a33…</span></div>
+        <div class="lg-r hl"><span class="lg-t">12:34:52</span><span class="lg-w">MAC</span><span class="lg-s">VOYAGER</span><span>camillec@ortus.solutions · GET invitations/sent · 200 · 22 rows</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
