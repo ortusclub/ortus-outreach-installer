@@ -10586,6 +10586,16 @@ async function _renderCampaignsBoardInner() {
         // but set it explicitly here rather than leaning on that default.
         runsOn: c.runs_on || 'vm',
         handoverAt: c.handover_at || null,
+        // A sweep running ON THE VM. Card #2 reads these three off the same `c`
+        // (see _buildCloudActiveStatus) and says "Checking now"; this row never
+        // carried them, so the board card said "nothing running right now" while
+        // its own log, built from these very fields, printed "Check in progress".
+        // Two sentences from one object, disagreeing. The started/completed pair
+        // is the same test the log line uses, so they cannot drift again.
+        monitorTaskStatus: c.monitorTaskStatus || null,
+        monitorTaskDueAt: c.monitorTaskDueAt || null,
+        monitorCheckStartedAt: c.monitor_check_started_at || null,
+        monitoringCheckInProgress: !!(c.monitor_check_started_at && !c.monitor_check_completed_at),
       });
       // Handed to this Mac: the checks run HERE, so the engine's copy of the
       // monitor state froze at handover. Same overlay card #2 gets.
