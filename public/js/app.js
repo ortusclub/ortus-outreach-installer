@@ -8324,6 +8324,14 @@ function _startCloudCardPoll() {
   _stopCloudCardPoll();
   _cloudCardTimer = setInterval(async () => {
     if (!_viewingCloudId) { _stopCloudCardPoll(); return; }
+    // A campaign handed to this Mac RUNS here, so pollStatus owns the card and
+    // its data is the live one. This 5s cloud repaint was still firing at the
+    // same element, so the card alternated between two different logs (measured
+    // 2026-08-21: 15 lines / 460px from pollStatus, then 9 lines / 262px from
+    // here, and back) and jumped 198px every five seconds while the operator
+    // was trying to read it. Stand down once the campaign is local: one card,
+    // one writer.
+    if (_checkRunsLocally(_viewingCloudId)) { _stopCloudCardPoll(); return; }
     await _refreshCloudActiveStatus(_viewingCloudId);
     try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
     try { if (typeof _enforceCloudReadOnlyView === 'function') _enforceCloudReadOnlyView(); } catch (_) { /* */ }
