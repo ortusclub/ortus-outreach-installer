@@ -6202,11 +6202,14 @@ app.post('/api/bulk-check-now', async (req, res) => {
       }
       if (r.error) {
         campaignLog(`⚠ [${pName}] Bulk check: ${r.error}`);
+      } else if (r.plain) {
+        // The sweep's own sentence. The forensic field dump it used to print
+        // here still goes to stdout from bulk-check-connections.js.
+        campaignLog(r.plain);
       } else {
         const stamped = r.stamped || 0;
         campaignLog(`📡 [${pName}] Bulk check: ${r.matched || 0} marked Connected, ${stamped} marked Still Pending (of ${r.fetched || 0} recent connections fetched)`);
       }
-      if (r.diag) campaignLog(`📡 [${pName}] diag: ${r.diag}`);
       perProfile.push({ profileId: pid, profileName: pName, ...r });
       if (!r.error) {
         totalMatched += r.matched || 0;

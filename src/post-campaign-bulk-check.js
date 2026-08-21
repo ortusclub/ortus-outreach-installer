@@ -276,7 +276,8 @@ async function tick() {
       if (r.error) {
         console.warn(`[post-campaign] ${entry.profileName} sweep error: ${r.error}`);
       } else {
-        const _resultMsg = `📡 ${entry.profileName}: bulk check, ${r.matched} new accepted · ${r.stamped || 0} still pending`;
+        const _resultMsg = r.plain
+          || `📡 ${entry.profileName}: bulk check, ${r.matched} new accepted · ${r.stamped || 0} still pending`;
         console.log(`[post-campaign] ${entry.profileName}: ${r.matched} Connected, ${r.stamped || 0} Still Pending`);
         appendCampaignLog(entry.sheetId, entry.profileId, _resultMsg);
         // Auto-intro pass for connect_and_introduce campaigns whose

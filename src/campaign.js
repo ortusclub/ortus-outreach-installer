@@ -68,6 +68,7 @@ import { readBlocklist } from './blocklist.js';
 import { blocklistExcludedUrls } from './preflight-lint.js';
 import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
+import { plainLine } from './log-voice.js';
 import {
   sample as rmSample,
   decideThrottle,
@@ -134,6 +135,14 @@ const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent
 // per-account panel lists these people by name; a status check that merely
 // confirmed a connection reached nobody and must not appear there.
 const SENT_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent']);
+
+/** What each send reads as in the operator's log. Never the action name. */
+const SENT_WORDS = {
+  connection_sent: 'a connection request',
+  message_sent: 'a message',
+  inmail_sent: 'an InMail',
+  op_message_sent: 'a message',
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 11.2: batch-loop constants + pure helpers
@@ -3014,8 +3023,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             if (r.error) {
               log(`  ⚠ [${pName}] Bulk check: ${r.error}`);
             } else {
-              const stamped = r.stamped || 0;
-              log(`  ✓ [${pName}] Bulk: ${r.matched} Connected, ${stamped} Still Pending (of ${r.fetched} fetched)`);
+              log(r.plain || `  ✓ [${pName}] Bulk: ${r.matched} Connected, ${r.stamped || 0} Still Pending (of ${r.fetched} fetched)`);
               bulkSucceeded = true;
             }
             try {
@@ -3126,8 +3134,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         if (r.error) {
           log(`  ⚠ [${pName}] Idle bulk-check: ${r.error}`);
         } else {
-          const stamped = r.stamped || 0;
-          log(`  📡 [${pName}] Idle bulk-check: ${r.matched} Connected, ${stamped} Still Pending (of ${r.fetched})`);
+          log(r.plain || `  📡 [${pName}] Idle bulk-check: ${r.matched} Connected, ${r.stamped || 0} Still Pending (of ${r.fetched})`);
         }
 
         if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
@@ -3521,6 +3528,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // so the queue rotates immediately (cooldown ≠ weeklyLimited: profile is
         // still re-enqueued at ~4671 and re-picked after the cooldown window).
         let cooling429 = false;
+        // The operator's two turn markers. Everything between them belongs to
+        // this account, which is otherwise only inferable from the [name] tags.
+        const _turnSentAtStart = getCampaignCount(profileId);
+        log(plainLine('turn-start', {
+          account: pName,
+          size: Number.isFinite(innerLimit) ? innerLimit : null,
+        }));
         for (let leadInBatch = 0; leadInBatch < innerLimit && shouldContinueTurn({ abort: campaign._abort, orphan: isOrphan(), weeklyLimited: weeklyLimited.has(profileId), benched: campaign._skippedProfiles?.has(profileId) }); leadInBatch++) {
         // Where this account is in its TURN, for the per-account panel. `done`
         // is how many leads of this turn are behind it; `size` is how many the
@@ -4337,18 +4351,32 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // status_unknown: no connected field — leave CC text alone
             await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), sheetData, linkedinColumn);
 
-            log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
             // The people this account actually reached, by name, for the
-            // per-account panel. Only real sends count: a status check that
-            // confirmed somebody is not somebody who was written to.
+            // per-account panel AND for the log. Only real sends count: a
+            // status check that confirmed somebody is not somebody who was
+            // written to. The old line here was a bare "(3/50)" counter that
+            // named neither the person nor what happened to them.
+            const _who = `${data.firstName || ''} ${data.lastName || ''}`.trim();
             if (SENT_ACTIONS.has(result.action)) {
-              const _who = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+              log(plainLine('sent', {
+                account: pName,
+                who: _who || 'Someone with no name in the sheet',
+                what: SENT_WORDS[result.action] || 'a message',
+                done: leadInBatch + 1,
+                size: Number.isFinite(innerLimit) ? innerLimit : null,
+                today: getCampaignCount(profileId),
+                dailyLimit: campaign.dailyLimit,
+              }));
               if (_who) {
                 campaign._reachedByProfile = campaign._reachedByProfile || {};
                 const _list = campaign._reachedByProfile[profileId] || (campaign._reachedByProfile[profileId] = []);
                 _list.push(_who);
                 if (_list.length > 200) _list.splice(0, _list.length - 200);
               }
+            } else {
+              // Nothing was sent to this person, but their row was brought up
+              // to date (a status check, an already-connected match, and so on).
+              log(`  ✓ [${pName}] ${_who || 'That row'} is now up to date in the sheet.`);
             }
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
@@ -4409,8 +4437,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   if (r.error) {
                     log(`  ⚠ [${pName}] Bulk check: ${r.error}`);
                   } else {
-                    const stamped = r.stamped || 0;
-                    log(`  📡 [${pName}] Bulk check: ${r.matched} marked Connected, ${stamped} marked Still Pending (of ${r.fetched} recent connections fetched)`);
+                    log(r.plain || `  📡 [${pName}] Bulk check: ${r.matched} marked Connected, ${r.stamped || 0} marked Still Pending (of ${r.fetched} recent connections fetched)`);
                   }
                   cooldown[_key] = Date.now();
                   await writeBulkCheckCooldown(cooldown);
@@ -4929,6 +4956,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           pushError(err);
         }
         }  // end inner BATCH_SIZE for-loop
+
+        log(plainLine('turn-end', {
+          account: pName,
+          sent: Math.max(0, getCampaignCount(profileId) - _turnSentAtStart),
+          size: Number.isFinite(innerLimit) ? innerLimit : null,
+        }));
 
         // ── End-of-turn close ──
         // 2.9.9: in the worker-pool model, profiles always close at end of
@@ -6674,8 +6707,7 @@ export async function runMonitoringCheck(profileId, profileName) {
       // can see it until this account's next check succeeds.
       noteAccountHealth(profileId, profileName, r.error);
     } else {
-      const stamped = r.stamped || 0;
-      campaign.logs.push(`${ts2} 📡 [${profileName}] Check now: ${r.matched} Connected, ${stamped} Still Pending (of ${r.fetched})`);
+      campaign.logs.push(`${ts2} ${r.plain || `📡 [${profileName}] Check now: ${r.matched} Connected, ${r.stamped || 0} Still Pending (of ${r.fetched})`}`);
       noteAccountHealth(profileId, profileName, null);
     }
 

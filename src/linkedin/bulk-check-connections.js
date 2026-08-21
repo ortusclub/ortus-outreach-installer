@@ -26,6 +26,7 @@ import { batchUpdateSheet, writeRecentConnectionsTab } from '../sheets-writer.js
 import { extractLinkedInUrl, campaign } from '../campaign.js';
 import { readSourceMemberId } from '../profile-identity.js';
 import { isIntroSlotOpen } from './intro-constants.js';
+import { plainLine } from '../log-voice.js';
 
 function publicIdFromUrl(url) {
   if (!url) return '';
@@ -771,8 +772,12 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   );
 
   const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, crossSender=${diag.crossSender}, duplicateCollapsed=${diag.duplicateCollapsed}, alreadyDmd=${diag.alreadyDmd}, requestHealed=${diag.requestHealed}, alreadyUnverified=${diag.alreadyUnverified}, composeCapped=${diag.composeCapped}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
-  // Log to stdout for forensic deep-dives, AND also surface in the return
-  // so the campaign loop can pipe it into the dashboard-visible log.
+  // The field dump is FORENSIC and stays on stdout only. It used to be piped
+  // into the operator's live log too, where it read as a wall of key=value
+  // pairs nobody outside this file can parse. What the operator gets instead
+  // is plainSweep() below: one sentence saying how many invitations were
+  // looked at, how many people newly accepted, how many rows were refreshed,
+  // and whether anything looks wrong.
   console.log(`[bulk-check] diag: ${diagSummary}`);
   // 2026-08-21: a live sweep reported withUrl=0 across 66 rows while the very
   // same sheet, tab and column yielded 66 of 66 when read offline. Nothing in
@@ -793,8 +798,22 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     console.log(`[bulk-check] ⚠ Collapsed ${diag.duplicateCollapsed} duplicate profile(s) — same person appeared on more than one row; introduced once, the extra row(s) stamped "Skipped — duplicate".`);
   }
 
+  // One sentence for the operator's live log. Same numbers as the dump above,
+  // said out loud instead of dumped, plus the one thing that genuinely looks
+  // wrong from here: rows that carry no LinkedIn address at all, which is why
+  // a sweep can read a full sheet and match nobody.
+  const plainSweep = (accepted, refreshed) => {
+    const base = accepted > 0
+      ? plainLine('sweep-found', { account: pName, accepted, outstanding: diag.rowsScanned, refreshed })
+      : plainLine('sweep-empty', { account: pName, outstanding: diag.rowsScanned, refreshed });
+    if (diag.rowsScanned > 0 && diag.withUrl === 0) {
+      return `${base} Something looks wrong: not one of those rows had a LinkedIn address on it, so nobody could be matched. Check that the right column is chosen for this sheet.`;
+    }
+    return base;
+  };
+
   if (updates.length === 0) {
-    return { matched: 0, freshConnected: 0, fetched: conns.length, diag: diagSummary, connectedUrls };
+    return { matched: 0, freshConnected: 0, fetched: conns.length, diag: diagSummary, plain: plainSweep(0, 0), connectedUrls };
   }
 
   // Batch-update via the existing Apps Script bridge. cc → 'Connected
@@ -817,5 +836,5 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   // an intro retry, which are 'Already connected', not new (see
   // tests/bulk-check-fresh-count.test.js). Callers driving the adaptive
   // check cadence must use freshConnected, mirroring the engine.
-  return { matched: matchedCount, freshConnected, fetched: conns.length, stamped: pendingCount, diag: diagSummary, connectedUrls };
+  return { matched: matchedCount, freshConnected, fetched: conns.length, stamped: pendingCount, diag: diagSummary, plain: plainSweep(freshConnected, pendingCount), connectedUrls };
 }
