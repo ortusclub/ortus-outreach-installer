@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.40" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.40" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.41" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.41" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -365,6 +365,9 @@
             <span>· <b id="sendingLbl">Idle</b> · <a onclick="window.dashOpenBatchSettings()" style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px;cursor:pointer">batch settings</a></span>
           </div>
         </div>
+        <!-- Per-account panel: one column per account, three visible, the one
+             working centred. Filled by renderRunPanel() in app.js. -->
+        <div class="sp" id="active-panel" hidden></div>
         <div id="primary-panel" hidden></div>
         <div class="vj-profiles" id="active-profiles" hidden></div>
         <div class="vj-controls">
@@ -4147,7 +4150,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.40"></script>
+  <script type="module" src="/js/app.js?v=3.1.41"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before

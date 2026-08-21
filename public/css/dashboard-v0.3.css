@@ -1490,3 +1490,131 @@ body[data-dashboard='v3'] .sn-acctwarn {
 }
 body[data-dashboard='v3'] .sn-acctwarn-txt { font-size: 0.76rem; color: var(--ink); }
 body[data-dashboard='v3'] .sn-acctwarn-pills { display: inline-flex; gap: 7px; flex-wrap: wrap; }
+
+/* ══ THE ONE NEW COMPONENT: the per-account step panel ═══════════════════
+   One column per account, divided by the same hairline the card already
+   uses everywhere. Built only from existing tokens: mono caps labels, ink
+   for what has happened, gray for what has not, no colour that is not
+   already on the card, radius 0 or 9999 only. Gold stays reserved for Start. */
+/* The card is a named-area grid (eyebrow / name / live / bar / hero /
+   stats+controls). The panel is a NEW ROW between the hero and the controls,
+   which is exactly what the change would be in the real card. Everything
+   else keeps its area. */
+body[data-dashboard='v3'] .vj-card:has(.sp) {
+  grid-template-areas:
+    "eyebrow eyebrow" "name name" "live live" "bar bar"
+    "hero hero" "panel panel" "stats controls";
+}
+body[data-dashboard='v3'] .sp { grid-area: panel; border-top: 1px solid var(--hairline); }
+body[data-dashboard='v3'] .vj-card:has(.sp) .vj-details { grid-row: 8; }
+
+.sp-head { display: flex; align-items: baseline; gap: 12px; padding: 13px 16px 0; }
+.sp-verb { font-family: var(--body); font-size: .95rem; color: var(--ink); }
+/* A live light: solid core plus an expanding ring, so it reads as ON from
+   across the room. The card's monitoring blue is already in the palette
+   (--blue, the MONITORING dot), so this borrows no new colour. */
+.sp-dot { position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 9999px;
+          background: var(--blue); margin-right: 13px; vertical-align: 1px; }
+.sp-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 9999px;
+                 border: 1px solid var(--blue); animation: spring 1.4s ease-out infinite; }
+.sp-dot.still { background: var(--gray); opacity: .5; }
+.sp-dot.still::after { display: none; }
+@keyframes spring { 0% { transform: scale(.55); opacity: .9 } 100% { transform: scale(1.9); opacity: 0 } }
+.sp-live { font-family: var(--mono); font-size: .58rem; letter-spacing: .18em; text-transform: uppercase;
+           color: var(--blue); border: 1px solid var(--blue); border-radius: 9999px;
+           padding: 3px 9px; margin-left: 10px; animation: spblink 1.4s steps(1) infinite; }
+@keyframes spblink { 0%,60% { opacity: 1 } 61%,100% { opacity: .35 } }
+.sp-meta { margin-left: auto; font-family: var(--mono); font-size: .7rem; color: var(--gray); letter-spacing: .03em; }
+.sp-sub { font-family: var(--mono); font-size: .71rem; color: var(--gray); padding: 5px 16px 0; letter-spacing: .02em; }
+
+/* Three columns visible, the live account CENTRED, the one before it on the
+   left and the one after on the right. Scrolls horizontally for the rest —
+   a 13-account campaign is 13 columns, not 13 stacked blocks. When the live
+   account is the first, it sits leftmost instead (nothing precedes it). */
+.sp-grid { display: flex; margin-top: 13px; overflow-x: auto; scroll-behavior: smooth;
+           scroll-snap-type: x mandatory; scrollbar-width: thin; }
+.sp-col { flex: 0 0 33.3333%; scroll-snap-align: center;
+          border-top: 1px solid var(--hairline-soft); border-right: 1px solid var(--hairline-soft);
+          padding: 14px 16px 12px; min-width: 0; }
+.sp-col:first-child { scroll-snap-align: start; }
+.sp-col:last-child { border-right: 0; }
+/* The rail's own hairline scrollbar — the design system has no other. */
+.sp-grid::-webkit-scrollbar { height: 3px; }
+.sp-grid::-webkit-scrollbar-thumb { background: var(--hairline); }
+.sp-grid::-webkit-scrollbar-track { background: transparent; }
+
+/* Position readout + arrows, only when there is more than one screenful. */
+.sp-nav { display: flex; align-items: center; gap: 8px; margin-left: 14px; }
+.sp-nav button { font-family: var(--mono); font-size: .7rem; line-height: 1; width: 24px; height: 24px;
+                 border: 1px solid var(--hairline); border-radius: 9999px; background: transparent;
+                 color: var(--gray); cursor: pointer; }
+.sp-nav button:hover { color: var(--ink); border-color: var(--ink); }
+.sp-pos { font-family: var(--mono); font-size: .62rem; letter-spacing: .12em;
+          text-transform: uppercase; color: var(--gray); }
+.sp-col.is-live { background: var(--hairline-soft); box-shadow: inset 2px 0 0 var(--blue); }
+
+.sp-who { font-family: var(--body); font-size: .82rem; color: var(--ink);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-state { font-family: var(--mono); font-size: .6rem; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--gray); margin-top: 5px; }
+.sp-col.is-live .sp-state { color: var(--ink); }
+
+.sp-steps { margin-top: 12px; }
+.sp-step { display: grid; grid-template-columns: 13px minmax(0,1fr) auto; align-items: baseline; gap: 9px;
+           font-family: var(--mono); font-size: .71rem; line-height: 1.5; color: var(--gray); padding: 3px 0; }
+.sp-mk { font-size: .68rem; }
+.sp-step.ok, .sp-step.now { color: var(--ink); }
+.sp-step.ok .sp-mk::before { content: "✓"; }
+.sp-step.now .sp-mk::before { content: "▸"; }
+.sp-step.wait .sp-mk::before { content: "·"; }
+/* NOT ".skip": the app already owns that class for the off-screen
+   skip-to-content link, which positioned these rows at left:-9999px. */
+.sp-step.miss .sp-mk::before { content: "–"; }
+.sp-t { color: var(--gray); font-size: .66rem; }
+
+/* Result line under the steps — the fact the app has and never showed. */
+.sp-res { font-family: var(--mono); font-size: .69rem; color: var(--gray);
+          border-top: 1px solid var(--hairline-soft); margin-top: 11px; padding-top: 9px; letter-spacing: .02em; }
+.sp-res b { color: var(--ink); font-weight: 600; }
+
+/* The batch counter. campaign.js already logs exactly this on every send:
+   "✓ [account] (19/100)" = getCampaignCount(profileId) / campaign.dailyLimit.
+   It went to the log and never to the card. */
+.sp-count { display: flex; align-items: baseline; gap: 8px; margin-top: 11px; }
+.sp-count b { font-family: var(--display); font-size: 1.5rem; letter-spacing: .02em; color: var(--ink); font-weight: 400; }
+.sp-count span { font-family: var(--mono); font-size: .64rem; letter-spacing: .12em;
+                 text-transform: uppercase; color: var(--gray); }
+.sp-cbar { height: 2px; background: var(--hairline); margin-top: 7px; display: flex; gap: 2px; }
+.sp-cbar i { flex: 1 1 0; height: 100%; background: var(--hairline); }
+.sp-cbar i.on { background: var(--ink); }
+.sp-cbar i.now { background: var(--blue); }
+/* The day, under the batch. Two questions, two answers: how far through this
+   turn of 8, and how much of today's allowance is spent. */
+.sp-day { font-family: var(--mono); font-size: .72rem; color: var(--gray); margin-top: 8px; }
+.sp-day b { color: var(--ink); font-weight: 600; }
+.sp-day span { display: block; font-size: .66rem; margin-top: 3px; }
+
+/* ── Account state vocabulary (Task 6) on .sp-col — added in Task 7 ────────
+   `working` is the emphasised one: same treatment the sketch gave its single
+   centred "is-live" column (kept above, unused by Task 8's class names but
+   harmless). `needs-login` / `cannot-open` / `rate-limited` / `trouble` are
+   the ones an operator must not miss — a logged-out account currently looks
+   healthy on the card, which is the bug this panel exists to fix, so those
+   four get the card's one reserved trouble colour, --red, never used
+   elsewhere in this panel. `waiting` / `idle` / `benched` / `stopped` are
+   quieter than `working` but still readable at a glance; no new colours. */
+.sp-col.working { background: var(--hairline-soft); box-shadow: inset 2px 0 0 var(--blue); }
+.sp-col.working .sp-state { color: var(--ink); }
+.sp-col.waiting .sp-state { color: var(--gray); }
+.sp-col.idle { opacity: .8; }
+.sp-col.idle .sp-state { color: var(--gray); }
+.sp-col.benched,
+.sp-col.stopped { opacity: .55; }
+.sp-col.needs-login,
+.sp-col.cannot-open,
+.sp-col.rate-limited,
+.sp-col.trouble { box-shadow: inset 2px 0 0 var(--red); }
+.sp-col.needs-login .sp-state,
+.sp-col.cannot-open .sp-state,
+.sp-col.rate-limited .sp-state,
+.sp-col.trouble .sp-state { color: var(--red); }
