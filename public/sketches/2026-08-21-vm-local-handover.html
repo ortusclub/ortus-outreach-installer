@@ -1,0 +1,222 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sketch: switching a live campaign between the VM and this Mac</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  /* Real card CSS is scoped to body[data-dashboard=v3] > main.main > .container,
+     so the sketch reproduces that chain exactly and restyles nothing. */
+  .container { max-width: 980px; }
+  .main { padding: 32px 40px 80px; }
+  h1 { font-family: var(--display); font-size: 2rem; margin: 0 0 4px; }
+  .lede { font-family: var(--mono); font-size: .82rem; color: var(--gray); max-width: 66ch; line-height: 1.5; margin: 0 0 28px; }
+  .vtitle { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--gray); margin: 34px 0 10px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+  .vnote { font-family: var(--mono); font-size: .76rem; color: var(--gray); max-width: 70ch; line-height: 1.5; margin: 8px 0 0; }
+  .stack > .vj-card { margin-bottom: 14px; }
+
+  /* ── The one new component: the WHERE segmented control. ──────────────────
+     Built only from tokens the design system already defines — hairlines,
+     mono type, radius 9999 on the pill, no colour that isn't already on the
+     card. Gold stays reserved for Start. */
+  .wh { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+        border-top: 1px solid var(--hairline); }
+  .wh-lab { font-family: var(--mono); font-size: .64rem; letter-spacing: .14em;
+            text-transform: uppercase; color: var(--gray); }
+  .wh-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; overflow: hidden; }
+  .wh-seg button { font-family: var(--mono); font-size: .68rem; letter-spacing: .08em;
+                   text-transform: uppercase; padding: 5px 14px; border: 0; background: transparent;
+                   color: var(--gray); cursor: pointer; }
+  .wh-seg button.on { background: var(--ink); color: var(--bg); }
+  .wh-seg button.busy { color: var(--ink); }
+  .wh-note { font-family: var(--mono); font-size: .7rem; color: var(--gray); margin-left: auto; }
+  .wh-warn { font-family: var(--mono); font-size: .7rem; color: var(--ink); margin-left: auto; }
+
+  /* Variant C's inline confirm strip — same hairline language. */
+  .wh-confirm { border-top: 1px solid var(--hairline); padding: 12px 14px;
+                font-family: var(--mono); font-size: .74rem; line-height: 1.6; }
+  .wh-confirm b { font-weight: 600; }
+  .wh-confirm .row { display: flex; gap: 8px; margin-top: 10px; }
+  .wh-confirm button { font-family: var(--mono); font-size: .68rem; letter-spacing: .08em;
+                       text-transform: uppercase; padding: 6px 16px; border: 1px solid var(--hairline);
+                       border-radius: 9999px; background: transparent; cursor: pointer; }
+  .wh-confirm button.go { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+</style>
+
+<body data-dashboard="v3">
+<main class="main"><div class="container">
+<h1>Switching a live campaign between the VM and this Mac</h1>
+<p class="lede">
+  One control on the card, available while it is sending, checking or monitoring.
+  Switching stops the current side and resumes the remainder on the other, keyed on
+  the leads already stamped in the sheet. Per your calls: the in-flight lead is
+  RETRIED on the new side, the adaptive cadence RESETS to your base interval on
+  every switch, and a local campaign stays local and waits if the laptop sleeps.
+  Every card below is the real <code>#active-card</code> cloned out of the shipping
+  index.html. Only the WHERE control is new.
+</p>
+
+<div id="out"></div>
+</div></main>
+
+<script type="module">
+const OUT = document.getElementById('out');
+const doc = new DOMParser().parseFromString(await (await fetch('/index.html')).text(), 'text/html');
+const TEMPLATE = doc.getElementById('active-card');
+
+function baseCard({ name, tag, count, cap, l1, l2, line, state }) {
+  const el = TEMPLATE.cloneNode(true);
+  el.removeAttribute('id');
+  el.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+  el.querySelector('.vj-name').textContent = name;
+  const tagEl = el.querySelector('.vj-tag .dot')?.parentElement.querySelector('span:last-child');
+  if (tagEl) tagEl.textContent = tag;
+
+  el.classList.add('is-monitor');
+  const mon = el.querySelector('.vj-monitor');
+  mon.removeAttribute('aria-hidden');
+  el.querySelector('.vj-hero')?.remove();
+  el.querySelector('.vj-hbar')?.remove();
+  el.querySelector('.fu-dual')?.remove();
+  mon.querySelector('.vj-mon-count').textContent = count;
+  mon.querySelector('.vj-mon-cap').textContent = cap;
+  mon.querySelector('.vj-mon-line').textContent = line;
+  if (state) mon.querySelector('.vj-mon-hero').classList.add(`is-${state}`);
+
+  const live = el.querySelector('.vj-live');
+  live.hidden = false;
+  live.querySelector('.vj-live-ico').textContent = '◷';
+  live.querySelector('.vj-live-l1').textContent = l1;
+  live.querySelector('.vj-live-l2').textContent = l2;
+
+  el.querySelector('.vj-profiles')?.remove();
+  el.querySelector('.vj-controls')?.remove();
+  return el;
+}
+
+// The segmented WHERE control.
+function seg({ where, busy, note, warn }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'wh';
+  const vmOn = where === 'vm', localOn = where === 'local';
+  wrap.innerHTML = `
+    <span class="wh-lab">Running on</span>
+    <span class="wh-seg">
+      <button class="${vmOn ? 'on' : ''}${busy === 'vm' ? ' busy' : ''}">Cloud VM</button>
+      <button class="${localOn ? 'on' : ''}${busy === 'local' ? ' busy' : ''}">This Mac</button>
+    </span>
+    <span class="${warn ? 'wh-warn' : 'wh-note'}">${warn || note || ''}</span>`;
+  return wrap;
+}
+
+function confirmStrip(html) {
+  const d = document.createElement('div');
+  d.className = 'wh-confirm';
+  d.innerHTML = html;
+  return d;
+}
+
+function section(title, note, build) {
+  const h = document.createElement('div');
+  h.className = 'vtitle'; h.textContent = title; OUT.append(h);
+  const wrap = document.createElement('div'); wrap.className = 'stack';
+  build(wrap);
+  OUT.append(wrap);
+  const n = document.createElement('p'); n.className = 'vnote'; n.textContent = note; OUT.append(n);
+}
+
+// ── A: the control alone, always visible, switch is immediate ──────────────
+section(
+  'Variant A: the control is just there, and switching is instant',
+  'One tap moves the campaign. Cheapest to build and the least ceremony. The risk is that it is a one-tap destructive action sitting on a live campaign: the VM is stopped and browsers open on this Mac with no confirmation, which is a bad surprise if the laptop is not ready.',
+  (wrap) => {
+    const a = baseCard({
+      name: 'MAEN_ANZ_HOB - CCII+CCIII+CCIV', tag: 'SENDING', count: '41:22', cap: 'until next check',
+      l1: 'Sending on the VM', l2: '13 accounts · 47 of 300 sent today',
+      line: '712 sent · 14 accepted',
+    });
+    a.append(seg({ where: 'vm', note: 'tap to move it here' }));
+    wrap.append(a);
+  }
+);
+
+// ── B: the control + an explicit handover state ────────────────────────────
+section(
+  'Variant B: the handover itself is a visible state on the card',
+  'Same control, but the switch is a state the card SHOWS, not an instant flip. Both buttons lock while the old side stops and the new one picks up, and the live line narrates it. This is the variant that fixes the class of problem Sam hit: the operator can always see which side owns the campaign and whether a move is in progress.',
+  (wrap) => {
+    const a = baseCard({
+      name: 'MAEN_ANZ_HOB - CCII+CCIII+CCIV', tag: 'HANDING OVER', count: '41:22', cap: 'until next check',
+      l1: 'Moving to this Mac, stopping the VM…',
+      l2: 'the lead in flight will be retried here · 47 of 300 sent today',
+      line: '712 sent · 14 accepted', state: 'checking',
+    });
+    a.append(seg({ where: 'vm', busy: 'local', warn: 'moving, both locked' }));
+    wrap.append(a);
+
+    const b = baseCard({
+      name: 'MAEN_ANZ_HOB - CCII+CCIII+CCIV', tag: 'SENDING', count: '58:04', cap: 'until next check',
+      l1: 'Sending on this Mac', l2: '13 accounts · 48 of 300 sent today · keep the app open',
+      line: '712 sent · 14 accepted',
+    });
+    b.append(seg({ where: 'local', note: 'moved 2 min ago' }));
+    wrap.append(b);
+
+    const c = baseCard({
+      name: 'CC7 - NICE MEL_a', tag: 'MONITORING', count: '59:12', cap: 'until next check',
+      l1: 'Checking on this Mac',
+      l2: 'moved here · back to hourly from the switch · 5 accounts',
+      line: '190 sent · 17 accepted',
+    });
+    c.append(seg({ where: 'local', note: 'cadence reset on switch' }));
+    wrap.append(c);
+  }
+);
+
+// ── C: the control + an inline confirm that states the consequences ────────
+section(
+  'Variant C: the control asks first, in the card, naming what will happen',
+  'Same as B plus one gate. Because you chose retry-the-in-flight-lead, a switch mid-send can re-send one person, and moving to this Mac means GoLogin browsers open here and the app has to stay open. This states both, once, before it happens. Most clicks, least surprise.',
+  (wrap) => {
+    const a = baseCard({
+      name: 'MAEN_ANZ_HOB - CCII+CCIII+CCIV', tag: 'SENDING', count: '41:22', cap: 'until next check',
+      l1: 'Sending on the VM', l2: '13 accounts · 47 of 300 sent today',
+      line: '712 sent · 14 accepted',
+    });
+    a.append(seg({ where: 'vm', busy: 'local', warn: 'confirm below' }));
+    a.append(confirmStrip(`
+      Move this campaign to <b>this Mac</b>?<br>
+      · The VM stops now. 253 lead(s) still to send continue here.<br>
+      · The lead being sent right now is retried here, so that one person may get a second request.<br>
+      · GoLogin browsers open on this Mac. Keep the app open or the campaign waits.<br>
+      · Acceptance checks go back to every 1h from the switch.
+      <span class="row"><button class="go">Move it here</button><button>Stay on the VM</button></span>`));
+    wrap.append(a);
+  }
+);
+
+// ── The reverse direction, and the laptop-sleeps case ──────────────────────
+section(
+  'Both of these have to read well whichever variant wins',
+  'Left: the same control moving a campaign the other way, back onto the VM, which is the direction that makes closing the laptop safe. Right: your call that a local campaign stays local and waits. The card has to say it is waiting on the laptop rather than looking stalled, or this becomes the next "it is stuck" report.',
+  (wrap) => {
+    const a = baseCard({
+      name: 'CC7 - NICE MEL_a', tag: 'HANDING OVER', count: '12:04', cap: 'until next check',
+      l1: 'Moving back to the VM, closing browsers here…',
+      l2: 'the VM picks up from what the sheet says is done',
+      line: '190 sent · 17 accepted', state: 'checking',
+    });
+    a.append(seg({ where: 'local', busy: 'vm', warn: 'moving, both locked' }));
+    wrap.append(a);
+
+    const b = baseCard({
+      name: 'CC7 - NICE MEL_a', tag: 'WAITING', count: 'PAUSED', cap: 'on this Mac',
+      l1: 'Waiting for this Mac',
+      l2: 'the app was closed · nothing is running · move it to the VM to keep going',
+      line: '190 sent · 17 accepted',
+    });
+    b.append(seg({ where: 'local', warn: 'laptop asleep, not running' }));
+    wrap.append(b);
+  }
+);
+</script>
