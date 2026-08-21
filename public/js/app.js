@@ -9304,9 +9304,13 @@ function renderUnifiedStrip(it) {
     cancelled ? 'cancelled' : '',
   ].filter(Boolean).join(' ');
 
-  const wherePill = cloud
-    ? '<span class="sn-where cloud">☁︎ VM</span>'
-    : '<span class="sn-where local">💻 This machine</span>';
+  // Ownership, not provenance: a cloud-dispatched campaign handed to this Mac
+  // runs HERE, and saying "☁︎ VM" on it is the exact lie the handover feature
+  // exists to kill. runsOn is absent on pre-handover campaigns ⇒ VM.
+  const _ownedLocal = it.where === 'local' || String(it.runsOn || '') === 'local';
+  const wherePill = _ownedLocal
+    ? '<span class="sn-where local">💻 This machine</span>'
+    : '<span class="sn-where cloud">☁︎ VM</span>';
   const whenPill = scheduled ? '<span class="sn-when-pill">⏰ Scheduled</span>' : '';
   const dot = errored ? '<span class="dot red"></span>'
     : it.bad ? '<span class="dot cancel"></span>'   // cancelled / stopped — gray, not red
@@ -9380,8 +9384,8 @@ function renderUnifiedStrip(it) {
   const flow = it.isFG
     ? `<b>${it.total || '—'} invites</b> → <b>${it.accounts || 1} account${(it.accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
     : `<b>${it.total || 0} leads</b> → <b>${it.accounts || 0} ${acctWord}</b> → feeds <b>${escHtml(it.name || '')}</b> · ${escHtml(_cloudModeLabel(it.mode))}`;
-  const whereNote = cloud ? 'runs in the cloud — keeps going if you close the app'
-    : 'runs on this machine — closing the app stops it';
+  const whereNote = _ownedLocal ? 'runs on this machine — closing the app stops it'
+    : 'runs in the cloud — keeps going if you close the app';
   const progLine = running
     ? `<div class="sn-progtxt"><b>${it.sent || 0}</b> of ${it.total || 0} ${it.isFG ? 'invites' : 'sent'} · ${whereNote}</div>`
     : '';
@@ -10252,7 +10256,15 @@ async function _renderCampaignsBoardInner() {
     if (s && !s.running && s.state !== 'monitoring' && Array.isArray(s.logs) && s.logs.length) {
       _endedLogs = s.logs; _endedName = s.name || '';
     }
-    if (s && (s.running || s.state === 'monitoring')) {
+    // An ADOPTED cloud campaign lives on this Mac but still has its row in
+    // Postgres, so step 3 already lists it. Pushing it here too put the same
+    // campaign on the board twice with contradictory states: one strip
+    // RUNNING/"Working…"/"next batch in 39m" (this builder hardcodes
+    // bucket:'running' and carries no monitoring fields) beside one strip
+    // MONITORING/VM. The cloud strip is the real one; card #2 already overlays
+    // the live local state onto it.
+    const _adopted = s && s.id && s.id !== 'legacy-singleton';
+    if (s && (s.running || s.state === 'monitoring') && !_adopted) {
       items.push({
         where: 'local', id: 'local-active', name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
         bucket: 'running', sent: s.totalProcessed || 0, total: s.totalTargets || 0,
@@ -10376,6 +10388,15 @@ async function _renderCampaignsBoardInner() {
         runsOn: c.runs_on || 'vm',
         handoverAt: c.handover_at || null,
       });
+      // Handed to this Mac: the checks run HERE, so the engine's copy of the
+      // monitor state froze at handover. Same overlay card #2 gets.
+      if (String(c.runs_on || '') === 'local' && _localLive) {
+        const _row = items[items.length - 1];
+        _row.monitoringCheckInProgress = !!_localLive.monitoringCheckInProgress;
+        if (_localLive.nextCheckAt) _row.nextCheckAt = _localLive.nextCheckAt;
+        if (_localLive.emptyCheckStreak != null) _row.emptyCheckStreak = _localLive.emptyCheckStreak;
+        if (Array.isArray(_localLive.logs) && _localLive.logs.length) _row.logs = _localLive.logs;
+      }
     }
   } catch (_) { /* cloud best-effort */ }
 

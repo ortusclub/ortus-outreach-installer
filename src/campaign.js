@@ -5745,6 +5745,11 @@ export function getCampaignStatus() {
   const thr = campaign._throttle   || amb.throttle;
   return {
     running: campaign.running,
+    // The cloud id when this Mac ADOPTED a cloud campaign's monitoring; the
+    // singleton id otherwise. The board needs it to tell "a local campaign" from
+    // "the cloud campaign that now lives here" — without it the same campaign was
+    // listed twice, once RUNNING/local and once MONITORING/VM.
+    id: campaign.id || SINGLETON_CAMPAIGN_ID,
     paused: campaign._paused,
     pauseRequested: campaign._pauseRequested,
     // v2.78: accounts the operator has benched from the rotation this run.
