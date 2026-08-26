@@ -46,7 +46,7 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.17';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.18';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -12891,7 +12891,17 @@ function beginCloudLaunch({ name, profileIds, handshake = true } = {}) {
     conn: {},
     startedAt: Date.now(),
   };
+  // A launch is operational status immediately, even before an engine campaign
+  // row exists. Reveal section 7 now so the handshake/dispatch card cannot sit
+  // hidden below the Launch form until a later poll discovers the real row.
+  liveStatusForcedOpen = true;
+  try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+  try { placeLiveCard(); } catch (_) { /* */ }
   paintCloudLaunch();
+  setTimeout(() => {
+    const sec = document.getElementById('nav-status');
+    if (sec) { sec.classList.remove('collapsed'); try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {} }
+  }, 100);
 }
 
 // The handshake wizard's poll snapshot → our per-sender map. Same data the modal
@@ -12954,6 +12964,8 @@ function cloudLaunchStatus() {
 // Repaint the card and the board immediately rather than waiting for their 2s /
 // 4s polls — during a launch those polls have nothing new to say anyway.
 function paintCloudLaunch() {
+  try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+  try { placeLiveCard(); } catch (_) { /* */ }
   try { if (typeof window.renderActiveCard === 'function') window.renderActiveCard(null); } catch (_) { /* */ }
   try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
 }
@@ -26445,6 +26457,13 @@ function _stageAcctPill(a, isCurrent, counts) {
   else if (cr && cr.available > 0) cls = 'ok';
   else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) cls = 'warn';
   else if (isCurrent) cls = 'ok';
+  // CC+IC's primary handshake is a launch prerequisite, not secondary account
+  // trivia. Keep its verified result visible in the top pill row so operators
+  // do not have to scroll below the large status card to find it.
+  if (a.primaryConnected === true && !['bad', 'warn'].includes(cls)) {
+    cls = 'ok';
+    text = `${text} · Primary ✓`;
+  }
   // Out of free personalised invites — the account IS still sending, so this is
   // never the pill's headline (a blocking state always wins above). It rides as a
   // suffix on the count so the operator can see the campaign has gone bare
@@ -26752,7 +26771,11 @@ function renderLiveStage(root, status) {
   // to leave the headline stuck on an earlier inferred step. This shared render
   // path covers VM + This Mac and sending + checking + introducing + monitoring.
   const logEvent = latestBannerEvent(status && status.logs, { phase });
-  if (logEvent && phase !== 'done') {
+  // Once a sweep has ended, an account result remains useful in the log and
+  // on its sender pill, but must not leave the whole campaign looking active.
+  // Idle monitoring returns to its durable "waiting for next check" view.
+  const transientCheckEvent = logEvent && ['local-browser-starting', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
+  if (logEvent && phase !== 'done' && !(phase === 'monitoring' && transientCheckEvent)) {
     ca = { ...(ca || {}), label: logEvent.headline,
       sub: `${logEvent.detail}${logEvent.explanation ? ` · ${logEvent.explanation}` : ''}` };
     const allLogs = Array.isArray(status && status.logs) ? status.logs.map((x) => String(x && x.line != null ? x.line : x || '')) : [];
@@ -26770,6 +26793,10 @@ function renderLiveStage(root, status) {
       ca = { ...ca, account: '', accountsDone: 0,
         facts: [['Check trigger', 'Run check now'], ['Scope', `${scope} campaign account${scope === 1 ? '' : 's'}`], ['Current account', 'not selected yet'], ['Next expected event', 'VM worker claims the check']],
         milestones: [['Requested', 'check queued', 'done'], ['Worker', 'waking', 'active'], ['Browser', 'not opened yet', 'future'], ['Accounts', 'waiting', 'future'], ['Results', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'local-browser-starting') {
+      ca = { ...ca, account: logEvent.account, accountsDone: done,
+        facts: [['Check', 'starting'], ['Current account', logEvent.account], ['Browser', 'not open yet'], ['Next expected event', 'local browser opens']],
+        milestones: [['Requested', 'complete', 'done'], ['Browser', 'starting on this Mac', 'active'], ['Connections', 'waiting', 'future'], ['Acceptances', 'waiting', 'future'], ['Results', 'waiting', 'future']] };
     } else if (logEvent.kind === 'account-checking') {
       ca = { ...ca, account: logEvent.account, accountsDone: done,
         facts: [['Check', 'running'], ['Current account', logEvent.account], ['Accounts completed', `${done} of ${scope}`], ['Next expected event', 'recent connections result']],
@@ -26911,7 +26938,7 @@ function renderLiveStage(root, status) {
   const cur = (ca && ca.account) || status.liveAccount || '';
   const isCur = (a) => !paused && !!cur && (a.profileId === cur || a.email === cur);
   const sel = _stageSel.get(cid) || '';
-  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}`).join(',')
+  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}`).join(',')
     + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}`
     + `|${[...((cid && _cloudAcctCounts.get(cid)) || new Map()).entries()].map(([k, v]) => `${k}:${v.sent}/${v.total}`).join(',')}`;
   if (stage.dataset.acctkey !== akey) {

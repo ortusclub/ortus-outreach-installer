@@ -4957,7 +4957,27 @@ app.post('/api/monitoring/check-now', async (req, res) => {
     // tick has always set it; this route never did.
     setBulkCheckInProgress(true);
     runMonitoringCheckAll()
-      .catch((err) => console.warn('[check-now] threw:', err.message))
+      .then((outcome) => {
+        const finished = getCampaignState();
+        finished.logs = finished.logs || [];
+        const stamp = () => `[${new Date().toISOString()}]`;
+        const successful = !!(outcome && outcome.ok);
+        finished.logs.push(`${stamp()} ${successful ? '✓' : '⚠'} Check complete${successful ? '' : ' — some accounts need attention'}.`);
+        // A terminal schedule event is part of the sweep contract. Without it,
+        // the final account line (often Identity Restricted) permanently owns
+        // the banner even though the check has already ended.
+        if (finished.state === 'monitoring' && finished.nextCheckAt) {
+          const next = new Date(finished.nextCheckAt);
+          const hhmm = `${String(next.getHours()).padStart(2, '0')}:${String(next.getMinutes()).padStart(2, '0')}`;
+          finished.logs.push(`${stamp()} 🛏 Monitoring active · next check at ${hhmm}.`);
+        }
+      })
+      .catch((err) => {
+        console.warn('[check-now] threw:', err.message);
+        const failed = getCampaignState();
+        failed.logs = failed.logs || [];
+        failed.logs.push(`[${new Date().toISOString()}] ⚠ Check ended unexpectedly — retry the check. Monitoring remains active.`);
+      })
       .finally(() => setBulkCheckInProgress(false));
     res.json({ ok: true, started: true });
   } catch (err) {

@@ -41,6 +41,17 @@ test('completed monitoring sweep uses the Next check row above its footer', () =
   assert.match(e.explanation, /Nothing needs to be done now/);
 });
 
+test('local terminal monitoring event restores the normal waiting banner', () => {
+  const e = latestBannerEvent([
+    'manoj.kumar@ortus.solutions — Identity Restricted in the SoO.',
+    '✓ Check complete — some accounts need attention.',
+    '🛏 Monitoring active · next check at 15:52.',
+  ]);
+  assert.equal(e.kind, 'check-waiting');
+  assert.equal(e.headline, 'Waiting for the next acceptance check');
+  assert.equal(e.detail, 'Today at 15:52');
+});
+
 test('tomorrow and later schedules use human dates without a year', () => {
   const now = new Date('2026-08-26T10:00:00Z');
   const tomorrow = latestBannerEvent(['Next check 2026-08-27 15:11 UTC · nothing happens until then'], { now });
@@ -60,11 +71,30 @@ test('restored monitoring schedule never exposes raw UTC or cancellation copy', 
   assert.doesNotMatch(`${e.headline} ${e.detail}`, /2026|UTC|cancel/i);
 });
 
+test('profile-open progress is concise while preserving account and batch position', () => {
+  const e = latestBannerEvent([
+    'damiano@ortus.solutions · My Tran — Profile opened — preparing the page · Waiting for LinkedIn controls to become ready · 1 of 8 this sending batch',
+  ]);
+  assert.equal(e.headline, 'Preparing My Tran’s profile');
+  assert.equal(e.detail, 'damiano@ortus.solutions · Waiting for LinkedIn · Lead 1 of 8');
+  assert.doesNotMatch(e.headline, /waiting|account|batch/i);
+});
+
 test('objects and plain local log lines use the same contract', () => {
   const e = latestBannerEvent([{ line: 'WARN manoj.kumar — Identity Restricted' }]);
   assert.equal(e.headline, 'manoj.kumar was skipped safely');
   assert.equal(e.detail, 'manoj.kumar — Identity Restricted');
   assert.match(e.explanation, /Other available accounts continue/);
+});
+
+test('local check startup removes ISO metadata and does not claim the browser is open', () => {
+  const e = latestBannerEvent([
+    '[2026-08-26T12:54:06.914Z] 📡 [sean.alcosin@ortus.solutions] Check now — bulk check pass starting…',
+  ], { phase: 'checking' });
+  assert.equal(e.kind, 'local-browser-starting');
+  assert.equal(e.headline, 'Starting the local browser');
+  assert.equal(e.detail, 'sean.alcosin@ortus.solutions · Browser not open yet');
+  assert.doesNotMatch(`${e.headline} ${e.detail}`, /2026|12:54|browser is open/i);
 });
 
 test('check lifecycle events expose progress kinds for the whole panel', () => {

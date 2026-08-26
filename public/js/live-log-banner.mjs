@@ -17,6 +17,14 @@ function relativeSchedule(raw, now = new Date()) {
 function readablePresentation(line, phase = '', now = new Date()) {
   const clean = line.replace(/^[◷↻⟳⏱]\s*/u, '').trim();
   let m;
+  if ((m = clean.match(/^📡?\s*\[([^\]]+)\]\s*Check now\s+[—–]\s+bulk check pass starting/i))) {
+    return {
+      kind: 'local-browser-starting', account: m[1], eyebrow: 'Starting this Mac',
+      headline: 'Starting the local browser',
+      detail: `${m[1]} · Browser not open yet`,
+      explanation: 'The check begins when the browser reports that it is open.',
+    };
+  }
   if (/^Check now\b/i.test(clean)) return {
     kind: 'check-queued', eyebrow: 'Waiting for the VM worker',
     headline: 'Acceptance check queued',
@@ -31,6 +39,30 @@ function readablePresentation(line, phase = '', now = new Date()) {
       headline: 'Waiting for the next acceptance check',
       detail: relativeSchedule(m[1], now),
       explanation: 'Nothing needs to be done now.',
+    };
+  }
+  if ((m = clean.match(/^Monitoring active\s*[·•]\s*next check at\s+(\d{1,2}:\d{2})/i))) {
+    return {
+      kind: 'check-waiting', eyebrow: 'Monitoring is active',
+      headline: 'Waiting for the next acceptance check',
+      detail: `Today at ${m[1]}`,
+      explanation: 'Nothing needs to be done now.',
+    };
+  }
+  // Sending progress contains machine-readable context for the log (account,
+  // lead, browser milestone, wait reason and batch position). Preserve all of
+  // it, but give the banner a sentence a person can scan in one glance.
+  if ((m = clean.match(/^(.*?)\s+[—–]\s+Profile opened\s+[—–]\s+preparing the page/i))) {
+    const context = m[1].split(/\s*[·•]\s*/).map((s) => s.trim()).filter(Boolean);
+    const account = context.find((s) => /@/.test(s)) || context[0] || '';
+    const lead = context[context.length - 1] || 'the lead';
+    const turn = clean.match(/(\d+)\s+of\s+(\d+)\s+this sending batch/i);
+    return {
+      kind: 'profile-loading', account,
+      eyebrow: 'Preparing the next lead',
+      headline: `Preparing ${lead}’s profile`,
+      detail: [account, 'Waiting for LinkedIn', turn ? `Lead ${turn[1]} of ${turn[2]}` : ''].filter(Boolean).join(' · '),
+      explanation: 'The profile is open. Sending continues when LinkedIn’s controls are ready.',
     };
   }
   if (/check complete/i.test(clean)) return { kind: 'check-complete', eyebrow: 'Acceptance check complete', headline: 'Every available account has finished this check', explanation: clean };
@@ -56,10 +88,14 @@ export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = 
     // are not chronological activity and must not permanently own the banner.
     if (/^(?:SUM\b|Σ\s*Total\b|[-—–_─━═]{3,})/iu.test(line)) continue;
     line = line
+      // Local engine rows can arrive with their original ISO envelope inside
+      // the API log row. Strip transport timestamps before interpreting the
+      // human event; they must never become part of an account name/headline.
+      .replace(/^(?:\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*)+/, '')
       .replace(/^\d{1,2}:\d{2}(?::\d{2})?\s+(?:OK|LOG|INFO|WARN|ERR(?:OR)?)\s+/i, '')
       .replace(/^(?:OK|LOG|INFO|WARN|ERR(?:OR)?)\s+/i, '')
       .replace(/\s+[·•]\s+\d{1,2}:\d{2}(?::\d{2})?\s*$/i, '')
-      .replace(/^[✓✔⚠■▶⏰⚡●○□▪︎▫︎\s]+/u, '')
+      .replace(/^[✓✔⚠■▶⏰⚡🛏●○□▪︎▫︎\s]+/u, '')
       .trim();
     // A row made only from glyphs/rules is presentation, not an event. Unicode
     // letter/number detection also keeps names in every supported locale.
