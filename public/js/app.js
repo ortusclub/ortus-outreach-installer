@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.8';
+import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.35';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -47,7 +47,7 @@ import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep } from '/js/monitor-sweep-summary.mjs?v=3.1.48.34';
+import { summarizeLatestMonitoringSweep } from '/js/monitor-sweep-summary.mjs?v=3.1.48.35';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -9750,7 +9750,10 @@ function _vjControlsHtml(c, status) {
   const resumeSendingHtml = interrupted && c.resumeSending
     ? `<button class="btn-pill one-shot" onclick="${c.resumeSending.onclick}">Resume sending</button>`
     : '';
-  return `${resumeHtml}${resumeSendingHtml}${openHtml}${sheetHtml}<div class="dock" role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`;
+  const deleteForeverHtml = interrupted && c.deleteForever
+    ? `<button class="btn-pill delete-forever" onclick="${c.deleteForever.onclick}">Delete for good</button>`
+    : '';
+  return `${resumeHtml}${resumeSendingHtml}${deleteForeverHtml}${openHtml}${sheetHtml}<div class="dock" role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`;
 }
 
 // The banner is the SAME .vj-live band, promoted. One component, four tones, so

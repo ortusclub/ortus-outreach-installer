@@ -211,6 +211,7 @@ test('interrupted local work uses the canonical stopped card and a resume decisi
   assert.equal(s.state, 'interrupted');
   assert.equal(f.eyebrow, 'Stopped · This Mac unavailable');
   assert.match(c.pause.onclick, /openCampaignResumeDecision/);
+  assert.match(c.deleteForever.onclick, /deleteBoardCampaign\('local-active'/);
 });
 test('interrupted monitoring with unsent leads offers checks and sending as separate recovery decisions', () => {
   const s = statusFromItem({ where: 'cloud', runsOn: 'local', id: 'c-monitor', bucket: 'running',

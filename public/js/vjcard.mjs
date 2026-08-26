@@ -239,7 +239,7 @@ export function vjCardControlsFor(status = {}) {
     open: { onclick: openOnclick },
     sheet: { onclick: 'window.openVjCardSheet && window.openVjCardSheet(this)' },
     pause: null, stop: null, restart: null, copy: null,
-    resumeSending: null, bulk: null, monAuto: null, extra: [],
+    resumeSending: null, deleteForever: null, bulk: null, monAuto: null, extra: [],
   };
 
   if (interrupted) {
@@ -249,6 +249,9 @@ export function vjCardControlsFor(status = {}) {
       c.resumeSending = { once: true, onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending','local',this)` };
     }
     c.stop = { tip: 'End campaign', onclick: 'window.dashStopActive && window.dashStopActive()' };
+    if (!cloud && (!id || id === 'local-active')) {
+      c.deleteForever = { onclick: `deleteBoardCampaign('${id || 'local-active'}', this)` };
+    }
     // This is still a durable cloud campaign even though ownership was handed
     // to a local runtime that has since disappeared. Open the durable record,
     // never the now-empty local singleton.
