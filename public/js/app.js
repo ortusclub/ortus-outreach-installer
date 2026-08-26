@@ -28,10 +28,10 @@ import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { fgActiveDoor, fgActivePayload } from '/js/fg-source.mjs';
 import { fgEyebrowWithPage } from '/js/fg-eyebrow.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.2';
+import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.3';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.2';
+import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.3';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -13695,7 +13695,7 @@ window.confirmStopMonitoringNow = confirmStopMonitoringNow;
 async function confirmStopCampaignNow(immediate = false) {
   closeStopModal();
   const target = _stopChoiceTarget;
-  showCampaignToast(immediate ? 'Stopping now — the in-flight lead will be verified.' : 'Waiting up to 15 seconds for the current lead…', 15000);
+  showCampaignToast(immediate ? 'Stopping now — if the result is uncertain, the strip will tell you exactly what to check.' : 'Waiting up to 15 seconds for the current lead…', 15000);
   if (target.cloud && target.id) await _doStopCloud(target.id, { immediate });
   else {
     try { await fetch('/api/campaign/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full: true, immediate }) }); } catch { /* status polling surfaces recovery */ }
@@ -27303,18 +27303,21 @@ window.renderActiveCard = function(status) {
     if (bar) bar.style.width = `${f.pct}%`;
     const liveEl = document.getElementById('active-live');
     const la = buildLiveActivity(status);
+    const review = status.interruption?.review;
     if (liveEl) {
       liveEl.hidden = false;
       liveEl.classList.remove('is-checking', 'is-waking', 'is-paused');
       liveEl.classList.add('is-interrupted');
       v3SetText('activeLiveIco', la.icon);
-      v3SetText('activeLiveL1', la.l1);
-      v3SetText('activeLiveL2', la.l2);
+      v3SetText('activeLiveL1', review?.title || la.l1);
+      v3SetText('activeLiveL2', review
+        ? `${review.detail} If LinkedIn shows it completed, Continue records it without sending twice; otherwise Continue retries it.`
+        : la.l2);
       applyLiveBanner(liveEl, status);
     }
     // Recovery uses the same complete card as every other state. The controls
     // below it remain the existing Resume checks / Resume sending actions.
-    const staged = renderLiveStage(card, status);
+    const staged = review ? false : renderLiveStage(card, status);
     if (liveEl && staged) liveEl.hidden = true;
     _setActiveDetails(true);
     const logEl = document.getElementById('active-log');

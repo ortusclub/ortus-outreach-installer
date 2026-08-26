@@ -5038,6 +5038,13 @@ app.post('/api/campaign/live/cadence', (req, res) => {
 });
 
 let _recoveryExitRequested = false;
+async function closeCurrentCampaignBrowsers() {
+  const ids = [...new Set((campaign.profileIds || []).filter((id) => id && id !== 'local-browser'))];
+  await Promise.allSettled(ids.map((id) => closeProfile(id)));
+  if ((campaign.profileIds || []).includes('local-browser')) {
+    try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
+  }
+}
 const _campaignStopWatchdog = createStopWatchdog({
   isRunning: ({ generation }) => campaign.running && campaign._abort && campaign._generation === generation,
   onStuck: async ({ graceMs }) => {
@@ -5050,7 +5057,7 @@ const _campaignStopWatchdog = createStopWatchdog({
     console.error(`[stop-watchdog] Stop exceeded ${Math.round(graceMs / 1000)}s; requesting supervised restart.`);
     _recoveryExitRequested = true;
     await Promise.race([
-      Promise.allSettled([closeAllProfiles(), closeLocalBrowser()]),
+      closeCurrentCampaignBrowsers(),
       new Promise((resolve) => setTimeout(resolve, 3000)),
     ]);
     process.exit(75);
@@ -5098,7 +5105,7 @@ app.post('/api/campaign/stop', async (req, res) => {
   // New order:
   //   1. stopCampaign() flips campaign._abort = true
   //   2. respond to UI
-  //   3. wait 3s — gives in-flight runAutoIntros / monitoring loops time
+  //   3. wait 15s — the exact grace period promised by the stop dialog
   //      to see _abort at their next iteration boundary, stamp remaining
   //      leads as 'Skipped — Stop pressed', and exit their finally blocks
   //      (which close their own browser cleanly)
@@ -5109,9 +5116,8 @@ app.post('/api/campaign/stop', async (req, res) => {
   // graceful-abort guidance (puppeteer/puppeteer#4671). Worker-side
   // cleanup is already idempotent so the safety-net close is harmless.
   setTimeout(async () => {
-    try { await closeAllProfiles(); } catch (err) { console.warn('[stop] closeAllProfiles:', err.message); }
-    try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
-  }, immediate ? 0 : 3000);
+    try { await closeCurrentCampaignBrowsers(); } catch (err) { console.warn('[stop] closeCurrentCampaignBrowsers:', err.message); }
+  }, immediate ? 0 : 15000);
 });
 
 // Phase 2.8.9: pause/resume control. Pause is non-destructive — browsers stay

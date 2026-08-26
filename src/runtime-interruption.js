@@ -43,5 +43,17 @@ export function interruptionCopy(value = {}) {
   const detail = value.phase === 'monitoring'
     ? 'Monitoring did not restart sending. Resume checks on this Mac or move them to the Cloud VM.'
     : 'The remaining leads are safe. Choose where to continue before sending resumes.';
-  return { title, detail };
+  const action = value.currentAction || {};
+  const lead = action.lead || value.lead || '';
+  const account = action.account || value.currentProfile || '';
+  const needsReview = !!(lead && reason !== 'system-sleep');
+  const review = needsReview ? {
+    title: `Check ${lead} before continuing`,
+    detail: `Open ${account || 'the sending account'} and check whether the LinkedIn action completed.`,
+    actions: [
+      { code: 'mark-sent', label: 'Mark as sent', help: 'Use this only if LinkedIn shows the action completed.' },
+      { code: 'retry', label: 'Retry this lead', help: 'Use this if LinkedIn shows it did not complete.' },
+    ],
+  } : null;
+  return { title, detail, needsReview, review };
 }

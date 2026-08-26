@@ -5923,10 +5923,9 @@ export function stopCampaign({ full = false, reason = 'operator-stopped' } = {})
   // campaign's background reply/accept tracking so the schedulers stop
   // reopening browsers for the next 7 days. Fire-and-forget (this fn is sync).
   if (full) {
-    // Full halt → clear the persisted snapshot so an idle dashboard can't
-    // resurrect a stale config. (A run that transitions into MONITORING is NOT
-    // a full stop, so the snapshot correctly survives into monitoring.)
-    try { writeLastRun(LAST_RUN_FILE, null); } catch { /* non-fatal */ }
+    // Preserve the snapshot until the operator deletes/abandons the campaign.
+    // A forced stop may still need it after Electron restarts; clearing it here
+    // made the promised Continue action impossible precisely on the worst path.
     const _sid = _extractSheetIdFromUrl(campaign.sheetUrl);
     const _pids = (campaign.profileIds || []).slice();
     if (_sid) {
