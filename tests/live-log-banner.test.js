@@ -8,9 +8,8 @@ test('the newest operational log line becomes the banner event', () => {
     '10:01:04 OK cindy.siapno@ortus.solutions — 0 newly accepted, 42 rows updated · 10:01',
     'Σ Total · 73 sent · 1 error · 124 pending',
   ]);
-  assert.equal(e.headline, 'Finished checking cindy.siapno@ortus.solutions');
+  assert.equal(e.headline, 'Account check finished');
   assert.equal(e.detail, 'cindy.siapno@ortus.solutions — 0 newly accepted, 42 rows updated');
-  assert.match(e.explanation, /0 newly accepted/);
 });
 
 test('banner events expose engine time for monotonic rendering', () => {
@@ -82,15 +81,25 @@ test('profile-open progress is concise while preserving account and batch positi
   const e = latestBannerEvent([
     'damiano@ortus.solutions · My Tran — Profile opened — preparing the page · Waiting for LinkedIn controls to become ready · 1 of 8 this sending batch',
   ]);
-  assert.equal(e.headline, 'Preparing My Tran’s profile');
-  assert.equal(e.detail, 'damiano@ortus.solutions · Waiting for LinkedIn · Lead 1 of 8');
+  assert.equal(e.headline, 'Opening My Tran on LinkedIn');
+  assert.equal(e.detail, 'damiano@ortus.solutions · Waiting for the profile page · Lead 1 of 8');
   assert.doesNotMatch(e.headline, /waiting|account|batch/i);
+});
+
+test('sheet stamping removes duplicate sender and internal wording', () => {
+  const e = latestBannerEvent([
+    'emanuele.circi@ortus.solutions · emanuele.circi@ortus.solutions · Michael B. — Stamping the result to the sheet · Writing the final status back to Google Sheets · 6 of 8 this sending batch',
+  ]);
+  assert.equal(e.headline, 'Saving Michael B.’s result');
+  assert.equal(e.detail, 'emanuele.circi@ortus.solutions · Writing to the campaign sheet · Lead 6 of 8');
+  assert.equal((`${e.headline} ${e.detail}`.match(/emanuele\.circi@ortus\.solutions/g) || []).length, 1);
+  assert.doesNotMatch(`${e.headline} ${e.detail}`, /newest verified|Google Sheets|Stamping/i);
 });
 
 test('objects and plain local log lines use the same contract', () => {
   const e = latestBannerEvent([{ line: 'WARN manoj.kumar — Identity Restricted' }]);
-  assert.equal(e.headline, 'manoj.kumar was skipped safely');
-  assert.equal(e.detail, 'manoj.kumar — Identity Restricted');
+  assert.equal(e.headline, 'Account skipped safely');
+  assert.equal(e.detail, 'manoj.kumar · Identity Restricted');
   assert.match(e.explanation, /Other available accounts continue/);
 });
 
@@ -102,6 +111,25 @@ test('local check startup removes ISO metadata and does not claim the browser is
   assert.equal(e.headline, 'Starting the local browser');
   assert.equal(e.detail, 'sean.alcosin@ortus.solutions · Browser not open yet');
   assert.doesNotMatch(`${e.headline} ${e.detail}`, /2026|12:54|browser is open/i);
+});
+
+test('top headlines never contain sender emails or clock metadata', () => {
+  const cases = [
+    '[2026-08-26T13:16:41.000Z] 📡 [sean.alcosin@ortus.solutions] Launching browser…',
+    '[2026-08-26T13:17:01.000Z] 📡 [cindy.siapno@ortus.solutions] Sweeping recent connections…',
+    'cindy.siapno@ortus.solutions — 0 newly accepted, 56 rows updated · 15:18',
+  ];
+  for (const line of cases) {
+    const e = latestBannerEvent([line], { phase: 'checking' });
+    assert.doesNotMatch(e.headline, /@|\b\d{1,2}:\d{2}\b|2026/);
+  }
+});
+
+test('all local check phases expose matching workflow kinds', () => {
+  assert.equal(latestBannerEvent(['📡 [sean@ortus.solutions] Launching browser…']).kind, 'account-browser-opening');
+  assert.equal(latestBannerEvent(['📡 [cindy@ortus.solutions] Sweeping recent connections…']).kind, 'account-checking');
+  assert.equal(latestBannerEvent(["Nobody has accepted cindy@ortus.solutions's 219 outstanding invitations yet. 56 rows refreshed as still waiting."]).kind, 'account-checked');
+  assert.equal(latestBannerEvent(['📡 Manual bulk check complete — 0 Connected, 56 Still Pending across 3 accounts.']).kind, 'check-complete');
 });
 
 test('check lifecycle events expose progress kinds for the whole panel', () => {

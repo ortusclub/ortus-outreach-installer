@@ -14,6 +14,18 @@ function relativeSchedule(raw, now = new Date()) {
   return `${parsed.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} at ${time}`;
 }
 
+function actionOnlyHeadline(raw) {
+  return String(raw || '')
+    .replace(/\[\s*[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\s*\]/gi, '')
+    .replace(/\b[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\b/gi, '')
+    .replace(/\b\d{4}-\d{2}-\d{2}T\S+\b/g, '')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, '')
+    .replace(/^[📡🖥️\s·•—–:-]+/u, '')
+    .replace(/[·•]\s*[·•]/g, ' · ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function readablePresentation(line, phase = '', now = new Date()) {
   const clean = line.replace(/^[◷↻⟳⏱]\s*/u, '').trim();
   let m;
@@ -25,6 +37,27 @@ function readablePresentation(line, phase = '', now = new Date()) {
       explanation: 'The check begins when the browser reports that it is open.',
     };
   }
+  if ((m = clean.match(/^📡?\s*\[([^\]]+)\]\s*Launching browser/i))) return {
+    kind: 'account-browser-opening', account: m[1], eyebrow: 'Starting account check',
+    headline: 'Opening the sender browser', detail: m[1], explanation: '',
+  };
+  if ((m = clean.match(/^📡?\s*\[([^\]]+)\]\s*Sweeping recent connections/i))) return {
+    kind: 'account-checking', account: m[1], eyebrow: 'Checking acceptances',
+    headline: 'Checking recent connections', detail: m[1], explanation: '',
+  };
+  if ((m = clean.match(/^Nobody has accepted\s+([^'\s]+)'s\s+(\d+)\s+outstanding invitations yet\.\s*(\d+)\s+rows refreshed/i))) return {
+    kind: 'account-checked', account: m[1], eyebrow: 'Account checked',
+    headline: 'Account check finished', detail: `${m[1]} · 0 newly accepted · ${m[3]} rows refreshed`, explanation: '',
+  };
+  if ((m = clean.match(/^📡?\s*\[([^\]]+)\]\s*Bulk check:\s*(\d+)\s+marked Connected/i))) return {
+    kind: 'account-checked', account: m[1], eyebrow: 'Account checked',
+    headline: 'Account check finished', detail: `${m[1]} · ${m[2]} newly accepted`, explanation: '',
+  };
+  if (/^📡?\s*Manual bulk check complete/i.test(clean)) return {
+    kind: 'check-complete', eyebrow: 'Acceptance check complete',
+    headline: 'Finished checking all available accounts',
+    detail: clean.replace(/^📡?\s*Manual bulk check complete\s*[—–]?\s*/i, ''), explanation: '',
+  };
   if (/^Check now\b/i.test(clean)) return {
     kind: 'check-queued', eyebrow: 'Waiting for the VM worker',
     headline: 'Acceptance check queued',
@@ -49,29 +82,48 @@ function readablePresentation(line, phase = '', now = new Date()) {
       explanation: 'Nothing needs to be done now.',
     };
   }
-  // Sending progress contains machine-readable context for the log (account,
-  // lead, browser milestone, wait reason and batch position). Preserve all of
-  // it, but give the banner a sentence a person can scan in one glance.
-  if ((m = clean.match(/^(.*?)\s+[—–]\s+Profile opened\s+[—–]\s+preparing the page/i))) {
+  // Sending progress is deliberately verbose in the forensic log. Its prefix
+  // can repeat the sender twice, followed by lead, step, detail and batch turn.
+  // The banner shows each fact once and translates internal verbs into plain
+  // operator language without weakening the underlying log.
+  if ((m = clean.match(/^(.*?)\s+[—–]\s+([^·•]+)(?:\s*[·•]\s*(.*))?$/i))
+      && /@/.test(m[1]) && /sending batch|Profile opened|Stamping the result/i.test(clean)) {
     const context = m[1].split(/\s*[·•]\s*/).map((s) => s.trim()).filter(Boolean);
-    const account = context.find((s) => /@/.test(s)) || context[0] || '';
-    const lead = context[context.length - 1] || 'the lead';
-    const turn = clean.match(/(\d+)\s+of\s+(\d+)\s+this sending batch/i);
+    const account = context.find((s) => /@/.test(s)) || '';
+    const lead = [...context].reverse().find((s) => !/@/.test(s)) || 'this lead';
+    const step = m[2].trim();
+    const tail = (m[3] || '').trim();
+    const turn = clean.match(/(\d+)\s+of\s+(\d+)\s+(?:this\s+)?sending batch/i);
+    let headline = `${step} — ${lead}`;
+    let action = tail.split(/\s*[·•]\s*/)[0] || '';
+    let kind = 'sending-progress';
+    if (/Profile opened\s+[—–]\s+preparing the page/i.test(step)) {
+      kind = 'profile-loading';
+      headline = `Opening ${lead} on LinkedIn`;
+      action = 'Waiting for the profile page';
+    } else if (/Stamping the result to the sheet/i.test(step)) {
+      kind = 'saving-result';
+      headline = `Saving ${lead}’s result`;
+      action = 'Writing to the campaign sheet';
+    } else if (/Profile ready/i.test(step)) {
+      headline = `${lead}’s profile is ready`;
+      action = 'Checking available actions';
+    }
     return {
-      kind: 'profile-loading', account,
-      eyebrow: 'Preparing the next lead',
-      headline: `Preparing ${lead}’s profile`,
-      detail: [account, 'Waiting for LinkedIn', turn ? `Lead ${turn[1]} of ${turn[2]}` : ''].filter(Boolean).join(' · '),
-      explanation: 'The profile is open. Sending continues when LinkedIn’s controls are ready.',
+      kind, account,
+      eyebrow: kind === 'saving-result' ? 'Recording the result' : 'Working on the next lead',
+      headline,
+      detail: [account, action, turn ? `Lead ${turn[1]} of ${turn[2]}` : ''].filter(Boolean).join(' · '),
+      explanation: '',
     };
   }
   if (/check complete/i.test(clean)) return { kind: 'check-complete', eyebrow: 'Acceptance check complete', headline: 'Every available account has finished this check', explanation: clean };
-  if ((m = clean.match(/^Checking\s+(.+?)(?:\.{3}|\s*[·•]|$)/i))) return { kind: 'account-checking', account: m[1], eyebrow: 'Checking acceptances', headline: `Checking ${m[1]}`, explanation: 'The app is reading this account’s recent LinkedIn connections now.' };
+  if ((m = clean.match(/^Checking\s+(.+?)(?:\.{3}|\s*[·•]|$)/i))) return { kind: 'account-checking', account: m[1], eyebrow: 'Checking acceptances', headline: 'Checking recent connections', detail: m[1], explanation: 'The app is reading this account’s recent LinkedIn connections now.' };
   if (/identity restricted/i.test(clean)) {
     const who = clean.split(/\s+[—–]\s+/)[0];
-    return { kind: 'account-skipped', account: who, eyebrow: 'Account unavailable', headline: `${who} was skipped safely`, explanation: 'The account is Identity Restricted. Other available accounts continue.' };
+    return { kind: 'account-skipped', account: who, eyebrow: 'Account unavailable', headline: 'Account skipped safely', detail: `${who} · Identity Restricted`, explanation: 'Other available accounts continue.' };
   }
-  if ((m = clean.match(/^(.+?)\s+[—–]\s+(\d+) newly accepted/i))) return { kind: 'account-checked', account: m[1], eyebrow: 'Account checked', headline: `Finished checking ${m[1]}`, explanation: `${m[2]} newly accepted connection${Number(m[2]) === 1 ? '' : 's'} found on this account.` };
+  if ((m = clean.match(/^(.+?)\s+[—–]\s+(\d+) newly accepted/i))) return { kind: 'account-checked', account: m[1], eyebrow: 'Account checked', headline: 'Account check finished', detail: clean, explanation: '' };
   if (/browser (?:opened|opening)|opening .+browser/i.test(clean)) return { eyebrow: phase === 'checking' ? 'Starting acceptance check' : 'Opening sender account', headline: clean, explanation: 'The browser is opening. The next verified action will appear here and in the log.' };
   if (/\b(?:CC|connection request) sent\b/i.test(clean)) return { eyebrow: 'Connection request confirmed', headline: clean, explanation: 'The result was confirmed and recorded before moving to the next lead.' };
   if (/introduc(?:ed|tion)|message sent/i.test(clean)) return { eyebrow: 'Introduction confirmed', headline: clean, explanation: 'The message result was confirmed and recorded in the campaign sheet.' };
@@ -112,7 +164,7 @@ export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = 
     const presentation = readablePresentation(line, phase, now);
     return {
       line,
-      headline: presentation.headline || first,
+      headline: actionOnlyHeadline(presentation.headline || first),
       eyebrow: presentation.eyebrow,
       kind: presentation.kind || 'event',
       account: presentation.account || '',

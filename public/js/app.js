@@ -46,7 +46,7 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.19';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.21';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -26787,7 +26787,7 @@ function renderLiveStage(root, status) {
   // Once a sweep has ended, an account result remains useful in the log and
   // on its sender pill, but must not leave the whole campaign looking active.
   // Idle monitoring returns to its durable "waiting for next check" view.
-  const transientCheckEvent = logEvent && ['local-browser-starting', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
+  const transientCheckEvent = logEvent && ['local-browser-starting', 'account-browser-opening', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
   if (logEvent && phase !== 'done' && !(phase === 'monitoring' && transientCheckEvent)) {
     ca = { ...(ca || {}), label: logEvent.headline,
       sub: `${logEvent.detail}${logEvent.explanation ? ` · ${logEvent.explanation}` : ''}` };
@@ -26797,7 +26797,8 @@ function renderLiveStage(root, status) {
     const currentRun = runStart >= 0 ? allLogs.slice(runStart) : allLogs;
     const completedAccounts = new Set();
     currentRun.forEach((line) => {
-      const hit = line.match(/(?:OK|LOG|WARN)?\s*[✓✔⚠]?\s*(\S+@\S+|[\w.-]+)\s+[—–]\s+(?:\d+ newly accepted|Identity Restricted)/i);
+      const hit = line.match(/(?:OK|LOG|WARN)?\s*[✓✔⚠]?\s*(\S+@\S+|[\w.-]+)\s+[—–]\s+(?:\d+ newly accepted|Identity Restricted)/i)
+        || line.match(/Nobody has accepted\s+(\S+@\S+)'s\s+\d+\s+outstanding invitations/i);
       if (hit) completedAccounts.add(hit[1].toLowerCase());
     });
     const done = completedAccounts.size;
@@ -26810,6 +26811,10 @@ function renderLiveStage(root, status) {
       ca = { ...ca, account: logEvent.account, accountsDone: done,
         facts: [['Check', 'starting'], ['Current account', logEvent.account], ['Browser', 'not open yet'], ['Next expected event', 'local browser opens']],
         milestones: [['Requested', 'complete', 'done'], ['Browser', 'starting on this Mac', 'active'], ['Connections', 'waiting', 'future'], ['Acceptances', 'waiting', 'future'], ['Results', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'account-browser-opening') {
+      ca = { ...ca, account: logEvent.account, accountsDone: done,
+        facts: [['Check', 'running'], ['Current account', logEvent.account], ['Browser', 'opening'], ['Next expected event', 'read recent connections']],
+        milestones: [['Requested', 'complete', 'done'], ['Browser', 'opening now', 'active'], ['Connections', 'waiting', 'future'], ['Acceptances', 'waiting', 'future'], ['Results', 'waiting', 'future']] };
     } else if (logEvent.kind === 'account-checking') {
       ca = { ...ca, account: logEvent.account, accountsDone: done,
         facts: [['Check', 'running'], ['Current account', logEvent.account], ['Accounts completed', `${done} of ${scope}`], ['Next expected event', 'recent connections result']],
