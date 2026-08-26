@@ -11819,15 +11819,17 @@ let _stopChoiceTarget = { cloud: false, id: null };
 // (1:1). Other modes — or a campaign already in monitoring/done — get the plain
 // confirm → cancel.
 async function stopCloudCampaignUI(id) {
-  let mode = '', status = '';
+  let mode = '', status = '', liveProgress = null;
   try {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`, { cache: 'no-store' })).json();
     mode = (d && d.campaign && d.campaign.mode) || '';
     status = (d && d.campaign && d.campaign.status) || '';
+    liveProgress = d && d.liveProgress;
   } catch { /* fall through to plain confirm */ }
 
-  const isSending = (status === 'running' || status === 'queued' || status === 'paused');
-  if (isSending) {
+  const hasCurrentSendingLead = status === 'running' && liveProgress
+    && liveProgress.phase === 'sending' && !!String(liveProgress.selecting || liveProgress.lead || '').trim();
+  if (hasCurrentSendingLead) {
     _stopChoiceTarget = { cloud: true, id };
     const modal = document.getElementById('confirm-stop-modal');
     const copy = document.getElementById('stop-current-lead-copy');
@@ -11835,7 +11837,8 @@ async function stopCloudCampaignUI(id) {
     modal?.classList.remove('hidden');
     return;
   }
-  // Monitoring between checks has no current lead, so it stops directly.
+  // Monitoring, queued work, and idle/paused campaigns have no verified current
+  // lead. Never ask a hypothetical lead question in those states.
   await _doStopCloud(id, { keepMonitoring: false });
 }
 window.stopCloudCampaignUI = stopCloudCampaignUI;
@@ -26864,12 +26867,27 @@ function renderLiveStage(root, status) {
       || Number(logEvent.at) >= Number(rememberedLog.event && rememberedLog.event.at))) {
     _stageNewestLogEvent.set(cid, { phase, event: logEvent });
   }
+  // The merged stream also contains derived lead events (for example an
+  // introduction reconstructed from the sheet). They can carry a later sync
+  // timestamp than the sweep that produced them. An unresolved sweep error is
+  // durable campaign state, so it owns the monitoring banner until a later
+  // sweep succeeds—regardless of those derived rows' append/sync timestamps.
+  if (phase === 'monitoring' && sweepSummary && sweepSummary.incomplete && sweepSummary.error) {
+    logEvent = {
+      line: sweepSummary.error,
+      headline: `Check incomplete — ${sweepSummary.checked} of ${sweepSummary.expected} accounts checked`,
+      eyebrow: 'Check incomplete', kind: 'check-error', account: '',
+      detail: `${sweepSummary.accepted} acceptance${sweepSummary.accepted === 1 ? '' : 's'} · ${sweepSummary.introduced} introduction${sweepSummary.introduced === 1 ? '' : 's'} · ${sweepSummary.error}`,
+      explanation: 'Monitoring remains active. Fix the named account before the next check.',
+      at: Number(logEvent && logEvent.at) || 0,
+    };
+  }
   // Once a sweep has ended, an account result remains useful in the log and
   // on its sender pill, but must not leave the whole campaign looking active.
   // Idle monitoring returns to its durable "waiting for next check" view.
   const transientCheckEvent = logEvent && ['local-browser-starting', 'account-browser-opening', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
   if (logEvent && phase !== 'done' && !(phase === 'monitoring' && transientCheckEvent)) {
-    if (logEvent.kind === 'check-error' && sweepSummary) {
+    if (logEvent.kind === 'check-error' && sweepSummary && !/^Check incomplete/i.test(logEvent.headline)) {
       logEvent = {
         ...logEvent,
         headline: `Check incomplete — ${sweepSummary.checked} of ${sweepSummary.expected} accounts checked`,
