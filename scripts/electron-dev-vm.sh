@@ -11,7 +11,8 @@ LIVE_NAMESPACE="salesnav-scraper"
 DEPLOYMENT="salesnav-scraper"
 LOCAL_ENGINE_PORT="3001"
 ENGINE_TOKEN="${SCRAPER_ENGINE_TOKEN:-ortus2026scraper}"
-ENGINE_REPO="/Users/antoniovarlese/ortus-salesnav-scraper-cloud"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENGINE_REPO="${ORTUS_DEV_ENGINE_REPO:-$PROJECT_ROOT/../ortus-salesnav-scraper-cloud}"
 PF_PID=""
 ELECTRON_PID=""
 
@@ -67,9 +68,16 @@ LIVE_VERSION="$(image_tag "$LIVE_NAMESPACE")" || {
 # Loading the app's normal .env here would expose production profiles that the
 # isolated engine correctly cannot open. Read only DEV_GOLOGIN_API_TOKEN and
 # explicitly blank every secondary workspace token.
-DEV_GOLOGIN_API_TOKEN="$(sed -n 's/^DEV_GOLOGIN_API_TOKEN=//p' "$ENGINE_REPO/.env" | tail -1)"
+DEV_GOLOGIN_API_TOKEN="${DEV_GOLOGIN_API_TOKEN:-}"
+if [ -z "$DEV_GOLOGIN_API_TOKEN" ] && [ -f "$PROJECT_ROOT/.env" ]; then
+  DEV_GOLOGIN_API_TOKEN="$(sed -n 's/^DEV_GOLOGIN_API_TOKEN=//p' "$PROJECT_ROOT/.env" | tail -1)"
+fi
+if [ -z "$DEV_GOLOGIN_API_TOKEN" ] && [ -f "$ENGINE_REPO/.env" ]; then
+  DEV_GOLOGIN_API_TOKEN="$(sed -n 's/^DEV_GOLOGIN_API_TOKEN=//p' "$ENGINE_REPO/.env" | tail -1)"
+fi
 if [ -z "$DEV_GOLOGIN_API_TOKEN" ]; then
-  echo "DEV_GOLOGIN_API_TOKEN is missing from $ENGINE_REPO/.env"
+  echo "DEV_GOLOGIN_API_TOKEN is missing. Add it to this app's .env, export it,"
+  echo "or keep ortus-salesnav-scraper-cloud beside this repository with its .env."
   echo "The development app will not start with production GoLogin profiles."
   exit 1
 fi
