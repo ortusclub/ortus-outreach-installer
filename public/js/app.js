@@ -6601,11 +6601,13 @@ async function startCampaign(opts = {}) {
     return startPostAmplification();
   }
 
-  // One-at-a-time: a campaign in the monitoring phase occupies the single
-  // campaign slot. Launching a new one resets that state (campaign.js
-  // startCampaign), silently ending the acceptance watch. Warn first.
+  // The local engine has one singleton campaign slot, so a LOCAL launch can
+  // replace local monitoring. VM campaigns are independent engine records and
+  // may run alongside any monitoring campaign; never show the destructive
+  // local warning for a VM launch.
   try {
-    if (typeof __cockpit !== 'undefined' && __cockpit && __cockpit.state === 'monitoring') {
+    if (!isCloudRunOn()
+      && typeof __cockpit !== 'undefined' && __cockpit && __cockpit.state === 'monitoring') {
       const ok = confirm('A campaign is currently monitoring for acceptances. Starting a new campaign will end that monitoring. Continue?');
       if (!ok) return;
     }
@@ -7073,10 +7075,7 @@ async function startCampaign(opts = {}) {
   // only for engine-supported modes. Gated on the mode so a non-cloud mode NEVER
   // routes to cloud even if the (hidden) checkbox is checked. The checkbox mirrors
   // the run-target tabs (setRunTarget); default is 💻 This machine (unchecked → local).
-  const _cloudModeNow = new Set(['connect_only', 'message_only', 'introduce_back',
-    'connect_and_introduce', 'connect_and_message', 'follower_growth',
-    'inmail_only', 'open_profile_only', 'check_status']).has(document.getElementById('campaign-mode')?.value);
-  const _cloudOn = _cloudModeNow && !!document.getElementById('cloud-run-checkbox')?.checked;
+  const _cloudOn = isCloudRunOn();
   if (_cloudOn && !opts.queueOnly) {
     opts = { ...opts, cloud: true };
     // Schedule on the VM: same dispatch, one extra field. The engine parks the
