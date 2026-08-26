@@ -46,7 +46,7 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.23';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.22';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -10178,11 +10178,8 @@ function renderUnifiedStrip(it) {
   const running = it.bucket === 'running';
   const queued = it.bucket === 'queued';
   const done = it.bucket === 'done';
-  // Monitoring is a lifecycle, not a location. A local monitoring campaign
-  // previously fell through to paused/running because this was gated by
-  // `cloud`, producing a green rail and PAUSED label between checks.
-  const monitoring = !!(it.monitoring || it.monitoringPhase || it.engineStatus === 'monitoring');
-  const locallyOwnedMonitoring = monitoring && String(it.runsOn || (cloud ? 'vm' : 'local')) === 'local';
+  const locallyOwnedMonitoring = cloud && it.monitoring && String(it.runsOn || '') === 'local';
+  const monitoring = cloud && it.monitoring && !locallyOwnedMonitoring;
   // Asleep on blocked_until: sending is gated until a real unblock time, but the
   // DB status stays 'running' SO THE MONITOR SWEEP KEEPS RUNNING. The chip must
   // report the truth about SENDING, not echo the raw status word — a green
@@ -10248,7 +10245,7 @@ function renderUnifiedStrip(it) {
     : queued ? 'Queued'
     : monitoring ? 'Monitoring'
     : waiting ? 'Waiting'
-    : running ? (it.paused ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
+    : running ? ((it.paused || locallyOwnedMonitoring) ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
   // Phase 0 primary-handshake lock (Task 3.4): the engine pauses a cloud
@@ -10361,10 +10358,10 @@ function renderUnifiedStrip(it) {
     monBlock = `<div class="sn-mon${endingSoon ? ' ending' : ''}">`
       + `<span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span>`
       + `<span class="sn-mon-line">${line}</span>`
-      + (cloud ? `<span class="sn-mon-ctl">`
+      + `<span class="sn-mon-ctl">`
       + `<button type="button" class="mini sn-mon-btn" onclick="event.stopPropagation();promptCloudCheckScope('${escHtml(it.id)}',this)" title="Run an acceptance check now">Check now</button>`
       + `<label class="sn-mon-auto" title="When off, the VM won't run automatic checks — use ⚡ Check now."><input type="checkbox" ${it.autoChecksEnabled ? 'checked' : ''} onclick="event.stopPropagation()" onchange="setCloudAutoChecks('${escHtml(it.id)}',this.checked,this)"> Auto</label>`
-      + `</span>` : '') + `</div>`;
+      + `</span></div>`;
   }
 
   // Handshake lock panel — replaces the log switchBlock while
@@ -10424,9 +10421,7 @@ function renderUnifiedStrip(it) {
     // handshake modal owns Cancel / Dispatch anyway while it's up.
     foot = '';
   } else if (running && it.where === 'local') {
-    foot = monitoring
-      ? _dib(V3_SVG_STOP, 'Stop monitoring', 'window.dashStopActive && window.dashStopActive()', 'danger') + _openPill
-      : (it.paused
+    foot = (it.paused
         ? _dib(V3_SVG_PLAY, 'Resume', 'window.dashPauseActive && window.dashPauseActive()')
         : _dib(V3_SVG_PAUSE, 'Pause', 'window.dashPauseActive && window.dashPauseActive()'))
       + _dib(V3_SVG_STOP, 'Stop', 'window.dashStopActive && window.dashStopActive()', 'danger')
@@ -11235,7 +11230,6 @@ async function _renderCampaignsBoardInner() {
         // Carry the same phase→pause mapping here or that one render path falls
         // back to RUNNING / Working even though only scheduled checks remain.
         monitoringPhase: s.state === 'monitoring',
-        monitoring: s.state === 'monitoring',
         paused: s.state === 'monitoring' || !!(s.paused || s._paused),
         monitoringCheckInProgress: !!s.monitoringCheckInProgress,
         live: !!s.live,
