@@ -29,6 +29,11 @@ test('an explicitly opened cloud campaign cannot be overwritten by local polling
   assert.doesNotMatch(app, /_viewingCloudId && !\(status && \(status\.running \|\| status\.state === 'monitoring'\)\)/);
 });
 
+test('local runtime overlays only its matching adopted cloud campaign', () => {
+  assert.match(app, /String\(_localLive\.id \|\| ''\) === String\(c\.id \|\| ''\)/);
+  assert.doesNotMatch(app, /if \(String\(c\.runs_on \|\| ''\) === 'local' && _localLive\)/);
+});
+
 test('monitoring with unsent leads shows the automatic sending resume time', () => {
   assert.match(app, /resumeAt: c\.resumeTaskDueAt \|\| null/);
   assert.match(app, /Sending paused · no sender available for 15\+ min/);

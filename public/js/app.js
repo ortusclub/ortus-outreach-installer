@@ -11413,7 +11413,16 @@ async function _renderCampaignsBoardInner() {
       });
       // Handed to this Mac: the checks run HERE, so the engine's copy of the
       // monitor state froze at handover. Same overlay card #2 gets.
-      if (String(c.runs_on || '') === 'local' && _localLive) {
+      // Only the cloud row that was actually adopted by the singleton on this
+      // Mac may receive its live state. Several historical/duplicate rows can
+      // retain runs_on='local'; overlaying the singleton onto all of them made
+      // stopped campaigns display the current campaign's monitoring schedule.
+      // Ownership says where a row last ran. The campaign id says WHICH row is
+      // running now, and both must match.
+      const _isCurrentLocalCampaign = String(c.runs_on || '') === 'local'
+        && _localLive
+        && String(_localLive.id || '') === String(c.id || '');
+      if (_isCurrentLocalCampaign) {
         const _row = items[items.length - 1];
         const _localInterrupted = _localLive.state === 'interrupted' || !!_localLive.interrupted;
         const _localRuntimeActive = !!(_localLive.running || _localLive.state === 'monitoring' || _localInterrupted);
