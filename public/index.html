@@ -1826,6 +1826,21 @@
   .sn-foot .mini.sn-dismiss:hover{color:var(--red);border-color:var(--red);}
 
   .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:var(--card-bg);margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
+  /* v3.1.48.24 · approved compact option A: the existing flat strip gains the
+     lifecycle atmosphere of the expanded card without adding nested boxes. */
+  .sn-strip.sn-collapsed.run{
+    background:linear-gradient(108deg,color-mix(in srgb,var(--green) 12%,var(--card-bg)) 0%,var(--card-bg) 31%,var(--card-bg) 100%);
+  }
+  .sn-strip.sn-collapsed.monitoring{
+    background:linear-gradient(108deg,color-mix(in srgb,var(--blue) 14%,var(--card-bg)) 0%,var(--card-bg) 31%,var(--card-bg) 100%);
+  }
+  .sn-strip.sn-collapsed.run::before,
+  .sn-strip.sn-collapsed.monitoring::before{width:4px;}
+  .sn-strip.sn-collapsed .sn-name{margin-top:10px;}
+  .sn-strip.sn-collapsed .sn-flow{margin-top:13px;}
+  .sn-strip.sn-collapsed .sn-progtxt,
+  .sn-strip.sn-collapsed .sn-mon{padding-top:11px;margin-top:13px;border-top:1px solid var(--hairline);}
+  .sn-strip.sn-collapsed .sn-foot{padding-top:13px;margin-top:13px;border-top:1px solid var(--hairline);}
   .sn-qpos{display:none;}
   /* Left accent rail — same pattern as the dashboard campaign card (::before
      clipped by the strip's overflow:hidden, so it hugs the rounded corners).
@@ -1917,6 +1932,7 @@
   .sn-strip.done:not(.stopped):not(.cancelled)::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
   .sn-strip.done:not(.stopped):not(.cancelled) .sn-status{color:var(--gray);}
   .sn-strip.monitoring::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue);}
+  .sn-strip.monitoring .sn-status{color:var(--blue);}
   .sn-strip.cancelled{opacity:.62;}
   .sn-strip.cancelled::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gray);}
   .sn-strip.cancelled .sn-status{color:var(--gray);}
