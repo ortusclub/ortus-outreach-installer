@@ -1826,6 +1826,19 @@
   .sn-foot .mini.sn-dismiss:hover{color:var(--red);border-color:var(--red);}
 
   .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:var(--card-bg);margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
+  /* v3.1.48 compact lifecycle strip — the collapsed view is the same card at a
+     lower information density, not a legacy list row. Flat bordered sections,
+     display-title hierarchy and the same lifecycle accent as Live Status. */
+  .sn-strip.sn-collapsed{padding:20px 24px 16px;border-radius:12px;box-shadow:none;}
+  .sn-strip.sn-collapsed .sn-compact{display:grid;grid-template-columns:minmax(0,1fr);}
+  .sn-strip.sn-collapsed .sn-top{min-height:22px;align-items:center;}
+  .sn-strip.sn-collapsed .sn-name{font-size:27px;line-height:1.05;margin-top:11px;max-width:calc(100% - 68px);}
+  .sn-strip.sn-collapsed .sn-flow{margin-top:15px;padding:12px 14px;background:color-mix(in srgb,var(--ink) 3%,transparent);border:1px solid var(--hairline);border-radius:9px 9px 0 0;}
+  .sn-strip.sn-collapsed .sn-progtxt{margin:0;padding:10px 14px;background:color-mix(in srgb,var(--ink) 3%,transparent);border:0 solid var(--hairline);border-width:0 1px 1px;border-radius:0 0 9px 9px;}
+  .sn-strip.sn-collapsed .sn-mon{margin-top:10px;border-radius:9px;}
+  .sn-strip.sn-collapsed .sn-foot{margin-top:15px;padding-top:13px;border-top:1px solid var(--hairline);}
+  .sn-strip.sn-collapsed .sn-collapse{top:17px;right:18px;}
+  .sn-strip.sn-collapsed .sn-status{padding-right:46px;font-weight:600;}
   .sn-qpos{display:none;}
   /* Left accent rail — same pattern as the dashboard campaign card (::before
      clipped by the strip's overflow:hidden, so it hugs the rounded corners).
@@ -1917,6 +1930,7 @@
   .sn-strip.done:not(.stopped):not(.cancelled)::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
   .sn-strip.done:not(.stopped):not(.cancelled) .sn-status{color:var(--gray);}
   .sn-strip.monitoring::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue);}
+  .sn-strip.monitoring .sn-status{color:var(--blue);}
   .sn-strip.cancelled{opacity:.62;}
   .sn-strip.cancelled::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gray);}
   .sn-strip.cancelled .sn-status{color:var(--gray);}
