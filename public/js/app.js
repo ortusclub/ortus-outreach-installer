@@ -11325,6 +11325,7 @@ async function _renderCampaignsBoardInner() {
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
+        identityKey: `${c.mode || ''}|${c.name || ''}|${c.sheet_url || ''}|${(c.profile_ids || []).slice().sort().join(',')}`,
         paused: c.status === 'paused',
         dailyWait: c.status === 'waiting_daily_reset',
         needsReview: c.status === 'needs_review',
@@ -11499,6 +11500,31 @@ async function _renderCampaignsBoardInner() {
       }
     }
   } catch (_) { /* cloud best-effort */ }
+
+  // A handover/re-run can leave an older engine row owned by This Mac while a
+  // newer identical run is actively monitoring on the VM. The local singleton
+  // cannot own both. Once its runtime is gone, that older row is terminal—not a
+  // permanently paused browser that still needs closing. Keep it visible under
+  // Stopped so the operator can inspect its log or delete it normally.
+  const activeVmKeys = new Set(items.filter((item) => item.where === 'cloud'
+    && item.bucket === 'running' && item.runsOn === 'vm' && !item.interrupted)
+    .map((item) => item.identityKey).filter(Boolean));
+  for (const item of items) {
+    if (item.where !== 'cloud' || !item.interrupted || !item.identityKey || !activeVmKeys.has(item.identityKey)) continue;
+    item.bucket = 'done';
+    item.paused = false;
+    item.interrupted = false;
+    item.waitingForLocal = false;
+    item.monitoring = false;
+    item.monitoringPhase = false;
+    item.bad = true;
+    item.badLabel = 'Stopped duplicate';
+    item.engineStatus = 'cancelled';
+    item.endReason = 'stopped';
+    item.stopReason = 'A newer identical run is active on the Cloud VM.';
+    item.currentAction = null;
+    item.live = false;
+  }
 
   // 4) Local done — recent history (limit 8).
   try {
