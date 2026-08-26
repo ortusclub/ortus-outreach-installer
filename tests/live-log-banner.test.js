@@ -66,6 +66,24 @@ test('tomorrow and later schedules use human dates without a year', () => {
   assert.doesNotMatch(later.detail, /2026|UTC/);
 });
 
+test('sender-unavailability uses tomorrow instead of a raw UTC date', () => {
+  const e = latestBannerEvent([
+    '🌙 No account can send until 2026-08-26 23:59 UTC — sending stops here and acceptance checks carry on. 293 leads left; they go out automatically when it lifts.',
+  ], { phase: 'monitoring', now: new Date('2026-08-26T14:00:00+02:00') });
+  assert.equal(e.kind, 'sending-paused-monitoring');
+  assert.equal(e.headline, 'Sending pauses until tomorrow');
+  assert.equal(e.detail, '293 leads remain · acceptance checks continue · resumes automatically tomorrow');
+  assert.doesNotMatch(`${e.headline} ${e.detail}`, /2026|UTC|No account can send/i);
+});
+
+test('current concise pause event stays concise in the banner', () => {
+  const e = latestBannerEvent([
+    '🌙 Sending pauses until tomorrow — acceptance checks continue. 293 leads remain and resume automatically tomorrow.',
+  ], { phase: 'monitoring' });
+  assert.equal(e.headline, 'Sending pauses until tomorrow');
+  assert.equal(e.detail, '293 leads remain · acceptance checks continue · resumes automatically tomorrow');
+});
+
 test('restored monitoring schedule never exposes raw UTC or cancellation copy', () => {
   const e = latestBannerEvent([
     'Queued check cancelled — monitoring stays active.',

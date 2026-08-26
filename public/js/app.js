@@ -46,7 +46,7 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.25';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.26';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';

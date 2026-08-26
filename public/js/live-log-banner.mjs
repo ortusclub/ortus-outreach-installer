@@ -14,6 +14,17 @@ function relativeSchedule(raw, now = new Date()) {
   return `${parsed.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} at ${time}`;
 }
 
+function relativeDay(raw, now = new Date()) {
+  const parsed = new Date(String(raw).trim().replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+UTC$/i, '$1T$2:00Z'));
+  if (Number.isNaN(parsed.getTime())) return String(raw).trim().toLowerCase();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  const days = Math.round((target - today) / 86400000);
+  if (days <= 0) return 'later today';
+  if (days === 1) return 'tomorrow';
+  return parsed.toLocaleDateString([], { weekday: 'long' });
+}
+
 function actionOnlyHeadline(raw) {
   return String(raw || '')
     .replace(/\[\s*[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\s*\]/gi, '')
@@ -29,6 +40,27 @@ function actionOnlyHeadline(raw) {
 function readablePresentation(line, phase = '', now = new Date()) {
   const clean = line.replace(/^[◷↻⟳⏱]\s*/u, '').trim();
   let m;
+  // Older engine rows included a raw UTC timestamp and repeated the entire
+  // explanation. Keep those forensic rows intact in the log, but present the
+  // same state in the compact human language used by current engine rows.
+  if ((m = clean.match(/^🌙?\s*No account can send until\s+(.+?)\s+[—–]\s+sending stops here and acceptance checks carry on\.\s*(\d+)\s+leads?\s+left/i))) {
+    const when = relativeDay(m[1], now);
+    return {
+      kind: 'sending-paused-monitoring', eyebrow: 'Monitoring is active',
+      headline: `Sending pauses until ${when}`,
+      detail: `${m[2]} leads remain · acceptance checks continue · resumes automatically ${when}`,
+      explanation: 'Nothing needs to be done.',
+    };
+  }
+  if ((m = clean.match(/^🌙?\s*Sending pauses until\s+([^—–]+?)\s+[—–]\s+acceptance checks continue\.\s*(\d+)\s+leads?\s+remain/i))) {
+    const when = m[1].trim().toLowerCase();
+    return {
+      kind: 'sending-paused-monitoring', eyebrow: 'Monitoring is active',
+      headline: `Sending pauses until ${when}`,
+      detail: `${m[2]} leads remain · acceptance checks continue · resumes automatically ${when}`,
+      explanation: 'Nothing needs to be done.',
+    };
+  }
   if ((m = clean.match(/^📡?\s*\[([^\]]+)\]\s*Check now\s+[—–]\s+bulk check pass starting/i))) {
     return {
       kind: 'local-browser-starting', account: m[1], eyebrow: 'Starting this Mac',
