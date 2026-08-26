@@ -26469,7 +26469,10 @@ function _stageAcctPill(a, isCurrent, counts) {
   }
   const benchWord = _benchWord(a.bench);
   let cls = '', text = count, tip = '';
-  if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; }
+  if (a.sweepAction) { cls = 'bad'; text = 'Needs login'; tip = a.sweepAction; }
+  else if (a.sweepChecked && Number(a.sweepAccepted) > 0) { cls = 'ok'; text = `${a.sweepAccepted} accepted`; tip = 'Checked successfully during the latest acceptance sweep.'; }
+  else if (a.sweepChecked) { cls = ''; text = '0 accepted'; tip = 'Checked successfully during the latest acceptance sweep.'; }
+  else if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; }
   else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
   else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly cap'; }
   else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
@@ -27035,7 +27038,7 @@ function renderLiveStage(root, status) {
   // The cloud payload already has stage-account objects. Local campaigns expose
   // the same truth through accountPanel/accountColumns; normalise those rows so
   // LM and VM use the identical pill row instead of restoring the legacy rail.
-  const accts = cloudAccts.length ? cloudAccts : accountColumns(status).map((a) => ({
+  let accts = cloudAccts.length ? cloudAccts : accountColumns(status).map((a) => ({
     profileId: a.email,
     email: a.email,
     dailyCount: a.sentToday,
@@ -27046,10 +27049,19 @@ function renderLiveStage(root, status) {
     parked: /stopped|benched|identity-restricted/.test(String(a.state || '').toLowerCase()),
     parkReason: /identity-restricted/.test(String(a.state || '').toLowerCase()) ? 'identity restricted' : '',
   }));
+  if (sweepSummary) {
+    accts = accts.map((account) => {
+      const result = sweepSummary.accounts.find((item) => {
+        const key = String(item.account || '').toLowerCase();
+        return key === String(account.email || '').toLowerCase() || key === String(account.profileId || '').toLowerCase();
+      });
+      return result ? { ...account, sweepChecked: result.checked, sweepAccepted: result.accepted, sweepAction: result.action } : account;
+    });
+  }
   const cur = (ca && ca.account) || status.liveAccount || '';
   const isCur = (a) => !paused && !!cur && (a.profileId === cur || a.email === cur);
   const sel = _stageSel.get(cid) || '';
-  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}`).join(',')
+  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}~${a.sweepChecked ? 'c' : ''}${a.sweepAccepted || 0}${a.sweepAction || ''}`).join(',')
     + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}`
     + `|${[...((cid && _cloudAcctCounts.get(cid)) || new Map()).entries()].map(([k, v]) => `${k}:${v.sent}/${v.total}`).join(',')}`;
   if (stage.dataset.acctkey !== akey) {
