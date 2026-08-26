@@ -46,7 +46,7 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.24';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.25';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -7837,6 +7837,9 @@ function _buildCloudActiveStatus(c, leads, counts) {
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
     acceptedCount: accepted, logs: _mergeCloudLog(_cloudLeadsToLog(leads, c.mode === 'follower_growth', c), _combineCloudEvents(c.id)),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
+    // When blocked senders become eligible again. Monitoring continues while
+    // this durable resume task waits.
+    resumeAt: c.resumeTaskDueAt || null,
     // Monitor task row → the hero's three states (see monitorHeroState). Absent
     // on a pre-fix engine, which monitorHeroState renders as a plain countdown.
     monitorTaskStatus: c.monitorTaskStatus || null,
@@ -10357,13 +10360,17 @@ function renderUnifiedStrip(it) {
     const line = endingSoon
       ? `Window ends in <b>${fmtRem(remMs)}</b> — then still-pending leads stay <i>Connection Request Sent</i>`
       : `Next check <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(fmtRem(remMs))}</b> · ${cad.label} <b>${escHtml(cad.value)}</b>`;
+    const resume = it.resumeAt ? new Date(it.resumeAt) : null;
+    const resumeLine = resume && !isNaN(resume.getTime()) && Number(it.pendingCount || 0) > 0
+      ? `<span class="sn-mon-resume"><b>Sending paused · no sender available for 15+ min.</b> Monitoring continues; sending retries automatically at ${escHtml(_wakeWhenText(resume.getTime()))}.</span>`
+      : '';
     monBlock = `<div class="sn-mon${endingSoon ? ' ending' : ''}">`
       + `<span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span>`
       + `<span class="sn-mon-line">${line}</span>`
       + (cloud ? `<span class="sn-mon-ctl">`
       + `<button type="button" class="mini sn-mon-btn" onclick="event.stopPropagation();promptCloudCheckScope('${escHtml(it.id)}',this)" title="Run an acceptance check now">Check now</button>`
       + `<label class="sn-mon-auto" title="When off, the VM won't run automatic checks — use ⚡ Check now."><input type="checkbox" ${it.autoChecksEnabled ? 'checked' : ''} onclick="event.stopPropagation()" onchange="setCloudAutoChecks('${escHtml(it.id)}',this.checked,this)"> Auto</label>`
-      + `</span>` : '') + `</div>`;
+      + `</span>` : '') + resumeLine + `</div>`;
   }
 
   // Handshake lock panel — replaces the log switchBlock while
@@ -27466,12 +27473,12 @@ window.renderActiveCard = function(status) {
   // outright. Cleared by endCloudLaunch(). See cloudLaunchStatus().
   const _launchStatus = (typeof cloudLaunchStatus === 'function') ? cloudLaunchStatus() : null;
   if (_launchStatus) status = _launchStatus;
-  // Cloud-view takeover (card #2): when the operator opened a VM campaign, render
-  // THAT campaign's live status into this same card — unless a LOCAL campaign is
-  // genuinely running/monitoring (local always wins, never hijacked). See
-  // feedback_two_live_status_cards.
-  if (_viewingCloudId && !(status && (status.running || status.state === 'monitoring'))) {
-    if (window.__cloudActiveStatus) {
+  // Cloud-view takeover (card #2): the campaign explicitly opened by the
+  // operator owns this card. The old local-always-wins exception let each local
+  // poll overwrite SAS with TEST, then the cloud poll painted SAS back.
+  if (_viewingCloudId) {
+    if (window.__cloudActiveStatus
+        && String(window.__cloudActiveStatus.id || '') === String(_viewingCloudId)) {
       status = window.__cloudActiveStatus;
     } else {
       // v2.160.53: viewing a SPECIFIC cloud campaign but its status hasn’t loaded

@@ -22,3 +22,15 @@ test('approved compact option uses quiet lifecycle gradients without boxed facts
   assert.match(html, /\.sn-strip\.sn-collapsed\.monitoring\{[^}]+linear-gradient/);
   assert.doesNotMatch(html, /\.sn-strip\.sn-collapsed \.sn-flow\{[^}]+border:/);
 });
+
+test('an explicitly opened cloud campaign cannot be overwritten by local polling', () => {
+  assert.match(app, /if \(_viewingCloudId\) \{/);
+  assert.match(app, /String\(window\.__cloudActiveStatus\.id \|\| ''\) === String\(_viewingCloudId\)/);
+  assert.doesNotMatch(app, /_viewingCloudId && !\(status && \(status\.running \|\| status\.state === 'monitoring'\)\)/);
+});
+
+test('monitoring with unsent leads shows the automatic sending resume time', () => {
+  assert.match(app, /resumeAt: c\.resumeTaskDueAt \|\| null/);
+  assert.match(app, /Sending paused · no sender available for 15\+ min/);
+  assert.match(app, /sending retries automatically at/);
+});
