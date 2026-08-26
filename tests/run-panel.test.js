@@ -117,4 +117,6 @@ test('a park reason is rewritten, so no raw internal wording reaches the card', 
   assert.match(s, /invitations for the week/);
   assert.match(parkSentence('Session expired — log in again'), /logged in again in GoLogin/);
   assert.equal(parkSentence(''), '');
+  assert.match(parkSentence('unconfirmed_streak'), /Five leads in a row could not be confirmed/);
+  assert.match(parkSentence('Parked after 5 consecutive unconfirmed sends'), /choose Try again/);
 });

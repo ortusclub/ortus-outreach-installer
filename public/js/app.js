@@ -7701,7 +7701,12 @@ function _cloudAccountPanel(id, d, leads) {
     }
     else if (a.needsLogin) { state = 'stopped'; sub = 'This account needs to be logged in again in GoLogin.'; }
     else if (a.weeklyCap) { state = 'stopped'; sub = 'LinkedIn weekly invitation limit reached.'; }
-    else if (a.parked) { state = 'stopped'; sub = a.parkReason ? `Stopped: ${String(a.parkReason).replace(/_/g, ' ')}.` : 'Stopped for this run.'; }
+    else if (a.parked) {
+      state = 'stopped';
+      sub = a.parkReason === 'unconfirmed_streak'
+        ? 'Five leads in a row could not be confirmed. Open this account, then choose Retry.'
+        : (a.parkReason ? `Stopped: ${String(a.parkReason).replace(/_/g, ' ')}.` : 'Stopped for this run.');
+    }
     const reached = sent.filter((l) => String(l.account || '') === pid).map((l) => l.fullName || l.firstName || l.leadUrl || 'Lead');
     // A "batch" belongs only to sending. During a monitoring sweep liveProgress
     // total means accounts checked or introductions due; presenting that as
@@ -8520,13 +8525,17 @@ function renderCloudAccountsPanel(id) {
     const who = escHtml(a.email || _acctLabel(a) || 'account');
     const badges = [];
     // Blocking status first (most important), then daily usage, then primary link.
-    const benched = !!(a.weeklyCap || a.parkReason === 'weekly');
+    const weekly = !!(a.weeklyCap || a.parkReason === 'weekly');
+    const benched = !!(weekly || a.parked);
     if (a.needsLogin) badges.push(badge('bad', '⚠ Not logged in'));
     // Parked by 3 consecutive proxy 407s — the VM literally cannot open this
     // profile's browser. Distinct from a throttle: waiting won't fix it.
     else if (a.parkReason === 'proxy') badges.push(badge('bad', '⛔ Proxy refused — fix the GoLogin profile, then Retry'));
-    else if (benched) badges.push(badge('bad', `🚫 Benched — weekly invitation limit · resets ${_nextMondayText()}`));
+    else if (weekly) badges.push(badge('bad', `🚫 Benched — weekly invitation limit · resets ${_nextMondayText()}`));
     else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') badges.push(badge('warn', '⏸ Throttled'));
+    else if (a.parkReason === 'unconfirmed_streak') {
+      badges.push(badge('bad', '5 unconfirmed in a row — open the account, then Retry'));
+    }
     else if (a.parked) {
       const reason = String(a.parkReason || 'stopped').replace(/[_-]+/g, ' ');
       badges.push(badge('bad', `Stopped — ${reason}`));
@@ -8552,7 +8561,7 @@ function renderCloudAccountsPanel(id) {
     // A weekly cap gets no Retry — it's a window, not a cooldown. Offering one
     // here while the live stage says "don't retry before Monday" is the app
     // arguing with itself, and taking it spends strikes for nothing.
-    if (benched && !a.needsLogin && !(a.weeklyCap || a.parkReason === 'weekly')) {
+    if (benched && !a.needsLogin && !weekly) {
       badges.push(`<button type="button" class="cap-retry" onclick="unbenchCloudAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)" title="Clear the bench and let this account try again">Retry</button>`);
     }
     // Editable (paused/stopped) → a toggle that REMOVES the account from the
@@ -26333,6 +26342,7 @@ function _stageAcctPill(a, isCurrent, counts) {
   else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly cap'; }
   else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
   else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') { cls = 'warn'; text = 'Throttled'; }
+  else if (a.parkReason === 'unconfirmed_streak') { cls = 'bad'; text = '5 unconfirmed'; tip = 'Five leads in a row could not be confirmed. Open this account, then choose Retry.'; }
   else if (a.parked) { cls = 'bad'; text = 'Stopped'; tip = String(a.parkReason || 'Reason recorded in the account details'); }
   // Out of credits having sent NOTHING is a blocked account; out of credits
   // having spent them all is just a finished one. Same number, different news.
@@ -26378,7 +26388,8 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
   // No Retry on a weekly cap. It's a window, not a cooldown — nothing changes
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
-  const why = a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
+  const why = a.parkReason === 'unconfirmed_streak' ? ' · five leads in a row could not be confirmed; open the account, then Retry'
+    : a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
     : a.bench ? ` · ${escHtml(String(a.bench))} — sits out the rest of this run, retries next run`
     : weekly ? ` · LinkedIn weekly invitation cap — resets ${_nextMondayText()}`
     : a.parkReason === 'throttle' ? ' · rate-limited, backing off' : '';

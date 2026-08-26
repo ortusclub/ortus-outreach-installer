@@ -576,6 +576,7 @@ const PARK_LINES = [
   [/campaign limit/, 'This account reached the limit you set for the day.'],
   [/checkpoint|challenge/, 'LinkedIn wants a person to confirm this account before it can carry on.'],
   [/throttl/, 'Paused while this Mac was under strain. It picks up again on the next run.'],
+  [/unconfirmed streak|consecutive unconfirmed/, 'Five leads in a row could not be confirmed. Open this account, then choose Try again.'],
   [/identity/, 'Stopped early because the profiles opening were not the people in the sheet.'],
   [/consecutive skips/, 'Stopped early after several people in a row could not be reached.'],
   [/complete/, 'Finished every row it was given.'],
@@ -3325,6 +3326,17 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     const SKIP_PARK_THRESHOLD =
       (mode === 'open_profile_only' || mode === 'inmail_only') ? 15 : BATCH_SIZE;
     const consecutiveSkips = new Map();
+    // A single uncertain LinkedIn result is a lead-level miss, never a campaign
+    // blocker. Only five consecutive misses of the SAME uncertainty kind on the
+    // SAME sender indicate an unhealthy account and park that sender.
+    const consecutiveUnconfirmed = new Map();
+    const UNCONFIRMED_PARK_THRESHOLD = 5;
+    const bumpUnconfirmed = (profileId, kind) => {
+      const previous = consecutiveUnconfirmed.get(profileId);
+      const next = { kind, count: previous && previous.kind === kind ? previous.count + 1 : 1 };
+      consecutiveUnconfirmed.set(profileId, next);
+      return next.count;
+    };
     // 429-specific consecutive counter. LinkedIn's Voyager API returns HTTP
     // 429 overwhelmingly for the weekly invitation cap (rather than transient
     // throttle, which the 6-min per-profile turn floor already prevents).
@@ -3358,6 +3370,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     campaign._unparkProfile = (profileId) => {
       weeklyLimited.delete(profileId);
       consecutiveSkips.set(profileId, 0);
+      consecutiveUnconfirmed.delete(profileId);
       consecutive429s.set(profileId, 0);
       cooldowns429.set(profileId, 0);
       campaign._cooldown429.delete(profileId);
@@ -4063,12 +4076,17 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               degradationStreak.set(profileId, (degradationStreak.get(profileId) || 0) + 1);
               const _idSkips = (consecutiveSkips.get(profileId) || 0) + 1;
               consecutiveSkips.set(profileId, _idSkips);
+              const _unconfirmedCount = bumpUnconfirmed(profileId, 'identity_unconfirmed');
               delete state.processed[url];
               await saveState(state);
-              if (_idSkips >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
-                log(`  ⚠ ${pName}: ${_idSkips} consecutive unverified/degraded leads — parking account to stop hammering a degrading session.`);
+              if (_unconfirmedCount >= UNCONFIRMED_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+                log(`  ${pName}: 5 identity checks in a row could not be confirmed — parking this account; the campaign continues with other senders.`);
                 weeklyLimited.add(profileId);
-                recordProfileEnd(profileId, pName, `Parked after ${_idSkips} consecutive identity-unverified leads`);
+                recordProfileEnd(profileId, pName, 'Parked after 5 consecutive unconfirmed identity checks');
+                campaign.parkedProfiles.push({
+                  profileId, pName, parkedAt: Date.now(), reason: 'unconfirmed_streak',
+                  issue: 'identity_unconfirmed', skipCount: _unconfirmedCount,
+                });
                 break;
               }
               // v2.96.2: this `continue` jumps past the end-of-iteration delay
@@ -4596,6 +4614,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               log(`  ✓ [${pName}] ${_who || 'That row'} is now up to date in the sheet.`);
             }
             consecutiveSkips.set(profileId, 0);
+            consecutiveUnconfirmed.delete(profileId);
             consecutive429s.set(profileId, 0);
             cooldowns429.set(profileId, 0);
             campaign._cooldown429.delete(profileId);
@@ -4913,6 +4932,24 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               }
             }
 
+            let _parkedForUnconfirmed = false;
+            const _unconfirmedKind = errorMsg.includes('SEND_NOT_CONFIRMED') ? 'send_not_confirmed' : '';
+            if (_unconfirmedKind) {
+              const _unconfirmedCount = bumpUnconfirmed(profileId, _unconfirmedKind);
+              if (_unconfirmedCount >= UNCONFIRMED_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, 'Parked after 5 consecutive unconfirmed sends');
+                campaign.parkedProfiles.push({
+                  profileId, pName, parkedAt: Date.now(), reason: 'unconfirmed_streak',
+                  issue: _unconfirmedKind, skipCount: _unconfirmedCount,
+                });
+                log(`  ${pName}: 5 sends in a row could not be confirmed — parking this account; the campaign continues with other senders.`);
+                _parkedForUnconfirmed = true;
+              }
+            } else {
+              consecutiveUnconfirmed.delete(profileId);
+            }
+
             if (errorMsg.includes('WEEKLY_LIMIT')) {
               log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);
@@ -5076,6 +5113,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 auditAction: normalizeSkipReason(errorMsg),
               }, linkedinColumn);
             }
+
+            if (_parkedForUnconfirmed) break;
           }
 
           // v2.137 (final-review): if a 429 cooldown fired for this lead, break
