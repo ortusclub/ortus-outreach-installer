@@ -28,10 +28,11 @@ import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { fgActiveDoor, fgActivePayload } from '/js/fg-source.mjs';
 import { fgEyebrowWithPage } from '/js/fg-eyebrow.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.47-20260825b';
+import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.2';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.47-20260825b';
+import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.2';
+import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
@@ -9890,11 +9891,12 @@ function applyVjCardAppearance(root, status, fields) {
   const inferredDone = !!(status && !status.running && !monitoring && !interrupted
     && !queued && !starting && Array.isArray(status.logs) && status.logs.length > 0);
   const done = !!(status && (state === 'done' || state === 'finished' || phase === 'done' || inferredDone));
+  const terminal = done ? terminalPresentation(status) : null;
   const local = _whSide(status || {}) === 'local';
 
   root.classList.remove('is-monitor', 'is-monitoring', 'is-waiting',
     'is-interrupted', 'is-error', 'is-queued', 'is-starting', 'is-paused',
-    'is-done', 'is-local');
+    'is-done', 'is-stopped', 'is-local');
   root.classList.toggle('is-monitor', monitoring);
   root.classList.toggle('is-monitoring', monitoring);
   root.classList.toggle('is-waiting', waiting);
@@ -9904,6 +9906,7 @@ function applyVjCardAppearance(root, status, fields) {
   root.classList.toggle('is-starting', starting);
   root.classList.toggle('is-paused', paused);
   root.classList.toggle('is-done', done);
+  root.classList.toggle('is-stopped', !!(done && terminal && !terminal.complete));
   root.classList.toggle('is-local', local);
 }
 
@@ -11712,24 +11715,16 @@ async function stopCloudCampaignUI(id) {
     status = (d && d.campaign && d.campaign.status) || '';
   } catch { /* fall through to plain confirm */ }
 
-  const isMonitorMode = (mode === 'connect_and_introduce' || mode === 'connect_and_message');
-  // paused counts as "still sending": its unsent leads + pending invitations are
-  // exactly the state the choice is about.
   const isSending = (status === 'running' || status === 'queued' || status === 'paused');
-  const modal = document.getElementById('stop-choice-modal');
-  if (isMonitorMode && isSending && modal) {
+  if (isSending) {
     _stopChoiceTarget = { cloud: true, id };
-    const isDm = mode === 'connect_and_message';
-    const eyebrow = modal.querySelector('.stop-choice-eyebrow');
-    const monitorSub = modal.querySelector('.stop-choice-pill.is-monitor .stop-choice-pill-sub');
-    if (eyebrow) eyebrow.textContent = isDm ? 'Stop cloud campaign · Connect + DM' : 'Stop cloud campaign · Connect + Introduce Back';
-    if (monitorSub) monitorSub.textContent = isDm
-      ? 'Sending stops. The VM keeps checking for acceptances (every 60 min, 7 days) and auto-DMs still fire.'
-      : 'Sending stops. The VM keeps checking for acceptances (every 60 min, 7 days) and auto-intros still fire.';
-    modal.classList.remove('hidden');
+    const modal = document.getElementById('confirm-stop-modal');
+    const copy = document.getElementById('stop-current-lead-copy');
+    if (copy) copy.textContent = 'No new lead will start. Waiting is safer; Stop now closes the VM browser and verifies the in-flight lead before any retry.';
+    modal?.classList.remove('hidden');
     return;
   }
-  if (!confirm('Stop this cloud campaign? Leads not yet actioned will not be sent.')) return;
+  // Monitoring between checks has no current lead, so it stops directly.
   await _doStopCloud(id, { keepMonitoring: false });
 }
 window.stopCloudCampaignUI = stopCloudCampaignUI;
@@ -11749,9 +11744,9 @@ async function _cloudMutationRequest(url, verb) {
 }
 
 // Fire the actual engine stop (shared by the plain confirm + both choice pills).
-async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign' } = {}) {
+async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', immediate = false } = {}) {
   try {
-    const qs = keepMonitoring ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}` : '';
+    const qs = keepMonitoring ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}` : (immediate ? '?immediate=1' : '?finishCurrent=1');
     await _cloudMutationRequest(`/api/campaign/cloud/${encodeURIComponent(id)}/stop${qs}`, 'stop');
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(keepMonitoring
@@ -13253,6 +13248,10 @@ async function submitStartCampaign(body, opts = {}) {
         showCampaignToast('Lead sheet changed since pre-flight check — press Start again to re-run the check.', 8000);
         return;
       }
+      if (_parsed409.launchRejected || res.status === 400) {
+        let parsed; try { parsed = JSON.parse(txt); } catch { parsed = null; }
+        if (parsed?.launchRejected && parsed.diagnostic) { showLaunchDiagnostic(parsed.diagnostic); return; }
+      }
       alert(`Could not ${opts.queueOnly ? 'queue' : 'start'} campaign:\n\n${txt}`);
       return;
     }
@@ -13315,6 +13314,32 @@ async function submitStartCampaign(body, opts = {}) {
   } catch (e) {
     alert(`Network error starting campaign:\n\n${e.message}`);
   }
+}
+
+function closeLaunchDiagnostic() { document.getElementById('launch-diagnostic-modal')?.classList.add('hidden'); }
+window.closeLaunchDiagnostic = closeLaunchDiagnostic;
+function resolveLaunchDiagnostic(code) {
+  closeLaunchDiagnostic();
+  const target = code === 'accounts' ? 'nav-accounts' : 'nav-sheet';
+  if (typeof scrollToSection === 'function') scrollToSection(target);
+  if (code === 'sender') setTimeout(() => document.getElementById('ic-sender-col-select')?.focus(), 350);
+  if (code === 'sheet') setTimeout(() => document.getElementById('sheet-url')?.focus(), 350);
+  if (code === 'rows') window.openRunningSheet?.();
+}
+window.resolveLaunchDiagnostic = resolveLaunchDiagnostic;
+function showLaunchDiagnostic(diagnostic = {}) {
+  const modal = document.getElementById('launch-diagnostic-modal');
+  const copy = document.getElementById('launch-diagnostic-copy');
+  const actions = document.getElementById('launch-diagnostic-actions');
+  if (!modal || !actions) return alert(diagnostic.message || 'Campaign not started.');
+  if (copy) copy.textContent = `${diagnostic.message || 'Campaign not started.'} Nothing was sent.`;
+  actions.replaceChildren(...(diagnostic.fixes || []).map((fix, index) => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = index === 0 ? 'btn btn-start' : 'btn btn-secondary';
+    button.textContent = fix.label; button.onclick = () => resolveLaunchDiagnostic(fix.code);
+    return button;
+  }));
+  modal.classList.remove('hidden');
 }
 
 // ── v2.106.0 — Mandatory per-machine operator identity ──────────────────
@@ -13584,34 +13609,13 @@ function confirmStopCampaign() {
       showCampaignToast('Still ending monitoring — hang tight, sheet stamping in progress…', 8000);
       return;
     }
-    const modal = document.getElementById('confirm-stop-monitoring-modal');
-    if (modal) modal.classList.remove('hidden');
+    confirmStopMonitoringNow();
     return;
   }
-  // CC+IC and CC+DM both run a phase-2 monitoring loop after the
-  // connection phase. Give the operator the choice between halting
-  // everything vs. just stopping new sends and letting acceptances
-  // continue to flow through auto-intro / auto-DM dispatch.
-  if (__cockpit && (__cockpit.mode === 'connect_and_introduce' || __cockpit.mode === 'connect_and_message')) {
-    const modal = document.getElementById('stop-choice-modal');
-    if (modal) {
-      const isDm = __cockpit.mode === 'connect_and_message';
-      const eyebrow = modal.querySelector('.stop-choice-eyebrow');
-      const monitorSub = modal.querySelector('.stop-choice-pill.is-monitor .stop-choice-pill-sub');
-      if (eyebrow) {
-        eyebrow.textContent = isDm
-          ? 'Stop campaign · Connect + DM'
-          : 'Stop campaign · Connect + Introduce Back';
-      }
-      if (monitorSub) {
-        monitorSub.textContent = isDm
-          ? 'Bulk-check fires now, then every 6 h for 7 days. Auto-DMs still fire on accept.'
-          : 'Bulk-check fires now, then every 6 h for 7 days. Auto-intro DMs still fire on accept.';
-      }
-      modal.classList.remove('hidden');
-    }
-    return;
-  }
+  _stopChoiceTarget = { cloud: false, id: null };
+  const copy = document.getElementById('stop-current-lead-copy');
+  const lead = __cockpit?.currentAction?.lead || 'the current lead';
+  if (copy) copy.textContent = `Currently processing ${lead}. No new lead will start. Waiting is recommended.`;
   const modal = document.getElementById('confirm-stop-modal');
   if (modal) modal.classList.remove('hidden');
 }
@@ -13688,11 +13692,15 @@ async function confirmStopMonitoringNow() {
 }
 window.confirmStopMonitoringNow = confirmStopMonitoringNow;
 
-async function confirmStopCampaignNow() {
+async function confirmStopCampaignNow(immediate = false) {
   closeStopModal();
-  // Visual feedback while the server force-closes browsers (~1-2s).
-  showCampaignToast('Stopping campaign — closing browsers…', 4000);
-  await stopCampaign();
+  const target = _stopChoiceTarget;
+  showCampaignToast(immediate ? 'Stopping now — the in-flight lead will be verified.' : 'Waiting up to 15 seconds for the current lead…', 15000);
+  if (target.cloud && target.id) await _doStopCloud(target.id, { immediate });
+  else {
+    try { await fetch('/api/campaign/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full: true, immediate }) }); } catch { /* status polling surfaces recovery */ }
+    try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
+  }
 }
 
 // v2.14.x: "Stop sending, keep monitoring" — CC+IC only. Fires the
@@ -15159,7 +15167,8 @@ async function pollStatus() {
     // Detect campaign completion and refresh history
     if (wasRunning && !s.running) {
       fetchHistory();
-      notify('Campaign finished', `${s.processedToday} connections sent. ${(s.errors || []).length} errors.`);
+      const terminal = terminalPresentation(s);
+      notify(`Campaign ${terminal.label.toLowerCase()}`, `${terminal.explanation} ${s.processedToday} connections sent; ${terminal.pending} pending.`);
     }
     // Detect new errors
     if (s.running && (s.errors || []).length > (wasErrorCount || 0)) {
@@ -27371,14 +27380,16 @@ window.renderActiveCard = function(status) {
     const total = Number(status.totalTargets) || 0;
     const done = Number(status.totalProcessed) || 0;
     const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+    const terminal = terminalPresentation(status);
+    card.classList.toggle('is-stopped', !isWaitingHere && !terminal.complete);
     v3SetText('activeName', status.name || '(unnamed)');
-    v3SetText('activeEyebrow', isWaitingHere ? 'Waiting for this Mac' : 'Finished');
+    v3SetText('activeEyebrow', isWaitingHere ? 'Waiting for this Mac' : terminal.label);
     v3SetText('activePct', String(pct));
     v3SetText('activeSent', String(done));
     v3SetText('activeTotal', String(total));
     v3SetText('activeAccounts', String((status.profileIds || []).length));
     v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
-    v3SetText('sendingLbl', isWaitingHere ? 'Waiting' : 'Finished');
+    v3SetText('sendingLbl', isWaitingHere ? 'Waiting' : terminal.activity);
     v3SetText('batchEta', '—');
     const glyph = document.getElementById('activeGlyph');
     if (glyph) glyph.textContent = (typeof v3ModeBadge === 'function') ? v3ModeBadge(status.mode) : '';
@@ -27394,6 +27405,14 @@ window.renderActiveCard = function(status) {
       v3SetText('activeLiveL1', 'Waiting for this Mac');
       v3SetText('activeLiveL2', 'the app was closed · nothing is running · move it to the VM to keep going');
       // Clears any beacon / readout / Stop the running card left behind.
+      applyLiveBanner(liveEl, status);
+    } else if (liveEl && !terminal.complete) {
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-checking', 'is-waking', 'is-paused');
+      liveEl.classList.add('is-outcome');
+      v3SetText('activeLiveIco', '■');
+      v3SetText('activeLiveL1', terminal.label);
+      v3SetText('activeLiveL2', terminal.explanation);
       applyLiveBanner(liveEl, status);
     } else if (liveEl) liveEl.hidden = true;
     // A finished run keeps its account pills. They are the only surface carrying

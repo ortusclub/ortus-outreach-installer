@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
 import { dataPath } from './paths.js';
 
 const FILE = dataPath('runtime-interruption.json');
@@ -21,7 +21,9 @@ export function writeRuntimeInterruption(snapshot = {}) {
     runsOn: 'local',
     ...snapshot,
   };
-  writeFileSync(FILE, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  const tmp = `${FILE}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  renameSync(tmp, FILE);
   return value;
 }
 
@@ -35,7 +37,9 @@ export function interruptionCopy(value = {}) {
     ? 'Stopped because this Mac went to sleep'
     : reason === 'app-quit'
       ? 'Stopped because the app was closed'
-      : 'Stopped because this Mac became unavailable';
+      : reason === 'campaign-stop-timeout'
+        ? 'Stopped after the 15-second safety limit'
+        : 'Stopped because this Mac became unavailable';
   const detail = value.phase === 'monitoring'
     ? 'Monitoring did not restart sending. Resume checks on this Mac or move them to the Cloud VM.'
     : 'The remaining leads are safe. Choose where to continue before sending resumes.';

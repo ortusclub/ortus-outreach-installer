@@ -3911,12 +3911,24 @@
   <!-- Phase 2.8.9: Stop confirmation modal (non-CC+IC modes) -->
   <div id="confirm-stop-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeStopModal()">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="stop-modal-title">
-      <h3 id="stop-modal-title" class="modal-title">Stop Campaign?</h3>
-      <p class="modal-body">All running browsers will be force-closed and the current run will end. Any leads already sent today are saved — leads in progress will roll back to "not attempted".</p>
+      <div class="stop-choice-eyebrow">Stop campaign</div>
+      <h3 id="stop-modal-title" class="modal-title">What should happen to the current lead?</h3>
+      <p class="modal-body" id="stop-current-lead-copy">No new lead will start after you choose.</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" onclick="closeStopModal()">Cancel</button>
-        <button type="button" class="btn btn-stop" onclick="confirmStopCampaignNow()">Yes, Stop Campaign</button>
+        <button type="button" class="btn btn-secondary" onclick="confirmStopCampaignNow(false)">Wait up to 15 seconds</button>
+        <button type="button" class="btn btn-stop" onclick="confirmStopCampaignNow(true)">Stop now</button>
       </div>
+    </div>
+  </div>
+
+  <div id="launch-diagnostic-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeLaunchDiagnostic()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="launch-diagnostic-title">
+      <div class="stop-choice-eyebrow">Campaign not started</div>
+      <h3 id="launch-diagnostic-title" class="modal-title">No actionable leads</h3>
+      <p class="modal-body" id="launch-diagnostic-copy">Nothing was sent. Choose a suggested fix below.</p>
+      <div class="modal-actions" id="launch-diagnostic-actions"></div>
+      <div class="stop-choice-cancel-row"><button type="button" class="modal-cancel-link" onclick="closeLaunchDiagnostic()">Close</button></div>
     </div>
   </div>
 

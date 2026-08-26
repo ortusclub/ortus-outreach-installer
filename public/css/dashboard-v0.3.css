@@ -359,7 +359,10 @@
   }
   /* Interrupted local work is not healthy/active. Red owns the whole recovery
      state until the operator successfully resumes checks or sending. */
-  body[data-dashboard='v3'] .vj-card.is-interrupted::before { background: var(--red); }
+body[data-dashboard='v3'] .vj-card.is-interrupted::before { background: var(--red); }
+body[data-dashboard='v3'] .vj-card.is-stopped::before { background: var(--red); }
+body[data-dashboard='v3'] .vj-card.is-stopped { --vj-tone: var(--red); }
+body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { background: var(--red); box-shadow: none; }
   body[data-dashboard='v3'] .vj-card.is-interrupted .vj-eyebrow .vj-tag .dot { background: var(--red); box-shadow: none; }
   body[data-dashboard='v3'] .vj-card.is-interrupted .vj-hbar > i { background: var(--red); }
   body[data-dashboard='v3'] .vj-card.is-interrupted .vj-live { border-color: color-mix(in srgb, var(--red) 55%, var(--hairline)); }

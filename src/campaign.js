@@ -1129,6 +1129,7 @@ function setAction(label, opts = {}) {
     stepLabel: stepLabel || label || null,
     stepDetail: stepDetail || null,
   };
+  recordRuntimeInterruption('active-run');
 }
 
 // Helper for the central Operations Log (Ortus Operations Log sheet via
@@ -2186,6 +2187,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign.templates = templates || {};
   campaign.senderFirstNames = senderFirstNames || {};
   campaign.sheetUrl = sheetUrl || '';
+  recordRuntimeInterruption('active-run');
   // Lead-source guard: the resolved tab. Read back by the run-guard, the
   // monitoring slice, and re-fetches so every read targets the chosen tab.
   campaign.sheetGid = sheetGid || '';
@@ -5819,6 +5821,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     campaign._abort = false;
     log('=== Campaign ended ===');
     campaign.currentAction = null; // clear cockpit
+    const journal = readRuntimeInterruption();
+    if (!journal || journal.reason === 'active-run') clearRuntimeInterruption();
   }
 }
 
@@ -6243,7 +6247,7 @@ function buildAccountPanel() {
   });
 }
 
-export function recordRuntimeInterruption(reason = 'unexpected-exit') {
+export function recordRuntimeInterruption(reason = 'unexpected-exit', extra = {}) {
   const active = !!campaign.running || campaign.state === 'monitoring' || !!campaign._paused;
   if (!active || campaign.runsOn === 'vm') return { ok: true, recorded: false };
   const phase = campaign.state === 'monitoring' ? 'monitoring' : 'sending';
@@ -6259,6 +6263,9 @@ export function recordRuntimeInterruption(reason = 'unexpected-exit') {
     participatingProfileIds: Array.isArray(campaign.participatingProfileIds)
       ? campaign.participatingProfileIds.slice() : [],
     sheetUrl: campaign.sheetUrl || '',
+    currentProfile: campaign.currentProfile || '',
+    currentAction: campaign.currentAction || null,
+    ...extra,
   });
   return { ok: true, recorded: true, interruption: value };
 }

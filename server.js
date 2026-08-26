@@ -70,6 +70,9 @@ import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './
 import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
 import { getFailures, retryFailures } from './src/sheet-write-tracker.js';
 import { getSkips } from './src/skip-ledger.js';
+import { createStopWatchdog } from './src/stop-watchdog.js';
+import { launchValidation } from './src/launch-validation.js';
+import { terminalPresentation } from './public/js/campaign-terminal.mjs';
 
 // Surface a repeated Operations Log write failure instead of letting it die
 // silently (the 2026-06-10 → 06-11 blackout). Routed to the fatal-error log
@@ -1225,9 +1228,10 @@ function launchCampaign(config, owner) {
   preventSleep('campaign');
   startCampaign({ ...config, createdBy: owner }).then(() => {
     const status = getCampaignStatus();
+    const terminal = terminalPresentation(status);
     notifyEmail(owner, {
-      title: 'Campaign finished',
-      body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+      title: `Campaign ${terminal.label.toLowerCase()}`,
+      body: `${terminal.explanation} ${status.processedToday || 0} actions, ${terminal.pending} pending, ${(status.errors || []).length} error(s).`,
       link: '/',
     }).catch(() => {});
   }).catch(err => {
@@ -2112,6 +2116,7 @@ app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
     pause: !!req.query.pause,
     keepMonitoring: !!req.query.keepMonitoring, // "Stop sending, keep monitoring"
     monitoringScope: req.query.monitoringScope === 'tab' ? 'tab' : 'campaign',
+    immediate: !!req.query.immediate,
   });
   if (r.error) return res.status(502).json(r);
   res.json(r);
@@ -2592,6 +2597,19 @@ async function runPreflightGate(req, res) {
       tabCount: gateTabs,
       gidExplicit: gateGidExplicit,
     });
+    const invalid = launchValidation({
+      mode: req.body?.mode,
+      profileIds: req.body?.profileIds,
+      targetCount: gateFindings.targetCount,
+      diagnostics: {
+        alreadyProcessed: Math.max(0, gateRows.length - gateFindings.targetCount),
+        unmatchedSenders: gateFindings.warnings.filter((f) => f.check === 'sender_mismatch').length,
+      },
+    });
+    if (invalid) {
+      res.status(400).json({ error: invalid.message, launchRejected: true, diagnostic: invalid });
+      return false;
+    }
     const expected = ackFor(gateFindings);
     const provided = String(req.body?.preflightAck || '');
     const ackKnown = _preflightAcks.has(provided) && provided === expected;
@@ -5019,13 +5037,35 @@ app.post('/api/campaign/live/cadence', (req, res) => {
   res.json(result);
 });
 
+let _recoveryExitRequested = false;
+const _campaignStopWatchdog = createStopWatchdog({
+  isRunning: ({ generation }) => campaign.running && campaign._abort && campaign._generation === generation,
+  onStuck: async ({ graceMs }) => {
+    const status = getCampaignStatus();
+    const pending = Math.max(0, Number(status.totalTargets || 0) - Number(status.totalProcessed || 0));
+    try {
+      const { recordRuntimeInterruption } = await import('./src/campaign.js');
+      recordRuntimeInterruption('campaign-stop-timeout', { pending });
+    } catch (err) { console.error('[stop-watchdog] recovery journal failed:', err.message); }
+    console.error(`[stop-watchdog] Stop exceeded ${Math.round(graceMs / 1000)}s; requesting supervised restart.`);
+    _recoveryExitRequested = true;
+    await Promise.race([
+      Promise.allSettled([closeAllProfiles(), closeLocalBrowser()]),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
+    process.exit(75);
+  },
+});
+
 app.post('/api/campaign/stop', async (req, res) => {
   // v2.14.x: optional `{ full: true }` body opts out of the
   // connect_and_introduce post-campaign sweep + auto-intros. Default
   // behaviour is unchanged (Stop sending, keep monitoring) — relevant only
   // when the running campaign is mode=connect_and_introduce.
-  const fullHalt = !!(req.body && req.body.full);
+  const fullHalt = req.body?.full !== false;
+  const immediate = !!req.body?.immediate;
   const result = stopCampaign({ full: fullHalt });
+  const stopState = campaign.running ? _campaignStopWatchdog.arm({ generation: campaign._generation }) : _campaignStopWatchdog.status();
   // v2.14.x: ALSO flip the abort flags for Check DMs and Post Amplification.
   // The bottom-bar Stop button posts to /api/campaign/stop regardless of
   // which subsystem is currently running (the cockpit overlay sets
@@ -5044,7 +5084,7 @@ app.post('/api/campaign/stop', async (req, res) => {
   // v2.14.x: respond to the UI immediately so the dashboard flips to
   // 'stopping' without waiting for the browser-close round-trip. The actual
   // browser kill runs after a short drain window — see comment block below.
-  res.json(result);
+  res.json({ ...result, stopping: campaign.running, stopRequestedAt: stopState.requestedAt, stopDeadlineAt: stopState.deadlineAt });
 
   // v2.14.x: drain-then-kill instead of kill-then-loop-discovers-it.
   //
@@ -5071,7 +5111,7 @@ app.post('/api/campaign/stop', async (req, res) => {
   setTimeout(async () => {
     try { await closeAllProfiles(); } catch (err) { console.warn('[stop] closeAllProfiles:', err.message); }
     try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
-  }, 3000);
+  }, immediate ? 0 : 3000);
 });
 
 // Phase 2.8.9: pause/resume control. Pause is non-destructive — browsers stay
@@ -5662,7 +5702,10 @@ app.get('/api/campaign/status', async (_req, res) => {
   }
   let followUp = null;
   try { followUp = await _activeFollowUpSummary(base); } catch { /* non-fatal — countdown just hides */ }
-  res.json({ ...base, followUp, skippedCount: getSkips().length });
+  const stopState = _campaignStopWatchdog.status();
+  res.json({ ...base, followUp, skippedCount: getSkips().length,
+    stopRequestedAt: campaign.running && campaign._abort ? stopState.requestedAt : null,
+    stopDeadlineAt: campaign.running && campaign._abort ? stopState.deadlineAt : null });
 });
 
 app.get('/api/campaign/skips', (_req, res) => {
@@ -7413,9 +7456,10 @@ function registerSchedule(schedule) {
       if (s) { s.lastRun = new Date().toISOString(); await saveSchedules(all); }
 
       const status = getCampaignStatus();
+      const terminal = terminalPresentation(status);
       notify({
-        title: 'Campaign finished',
-        body: `${schedule.name}: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+        title: `Campaign ${terminal.label.toLowerCase()}`,
+        body: `${schedule.name}: ${terminal.explanation} ${status.processedToday || 0} actions, ${terminal.pending} pending.`,
         link: '/',
       }).catch(() => {});
     } catch (err) {
@@ -8346,7 +8390,7 @@ async function gracefulShutdown(signal) {
     await Promise.race([flushOpsLog(), new Promise((r) => setTimeout(r, 4000))]);
   } catch (_) { /* fire-and-forget */ }
   console.log('[shutdown] Done.');
-  process.exit(0);
+  process.exit(_recoveryExitRequested ? 75 : 0);
 }
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));

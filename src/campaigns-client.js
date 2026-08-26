@@ -320,8 +320,8 @@ export function ackLocalFollowups(taskIds, owner) {
  *   stopAndKeepMonitoring path. pause + keepMonitoring are mutually exclusive;
  *   keepMonitoring wins.
  */
-export function stopCloudCampaign(id, { pause = false, keepMonitoring = false } = {}) {
-  const qs = keepMonitoring ? '?keepMonitoring=1' : (pause ? '?pause=1' : '');
+export function stopCloudCampaign(id, { pause = false, keepMonitoring = false, immediate = false } = {}) {
+  const qs = keepMonitoring ? '?keepMonitoring=1' : (pause ? '?pause=1' : (immediate ? '?immediate=1' : '?finishCurrent=1'));
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${qs}`);
 }
 
