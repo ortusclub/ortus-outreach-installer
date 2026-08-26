@@ -1859,6 +1859,14 @@ body[data-dashboard='v3'] .vj-live.is-handover.to-cloud { --vj-tone: var(--green
 body[data-dashboard='v3'] .vj-live.is-handover.to-local { --vj-tone: var(--blue); }
 body[data-dashboard='v3'] .vj-card.is-interrupted .vj-stage,
 body[data-dashboard='v3'] .vj-card.is-interrupted .vj-live { --vj-tone: var(--red); }
+/* Terminal records are quieter than live work. A stopped record keeps the red
+   recovery cue; a clean completion stays neutral regardless of where it ran. */
+body[data-dashboard='v3'] .vj-card.is-done { --vj-tone: var(--gray); }
+body[data-dashboard='v3'] .vj-card.is-stopped { --vj-tone: var(--red); }
+body[data-dashboard='v3'] .vj-card.is-stopped .vj-stage.is-done {
+  --vj-tone: var(--red);
+  border-color: color-mix(in srgb, var(--red) 58%, var(--hairline));
+}
 
 /* Checking keeps its pulse without dropping back to a flat fill. */
 @keyframes ckbreathe {

@@ -11362,6 +11362,9 @@ async function _renderCampaignsBoardInner() {
         scheduledAt: c.scheduled_start_at || null,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Stopped' : 'Error',
+        endReason: c.status === 'done' ? 'completed' : c.status,
+        endNotice: c.end_notice || null,
+        stopReason: c.stop_reason || '',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
         logs: Array.isArray(d._logLines) && d._logLines.length
           ? d._logLines
@@ -26633,6 +26636,12 @@ function _stageMilestoneFallback(ca, phase) {
       ['Introductions', 'sent after matches', 'done'],
     ];
   }
+  if (p === 'done') {
+    return [
+      ['Leads', 'eligibility confirmed', 'done'], ['Work', 'results recorded', 'done'],
+      ['Monitoring', 'not active', 'done'], ['Campaign', 'closed', 'done'],
+    ];
+  }
   return [];
 }
 
@@ -26699,6 +26708,15 @@ function _stageOverview(status, ca, la, phase) {
   } else if (phase === 'paused') {
     side = ['Campaign state', 'Paused safely', 'No new lead starts until the operator resumes'];
     next = ['Operator action', 'Resume here or switch machines', 'The campaign continues from its saved queue position.'];
+  } else if (phase === 'done') {
+    const terminal = terminalPresentation(status || {});
+    side = ['Outcome', terminal.complete ? 'Completed normally' : 'Stopped before completion',
+      terminal.complete ? 'No actionable work remains' : `${terminal.pending} lead${terminal.pending === 1 ? '' : 's'} remain safe`];
+    next = terminal.complete
+      ? ['Next', 'Nothing is scheduled', 'Open the sheet or debrief whenever you need the final record.']
+      : ['Next', 'Continue or archive', 'Continuing starts at the first unprocessed lead; confirmed work is not repeated.'];
+    metricLabels = ['Processed', 'Remaining', 'Monitoring'];
+    metricValues = [Number(status && status.totalProcessed) || 0, terminal.pending, 'Off'];
   }
   return { side, next, metricLabels, metricValues };
 }
@@ -26725,14 +26743,45 @@ function renderLiveStage(root, status) {
   // A paused local run may deliberately retain only its last browser action.
   // Keep the shared stage visible as PAUSED instead of falling through to the
   // legacy local banner (or incorrectly treating its account list as "done").
-  const phase = (interrupted ? 'paused' : '')
+  const terminal = status && status.state === 'done' ? terminalPresentation(status) : null;
+  const phase = (terminal ? 'done' : '')
+    || (interrupted ? 'paused' : '')
     || (status && status.phase === 'preflight' ? 'starting' : '')
     || (la && la.phase)
     || ((la && la.state === 'checking') || (status && status.monitoringCheckInProgress) ? 'checking' : '')
     || (paused ? 'paused' : (_doneAccts.length ? 'done' : ''));
   if (!phase) { stage.hidden = true; root.classList.remove('has-unified-stage'); return false; }
   if (!la) la = { phase, who: '', l1: '', l2: '' };
-  if (interrupted) {
+  if (terminal) {
+    const processed = Math.max(0, Number(status.totalProcessed) || 0);
+    const total = Math.max(processed, Number(status.totalTargets) || 0);
+    ca = {
+      phase: 'done',
+      label: terminal.complete ? 'All eligible leads have a final result' : 'Work ended before every lead was processed',
+      sub: terminal.complete
+        ? 'Nothing is running or scheduled. The campaign can be safely archived.'
+        : `${terminal.explanation} Nothing is running, checking, or scheduled.`,
+      safety: terminal.complete
+        ? 'No actionable work remains'
+        : `${terminal.pending} lead${terminal.pending === 1 ? '' : 's'} remain safe and untouched`,
+      facts: [
+        ['Outcome', terminal.complete ? 'Completed normally' : terminal.label],
+        ['Processed', `${processed} of ${total}`],
+        ['Monitoring', 'Off'],
+        ['Next', terminal.complete ? 'Nothing scheduled' : 'Continue or archive'],
+      ],
+      milestones: terminal.complete
+        ? [['Leads', `${total} eligible`, 'done'], ['Processed', `${processed} confirmed`, 'done'], ['Monitoring', 'finished', 'done'], ['Complete', 'no work remains', 'done']]
+        : [['Leads', `${total} eligible`, 'done'], ['Processed', `${processed} confirmed`, 'done'], ['Stopped', `${terminal.pending} remain safe`, 'active'], ['Next', 'continue or archive', 'future']],
+    };
+    la = {
+      phase: 'done',
+      verb: terminal.complete ? 'Campaign complete' : 'Campaign stopped',
+      who: ca.label,
+      l1: ca.label,
+      l2: ca.sub,
+    };
+  } else if (interrupted) {
     const monitoring = !!(status.monitoring || status.monitoringPhase || status.keepMonitoring);
     ca = {
       phase: 'paused',

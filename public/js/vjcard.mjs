@@ -48,6 +48,11 @@ export function statusFromItem(it = {}) {
     totalTargets: Number(it.total) || 0,
     totalProcessed: Number(it.sent) || 0,
     pending: Number(it.pending) || 0,
+    pendingCount: it.pending == null ? undefined : Math.max(0, Number(it.pending) || 0),
+    endNotice: it.endNotice || (it.hist && it.hist.endNotice) || null,
+    endReason: it.endReason || (it.hist && it.hist.endReason)
+      || (it.bad ? 'stopped' : (it.bucket === 'done' ? 'completed' : '')),
+    stopReason: it.stopReason || (it.hist && it.hist.stopReason) || '',
     dailyWait: !!it.dailyWait,
     needsReview: !!it.needsReview,
     engineStatus: it.engineStatus || '',

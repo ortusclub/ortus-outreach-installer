@@ -128,6 +128,15 @@ test('statusFromItem: done + queued map their states', () => {
   assert.equal(statusFromItem({ bucket: 'done' }).state, 'done');
   assert.equal(statusFromItem({ bucket: 'queued' }).state, 'queued');
 });
+test('terminal items preserve the reason and exact remaining count', () => {
+  const stopped = statusFromItem({ bucket: 'done', bad: true, pending: 125, sent: 73, total: 198, endReason: 'operator_stopped' });
+  const finished = statusFromItem({ bucket: 'done', pending: 0, sent: 148, total: 148, endReason: 'completed' });
+  assert.equal(stopped.pendingCount, 125);
+  assert.equal(stopped.endReason, 'operator_stopped');
+  assert.equal(vjCardFields(stopped).eyebrow, 'Stopped');
+  assert.equal(finished.pendingCount, 0);
+  assert.equal(vjCardFields(finished).eyebrow, 'Finished');
+});
 test('daily reset wait remains active-looking but never pretends to be running or finished', () => {
   const s = statusFromItem({ where: 'cloud', id: 'c-wait', bucket: 'running', dailyWait: true, engineStatus: 'waiting_daily_reset', resumeAt: '2026-08-27T00:02:00Z' });
   assert.equal(s.running, false);

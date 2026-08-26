@@ -27,3 +27,11 @@ test('card, stage and banner primitives all carry the approved state gradient', 
     'is-checking', 'is-sending', 'is-delayed', 'is-handover',
   ]) assert.match(css, new RegExp(`\\.${state}`), state);
 });
+
+test('terminal cards keep their log and render a static outcome stage', () => {
+  assert.match(app, /const terminal = status && status\.state === 'done' \? terminalPresentation\(status\) : null/);
+  assert.match(app, /terminal \? 'done'/);
+  assert.match(app, /phase !== 'done'/);
+  assert.match(app, /const logEl = root\.querySelector\('\[data-f="active-log"\]'\)/);
+  assert.match(css, /\.vj-card\.is-stopped \.vj-stage\.is-done/);
+});
