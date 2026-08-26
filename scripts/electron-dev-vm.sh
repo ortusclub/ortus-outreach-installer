@@ -13,7 +13,7 @@ LOCAL_ENGINE_PORT="3001"
 ENGINE_TOKEN="${SCRAPER_ENGINE_TOKEN:-ortus2026scraper}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENGINE_REPO="${ORTUS_DEV_ENGINE_REPO:-$PROJECT_ROOT/../ortus-salesnav-scraper-cloud}"
-if [ ! -d "$ENGINE_REPO" ] && [ -d "$HOME/ortus-salesnav-scraper-cloud" ]; then
+if [ -z "${ORTUS_DEV_ENGINE_REPO:-}" ] && [ ! -d "$ENGINE_REPO" ] && [ -d "$HOME/ortus-salesnav-scraper-cloud" ]; then
   ENGINE_REPO="$HOME/ortus-salesnav-scraper-cloud"
 fi
 PF_PID=""
@@ -78,13 +78,6 @@ fi
 if [ -z "$DEV_GOLOGIN_API_TOKEN" ] && [ -f "$ENGINE_REPO/.env" ]; then
   DEV_GOLOGIN_API_TOKEN="$(sed -n 's/^DEV_GOLOGIN_API_TOKEN=//p' "$ENGINE_REPO/.env" | tail -1)"
 fi
-if [ -z "$DEV_GOLOGIN_API_TOKEN" ]; then
-  echo "DEV_GOLOGIN_API_TOKEN is missing. Add it to this app's .env, export it,"
-  echo "or keep ortus-salesnav-scraper-cloud beside this repository with its .env."
-  echo "The development app will not start with production GoLogin profiles."
-  exit 1
-fi
-
 echo "Development Electron"
 echo "  app worktree: $(pwd)"
 echo "  dev engine:   $DEV_VERSION"
@@ -96,6 +89,22 @@ start_port_forward
 if ! wait_for_tunnel; then
   echo "Could not establish the development-engine tunnel."
   tail -20 /tmp/ortus-dev-engine-port-forward.log 2>/dev/null || true
+  exit 1
+fi
+
+# A teammate cloning only the app repository does not need the GoLogin secret
+# in a local file. Once their authenticated kubectl tunnel reaches dev-2+, ask
+# that isolated engine for its matching development credential. Production
+# deliberately returns 404 for this endpoint.
+if [ -z "$DEV_GOLOGIN_API_TOKEN" ]; then
+  DEV_GOLOGIN_API_TOKEN="$(curl -fsS --max-time 8 \
+    -H "Authorization: Bearer $ENGINE_TOKEN" \
+    "http://127.0.0.1:$LOCAL_ENGINE_PORT/api/dev/bootstrap" 2>/dev/null \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).goLoginToken||"")}catch{}})')"
+fi
+if [ -z "$DEV_GOLOGIN_API_TOKEN" ]; then
+  echo "The development engine did not provide its GoLogin workspace credential."
+  echo "Confirm you can access salesnav-dev and that the engine is dev-2 or newer."
   exit 1
 fi
 
