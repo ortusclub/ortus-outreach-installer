@@ -36,6 +36,7 @@ export function whereLabel(runsOn) {
  */
 export function bannerFor(status) {
   const s = status || {};
+  const action = s.currentAction || {};
 
   // A stop in progress outranks everything: the operator just pressed it and
   // needs to see that it landed, or they press it three more times.
@@ -48,13 +49,31 @@ export function bannerFor(status) {
     };
   }
 
-  if (s.monitoringCheckInProgress) {
+  // An acceptance sweep can transition into introductions without clearing the
+  // outer "check in progress" flag. The concrete browser action must win, or
+  // the banner says "Checking" while the stage and log say "Introducing".
+  if (action.phase === 'introducing') {
+    const done = Number(action.done) || 0;
+    const total = Number(action.total) || 0;
+    const pos = total ? `${Math.min(done, total)} of ${total}` : '';
+    return {
+      tone: 'intro',
+      l1: action.stepLabel || 'Sending an introduction',
+      l2: `${action.lead || 'the accepted connection'} · from ${action.account || s.liveAccount || 'an account'} · ${whereLabel(s.runsOn)}`,
+      big: pos,
+      cap: pos ? 'introductions' : '',
+    };
+  }
+
+  if (s.monitoringCheckInProgress || action.phase === 'checking') {
     // The local status payload carries none of these counters. An absent number
     // prints nothing rather than a confident 1 of 3 while the sweep is on its
     // third account.
     const done = Number(s.accountsDone) || 0;
     const total = Number(s.accountsTotal) || 0;
-    const pos = (s.accountsDone != null && total) ? `${Math.min(done + 1, total)} of ${total}` : '';
+    // accountsDone is a completed/current count on both engines, not a zero-
+    // based index. Adding one made the first VM account read "2 of 3".
+    const pos = (s.accountsDone != null && total) ? `${Math.min(Math.max(done, 1), total)} of ${total}` : '';
     const el = s.elapsedSec != null ? ` · ${mmss(s.elapsedSec)} elapsed` : '';
     return {
       tone: 'check',
@@ -110,7 +129,7 @@ const HANDOVER = {
     l2: (n) => `Taking ${n} off this Mac and handing it to the VM, so it keeps going after you close the app.`,
     right: ['Leave it open', 'This takes a moment. Nothing is lost if you wait.'],
     doneL1: 'Now running on the VM',
-    doneL2: (n) => `${n} is on the Cloud VM. You can close the app, it keeps going.`,
+    doneL2: (n) => `${n} is on the Cloud VM. An acceptance check starts there automatically. You can close the app.`,
     doneRight: ['Done', 'Safe to close the app now.'],
   },
   local: {
@@ -119,7 +138,7 @@ const HANDOVER = {
     l2: (n) => `Taking ${n} off the Cloud VM so it runs here, in your own browsers.`,
     right: ['Leave it open', 'This takes a moment. Closing now stops the run.'],
     doneL1: 'Now running on this Mac',
-    doneL2: (n) => `${n} is running here. Closing the app now stops it.`,
+    doneL2: (n) => `${n} is running here. An acceptance check starts automatically. Keep the app open.`,
     doneRight: ['Done', 'Keep the app open to keep it running.'],
   },
 };

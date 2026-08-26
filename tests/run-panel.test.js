@@ -59,6 +59,16 @@ test('a missing panel yields no columns rather than throwing', () => {
   assert.deepEqual(accountColumns(null), []);
 });
 
+test('identity restriction remains explicit in the shared account panel', () => {
+  const [c] = accountColumns({ accountPanel: [{
+    email: 'blocked@ortus.solutions',
+    state: 'identity-restricted',
+    sub: 'Identity Restricted in the SoO. Removed from rotation; queued leads are safe.',
+  }] });
+  assert.equal(c.state, 'identity-restricted');
+  assert.match(c.sub, /queued leads are safe/i);
+});
+
 // ── The sweep's own health, in the operator's words ──────────────────────────
 // A check that fails for one account used to leave one log line and nothing
 // else, so the account read as healthy for the rest of the run.

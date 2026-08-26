@@ -22,8 +22,10 @@ test('coming back to this Mac reverses the tone', () => {
 test('the landed state says what the operator can now do', () => {
   const a = handoverBanner({ to: 'cloud', name: 'X', landed: true });
   assert.match(a.right[1], /[Ss]afe to close/);
+  assert.match(a.l2, /acceptance check starts/);
   const b = handoverBanner({ to: 'local', name: 'X', landed: true });
   assert.match(b.right[1], /[Kk]eep the app open/);
+  assert.match(b.l2, /acceptance check starts/);
 });
 
 test('never a bare Handover, and never an em dash', () => {

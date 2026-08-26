@@ -10,9 +10,14 @@
 /** Map a board item (renderUnifiedStrip `it`) → the status shape fillVjCard/
  *  renderActiveCard consume. Mirrors _buildCloudActiveStatus's shape. */
 export function statusFromItem(it = {}) {
-  const cloud = it.where === 'cloud';
-  const monitoring = !!it.monitoring;
-  const state = monitoring ? 'monitoring'
+  const ownedLocal = String(it.runsOn || '') === 'local';
+  const cloud = it.where === 'cloud' && !ownedLocal;
+  // Monitoring is a campaign phase, not a VM-only location and not a synonym
+  // for Pause. The same durable phase must select the same card on either side
+  // of a handover.
+  const monitoring = !!it.monitoring || !!it.monitoringPhase;
+  const state = (it.interrupted || it.waitingForLocal) ? 'interrupted'
+    : monitoring ? 'monitoring'
     : it.bucket === 'done' ? 'done'
     : it.bucket === 'queued' ? 'queued'
     : undefined;
@@ -20,7 +25,10 @@ export function statusFromItem(it = {}) {
     _cloud: cloud,
     id: it.id,
     rawId: it.rawId,
-    running: it.bucket === 'running' && !monitoring,
+    // A released VM row can remain status='running' while ownership is local.
+    // When the local singleton is not actually active that word is only the
+    // engine's frozen handover record, not proof that work is happening here.
+    running: it.bucket === 'running' && !monitoring && !it.waitingForLocal,
     state,
     name: it.name,
     mode: it.mode,
@@ -33,8 +41,13 @@ export function statusFromItem(it = {}) {
     // board strip that only carried the number showed "0 accounts" beside a
     // stats line reading "3 accounts".
     profileIds: Array.isArray(it.profileIds) ? it.profileIds : [],
+    participatingProfileIds: (Array.isArray(it.participatingProfileIds) && it.participatingProfileIds.length)
+      ? it.participatingProfileIds
+      : (Array.isArray(it.profileIds) ? it.profileIds : []),
+    sheetUrl: it.sheetUrl || it.sheet_url || '',
     acceptedCount: (it.acceptedCount == null ? undefined : it.acceptedCount),
-    paused: !!it.paused,
+    paused: (!!it.paused && !monitoring) || !!it.interrupted || !!it.waitingForLocal,
+    monitoringPhase: !!it.monitoringPhase || (!!it.monitoring && ownedLocal),
     // Live-browser flag + the engine's per-person phase tick. The strip's card
     // is a clone of #active-card, so it renders the same live stage — without
     // these it can only fall back to the one-line "Working…".
@@ -87,8 +100,16 @@ export function statusFromItem(it = {}) {
     monitorTaskStatus: it.monitorTaskStatus || null,
     monitorTaskDueAt: it.monitorTaskDueAt || null,
     monitorCheckStartedAt: it.monitorCheckStartedAt || null,
+    monitorCheckCompletedAt: it.monitorCheckCompletedAt || null,
     runsOn: it.runsOn || 'vm',
     handoverAt: it.handoverAt || null,
+    waitingForLocal: !!it.waitingForLocal,
+    interrupted: !!it.interrupted || !!it.waitingForLocal,
+    interruption: it.interruption || (it.waitingForLocal ? {
+      title: 'Stopped because this Mac became unavailable',
+      detail: 'Nothing is running on this Mac. The remaining leads are safe. Choose where to continue.',
+      reason: 'local-runtime-missing',
+    } : null),
     // The finished-FG reason line reads all three of these. Leaving them out of
     // this whitelist is why a done FG card on the board never explained itself:
     // _fgFinishedNote returns null the moment `bucket` is undefined, so the
@@ -110,6 +131,7 @@ export function vjCardFields(status = {}) {
   const isMonitor = s.state === 'monitoring';
   const isDone = s.state === 'done';
   const isQueued = s.state === 'queued';
+  const isInterrupted = s.state === 'interrupted' || !!s.interrupted;
   const done = Number(s.totalProcessed) || 0;
   const total = Number(s.totalTargets) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
@@ -124,19 +146,21 @@ export function vjCardFields(status = {}) {
   // eyebrow is a SEPARATE renderer and was still echoing the raw status.
   const isWaiting = !isMonitor && !isDone && !isQueued && !s.bad
     && !!(s.currentAction && s.currentAction.phase === 'waiting');
-  const eyebrow = s.bad ? (s.badLabel || 'Stopped')
+  const eyebrow = isInterrupted ? 'Stopped · This Mac unavailable'
+    : s.bad ? (s.badLabel || 'Stopped')
     : isMonitor ? 'Monitoring'
     : isQueued ? 'Queued'
     : isDone ? 'Finished'
     : isWaiting ? 'Waiting'
     : (s.paused ? 'Paused' : 'Running');
-  const sendingLbl = isMonitor ? 'Watching'
+  const sendingLbl = isInterrupted ? 'Stopped safely'
+    : isMonitor ? (s.monitoringCheckInProgress ? 'Checking now' : 'Waiting between checks')
     : isDone ? 'Finished'
     : isQueued ? 'Queued'
     : isWaiting ? 'Waiting'
     : (s.paused ? 'Paused' : 'Sending');
   return {
-    isMonitor, isDone, isQueued, isWaiting,
+    isMonitor, isDone, isQueued, isWaiting, isInterrupted,
     name: s.name || '(unnamed)',
     eyebrow, pct, done, total, accountsCount, accepted, sendingLbl,
   };
@@ -162,7 +186,8 @@ export function vjCardControlsFor(status = {}) {
   const monitor = s.state === 'monitoring';
   const done = s.state === 'done';
   const queued = s.state === 'queued';
-  const running = !monitor && !done && !queued;
+  const interrupted = s.state === 'interrupted' || !!s.interrupted;
+  const running = !monitor && !done && !queued && !interrupted;
 
   // Running cloud → read-only wizard WITH the campaign's Live Status card #2
   // bound and open; STOPPED/cancelled cloud → the setup wizard prefilled + fully
@@ -185,23 +210,57 @@ export function vjCardControlsFor(status = {}) {
 
   const c = {
     open: { onclick: openOnclick },
+    sheet: { onclick: 'window.openVjCardSheet && window.openVjCardSheet(this)' },
     pause: null, stop: null, restart: null, copy: null,
-    bulk: null, monAuto: null, extra: [],
+    resumeSending: null, bulk: null, monAuto: null, extra: [],
   };
 
+  if (interrupted) {
+    const interruptedPhase = s.interruption?.phase || (s.monitoringPhase ? 'monitoring' : 'sending');
+    c.pause = { once: true, onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','${interruptedPhase}','local',this)` };
+    if (interruptedPhase === 'monitoring' && Number(s.pending) > 0) {
+      c.resumeSending = { once: true, onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending','local',this)` };
+    }
+    c.stop = { tip: 'End campaign', onclick: 'window.dashStopActive && window.dashStopActive()' };
+    // This is still a durable cloud campaign even though ownership was handed
+    // to a local runtime that has since disappeared. Open the durable record,
+    // never the now-empty local singleton.
+    if (id && id !== 'local-active') c.open = { onclick: `openRunningCampaignReadOnly('${id}')` };
+    return c;
+  }
+
   if (running && !cloud) {
-    c.pause = { onclick: 'window.dashPauseActive && window.dashPauseActive()' };
+    c.pause = { onclick: s.paused
+      ? `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending','local',this)`
+      : 'window.dashPauseActive && window.dashPauseActive()' };
     c.stop = { tip: 'Stop', onclick: 'window.dashStopActive && window.dashStopActive()' };
     c.restart = { onclick: 'window.dashRestartActive && window.dashRestartActive()' };
     c.copy = { onclick: 'window.dashCopyActiveToQueue && window.dashCopyActiveToQueue()' };
     c.bulk = { label: 'Run check now', onclick: 'window.dashRunCheck && window.dashRunCheck()' };
   } else if (running && cloud) {
+    // Cloud pause/resume has shipped. Keep this matrix identical to Campaign
+    // Builder instead of preserving the old read-only cloud dock.
+    c.pause = { onclick: s.paused
+      ? `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending','vm',this)`
+      : `pauseCloudCampaignUI('${id}', false)` };
     c.stop = { tip: 'Stop', onclick: `stopCloudCampaignUI('${id}')` };
+    // Keep the compact circular-arrow shortcut, but also expose the same
+    // explicit action shown in Campaign Builder. An operator should not have
+    // to guess that an unlabelled icon means "check pending connections".
+    c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}',this)` };
+    c.restart = { onclick: `cloudCheckNow('${id}',this)` };
+    c.copy = { onclick: `duplicateCampaign('${id}')` };
     c.extra.push({ tip: 'Show', kind: 'show', onclick: `openCloudCampaignView('${id}','${id}')` });
   } else if (monitor && !cloud) {
-    c.pause = { onclick: 'window.dashPauseActive && window.dashPauseActive()' };
+    c.pause = { once: true, onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','monitoring','local',this)` };
     c.stop = { tip: 'Stop', onclick: 'window.dashStopActive && window.dashStopActive()' };
     c.bulk = { label: 'Run check now', onclick: 'window.dashRunCheck && window.dashRunCheck()' };
+    const remaining = Number(s.pending) > 0
+      || Number(s.totalTargets) > Number(s.totalProcessed);
+    if (remaining) {
+      c.extra.push({ tip: 'Resume sending', kind: 'play', once: true,
+        onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending','local',this)` });
+    }
   } else if (monitor && cloud) {
     c.stop = { tip: 'Stop monitoring', onclick: `stopCloudCampaignUI('${id}')` };
     c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}',this)` };
@@ -211,8 +270,11 @@ export function vjCardControlsFor(status = {}) {
     // short-circuits when nothing is pending); the app just never offered it, so
     // the only way back was to wait for the scheduled resume. Continue-where-it-
     // left-off only: re-sending to leads already connected is not one click away.
-    if (Number(s.pending) > 0) {
-      c.extra.push({ tip: 'Resume sending', kind: 'play', onclick: `restartCloudCampaignUI('${id}', false)` });
+    const remaining = Number(s.pending) > 0
+      || Number(s.totalTargets) > Number(s.totalProcessed);
+    if (remaining) {
+      c.extra.push({ tip: 'Resume sending', kind: 'play', once: true,
+        onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending','vm',this)` });
     }
   } else if (done) {
     // Restart controls — only for a STOPPED/CANCELLED/ERRORED campaign (never a

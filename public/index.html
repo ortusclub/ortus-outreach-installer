@@ -204,6 +204,25 @@
       </div>
     </div>
 
+    <section id="engine-version-banner" class="engine-version-banner is-loading" aria-live="polite">
+      <div class="engine-version-banner__flag">
+        <span class="engine-version-banner__signal" aria-hidden="true"></span>
+        <span id="engine-version-environment">CHECKING ENGINE</span>
+      </div>
+      <div class="engine-version-banner__current">
+        <span class="engine-version-banner__label">THIS APP IS USING</span>
+        <strong id="engine-version-current">—</strong>
+        <span id="engine-version-url" class="engine-version-banner__url">Connecting…</span>
+      </div>
+      <div class="engine-version-banner__divider" aria-hidden="true"></div>
+      <div class="engine-version-banner__live">
+        <span class="engine-version-banner__label">TEAM LIVE ENGINE</span>
+        <strong id="engine-version-live">—</strong>
+        <span class="engine-version-banner__url">scraper.ortusclub.com</span>
+      </div>
+      <p id="engine-version-explanation" class="engine-version-banner__explanation">Confirming which engine this app controls.</p>
+    </section>
+
     <!-- Phase 2.8.20 (W3-C2): disk-low banner -->
     <div id="disk-warning-banner" class="disk-warning-banner" hidden>
       <span id="disk-warning-text">—</span>
@@ -317,9 +336,33 @@
         <div class="vj-stage" id="active-stage" aria-live="polite" hidden>
           <div class="vj-stage-gly" id="stageGly"></div>
           <div class="vj-stage-body">
-            <div class="vj-stage-verb" id="stageVerb"></div>
-            <div class="vj-stage-name" id="stageName"></div>
-            <div class="vj-stage-sub" id="stageSub"></div>
+            <div class="vj-stage-summary">
+              <div class="vj-stage-summary-main">
+                <div class="vj-stage-verb" id="stageVerb"></div>
+                <div class="vj-stage-name" id="stageName"></div>
+                <div class="vj-stage-sub" id="stageSub"></div>
+              </div>
+              <div class="vj-stage-side" id="stageSide">
+                <span id="stageSideLabel"></span>
+                <strong id="stageSideValue"></strong>
+                <small id="stageSideHelp"></small>
+              </div>
+            </div>
+            <div class="vj-stage-safety" id="stageSafety"></div>
+            <div class="vj-stage-facts" id="stageFacts"></div>
+            <div class="vj-stage-miles" id="stageMiles"></div>
+            <div class="vj-stage-outcome" id="stageOutcome">
+              <div class="vj-stage-metrics">
+                <div><strong id="stageMetricAccepted">0</strong><span id="stageMetricAcceptedLabel">Newly accepted</span></div>
+                <div><strong id="stageMetricIntroduced">0</strong><span id="stageMetricIntroducedLabel">Introductions sent</span></div>
+                <div><strong id="stageMetricRemaining">0</strong><span id="stageMetricRemainingLabel">Accounts remaining</span></div>
+              </div>
+              <div class="vj-stage-next">
+                <label id="stageNextLabel"></label>
+                <strong id="stageNextTitle"></strong>
+                <p id="stageNextDetail"></p>
+              </div>
+            </div>
             <div class="vj-stage-fix" id="stageFix"></div>
             <div class="vj-stage-accts" id="stageAccts"></div>
             <div class="vj-stage-drawer" id="stageDrawer"></div>
@@ -3959,8 +4002,8 @@
           <div class="stop-choice-pill-sub">Checks only the accounts this campaign used.</div>
         </button>
         <button type="button" class="stop-choice-pill is-monitor" onclick="runSoloCheck('sheet')">
-          <div class="stop-choice-pill-headline">All senders<br>in the sheet</div>
-          <div class="stop-choice-pill-sub">Checks every account in the sheet's Sender column.</div>
+          <div class="stop-choice-pill-headline">All senders<br>in this tab</div>
+          <div class="stop-choice-pill-sub">Checks every account in this tab's Sender column. Other tabs are never included.</div>
         </button>
       </div>
       <div class="stop-choice-cancel-row">
@@ -4150,7 +4193,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3.1.47"></script>
+<script type="module" src="/js/app.js?v=3.1.47-20260825b"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4166,7 +4209,27 @@
         if (main) main.textContent = v;
         if (side) side.textContent = v;
       }
-    }).catch(() => {});
+      const banner = document.getElementById('engine-version-banner');
+      if (banner && d) {
+        const isDev = d.scraperEngineEnvironment === 'development';
+        banner.classList.remove('is-loading', 'is-development', 'is-production', 'is-error');
+        banner.classList.add(isDev ? 'is-development' : 'is-production');
+        document.getElementById('engine-version-environment').textContent = isDev ? 'DEVELOPMENT ENGINE' : 'LIVE PRODUCTION';
+        document.getElementById('engine-version-current').textContent = d.scraperEngineVersion || 'unverified';
+        document.getElementById('engine-version-live').textContent = d.productionEngineVersion || 'unverified';
+        document.getElementById('engine-version-url').textContent = d.scraperEngineUrl || 'Not configured';
+        document.getElementById('engine-version-explanation').textContent = isDev
+          ? 'Isolated test environment. Your colleagues remain on the live engine shown here.'
+          : 'This app and your colleagues are using the same live production engine.';
+      }
+    }).catch(() => {
+      const banner = document.getElementById('engine-version-banner');
+      if (!banner) return;
+      banner.classList.remove('is-loading');
+      banner.classList.add('is-error');
+      document.getElementById('engine-version-environment').textContent = 'ENGINE UNKNOWN';
+      document.getElementById('engine-version-explanation').textContent = 'Could not verify the engine target. Do not launch a campaign until this is resolved.';
+    });
   </script>
 
   <!-- Floating live console. Hidden by default. Visibility + content driven by

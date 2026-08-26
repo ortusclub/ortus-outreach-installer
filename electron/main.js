@@ -214,10 +214,23 @@ if (!gotLock) {
       // wakes from sleep), ping the server's monitoring-wake endpoint so an
       // overdue auto-check fires immediately rather than waiting up to 60s
       // for the next setInterval tick.
+      powerMonitor.on('suspend', () => {
+        if (!serverPort) return;
+        fetch(`http://127.0.0.1:${serverPort}/api/runtime/interruption`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'system-sleep' }),
+        }).catch((err) => console.warn('[powerMonitor.suspend] journal failed:', err.message));
+      });
+
       powerMonitor.on('resume', () => {
         if (!serverPort) return;
         fetch(`http://127.0.0.1:${serverPort}/api/monitoring/wake`, { method: 'POST' })
           .catch((err) => console.warn('[powerMonitor.resume] ping failed:', err.message));
+        // If the in-process campaign survived sleep, the wake endpoint owns its
+        // normal continuation and the temporary interruption marker is stale.
+        fetch(`http://127.0.0.1:${serverPort}/api/runtime/resumed`, { method: 'POST' })
+          .catch((err) => console.warn('[powerMonitor.resume] clear failed:', err.message));
       });
 
       tray.on('click', () => {
@@ -254,6 +267,16 @@ app.on('before-quit', async (e) => {
   if (_flushedOnQuit) return;
   e.preventDefault();
   _flushedOnQuit = true;
+  try {
+    if (serverPort) await Promise.race([
+      fetch(`http://127.0.0.1:${serverPort}/api/runtime/interruption`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'app-quit' }),
+      }),
+      new Promise((r) => setTimeout(r, 1000)),
+    ]);
+  } catch (_) { /* best effort during shutdown */ }
   try { await Promise.race([flushOpsLog(), new Promise((r) => setTimeout(r, 4000))]); } catch (_) { /* */ }
   app.quit();
 });

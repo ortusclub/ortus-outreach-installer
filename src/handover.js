@@ -29,6 +29,16 @@ export function handoverTarget(leads) {
   return stillToDo.length > 0 ? 'send' : 'monitor';
 }
 
+// A campaign already in monitoring has deliberately ended its sending phase,
+// even when some leads remain pending (for example while all senders are
+// blocked until a later retry window). Preserve that authoritative phase during
+// handover so moving monitoring never resurrects outreach on the destination.
+export function handoverTargetForCampaign(status, leads) {
+  return String(status || '').toLowerCase() === 'monitoring'
+    ? 'monitor'
+    : handoverTarget(leads);
+}
+
 // The same question for the other direction. A local campaign keeps no per-lead
 // table the way the engine does: the SHEET is its ledger, stamped as it goes. So
 // "what did this Mac already do" is "which rows carry a status".

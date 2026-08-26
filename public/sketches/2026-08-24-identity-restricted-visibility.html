@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Identity Restricted — visibility concepts</title>
+  <style>
+    :root {
+      --paper: #f5f3ef;
+      --surface: #fffdfa;
+      --surface-2: #f0ede7;
+      --ink: #191919;
+      --muted: #77736c;
+      --faint: #a7a29a;
+      --line: #d8d4cd;
+      --line-strong: #b9b4ab;
+      --danger: #b6423d;
+      --danger-wash: #f6e9e6;
+      --danger-deep: #842e2a;
+      --ok: #3e8e59;
+      --gold: #b98a39;
+      --shadow: 0 18px 50px rgba(52, 43, 29, .07);
+      --display: "Arial Narrow", "Avenir Next Condensed", "Helvetica Neue", sans-serif;
+      --body: "Geist", "Avenir Next", "Helvetica Neue", sans-serif;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--body);
+      -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; }
+    button:active { transform: translateY(1px); }
+
+    .shell {
+      min-height: 100dvh;
+      display: grid;
+      grid-template-columns: 244px minmax(0, 1fr);
+    }
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+      border-right: 1px solid var(--line);
+      background: #f9f7f3;
+      padding: 30px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+    .brand {
+      font-family: var(--display);
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: -.035em;
+      text-transform: uppercase;
+    }
+    .version {
+      margin-top: 5px;
+      font: 10px/1.4 var(--mono);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .15em;
+    }
+    .rail-nav { display: grid; gap: 5px; }
+    .rail-nav a {
+      color: var(--muted);
+      text-decoration: none;
+      padding: 10px 12px;
+      border-left: 2px solid transparent;
+      font-size: 13px;
+      transition: color .2s ease, background .2s ease, border-color .2s ease;
+    }
+    .rail-nav a:hover,
+    .rail-nav a.active { color: var(--ink); border-color: var(--danger); background: var(--danger-wash); }
+    .rail-note {
+      margin-top: auto;
+      border-top: 1px solid var(--line);
+      padding-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .rail-note b { color: var(--danger-deep); }
+
+    main { min-width: 0; padding: 38px clamp(24px, 4vw, 70px) 96px; }
+    .mast {
+      max-width: 1520px;
+      margin: 0 auto 40px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr);
+      gap: 56px;
+      align-items: end;
+    }
+    .eyebrow {
+      font: 10px/1.4 var(--mono);
+      color: var(--danger);
+      text-transform: uppercase;
+      letter-spacing: .22em;
+      margin-bottom: 10px;
+    }
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-family: var(--display);
+      font-size: clamp(42px, 6vw, 82px);
+      font-weight: 900;
+      letter-spacing: -.055em;
+      line-height: .92;
+      text-transform: uppercase;
+    }
+    .mast-copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+      max-width: 58ch;
+    }
+    .mast-copy b { color: var(--ink); }
+
+    .jumpbar {
+      position: sticky;
+      top: 12px;
+      z-index: 3;
+      max-width: 1520px;
+      margin: 0 auto 28px;
+      padding: 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 253, 250, .93);
+      backdrop-filter: blur(16px);
+      display: flex;
+      width: fit-content;
+      box-shadow: 0 10px 30px rgba(45, 37, 26, .06);
+    }
+    .jumpbar a {
+      color: var(--muted);
+      text-decoration: none;
+      border-radius: 999px;
+      padding: 10px 18px;
+      font: 10px/1 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      transition: color .2s ease, background .2s ease;
+    }
+    .jumpbar a:hover { color: var(--ink); background: var(--surface-2); }
+
+    .concept {
+      max-width: 1520px;
+      margin: 0 auto 58px;
+      scroll-margin-top: 88px;
+    }
+    .concept-head {
+      display: grid;
+      grid-template-columns: 90px minmax(0, 1fr) minmax(260px, 440px);
+      gap: 20px;
+      align-items: end;
+      margin-bottom: 15px;
+    }
+    .concept-no {
+      font-family: var(--display);
+      font-size: 66px;
+      font-weight: 900;
+      line-height: .8;
+      color: var(--line-strong);
+      letter-spacing: -.06em;
+    }
+    .concept h2 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(28px, 3vw, 44px);
+      font-weight: 900;
+      letter-spacing: -.035em;
+      line-height: .95;
+      text-transform: uppercase;
+    }
+    .concept-desc { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .recommended {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 8px;
+      padding: 5px 9px;
+      border: 1px solid var(--danger);
+      border-radius: 999px;
+      color: var(--danger-deep);
+      font: 9px/1 var(--mono);
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    .recommended::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+
+    .frame {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .frame-top {
+      min-height: 52px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .crumb { font: 10px/1 var(--mono); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+    .crumb b { color: var(--ink); }
+    .frame-meta { margin-left: auto; font: 10px/1 var(--mono); color: var(--faint); }
+    .frame-body { padding: 22px; }
+
+    .picker-tools {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .search {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 11px 16px;
+      color: var(--faint);
+      font-size: 12px;
+      background: white;
+    }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font: 9px/1 var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .pill.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+    .pill.restricted { color: var(--danger); border-color: rgba(182, 66, 61, .35); }
+
+    .source-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--danger);
+      background: var(--danger-wash);
+      color: var(--danger-deep);
+      font-size: 12px;
+    }
+    .source-line b { color: var(--danger-deep); }
+    .source-line .right { margin-left: auto; font: 9px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+
+    .account-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 10px;
+    }
+    .account {
+      min-height: 76px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr);
+      background: white;
+    }
+    .account-state {
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: #edf4ee;
+    }
+    .account-state i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+    .account-state b {
+      font-family: var(--display);
+      font-size: 17px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .account-body { min-width: 0; padding: 13px 15px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+    .account-email { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .account-sub { font-size: 11px; color: var(--muted); }
+    .account.is-restricted { border-color: rgba(182, 66, 61, .5); }
+    .account.is-restricted .account-state { background: var(--danger-wash); }
+    .account.is-restricted .account-state i { background: var(--danger); box-shadow: 0 0 0 5px rgba(182, 66, 61, .08); }
+    .account.is-restricted .account-state b { color: var(--danger-deep); }
+    .account.is-restricted .account-email { text-decoration: line-through; text-decoration-color: rgba(182, 66, 61, .45); }
+    .account.is-restricted .account-sub { color: var(--danger-deep); }
+    .account-actions { display: flex; gap: 7px; margin-top: 7px; }
+    .micro-btn {
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: transparent;
+      color: var(--ink);
+      font: 8px/1 var(--mono);
+      letter-spacing: .09em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .micro-btn.danger { color: var(--danger-deep); border-color: rgba(182, 66, 61, .45); }
+
+    .launch-summary {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .launch-summary b { color: var(--ink); }
+    .launch-summary .safe { margin-left: auto; color: var(--danger-deep); font-weight: 650; }
+
+    .campaign-card { border-left: 3px solid var(--ok); }
+    .campaign-title-row { display: flex; align-items: flex-start; gap: 14px; }
+    .status-dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--ok); }
+    .campaign-kicker { font: 9px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--ok); }
+    .campaign-name { margin: 5px 0 0; font-family: var(--display); font-weight: 900; font-size: 31px; letter-spacing: -.025em; text-transform: uppercase; }
+    .campaign-progress { margin-left: auto; text-align: right; }
+    .campaign-progress b { font-family: var(--display); font-size: 32px; }
+    .campaign-progress span { display: block; font: 9px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+
+    .restriction-event {
+      margin: 22px 0 12px;
+      display: grid;
+      grid-template-columns: 62px minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      padding: 17px 18px;
+      border: 1px solid rgba(182, 66, 61, .45);
+      background: var(--danger-wash);
+      border-radius: 12px;
+    }
+    .event-mark {
+      width: 48px; height: 48px;
+      border: 1px solid var(--danger);
+      border-radius: 50%;
+      color: var(--danger);
+      display: grid; place-items: center;
+      font-family: var(--display);
+      font-size: 28px; font-weight: 900;
+    }
+    .event-kicker { font: 9px/1 var(--mono); color: var(--danger); letter-spacing: .16em; text-transform: uppercase; }
+    .event-title { margin: 5px 0 4px; font-size: 17px; font-weight: 750; }
+    .event-copy { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .event-safe { color: var(--danger-deep); font-size: 12px; font-weight: 700; text-align: right; max-width: 230px; }
+
+    .account-rail {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      overflow: hidden;
+    }
+    .run-account { min-height: 154px; padding: 16px; border-right: 1px solid var(--line); background: white; }
+    .run-account:last-child { border-right: 0; }
+    .run-email { font-size: 11px; font-weight: 650; }
+    .run-state { margin: 8px 0 12px; font: 9px/1 var(--mono); color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+    .run-main { font-family: var(--display); font-size: 22px; font-weight: 900; text-transform: uppercase; }
+    .run-sub { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .run-account.restricted { background: linear-gradient(180deg, var(--danger-wash), white 75%); }
+    .run-account.restricted .run-state,
+    .run-account.restricted .run-main { color: var(--danger-deep); }
+
+    .log {
+      margin-top: 12px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      display: grid;
+      gap: 7px;
+      font: 10px/1.45 var(--mono);
+    }
+    .log-line { display: grid; grid-template-columns: 72px 58px minmax(0, 1fr); gap: 10px; }
+    .log-time { color: var(--faint); }
+    .log-level { color: var(--muted); text-transform: uppercase; }
+    .log-line.warning .log-level,
+    .log-line.warning .log-msg { color: var(--danger-deep); }
+    .log-line.ok .log-level { color: var(--ok); }
+
+    .dash-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
+    .dash-card { border: 1px solid var(--line); border-radius: 13px; background: white; overflow: hidden; }
+    .dash-main { padding: 20px; }
+    .dash-strip { height: 3px; background: var(--ok); }
+    .dash-title { display: flex; align-items: start; gap: 12px; }
+    .dash-title h3 { margin: 0; font-family: var(--display); font-size: 25px; text-transform: uppercase; }
+    .dash-title .right { margin-left: auto; font: 9px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+    .health-line { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; grid-template-columns: 1fr 1fr 1fr; }
+    .health-stat { padding: 0 16px; border-right: 1px solid var(--line); }
+    .health-stat:first-child { padding-left: 0; }
+    .health-stat:last-child { border-right: 0; }
+    .health-stat b { display: block; font-family: var(--display); font-size: 26px; }
+    .health-stat span { color: var(--muted); font: 9px/1.35 var(--mono); text-transform: uppercase; letter-spacing: .09em; }
+    .inline-restriction {
+      margin-top: 18px;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .restricted-chip { border: 1px solid rgba(182, 66, 61, .45); background: var(--danger-wash); color: var(--danger-deep); border-radius: 999px; padding: 7px 10px; font: 9px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; }
+    .inline-restriction p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .inline-restriction p b { color: var(--ink); }
+    .side-summary { border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); padding: 20px; }
+    .side-summary h3 { margin: 0 0 16px; font: 10px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
+    .summary-row { padding: 13px 0; border-top: 1px solid var(--line); }
+    .summary-row:first-of-type { border-top: 0; padding-top: 0; }
+    .summary-row b { display: block; font-size: 13px; }
+    .summary-row span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .summary-row.danger b { color: var(--danger-deep); }
+    .summary-action { width: 100%; margin-top: 14px; border: 1px solid var(--ink); border-radius: 999px; padding: 11px; background: var(--ink); color: white; font: 9px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+
+    .decision {
+      max-width: 1520px;
+      margin: 0 auto;
+      border-top: 1px solid var(--line-strong);
+      padding-top: 28px;
+      display: grid;
+      grid-template-columns: 90px minmax(0, 1fr);
+      gap: 20px;
+    }
+    .decision h2 { margin: 0 0 10px; font-family: var(--display); font-size: 34px; text-transform: uppercase; }
+    .decision p { margin: 0; max-width: 76ch; color: var(--muted); line-height: 1.65; }
+    .decision b { color: var(--ink); }
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      transform: translateY(24px);
+      opacity: 0;
+      pointer-events: none;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--ink);
+      color: white;
+      padding: 12px 15px;
+      font-size: 12px;
+      box-shadow: var(--shadow);
+      transition: transform .32s cubic-bezier(.16, 1, .3, 1), opacity .2s ease;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; }
+      .rail { position: relative; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .rail-nav { display: flex; flex-wrap: wrap; }
+      .rail-note { display: none; }
+      .mast, .concept-head, .dash-layout { grid-template-columns: 1fr; }
+      .concept-no { font-size: 40px; }
+      .account-rail { grid-template-columns: 1fr; }
+      .run-account { border-right: 0; border-bottom: 1px solid var(--line); }
+      .run-account:last-child { border-bottom: 0; }
+      .event-safe { text-align: left; }
+      .restriction-event { grid-template-columns: 50px 1fr; }
+      .restriction-event .event-safe { grid-column: 2; }
+    }
+    @media (max-width: 680px) {
+      main { padding: 26px 16px 70px; }
+      h1 { font-size: 43px; }
+      .jumpbar { width: 100%; overflow-x: auto; justify-content: flex-start; border-radius: 13px; }
+      .picker-tools, .health-line { grid-template-columns: 1fr; }
+      .filters { justify-content: flex-start; }
+      .account-grid { grid-template-columns: 1fr; }
+      .account { grid-template-columns: 96px minmax(0, 1fr); }
+      .health-stat { padding: 12px 0; border-right: 0; border-bottom: 1px solid var(--line); }
+      .health-stat:last-child { border-bottom: 0; }
+      .inline-restriction { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div>
+        <div class="brand">Ortus Outreach</div>
+        <div class="version">UI study · v3.1.47</div>
+      </div>
+      <nav class="rail-nav" aria-label="Sketch navigation">
+        <a class="active" href="#picker">Before launch</a>
+        <a href="#live">During campaign</a>
+        <a href="#dashboard">On the dashboard</a>
+      </nav>
+      <div class="rail-note">
+        Source of truth<br>
+        <b>SoO → LinkedIn Accounts → Status</b><br><br>
+        “Identity Restricted” is not a pacing state. The account must stop working until the SoO returns it to Active.
+      </div>
+    </aside>
+
+    <main>
+      <header class="mast">
+        <div>
+          <div class="eyebrow">Account guardrail study · 24 Aug 2026</div>
+          <h1>Make the restriction impossible to miss—without making the campaign look broken.</h1>
+        </div>
+        <p class="mast-copy"><b>The key distinction:</b> the account is blocked, not necessarily the campaign. These sketches preserve that distinction everywhere the operator can encounter it.</p>
+      </header>
+
+      <nav class="jumpbar" aria-label="Jump to concept">
+        <a href="#picker">01 · Picker</a>
+        <a href="#live">02 · Live campaign</a>
+        <a href="#dashboard">03 · Dashboard</a>
+      </nav>
+
+      <section class="concept" id="picker">
+        <div class="concept-head">
+          <div class="concept-no">01</div>
+          <div>
+            <div class="recommended">Recommended foundation</div>
+            <h2>Block it at selection, explain it in place</h2>
+          </div>
+          <p class="concept-desc">The account remains searchable and visible, but cannot be selected. The tile names the SoO reason and gives an immediate refresh path.</p>
+        </div>
+
+        <div class="frame">
+          <div class="frame-top">
+            <span class="crumb">Campaign settings / <b>3. Select GoLogin accounts</b></span>
+            <span class="frame-meta">SoO refreshed 18s ago</span>
+          </div>
+          <div class="frame-body">
+            <div class="picker-tools">
+              <div class="search">Search by name or email…</div>
+              <div class="filters">
+                <button class="pill active">All 493</button>
+                <button class="pill">Available 118</button>
+                <button class="pill">Selected 2</button>
+                <button class="pill restricted">Restricted 17</button>
+              </div>
+            </div>
+
+            <div class="source-line">
+              <b>1 account in this view is Identity Restricted</b>
+              <span>It cannot be selected or used by a campaign.</span>
+              <span class="right">From State of Operations</span>
+            </div>
+
+            <div class="account-grid">
+              <article class="account">
+                <div class="account-state"><i></i><b>Free</b></div>
+                <div class="account-body">
+                  <div class="account-email">sean.alcosin@ortus.solutions</div>
+                  <div class="account-sub">Available for Connect campaigns</div>
+                </div>
+              </article>
+
+              <article class="account is-restricted">
+                <div class="account-state"><i></i><b>Blocked</b></div>
+                <div class="account-body">
+                  <div class="account-email">manoj.kumar@ortus.solutions</div>
+                  <div class="account-sub">Identity Restricted in the SoO · selection disabled</div>
+                  <div class="account-actions">
+                    <button class="micro-btn danger" data-toast="The app would refresh Manoj’s status from the SoO.">Refresh status</button>
+                    <button class="micro-btn" data-toast="This would open the LinkedIn Accounts tab in the SoO.">Open SoO</button>
+                  </div>
+                </div>
+              </article>
+
+              <article class="account">
+                <div class="account-state"><i></i><b>Free</b></div>
+                <div class="account-body">
+                  <div class="account-email">cindy.siapno@ortus.solutions</div>
+                  <div class="account-sub">Available for Connect campaigns</div>
+                </div>
+              </article>
+            </div>
+
+            <div class="launch-summary">
+              <span><b>2 accounts selected</b> · sean.alcosin · cindy.siapno</span>
+              <span class="safe">Manoj is excluded before launch</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept" id="live">
+        <div class="concept-head">
+          <div class="concept-no">02</div>
+          <div><h2>If it changes mid-run, show the safe recovery</h2></div>
+          <p class="concept-desc">A restriction discovered during a campaign removes only that account from rotation. The main campaign stays green when other accounts can continue.</p>
+        </div>
+
+        <div class="frame campaign-card">
+          <div class="frame-body">
+            <div class="campaign-title-row">
+              <span class="status-dot"></span>
+              <div>
+                <div class="campaign-kicker">Running · Cloud VM</div>
+                <div class="campaign-name">TEST_24/08_CC+IC_A</div>
+              </div>
+              <div class="campaign-progress"><b>23</b><span>of 198 sent</span></div>
+            </div>
+
+            <div class="restriction-event">
+              <div class="event-mark">!</div>
+              <div>
+                <div class="event-kicker">Account removed from rotation</div>
+                <div class="event-title">manoj.kumar@ortus.solutions is now Identity Restricted</div>
+                <div class="event-copy">The VM stopped assigning new leads to this account. Its current lead was returned safely to the queue.</div>
+              </div>
+              <div class="event-safe">Campaign continues with the other 2 accounts. No leads were lost.</div>
+            </div>
+
+            <div class="account-rail">
+              <div class="run-account">
+                <div class="run-email">sean.alcosin@ortus.solutions</div>
+                <div class="run-state">Waiting</div>
+                <div class="run-main">8 / 50 today</div>
+                <div class="run-sub">Eligible for its next turn.</div>
+              </div>
+              <div class="run-account">
+                <div class="run-email">cindy.siapno@ortus.solutions</div>
+                <div class="run-state">Working</div>
+                <div class="run-main">3 of 8 this batch</div>
+                <div class="run-sub">Sending connection to Olivia Hammond.</div>
+              </div>
+              <div class="run-account restricted">
+                <div class="run-email">manoj.kumar@ortus.solutions</div>
+                <div class="run-state">Stopped by SoO</div>
+                <div class="run-main">Identity Restricted</div>
+                <div class="run-sub">No more leads until the account returns to Active.</div>
+              </div>
+            </div>
+
+            <div class="log" aria-label="Example live log">
+              <div class="log-line ok"><span class="log-time">17:31:42</span><span class="log-level">OK</span><span class="log-msg">cindy.siapno invited Olivia Hammond · 23/198 sent</span></div>
+              <div class="log-line warning"><span class="log-time">17:31:44</span><span class="log-level">Guard</span><span class="log-msg">SoO status changed · manoj.kumar → Identity Restricted</span></div>
+              <div class="log-line warning"><span class="log-time">17:31:44</span><span class="log-level">Safe</span><span class="log-msg">Manoj removed from rotation · current lead returned to queue · 175 remain</span></div>
+              <div class="log-line ok"><span class="log-time">17:31:45</span><span class="log-level">OK</span><span class="log-msg">Campaign continuing with sean.alcosin and cindy.siapno</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept" id="dashboard">
+        <div class="concept-head">
+          <div class="concept-no">03</div>
+          <div><h2>Keep the dashboard calm, but never hide the account</h2></div>
+          <p class="concept-desc">The campaign headline reports its true state. Restriction is a secondary health event, with a dedicated account-health summary and a clear drill-down.</p>
+        </div>
+
+        <div class="frame">
+          <div class="frame-top">
+            <span class="crumb"><b>Your campaigns</b> / expanded card</span>
+            <span class="frame-meta">1 running</span>
+          </div>
+          <div class="frame-body dash-layout">
+            <article class="dash-card">
+              <div class="dash-strip"></div>
+              <div class="dash-main">
+                <div class="dash-title">
+                  <span class="status-dot"></span>
+                  <div>
+                    <div class="campaign-kicker">Running · healthy</div>
+                    <h3>TEST_24/08_CC+IC_A</h3>
+                  </div>
+                  <span class="right">Cloud VM</span>
+                </div>
+
+                <div class="health-line">
+                  <div class="health-stat"><b>12%</b><span>23 of 198 sent</span></div>
+                  <div class="health-stat"><b>2</b><span>Accounts working</span></div>
+                  <div class="health-stat"><b>1</b><span>Account blocked</span></div>
+                </div>
+
+                <div class="inline-restriction">
+                  <span class="restricted-chip">1 Identity Restricted</span>
+                  <p><b>manoj.kumar</b> was removed from rotation at 17:31. The campaign is continuing normally.</p>
+                  <button class="micro-btn" data-toast="This would expand directly to Manoj’s account-health event.">View details</button>
+                </div>
+              </div>
+            </article>
+
+            <aside class="side-summary">
+              <h3>Account health</h3>
+              <div class="summary-row">
+                <b>sean.alcosin</b>
+                <span>Available · waiting for next turn</span>
+              </div>
+              <div class="summary-row">
+                <b>cindy.siapno</b>
+                <span>Working · 15/50 today</span>
+              </div>
+              <div class="summary-row danger">
+                <b>manoj.kumar</b>
+                <span>Identity Restricted · stopped by SoO</span>
+              </div>
+              <button class="summary-action" data-toast="The app would refresh all three statuses from the SoO.">Refresh account health</button>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="decision">
+        <div class="concept-no">A</div>
+        <div>
+          <h2>Recommended system</h2>
+          <p>Use all three views as one behavior: <b>disabled red “Blocked” tile before launch</b>, <b>safe-removal banner plus stopped account column during a run</b>, and <b>a compact account-health exception on the dashboard</b>. The campaign itself only turns red when every selected account is blocked and no work can continue.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-toast]');
+      if (!button) return;
+      clearTimeout(toastTimer);
+      toast.textContent = button.dataset.toast;
+      toast.classList.add('show');
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+    });
+
+    const links = [...document.querySelectorAll('.rail-nav a')];
+    const sections = links.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!visible) return;
+      links.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === '#' + visible.target.id));
+    }, { rootMargin: '-20% 0px -60% 0px', threshold: [0, .2, .5] });
+    sections.forEach((section) => observer.observe(section));
+  </script>
+</body>
+</html>

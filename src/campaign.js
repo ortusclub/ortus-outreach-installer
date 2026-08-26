@@ -61,6 +61,7 @@ import { enqueueDesktopNotification } from './notifier.js';
 import { decide429 } from './throttle-policy.js';
 import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
 import { fetchSoOData } from './soo.js';
+import { identityRestrictionLabel } from './soo-restrictions.js';
 import { getOperatorEmail } from './operator-identity.js';
 import { dataPath } from './paths.js';
 import { readLastRun, writeLastRun } from './last-run-store.js';
@@ -69,6 +70,7 @@ import { blocklistExcludedUrls } from './preflight-lint.js';
 import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import { plainLine } from './log-voice.js';
+import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy } from './runtime-interruption.js';
 import {
   sample as rmSample,
   decideThrottle,
@@ -735,6 +737,43 @@ export function salesNavToInUrl(url) {
   return m ? `https://www.linkedin.com/in/${m[1]}` : (url || '');
 }
 
+// LinkedIn's encoded /in/ACwAA… and /in/ACoAA… identifiers carry the numeric
+// member id in their base64url payload. The browser APIs occasionally omit the
+// same values on a late-rendering profile (the sender-specific blank-column
+// bug), but the URL is already verified by the identity gate and is therefore a
+// safe fallback. Keep this local and deterministic: no extra LinkedIn request.
+export function recoverProfileIdentityFromUrl(url) {
+  const token = (String(url || '').match(/(AC[ow]AA[A-Za-z0-9_-]+)/i) || [])[1] || '';
+  let memberNumber = '';
+  if (token) {
+    try {
+      const buf = Buffer.from(token.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+      if (buf.length >= 8) {
+        const n = buf.readUInt32BE(4);
+        if (n > 0 && n < 4294967295) memberNumber = String(n);
+      }
+      if (!memberNumber && buf.length >= 4) {
+        const n = buf.readUInt32BE(0);
+        if (n > 0 && n < 4294967295) memberNumber = String(n);
+      }
+    } catch { /* malformed token → leave unknown */ }
+  }
+  return { memberId: token, memberNumber };
+}
+
+function mergeProfileMeta(...parts) {
+  const out = { memberId: '', memberNumber: '', name: '', isOpenProfile: null, connectionDegree: null };
+  for (const p of parts) {
+    if (!p) continue;
+    if (!out.memberId && p.memberId) out.memberId = p.memberId;
+    if (!out.memberNumber && p.memberNumber) out.memberNumber = String(p.memberNumber);
+    if (!out.name && p.name) out.name = p.name;
+    if (out.isOpenProfile == null && p.isOpenProfile != null) out.isOpenProfile = !!p.isOpenProfile;
+    if (out.connectionDegree == null && p.connectionDegree != null) out.connectionDegree = p.connectionDegree;
+  }
+  return out;
+}
+
 // v2.112.26 (#4): true when the loaded page is LinkedIn's "this page doesn't
 // exist" interstitial — the dead-profile case the identity gate must skip
 // terminally rather than retry. Mirrors the proven text probe in outreach.js
@@ -846,6 +885,14 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
     last = { ok: v.ok, reason: v.reason, loaded: { name: meta.name || '', memberNumber: meta.memberNumber || '' } };
     if (v.ok) {
       if (attempt > 1) log(`  ✓ identity confirmed on attempt ${attempt} (${v.reason})`);
+      // Do not throw away the profile data that was read on the VERIFIED page.
+      // The old flow scraped a second time after Connect and used only that
+      // result; a late/empty second response is why one sender populated the
+      // four metadata columns while another sender left them blank.
+      const recovered = recoverProfileIdentityFromUrl(navUrl);
+      last.identity = mergeProfileMeta(meta, recovered, {
+        memberNumber: sourceMemberId,
+      });
       return last;
     }
     log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${v.reason}`);
@@ -940,6 +987,7 @@ export const campaign = {
   // so a new campaign starts with every account active. (A Set — never
   // persisted; JSON.stringify drops it, which is fine since it's per-run.)
   _skippedProfiles: new Set(),
+  _restrictedProfiles: new Map(),
   // v2.78: CC+IC per-account connection-to-primary status. profileId →
   // 'connected' | 'pending' (connect request sent, not yet accepted). Drives the
   // Live Status label and gates that account's intros. Reset each run.
@@ -1067,7 +1115,8 @@ function noteAccountHealth(profileId, profileName, error) {
 // Phase 2.8.12: tiny helper — sets the action shown in the dashboard cockpit.
 // durationMs > 0 = timed wait (countdown); durationMs null = indeterminate.
 function setAction(label, opts = {}) {
-  const { lead = null, account = null, mode = null, durationMs = null } = opts;
+  const { lead = null, account = null, mode = null, durationMs = null,
+    phase = null, step = null, stepLabel = null, stepDetail = null } = opts;
   campaign.currentAction = {
     label,
     lead: lead || null,
@@ -1075,6 +1124,10 @@ function setAction(label, opts = {}) {
     mode: mode || campaign.mode || null,
     endsAt: typeof durationMs === 'number' && durationMs > 0 ? Date.now() + durationMs : null,
     startedAt: Date.now(),
+    phase: phase || null,
+    step: step || null,
+    stepLabel: stepLabel || label || null,
+    stepDetail: stepDetail || null,
   };
 }
 
@@ -1975,6 +2028,7 @@ export function setLiveCadence(min) {
 }
 
 export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
+  clearRuntimeInterruption();
   if (campaign.running) throw new Error('Campaign already running');
 
   // #7: when 'after_connections', the primary connect/check is deferred until
@@ -2034,10 +2088,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   } catch { setOperatorTz(''); campaign.identityGateEnabled = identityGateEnabled(null); }
   campaign._abort = false;
   campaign._stoppedManually = false;
+  campaign.stopReason = null;
   campaign._skipCleanup = false;
   clearSkips(); // reset skip ledger for this run
   // v2.78: seed the rotation benches from any accounts pre-benched in the wizard.
   campaign._skippedProfiles = new Set(Array.isArray(benchedProfileIds) ? benchedProfileIds : []);
+  campaign._restrictedProfiles = new Map();
   campaign._primaryConn = new Map();      // v2.78: fresh per-run primary-connection status
   // v2.52.0: capture this loop's generation. Any prior loop still in flight
   // (e.g. after restoreCampaign re-launched without waiting for the old loop
@@ -2252,6 +2308,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
     // ── Fetch leads from Google Sheet ──
     log('Fetching sheet…');
+    setAction('Reading the campaign sheet', {
+      phase: 'starting', step: 'fetching_sheet',
+      stepDetail: 'Loading leads and checking the selected sheet tab',
+    });
     // Lead-source guard: always read the operator-chosen tab. withGid is a
     // no-op when sheetGid is empty (legacy single-tab links keep working).
     const _src = withGid(sheetUrl, campaign.sheetGid);
@@ -2322,20 +2382,37 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // board, matched by Email == the account's GoLogin profile name.
     const _sooFlipped = new Set();      // accountNorm already flipped to In Use this run
     const _sooNeedsLogin = new Set();   // accountNorm already flagged Needs Login this run
-    let _sooEmailsCache = null;         // SoO Email column, fetched once per run (or [] on failure)
+    let _sooAccountsCache = null;
+    let _sooFetchedAt = 0;
+    const SOO_RESTRICTION_REFRESH_MS = 5 * 60 * 1000;
 
     // The SoO's Email-column values, fetched once per run for fuzzy resolution.
     // A failed fetch caches [] so we don't retry every account — the flip then
     // falls back to the raw GoLogin label (exact match only, as before).
-    async function sooEmailList() {
-      if (_sooEmailsCache) return _sooEmailsCache;
+    async function sooAccounts({ force = false } = {}) {
+      if (!force && _sooAccountsCache && Date.now() - _sooFetchedAt < SOO_RESTRICTION_REFRESH_MS) return _sooAccountsCache;
       try {
         const soo = await fetchSoOData();
-        _sooEmailsCache = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
+        _sooAccountsCache = ((soo && soo.accounts) || []).filter((a) => a && a.email);
+        _sooFetchedAt = Date.now();
       } catch (_) {
-        _sooEmailsCache = [];
+        if (!_sooAccountsCache) _sooAccountsCache = [];
       }
-      return _sooEmailsCache;
+      return _sooAccountsCache;
+    }
+
+    async function sooEmailList() {
+      return (await sooAccounts()).map((a) => a.email).filter(Boolean);
+    }
+
+    async function restrictionForProfile(profileId) {
+      const accountName = profileNameCache[profileId] || profileId;
+      const accounts = await sooAccounts();
+      const emails = accounts.map((a) => a.email).filter(Boolean);
+      const resolved = resolveSoOEmail(accountName, emails);
+      if (!resolved || !resolved.email || resolved.ambiguous) return '';
+      const row = accounts.find((a) => String(a.email).toLowerCase().trim() === String(resolved.email).toLowerCase().trim());
+      return identityRestrictionLabel(row);
     }
 
     // Resolve a GoLogin account label to its best SoO Email, fuzzily but safely
@@ -2764,10 +2841,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
     const targets = _pfRows.filter(_isTarget);
     log(`Pre-filter → ${targets.length} to process, ${_pfRows.length - targets.length} skipped (mode: ${mode})`);
-    campaign.totalTargets = targets.length;
+    campaign.totalTargets = _resumeTotal + targets.length;
 
     // Load profile names
     log('Loading profile names…');
+    setAction('Preparing the selected accounts', {
+      phase: 'starting', step: 'loading_accounts',
+      stepDetail: `${profileIds.length} account${profileIds.length === 1 ? '' : 's'} selected · resolving GoLogin profiles`,
+    });
     // 2.8.29: in check_status mode profileIds starts empty (auto-derived from
     // sheet below) — but we still need the GoLogin token to fetch the profile
     // list and resolve Account Used → profile id. Always grab the token here.
@@ -2938,7 +3019,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       try {
         if (campaign._abort) return null;
         log(`▶ Opening ${pName}…`);
-        setAction('Opening browser', { account: pName });
+        setAction('Opening browser', {
+          account: pName, phase: campaign.phase === 'preflight' ? 'starting' : 'sending',
+          step: 'opening_browser', stepDetail: 'Starting the GoLogin browser and restoring its LinkedIn session',
+        });
         let launched;
         if (profileId === 'local-browser') {
           launched = await launchLocalBrowser();
@@ -3270,7 +3354,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           targets.push(r); byUrl.set(u, r); added++;
         } else { Object.assign(byUrl.get(u), r); updated++; }
       }
-      campaign.totalTargets = targets.length;
+      // `targets` only contains the work still owned by this local process.
+      // Preserve the already-completed baseline imported during a VM → Mac
+      // handover, otherwise Reload sheet makes the denominator jump backwards.
+      campaign.totalTargets = _resumeTotal + targets.length;
       if (skippedNew) {
         log(`⟳ Reload: ${skippedNew} new lead(s) found, but new-lead pickup needs a restart in ${mode} mode. ${updated} existing lead(s) updated.`);
       }
@@ -3297,6 +3384,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     }
 
     log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
+    setAction('Starting account rotation', {
+      phase: 'starting', step: 'starting_rotation',
+      stepDetail: `${targets.length} lead${targets.length === 1 ? '' : 's'} ready · choosing the first available account`,
+    });
 
     // 2.9.8: modes that bypass the daily limit entirely.
     //   - check_status: read-only Voyager fetch, zero LinkedIn-visible action
@@ -3405,6 +3496,23 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     async function runProfileTurn(profileId) {
         if (campaign._abort || isOrphan()) return;
         if (leadsExhausted) return;
+
+        const restriction = await restrictionForProfile(profileId);
+        if (restriction) {
+          const name = profileNameCache[profileId] || profileId;
+          const wasKnown = campaign._restrictedProfiles?.has(profileId);
+          if (!campaign._restrictedProfiles) campaign._restrictedProfiles = new Map();
+          campaign._restrictedProfiles.set(profileId, restriction);
+          campaign._skippedProfiles.add(profileId);
+          if (!wasKnown) log(`Account removed from rotation — ${name} is ${restriction} in the SoO. No lead was consumed; queued leads will use another available account.`);
+          _persistRunSettings();
+          return;
+        }
+        if (campaign._restrictedProfiles?.has(profileId)) {
+          campaign._restrictedProfiles.delete(profileId);
+          campaign._skippedProfiles.delete(profileId);
+          log(`Account restored to rotation — ${profileNameCache[profileId] || profileId} is no longer Identity Restricted in the SoO.`);
+        }
 
         const session = await ensureOpen(profileId);
         if (!session) {
@@ -3833,7 +3941,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           if (!_pageHealthy) break;
 
           log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
-          setAction('Processing lead', { lead: data.firstName || '?', account: pName });
+          const _liveLeadName = `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.firstName || '?';
+          setAction('Opening the LinkedIn profile', {
+            lead: _liveLeadName, account: pName, phase: 'sending',
+            step: 'opening_profile', stepDetail: 'Waiting for the local browser event',
+          });
 
           // ── v2.96.0: PRE-SEND identity gate (connect modes only) ──
           // Confirm the loaded profile IS the intended lead BEFORE any Connect
@@ -3841,6 +3953,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // rate-limiting sent the correctly-named note to the wrong person.
           // Skip-on-doubt: 5 attempts, then skip+flag rather than risk a send.
           let _identityVerified = false;
+          let _verifiedIdentityMeta = null;
           // Gate every URL that will become a connect: plain /in/ AND Sales-Nav
           // /sales/lead|people/ URLs (performOutreach rewrites those to /in/ and
           // connects, so they carry the same mis-load risk — v2.96.2).
@@ -3939,6 +4052,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // The full-verify path returns no `navigated` field → defaults to
             // reuse (skipNavigation:true), preserving prior behavior.
             _identityVerified = _gate.navigated !== false;
+            _verifiedIdentityMeta = _gate.identity || null;
           }
 
           // performOutreach with retry
@@ -3967,7 +4081,17 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               try {
                 result = await Promise.race([
                   withWatchdog(
-                    performOutreach(page, url, { ...tpl, data }, { profileId, skipNavigation: _identityVerified }, hint),
+                    performOutreach(page, url, { ...tpl, data }, {
+                      profileId, skipNavigation: _identityVerified,
+                      onProgress: (event) => {
+                        const e = (event && typeof event === 'object') ? event : {};
+                        setAction(e.stepLabel || 'Processing lead', {
+                          lead: _liveLeadName, account: pName, phase: 'sending',
+                          step: e.step || '', stepLabel: e.stepLabel || '',
+                          stepDetail: e.stepDetail || '',
+                        });
+                      },
+                    }, hint),
                     LEAD_TIMEOUT_MS,
                     profileId,
                   ),
@@ -4081,6 +4205,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               const _gateRetry = await gateConnectIdentity(page, { url, row, sourceName: _srcNameRetry, log, verifyIdentity: campaign.identityGateEnabled !== false });
               if (_gateRetry.ok) {
                 _identityVerified = _gateRetry.navigated !== false;
+                _verifiedIdentityMeta = mergeProfileMeta(_verifiedIdentityMeta, _gateRetry.identity);
               } else if (_gateRetry.notFound) {
                 // v2.112.26 (#4): the profile went dead (404) on the re-load —
                 // a 'profile_not_found_404' error routes through normalizeSkipReason
@@ -4229,7 +4354,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             bumpCampaignCount(profileId);
             totalDone++;
             campaign.processedToday++;
-            campaign.totalProcessed = campaign.processedToday;
+            // Keep the lifetime/run total monotonic when a campaign is resumed
+            // or handed back from the VM. `processedToday` is only this local
+            // process' contribution; resetting the headline to it made the UI
+            // briefly claim e.g. "1 of 200" after 20 leads were already done.
+            campaign.totalProcessed = _resumeTotal + campaign.processedToday;
             await saveState(state);
             // v2.95: SoO write-back — on the account's first credit-consuming
             // send (connection_sent / inmail_sent per mode), flip its SoO credit
@@ -4292,25 +4421,71 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 }
               } catch { /* reporting only — never fail a good send over it */ }
               try {
-                const meta = await captureProfileMeta(page);
+                // Start with the metadata captured on the VERIFIED pre-send
+                // page, then enrich it from the post-send page. Never replace a
+                // known value with a blank late response.
+                let meta = mergeProfileMeta(_verifiedIdentityMeta);
+                const post = await captureProfileMeta(page);
                 // v2.86.9 — only stamp the captured URN when it provably belongs
                 // to this lead. A mis-loaded /in/ACwAA… profile yields a stray
                 // URN that would poison future bulk-check matching. An invite DID
                 // go out, so we keep the connection_sent stamp — we just withhold
                 // the unreliable URN/member-id rather than write a wrong one.
                 const _v = verifyConnectIdentity({
-                  capturedMemberNumber: meta.memberNumber,
-                  capturedUrn: meta.memberId,
+                  capturedMemberNumber: post.memberNumber,
+                  capturedUrn: post.memberId,
                   leadUrl: url,
                   sourceMemberId: readSourceMemberId(row),
                 });
                 if (_v.ok) {
+                  meta = mergeProfileMeta(meta, post);
+                  // One short, missing-fields-only retry catches LinkedIn's
+                  // delayed top-card/Voyager paint without slowing healthy rows.
+                  if (!meta.memberId || !meta.memberNumber || meta.isOpenProfile == null || meta.connectionDegree == null) {
+                    await new Promise((r) => setTimeout(r, 1200));
+                    const retry = await captureProfileMeta(page);
+                    const retryV = verifyConnectIdentity({
+                      capturedMemberNumber: retry.memberNumber,
+                      capturedUrn: retry.memberId,
+                      leadUrl: url,
+                      sourceMemberId: readSourceMemberId(row),
+                    });
+                    if (retryV.ok) meta = mergeProfileMeta(meta, retry);
+                  }
+                } else if (_verifiedIdentityMeta) {
+                  // The current page moved or returned a partial response after
+                  // the click. The gate's earlier data is still verified and is
+                  // safe to write; only the unverified post-send read is dropped.
+                  log(`  ℹ ${pName}: post-send metadata read was incomplete (${_v.reason}); using the verified pre-send identity.`);
+                  if (!meta.memberId || !meta.memberNumber || meta.isOpenProfile == null || meta.connectionDegree == null) {
+                    await new Promise((r) => setTimeout(r, 1200));
+                    const retry = await captureProfileMeta(page);
+                    const retryV = verifyConnectIdentity({
+                      capturedMemberNumber: retry.memberNumber,
+                      capturedUrn: retry.memberId,
+                      leadUrl: url,
+                      sourceMemberId: readSourceMemberId(row),
+                    });
+                    if (retryV.ok) meta = mergeProfileMeta(meta, retry);
+                  }
+                } else {
+                  log(`  ⚠ ${pName}: connect sent but profile identity unverified (${_v.reason}) — withholding URN.`);
+                  meta = null;
+                }
+
+                if (meta) {
                   if (meta.memberId)     sheetData.linkedinUrn       = meta.memberId;
                   if (meta.memberNumber) sheetData.linkedinMemberId  = meta.memberNumber;
                   if (meta.isOpenProfile !== null) sheetData.openProfile     = meta.isOpenProfile ? 'Yes' : 'No';
-                  if (meta.connectionDegree !== null) sheetData.connectedAlready = meta.connectionDegree === 1 ? 'Yes' : 'No';
-                } else {
-                  log(`  ⚠ ${pName}: connect sent but profile identity unverified (${_v.reason}) — withholding URN.`);
+                  // A confirmed new invitation proves this account was not
+                  // already 1st-degree, even if LinkedIn omitted the degree.
+                  sheetData.connectedAlready = meta.connectionDegree === 1 ? 'Yes' : 'No';
+                  const missing = [
+                    !meta.memberId && 'LinkedIn URN',
+                    !meta.memberNumber && 'LinkedIn Membership ID',
+                    meta.isOpenProfile == null && 'Open Profile',
+                  ].filter(Boolean);
+                  if (missing.length) log(`  ⚠ ${pName}: metadata captured partially; still unavailable: ${missing.join(', ')}. It will be retried during monitoring.`);
                 }
               } catch { /* best-effort */ }
             } else if (result.action === 'already_connected') {
@@ -5090,6 +5265,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       campaign.phase = 'preflight';
       if (need.length) log(`🤝 Preparing introductions — ${need.length} account(s) need to connect to the primary`);
       else log('🤝 Pre-flight: senders already connected — running the accept-all sweep on the primary');
+      setAction('Preparing introductions', {
+        phase: 'starting', step: 'primary_preflight',
+        stepDetail: need.length
+          ? `${need.length} account${need.length === 1 ? '' : 's'} must connect to the primary before outreach starts`
+          : 'Sender connections are ready · checking the primary inbox',
+      });
       const sender = tpl.primarySource || 'local-browser';
       const queuedAccepts = [];
       for (const profileId of need) {
@@ -5201,6 +5382,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         }
       }
       log('✅ Primary connections ready — starting outreach');
+      setAction('Primary connections ready', {
+        phase: 'starting', step: 'primary_ready',
+        stepDetail: 'Pre-flight complete · selecting the first sender and lead',
+      });
     }
 
     // #8: seed connection-to-primary from the persistent store so confirmed-
@@ -5708,12 +5893,13 @@ function _persistRunSettings() {
   try { writeLastRun(LAST_RUN_FILE, _lastRunSettings); } catch { /* non-fatal */ }
 }
 
-export function stopCampaign({ full = false } = {}) {
+export function stopCampaign({ full = false, reason = 'operator-stopped' } = {}) {
   campaign._abort = true;
   // Distinguish operator-initiated stop from natural completion so the
   // dashboard can surface a "Stopped" badge + Restart button on the history
   // entry that gets written when the loop unwinds.
   campaign._stoppedManually = true;
+  campaign.stopReason = reason;
   // v2.14.x: when `full` is true (operator picked "Stop everything" in the
   // CC+IC stop-choice modal), the finally block skips the end-of-list
   // bulk-check, the running→monitoring transition, and the per-account
@@ -5974,6 +6160,7 @@ function buildAccountPanel() {
   const parked = campaign.parkedProfiles || [];
   const ends = campaign.profileEndReasons || [];
   const benched = campaign._skippedProfiles || new Set();
+  const restricted = campaign._restrictedProfiles || new Map();
   const cooldowns = campaign._cooldown429 || new Map();
   const turns = campaign._turnByProfile || {};
   const reachedBy = campaign._reachedByProfile || {};
@@ -6002,6 +6189,9 @@ function buildAccountPanel() {
       state = 'stopped'; sub = parkSentence((end && end.reason) || (park && park.reason));
     } else if (cool && cool.until > Date.now()) {
       state = 'rate-limited'; sub = SLOW_DOWN_LINE;
+    } else if (restricted.has && restricted.has(pid)) {
+      state = 'identity-restricted';
+      sub = `${restricted.get(pid) || 'Identity Restricted'} in the SoO. Removed from rotation; queued leads are safe.`;
     } else if (benched.has && benched.has(pid)) {
       state = 'benched'; sub = 'You took this account out of the rotation.';
     } else if (live) {
@@ -6021,7 +6211,7 @@ function buildAccountPanel() {
 
     // What the counters cannot say: how many were missed, and whether anything
     // is wrong. Never the sent count, which the counters already show.
-    const problem = (state === 'needs-login' || state === 'cannot-open' || state === 'rate-limited' || state === 'trouble') ? sub : '';
+    const problem = (state === 'needs-login' || state === 'cannot-open' || state === 'rate-limited' || state === 'trouble' || state === 'identity-restricted') ? sub : '';
     const missedLine = mine.length
       ? `${mine.length} ${mine.length === 1 ? 'person was' : 'people were'} not reached.`
       : '';
@@ -6053,6 +6243,31 @@ function buildAccountPanel() {
   });
 }
 
+export function recordRuntimeInterruption(reason = 'unexpected-exit') {
+  const active = !!campaign.running || campaign.state === 'monitoring' || !!campaign._paused;
+  if (!active || campaign.runsOn === 'vm') return { ok: true, recorded: false };
+  const phase = campaign.state === 'monitoring' ? 'monitoring' : 'sending';
+  const value = writeRuntimeInterruption({
+    reason,
+    phase,
+    name: campaign.name || '',
+    mode: campaign.mode || '',
+    campaignId: campaign.id || SINGLETON_CAMPAIGN_ID,
+    totalProcessed: Number(campaign.totalProcessed) || 0,
+    totalTargets: Number(campaign.totalTargets) || 0,
+    profileIds: Array.isArray(campaign.profileIds) ? campaign.profileIds.slice() : [],
+    participatingProfileIds: Array.isArray(campaign.participatingProfileIds)
+      ? campaign.participatingProfileIds.slice() : [],
+    sheetUrl: campaign.sheetUrl || '',
+  });
+  return { ok: true, recorded: true, interruption: value };
+}
+
+export function acknowledgeRuntimeResume() {
+  clearRuntimeInterruption();
+  return { ok: true };
+}
+
 export function getCampaignStatus() {
   // Prefer campaign-loop samples (include browser PIDs) but fall back to the
   // ambient sampler so tiles populate the moment the server starts.
@@ -6061,6 +6276,13 @@ export function getCampaignStatus() {
   const thr = campaign._throttle   || amb.throttle;
   const panel = buildAccountPanel();
   const working = panel.find((a) => a.live) || null;
+  const interruption = (!campaign.running && campaign.state !== 'monitoring')
+    ? readRuntimeInterruption() : null;
+  const interrupted = !!interruption;
+  const interruptedCopy = interrupted ? interruptionCopy(interruption) : null;
+  const interruptionLog = interrupted
+    ? `[${interruption.recordedAt}] STOPPED ${interruptedCopy.title}. ${interruptedCopy.detail}`
+    : null;
   return {
     // The per-account panel, and the three live fields the sending banner reads.
     // Until now only the cloud engine produced them, so a run on this Mac could
@@ -6074,13 +6296,13 @@ export function getCampaignStatus() {
     batchDone: working ? working.batchDone : null,
     batchSize: working ? working.batchSize : null,
     sentToday: working ? working.sentToday : 0,
-    running: campaign.running,
+    running: interrupted ? false : campaign.running,
     // The cloud id when this Mac ADOPTED a cloud campaign's monitoring; the
     // singleton id otherwise. The board needs it to tell "a local campaign" from
     // "the cloud campaign that now lives here" — without it the same campaign was
     // listed twice, once RUNNING/local and once MONITORING/VM.
     id: campaign.id || SINGLETON_CAMPAIGN_ID,
-    paused: campaign._paused,
+    paused: interrupted ? true : campaign._paused,
     pauseRequested: campaign._pauseRequested,
     // v2.78: accounts the operator has benched from the rotation this run.
     skippedProfiles: [...(campaign._skippedProfiles || [])],
@@ -6091,7 +6313,9 @@ export function getCampaignStatus() {
     primaryCheckTiming: campaign.primaryCheckTiming || 'immediately',
     // v2.13.14: surface monitoring fields so the cockpit + run-bar can
     // reflect post-campaign monitoring state without a second poll.
-    state: campaign.state || 'idle',
+    state: interrupted ? 'interrupted' : (campaign.state || 'idle'),
+    interrupted,
+    interruption: interrupted ? { ...interruption, ...interruptedCopy } : null,
     // v2.105: pre-flight primary handshake sub-phase ('preflight' | null) —
     // drives the gold is-preflight card state. Distinct from `state` (running
     // stays true through pre-flight).
@@ -6119,11 +6343,14 @@ export function getCampaignStatus() {
     // the handover routes in server.js (and by launchCampaign for any run that
     // starts here). The card's RUNNING ON control reads exactly these two: an
     // absent runsOn means nobody has ever moved this campaign, which is 'local'.
-    runsOn: campaign.runsOn || 'local',
+    runsOn: interrupted ? 'local' : (campaign.runsOn || 'local'),
     handoverAt: campaign.handoverAt || null,
+    stopReason: campaign.stopReason || null,
     // v2.14.x: surface the tick re-entrancy guard so the cockpit + run-bar
     // can flip to "Checking now…" while a bulk-check is mid-fire.
     monitoringCheckInProgress: _checkInProgress,
+    accountsDone: campaign._monitoringAccountDone || null,
+    accountsTotal: campaign._monitoringAccountTotal || null,
     // The banner shows STOPPING between the press and the browsers actually
     // closing, so the operator does not press Stop three more times.
     checkStopping: !!campaign._abortCheck,
@@ -6131,21 +6358,21 @@ export function getCampaignStatus() {
     currentAction: campaign.currentAction,
     currentProfile: campaign.currentProfile,
     processedToday: campaign.processedToday,
-    totalProcessed: campaign.totalProcessed,
-    totalTargets: campaign.totalTargets || 0,
-    mode: campaign.mode || '',
-    name: campaign.name || '',
-    sheetUrl: campaign.sheetUrl || '',
+    totalProcessed: interrupted ? (Number(interruption.totalProcessed) || 0) : campaign.totalProcessed,
+    totalTargets: interrupted ? (Number(interruption.totalTargets) || 0) : (campaign.totalTargets || 0),
+    mode: interrupted ? (interruption.mode || '') : (campaign.mode || ''),
+    name: interrupted ? (interruption.name || '') : (campaign.name || ''),
+    sheetUrl: interrupted ? (interruption.sheetUrl || '') : (campaign.sheetUrl || ''),
     // Feature ⑩ Team status: real start timestamp (set in the run loop),
     // surfaced here so the admin table can show "Started" instead of "—".
     startedAt: campaign.startedAt || null,
     // v2.72: one-shot end-of-run notice (no more rows) for the dashboard popup.
     endNotice: campaign._endNotice || null,
     profileNames: campaign.profileNames || [],
-    profileIds: campaign.profileIds || [],
+    profileIds: interrupted ? (interruption.profileIds || []) : (campaign.profileIds || []),
     dailyLimit: campaign.dailyLimit || 0,
     campaignCounts: { ...campaignCounts },
-    logs: campaign.logs.slice(-100),
+    logs: interruptionLog ? [...campaign.logs.slice(-99), interruptionLog] : campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
     parked: campaign.parkedProfiles.slice(),
     // Local-browser re-login recovery: drives the "log into LinkedIn" popup.
@@ -6229,6 +6456,7 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // the stamp call (its state guard at line 3237 still sees 'monitoring'),
   // and the cockpit + dashboard show "monitoring" until the stamp finishes.
   campaign.state = 'done';
+  campaign.stopReason = reason;
   console.log(`[stopMonitoring] state set to 'done'`);
   // v2.74: force-close any in-flight monitoring-check browser so a running
   // sweep stops within a second or two rather than finishing the current
@@ -6591,10 +6819,19 @@ export async function adoptMonitoring(slice = {}) {
     nextCheckAt: new Date(now.getTime() + cadence * 60_000).toISOString(),
     monitoringUntil: slice.monitoringUntil || computeMonitoringUntil(sendingEndedAt).toISOString(),
     autoChecksEnabled: slice.autoChecksEnabled !== false,
+    totalTargets: Math.max(0, Number(slice.totalTargets) || 0),
+    totalProcessed: Math.max(0, Number(slice.totalProcessed) || 0),
     _abort: false,
+    stopReason: null,
   });
   campaign.logs = campaign.logs || [];
-  campaign.logs.push(`[${now.toISOString()}] 🛏 Monitoring adopted on this Mac · next check in ${cadence} min · ends ${campaign.monitoringUntil}`);
+  const nextLocal = new Date(campaign.nextCheckAt).toLocaleString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+  const endsLocal = new Date(campaign.monitoringUntil).toLocaleString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+  campaign.logs.push(`[${now.toISOString()}] 🛏 Monitoring moved to this Mac · next check ${nextLocal} (every ${cadence} min) · monitoring ends ${endsLocal}`);
 
   // Log bus, same registration resume does, so sheet writes narrate into this
   // campaign's log instead of disappearing.
@@ -6678,7 +6915,19 @@ export async function runMonitoringCheck(profileId, profileName) {
     campaign.logs = campaign.logs || [];
     campaign.logs.push(`${ts} ${msg}`);
 
+    setAction(`Opening ${profileName} for an acceptance check`, {
+      account: profileName, phase: 'checking', step: 'opening_account',
+      stepLabel: 'Opening the account browser', stepDetail: 'Preparing to read sent invitations',
+    });
+    campaign.currentAction.done = campaign._monitoringAccountDone || 1;
+    campaign.currentAction.total = campaign._monitoringAccountTotal || 1;
     launched = await launchProfile(profileId, token);
+    setAction(`Checking ${profileName} for new acceptances`, {
+      account: profileName, phase: 'checking', step: 'loading_invitations',
+      stepLabel: 'Loading sent invitations', stepDetail: 'Comparing LinkedIn results with the campaign sheet',
+    });
+    campaign.currentAction.done = campaign._monitoringAccountDone || 1;
+    campaign.currentAction.total = campaign._monitoringAccountTotal || 1;
 
     // v2.62: phase-2 mode-routing — CC+IC fires runAutoIntros, CC+DM fires
     // runAutoDms. campaign.mode is persisted in monitoring state so this
@@ -6697,6 +6946,10 @@ export async function runMonitoringCheck(profileId, profileName) {
       // The auto-intro pass then only stamps Introduction Status (no longer
       // batched into a single Apps Script write).
       suppressAcceptedStamp: false,
+    });
+    setAction(`Matching acceptances for ${profileName}`, {
+      account: profileName, phase: 'checking', step: 'acceptances_matched',
+      stepLabel: 'Acceptance check complete', stepDetail: `${Number(r.freshConnected ?? r.matched) || 0} newly accepted connection(s) found`,
     });
 
     const ts2 = `[${new Date().toISOString()}]`;
@@ -6769,6 +7022,9 @@ export async function runMonitoringCheck(profileId, profileName) {
       else await closeProfile(profileId);
     } catch { /* */ }
     browserSemaphore.release();
+    if (campaign.currentAction && ['checking', 'introducing'].includes(campaign.currentAction.phase)) {
+      campaign.currentAction = null;
+    }
   }
 }
 
@@ -6781,7 +7037,31 @@ export async function runMonitoringCheckAll() {
     return { ok: false, error: 'Campaign not in monitoring state' };
   }
   const results = [];
-  for (const pid of (campaign.participatingProfileIds || [])) {
+  const monitoringProfiles = campaign.participatingProfileIds || [];
+  // Monitoring opens the same sender browsers as outreach, so the SoO safety
+  // rule applies here too. Refresh once per sweep and skip restricted accounts
+  // before a browser opens; a restriction never prevents the other accounts
+  // from checking their acceptances.
+  const restrictedNow = new Map();
+  try {
+    const soo = await fetchSoOData();
+    const accounts = ((soo && soo.accounts) || []).filter((a) => a && a.email);
+    const emails = accounts.map((a) => a.email);
+    for (const pid of monitoringProfiles) {
+      const idx = (campaign.profileIds || []).indexOf(pid);
+      const name = idx >= 0 ? (campaign.profileNames || [])[idx] : pid;
+      const resolved = resolveSoOEmail(name, emails);
+      if (!resolved || !resolved.email || resolved.ambiguous) continue;
+      const row = accounts.find((a) => String(a.email).toLowerCase().trim() === String(resolved.email).toLowerCase().trim());
+      const label = identityRestrictionLabel(row);
+      if (label) restrictedNow.set(pid, label);
+    }
+  } catch (err) {
+    campaign.logs.push(`[${new Date().toISOString()}] SoO restriction check unavailable (${err.message}) — continuing with the last known account state.`);
+  }
+  campaign._monitoringAccountTotal = monitoringProfiles.length;
+  for (let monitorIndex = 0; monitorIndex < monitoringProfiles.length; monitorIndex++) {
+    const pid = monitoringProfiles[monitorIndex];
     // v2.74: stop sweeping the moment the operator stops monitoring (state
     // flips off 'monitoring') or hits Stop (_abort), instead of walking every
     // remaining account.
@@ -6790,8 +7070,18 @@ export async function runMonitoringCheckAll() {
     if (campaign._abort || campaign._abortCheck || campaign.state !== 'monitoring') break;
     const idx = (campaign.profileIds || []).indexOf(pid);
     const pName = idx >= 0 ? (campaign.profileNames || [])[idx] : pid;
+    if (restrictedNow.has(pid)) {
+      const note = `${restrictedNow.get(pid)} in the SoO. Monitoring skipped this account; the other accounts continue.`;
+      campaign._restrictedProfiles.set(pid, restrictedNow.get(pid));
+      campaign.logs.push(`[${new Date().toISOString()}] ${pName} — ${note}`);
+      results.push({ profileId: pid, ok: false, skipped: true, reason: 'identity-restricted', note });
+      continue;
+    }
+    campaign._monitoringAccountDone = monitorIndex + 1;
     const r = await runMonitoringCheck(pid, pName || pid);
     results.push({ profileId: pid, ...r });
   }
+  campaign._monitoringAccountDone = 0;
+  campaign._monitoringAccountTotal = 0;
   return { ok: true, results };
 }

@@ -53,7 +53,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { processedLeadUrls, sheetProcessedUrls, handoverTarget, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
+import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
@@ -410,9 +410,25 @@ console.error = (...args) => { captureLog('ERR', args); origError.apply(console,
 // Health check
 // ---------------------------------------------------------------------------
 app.get('/api/health', (_req, res) => {
-  // scraperConfigured lets the dashboard gate the "Sales Nav Scrape" mode —
-  // it's enabled only when SCRAPER_ENGINE_URL points at a GKE engine.
-  res.json({ ok: true, time: new Date().toISOString(), version: APP_VERSION, scraperConfigured: isScraperConfigured(), scraperEngineUrl: getScrapeEngineUrl() });
+  // Make the runtime target visible in the app. A development Electron build
+  // can point at a frozen engine image without moving the team's live engine.
+  const scraperEngineUrl = getScrapeEngineUrl();
+  const productionEngineUrl = 'https://scraper.ortusclub.com';
+  const isProductionEngine = scraperEngineUrl.replace(/\/+$/, '') === productionEngineUrl;
+  const productionEngineVersion = process.env.PRODUCTION_ENGINE_VERSION || 'v139';
+  const scraperEngineVersion = process.env.SCRAPER_ENGINE_VERSION
+    || (isProductionEngine ? productionEngineVersion : 'unverified');
+  res.json({
+    ok: true,
+    time: new Date().toISOString(),
+    version: APP_VERSION,
+    scraperConfigured: isScraperConfigured(),
+    scraperEngineUrl,
+    scraperEngineVersion,
+    scraperEngineEnvironment: isProductionEngine ? 'production' : 'development',
+    productionEngineUrl,
+    productionEngineVersion,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -653,7 +669,17 @@ app.get('/api/profiles', async (req, res) => {
     })));
   } catch (err) {
     console.error('Error fetching profiles:', err.message);
-    res.status(500).json({ error: err.message });
+    const unauthorized = /GoLogin API 401|unauthori[sz]ed/i.test(String(err && err.message));
+    const devEngine = /^dev-/.test(String(process.env.SCRAPER_ENGINE_VERSION || ''));
+    res.status(unauthorized ? 401 : 500).json({
+      error: unauthorized
+        ? (devEngine
+          ? 'DEV GOLOGIN TOKEN REJECTED (HTTP 401). No development profiles can be loaded, so campaign browsers cannot open. Replace DEV_GOLOGIN_API_TOKEN in the engine .env and Kubernetes salesnav-secrets-dev, then restart this app. Production profiles are intentionally hidden here.'
+          : 'GoLogin rejected the configured API token (HTTP 401). Replace the token, then restart the app.')
+        : err.message,
+      code: unauthorized ? 'GOLOGIN_UNAUTHORIZED' : 'PROFILE_LOAD_FAILED',
+      environment: devEngine ? 'development' : 'production',
+    });
   }
 });
 
@@ -2085,6 +2111,7 @@ app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
   const r = await stopCloudCampaign(req.params.id, {
     pause: !!req.query.pause,
     keepMonitoring: !!req.query.keepMonitoring, // "Stop sending, keep monitoring"
+    monitoringScope: req.query.monitoringScope === 'tab' ? 'tab' : 'campaign',
   });
   if (r.error) return res.status(502).json(r);
   res.json(r);
@@ -2168,7 +2195,7 @@ app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
 // stamps nothing in the sheet (see its comment), so a monitoring campaign can
 // leave this Mac without its still-pending leads being closed off.
 async function stopLocalAndConfirm({ timeoutMs = 120000 } = {}) {
-  if (campaign.running) stopCampaign({ full: true });
+  if (campaign.running) stopCampaign({ full: true, reason: 'handover-to-vm' });
   else if (campaign.state === 'monitoring') await stopMonitoring({ reason: 'handover-to-vm' });
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -2221,7 +2248,13 @@ async function handoverToLocal(id, req, res) {
   // asked for: everything is out, the operator wants the ACCEPTANCE CHECKS on
   // his own machine. It must be adopted straight into local monitoring —
   // startCampaign would find 0 targets and land it on 'done', stranded.
-  if (handoverTarget(allLeads) === 'monitor') {
+  // A recovery card can carry stronger phase evidence than an old engine row:
+  // next_check_at/monitoring_until, or the explicit operator action "Resume
+  // checks". In that case never let the stale status word `running` resurrect
+  // sender work on this Mac.
+  const preserveMonitoring = String(req.body && req.body.phase || '').toLowerCase() === 'monitoring'
+    || !!camp.next_check_at || !!camp.monitoring_until;
+  if (preserveMonitoring || handoverTargetForCampaign(camp.status, allLeads) === 'monitor') {
     let profileNames = [];
     try {
       const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN);
@@ -2244,6 +2277,8 @@ async function handoverToLocal(id, req, res) {
       senderFirstNames: cfg.senderFirstNames || {},
       checkIntervalMinutes: cfg.checkIntervalMinutes,
       autoChecksEnabled: camp.auto_checks_enabled !== false,
+      totalTargets: allLeads.length,
+      totalProcessed: excluded.length,
     });
     if (!adopted.ok) {
       return res.status(409).json({ error: `${adopted.error} The campaign is now waiting on this Mac: move it back, or free this machine and try again.` });
@@ -2251,7 +2286,7 @@ async function handoverToLocal(id, req, res) {
     campaign.runsOn = 'local';
     campaign.handoverAt = Date.now();
     cloudLog(`[cloud] handover: ${id} → local (monitoring adopted, next check ${adopted.nextCheckAt})`);
-    return res.json({ ok: true, to: 'local', id, remaining: 0, excluded: excluded.length, adopted: 'monitoring', nextCheckAt: adopted.nextCheckAt });
+    return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length, adopted: 'monitoring', nextCheckAt: adopted.nextCheckAt });
   }
 
   const config = buildCampaignConfig({
@@ -2296,7 +2331,29 @@ async function handoverToLocal(id, req, res) {
 async function handoverToVm(id, req, res) {
   const running = campaign.running;
   const monitoring = !running && campaign.state === 'monitoring';
-  if (!running && !monitoring) return res.status(409).json({ error: 'Nothing is running on this Mac, so there is nothing to move to the VM.' });
+  if (!running && !monitoring) {
+    // Recovery after sleep/quit: the engine row still exists and says it was
+    // handed to This Mac, but the local singleton is gone. Reclaim that durable
+    // row instead of refusing because there is no process left to stop.
+    const cur = await getCloudCampaign(id);
+    const camp = (cur && cur.campaign) || cur || {};
+    if (String(camp.runs_on || '') !== 'local') {
+      return res.status(409).json({ error: 'Nothing is running on this Mac, and this campaign is not waiting for this Mac, so nothing was moved.' });
+    }
+    const rec = await reclaimCloudCampaign(id);
+    if (!rec || rec.error || !rec.reclaimed) {
+      const rr = reclaimRefusal(rec && rec.reason);
+      return res.status(rec && rec.status === 409 ? 409 : 502).json({ reason: (rec && rec.reason) || undefined, error: rr.error });
+    }
+    if (String(req.body && req.body.phase || '') === 'sending') {
+      const resumed = await restartCloudCampaign(id, { fromStart: false });
+      if (!resumed || resumed.error) {
+        return res.status((resumed && resumed.status) || 502).json({ error: (resumed && resumed.error) || 'The VM reclaimed monitoring, but could not resume sending. Monitoring remains safe on the VM.' });
+      }
+    }
+    cloudLog(`[cloud] handover recovery: ${id} → vm (${req.body && req.body.phase === 'sending' ? 'sending resumed' : 'monitoring reclaimed'})`);
+    return res.json({ ok: true, to: 'vm', id, reclaimed: true, phase: (req.body && req.body.phase) || 'monitoring' });
+  }
 
   // A campaign this Mac ADOPTED from the VM still has its engine row intact:
   // handover-release never cancelled it, because it was monitoring rather than
@@ -4892,6 +4949,27 @@ app.post('/api/monitoring/wake', async (_req, res) => {
     const { tickMonitoringNow } = await import('./src/campaign.js');
     tickMonitoringNow().catch((err) => console.warn('[wake] tick threw:', err.message));
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Electron writes a durable reason before this Mac sleeps or the app quits.
+// On the next launch the canonical card can explain why local work stopped,
+// instead of reconstructing a misleading generic running/waiting state.
+app.post('/api/runtime/interruption', async (req, res) => {
+  try {
+    const { recordRuntimeInterruption } = await import('./src/campaign.js');
+    res.json(recordRuntimeInterruption(req.body?.reason || 'unexpected-exit'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/runtime/resumed', async (_req, res) => {
+  try {
+    const { acknowledgeRuntimeResume } = await import('./src/campaign.js');
+    res.json(acknowledgeRuntimeResume());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

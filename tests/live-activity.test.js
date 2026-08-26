@@ -7,13 +7,15 @@ import { buildLiveActivity, pauseAutoStop, PAUSE_MAX_MS } from '../public/js/liv
 // the same currentAction/currentProfile/nextCheckAt the backend sends for
 // every campaign mode, so connect_only, CC+DM, message_only, etc. all work.
 
-test('monitoring, between checks → "Waiting for next check" (nothing running)', () => {
+test('monitoring, between checks → expected idle state with monitoring armed', () => {
   const r = buildLiveActivity({
     running: false, state: 'monitoring', monitoringCheckInProgress: false,
     participatingProfileIds: ['a', 'b'], checkIntervalMinutes: 15,
   });
   assert.equal(r.state, 'monitoring');
-  assert.equal(r.l1, 'Waiting for next check');
+  assert.equal(r.icon, '◷');
+  assert.equal(r.l1, 'Nothing is running right now — this is expected');
+  assert.match(r.l2, /monitoring is armed/);
   assert.match(r.l2, /2 accounts/);
   assert.match(r.l2, /15 min/);
 });
@@ -24,8 +26,20 @@ test('monitoring, a sweep is running → "Checking" state', () => {
     currentProfile: 'justine.mangera@ortus.solutions',
   });
   assert.equal(r.state, 'checking');
+  assert.equal(r.phase, 'checking');
+  assert.equal(r.who, 'justine.mangera@ortus.solutions');
   assert.match(r.l1, /Checking/);
   assert.match(r.l2, /justine\.mangera/);
+});
+
+test('manual This-Mac check has a detailed checking phase before currentAction arrives', () => {
+  const r = buildLiveActivity({
+    running: false, state: 'monitoring', monitoringCheckInProgress: true,
+    participatingProfileIds: ['a', 'b', 'c'],
+  });
+  assert.equal(r.phase, 'checking');
+  assert.equal(r.who, 'Selecting the next account');
+  assert.match(r.sub, /eligible campaign account/i);
 });
 
 test('sending → surfaces the REAL currentAction label + account · lead', () => {
@@ -123,12 +137,22 @@ test('paused outranks a stale phase tick', () => {
   assert.equal(r.phase, undefined);
 });
 
-test('an unknown phase is ignored, not rendered blank', () => {
+test('an unknown phase is explicit, never a misleading generic working state', () => {
   const r = buildLiveActivity({
     running: true, currentAction: { phase: 'teleporting', lead: 'Nobody' },
   });
   assert.equal(r.phase, undefined);
-  assert.equal(r.l1, 'Working…'); // the old fallback, unchanged
+  assert.equal(r.l1, 'Waiting for a verified engine update');
+  assert.match(r.l2, /reported phase:/);
+});
+
+test('an interrupted local runtime explains why it stopped', () => {
+  const r = buildLiveActivity({ state: 'interrupted', interruption: {
+    title: 'Stopped because the app was closed', detail: 'The remaining leads are safe.',
+  } });
+  assert.equal(r.state, 'interrupted');
+  assert.equal(r.l1, 'Stopped because the app was closed');
+  assert.match(r.l2, /remaining leads are safe/i);
 });
 
 test('every account capped/benched → says so, never "Working…"', () => {
@@ -208,13 +232,13 @@ test('past the deadline the card drops "resumes instantly"', () => {
   assert.ok(!/resumes instantly/.test(r.l2));
 });
 
-test('a monitoring campaign that is not slowed reads exactly as it always has', () => {
+test('a monitoring campaign that is not slowed explains the expected idle window', () => {
   const a = buildLiveActivity({
     running: false, state: 'monitoring', profileIds: ['a', 'b', 'c', 'd', 'e'],
     checkIntervalMinutes: 60, checkIntervalBaseMinutes: 60, emptyCheckStreak: 1,
   });
-  assert.equal(a.l1, 'Waiting for next check');
-  assert.equal(a.l2, '5 accounts · checks every 1h · nothing running right now');
+  assert.equal(a.l1, 'Nothing is running right now — this is expected');
+  assert.equal(a.l2, '5 accounts · monitoring is armed · next check runs automatically every 1h');
 });
 
 test('a slowed campaign explains itself and promises the way back', () => {

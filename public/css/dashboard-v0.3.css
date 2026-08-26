@@ -357,6 +357,14 @@
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
     background: var(--green);
   }
+  /* Interrupted local work is not healthy/active. Red owns the whole recovery
+     state until the operator successfully resumes checks or sending. */
+  body[data-dashboard='v3'] .vj-card.is-interrupted::before { background: var(--red); }
+  body[data-dashboard='v3'] .vj-card.is-interrupted .vj-eyebrow .vj-tag .dot { background: var(--red); box-shadow: none; }
+  body[data-dashboard='v3'] .vj-card.is-interrupted .vj-hbar > i { background: var(--red); }
+  body[data-dashboard='v3'] .vj-card.is-interrupted .vj-live { border-color: color-mix(in srgb, var(--red) 55%, var(--hairline)); }
+  body[data-dashboard='v3'] .vj-card.is-interrupted .vj-live-ico,
+  body[data-dashboard='v3'] .vj-card.is-interrupted .vj-live-l1 { color: var(--red); }
   /* v2.130: local campaign detail card gets a PINK rail (matches the pink
      board strip) when opened from the unified Campaigns board. */
   body[data-dashboard='v3'] .vj-card.is-local:not(.is-monitor)::before { background: #e35ea0; }
@@ -525,7 +533,7 @@
      elapsed seconds, which is a fact. */
   body[data-dashboard='v3'] .vj-stage {
     grid-area: live; display: flex; gap: 20px; align-items: flex-start;
-    padding: 18px 20px; border-radius: 12px;
+    padding: 22px 24px; border-radius: 12px;
     background: rgba(255,255,255,.03); border: 1px solid var(--hairline-soft);
   }
   body[data-dashboard='v3'] .vj-stage[hidden] { display: none; }
@@ -537,6 +545,13 @@
     position: absolute; bottom: -4px; left: 0; right: 0; text-align: center;
     font-family: var(--mono); font-size: 0.68rem; color: var(--gray);
   }
+  body[data-dashboard='v3'] .stg-boot {
+    width: 30px; height: 30px; border-radius: 9999px; display: grid; place-items: center;
+    border: 2px solid var(--hairline); border-top-color: var(--gold);
+    animation: stg-boot-spin 1.1s linear infinite;
+  }
+  body[data-dashboard='v3'] .stg-boot i { width: 7px; height: 7px; border-radius: 9999px; background: var(--gold); }
+  @keyframes stg-boot-spin { to { transform: rotate(360deg); } }
   /* sending — invites flying down a dotted wire */
   body[data-dashboard='v3'] .stg-fly { position: relative; width: 70px; height: 26px; }
   body[data-dashboard='v3'] .stg-fly i {
@@ -584,6 +599,10 @@
     50% { opacity: 1; transform: scale(1); }
   }
   body[data-dashboard='v3'] .vj-stage.is-waiting { border-color: var(--gray); }
+  body[data-dashboard='v3'] .vj-stage.is-starting { border-color: var(--gold); }
+  body[data-dashboard='v3'] .vj-stage.is-delayed { border-color: var(--red); }
+  body[data-dashboard='v3'] .vj-stage.is-delayed .stg-boot { border-top-color: var(--red); animation-duration: 1.8s; }
+  body[data-dashboard='v3'] .vj-stage.is-delayed .stg-boot i { background: var(--red); }
   /* Finished run: the stage stays for its account pills, so it must read as a
      record and not as something still happening — no spinner, muted glyph. */
   body[data-dashboard='v3'] .vj-stage.is-done .vj-stage-gly,
@@ -596,27 +615,120 @@
     display: inline-flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; font-size: 15px; opacity: .5;
   }
+  body[data-dashboard='v3'] .stg-paused {
+    width: 58px; height: 58px; display: inline-flex; align-items: center;
+    justify-content: center; gap: 8px; border: 2px solid var(--ink);
+    border-radius: 9999px; color: var(--ink); opacity: .78;
+  }
+  body[data-dashboard='v3'] .stg-paused i {
+    display: block; width: 7px; height: 24px; border-radius: 1px;
+    background: currentColor;
+  }
+  body[data-dashboard='v3'] .vj-stage.is-paused .vj-stage-secs { display: none; }
   body[data-dashboard='v3'] .vj-stage.is-waiting .vj-stage-verb { color: var(--gray); }
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-fly i,
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-typ i,
   body[data-dashboard='v3'] .vj-stage.is-paused .stg-swp { animation-play-state: paused; opacity: .35; }
 
   body[data-dashboard='v3'] .vj-stage-body { flex: 1; min-width: 0; }
+  body[data-dashboard='v3'] .vj-stage-summary {
+    display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(220px, .55fr);
+    gap: 28px; align-items: center; min-height: 72px;
+  }
+  body[data-dashboard='v3'] .vj-stage-side {
+    border-left: 1px solid var(--hairline-soft); padding-left: 24px; min-width: 0;
+  }
+  body[data-dashboard='v3'] .vj-stage-side span,
+  body[data-dashboard='v3'] .vj-stage-next label {
+    display: block; font-family: var(--mono); font-size: .64rem; letter-spacing: .15em;
+    text-transform: uppercase; color: var(--gray);
+  }
+  body[data-dashboard='v3'] .vj-stage-side strong {
+    display: block; margin-top: 7px; font-family: var(--display); font-size: 1.7rem;
+    line-height: 1; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  body[data-dashboard='v3'] .vj-stage-side small { display: block; margin-top: 5px; color: var(--gray); font-size: .76rem; line-height: 1.35; }
   body[data-dashboard='v3'] .vj-stage-verb {
-    font-family: var(--mono); font-size: 0.67rem; letter-spacing: 0.2em; text-transform: uppercase;
+    font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.16em; text-transform: uppercase;
     color: var(--green);
   }
   body[data-dashboard='v3'] .vj-stage.is-checking .vj-stage-verb { color: var(--blue); }
+  body[data-dashboard='v3'] .vj-stage.is-starting .vj-stage-verb { color: var(--gold); }
+  body[data-dashboard='v3'] .vj-stage.is-delayed .vj-stage-verb { color: var(--red); }
   body[data-dashboard='v3'] .vj-stage.is-paused .vj-stage-verb { color: var(--gray); }
   body[data-dashboard='v3'] .vj-stage-name {
-    font-family: var(--display); font-size: 2.15rem; letter-spacing: 0.02em; line-height: 1.04;
-    margin: 4px 0 3px; color: var(--ink);
+    font-family: var(--display); font-size: 2.25rem; letter-spacing: 0.015em; line-height: 1.04;
+    margin: 6px 0 5px; color: var(--ink);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   body[data-dashboard='v3'] .vj-stage-name.swap { animation: stg-name-in .42s cubic-bezier(.2,.7,.3,1); }
   @keyframes stg-name-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
-  body[data-dashboard='v3'] .vj-stage-sub { font-size: 0.79rem; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-stage-sub {
+    max-width: 82ch; font-family: var(--body); font-size: 0.94rem;
+    font-weight: 500; line-height: 1.5; color: var(--ink);
+  }
   body[data-dashboard='v3'] .vj-stage-sub:empty { display: none; }
+  body[data-dashboard='v3'] .vj-stage-safety {
+    display: inline-flex; align-items: center; margin-top: 12px; padding: 6px 11px;
+    border: 1px solid var(--hairline); border-radius: 9999px;
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .035em; color: var(--ink);
+  }
+  body[data-dashboard='v3'] .vj-stage-safety::before {
+    content: ''; width: 6px; height: 6px; border-radius: 9999px; background: var(--green); margin-right: 8px;
+  }
+  body[data-dashboard='v3'] .vj-stage-safety[hidden] { display: none; }
+  body[data-dashboard='v3'] .vj-stage-facts {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 15px;
+    border-top: 1px solid var(--hairline-soft); border-bottom: 1px solid var(--hairline-soft);
+  }
+  body[data-dashboard='v3'] .vj-stage-facts[hidden] { display: none; }
+  body[data-dashboard='v3'] .vj-stage-facts > div {
+    display: flex; justify-content: space-between; gap: 14px; padding: 10px 12px 10px 0;
+    border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); font-size: .7rem;
+  }
+  body[data-dashboard='v3'] .vj-stage-facts > div:nth-child(odd) { border-right: 1px solid var(--hairline-soft); margin-right: 12px; }
+  body[data-dashboard='v3'] .vj-stage-facts > div:nth-last-child(-n+2) { border-bottom: 0; }
+  body[data-dashboard='v3'] .vj-stage-facts span { color: var(--gray); text-transform: uppercase; letter-spacing: .08em; }
+  body[data-dashboard='v3'] .vj-stage-facts b { color: var(--ink); font-weight: 500; text-align: right; }
+  body[data-dashboard='v3'] .vj-stage-miles {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 15px;
+    border-top: 1px solid var(--hairline);
+  }
+  body[data-dashboard='v3'] .vj-stage-miles[hidden] { display: none; }
+  body[data-dashboard='v3'] .vj-stage-miles > div { position: relative; padding: 12px 10px 0 0; min-width: 0; }
+  body[data-dashboard='v3'] .vj-stage-miles > div { min-height: 86px; padding-top: 17px; }
+  body[data-dashboard='v3'] .vj-stage-miles > div:not(:last-child) { border-right: 1px solid var(--hairline-soft); margin-right: 10px; }
+  body[data-dashboard='v3'] .vj-stage-miles > div.active::before,
+  body[data-dashboard='v3'] .vj-stage-miles > div.done::before { content: ''; position: absolute; top: -2px; left: 0; right: 10px; height: 3px; background: var(--ink); }
+  body[data-dashboard='v3'] .vj-stage-miles > div.active::before { background: var(--gold); }
+  body[data-dashboard='v3'] .vj-stage-miles small { display: block; font-family: var(--mono); font-size: .64rem; letter-spacing: .07em; text-transform: uppercase; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-stage-miles b { display: block; margin-top: 7px; font-family: var(--body); font-size: .84rem; line-height: 1.35; font-weight: 550; color: var(--ink); }
+  body[data-dashboard='v3'] .vj-stage-miles .future { opacity: .46; }
+  body[data-dashboard='v3'] .vj-stage-outcome {
+    display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(230px, .65fr);
+    gap: 26px; margin-top: 18px;
+  }
+  body[data-dashboard='v3'] .vj-stage-metrics {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+  }
+  body[data-dashboard='v3'] .vj-stage-metrics > div { padding: 15px 18px 14px 0; min-width: 0; }
+  body[data-dashboard='v3'] .vj-stage-metrics > div + div { border-left: 1px solid var(--hairline-soft); padding-left: 18px; }
+  body[data-dashboard='v3'] .vj-stage-metrics strong { display: block; font-family: var(--display); font-size: 1.95rem; line-height: 1; }
+  body[data-dashboard='v3'] .vj-stage-metrics span { display: block; margin-top: 5px; font-size: .75rem; color: var(--gray); font-weight: 550; }
+  body[data-dashboard='v3'] .vj-stage-next { border: 1px solid var(--hairline); border-radius: 9px; padding: 14px 16px; background: rgba(128,128,128,.035); }
+  body[data-dashboard='v3'] .vj-stage-next strong { display: block; margin-top: 7px; font-size: .86rem; color: var(--ink); }
+  body[data-dashboard='v3'] .vj-stage-next p { margin: 5px 0 0; font-size: .75rem; line-height: 1.4; color: var(--gray); }
+  @media (max-width: 760px) {
+    body[data-dashboard='v3'] .vj-stage-summary,
+    body[data-dashboard='v3'] .vj-stage-outcome { grid-template-columns: 1fr; }
+    body[data-dashboard='v3'] .vj-stage-side { border-left: 0; border-top: 1px solid var(--hairline-soft); padding: 14px 0 0; }
+    body[data-dashboard='v3'] .vj-stage-facts { grid-template-columns: 1fr; }
+    body[data-dashboard='v3'] .vj-stage-facts > div:nth-child(odd) { border-right: 0; margin-right: 0; }
+    body[data-dashboard='v3'] .vj-stage-facts > div:nth-last-child(-n+2) { border-bottom: 1px solid var(--hairline-soft); }
+    body[data-dashboard='v3'] .vj-stage-facts > div:last-child { border-bottom: 0; }
+    body[data-dashboard='v3'] .vj-stage-miles { grid-template-columns: 1fr 1fr; }
+  }
 
   /* Account row — one pill per account: name + today's count in the same oval,
      colour carries the state, a word only where a number can't say it. */
@@ -1592,6 +1704,168 @@ body[data-dashboard='v3'] .vj-card:has(.sp) .vj-details { grid-row: 8; }
 .sp-day b { color: var(--ink); font-weight: 600; }
 .sp-day span { display: block; font-size: .66rem; margin-top: 3px; }
 
+/* ── One live-status composition, shared by Dashboard + Campaign Builder ──
+   renderLiveStage marks the card only when the rich, phase-aware component is
+   available. In that state it replaces every legacy summary surface instead
+   of being stacked above them. This selector applies to the singleton card and
+   its dashboard clone, and therefore to local and cloud ownership alike. */
+body[data-dashboard='v3'] .vj-card.has-unified-stage,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
+  grid-template-areas:
+    "eyebrow"
+    "name"
+    "live"
+    "where"
+    "controls"
+    "details";
+  gap: 12px;
+}
+body[data-dashboard='v3'] .vj-card.has-unified-stage .vj-hbar,
+body[data-dashboard='v3'] .vj-card.has-unified-stage .vj-monitor,
+body[data-dashboard='v3'] .vj-card.has-unified-stage .vj-hero,
+body[data-dashboard='v3'] .vj-card.has-unified-stage .sp,
+body[data-dashboard='v3'] .vj-card.has-unified-stage #primary-panel,
+body[data-dashboard='v3'] .vj-card.has-unified-stage [data-f='primary-panel'],
+body[data-dashboard='v3'] .vj-card.has-unified-stage .vj-profiles,
+body[data-dashboard='v3'] .vj-card.has-unified-stage .pf-list,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) .vj-hbar,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) .vj-monitor,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) .vj-hero,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) .sp,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) #primary-panel,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) [data-f='primary-panel'],
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) .vj-profiles,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) .pf-list {
+  display: none !important;
+}
+body[data-dashboard='v3'] .vj-card.has-unified-stage .vj-stage,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) .vj-stage {
+  grid-area: live;
+  margin: 0;
+}
+/* During ownership transfer the handover banner IS the stage. Never stack the
+   old monitoring/sending stage under it; that produced two contradictory live
+   states occupying the same grid cell. */
+body[data-dashboard='v3'] .vj-card.is-handover-active > .vj-stage {
+  display: none !important;
+}
+body[data-dashboard='v3'] .vj-card.is-handover-active > .vj-live.is-handover {
+  display: flex !important;
+  grid-area: live;
+}
+body[data-dashboard='v3'] .vj-card.has-unified-stage > .wh-host,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .wh-host {
+  grid-area: where;
+  min-width: 0;
+}
+body[data-dashboard='v3'] .vj-card.has-unified-stage > .wh-host .wh,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .wh-host .wh {
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+body[data-dashboard='v3'] .vj-card.has-unified-stage > .vj-controls,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .vj-controls {
+  grid-area: controls;
+  width: 100%;
+  padding: 0 0 2px;
+  justify-self: stretch;
+  justify-content: flex-end;
+}
+body[data-dashboard='v3'] .vj-card.has-unified-stage > .vj-details,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .vj-details {
+  grid-area: details;
+  grid-row: auto !important;
+  margin-top: 0;
+}
+body[data-dashboard='v3'] .vj-card.has-unified-stage.is-detailed > .vj-details,
+body[data-dashboard='v3'] .vj-card.is-detailed:has(> .vj-stage:not([hidden])) > .vj-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+body[data-dashboard='v3'] .vj-card.has-unified-stage .vj-stage-accts:empty,
+body[data-dashboard='v3'] .vj-card.has-unified-stage .vj-stage-drawer:empty {
+  display: none;
+}
+body[data-dashboard='v3'] .vj-card.is-interrupted.has-unified-stage .vj-stage,
+body[data-dashboard='v3'] .vj-card.is-interrupted:has(> .vj-stage:not([hidden])) .vj-stage {
+  border-color: color-mix(in srgb, var(--red) 68%, var(--hairline));
+}
+body[data-dashboard='v3'] .vj-card.is-interrupted.has-unified-stage .vj-stage-kicker,
+body[data-dashboard='v3'] .vj-card.is-interrupted.has-unified-stage .vj-stage-title,
+body[data-dashboard='v3'] .vj-card.is-interrupted:has(> .vj-stage:not([hidden])) .vj-stage-kicker,
+body[data-dashboard='v3'] .vj-card.is-interrupted:has(> .vj-stage:not([hidden])) .vj-stage-title {
+  color: var(--red);
+}
+
+/* ── Unified live-card atmosphere ──────────────────────────────────────────
+   One quiet wash of the current state colour, shared by every live card.
+   Dashboard + builder, Cloud VM + This Mac and every lifecycle branch all use
+   these primitives, so future branches inherit the approved treatment too. */
+body[data-dashboard='v3'] .vj-card {
+  --vj-tone: var(--green);
+  background: linear-gradient(115deg,
+    color-mix(in srgb, var(--vj-tone) 4.5%, var(--card-bg)) 0%,
+    var(--card-bg) 30%, var(--card-bg) 100%);
+}
+body[data-dashboard='v3'] .vj-card.is-monitor,
+body[data-dashboard='v3'] .vj-card.is-monitoring { --vj-tone: var(--blue); }
+body[data-dashboard='v3'] .vj-card.is-preflight,
+body[data-dashboard='v3'] .vj-card.is-queued,
+body[data-dashboard='v3'] .vj-card.is-starting { --vj-tone: var(--gold); }
+body[data-dashboard='v3'] .vj-card.is-waiting,
+body[data-dashboard='v3'] .vj-card.is-paused,
+body[data-dashboard='v3'] .vj-card.is-done,
+body[data-dashboard='v3'] .vj-card.is-empty { --vj-tone: var(--gray); }
+body[data-dashboard='v3'] .vj-card.is-interrupted,
+body[data-dashboard='v3'] .vj-card.is-error { --vj-tone: var(--red); }
+body[data-dashboard='v3'] .vj-card.is-local:not(.is-monitor):not(.is-monitoring) { --vj-tone: #e35ea0; }
+/* Monitoring stays blue even when sending is paused. */
+body[data-dashboard='v3'] .vj-card.is-monitor,
+body[data-dashboard='v3'] .vj-card.is-monitoring { --vj-tone: var(--blue); }
+
+body[data-dashboard='v3'] .vj-stage,
+body[data-dashboard='v3'] .vj-live {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--vj-tone) 8%, var(--card-bg)) 0%,
+    color-mix(in srgb, var(--vj-tone) 3%, var(--card-bg)) 24%,
+    var(--card-bg) 52%, var(--card-bg) 100%);
+}
+body[data-dashboard='v3'] .vj-stage.is-checking,
+body[data-dashboard='v3'] .vj-live.is-checking,
+body[data-dashboard='v3'] .vj-live.is-waking { --vj-tone: var(--blue); }
+body[data-dashboard='v3'] .vj-stage.is-sending,
+body[data-dashboard='v3'] .vj-live.is-sending { --vj-tone: var(--green); }
+body[data-dashboard='v3'] .vj-stage.is-starting { --vj-tone: var(--gold); }
+body[data-dashboard='v3'] .vj-stage.is-delayed { --vj-tone: var(--red); }
+body[data-dashboard='v3'] .vj-stage.is-interrupted,
+body[data-dashboard='v3'] .vj-live.is-interrupted { --vj-tone: var(--red); }
+body[data-dashboard='v3'] .vj-stage.is-waiting,
+body[data-dashboard='v3'] .vj-stage.is-paused,
+body[data-dashboard='v3'] .vj-stage.is-done,
+body[data-dashboard='v3'] .vj-live.is-paused,
+body[data-dashboard='v3'] .vj-live.is-outcome { --vj-tone: var(--gray); }
+body[data-dashboard='v3'] .vj-live.is-handover.to-cloud { --vj-tone: var(--green); }
+body[data-dashboard='v3'] .vj-live.is-handover.to-local { --vj-tone: var(--blue); }
+body[data-dashboard='v3'] .vj-card.is-interrupted .vj-stage,
+body[data-dashboard='v3'] .vj-card.is-interrupted .vj-live { --vj-tone: var(--red); }
+
+/* Checking keeps its pulse without dropping back to a flat fill. */
+@keyframes ckbreathe {
+  0%, 100% { background: linear-gradient(90deg,
+    color-mix(in srgb, var(--vj-tone) 7%, var(--card-bg)) 0%, var(--card-bg) 52%); }
+  50% { background: linear-gradient(90deg,
+    color-mix(in srgb, var(--vj-tone) 12%, var(--card-bg)) 0%,
+    color-mix(in srgb, var(--vj-tone) 4%, var(--card-bg)) 34%, var(--card-bg) 62%); }
+}
+@media (max-width: 900px) {
+  body[data-dashboard='v3'] .vj-card.has-unified-stage.is-detailed > .vj-details {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Who actually got a request. The counterpart of "Nobody reached, and why" —
    the app knows every name and shows none of them. Copied verbatim from the
    approved sketch; Task 7 stopped at .sp-day and left these behind. */
@@ -1633,8 +1907,10 @@ body[data-dashboard='v3'] .vj-card:has(.sp) .vj-details { grid-row: 8; }
 .sp-col.needs-login,
 .sp-col.cannot-open,
 .sp-col.rate-limited,
+.sp-col.identity-restricted,
 .sp-col.trouble { box-shadow: inset 2px 0 0 var(--red); }
 .sp-col.needs-login .sp-state,
 .sp-col.cannot-open .sp-state,
 .sp-col.rate-limited .sp-state,
+.sp-col.identity-restricted .sp-state,
 .sp-col.trouble .sp-state { color: var(--red); }

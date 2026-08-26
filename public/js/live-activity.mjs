@@ -74,9 +74,15 @@ export function monitorHeroState(status, now = Date.now()) {
   const claimed = status.monitorTaskStatus === 'claimed' || !!status.monitoringCheckInProgress;
   if (claimed) {
     const started = Date.parse(status.monitorCheckStartedAt || '');
+    const completed = Date.parse(status.monitorCheckCompletedAt || '');
+    // A manual "check now" request can be active before the engine writes a new
+    // started timestamp. Do not measure that request against the PREVIOUS
+    // sweep's timestamp or a perfectly normal VM wake-up is labelled stalled.
+    const currentStart = Number.isFinite(started)
+      && (!Number.isFinite(completed) || started > completed);
     return {
       state: 'checking',
-      overrun: Number.isFinite(started) && (now - started) > CHECKING_OVERRUN_MS,
+      overrun: currentStart && (now - started) > CHECKING_OVERRUN_MS,
     };
   }
 
@@ -204,9 +210,11 @@ export function pauseAutoStop(pausedAt, now = Date.now()) {
 }
 
 export const LIVE_PHASES = {
+  starting:    { verb: 'Starting campaign worker', icon: '◌', state: 'starting', glyph: 'boot' },
   sending:     { verb: 'Sending connection',   icon: '➤', state: 'sending',  glyph: 'fly' },
   introducing: { verb: 'Writing introduction', icon: '✎', state: 'sending',  glyph: 'typ' },
   checking:    { verb: 'Checking acceptances', icon: '↻', state: 'checking', glyph: 'swp' },
+  monitoring:  { verb: 'Monitoring is active', icon: '◷', state: 'monitoring', glyph: 'wait' },
   // Not a thing the VM is DOING — a thing it can't do. A campaign whose every
   // account is capped or benched stays status:'running' forever, so the card
   // showed a green RUNNING dot over "Working…" while nothing had been sent for
@@ -217,6 +225,25 @@ export const LIVE_PHASES = {
 
 export function buildLiveActivity(status, now = Date.now()) {
   if (!status) return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
+
+  if (status.state === 'interrupted' || status.interrupted) {
+    const i = status.interruption || {};
+    const monitoring = i.phase === 'monitoring' || status.monitoringPhase;
+    return {
+      state: 'interrupted',
+      icon: '■',
+      phase: 'interrupted',
+      l1: i.title || (monitoring
+        ? 'Monitoring stopped because this Mac became unavailable'
+        : 'Campaign stopped because this Mac became unavailable'),
+      l2: i.detail || (monitoring
+        ? 'Sending remains stopped. Resume acceptance checks here or move monitoring to the Cloud VM.'
+        : 'The remaining leads are safe. Choose where to continue.'),
+      verb: monitoring ? 'Monitoring stopped safely' : 'Campaign stopped safely',
+      who: '',
+      sub: i.recordedAt ? `recorded ${i.recordedAt}` : '',
+    };
+  }
 
   if (status.phase === 'preflight') {
     const conn = status.primaryConn || {};
@@ -232,6 +259,7 @@ export function buildLiveActivity(status, now = Date.now()) {
 
   const monitoring = !status.running && status.state === 'monitoring';
   const paused = !!(status.paused || status._paused);
+  const monitoringPaused = !!status.monitoringPhase && paused && status.state !== 'monitoring';
   const ca = status.currentAction || null;
   const account = (ca && ca.account) || status.currentProfile || '';
   const lead = (ca && ca.lead) || '';
@@ -242,12 +270,22 @@ export function buildLiveActivity(status, now = Date.now()) {
   // sweep, so without this an intro run reports as "Checking for new
   // acceptances…". Paused still wins (the phase is stale the moment we pause).
   const P = ca && LIVE_PHASES[ca.phase];
-  if (P && !paused) {
+  if (P && (!paused || monitoring)) {
     return {
       state: P.state, icon: P.icon, phase: ca.phase,
       l1: ca.label || P.verb,
       l2: [account, lead].filter(Boolean).join(' · '),
       verb: P.verb, who: lead || account || '', sub: ca.sub || '',
+    };
+  }
+
+  if (monitoringPaused) {
+    const n = (status.participatingProfileIds || status.profileIds || []).length;
+    const cadMin = Number(status.checkIntervalMinutes) || 60;
+    const cad = cadMin >= 60 ? `${cadMin / 60}h` : `${cadMin} min`;
+    return {
+      state: 'paused', icon: '‖', l1: 'Paused between checks',
+      l2: `${n ? `${n} account${n === 1 ? '' : 's'} · ` : ''}monitoring remains active · next check runs automatically every ${cad}`,
     };
   }
 
@@ -257,10 +295,17 @@ export function buildLiveActivity(status, now = Date.now()) {
       return {
         state: 'checking',
         icon: '↻',
+        // The detailed card keys off `phase`. Manual This-Mac checks are
+        // marked in-progress before their first browser event/currentAction,
+        // so omitting this sent them back to the legacy blue banner.
+        phase: 'checking',
         l1: 'Checking for new acceptances…',
         l2: hero.overrun
           ? 'sweep looks stalled — auto-recovers'
           : (account ? `${account} · sweeping recent connections` : 'sweeping recent connections'),
+        verb: 'Checking acceptances',
+        who: account || 'Selecting the next account',
+        sub: account ? 'Reading sent invitations' : 'Choosing the first eligible campaign account',
       };
     }
     const n = (status.participatingProfileIds || status.profileIds || []).length;
@@ -294,10 +339,15 @@ export function buildLiveActivity(status, now = Date.now()) {
       };
     }
     return {
-      state: 'monitoring',
+      // Between scheduled sweeps the browser work is intentionally paused.
+      // Calling that merely "waiting" made an operator-paused campaign look as
+      // if its pause had been lost during a VM ↔ Mac handover. Keep both truths
+      // visible: sending/browser work is paused, monitoring remains armed.
+      state: 'monitoring', phase: 'monitoring',
       icon: '◷',
-      l1: 'Waiting for next check',
-      l2: `${acctStr}checks every ${cad} · nothing running right now`,
+      l1: 'Nothing is running right now — this is expected',
+      l2: `${acctStr}monitoring is armed · next check runs automatically every ${cad}`,
+      verb: 'Monitoring is active', who: 'Waiting between checks', sub: 'No browser stays open between sweeps',
     };
   }
 
@@ -325,8 +375,8 @@ export function buildLiveActivity(status, now = Date.now()) {
     return {
       state: 'sending',
       icon: '→',
-      l1: (ca && ca.label) || 'Working…',
-      l2: [account, lead].filter(Boolean).join(' · '),
+      l1: (ca && ca.label) || 'Waiting for a verified engine update',
+      l2: [account, lead, ca && ca.phase && !LIVE_PHASES[ca.phase] ? `reported phase: ${ca.phase}` : ''].filter(Boolean).join(' · '),
     };
   }
 

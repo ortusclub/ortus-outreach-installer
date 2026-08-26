@@ -57,10 +57,10 @@ test("the board's live line says the checks slowed, and what un-slows them", () 
   assert.equal(a.l2, 'nothing accepted in the last 9 checks · hourly again as soon as one lands');
 });
 
-test('REGRESSION LOCK: an unslowed board campaign reads exactly as it always has', () => {
+test('an idle local monitor says waiting is expected and monitoring is armed', () => {
   const a = buildLiveActivity(statusFromItem(boardItem()));
-  assert.equal(a.l1, 'Waiting for next check');
-  assert.equal(a.l2, '5 accounts · checks every 1h · nothing running right now');
+  assert.equal(a.l1, 'Nothing is running right now — this is expected');
+  assert.equal(a.l2, '5 accounts · monitoring is armed · next check runs automatically every 1h');
 });
 
 // ── the collapsed strip's one-line summary ──

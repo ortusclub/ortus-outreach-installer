@@ -7,8 +7,20 @@ test('a sweep in flight gets the checking banner', () => {
     liveAccount: 'camillec@ortus.solutions', accountsDone: 1, accountsTotal: 3, elapsedSec: 41 });
   assert.equal(b.tone, 'check');
   assert.equal(b.l1, 'Checking right now');
-  assert.equal(b.big, '2 of 3');
+  assert.equal(b.big, '1 of 3');
   assert.match(b.l2, /camillec@ortus\.solutions/);
+});
+
+test('an introduction outranks the enclosing acceptance sweep', () => {
+  const b = bannerFor({
+    runsOn: 'vm', monitoringCheckInProgress: true, liveAccount: 'sender@example.com',
+    currentAction: { phase: 'introducing', lead: 'Ada Lovelace', account: 'sender@example.com',
+      stepLabel: 'Selecting both recipients', done: 1, total: 2 },
+  });
+  assert.equal(b.tone, 'intro');
+  assert.equal(b.l1, 'Selecting both recipients');
+  assert.match(b.l2, /Ada Lovelace/);
+  assert.equal(b.big, '1 of 2');
 });
 
 test('monitoring between checks gets NO banner', () => {

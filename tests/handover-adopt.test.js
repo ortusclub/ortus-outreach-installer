@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handoverTarget } from '../src/handover.js';
+import { handoverTarget, handoverTargetForCampaign } from '../src/handover.js';
 
 process.env.ORTUS_DATA_DIR = await mkdtemp(join(tmpdir(), 'ortus-handover-'));
 const { adoptMonitoring, getCampaignStatus, stopMonitoringWatcher } = await import('../src/campaign.js');
@@ -35,6 +35,16 @@ test('a campaign moved mid-send still sends here', () => {
     'the in-flight lead is retried here, so it is still work to do');
 });
 
+test('a monitoring campaign never restarts sending just because pending leads remain', () => {
+  assert.equal(handoverTargetForCampaign('monitoring', [
+    { leadUrl: 'https://a', status: 'sent' },
+    { leadUrl: 'https://b', status: 'pending' },
+  ]), 'monitor');
+  assert.equal(handoverTargetForCampaign('running', [
+    { leadUrl: 'https://b', status: 'pending' },
+  ]), 'send');
+});
+
 test('adopting a send-complete campaign lands it in local monitoring, not done', async (t) => {
   t.after(() => stopMonitoringWatcher());
   const until = new Date(Date.now() + 3 * 86400000).toISOString();
@@ -52,6 +62,8 @@ test('adopting a send-complete campaign lands it in local monitoring, not done',
     monitoringUntil: until,
     templates: { primaryName: 'Sam' },
     checkIntervalMinutes: 120,
+    totalTargets: 199,
+    totalProcessed: 23,
     emptyCheckStreak: 5,           // the VM's backoff must NOT come along
   });
   assert.equal(r.ok, true);
@@ -65,6 +77,12 @@ test('adopting a send-complete campaign lands it in local monitoring, not done',
   assert.equal(s.checkIntervalBaseMinutes, 120, "the operator's own interval survives the move");
   assert.equal(s.checkIntervalMinutes, 120, 'streak 0 means the effective cadence is the base one');
   assert.equal(s.monitoringUntil, until, 'the 7-day window belongs to the campaign, not to the side running it');
+  assert.equal(s.totalTargets, 199, 'the VM lead ledger survives the move');
+  assert.equal(s.totalProcessed, 23, 'the paused card keeps its real progress');
+  const adoptionLog = s.logs.find((line) => line.includes('Monitoring moved to this Mac')) || '';
+  assert.match(adoptionLog, /next check .+ \(every 120 min\) · monitoring ends /);
+  assert.doesNotMatch(adoptionLog, /adopted on this Mac|ends 20\d\d-\d\d-\d\dT/,
+    'the operator log must use readable local dates, never backend ISO wording');
   const nextIn = (Date.parse(s.nextCheckAt) - Date.now()) / 60000;
   assert.ok(nextIn > 115 && nextIn <= 121, `next check is one base interval from now, got ${nextIn} min`);
 

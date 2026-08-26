@@ -13,12 +13,100 @@ test('statusFromItem: cloud monitoring item → monitoring state, cloud flag', (
   assert.equal(s.checkIntervalMinutes, 30);
   assert.equal(s.autoChecksEnabled, false);
 });
+test('statusFromItem preserves participating accounts and per-card sheet URL', () => {
+  const s = statusFromItem({ participatingProfileIds: ['p1', 'p2'], sheet_url: 'https://docs.google.com/x' });
+  assert.deepEqual(s.participatingProfileIds, ['p1', 'p2']);
+  assert.equal(s.sheetUrl, 'https://docs.google.com/x');
+  assert.match(vjCardControlsFor(s).sheet.onclick, /openVjCardSheet/);
+});
 test('statusFromItem: running local item → running, no state', () => {
   const s = statusFromItem({ where: 'local', id: 'local-active', bucket: 'running', sent: 5, total: 10, accounts: 2, paused: true });
   assert.equal(s._cloud, false);
   assert.equal(s.running, true);
   assert.equal(s.state, undefined);
   assert.equal(s.paused, true);
+});
+
+test('statusFromItem: released VM row with no local runtime is interrupted, never fake-waiting', () => {
+  const s = statusFromItem({
+    where: 'cloud', id: 'c-wait', bucket: 'running', runsOn: 'local',
+    handoverAt: 123, waitingForLocal: true, logs: ['campaign stopped locally'],
+  });
+  assert.equal(s.running, false);
+  assert.equal(s.waitingForLocal, true);
+  assert.equal(s.state, 'interrupted');
+  assert.equal(s.interrupted, true);
+  assert.match(s.interruption.title, /Mac became unavailable/);
+  assert.equal(vjCardFields(s).eyebrow, 'Stopped · This Mac unavailable');
+  assert.match(vjCardControlsFor(s).pause.onclick, /openCampaignResumeDecision/);
+  assert.equal(s.runsOn, 'local');
+  assert.equal(s.handoverAt, 123);
+});
+test('statusFromItem: restored local monitoring snapshot keeps the monitoring phase', () => {
+  const s = statusFromItem({
+    where: 'local', id: 'local-active', bucket: 'running',
+    monitoringPhase: true, paused: true, sent: 22, total: 198,
+    profileIds: ['a', 'b', 'c'],
+  });
+  assert.equal(s._cloud, false);
+  assert.equal(s.running, false);
+  assert.equal(s.paused, false);
+  assert.equal(s.state, 'monitoring');
+  assert.equal(s.monitoringPhase, true);
+  assert.equal(vjCardFields(s).eyebrow, 'Monitoring');
+  const activity = vjCardControlsFor(s);
+  assert.match(activity.bulk.onclick, /dashRunCheck/);
+});
+test('statusFromItem: a monitoring row owned by This Mac keeps the monitoring layout', () => {
+  const s = statusFromItem({
+    where: 'cloud', runsOn: 'local', id: 'c1', bucket: 'running',
+    monitoring: false, monitoringPhase: true, paused: true,
+    sent: 23, total: 199, profileIds: ['a', 'b', 'c'],
+    accountPanel: [{ email: 'a@example.com', state: 'paused' }],
+  });
+  assert.equal(s._cloud, false, 'ownership, not the durable row origin, selects the control/layout path');
+  assert.equal(s.state, 'monitoring');
+  assert.equal(s.running, false);
+  assert.equal(s.paused, false);
+  assert.equal(s.state, 'monitoring');
+  assert.equal(s.monitoringPhase, true);
+  assert.equal(s.totalProcessed, 23);
+  assert.equal(s.totalTargets, 199);
+  assert.equal(s.accountPanel.length, 1);
+  assert.equal(vjCardFields(s).eyebrow, 'Monitoring');
+  assert.match(vjCardControlsFor(s).bulk.onclick, /dashRunCheck/);
+});
+test('statusFromItem: local monitoring is active waiting, not a paused sending campaign', () => {
+  const s = statusFromItem({
+    where: 'cloud', runsOn: 'local', id: 'c1', bucket: 'running',
+    monitoring: true, sent: 22, total: 198,
+  });
+  assert.equal(s._cloud, false);
+  assert.equal(s.running, false);
+  assert.equal(s.state, 'monitoring');
+  assert.equal(s.paused, false);
+  assert.equal(s.monitoringPhase, true);
+  assert.equal(vjCardFields(s).eyebrow, 'Monitoring');
+});
+test('VM and This Mac produce the same monitoring content contract', () => {
+  const shared = {
+    id: 'c-parity', bucket: 'running', monitoring: true,
+    sent: 46, total: 198, acceptedCount: 1,
+    profileIds: ['p1', 'p2', 'p3'], participatingProfileIds: ['p1', 'p2', 'p3'],
+    monitoringCheckInProgress: true,
+    currentAction: {
+      phase: 'checking', label: 'Checking acceptances',
+      facts: [['Current account', 'sender@example.com']],
+      milestones: [['Request', 'queued', 'done'], ['Browser', 'opening', 'active']],
+    },
+    logs: ['check started'], accountPanel: [{ email: 'sender@example.com', state: 'working' }],
+  };
+  const vm = statusFromItem({ ...shared, where: 'cloud', runsOn: 'vm' });
+  const lm = statusFromItem({ ...shared, where: 'cloud', runsOn: 'local', monitoringPhase: true });
+  assert.deepEqual(vjCardFields(vm), vjCardFields(lm));
+  for (const key of ['currentAction', 'logs', 'accountPanel', 'profileIds', 'participatingProfileIds']) {
+    assert.deepEqual(vm[key], lm[key], `${key} must be location-independent`);
+  }
 });
 // Regression: statusFromItem is a WHITELIST, so a field the card reads but this
 // function drops is silently always-undefined. _fgFinishedNote returns null the
@@ -54,6 +142,7 @@ test('vjCardFields: monitoring eyebrow + zero-total guard', () => {
   const f = vjCardFields(statusFromItem({ where: 'cloud', bucket: 'running', monitoring: true, sent: 0, total: 0 }));
   assert.equal(f.isMonitor, true);
   assert.equal(f.eyebrow, 'Monitoring');
+  assert.equal(f.sendingLbl, 'Waiting between checks');
   assert.equal(f.pct, 0); // no divide-by-zero
 });
 test('vjCardFields: paused running reads Paused', () => {
@@ -74,13 +163,43 @@ test('controls: running local → pause/stop/restart/copy + bulk run-check, open
 // The expanded strip's OPEN must use the SAME handler as the collapsed strip's
 // footer (openRunningCampaignReadOnly) — it is the only one that binds card #2's
 // Live Status to the campaign and sets the Cloud VM run target.
-test('controls: running cloud → stop + Show, no pause, no bulk, open=openRunningCampaignReadOnly', () => {
+test('controls: running cloud → Campaign Builder parity for pause/check/stop/copy/Show', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'c1', bucket: 'running' }));
   assert.match(c.open.onclick, /openRunningCampaignReadOnly\('c1'\)/);
-  assert.equal(c.pause, null);
-  assert.equal(c.bulk, null);
+  assert.ok(c.pause);
+  assert.match(c.pause.onclick, /pauseCloudCampaignUI\('c1', false\)/);
+  assert.equal(c.bulk.label, 'Run check now');
+  assert.match(c.bulk.onclick, /cloudCheckNow\('c1',this\)/);
   assert.match(c.stop.onclick, /stopCloudCampaignUI\('c1'\)/);
+  assert.match(c.restart.onclick, /cloudCheckNow\('c1',this\)/);
+  assert.match(c.copy.onclick, /duplicateCampaign\('c1'\)/);
   assert.ok(c.extra.find((e) => e.kind === 'show'));
+});
+
+test('controls: paused cloud uses Resume', () => {
+  const c = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'c2', bucket: 'running', paused: true }));
+  assert.match(c.pause.onclick, /openCampaignResumeDecision\('c2','sending','vm',this\)/);
+  assert.equal(c.bulk.label, 'Run check now');
+  assert.match(c.bulk.onclick, /cloudCheckNow\('c2',this\)/);
+});
+
+test('interrupted local work uses the canonical stopped card and a resume decision', () => {
+  const s = statusFromItem({ id: 'local-active', where: 'local', bucket: 'running',
+    interrupted: true, interruption: { title: 'Stopped because the app was closed' },
+    name: 'A', total: 20, sent: 4 });
+  const f = vjCardFields(s);
+  const c = vjCardControlsFor(s);
+  assert.equal(s.state, 'interrupted');
+  assert.equal(f.eyebrow, 'Stopped · This Mac unavailable');
+  assert.match(c.pause.onclick, /openCampaignResumeDecision/);
+});
+test('interrupted monitoring with unsent leads offers checks and sending as separate recovery decisions', () => {
+  const s = statusFromItem({ where: 'cloud', runsOn: 'local', id: 'c-monitor', bucket: 'running',
+    interrupted: true, monitoringPhase: true, pending: 176,
+    interruption: { phase: 'monitoring', title: 'Monitoring interrupted' } });
+  const c = vjCardControlsFor(s);
+  assert.match(c.pause.onclick, /'monitoring','local'/);
+  assert.match(c.resumeSending.onclick, /'sending','local'/);
 });
 test('controls: monitoring cloud → check-now bulk + auto toggle + stop monitoring', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'c9', bucket: 'running', monitoring: true, autoChecksEnabled: true }));
@@ -97,11 +216,15 @@ test('controls: monitoring cloud → check-now bulk + auto toggle + stop monitor
   assert.equal(c.pause, null);
 });
 test('controls: monitoring local → dashRunCheck bulk + pause + stop', () => {
-  const c = vjCardControlsFor(statusFromItem({ where: 'local', id: 'local-active', bucket: 'running', monitoring: true }));
+  const c = vjCardControlsFor(statusFromItem({ where: 'local', id: 'local-active', bucket: 'running', monitoring: true, sent: 22, total: 198 }));
   assert.match(c.bulk.onclick, /dashRunCheck/);
   assert.ok(c.pause);
   assert.ok(c.stop);
   assert.equal(c.monAuto, null);
+  const resume = c.extra.find((x) => x.kind === 'play');
+  assert.ok(resume);
+  assert.equal(resume.once, true);
+  assert.match(resume.onclick, /openCampaignResumeDecision\('local-active','sending','local',this\)/);
 });
 test('controls: done → duplicate + delete, no bulk/stop/pause', () => {
   const cloud = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'cD', bucket: 'done' }));
@@ -136,8 +259,9 @@ test('a cloud monitoring campaign with unsent leads offers Resume sending', () =
   });
   const resume = c.extra.find((x) => x.kind === 'play');
   assert.ok(resume, 'a campaign that stopped sending early must offer a way back');
-  assert.match(resume.onclick, /restartCloudCampaignUI\('c1', ?false\)/,
-    'continue where it left off — never restart from the beginning');
+  assert.equal(resume.once, true);
+  assert.match(resume.onclick, /openCampaignResumeDecision\('c1','sending','vm',this\)/,
+    'resume must use the same machine-choice flow as This Mac');
 });
 
 test('a cloud monitoring campaign that FINISHED sending offers no Resume', () => {
@@ -146,6 +270,13 @@ test('a cloud monitoring campaign that FINISHED sending offers no Resume', () =>
   });
   assert.equal(c.extra.find((x) => x.kind === 'play'), undefined,
     'nothing left to send — the button would re-open leads that are already done');
+});
+
+test('a local monitoring campaign that FINISHED sending offers no Resume', () => {
+  const c = vjCardControlsFor({
+    _local: true, id: 'l1', state: 'monitoring', totalTargets: 22, totalProcessed: 22, pending: 0,
+  });
+  assert.equal(c.extra.find((x) => x.kind === 'play'), undefined);
 });
 
 test('Stop monitoring and Run check now survive on the monitoring card', () => {
