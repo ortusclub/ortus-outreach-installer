@@ -46,7 +46,8 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.26';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
+import { summarizeLatestMonitoringSweep } from '/js/monitor-sweep-summary.mjs?v=3.1.48.30';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -26841,6 +26842,13 @@ function renderLiveStage(root, status) {
   // to leave the headline stuck on an earlier inferred step. This shared render
   // path covers VM + This Mac and sending + checking + introducing + monitoring.
   let logEvent = latestBannerEvent(status && status.logs, { phase });
+  const sweepSummary = summarizeLatestMonitoringSweep(
+    status && status.logs,
+    ((status && (status.participatingProfileIds || status.profileIds)) || []).map((id) => {
+      const account = ((cid && _cloudAccountsById.get(cid)) || []).find((a) => a.profileId === id || a.email === id);
+      return (account && account.email) || id;
+    }),
+  );
   // Cloud state and log streams are fetched independently. A normal poll can
   // briefly return an older log snapshot after a newer event was shown. Keep
   // each campaign's banner monotonic instead of visually replaying old work.
@@ -26858,6 +26866,13 @@ function renderLiveStage(root, status) {
   // Idle monitoring returns to its durable "waiting for next check" view.
   const transientCheckEvent = logEvent && ['local-browser-starting', 'account-browser-opening', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
   if (logEvent && phase !== 'done' && !(phase === 'monitoring' && transientCheckEvent)) {
+    if (logEvent.kind === 'check-error' && sweepSummary) {
+      logEvent = {
+        ...logEvent,
+        headline: `Check incomplete — ${sweepSummary.checked} of ${sweepSummary.expected} accounts checked`,
+        detail: `${sweepSummary.accepted} acceptance${sweepSummary.accepted === 1 ? '' : 's'} · ${sweepSummary.introduced} introduction${sweepSummary.introduced === 1 ? '' : 's'} · ${logEvent.detail}`,
+      };
+    }
     ca = { ...(ca || {}), label: logEvent.headline,
       sub: `${logEvent.detail}${logEvent.explanation ? ` · ${logEvent.explanation}` : ''}` };
     // During account rotation the durable action can be one poll behind the
@@ -26899,6 +26914,10 @@ function renderLiveStage(root, status) {
       ca = { ...ca, account: '', accountsDone: scope,
         facts: [['Check', 'complete'], ['Accounts completed', `${scope} of ${scope}`], ['Results', 'saved'], ['Next expected event', 'schedule the next automatic check']],
         milestones: [['Requested', 'complete', 'done'], ['Browsers', 'closed', 'done'], ['Connections', 'loaded', 'done'], ['Acceptances', 'recorded', 'done'], ['Results', 'saved', 'done']] };
+    } else if (logEvent.kind === 'check-error' && sweepSummary) {
+      ca = { ...ca, account: '', accountsDone: sweepSummary.checked,
+        facts: [['Check', 'incomplete'], ['Accounts checked', `${sweepSummary.checked} of ${sweepSummary.expected}`], ['Results', `${sweepSummary.accepted} accepted · ${sweepSummary.introduced} introduced`], ['Operator action', logEvent.detail]],
+        milestones: [['Requested', 'complete', 'done'], ['Accounts', `${sweepSummary.checked} checked`, 'done'], ['Unavailable', `${sweepSummary.expected - sweepSummary.checked} needs action`, 'active'], ['Recovery', 'log in, then Retry', 'future']] };
     }
     la = {
       ...(la || {}), phase,

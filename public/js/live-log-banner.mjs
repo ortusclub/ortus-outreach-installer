@@ -40,6 +40,14 @@ function actionOnlyHeadline(raw) {
 function readablePresentation(line, phase = '', now = new Date()) {
   const clean = line.replace(/^[◷↻⟳⏱]\s*/u, '').trim();
   let m;
+  if ((m = clean.match(/^Check finished with an error\s*[—–-]\s*(?:Action required:\s*)?(.+)$/i))) {
+    return {
+      kind: 'check-error', eyebrow: 'Check incomplete',
+      headline: 'Not every account could be checked',
+      detail: m[1].trim(),
+      explanation: 'Monitoring remains active. Fix the named account before the next check.',
+    };
+  }
   // Older engine rows included a raw UTC timestamp and repeated the entire
   // explanation. Keep those forensic rows intact in the log, but present the
   // same state in the compact human language used by current engine rows.
@@ -170,7 +178,8 @@ function readablePresentation(line, phase = '', now = new Date()) {
 
 export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = {}) {
   if (!Array.isArray(logs)) return null;
-  for (let i = logs.length - 1; i >= 0; i -= 1) {
+  const candidates = [];
+  for (let i = 0; i < logs.length; i += 1) {
     const rawEvent = logs[i];
     let line = String(rawEvent && rawEvent.line != null ? rawEvent.line : rawEvent || '').trim();
     if (!line) continue;
@@ -179,6 +188,10 @@ export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = 
       ? Number(rawEvent.t || rawEvent.at || new Date(rawEvent.ts || rawEvent.timestamp || 0))
       : 0;
     const envelopeTime = envelope ? Number(new Date(envelope[1])) : 0;
+    const clock = line.match(/\s+[·•]\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$/);
+    const clockTime = clock
+      ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(clock[1]), Number(clock[2]), Number(clock[3] || 0)).getTime()
+      : 0;
     // Totals and divider rows are pinned to the bottom of merged logs, so they
     // are not chronological activity and must not permanently own the banner.
     if (/^(?:SUM\b|Σ\s*Total\b|[-—–_─━═]{3,})/iu.test(line)) continue;
@@ -199,7 +212,7 @@ export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = 
     const first = parts[0].trim();
     if (!/[\p{L}\p{N}]/u.test(first)) continue;
     const presentation = readablePresentation(line, phase, now);
-    return {
+    candidates.push({
       line,
       headline: actionOnlyHeadline(presentation.headline || first),
       eyebrow: presentation.eyebrow,
@@ -207,8 +220,29 @@ export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = 
       account: presentation.account || '',
       explanation: presentation.explanation,
       detail: presentation.detail || line,
-      at: objectTime || envelopeTime || 0,
-    };
+      at: objectTime || envelopeTime || clockTime || 0,
+      order: i,
+    });
   }
-  return null;
+  if (!candidates.length) return null;
+  // Merged campaign logs contain both lifecycle rows and lead-derived rows.
+  // Those sources can be appended out of chronological order, so array order
+  // is only a fallback. A real event timestamp is authoritative.
+  const timed = candidates.filter((event) => event.at > 0);
+  if (timed.length) {
+    const newest = timed.reduce((latest, event) => (
+      event.at > latest.at || (event.at === latest.at && event.order > latest.order) ? event : latest
+    ));
+    // Scheduling the next sweep is bookkeeping, not resolution. Keep a fresh
+    // incomplete result visible even though the engine writes "Next check"
+    // immediately after it. A later successful sweep produces a newer terminal
+    // result and naturally clears this warning.
+    if (newest.kind === 'check-waiting') {
+      const error = timed.filter((event) => event.kind === 'check-error')
+        .reduce((latest, event) => (!latest || event.at > latest.at ? event : latest), null);
+      if (error && newest.at - error.at <= 5 * 60 * 1000) return error;
+    }
+    return newest;
+  }
+  return candidates[candidates.length - 1];
 }

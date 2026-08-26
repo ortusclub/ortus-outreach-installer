@@ -19,6 +19,34 @@ test('banner events expose engine time for monotonic rendering', () => {
   assert.equal(object.at, 1787749513000);
 });
 
+test('timestamp truth outranks append order in merged campaign logs', () => {
+  const e = latestBannerEvent([
+    { t: Date.parse('2026-08-26T16:04:00Z'), line: 'ERR Check finished with an error — Action required: manoj.kumar@ortus.solutions: log back into LinkedIn in GoLogin, then Retry' },
+    { t: Date.parse('2026-08-26T16:01:00Z'), line: 'Juan C. Rojas, MD, MS · Connected sent · via sean.alcosin@ortus.solutions' },
+  ]);
+  assert.equal(e.kind, 'check-error');
+  assert.equal(e.headline, 'Not every account could be checked');
+  assert.match(e.detail, /manoj\.kumar@ortus\.solutions/);
+});
+
+test('clock suffixes also prevent an older derived row from replacing a terminal check event', () => {
+  const e = latestBannerEvent([
+    'ERR Check finished with an error — Action required: manoj needs login · 18:04',
+    'Juan C. Rojas · Connected sent · 18:01',
+  ], { now: new Date('2026-08-26T18:10:00+02:00') });
+  assert.equal(e.kind, 'check-error');
+});
+
+test('scheduling the next check does not hide a fresh unresolved sweep error', () => {
+  const e = latestBannerEvent([
+    'ERR Check finished with an error — Action required: manoj needs login · 18:04',
+    'LOG Next check 2026-08-26 16:59 UTC · nothing happens until then, the campaign stays running. · 18:04',
+    'Juan C. Rojas · Connected sent · 18:01',
+  ], { now: new Date('2026-08-26T18:10:00+02:00') });
+  assert.equal(e.kind, 'check-error');
+  assert.match(e.detail, /manoj needs login/i);
+});
+
 test('summary and divider rows never pin the banner', () => {
   assert.equal(latestBannerEvent([
     'Checking account 2',
