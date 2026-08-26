@@ -45,7 +45,7 @@ test('tickMonitoringNow fires when overdue and reschedules by the EXACT cadence 
 // never set under it. participatingProfileIds=[] drives the REAL
 // runMonitoringCheckAll() → it loops zero accounts → a genuine "nothing
 // looked" sweep, with no browser/network involved.
-test('a real tick with zero participating accounts does not advance the streak, and never writes the stretched cadence back into checkIntervalMinutes', async () => {
+test('a zero-account sweep is actionable and retries in ten minutes without changing the base cadence', async () => {
   const past = new Date(Date.now() - 1000);
   _setTestState({
     state: 'monitoring',
@@ -64,10 +64,11 @@ test('a real tick with zero participating accounts does not advance the streak, 
   // survive the tick unchanged — only the (separate) status payload may show
   // the stretched effective value.
   assert.equal(s.checkIntervalMinutes, 60, 'the base cadence must never be overwritten with the stretched value');
-  // The schedule still honors the (unchanged) stretched cadence: 240min out.
+  assert.match(s.monitorCheckError, /no monitoring accounts are configured/i);
+  // An incomplete sweep retries soon instead of disappearing for the stretched cadence.
   const nextMs = new Date(s.nextCheckAt).getTime();
-  assert.ok(nextMs > Date.now() + 239 * 60_000, 'nextCheckAt should be ~240 min out (still-stretched cadence)');
-  assert.ok(nextMs <= Date.now() + 241 * 60_000, 'nextCheckAt should not exceed 240 min + slack');
+  assert.ok(nextMs > Date.now() + 9 * 60_000, 'nextCheckAt should be ~10 min out');
+  assert.ok(nextMs <= Date.now() + 11 * 60_000, 'nextCheckAt should not exceed 10 min + slack');
 });
 
 test('tickMonitoringNow does not reschedule when state changes during fire', async () => {

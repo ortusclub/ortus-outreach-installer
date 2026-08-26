@@ -7829,6 +7829,7 @@ function _buildCloudActiveStatus(c, leads, counts) {
     monitorTaskDueAt: c.monitorTaskDueAt || null,
     monitorCheckStartedAt: c.monitor_check_started_at || null,
     monitorCheckCompletedAt: c.monitor_check_completed_at || null,
+    monitorCheckError: c.monitor_check_error || '',
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
     // The engine sends check_interval_minutes as the EFFECTIVE cadence and the
     // operator's own setting beside it; the difference is what makes the card say
@@ -8012,6 +8013,27 @@ function _cloudCurrentAction(d) {
         || (Number.isFinite(startedAt) && (!Number.isFinite(completedAt) || startedAt > completedAt));
       const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
       const accounts = (c.profile_ids || []).length;
+      const dueAt = Date.parse(c.next_check_at || '');
+      const overdue = Number.isFinite(dueAt) && Date.now() > dueAt + 15 * 60 * 1000;
+      const claimedTooLong = c.monitorTaskStatus === 'claimed' && Number.isFinite(startedAt)
+        && Date.now() > startedAt + 15 * 60 * 1000;
+      if (overdue || claimedTooLong) return {
+        phase: 'monitoring', label: 'Monitoring check is overdue', account: '',
+        lead: 'No successful check completed within the expected window',
+        sub: claimedTooLong
+          ? 'The current check has exceeded 15 minutes. The engine will recover the task automatically; use Run check now if it does not recover.'
+          : 'The VM worker has not completed the scheduled check. Use Run check now; if it remains overdue, the engine needs attention.',
+        safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safe · no invitations are being resent`,
+        facts: [
+          ['Scheduled', Number.isFinite(dueAt) ? new Date(dueAt).toLocaleString([], { hour: '2-digit', minute: '2-digit' }) : 'unknown'],
+          ['Delay', 'more than 15 minutes'], ['Accounts expected', String(accounts)],
+          ['Operator action', 'Run check now'],
+        ],
+        milestones: [
+          ['Scheduled', 'due', 'done'], ['Worker', 'overdue', 'active'],
+          ['Accounts', 'not fully checked', 'future'], ['Recovery', 'Run check now', 'future'],
+        ],
+      };
       if (checking) return {
         phase: 'checking', label: requested && !Number.isFinite(startedAt) ? 'Starting acceptance check' : 'Checking acceptances',
         account: '', lead: requested && !Number.isFinite(startedAt) ? 'Opening the first eligible sender browser' : 'Selecting the next account',
@@ -8040,6 +8062,7 @@ function _cloudCurrentAction(d) {
           && changed <= checkCompleted + 5000;
       });
       const acceptedLast = Math.max(0, Number(c.monitor_check_newly_accepted) || 0);
+      const checkError = String(c.monitor_check_error || '').trim();
       const introducedLast = checkedLeads.filter((lead) => {
         const value = String((lead && lead.introductionStatus) || '').trim();
         return value && !/fail|error|not in your connections|couldn'?t|unable/i.test(value);
@@ -8051,18 +8074,22 @@ function _cloudCurrentAction(d) {
       const hasCompletedCheck = Number.isFinite(checkCompleted);
       return {
         phase: 'monitoring',
-        label: hasCompletedCheck
+        label: checkError
+          ? 'Monitoring needs attention'
+          : hasCompletedCheck
           ? `Last check complete — ${introducedLast} introduction${introducedLast === 1 ? '' : 's'} sent`
           : 'Nothing is running right now — this is expected',
         account: '', lead: 'Waiting between acceptance checks',
-        sub: hasCompletedCheck
+        sub: checkError
+          ? checkError
+          : hasCompletedCheck
           ? `${resultBits.join(' · ')} · next check ${next}`
           : 'No browser stays open between sweeps · the VM starts the next check automatically',
         safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safely queued · sending is stopped`,
         facts: [
-          ['Last check', last], ['Last check result', hasCompletedCheck ? resultBits.join(' · ') : 'not run yet'],
+          ['Last check', last], ['Last check result', checkError || (hasCompletedCheck ? resultBits.join(' · ') : 'not run yet')],
           ['Next check', next],
-          ['Scope', `${accounts} campaign account${accounts === 1 ? '' : 's'}`], ['Operator action', 'none required'],
+          ['Scope', `${accounts} campaign account${accounts === 1 ? '' : 's'}`], ['Operator action', checkError ? 'Follow the account instruction, then Retry' : 'none required'],
         ],
         milestones: [
           ['Last check', hasCompletedCheck ? 'complete' : 'not run yet', hasCompletedCheck ? 'done' : 'future'],
@@ -8552,6 +8579,10 @@ function renderCloudAccountsPanel(id) {
     // spent. Not a blocker, so it sits after the tally rather than replacing the
     // status badge — the campaign is running, the note just isn't attached.
     if (a.noteExhausted) badges.push(badge('warn', '✉ No note — free personalised invites used up'));
+    if (a.lastMonitorSuccessAt) {
+      const checked = new Date(a.lastMonitorSuccessAt);
+      if (!Number.isNaN(checked.getTime())) badges.push(badge('muted', `Last checked ${checked.toLocaleString([], { hour: '2-digit', minute: '2-digit' })}`));
+    }
     // Primary-connection (CC+IC only; null when N/A).
     if (a.primaryConnected === true) badges.push(badge('ok', '🔗 Connected to primary'));
     else if (a.primaryConnected === false) badges.push(badge('muted', 'Primary not yet connected'));
@@ -26393,10 +26424,13 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
     : a.bench ? ` · ${escHtml(String(a.bench))} — sits out the rest of this run, retries next run`
     : weekly ? ` · LinkedIn weekly invitation cap — resets ${_nextMondayText()}`
     : a.parkReason === 'throttle' ? ' · rate-limited, backing off' : '';
+  const lastMonitor = a.lastMonitorSuccessAt && !Number.isNaN(new Date(a.lastMonitorSuccessAt).getTime())
+    ? ` Last successful acceptance check: ${new Date(a.lastMonitorSuccessAt).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}.`
+    : '';
   return `<div class="stg-drawer"><div class="dh"><b>${email}</b>${st}`
     + `<span class="x" onclick="stageAcctPick(this,'')">✕ close</span></div>`
     + `<div class="dl">${a.dailyCount || 0}/${a.dailyLimit || 0} sent today${why}<br>`
-    + `${isCurrent ? 'Currently driving this campaign on the VM.' : 'Not currently driving anything.'}</div>`
+    + `${isCurrent ? 'Currently driving this campaign on the VM.' : 'Not currently driving anything.'}${lastMonitor}</div>`
     + (acts.length ? `<div class="acts">${acts.join('')}</div>` : '') + '</div>';
 }
 
@@ -27902,6 +27936,7 @@ function v3RenderMonitorHero(status) {
   }
   const lineEl = document.getElementById('monLine');
   if (lineEl) {
+    const monitorError = String(status.monitorCheckError || '').trim();
     const sent = Number(status.totalProcessed) || 0;
     const accepted = status.acceptedCount ?? '—';
     const cadMin = Number(status.checkIntervalMinutes) || 60;
@@ -27911,7 +27946,9 @@ function v3RenderMonitorHero(status) {
       ends = new Date(status.monitoringUntil).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
     }
     // Bug 10: "replies" removed from the dashboard.
-    lineEl.innerHTML = _monLineHtml(sent, accepted, cad, ends, status.followUp);
+    lineEl.innerHTML = monitorError
+      ? `<b style="color:var(--red)">Monitoring needs attention</b> · ${escHtml(monitorError)}`
+      : _monLineHtml(sent, accepted, cad, ends, status.followUp);
   }
   // v2.160.35: follow-up dual hero — the ETA stands beside the check timer.
   const fu = status.followUp;

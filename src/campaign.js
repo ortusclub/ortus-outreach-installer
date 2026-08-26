@@ -6449,6 +6449,7 @@ export function getCampaignStatus() {
     phase: campaign.phase || null,
     monitoringUntil: campaign.monitoringUntil || null,
     nextCheckAt: campaign.nextCheckAt || null,
+    monitorCheckError: campaign.monitorCheckError || '',
     // v2.52.0: surface the operator-chosen cadence so the cockpit tips +
     // the dashboard Monitoring tab show the ACTUAL running value, not the
     // wizard dropdown's default. Was missing entirely → tips fell back to
@@ -6791,6 +6792,8 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
         const summary = summarizeMonitoringSweep(results);
         campaign._lastCheckNewlyAccepted = summary.newlyAccepted;
         campaign._lastCheckLooked = summary.looked;
+        campaign._lastCheckIncomplete = !checkOutcome.ok;
+        campaign.monitorCheckError = checkOutcome.error || '';
       }
     } catch (err) {
       console.warn('[monitoring-tick] runMonitoringCheckAll threw:', err.message);
@@ -6811,7 +6814,7 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
           });
         }
         const cadenceMin = checkCadenceMin({ baseMin, emptyStreak: campaign.emptyCheckStreak });
-        const ms = cadenceMin * 60_000;
+        const ms = campaign._lastCheckIncomplete ? 10 * 60_000 : cadenceMin * 60_000;
         // v2.14.x: schedule the next tick from the PREVIOUS nextCheckAt
         // boundary, not from "now" (which is whenever the bulk-check
         // happened to finish). Without this, a 1-2 min bulk-check
@@ -7210,5 +7213,19 @@ export async function runMonitoringCheckAll() {
   }
   campaign._monitoringAccountDone = 0;
   campaign._monitoringAccountTotal = 0;
-  return { ok: true, results };
+  if (!monitoringProfiles.length) {
+    return { ok: false, results, error: 'Action required: no monitoring accounts are configured. Add or restore an eligible sender.' };
+  }
+  const available = results.filter((r) => !r.skipped);
+  const failed = available.filter((r) => !r.ok || r.error);
+  const unavailable = results.filter((r) => r.skipped);
+  const actions = [];
+  for (const r of failed) actions.push(`${r.profileId}: ${r.error || 'recent-connections data was not retrieved'}; open the account and retry`);
+  for (const r of unavailable) actions.push(`${r.profileId}: ${r.note || r.reason}; restore or replace this account`);
+  const complete = available.length > 0 && failed.length === 0;
+  return {
+    ok: complete,
+    results,
+    error: actions.length ? `${complete ? 'Action required' : 'Incomplete check'}: ${actions.join(' | ')}` : '',
+  };
 }
