@@ -136,6 +136,15 @@ prototyping new layouts before committing to changes in `index.html`). When you 
 a sketch, name it `<area>-<variant>.html` (e.g. `sheet-A-single-stage.html`) and
 index it from `public/sketches/index.html`.
 
+**Current visual baseline (v3.1.48.1+):** Every graphical change and sketch must
+start from the latest expanded campaign strip in the running Electron app: full-width
+strip, operational stage panel, four-step timeline, RUNNING ON segmented control,
+inline controls, and live log. Do not revive older floating-card campaign layouts.
+Use a red left status edge for stopped, failed, interrupted, and forced-recovery states.
+Keep every graphical change easy to understand: use plain language, one clear decision
+at a time, existing components, and progressive disclosure. Do not add controls or
+visual complexity unless they resolve a concrete operator problem.
+
 **Visual companion mode** of brainstorming — when a design question is genuinely
 visual (mockup comparisons, layout choices), brainstorming can open a local browser
 URL to show options. Token-intensive; the operator must explicitly accept the offer
