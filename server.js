@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
+import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
@@ -1587,11 +1587,27 @@ function memoCloud(key, fetcher, { ttlMs = CLOUD_MEMO_TTL_MS, onFresh } = {}) {
 }
 
 
-// Any cloud mutation (start, cancel, unbench, account edits) must be visible on
-// the next poll, not up to a TTL later — so every non-GET under /api/campaign
-// drops the memo.
+// Mutations invalidate only the affected campaign lanes. Clearing the entire
+// board cache made an account retry trigger a new 89-campaign fan-out.
 app.use('/api/campaign', (req, _res, next) => {
-  if (req.method !== 'GET') _cloudMemo.clear();
+  if (req.method !== 'GET') {
+    _cloudMemo.delete('capacity');
+    for (const key of _cloudMemo.keys()) {
+      if (key.startsWith('list:')) _cloudMemo.delete(key);
+    }
+    const match = req.path.match(/^\/cloud\/([^/]+)/);
+    if (match) {
+      const id = decodeURIComponent(match[1]);
+      _cloudMemo.delete(`campaign:${id}`);
+      _cloudMemo.delete(`leads:${id}`);
+      _cloudMemo.delete(`accounts:${id}`);
+    }
+    if (req.path.includes('preflight') || req.path.includes('accounts')) {
+      for (const key of _cloudMemo.keys()) {
+        if (key.startsWith('preflight:')) _cloudMemo.delete(key);
+      }
+    }
+  }
   next();
 });
 
@@ -1623,6 +1639,33 @@ app.get('/api/campaign/cloud-capacity', async (_req, res) => {
   const r = await memoCloud('capacity', () => getCloudCapacity());
   if (r.error) return res.json({ queue: [], unavailable: true });
   res.json(r);
+});
+
+// One browser request supplies the board's list, detail snapshots and global
+// capacity. Server-side memo lanes still refresh independently and with bounded
+// concurrency, without occupying the Electron renderer's connection pool.
+app.get('/api/campaign/cloud-board-summary', async (req, res) => {
+  const list = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
+  if (list && list.error) return res.status(502).json(list);
+  const campaigns = Array.isArray(list?.campaigns) ? list.campaigns : [];
+  const details = {};
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < campaigns.length) {
+      const id = campaigns[nextIndex++]?.id;
+      if (!id) continue;
+      try {
+        const value = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
+          onFresh: (fresh) => { reconcilePrimaryHandshake(id, fresh).catch(() => {}); },
+        });
+        if (value && !value.error) details[id] = value;
+      } catch { /* preserve the usable remainder of the board */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, campaigns.length) }, worker));
+  const live = campaigns.some((c) => ['queued', 'running', 'stopping', 'monitoring', 'paused'].includes(c.status));
+  const capacity = live ? await memoCloud('capacity', () => getCloudCapacity()) : { queue: [] };
+  res.json({ campaigns, details, capacity: capacity?.error ? { queue: [], unavailable: true } : capacity });
 });
 // Per-account block truth for the Waiting card and the Start prompt.
 //
@@ -5073,6 +5116,13 @@ app.post('/api/campaign/stop', async (req, res) => {
   const immediate = !!req.body?.immediate;
   const result = stopCampaign({ full: fullHalt });
   const stopState = campaign.running ? _campaignStopWatchdog.arm({ generation: campaign._generation }) : _campaignStopWatchdog.status();
+  let tracking = { ok: true };
+  if (fullHalt) {
+    tracking = await Promise.race([
+      stopCampaignBackgroundTracking(),
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'Background checks did not confirm stop within 10 seconds.' }), 10000)),
+    ]);
+  }
   // v2.14.x: ALSO flip the abort flags for Check DMs and Post Amplification.
   // The bottom-bar Stop button posts to /api/campaign/stop regardless of
   // which subsystem is currently running (the cockpit overlay sets
@@ -5091,7 +5141,7 @@ app.post('/api/campaign/stop', async (req, res) => {
   // v2.14.x: respond to the UI immediately so the dashboard flips to
   // 'stopping' without waiting for the browser-close round-trip. The actual
   // browser kill runs after a short drain window — see comment block below.
-  res.json({ ...result, stopping: campaign.running, stopRequestedAt: stopState.requestedAt, stopDeadlineAt: stopState.deadlineAt });
+  res.status(tracking.ok ? 200 : 502).json({ ...result, tracking, stopping: campaign.running, stopRequestedAt: stopState.requestedAt, stopDeadlineAt: stopState.deadlineAt });
 
   // v2.14.x: drain-then-kill instead of kill-then-loop-discovers-it.
   //
@@ -7885,7 +7935,7 @@ app.get('/api/export/csv', async (_req, res) => {
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
-app.listen(PORT, async () => {
+app.listen(PORT, '127.0.0.1', async () => {
   console.log(`\n  ✦ Ortus Outreach v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   startAmbientSampling(getActiveBrowserPids);

@@ -28,10 +28,10 @@ import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { fgActiveDoor, fgActivePayload } from '/js/fg-source.mjs';
 import { fgEyebrowWithPage } from '/js/fg-eyebrow.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.3';
+import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.7';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.3';
+import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.7';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -10950,7 +10950,7 @@ async function _refreshCloudItems() {
   // over a board that is perfectly live.
   let listOk = false;
   try {
-    const _res = await fetch('/api/campaign/cloud-list');
+    const _res = await fetch('/api/campaign/cloud-board-summary');
     const cl = await _res.json();
     // The engine answers a failed list with 502 + {error}, which fetch does NOT
     // throw on. Reading `.campaigns` off it yields undefined, and the old `|| []`
@@ -10976,10 +10976,7 @@ async function _refreshCloudItems() {
     // ceiling that froze the board once — so an unconditional fetch here would
     // cost a connection every 2.5s to re-learn a constant.
     const _vmLive = cloudCamps.some((c) => ['queued', 'running', 'monitoring', 'paused'].includes(c.status));
-    if (_vmLive) {
-      try { _cloudCapacity = await (await fetch('/api/campaign/cloud-capacity')).json(); }
-      catch { _cloudCapacity = { queue: [], unavailable: true }; }
-    }
+    if (_vmLive) _cloudCapacity = cl.capacity || { queue: [], unavailable: true };
     renderVmTile(_vmLive);
     // Everything that still needs refreshing comes back in ONE request. Asking
     // per campaign meant 89 of them, which pinned the browser at its six
@@ -10990,12 +10987,14 @@ async function _refreshCloudItems() {
       return Boolean(cached && cached.campaign && ['done', 'cancelled', 'error'].includes(cached.campaign.status));
     };
     const _needIds = cloudCamps.filter((c) => !_isFresh(c)).map((c) => c.id);
-    let _bulk = {};
+    let _bulk = (cl && cl.details) || {};
     if (_needIds.length) {
+      const _missingIds = _needIds.filter((id) => !_bulk[id]);
       try {
-        const br = await (await fetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(_needIds.join(','))}`)).json();
-        _bulk = (br && br.details) || {};
-      } catch { /* fall back to the per-campaign path below */ }
+        if (!_missingIds.length) throw new Error('summary complete');
+        const br = await (await fetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(_missingIds.join(','))}`)).json();
+        _bulk = { ..._bulk, ...((br && br.details) || {}) };
+      } catch { /* summary was complete, or per-id fallback runs below */ }
     }
     _cloudRaw = await _mapLimit(cloudCamps, CLOUD_FANOUT_LIMIT, async (c) => {
       let d;
@@ -11126,7 +11125,12 @@ async function _renderCampaignsBoardInner() {
     // Feed the dashboard the same normalized local snapshot used by Campaign
     // Builder card #2. Consuming the raw payload here bypassed the synthesized
     // five-stage recorder after reopening the app.
-    const s = _decorateLocalLiveStatus(await (await fetch('/api/campaign/status')).json());
+    const _cachedLocal = _localLive && (Date.now() - Number(_localLive.lastVerifiedAt || 0) < 5000)
+      ? _localLive
+      : null;
+    const s = _decorateLocalLiveStatus(_cachedLocal || await (await fetch('/api/campaign/status')).json());
+    s.lastVerifiedAt = s.lastVerifiedAt || Date.now();
+    _localLive = s;
     if (s && !s.running && s.state !== 'monitoring' && Array.isArray(s.logs) && s.logs.length) {
       _endedLogs = s.logs; _endedName = s.name || '';
     }
@@ -11231,11 +11235,12 @@ async function _renderCampaignsBoardInner() {
       // 'scheduled' — dispatched to the VM with a start time; the engine holds it
       // and starts it itself. Same bucket as queued, and scheduledAt makes the
       // strip read "Scheduled · <when>" (the shape the local queue already uses).
-      const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused') ? 'running'
+      const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing') ? 'running'
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
         paused: c.status === 'paused',
+        stopping: c.status === 'stopping' || c.status === 'pausing',
         monitoringPhase: c.status === 'monitoring' && String(c.runs_on || '') === 'local',
         pausedAt: c.paused_at || null,
         // Live-browser flag from the engine (top-level of the /:id detail, NOT
@@ -11675,10 +11680,14 @@ function startCampaignsBoard() {
   renderCampaignsBoard();
   _refreshCloudItems();   // kick a background cloud fetch (renders again when it lands)
   if (_campaignsBoardTimer) clearInterval(_campaignsBoardTimer);
-  _campaignsBoardTimer = setInterval(renderCampaignsBoard, 4000);
+  _campaignsBoardTimer = setInterval(() => {
+    if (!document.hidden) renderCampaignsBoard();
+  }, 4000);
   // Cloud snapshot refreshes on its own slower timer — off the render path.
   if (_cloudRefreshTimer) clearInterval(_cloudRefreshTimer);
-  _cloudRefreshTimer = setInterval(_refreshCloudItems, 5000);
+  _cloudRefreshTimer = setInterval(() => {
+    if (!document.hidden) _refreshCloudItems();
+  }, 5000);
 }
 window.startCampaignsBoard = startCampaignsBoard;
 
@@ -14471,7 +14480,11 @@ function formatMode(m) {
 }
 
 // 250ms client-side tick keeps the countdown smooth without re-polling.
-setInterval(renderCockpit, 250);
+setInterval(() => {
+  if (document.hidden) return;
+  if (!__cockpit.running && __cockpit.state !== 'monitoring') return;
+  renderCockpit();
+}, 1000);
 
 // Phase 11.2 (D-18): un-hide all active browser processes (debug aid).
 // Calls the session-gated POST /api/browsers/show shipped in Plan 01.
@@ -18741,7 +18754,7 @@ function startDashboardPolling() {
       // away and back. Paint directly here every 5s so the tile reflects
       // reality even when pollStatus is dead.
       try {
-        const s = await fetch('/api/campaign/status').then(r => r.json());
+        const s = _localLive || await fetch('/api/campaign/status').then(r => r.json());
         if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
         if (typeof window.renderMonitoringCard === 'function') window.renderMonitoringCard(s);
         maybeShowCampaignDoneModal(s);

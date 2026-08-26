@@ -71,6 +71,7 @@ import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import { plainLine } from './log-voice.js';
 import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy } from './runtime-interruption.js';
+import { writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
 import {
   sample as rmSample,
   decideThrottle,
@@ -266,33 +267,17 @@ export function shouldFireIdleBulkCheck(ctx) {
 }
 
 async function appendHistory(entry) {
-  let history = [];
-  try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf8')); } catch { /* first run */ }
-  // v2.58.x — same-name dedup. When a campaign ends, any earlier history
-  // entry with the same `name` is removed so the dashboard shows one row
-  // per campaign (latest run wins). Matches the operator's "I keep
-  // seeing the same campaign twice" complaint. Case- and whitespace-
-  // insensitive match; entries with blank names are never deduped (those
-  // are typically one-off ad-hoc runs that shouldn't collapse together).
-  const name = (entry?.name || '').toString().trim().toLowerCase();
-  if (name) {
-    const before = history.length;
-    history = history.filter(h => ((h?.name || '').toString().trim().toLowerCase()) !== name);
-    const removed = before - history.length;
-    if (removed > 0) {
-      console.log(`[history] same-name dedup: removed ${removed} older entr${removed === 1 ? 'y' : 'ies'} for "${entry.name}"`);
-    }
-  }
-  history.push(entry);
-  await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2));
+  await updateJsonAtomic(HISTORY_PATH, [], (value) => {
+    const history = Array.isArray(value) ? value : [];
+    history.push({ ...entry, runId: entry.runId || `${entry.startedAt || entry.date || Date.now()}-${Math.random().toString(36).slice(2, 9)}` });
+    return history;
+  });
 }
 
 // Data directory creation is handled centrally in src/paths.js.
 
 async function loadState() {
-  let s;
-  try { s = JSON.parse(await readFile(STATE_FILE, 'utf8')); }
-  catch { return { processed: {}, dailyCounts: {} }; }
+  const s = await readJson(STATE_FILE, { processed: {}, dailyCounts: {} });
   // Phase 2.8.20 (W3-D1): prune entries older than retention window.
   // Done at load (not save) so the trim happens once per process startup
   // rather than on every campaign-step persistence.
@@ -310,7 +295,7 @@ async function loadState() {
   }
   return s;
 }
-async function saveState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null, 2)); }
+async function saveState(s) { await writeJsonAtomic(STATE_FILE, s); }
 
 // Bulk-check cooldown helpers. Stored as { "<sheetId>|<profileId>": timestamp }
 // so different sheets don't share a single profile's cooldown.
@@ -973,6 +958,10 @@ function _primaryIntroAllowed(profileId) {
 
 export const campaign = {
   id: SINGLETON_CAMPAIGN_ID,
+  // A stable registry slot is retained for compatibility; every actual run
+  // receives its own identity so history, logs and recovery never infer runs
+  // from a mutable campaign name.
+  executionId: null,
   running: false,
   _abort: false,
   // Stop THIS acceptance check, not the campaign. _abort tears the whole run
@@ -2029,6 +2018,7 @@ export function setLiveCadence(min) {
 }
 
 export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
+  campaign.executionId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   clearRuntimeInterruption();
   if (campaign.running) throw new Error('Campaign already running');
 
@@ -5538,6 +5528,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // Save campaign history (D-10)
     try {
       await appendHistory({
+        runId: campaign.executionId,
+        executionId: campaign.executionId,
         date: new Date().toISOString(),
         name: campaign.name || '',
         mode: campaign.mode,
@@ -5926,12 +5918,8 @@ export function stopCampaign({ full = false, reason = 'operator-stopped' } = {})
     // Preserve the snapshot until the operator deletes/abandons the campaign.
     // A forced stop may still need it after Electron restarts; clearing it here
     // made the promised Continue action impossible precisely on the worst path.
-    const _sid = _extractSheetIdFromUrl(campaign.sheetUrl);
-    const _pids = (campaign.profileIds || []).slice();
-    if (_sid) {
-      removeReplySchedules(_sid, _pids).catch(() => {});
-      removeBulkSchedules(_sid, _pids).catch(() => {});
-    }
+    // Background schedules are removed by stopCampaignBackgroundTracking(),
+    // which the HTTP route awaits with a deadline before claiming full stop.
   }
   log(full
     ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
@@ -5939,6 +5927,20 @@ export function stopCampaign({ full = false, reason = 'operator-stopped' } = {})
   // P-02 fix (2.8.18): return a real shape instead of undefined so
   // /api/campaign/stop sends `{ok:true}` like every other endpoint.
   return { ok: true, full: !!full };
+}
+
+export async function stopCampaignBackgroundTracking() {
+  const sheetId = _extractSheetIdFromUrl(campaign.sheetUrl);
+  const profileIds = (campaign.profileIds || []).slice();
+  if (!sheetId) return { ok: true, removed: false };
+  const results = await Promise.allSettled([
+    removeReplySchedules(sheetId, profileIds),
+    removeBulkSchedules(sheetId, profileIds),
+  ]);
+  const failed = results.filter((r) => r.status === 'rejected');
+  return failed.length
+    ? { ok: false, error: failed.map((r) => r.reason?.message || String(r.reason)).join('; ') }
+    : { ok: true, removed: true };
 }
 
 // Phase 2.8.9: pause/resume.

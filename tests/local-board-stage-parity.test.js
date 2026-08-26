@@ -5,8 +5,9 @@ import fs from 'node:fs';
 const source = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
 
 test('dashboard normalizes its local snapshot before constructing card #2', () => {
-  assert.match(source,
-    /const s = _decorateLocalLiveStatus\(await \(await fetch\('\/api\/campaign\/status'\)\)\.json\(\)\);/);
+  assert.match(source, /const s = _decorateLocalLiveStatus\(_cachedLocal \|\| await/);
+  assert.match(source, /_localLive = s;/,
+    'the normalized result must become the shared snapshot for all dashboard consumers');
 });
 
 test('native local board row carries the complete shared stage contract', () => {

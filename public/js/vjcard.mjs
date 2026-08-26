@@ -1,4 +1,5 @@
 import { terminalPresentation } from './campaign-terminal.mjs';
+import { normalizeLifecycle } from './campaign-lifecycle.mjs';
 
 // Pure helpers for rendering card #2 (the .vj-card live-status card) inside an
 // EXPANDED dashboard strip — browser-safe (no DOM), so app.js imports them and
@@ -12,18 +13,25 @@ import { terminalPresentation } from './campaign-terminal.mjs';
 /** Map a board item (renderUnifiedStrip `it`) → the status shape fillVjCard/
  *  renderActiveCard consume. Mirrors _buildCloudActiveStatus's shape. */
 export function statusFromItem(it = {}) {
+  const lifecycle = normalizeLifecycle(it);
   const ownedLocal = String(it.runsOn || '') === 'local';
   const cloud = it.where === 'cloud' && !ownedLocal;
   // Monitoring is a campaign phase, not a VM-only location and not a synonym
   // for Pause. The same durable phase must select the same card on either side
   // of a handover.
   const monitoring = !!it.monitoring || !!it.monitoringPhase;
+  const stopping = !!it.stopping;
   const state = (it.interrupted || it.waitingForLocal) ? 'interrupted'
+    : stopping ? 'stopping'
     : monitoring ? 'monitoring'
     : it.bucket === 'done' ? 'done'
     : it.bucket === 'queued' ? 'queued'
     : undefined;
   return {
+    lifecycle,
+    executionId: lifecycle.executionId,
+    needsReview: lifecycle.needsReview,
+    reviewAction: lifecycle.reviewAction,
     _cloud: cloud,
     id: it.id,
     rawId: it.rawId,
@@ -134,6 +142,7 @@ export function vjCardFields(status = {}) {
   const isDone = s.state === 'done';
   const isQueued = s.state === 'queued';
   const isInterrupted = s.state === 'interrupted' || !!s.interrupted;
+  const isStopping = s.state === 'stopping';
   const done = Number(s.totalProcessed) || 0;
   const total = Number(s.totalTargets) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
@@ -150,6 +159,7 @@ export function vjCardFields(status = {}) {
   const isWaiting = !isMonitor && !isDone && !isQueued && !s.bad
     && !!(s.currentAction && s.currentAction.phase === 'waiting');
   const eyebrow = isInterrupted ? 'Stopped · This Mac unavailable'
+    : isStopping ? 'Stopping…'
     : s.bad ? (s.badLabel || 'Stopped')
     : isMonitor ? 'Monitoring'
     : isQueued ? 'Queued'
@@ -157,6 +167,7 @@ export function vjCardFields(status = {}) {
     : isWaiting ? 'Waiting'
     : (s.paused ? 'Paused' : 'Running');
   const sendingLbl = isInterrupted ? 'Stopped safely'
+    : isStopping ? 'Finishing the current lead'
     : isMonitor ? (s.monitoringCheckInProgress ? 'Checking now' : 'Waiting between checks')
     : isDone ? terminal.activity
     : isQueued ? 'Queued'

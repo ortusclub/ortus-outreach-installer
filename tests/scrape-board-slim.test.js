@@ -111,7 +111,9 @@ test('cloud detail is fetched in one request, not one per campaign', () => {
   // The memo must not be per-request: a cache hit re-running reconcile on every
   // poll is exactly the load this removes.
   assert.match(SERVER, /function memoCloud\(key, fetcher, \{ ttlMs = CLOUD_MEMO_TTL_MS, onFresh \} = \{\}\)/);
-  assert.match(SERVER, /if \(req\.method !== 'GET'\) _cloudMemo\.clear\(\);/);
+  assert.doesNotMatch(SERVER, /if \(req\.method !== 'GET'\) _cloudMemo\.clear\(\);/);
+  assert.match(SERVER, /_cloudMemo\.delete\(`campaign:\$\{id\}`\)/);
+  assert.match(SERVER, /app\.get\('\/api\/campaign\/cloud-board-summary'/);
 });
 
 test('the FG status poll runs one chain, not one per entry point', () => {

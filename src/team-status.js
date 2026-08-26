@@ -21,7 +21,7 @@
  */
 export function bucketForCloudStatus(status) {
   const s = String(status || '').toLowerCase();
-  if (s === 'running') return 'running';
+  if (s === 'running' || s === 'stopping' || s === 'pausing') return 'running';
   if (s === 'pending' || s === 'queued') return 'queued';
   return 'done';
 }
