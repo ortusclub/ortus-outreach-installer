@@ -23,6 +23,8 @@ export function statusFromItem(it = {}) {
   const stopping = !!it.stopping;
   const state = (it.interrupted || it.waitingForLocal) ? 'interrupted'
     : stopping ? 'stopping'
+    : it.dailyWait ? 'waiting_daily_reset'
+    : it.needsReview ? 'needs_review'
     : monitoring ? 'monitoring'
     : it.bucket === 'done' ? 'done'
     : it.bucket === 'queued' ? 'queued'
@@ -38,7 +40,7 @@ export function statusFromItem(it = {}) {
     // A released VM row can remain status='running' while ownership is local.
     // When the local singleton is not actually active that word is only the
     // engine's frozen handover record, not proof that work is happening here.
-    running: it.bucket === 'running' && !monitoring && !it.waitingForLocal,
+    running: it.bucket === 'running' && !monitoring && !it.waitingForLocal && !it.dailyWait && !it.needsReview,
     state,
     name: it.name,
     mode: it.mode,
@@ -46,6 +48,10 @@ export function statusFromItem(it = {}) {
     totalTargets: Number(it.total) || 0,
     totalProcessed: Number(it.sent) || 0,
     pending: Number(it.pending) || 0,
+    dailyWait: !!it.dailyWait,
+    needsReview: !!it.needsReview,
+    engineStatus: it.engineStatus || '',
+    resumeAt: it.resumeAt || null,
     accountsCount: Number(it.accounts) || 0,
     // The live stage counts accounts from these, not from accountsCount — a
     // board strip that only carried the number showed "0 accounts" beside a
@@ -201,7 +207,9 @@ export function vjCardControlsFor(status = {}) {
   const done = s.state === 'done';
   const queued = s.state === 'queued';
   const interrupted = s.state === 'interrupted' || !!s.interrupted;
-  const running = !monitor && !done && !queued && !interrupted;
+  const dailyWait = s.state === 'waiting_daily_reset';
+  const needsReview = s.state === 'needs_review';
+  const running = !monitor && !done && !queued && !interrupted && !dailyWait && !needsReview;
 
   // Running cloud → read-only wizard WITH the campaign's Live Status card #2
   // bound and open; STOPPED/cancelled cloud → the setup wizard prefilled + fully
@@ -240,6 +248,12 @@ export function vjCardControlsFor(status = {}) {
     // to a local runtime that has since disappeared. Open the durable record,
     // never the now-empty local singleton.
     if (id && id !== 'local-active') c.open = { onclick: `openRunningCampaignReadOnly('${id}')` };
+    return c;
+  }
+
+  if (dailyWait || needsReview) {
+    c.open = { onclick: cloud ? `openRunningCampaignReadOnly('${id}')` : 'viewRunningCampaign()' };
+    c.stop = { tip: 'Stop permanently', onclick: cloud ? `stopCloudCampaignUI('${id}')` : 'window.dashStopActive && window.dashStopActive()' };
     return c;
   }
 

@@ -16,12 +16,25 @@ let _max = 2;
 let _count = 0;
 const _waiters = [];
 
-export async function acquire() {
+export async function acquire({ signal } = {}) {
+  if (signal?.aborted) throw signal.reason || new Error('browser slot cancelled');
   if (_count < _max) {
     _count++;
     return;
   }
-  return new Promise(resolve => _waiters.push(resolve));
+  return new Promise((resolve, reject) => {
+    const waiter = () => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      const index = _waiters.indexOf(waiter);
+      if (index !== -1) _waiters.splice(index, 1);
+      reject(signal.reason || new Error('browser slot cancelled'));
+    };
+    _waiters.push(waiter);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 export function release() {

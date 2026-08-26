@@ -28,10 +28,10 @@ import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { fgActiveDoor, fgActivePayload } from '/js/fg-source.mjs';
 import { fgEyebrowWithPage } from '/js/fg-eyebrow.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.7';
+import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.7';
+import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.8';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -11131,7 +11131,7 @@ async function _renderCampaignsBoardInner() {
     const s = _decorateLocalLiveStatus(_cachedLocal || await (await fetch('/api/campaign/status')).json());
     s.lastVerifiedAt = s.lastVerifiedAt || Date.now();
     _localLive = s;
-    if (s && !s.running && s.state !== 'monitoring' && Array.isArray(s.logs) && s.logs.length) {
+    if (s && !s.running && s.state !== 'monitoring' && s.state !== 'waiting_daily_reset' && Array.isArray(s.logs) && s.logs.length) {
       _endedLogs = s.logs; _endedName = s.name || '';
     }
     // An ADOPTED cloud campaign lives on this Mac but still has its row in
@@ -11142,12 +11142,15 @@ async function _renderCampaignsBoardInner() {
     // MONITORING/VM. The cloud strip is the real one; card #2 already overlays
     // the live local state onto it.
     const _adopted = s && s.id && s.id !== 'legacy-singleton';
-    if (s && (s.running || s.state === 'monitoring' || s.state === 'interrupted') && !_adopted) {
+    if (s && (s.running || s.state === 'monitoring' || s.state === 'interrupted' || s.state === 'waiting_daily_reset') && !_adopted) {
       items.push({
         where: 'local', id: 'local-active', name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
         bucket: 'running', sent: s.totalProcessed || 0, total: s.totalTargets || 0,
         pending: Math.max(0, (Number(s.totalTargets) || 0) - (Number(s.totalProcessed) || 0)),
         interrupted: s.state === 'interrupted' || !!s.interrupted,
+        dailyWait: s.state === 'waiting_daily_reset',
+        resumeAt: s.resumeAt || null,
+        engineStatus: s.state || '',
         interruption: s.interruption || null,
         accounts: (s.profileIds || []).length, mine: true,
         profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
@@ -11191,9 +11194,11 @@ async function _renderCampaignsBoardInner() {
   try {
     const q = await (await fetch('/api/queue')).json();
     for (const it of (q.queue || [])) {
+      if (it.dailyContinuation && _localLive?.state === 'waiting_daily_reset') continue;
       items.push({ where: 'local', id: 'q-' + it.id, rawId: it.id, name: it.name, mode: it.mode,
-        isFG: it.mode === 'follower_growth', bucket: 'queued', accounts: (it.profileIds || []).length,
-        mine: true, scheduledAt: it.scheduledAt || null });
+        isFG: it.mode === 'follower_growth', bucket: it.dailyContinuation ? 'running' : 'queued', accounts: (it.profileIds || []).length,
+        mine: true, scheduledAt: it.scheduledAt || null, dailyWait: !!it.dailyContinuation,
+        resumeAt: it.scheduledAt || null, engineStatus: it.dailyContinuation ? 'waiting_daily_reset' : 'queued' });
     }
   } catch (_) { /* */ }
 
@@ -11235,11 +11240,15 @@ async function _renderCampaignsBoardInner() {
       // 'scheduled' — dispatched to the VM with a start time; the engine holds it
       // and starts it itself. Same bucket as queued, and scheduledAt makes the
       // strip read "Scheduled · <when>" (the shape the local queue already uses).
-      const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing') ? 'running'
+      const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing' || c.status === 'waiting_daily_reset' || c.status === 'needs_review') ? 'running'
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
         paused: c.status === 'paused',
+        dailyWait: c.status === 'waiting_daily_reset',
+        needsReview: c.status === 'needs_review',
+        engineStatus: c.status || '',
+        resumeAt: c.resumeTaskDueAt || null,
         stopping: c.status === 'stopping' || c.status === 'pausing',
         monitoringPhase: c.status === 'monitoring' && String(c.runs_on || '') === 'local',
         pausedAt: c.paused_at || null,
@@ -27287,6 +27296,8 @@ window.renderActiveCard = function(status) {
   // monitoring story; the cockpit ring already handled this state).
   const isMonitoring = !!(status && !status.running && status.state === 'monitoring');
   const isInterrupted = !!(status && (status.state === 'interrupted' || status.interrupted));
+  const isDailyWait = !!(status && status.state === 'waiting_daily_reset');
+  const isNeedsReview = !!(status && status.state === 'needs_review');
   card.classList.toggle('is-interrupted', isInterrupted);
   // A cloud campaign that's still pending/queued on the VM (worker scaling up,
   // hasn’t claimed it yet). Not running, not monitoring, and NOT finished —
@@ -27298,8 +27309,49 @@ window.renderActiveCard = function(status) {
   // stopped, or errored) — keep the log + details visible so the operator can
   // review what happened, instead of wiping straight to "No campaign running".
   // Detected by: not running, not monitoring, but logs exist from this session.
-  const isFinished = !!(status && !status.running && !isMonitoring && !isInterrupted && !isLaunching
+  const isFinished = !!(status && !status.running && !isMonitoring && !isInterrupted && !isLaunching && !isDailyWait && !isNeedsReview
     && Array.isArray(status.logs) && status.logs.length > 0);
+  if (isDailyWait || isNeedsReview) {
+    card.classList.remove('is-empty', 'is-monitor', 'is-queued', 'is-done');
+    card.classList.toggle('is-waiting', isDailyWait);
+    card.classList.toggle('is-interrupted', isNeedsReview);
+    const total = Number(status.totalTargets) || 0;
+    const done = Number(status.totalProcessed) || 0;
+    const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+    v3SetText('activeName', status.name || '(unnamed)');
+    v3SetText('activeEyebrow', isDailyWait ? 'Waiting for daily reset' : 'Needs review');
+    v3SetText('activePct', String(pct));
+    v3SetText('activeSent', String(done));
+    v3SetText('activeTotal', String(total));
+    v3SetText('activeAccounts', String((status.profileIds || []).length));
+    v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
+    v3SetText('sendingLbl', isDailyWait ? 'Sending resumes automatically' : 'Automatic work paused');
+    const resume = status.resumeAt ? new Date(status.resumeAt) : null;
+    const resumeLabel = resume && !Number.isNaN(resume.getTime())
+      ? resume.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'after the daily reset';
+    v3SetText('batchEta', isDailyWait ? resumeLabel : 'operator action required');
+    const bar = card.querySelector('.vj-hbar > i');
+    if (bar) bar.style.width = `${pct}%`;
+    const liveEl = document.getElementById('active-live');
+    if (liveEl) {
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-checking', 'is-waking', 'is-paused', 'is-outcome');
+      liveEl.classList.toggle('is-interrupted', isNeedsReview);
+      v3SetText('activeLiveIco', isDailyWait ? '◷' : '■');
+      v3SetText('activeLiveL1', isDailyWait ? 'Daily invitation limit reached' : 'Campaign needs attention');
+      v3SetText('activeLiveL2', isDailyWait
+        ? `${Math.max(0, total - done)} leads remain safely queued · resumes ${resumeLabel}`
+        : 'Open the log for the named problem and its recommended action. Nothing retries in the background.');
+      applyLiveBanner(liveEl, status);
+    }
+    if (!renderLiveStage(card, status)) _hideStage(card);
+    _setActiveDetails(true);
+    const logEl = document.getElementById('active-log');
+    if (logEl) logEl.innerHTML = (status.logs || []).slice(-200).map(v3RenderLogLine).join('');
+    window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
+    window.__activeCardActive = true;
+    return;
+  }
   if (isInterrupted) {
     card.classList.remove('is-empty', 'is-monitor', 'is-queued');
     const f = vjCardFields(status);
@@ -27316,21 +27368,24 @@ window.renderActiveCard = function(status) {
     if (bar) bar.style.width = `${f.pct}%`;
     const liveEl = document.getElementById('active-live');
     const la = buildLiveActivity(status);
-    const review = status.interruption?.review;
     if (liveEl) {
       liveEl.hidden = false;
       liveEl.classList.remove('is-checking', 'is-waking', 'is-paused');
       liveEl.classList.add('is-interrupted');
       v3SetText('activeLiveIco', la.icon);
-      v3SetText('activeLiveL1', review?.title || la.l1);
-      v3SetText('activeLiveL2', review
-        ? `${review.detail} If LinkedIn shows it completed, Continue records it without sending twice; otherwise Continue retries it.`
+      const _sendResume = isMonitoring && !status.monitoringCheckInProgress && status.resumeAt
+        ? new Date(status.resumeAt) : null;
+      const _sendResumeLabel = _sendResume && !Number.isNaN(_sendResume.getTime())
+        ? _sendResume.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      v3SetText('activeLiveL1', _sendResumeLabel ? 'Acceptance checks continue' : la.l1);
+      v3SetText('activeLiveL2', _sendResumeLabel
+        ? `${Math.max(0, (Number(status.totalTargets) || 0) - (Number(status.totalProcessed) || 0))} unsent leads resume ${_sendResumeLabel}`
         : la.l2);
       applyLiveBanner(liveEl, status);
     }
     // Recovery uses the same complete card as every other state. The controls
     // below it remain the existing Resume checks / Resume sending actions.
-    const staged = review ? false : renderLiveStage(card, status);
+    const staged = renderLiveStage(card, status);
     if (liveEl && staged) liveEl.hidden = true;
     _setActiveDetails(true);
     const logEl = document.getElementById('active-log');

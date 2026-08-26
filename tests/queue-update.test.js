@@ -24,6 +24,7 @@ import {
   addToQueue,
   updateQueueEntry,
   removeFromQueue,
+  popNextReady,
 } from '../src/campaign-queue.js';
 
 test('updateQueueEntry — patches name field', async () => {
@@ -54,4 +55,12 @@ test('updateQueueEntry — rejects unknown keys', async () => {
     /unknown key/i,
   );
   await removeFromQueue(entry.id);
+});
+
+test('a future scheduled continuation does not block a ready campaign behind it', async () => {
+  const future = await addToQueue({ name: 'Tomorrow', mode: 'CC' }, null, { scheduledAt: '2099-01-01T00:02:00Z' });
+  const ready = await addToQueue({ name: 'Now', mode: 'CC' });
+  const popped = await popNextReady(Date.parse('2026-08-26T12:00:00Z'));
+  assert.equal(popped.id, ready.id);
+  await removeFromQueue(future.id);
 });

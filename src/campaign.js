@@ -410,6 +410,8 @@ export function buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedin
 
 // Campaign-scoped counters — reset every time a campaign starts
 const campaignCounts = {};
+const campaignSendCounts = {};
+const campaignMessageCounts = {};
 
 // v2.14.x: Snapshot of the most recent startCampaign() options, captured
 // at run-start. Used by restoreCampaign() to re-launch with the exact same
@@ -424,6 +426,14 @@ function getCampaignCount(profileId) {
 }
 function bumpCampaignCount(profileId) {
   campaignCounts[profileId] = (campaignCounts[profileId] || 0) + 1;
+}
+function getCampaignSendCount(profileId) { return campaignSendCounts[profileId] || 0; }
+function bumpCampaignSendCount(profileId) {
+  campaignSendCounts[profileId] = (campaignSendCounts[profileId] || 0) + 1;
+}
+function getCampaignMessageCount(profileId) { return campaignMessageCounts[profileId] || 0; }
+function bumpCampaignMessageCount(profileId) {
+  campaignMessageCounts[profileId] = (campaignMessageCounts[profileId] || 0) + 1;
 }
 
 // 2.9.8: normalize any skip/failure reason to a "Skipped: <reason>" form
@@ -2018,9 +2028,12 @@ export function setLiveCadence(min) {
 }
 
 export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
-  campaign.executionId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   clearRuntimeInterruption();
   if (campaign.running) throw new Error('Campaign already running');
+  campaign.executionId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  campaign._abortController = new AbortController();
+  campaign.dailyResetNeeded = false;
+  campaign.resumeAt = null;
 
   // #7: when 'after_connections', the primary connect/check is deferred until
   // all accounts finish sending connections — the pre-loop handshake and the
@@ -2223,6 +2236,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
   // Reset campaign counts — allows reusing same accounts immediately
   for (const key of Object.keys(campaignCounts)) delete campaignCounts[key];
+  for (const key of Object.keys(campaignSendCounts)) delete campaignSendCounts[key];
+  for (const key of Object.keys(campaignMessageCounts)) delete campaignMessageCounts[key];
 
   // v2.14.x: defensive guard — if the campaign launches as connect_and_introduce
   // without the primary person fields, every accepted invite would silently
@@ -2594,10 +2609,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       if (_skipActions.has(entry.action)) continue;
       if (!profileIds.includes(entry.profileId)) continue;
       campaignCounts[entry.profileId] = (campaignCounts[entry.profileId] || 0) + 1;
+      if (entry.action === 'connection_sent') {
+        campaignSendCounts[entry.profileId] = (campaignSendCounts[entry.profileId] || 0) + 1;
+      }
+      if (SENT_ACTIONS.has(entry.action) && entry.action !== 'connection_sent') {
+        campaignMessageCounts[entry.profileId] = (campaignMessageCounts[entry.profileId] || 0) + 1;
+      }
       _seedTotal++;
     }
     if (_seedTotal > 0) {
-      const summary = Object.entries(campaignCounts)
+      const summary = Object.entries(campaignSendCounts)
         .filter(([, n]) => n > 0)
         .map(([pid, n]) => {
           const pName = profileNameCache[pid] || (pid === 'local-browser' ? 'You' : pid);
@@ -3005,7 +3026,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       if (semStatusBefore.count >= semStatusBefore.max) {
         log(`  ⏸ ${pName}: waiting for browser slot (${semStatusBefore.count}/${semStatusBefore.max} in use)`);
       }
-      await browserSemaphore.acquire();
+      try {
+        await browserSemaphore.acquire({ signal: campaign._abortController?.signal });
+      } catch (err) {
+        if (campaign._abort || err?.name === 'AbortError') return null;
+        throw err;
+      }
 
       let success = false;
       try {
@@ -3146,16 +3172,31 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       const s = sessions.get(profileId);
       if (!s) return { durationMs: 0 };
       const t0 = Date.now();
+      const withinCloseDeadline = async (work, label) => {
+        let timer;
+        try {
+          return await Promise.race([
+            Promise.resolve().then(work),
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error(`${label} exceeded 15 second close deadline`)), 15_000);
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
       try {
         if (profileId === 'local-browser') {
-          await closeLocalBrowser();
+          await withinCloseDeadline(() => closeLocalBrowser(), 'Local browser');
         } else {
-          const pages = await s.browser.pages().catch(() => []);
-          for (const p of pages) {
-            try { await p.close(); } catch { /* */ }
-          }
-          await s.browser.close().catch(() => {});
-          await closeProfile(profileId);
+          await withinCloseDeadline(async () => {
+            const pages = await s.browser.pages().catch(() => []);
+            for (const p of pages) {
+              try { await p.close(); } catch { /* */ }
+            }
+            await s.browser.close().catch(() => {});
+            await closeProfile(profileId);
+          }, `${s.pName} browser`);
         }
         const durationMs = Date.now() - t0;
         log(`✓ ${s.pName} browser closed. ⏱ close duration ${durationMs}ms`);
@@ -3178,7 +3219,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
      * returns true for a profile.
      */
     async function runIdleBulkCheck(profileId, pName) {
-      await browserSemaphore.acquire();
+      try {
+        await browserSemaphore.acquire({ signal: campaign._abortController?.signal });
+      } catch (err) {
+        if (campaign._abort || err?.name === 'AbortError') return;
+        throw err;
+      }
       // v2.74: if Stop landed while we waited for a semaphore slot, don't even
       // open the browser.
       if (campaign._abort) { browserSemaphore.release(); return; }
@@ -3455,7 +3501,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // v2.78: operator benched this account for the rest of the run.
         if (campaign._skippedProfiles && campaign._skippedProfiles.has(candidate)) continue;
         if (weeklyLimited.has(candidate)) continue;
-        if (!skipsDailyLimit && getCampaignCount(candidate) >= campaign.dailyLimit) continue;
+        if (!skipsDailyLimit && getCampaignSendCount(candidate) >= campaign.dailyLimit) continue;
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
         // Clear stale _cooldown429 entry once the cooldown window has passed
         if (campaign._cooldown429.has(candidate) && now >= (campaign._cooldown429.get(candidate).until || 0)) {
@@ -3476,7 +3522,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       if (profileQueue.length === 0) return true;
       return profileQueue.every(id =>
         weeklyLimited.has(id) ||
-        (!skipsDailyLimit && getCampaignCount(id) >= campaign.dailyLimit)
+        (!skipsDailyLimit && getCampaignSendCount(id) >= campaign.dailyLimit)
       );
     }
 
@@ -3630,7 +3676,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         let cooling429 = false;
         // The operator's two turn markers. Everything between them belongs to
         // this account, which is otherwise only inferable from the [name] tags.
-        const _turnSentAtStart = getCampaignCount(profileId);
+        const _turnSentAtStart = getCampaignSendCount(profileId);
         log(plainLine('turn-start', {
           account: pName,
           size: Number.isFinite(innerLimit) ? innerLimit : null,
@@ -4344,6 +4390,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               ...(result.invitationUrn ? { invitationUrn: result.invitationUrn } : {}),
             };
             bumpCampaignCount(profileId);
+            if (result.action === 'connection_sent') bumpCampaignSendCount(profileId);
+            if (SENT_ACTIONS.has(result.action) && result.action !== 'connection_sent') {
+              bumpCampaignMessageCount(profileId);
+            }
             totalDone++;
             campaign.processedToday++;
             // Keep the lifetime/run total monotonic when a campaign is resumed
@@ -4531,7 +4581,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 what: SENT_WORDS[result.action] || 'a message',
                 done: leadInBatch + 1,
                 size: Number.isFinite(innerLimit) ? innerLimit : null,
-                today: getCampaignCount(profileId),
+                today: getCampaignSendCount(profileId),
                 dailyLimit: campaign.dailyLimit,
               }));
               if (_who) {
@@ -4664,7 +4714,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // The candidate filter at line ~1289 will silently exclude it
             // from the next round; this gives operators a visible "why" on
             // the dashboard's Done row.
-            if (!skipsDailyLimit && getCampaignCount(profileId) >= campaign.dailyLimit) {
+            if (!skipsDailyLimit && getCampaignSendCount(profileId) >= campaign.dailyLimit) {
               recordProfileEnd(profileId, pName, `Reached campaign limit (${campaign.dailyLimit})`);
             }
           } else {
@@ -5126,7 +5176,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
         log(plainLine('turn-end', {
           account: pName,
-          sent: Math.max(0, getCampaignCount(profileId) - _turnSentAtStart),
+          sent: Math.max(0, getCampaignSendCount(profileId) - _turnSentAtStart),
           size: Number.isFinite(innerLimit) ? innerLimit : null,
         }));
 
@@ -5209,7 +5259,20 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
         const profileId = pickNextProfile();
         if (!profileId) {
-          if (noProfilesLeftEver()) break;
+          if (noProfilesLeftEver()) {
+            const dailyCapped = profileQueue.some((id) => !weeklyLimited.has(id)
+              && !skipsDailyLimit && getCampaignSendCount(id) >= campaign.dailyLimit);
+            if (dailyCapped && !leadsExhausted && !campaign._abort) {
+              const resume = new Date();
+              resume.setDate(resume.getDate() + 1);
+              resume.setHours(0, 2, 0, 0);
+              campaign.dailyResetNeeded = true;
+              campaign.resumeAt = resume.toISOString();
+              campaign.state = 'waiting_daily_reset';
+              log(`◷ Daily invitation limit reached · remaining leads stay queued · sending resumes ${resume.toLocaleString()}.`);
+            }
+            break;
+          }
           // Eligible profiles exist but they're all in cooldown or mid-turn.
           // Idle briefly and retry.
           await new Promise(r => setTimeout(r, 5000));
@@ -5334,7 +5397,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         const CAP_MS = 120_000, POLL_MS = 30_000;
         const startedAt = Date.now();
         try {
-          await browserSemaphore.acquire();
+          try {
+            await browserSemaphore.acquire({ signal: campaign._abortController?.signal });
+          } catch (err) {
+            if (campaign._abort || err?.name === 'AbortError') return;
+            throw err;
+          }
           const launched = (sender === 'local-browser')
             ? await launchLocalBrowser()
             : await launchProfile(sender, token);
@@ -5565,7 +5633,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             return [...ids].filter(Boolean).map((pid) => ({
               profileId: pid,
               name: profileNameCache[pid] || (pid === 'local-browser' ? 'You' : pid),
-              sent: getCampaignCount(pid),
+              sent: getCampaignSendCount(pid) + getCampaignMessageCount(pid),
               endReason: (campaign.profileEndReasons || []).find((e) => e.profileId === pid)?.reason || '',
             }));
           })(),
@@ -5596,6 +5664,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             primaryName:      (templates && templates.primaryName)      || '',
             primaryIntroBody: (templates && templates.primaryIntroBody) || '',
             primaryUrl:       (templates && templates.primaryUrl)       || '',
+            ccDmBody:         (templates && templates.ccDmBody)         || '',
           },
           dailyLimit,
           messageOpenProfiles: !!messageOpenProfiles,
@@ -5708,6 +5777,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // auto-intros for connect_and_introduce campaigns.
         for (let i = 0; i < (campaign.profileIds || []).length; i++) {
           const pid = campaign.profileIds[i];
+          if (getCampaignSendCount(pid) === 0) continue;
           const pName = (campaign.profileNames || [])[i] || pid;
           await registerPostCampaignSweep({
             sheetId: _sheetId,
@@ -5774,6 +5844,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         const _scanSinceMs = (Number.isFinite(_startMs) ? _startMs : Date.now()) - 12 * 60 * 60 * 1000;
         for (let i = 0; i < (campaign.profileIds || []).length; i++) {
           const pid = campaign.profileIds[i];
+          const participated = (mode === 'connect_and_introduce' || mode === 'connect_and_message')
+            ? getCampaignSendCount(pid) > 0
+            : getCampaignMessageCount(pid) > 0;
+          if (!participated) continue;
           const pName = (campaign.profileNames || [])[i] || pid;
           await registerReplyTracking({
             sheetId: _sheetId,
@@ -5891,6 +5965,9 @@ function _persistRunSettings() {
 
 export function stopCampaign({ full = false, reason = 'operator-stopped' } = {}) {
   campaign._abort = true;
+  if (campaign._abortController && !campaign._abortController.signal.aborted) {
+    campaign._abortController.abort(new DOMException('Campaign stopped', 'AbortError'));
+  }
   // Distinguish operator-initiated stop from natural completion so the
   // dashboard can surface a "Stopped" badge + Restart button on the history
   // entry that gets written when the loop unwinds.
@@ -6228,7 +6305,7 @@ function buildAccountPanel() {
       live,
       batchDone: turn.done == null ? null : turn.done,
       batchSize: turn.size == null ? null : turn.size,
-      sentToday: getCampaignCount(pid),
+      sentToday: getCampaignSendCount(pid),
       // An account a sweep found but that this campaign never selected has no
       // cap of its own here, so it shows none rather than borrowing this
       // campaign's.
@@ -6322,6 +6399,9 @@ export function getCampaignStatus() {
     // v2.13.14: surface monitoring fields so the cockpit + run-bar can
     // reflect post-campaign monitoring state without a second poll.
     state: interrupted ? 'interrupted' : (campaign.state || 'idle'),
+    dailyResetNeeded: !!campaign.dailyResetNeeded,
+    resumeAt: campaign.resumeAt || null,
+    stoppedManually: !!campaign._stoppedManually,
     interrupted,
     interruption: interrupted ? { ...interruption, ...interruptedCopy } : null,
     // v2.105: pre-flight primary handshake sub-phase ('preflight' | null) —

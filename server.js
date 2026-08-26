@@ -23,7 +23,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
-import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
+import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNextReady } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
@@ -1226,8 +1226,14 @@ function launchCampaign(config, owner) {
   campaign.runsOn = 'local';
   campaign.handoverAt = null;
   preventSleep('campaign');
-  startCampaign({ ...config, createdBy: owner }).then(() => {
+  startCampaign({ ...config, createdBy: owner }).then(async () => {
     const status = getCampaignStatus();
+    if (status.dailyResetNeeded && status.resumeAt && !status.stoppedManually) {
+      await addToQueue({ ...config, _dailyContinuation: true, resumeContext: { totalProcessed: status.totalProcessed || 0 } }, owner, {
+        scheduledAt: status.resumeAt,
+      });
+      console.log(`[queue] Daily-limit continuation scheduled for ${status.resumeAt}`);
+    }
     const terminal = terminalPresentation(status);
     notifyEmail(owner, {
       title: `Campaign ${terminal.label.toLowerCase()}`,
@@ -1254,8 +1260,23 @@ function launchCampaign(config, owner) {
 
 async function runNextFromQueue() {
   if (campaign.running) return;
-  const next = await popNextQueued();
-  if (!next) return;
+  const queued = await getQueue();
+  const next = await popNextReady();
+  if (!next) {
+    const futureTimes = queued.map((entry) => new Date(entry.scheduledAt).getTime())
+      .filter((due) => Number.isFinite(due) && due > Date.now());
+    const due = futureTimes.length ? Math.min(...futureTimes) : null;
+    if (due) {
+      const waitMs = Math.min(due - Date.now(), 2_147_000_000);
+      clearTimeout(runNextFromQueue._scheduledTimer);
+      runNextFromQueue._scheduledTimer = setTimeout(() => {
+        runNextFromQueue().catch((err) => console.error('Scheduled queue drain failed:', err.message));
+      }, waitMs);
+      runNextFromQueue._scheduledTimer.unref?.();
+      return;
+    }
+    return;
+  }
   console.log(`[queue] Launching queued campaign "${next.name || '(unnamed)'}" (${next.id})`);
   launchCampaign(next.config, next.owner);
 }
@@ -2990,6 +3011,8 @@ app.get('/api/queue', async (_req, res) => {
       mode: e.config?.mode || '',
       profileIds: e.config?.profileIds || [],
       sheetUrl: e.config?.sheetUrl || '',
+      scheduledAt: e.scheduledAt || null,
+      dailyContinuation: !!e.config?._dailyContinuation,
     }));
     res.json({ queue: summary });
   } catch (err) {

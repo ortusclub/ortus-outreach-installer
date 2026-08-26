@@ -128,6 +128,16 @@ test('statusFromItem: done + queued map their states', () => {
   assert.equal(statusFromItem({ bucket: 'done' }).state, 'done');
   assert.equal(statusFromItem({ bucket: 'queued' }).state, 'queued');
 });
+test('daily reset wait remains active-looking but never pretends to be running or finished', () => {
+  const s = statusFromItem({ where: 'cloud', id: 'c-wait', bucket: 'running', dailyWait: true, engineStatus: 'waiting_daily_reset', resumeAt: '2026-08-27T00:02:00Z' });
+  assert.equal(s.running, false);
+  assert.equal(s.state, 'waiting_daily_reset');
+  assert.equal(s.resumeAt, '2026-08-27T00:02:00Z');
+  const controls = vjCardControlsFor(s);
+  assert.ok(controls.stop);
+  assert.equal(controls.pause, null);
+  assert.equal(controls.bulk, null);
+});
 
 // ── vjCardFields ──
 test('vjCardFields: pct/accounts/accepted for a running local campaign', () => {
