@@ -125,6 +125,17 @@ test('top headlines never contain sender emails or clock metadata', () => {
   }
 });
 
+test('VM browser-opening event identifies one authoritative sender', () => {
+  const e = latestBannerEvent([
+    "🖥️ Opening emanuele.circi@ortus.solutions's browser on the VM — 8/20 sent today",
+  ]);
+  assert.equal(e.kind, 'sender-browser-opening');
+  assert.equal(e.account, 'emanuele.circi@ortus.solutions');
+  assert.equal(e.headline, 'Opening the sender browser');
+  assert.equal(e.detail, 'emanuele.circi@ortus.solutions · 8 of 20 sent today');
+  assert.doesNotMatch(e.headline, /@/);
+});
+
 test('all local check phases expose matching workflow kinds', () => {
   assert.equal(latestBannerEvent(['📡 [sean@ortus.solutions] Launching browser…']).kind, 'account-browser-opening');
   assert.equal(latestBannerEvent(['📡 [cindy@ortus.solutions] Sweeping recent connections…']).kind, 'account-checking');

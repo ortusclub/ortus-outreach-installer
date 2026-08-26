@@ -41,6 +41,11 @@ function readablePresentation(line, phase = '', now = new Date()) {
     kind: 'account-browser-opening', account: m[1], eyebrow: 'Starting account check',
     headline: 'Opening the sender browser', detail: m[1], explanation: '',
   };
+  if ((m = clean.match(/^🖥️?\s*Opening\s+([^'\s]+)'s browser on the VM\s*[—–]\s*(\d+)\s*\/\s*(\d+)\s*sent today/i))) return {
+    kind: 'sender-browser-opening', account: m[1], eyebrow: 'Opening sender account',
+    headline: 'Opening the sender browser',
+    detail: `${m[1]} · ${m[2]} of ${m[3]} sent today`, explanation: '',
+  };
   if ((m = clean.match(/^📡?\s*\[([^\]]+)\]\s*Sweeping recent connections/i))) return {
     kind: 'account-checking', account: m[1], eyebrow: 'Checking acceptances',
     headline: 'Checking recent connections', detail: m[1], explanation: '',

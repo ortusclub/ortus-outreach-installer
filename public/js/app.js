@@ -46,7 +46,7 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.21';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.22';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -26791,6 +26791,9 @@ function renderLiveStage(root, status) {
   if (logEvent && phase !== 'done' && !(phase === 'monitoring' && transientCheckEvent)) {
     ca = { ...(ca || {}), label: logEvent.headline,
       sub: `${logEvent.detail}${logEvent.explanation ? ` · ${logEvent.explanation}` : ''}` };
+    // During account rotation the durable action can be one poll behind the
+    // log. Never combine the previous sender with the new sender's event.
+    if (logEvent.account) ca.account = logEvent.account;
     const allLogs = Array.isArray(status && status.logs) ? status.logs.map((x) => String(x && x.line != null ? x.line : x || '')) : [];
     let runStart = -1;
     allLogs.forEach((line, i) => { if (/Check now|Check started/i.test(line)) runStart = i; });
@@ -26902,7 +26905,9 @@ function renderLiveStage(root, status) {
       return (hit && (hit.email || hit.name)) || profileLabel(id);
     };
     const acct = ca && ca.account && ca.account !== who ? _label(ca.account) : '';
-    const sub = [acct, ca && ca.sub].filter(Boolean).join(' · ');
+    const detail = String((ca && ca.sub) || '');
+    const alreadyNamed = acct && detail.toLowerCase().includes(String(acct).toLowerCase());
+    const sub = [alreadyNamed ? '' : acct, detail].filter(Boolean).join(' · ');
     if (subEl.textContent !== sub) subEl.textContent = sub;
   }
 
