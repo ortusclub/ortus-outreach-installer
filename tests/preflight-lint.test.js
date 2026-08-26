@@ -88,6 +88,48 @@ test('rows with terminal Stage are ignored entirely', () => {
 // ── Task 3 tests ─────────────────────────────────────────────────────────────
 const IBM = { value: 'IBM', kind: 'company', reason: 'existing client', addedBy: '', addedAt: '' };
 const ORTUS = { value: 'ortusclub.com', kind: 'domain', reason: 'employees', addedBy: '', addedAt: '' };
+const PERSON_URN = { value: 'linkedin.com/in/ACwAAB3xYz_ok', kind: 'person', urn: 'ACwAAB3xYz_ok', reason: 'opted out', addedBy: '', addedAt: '' };
+const PERSON_SLUG = { value: 'linkedin.com/in/jane-doe', kind: 'person', slug: 'jane-doe', reason: '', addedBy: '', addedAt: '' };
+
+test('blocklist person match by member URN (scraped/sales-nav rows)', () => {
+  const out = lintLeads({ ...BASE, blocklist: [PERSON_URN], rows: [
+    // URN-form URL the scraper writes to the sheet → matches.
+    R(10, { 'First Name': 'Blocked', 'Last Name': 'Person', 'LinkedIn URL': 'https://www.linkedin.com/in/ACwAAB3xYz_ok' }),
+    // Different member → no match.
+    R(11, { 'First Name': 'Other', 'Last Name': 'Guy', 'LinkedIn URL': 'https://www.linkedin.com/in/ACwAAdifferent1' }),
+  ]});
+  const hits = out.blockers.filter(f => f.check === 'blocklist_match');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].rowIndex, 10);
+  assert.equal(hits[0].detail.startsWith('Profile matches blocklist entry'), true);
+  assert.equal(hits[0].stampText, 'Skipped: blocklist — linkedin.com/in/ACwAAB3xYz_ok');
+});
+
+test('blocklist person URN match is case-sensitive (base64url)', () => {
+  const out = lintLeads({ ...BASE, blocklist: [PERSON_URN], rows: [
+    // Same characters, different case → a DIFFERENT member → must NOT match.
+    R(12, { 'First Name': 'Case', 'Last Name': 'Shift', 'LinkedIn URL': 'https://www.linkedin.com/in/acwaab3xyz_ok' }),
+  ]});
+  assert.equal(out.blockers.filter(f => f.check === 'blocklist_match').length, 0);
+});
+
+test('blocklist person match by vanity slug, trailing-slash tolerant', () => {
+  const out = lintLeads({ ...BASE, blocklist: [PERSON_SLUG], rows: [
+    R(20, { 'First Name': 'Jane', 'Last Name': 'Doe', 'LinkedIn URL': 'https://www.linkedin.com/in/jane-doe/' }),
+    R(21, { 'First Name': 'John', 'Last Name': 'Doe', 'LinkedIn URL': 'https://www.linkedin.com/in/john-doe' }),
+  ]});
+  const hits = out.blockers.filter(f => f.check === 'blocklist_match');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].rowIndex, 20);
+});
+
+test('blocklistExcludedUrls returns person-blocked URLs for send-out exclusion', () => {
+  const urls = blocklistExcludedUrls(
+    [{ 'First Name': 'Blocked', 'Last Name': 'Person', 'LinkedIn URL': 'https://www.linkedin.com/in/ACwAAB3xYz_ok' }],
+    { linkedinColumn: 'LinkedIn URL', mode: 'connect_only', blocklist: [PERSON_URN] },
+  );
+  assert.equal(urls.length, 1);
+});
 
 test('blocklist company match is a blocker with the exact stamp, word-boundary safe', () => {
   const out = lintLeads({ ...BASE, blocklist: [IBM], rows: [

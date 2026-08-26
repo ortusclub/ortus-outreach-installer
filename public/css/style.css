@@ -8201,7 +8201,12 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .bl-sub b { color: var(--ink); font-weight: 500; }
 .bl-row { display: grid; grid-template-columns: 190px 1fr 150px 70px; gap: 14px; align-items: baseline;
   padding: 14px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); font-size: 0.85rem; }
-.bl-entry { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+.bl-entry { font-size: 0.88rem; font-weight: 600; color: var(--ink); word-break: break-all; }
+.bl-kind { display: inline-block; font-size: 0.52rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 2px 7px;
+  margin-right: 8px; vertical-align: middle; font-weight: 500; }
+.bl-kind[data-kind="person"] { color: var(--ink); border-color: var(--ink); }
+.wiz-bl-chip[data-kind="person"] { border-color: var(--ink); }
 .bl-reason-cell { font-size: 0.85rem; color: var(--gray); }
 .bl-meta { font-size: 0.72rem; color: var(--gray); }
 .bl-remove { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase;

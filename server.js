@@ -4879,11 +4879,18 @@ function boardIdForLaunch({ sheetUrl, tabName, campaignName }) {
 
 app.post('/api/scrape/start', async (req, res) => {
   const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName } = req.body || {};
+  // Blocklisted people the engine must skip mid-scrape. Only URN-form entries
+  // can be matched against a search result (which carries a memberUrn, not a
+  // vanity slug); vanity-only entries still block at send-out via pre-flight.
+  const excludeUrns = readBlocklist()
+    .filter((e) => e.kind === 'person' && e.urn)
+    .map((e) => e.urn);
   // Stamp the owner server-side (the authoritative "Operating as" email) so the
   // shared board can show WHO launched each scrape across machines.
   const result = await startScrape({
     searchUrls, sheetUrl, tabName, profileId, slowMode,
     ownerEmail: getOperatorEmail() || '', campaignName: campaignName || '',
+    excludeUrns,
   });
   // Dispatch was the single biggest blind spot: WHAT was asked for (search URL,
   // GoLogin profile, destination sheet + tab) was never written down anywhere,
