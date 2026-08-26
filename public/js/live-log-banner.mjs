@@ -22,11 +22,14 @@ function readablePresentation(line, phase = '', now = new Date()) {
     headline: 'Acceptance check queued',
     explanation: 'The VM is waking and has not selected an account yet. A cold start normally takes about two minutes.',
   };
-  if ((m = clean.match(/^Next check\s+(.+?)\s*[·•]\s*nothing happens until then/i))) {
+  // The engine has used both "nothing happens until then" and "monitoring
+  // stays active" over time. The schedule is the state; trailing narration is
+  // log detail and must never become a giant permanent headline.
+  if ((m = clean.match(/^Next check\s+(.+?)\s*[·•](?:\s|$)/i))) {
     return {
       kind: 'check-waiting', eyebrow: 'Monitoring is active',
       headline: 'Waiting for the next acceptance check',
-      detail: `${relativeSchedule(m[1], now)} · Campaign stays running`,
+      detail: relativeSchedule(m[1], now),
       explanation: 'Nothing needs to be done now.',
     };
   }

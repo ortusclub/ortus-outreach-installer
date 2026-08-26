@@ -36,7 +36,7 @@ test('completed monitoring sweep uses the Next check row above its footer', () =
   ], { now: new Date('2026-08-26T11:20:00Z') });
   assert.equal(e.headline, 'Waiting for the next acceptance check');
   assert.match(e.detail, /^Today at /);
-  assert.match(e.detail, /Campaign stays running/);
+  assert.doesNotMatch(e.detail, /Campaign stays running/);
   assert.doesNotMatch(e.detail, /2026|UTC/);
   assert.match(e.explanation, /Nothing needs to be done now/);
 });
@@ -47,6 +47,17 @@ test('tomorrow and later schedules use human dates without a year', () => {
   const later = latestBannerEvent(['Next check 2026-08-30 15:11 UTC · nothing happens until then'], { now });
   assert.match(tomorrow.detail, /^Tomorrow at /);
   assert.doesNotMatch(later.detail, /2026|UTC/);
+});
+
+test('restored monitoring schedule never exposes raw UTC or cancellation copy', () => {
+  const e = latestBannerEvent([
+    'Queued check cancelled — monitoring stays active.',
+    '⏱ Next check 2026-08-26 12:59 UTC · monitoring stays active.',
+  ], { now: new Date('2026-08-26T12:22:00Z') });
+  assert.equal(e.kind, 'check-waiting');
+  assert.equal(e.headline, 'Waiting for the next acceptance check');
+  assert.match(e.detail, /^Today at /);
+  assert.doesNotMatch(`${e.headline} ${e.detail}`, /2026|UTC|cancel/i);
 });
 
 test('objects and plain local log lines use the same contract', () => {
