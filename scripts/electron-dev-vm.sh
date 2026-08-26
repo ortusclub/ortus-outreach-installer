@@ -13,6 +13,9 @@ LOCAL_ENGINE_PORT="3001"
 ENGINE_TOKEN="${SCRAPER_ENGINE_TOKEN:-ortus2026scraper}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENGINE_REPO="${ORTUS_DEV_ENGINE_REPO:-$PROJECT_ROOT/../ortus-salesnav-scraper-cloud}"
+if [ ! -d "$ENGINE_REPO" ] && [ -d "$HOME/ortus-salesnav-scraper-cloud" ]; then
+  ENGINE_REPO="$HOME/ortus-salesnav-scraper-cloud"
+fi
 PF_PID=""
 ELECTRON_PID=""
 
