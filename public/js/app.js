@@ -46,7 +46,7 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.18';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.19';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -26309,6 +26309,7 @@ function renderPrimaryLoginWarn(status) {
 // animating node is written ONLY when its content actually changes, tracked in
 // the stage element's own dataset.
 const _stagePhaseAt = new Map();   // campaign id → { key, at } — elapsed clock
+const _stageNewestLogEvent = new Map(); // campaign id → monotonic banner event
 const _stageSel = new Map();       // campaign id → selected account (drawer)
 const _stageStatus = new WeakMap(); // stage node → the status it last drew
 
@@ -26770,7 +26771,19 @@ function renderLiveStage(root, status) {
   // supplies counters, safety copy and workflow anatomy, but it no longer gets
   // to leave the headline stuck on an earlier inferred step. This shared render
   // path covers VM + This Mac and sending + checking + introducing + monitoring.
-  const logEvent = latestBannerEvent(status && status.logs, { phase });
+  let logEvent = latestBannerEvent(status && status.logs, { phase });
+  // Cloud state and log streams are fetched independently. A normal poll can
+  // briefly return an older log snapshot after a newer event was shown. Keep
+  // each campaign's banner monotonic instead of visually replaying old work.
+  const rememberedLog = _stageNewestLogEvent.get(cid);
+  if (rememberedLog && rememberedLog.phase === phase && rememberedLog.event
+      && Number(rememberedLog.event.at) > 0 && Number(logEvent && logEvent.at) > 0
+      && Number(logEvent.at) < Number(rememberedLog.event.at)) {
+    logEvent = rememberedLog.event;
+  } else if (logEvent && (!rememberedLog || rememberedLog.phase !== phase
+      || Number(logEvent.at) >= Number(rememberedLog.event && rememberedLog.event.at))) {
+    _stageNewestLogEvent.set(cid, { phase, event: logEvent });
+  }
   // Once a sweep has ended, an account result remains useful in the log and
   // on its sender pill, but must not leave the whole campaign looking active.
   // Idle monitoring returns to its durable "waiting for next check" view.

@@ -13,6 +13,13 @@ test('the newest operational log line becomes the banner event', () => {
   assert.match(e.explanation, /0 newly accepted/);
 });
 
+test('banner events expose engine time for monotonic rendering', () => {
+  const iso = latestBannerEvent(['[2026-08-26T13:05:12.000Z] Browser opened']);
+  const object = latestBannerEvent([{ t: 1787749513000, line: 'Profile opened' }]);
+  assert.equal(iso.at, Date.parse('2026-08-26T13:05:12.000Z'));
+  assert.equal(object.at, 1787749513000);
+});
+
 test('summary and divider rows never pin the banner', () => {
   assert.equal(latestBannerEvent([
     'Checking account 2',

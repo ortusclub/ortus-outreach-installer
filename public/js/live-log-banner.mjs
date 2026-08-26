@@ -82,8 +82,14 @@ function readablePresentation(line, phase = '', now = new Date()) {
 export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = {}) {
   if (!Array.isArray(logs)) return null;
   for (let i = logs.length - 1; i >= 0; i -= 1) {
-    let line = String(logs[i] && logs[i].line != null ? logs[i].line : logs[i] || '').trim();
+    const rawEvent = logs[i];
+    let line = String(rawEvent && rawEvent.line != null ? rawEvent.line : rawEvent || '').trim();
     if (!line) continue;
+    const envelope = line.match(/^\[([^\]]+)\]/);
+    const objectTime = rawEvent && typeof rawEvent === 'object'
+      ? Number(rawEvent.t || rawEvent.at || new Date(rawEvent.ts || rawEvent.timestamp || 0))
+      : 0;
+    const envelopeTime = envelope ? Number(new Date(envelope[1])) : 0;
     // Totals and divider rows are pinned to the bottom of merged logs, so they
     // are not chronological activity and must not permanently own the banner.
     if (/^(?:SUM\b|Σ\s*Total\b|[-—–_─━═]{3,})/iu.test(line)) continue;
@@ -112,6 +118,7 @@ export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = 
       account: presentation.account || '',
       explanation: presentation.explanation,
       detail: presentation.detail || line,
+      at: objectTime || envelopeTime || 0,
     };
   }
   return null;
