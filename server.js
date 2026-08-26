@@ -71,6 +71,7 @@ import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
 import { getFailures, retryFailures } from './src/sheet-write-tracker.js';
 import { getSkips } from './src/skip-ledger.js';
 import { createStopWatchdog } from './src/stop-watchdog.js';
+import { clearRuntimeInterruption, readRuntimeInterruption } from './src/runtime-interruption.js';
 import { launchValidation } from './src/launch-validation.js';
 import { terminalPresentation } from './public/js/campaign-terminal.mjs';
 
@@ -5211,6 +5212,20 @@ app.post('/api/campaign/stop', async (req, res) => {
   setTimeout(async () => {
     try { await closeCurrentCampaignBrowsers(); } catch (err) { console.warn('[stop] closeCurrentCampaignBrowsers:', err.message); }
   }, immediate ? 0 : 15000);
+});
+
+// Permanently remove the local crash/stop recovery copy. This deliberately
+// cannot touch a running local campaign, monitoring watcher, or any Cloud VM
+// campaign; it only deletes the inactive runtime-interruption journal that
+// creates the stale "This Mac unavailable" board card.
+app.delete('/api/campaign/interrupted', (_req, res) => {
+  const interruption = readRuntimeInterruption();
+  if (!interruption) return res.json({ ok: true, deleted: false });
+  if (campaign.running || campaign.state === 'monitoring') {
+    return res.status(409).json({ error: 'The local campaign is active and cannot be deleted as a recovery copy.' });
+  }
+  clearRuntimeInterruption();
+  res.json({ ok: true, deleted: true });
 });
 
 // Phase 2.8.9: pause/resume control. Pause is non-destructive — browsers stay

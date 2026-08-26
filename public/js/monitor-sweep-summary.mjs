@@ -41,9 +41,13 @@ export function summarizeLatestMonitoringSweep(logs = [], expectedAccounts = [])
   const accounts = [...byAccount.values()];
   const checked = accounts.filter((account) => account.checked).length;
   const accepted = accounts.reduce((total, account) => total + account.accepted, 0);
+  // Expected accounts may be profile IDs while the log identifies the same
+  // accounts by email. Do not add those two identifier sets together: a
+  // three-account sweep was incorrectly presented as "2 of 6".
+  const expected = expectedAccounts.length || accounts.length;
   return {
-    expected: Math.max(expectedAccounts.length, accounts.length), checked, accepted, introduced,
-    incomplete: !!terminalError || checked < Math.max(expectedAccounts.length, accounts.length),
+    expected, checked, accepted, introduced,
+    incomplete: !!terminalError || checked < expected,
     error: terminalError, accounts,
   };
 }

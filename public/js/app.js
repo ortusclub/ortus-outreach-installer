@@ -47,7 +47,7 @@ import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep } from '/js/monitor-sweep-summary.mjs?v=3.1.48.30';
+import { summarizeLatestMonitoringSweep } from '/js/monitor-sweep-summary.mjs?v=3.1.48.34';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -9181,6 +9181,14 @@ async function deleteBoardCampaign(id, btn) {
       // even if the stop call fails.
       try { await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop`, { method: 'POST' }); } catch (_) { /* still hide it below */ }
       _cloudDismissed.add(id); _cloudSaveDismissed();
+    } else if (it && it.id === 'local-active' && it.interrupted) {
+      const r = await fetch('/api/campaign/interrupted', { method: 'DELETE' });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        alert('Could not delete: ' + (e.error || r.status));
+        return;
+      }
+      _localDismissed.add(id);
     } else if (it && it.histIdx != null) {
       const r = await fetch('/api/history/' + encodeURIComponent(it.histIdx), { method: 'DELETE' });
       if (!r.ok) {
@@ -10429,6 +10437,8 @@ function renderUnifiedStrip(it) {
     // and every cloud control here would be called with a placeholder id. The
     // handshake modal owns Cancel / Dispatch anyway while it's up.
     foot = '';
+  } else if (it.where === 'local' && it.interrupted) {
+    foot = `<button type="button" class="mini sn-delete-forever" onclick="event.stopPropagation();deleteBoardCampaign('${escHtml(it.id)}', this)">Delete for good</button>`;
   } else if (running && it.where === 'local') {
     foot = monitoring
       ? _dib(V3_SVG_STOP, 'Stop monitoring', 'window.dashStopActive && window.dashStopActive()', 'danger') + _openPill
