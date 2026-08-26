@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { latestBannerEvent } from '../public/js/live-log-banner.mjs';
+
+test('the newest operational log line becomes the banner event', () => {
+  const e = latestBannerEvent([
+    '10:01:00 INFO Opening sean browser',
+    '10:01:04 OK cindy.siapno@ortus.solutions — 0 newly accepted, 42 rows updated · 10:01',
+    'Σ Total · 73 sent · 1 error · 124 pending',
+  ]);
+  assert.equal(e.headline, 'Finished checking cindy.siapno@ortus.solutions');
+  assert.equal(e.detail, 'cindy.siapno@ortus.solutions — 0 newly accepted, 42 rows updated');
+  assert.match(e.explanation, /0 newly accepted/);
+});
+
+test('summary and divider rows never pin the banner', () => {
+  assert.equal(latestBannerEvent([
+    'Checking account 2',
+    '──────────',
+    '━━━━━━━━━━',
+    'SUM ———',
+    'Σ Total · 3 sent',
+  ]).line, 'Checking account 2');
+});
+
+test('symbol-only rows can never erase a readable banner', () => {
+  assert.equal(latestBannerEvent(['Browser opened', '✓', '■', '────────']).headline, 'Browser opened');
+});
+
+test('completed monitoring sweep uses the Next check row above its footer', () => {
+  const e = latestBannerEvent([
+    '✓ Check complete · 0 newly accepted across 3 accounts · 13:14',
+    '◷ Next check 2026-08-26 15:11 UTC · nothing happens until then, the campaign stays running. · 13:14',
+    '──────────',
+    'Σ Total · 73 sent · 1 error · 124 pending',
+  ], { now: new Date('2026-08-26T11:20:00Z') });
+  assert.equal(e.headline, 'Waiting for the next acceptance check');
+  assert.match(e.detail, /^Today at /);
+  assert.match(e.detail, /Campaign stays running/);
+  assert.doesNotMatch(e.detail, /2026|UTC/);
+  assert.match(e.explanation, /Nothing needs to be done now/);
+});
+
+test('tomorrow and later schedules use human dates without a year', () => {
+  const now = new Date('2026-08-26T10:00:00Z');
+  const tomorrow = latestBannerEvent(['Next check 2026-08-27 15:11 UTC · nothing happens until then'], { now });
+  const later = latestBannerEvent(['Next check 2026-08-30 15:11 UTC · nothing happens until then'], { now });
+  assert.match(tomorrow.detail, /^Tomorrow at /);
+  assert.doesNotMatch(later.detail, /2026|UTC/);
+});
+
+test('objects and plain local log lines use the same contract', () => {
+  const e = latestBannerEvent([{ line: 'WARN manoj.kumar — Identity Restricted' }]);
+  assert.equal(e.headline, 'manoj.kumar was skipped safely');
+  assert.equal(e.detail, 'manoj.kumar — Identity Restricted');
+  assert.match(e.explanation, /Other available accounts continue/);
+});
+
+test('check lifecycle events expose progress kinds for the whole panel', () => {
+  assert.equal(latestBannerEvent(['Check now — this campaign’s accounts']).kind, 'check-queued');
+  assert.equal(latestBannerEvent(['Checking sean@ortus.solutions…']).kind, 'account-checking');
+  assert.equal(latestBannerEvent(['sean@ortus.solutions — 0 newly accepted, 22 rows updated']).kind, 'account-checked');
+  assert.equal(latestBannerEvent(['Check complete · 0 newly accepted']).kind, 'check-complete');
+});

@@ -1413,6 +1413,11 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   }
   body[data-dashboard='v3'] .vj-bulk-btn:hover { opacity: 0.85; }
+  body[data-dashboard='v3'] .vj-bulk-btn:disabled,
+  body[data-dashboard='v3'] .vj-bulk-btn[aria-disabled='true'] {
+    background: #343434; color: #929292; border-color: #4a4a4a;
+    cursor: not-allowed; pointer-events: none; opacity: 1;
+  }
   body[data-dashboard='v3'] .vj-bulk-btn svg { width: 16px; height: 16px; }
   body[data-dashboard='v3'] .vj-bulk-hint { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.03em; color: var(--gray-faint); line-height: 1.5; }
 

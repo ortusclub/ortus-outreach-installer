@@ -297,6 +297,15 @@ test('Stop monitoring and Run check now survive on the monitoring card', () => {
   assert.ok(c.bulk, 'Run check now must not be displaced');
 });
 
+test('an active cloud sweep replaces Stop monitoring with Stop check', () => {
+  const c = vjCardControlsFor({
+    _cloud: true, id: 'c1', state: 'monitoring', monitoringCheckInProgress: true,
+  });
+  assert.equal(c.stop.tip, 'Stop check');
+  assert.match(c.stop.onclick, /stopCloudCheckUI\('c1',this\)/);
+  assert.ok(c.bulk, 'the check control remains visible so the renderer can show it disabled');
+});
+
 test('statusFromItem carries pending through to the card', () => {
   const s = statusFromItem({ where: 'cloud', id: 'c1', monitoring: true, pending: 793 });
   assert.equal(s.pending, 793,

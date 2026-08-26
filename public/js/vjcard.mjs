@@ -290,7 +290,9 @@ export function vjCardControlsFor(status = {}) {
         onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending','local',this)` });
     }
   } else if (monitor && cloud) {
-    c.stop = { tip: 'Stop monitoring', onclick: `stopCloudCampaignUI('${id}')` };
+    c.stop = s.monitoringCheckInProgress
+      ? { tip: 'Stop check', onclick: `stopCloudCheckUI('${id}',this)` }
+      : { tip: 'Stop monitoring', onclick: `stopCloudCampaignUI('${id}')` };
     c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}',this)` };
     c.monAuto = { checked: s.autoChecksEnabled !== false, onclick: `setCloudAutoChecks('${id}',this.checked,this)` };
     // A campaign that switched to monitoring because nothing could send still has

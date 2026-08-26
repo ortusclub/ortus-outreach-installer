@@ -46,6 +46,7 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
+import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.16';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -7273,7 +7274,11 @@ const _cloudSheetUrls = new Map();
 // marker expires by itself so a sweep that never starts cannot leave the card
 // claiming one is.
 const _cloudCheckAsked = new Map();
-const CLOUD_CHECK_ASK_TTL_MS = 90000;
+// A cold VM has been observed taking a little over two minutes before opening
+// the first browser. Keep the operator's single-flight lock for the same
+// 15-minute recovery window used by the worker instead of expiring it after
+// 90 seconds and re-enabling a duplicate check while the first one is queued.
+const CLOUD_CHECK_ASK_TTL_MS = 15 * 60 * 1000;
 function _cloudCheckAskedActive(c) {
   const asked = _cloudCheckAsked.get(c.id);
   if (!asked) return false;
@@ -7378,8 +7383,9 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
   if (checkDone) {
     const accepted = Math.max(0, Number(monitor.monitor_check_newly_accepted) || 0);
     const checkError = String(monitor.monitor_check_error || '').trim();
+    const stopped = /^check stopped by you\b/i.test(checkError);
     entries.push({ t: ts(checkDone), line: checkError
-      ? `✗ Check finished with an error${checkWhen ? ` · ${checkWhen}` : ''} · ${checkError}`
+      ? `${stopped ? '🛑 Check stopped' : '✗ Check finished with an error'}${checkWhen ? ` · ${checkWhen}` : ''} · ${checkError}`
       : `✓ Check complete${checkWhen ? ` · ${checkWhen}` : ''} · ${accepted} newly accepted` });
   } else if (checkStarted) {
     entries.push({ t: ts(checkStarted), line: `◌ Check in progress${checkWhen ? ` · ${checkWhen}` : ''}` });
@@ -7754,8 +7760,16 @@ function _combineCloudEvents(id) {
 // pins the Σ footer last. Stable sort keeps same-time lines in emit order.
 function _mergeCloudLog(leadEntries, events) {
   leadEntries = Array.isArray(leadEntries) ? leadEntries : [];
+  events = Array.isArray(events) ? events : [];
+  // The campaign snapshot carries a synthesized completion marker for older
+  // engines. Modern engines also emit the authoritative sweep summary. Never
+  // show both (and especially never show a synthetic success after a stop).
+  const eventHasTerminalCheck = events.some((e) => /(?:✓\s*)?Check complete|🛑\s*Check stopped|Check finished with an error/i.test(String(e && e.line || '')));
+  if (eventHasTerminalCheck) {
+    leadEntries = leadEntries.filter((e) => !/^(?:✓\s*Check complete|🛑\s*Check stopped|✗\s*Check finished with an error)/i.test(String(e && e.line || '')));
+  }
   const stamp = (t) => { const d = new Date(t); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
-  const evEntries = (Array.isArray(events) ? events : []).map((e) => {
+  const evEntries = events.map((e) => {
     const hh = stamp(e.t);
     return { t: Number(e.t) || null, line: hh ? `${e.line} · ${hh}` : e.line };
   });
@@ -8014,7 +8028,11 @@ function _cloudCurrentAction(d) {
       const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
       const accounts = (c.profile_ids || []).length;
       const dueAt = Date.parse(c.next_check_at || '');
-      const overdue = Number.isFinite(dueAt) && Date.now() > dueAt + 15 * 60 * 1000;
+      // A fresh manual request supersedes an old scheduled due time. Otherwise
+      // a two-minute cold start can inherit yesterday's `next_check_at` and be
+      // announced as a 15-minute outage while it is visibly starting.
+      const overdue = !requested && !checking
+        && Number.isFinite(dueAt) && Date.now() > dueAt + 15 * 60 * 1000;
       const claimedTooLong = c.monitorTaskStatus === 'claimed' && Number.isFinite(startedAt)
         && Date.now() > startedAt + 15 * 60 * 1000;
       if (overdue || claimedTooLong) return {
@@ -8034,22 +8052,27 @@ function _cloudCurrentAction(d) {
           ['Accounts', 'not fully checked', 'future'], ['Recovery', 'Run check now', 'future'],
         ],
       };
-      if (checking) return {
-        phase: 'checking', label: requested && !Number.isFinite(startedAt) ? 'Starting acceptance check' : 'Checking acceptances',
-        account: '', lead: requested && !Number.isFinite(startedAt) ? 'Opening the first eligible sender browser' : 'Selecting the next account',
-        sub: 'This check uses the same workflow whether started manually or automatically',
+      if (checking) {
+        const queuedForWorker = c.monitorTaskStatus === 'pending' || (requested && c.monitorTaskStatus !== 'claimed');
+        return {
+        phase: 'checking', label: queuedForWorker ? 'Waiting for the VM worker' : 'Checking acceptances',
+        account: '', lead: queuedForWorker ? 'No account selected yet' : 'Selecting the next account',
+        sub: queuedForWorker ? 'The VM is waking. A cold start normally takes about two minutes.' : 'Selecting the next eligible sender account',
         safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safe · sending stays stopped`,
         facts: [
           ['Check trigger', requested ? 'Run check now' : 'scheduled check'],
           ['Scope', `${accounts} campaign account${accounts === 1 ? '' : 's'}`],
-          ['Current account', 'selecting'],
-          ['Next expected event', 'sender browser opens'],
+          ['Current account', queuedForWorker ? 'not selected yet' : 'selecting'],
+          ['Next expected event', queuedForWorker ? 'VM worker claims the check' : 'sender browser opens'],
         ],
         milestones: [
-          ['Requested', 'check queued', 'done'], ['Browser', 'opening eligible account', 'active'],
-          ['Invitations', 'waiting', 'future'], ['Acceptances', 'waiting', 'future'], ['Introductions', 'waiting', 'future'],
+          ['Requested', 'check queued', 'done'],
+          ['Worker', queuedForWorker ? 'waking' : 'ready', queuedForWorker ? 'active' : 'done'],
+          ['Browser', queuedForWorker ? 'not opened yet' : 'opening eligible account', queuedForWorker ? 'future' : 'active'],
+          ['Accounts', 'waiting', 'future'], ['Results', 'waiting', 'future'],
         ],
       };
+      }
       const next = c.next_check_at ? new Date(c.next_check_at).toLocaleString([], { hour: '2-digit', minute: '2-digit' }) : 'being scheduled';
       const last = c.monitor_check_completed_at
         ? new Date(c.monitor_check_completed_at).toLocaleString([], { hour: '2-digit', minute: '2-digit' }) : 'not run yet';
@@ -10041,8 +10064,14 @@ function fillVjCard(root, status) {
   if (bulkWrap) {
     if (c.bulk) {
       bulkWrap.style.display = '';
-      const bb = root.querySelector('[data-f="vj-bulk-btn"]'); if (bb) bb.setAttribute('onclick', c.bulk.onclick);
-      const lbl = root.querySelector('[data-f="vj-bulk-btn-label"]'); if (lbl) lbl.textContent = c.bulk.label || 'Run check now';
+      const bb = root.querySelector('[data-f="vj-bulk-btn"]');
+      if (bb) {
+        bb.setAttribute('onclick', c.bulk.onclick);
+        bb.disabled = !!status.monitoringCheckInProgress;
+        bb.setAttribute('aria-disabled', bb.disabled ? 'true' : 'false');
+      }
+      const lbl = root.querySelector('[data-f="vj-bulk-btn-label"]');
+      if (lbl) lbl.textContent = status.monitoringCheckInProgress ? 'Check in progress' : (c.bulk.label || 'Run check now');
     } else {
       bulkWrap.style.display = 'none';
     }
@@ -12470,6 +12499,11 @@ window.restartCloudCampaignUI = restartCloudCampaignUI;
 // 404/HTTP error → a clear "engine update pending" toast, no throw.
 async function cloudCheckNow(id, btn, scope) {
   scope = scope === 'all' ? 'all' : 'campaign';
+  const existingAsk = _cloudCheckAsked.get(id);
+  if (existingAsk && Date.now() - existingAsk < CLOUD_CHECK_ASK_TTL_MS) {
+    if (btn) btn.disabled = true;
+    return false;
+  }
   // A check runs where the campaign runs. The guard lives HERE, not in each
   // caller, because a caller that forgets it fires a VM sweep on a campaign
   // sitting on this Mac: the card said RUNNING ON = THIS MAC while the toast
@@ -12506,7 +12540,7 @@ async function cloudCheckNow(id, btn, scope) {
     try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
     showCampaignToast('Could not reach the engine: ' + e.message, 6000);
   }
-  finally { if (btn) btn.disabled = false; }
+  finally { if (btn && !queued) btn.disabled = false; }
   if (!queued) return false;
 
   // Real feedback tied to the actual browser (fixes "no indication when it
@@ -12515,24 +12549,54 @@ async function cloudCheckNow(id, btn, scope) {
   // for only a few seconds, so this narrates that short window.
   (async () => {
     let sawLive = false;
-    for (let i = 0; i < 40; i++) {                 // ~60s
+    for (let i = 0; i < 120; i++) {                // ~3 min cold-start window
       await new Promise((r) => setTimeout(r, 1500));
       let dd = {};
       try { dd = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json(); } catch { /* */ }
+      if (i === 39 && !dd.live && !sawLive) {
+        showCampaignToast('The VM worker is still waking. No account has started yet; cold starts normally take about two minutes.', 7000);
+      }
       if (dd.live && !sawLive) {
         sawLive = true;
         showCampaignToast('🟢 VM checking now — browser is open. Click 👁 Show to watch it live.', 6000);
       } else if (!dd.live && sawLive) {
+        _cloudCheckAsked.delete(id);
         showCampaignToast('✓ VM check complete.', 4000);
         if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
         return;
       }
     }
-    if (!sawLive) showCampaignToast('VM check ran, but no browser opened — it may already be up to date, or a check was already in progress. Try again in a moment.', 7000);
+    if (!sawLive && _cloudCheckAsked.get(id) === askedAt) {
+      _cloudCheckAsked.delete(id);
+      showCampaignToast('The VM did not start the check within three minutes. The request remains queued; use Stop check to cancel it.', 8000);
+      try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+    }
   })();
   return true;
 }
 window.cloudCheckNow = cloudCheckNow;
+
+async function stopCloudCheckUI(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check/stop`, { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    _cloudCheckAsked.delete(id);
+    showCampaignToast(d.wasQueued
+      ? 'Queued check cancelled. No browser was opened; monitoring remains active.'
+      : d.wasRunning === false
+      ? 'Nothing was queued or running — no check to stop.'
+      : 'Stopping the check now. The current browser is closing; unconfirmed work will retry next time. Monitoring remains active.', 7000);
+    if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+    return true;
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    showCampaignToast('Could not stop the check: ' + e.message, 7000);
+    return false;
+  }
+}
+window.stopCloudCheckUI = stopCloudCheckUI;
 
 // Local check of a CLOUD campaign (v2.160.87) — runs the app's OWN GoLogin
 // sweep (/api/bulk-check-now — the exact engine local campaigns use: opens each
@@ -26562,7 +26626,7 @@ function _stageOverview(status, ca, la, phase) {
   const accepted = _stageNumberFromMilestones(ca, /accept/i);
   const introduced = _stageNumberFromMilestones(ca, /introduc|message/i);
   const currentAccount = String(ca && ca.account || status && status.liveAccount || '');
-  const accountDone = Math.max(0, Number(status && status.accountsDone) || 0);
+  const accountDone = Math.max(0, Number(ca && ca.accountsDone) || Number(status && status.accountsDone) || 0);
   const accountRemaining = Math.max(0, accountTotal - accountDone);
   let side = ['Current account', currentAccount ? profileLabel(currentAccount) : 'Selecting next', 'The card updates from verified engine events'];
   let next = ['Next expected event', String(ca && ca.sub || 'The next verified engine event'), 'No action is needed unless this panel says otherwise.'];
@@ -26679,6 +26743,52 @@ function renderLiveStage(root, status) {
         ['Next expected event', 'sender browser opens'],
       ],
       milestones: _stageMilestoneFallback(null, 'checking'),
+    };
+  }
+
+  // One source of live truth: whenever the visible log advances, the headline
+  // advances from that exact event on the very same render. Durable state still
+  // supplies counters, safety copy and workflow anatomy, but it no longer gets
+  // to leave the headline stuck on an earlier inferred step. This shared render
+  // path covers VM + This Mac and sending + checking + introducing + monitoring.
+  const logEvent = latestBannerEvent(status && status.logs, { phase });
+  if (logEvent && phase !== 'done') {
+    ca = { ...(ca || {}), label: logEvent.headline,
+      sub: `${logEvent.detail}${logEvent.explanation ? ` · ${logEvent.explanation}` : ''}` };
+    const allLogs = Array.isArray(status && status.logs) ? status.logs.map((x) => String(x && x.line != null ? x.line : x || '')) : [];
+    let runStart = -1;
+    allLogs.forEach((line, i) => { if (/Check now|Check started/i.test(line)) runStart = i; });
+    const currentRun = runStart >= 0 ? allLogs.slice(runStart) : allLogs;
+    const completedAccounts = new Set();
+    currentRun.forEach((line) => {
+      const hit = line.match(/(?:OK|LOG|WARN)?\s*[✓✔⚠]?\s*(\S+@\S+|[\w.-]+)\s+[—–]\s+(?:\d+ newly accepted|Identity Restricted)/i);
+      if (hit) completedAccounts.add(hit[1].toLowerCase());
+    });
+    const done = completedAccounts.size;
+    const scope = ((status.participatingProfileIds || status.profileIds) || []).length;
+    if (logEvent.kind === 'check-queued') {
+      ca = { ...ca, account: '', accountsDone: 0,
+        facts: [['Check trigger', 'Run check now'], ['Scope', `${scope} campaign account${scope === 1 ? '' : 's'}`], ['Current account', 'not selected yet'], ['Next expected event', 'VM worker claims the check']],
+        milestones: [['Requested', 'check queued', 'done'], ['Worker', 'waking', 'active'], ['Browser', 'not opened yet', 'future'], ['Accounts', 'waiting', 'future'], ['Results', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'account-checking') {
+      ca = { ...ca, account: logEvent.account, accountsDone: done,
+        facts: [['Check', 'running'], ['Current account', logEvent.account], ['Accounts completed', `${done} of ${scope}`], ['Next expected event', 'recent connections result']],
+        milestones: [['Requested', 'complete', 'done'], ['Browser', 'open', 'done'], ['Connections', 'reading now', 'active'], ['Acceptances', 'waiting', 'future'], ['Introductions', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'account-checked' || logEvent.kind === 'account-skipped') {
+      ca = { ...ca, account: logEvent.account, accountsDone: done,
+        facts: [['Check', 'running'], ['Last account', logEvent.account], ['Accounts completed', `${done} of ${scope}`], ['Next expected event', done >= scope ? 'finish and schedule next check' : 'open the next account']],
+        milestones: [['Requested', 'complete', 'done'], ['Browser', 'complete', 'done'], ['Connections', 'loaded', 'done'], ['Acceptances', 'recorded', 'done'], ['Next account', done >= scope ? 'finishing check' : 'selecting', 'active']] };
+    } else if (logEvent.kind === 'check-complete') {
+      ca = { ...ca, account: '', accountsDone: scope,
+        facts: [['Check', 'complete'], ['Accounts completed', `${scope} of ${scope}`], ['Results', 'saved'], ['Next expected event', 'schedule the next automatic check']],
+        milestones: [['Requested', 'complete', 'done'], ['Browsers', 'closed', 'done'], ['Connections', 'loaded', 'done'], ['Acceptances', 'recorded', 'done'], ['Results', 'saved', 'done']] };
+    }
+    la = {
+      ...(la || {}), phase,
+      verb: logEvent.eyebrow || 'Latest campaign event',
+      who: logEvent.headline,
+      l1: logEvent.headline,
+      l2: ca.sub,
     };
   }
 
