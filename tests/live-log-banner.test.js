@@ -194,6 +194,31 @@ test('resumed sending event outranks a stale idle-monitoring snapshot', () => {
   assert.equal(bannerEventOwnsIdleMonitoring(checking, true), false);
 });
 
+test('real resumed VM sequence advances past an older introduction to the latest sending step', () => {
+  const event = latestBannerEvent([
+    '✓ Benjamin Lombardo · introduced · 13:18',
+    '✓ riccardo@ortus.solutions invited Angie Ruminski-Sontag · 6 of 8 this turn, 26/50 today · 13:27',
+    '✓ CJ Jewell, PhD · CC sent · 13:28 · via riccardo@ortus.solutions · linkedin.com/in/ACwAAAR9UmYBHX0b8Glola41GiVL3rTjk2EF2ao',
+    '✓ riccardo@ortus.solutions invited CJ Jewell, PhD · 7 of 8 this turn, 27/50 today · 13:28',
+    '✓ Khaliq Malik · CC sent · 13:29 · via riccardo@ortus.solutions · linkedin.com/in/ACwAAACc5nQB4M5lsgdc5zyy8adpzJUA7c-2oIE',
+    '✓ riccardo@ortus.solutions invited Khaliq Malik · 8 of 8 this turn, 28/50 today · 13:29',
+    '⏹ riccardo@ortus.solutions — browser closed · 8 sent this turn (28/50 today) · rests ~3 min before its next turn · 13:29',
+    "🖥️ Opening carlos@virtualroundtable.com's browser on the VM — 20/50 sent today · 13:29",
+    '📋 carlos@virtualroundtable.com is taking up to 8 people this turn · 13:29',
+    '▶ carlos@virtualroundtable.com · Luke Dauparas — Connect pressed from More · Waiting for LinkedIn to open the invitation dialog · 0 of 8 this sending batch · 13:30',
+    '▶ carlos@virtualroundtable.com · Luke Dauparas — Send pressed — confirming with LinkedIn · Waiting for LinkedIn or Voyager to confirm the invitation · 0 of 8 this sending batch · 13:30',
+    '⚠ carlos@virtualroundtable.com · Luke Dauparas — Send was clicked but Pending was NOT confirmed · LinkedIn may have silently dropped it · 13:31',
+    '⏳ carlos@virtualroundtable.com — backing off 66s (degradation streak 1) · 13:31',
+    '▶ carlos@virtualroundtable.com · Luke Dauparas — Stamping the result to the sheet · Writing the final status back to Google Sheets · 13:32',
+    '──────────',
+    'Σ Total · 100 sent · 0 errors · 35 pending',
+  ], { phase: 'sending', now: new Date(2026, 7, 27, 13, 32) });
+  assert.equal(event.kind, 'saving-result');
+  assert.equal(event.headline, 'Saving Luke Dauparas’s result');
+  assert.equal(event.detail, 'carlos@virtualroundtable.com · Writing to the campaign sheet');
+  assert.doesNotMatch(event.headline, /Benjamin Lombardo/);
+});
+
 test('all local check phases expose matching workflow kinds', () => {
   assert.equal(latestBannerEvent(['📡 [sean@ortus.solutions] Launching browser…']).kind, 'account-browser-opening');
   assert.equal(latestBannerEvent(['📡 [cindy@ortus.solutions] Sweeping recent connections…']).kind, 'account-checking');

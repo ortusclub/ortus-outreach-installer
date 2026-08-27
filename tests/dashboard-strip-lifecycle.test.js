@@ -49,3 +49,8 @@ test('cloud Start now from monitoring restarts pending sending instead of resumi
   assert.match(app, /await _forceCloudItemsAfterAction\(id\)/);
   assert.match(app, /if \(btn && btn\.isConnected && !accepted\)/);
 });
+
+test('expanded banner cannot override the visible log with a private remembered event', () => {
+  assert.doesNotMatch(app, /_stageNewestLogEvent/);
+  assert.match(app, /latestBannerEvent\(status && status\.logs, \{ phase \}\)/);
+});

@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.51';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.52';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -46,8 +46,8 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent, bannerEventOwnsIdleMonitoring } from '/js/live-log-banner.mjs?v=3.1.48.51';
-import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.51';
+import { latestBannerEvent, bannerEventOwnsIdleMonitoring } from '/js/live-log-banner.mjs?v=3.1.48.52';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.52';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -26493,7 +26493,6 @@ function renderPrimaryLoginWarn(status) {
 // animating node is written ONLY when its content actually changes, tracked in
 // the stage element's own dataset.
 const _stagePhaseAt = new Map();   // campaign id → { key, at } — elapsed clock
-const _stageNewestLogEvent = new Map(); // campaign id → monotonic banner event
 const _stageSel = new Map();       // campaign id → selected account (drawer)
 const _stageStatus = new WeakMap(); // stage node → the status it last drew
 
@@ -27068,18 +27067,11 @@ function renderLiveStage(root, status) {
       return (account && account.email) || id;
     }),
   );
-  // Cloud state and log streams are fetched independently. A normal poll can
-  // briefly return an older log snapshot after a newer event was shown. Keep
-  // each campaign's banner monotonic instead of visually replaying old work.
-  const rememberedLog = _stageNewestLogEvent.get(cid);
-  if (rememberedLog && rememberedLog.phase === phase && rememberedLog.event
-      && Number(rememberedLog.event.at) > 0 && Number(logEvent && logEvent.at) > 0
-      && Number(logEvent.at) < Number(rememberedLog.event.at)) {
-    logEvent = rememberedLog.event;
-  } else if (logEvent && (!rememberedLog || rememberedLog.phase !== phase
-      || Number(logEvent.at) >= Number(rememberedLog.event && rememberedLog.event.at))) {
-    _stageNewestLogEvent.set(cid, { phase, event: logEvent });
-  }
+  // Do not keep a banner-only event cache. `status.logs` is the exact stream
+  // rendered below the card, and the banner must select from that same current
+  // snapshot on every render. The former cache could overwrite this freshly
+  // selected event with an older introduction whose timestamp compared higher,
+  // leaving the headline pinned while the visible log had already advanced.
   // The merged stream also contains derived lead events (for example an
   // introduction reconstructed from the sheet). They can carry a later sync
   // timestamp than the sweep that produced them. An unresolved sweep error is
