@@ -4878,12 +4878,13 @@ function boardIdForLaunch({ sheetUrl, tabName, campaignName }) {
 }
 
 app.post('/api/scrape/start', async (req, res) => {
-  const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName } = req.body || {};
+  const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName, accountName } = req.body || {};
   // Stamp the owner server-side (the authoritative "Operating as" email) so the
   // shared board can show WHO launched each scrape across machines.
   const result = await startScrape({
     searchUrls, sheetUrl, tabName, profileId, slowMode,
     ownerEmail: getOperatorEmail() || '', campaignName: campaignName || '',
+    accountName: accountName || '',
   });
   // Dispatch was the single biggest blind spot: WHAT was asked for (search URL,
   // GoLogin profile, destination sheet + tab) was never written down anywhere,
