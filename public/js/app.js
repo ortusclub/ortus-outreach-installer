@@ -7847,6 +7847,13 @@ function _buildCloudActiveStatus(c, leads, counts) {
     monitorCheckStartedAt: c.monitor_check_started_at || null,
     monitorCheckCompletedAt: c.monitor_check_completed_at || null,
     monitorCheckError: c.monitor_check_error || '',
+    monitorCheckId: c.monitor_check_id || '',
+    monitorCheckStatus: c.monitor_check_status || '',
+    monitorCheckExpected: Number(c.monitor_check_expected) || 0,
+    monitorCheckAccountsChecked: Number(c.monitor_check_accounts_checked) || 0,
+    monitorCheckCurrentAccount: c.monitor_check_current_account || '',
+    monitorCheckHeartbeatAt: c.monitor_check_heartbeat_at || null,
+    monitorTaskError: c.monitorTaskError || '',
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
     // The engine sends check_interval_minutes as the EFFECTIVE cadence and the
     // operator's own setting beside it; the difference is what makes the card say
@@ -8026,11 +8033,28 @@ function _cloudCurrentAction(d) {
       const requested = _cloudCheckAskedActive(c);
       const startedAt = Date.parse(c.monitor_check_started_at || '');
       const completedAt = Date.parse(c.monitor_check_completed_at || '');
-      const checking = requested || c.monitorTaskStatus === 'claimed'
-        || (Number.isFinite(startedAt) && (!Number.isFinite(completedAt) || startedAt > completedAt));
+      const durableSweepStatus = String(c.monitor_check_status || '').toLowerCase();
+      const durableFailure = durableSweepStatus === 'failed' || durableSweepStatus === 'incomplete' || c.monitorTaskStatus === 'error';
+      const durableRunning = durableSweepStatus === 'running';
+      const hasDurableSweep = !!c.monitor_check_id;
+      const checking = !durableFailure && (requested || c.monitorTaskStatus === 'claimed'
+        || durableRunning
+        || (!hasDurableSweep && Number.isFinite(startedAt) && (!Number.isFinite(completedAt) || startedAt > completedAt)));
       const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
       const accounts = (c.profile_ids || []).length;
       const dueAt = Date.parse(c.next_check_at || '');
+      if (durableFailure) {
+        const expected = Number(c.monitor_check_expected) || accounts;
+        const checked = Math.min(expected, Number(c.monitor_check_accounts_checked) || 0);
+        const reason = String(c.monitor_check_error || c.monitorTaskError || 'The worker could not finish this check.');
+        return {
+          phase: 'monitoring', label: `Check incomplete — ${checked} of ${expected} accounts checked`,
+          account: '', lead: '', sub: reason,
+          safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safe · monitoring stays active`,
+          facts: [['Check', 'incomplete'], ['Accounts checked', `${checked} of ${expected}`], ['Result', reason], ['Operator action', 'Retry check']],
+          milestones: [['Requested', 'complete', 'done'], ['Accounts', `${checked} checked`, checked ? 'done' : 'active'], ['Incomplete', `${Math.max(0, expected - checked)} not checked`, 'active'], ['Recovery', 'Retry check', 'future']],
+        };
+      }
       // A fresh manual request supersedes an old scheduled due time. Otherwise
       // a two-minute cold start can inherit yesterday's `next_check_at` and be
       // announced as a 15-minute outage while it is visibly starting.
@@ -11439,7 +11463,16 @@ async function _renderCampaignsBoardInner() {
         monitorTaskDueAt: c.monitorTaskDueAt || null,
         monitorCheckStartedAt: c.monitor_check_started_at || null,
         monitorCheckCompletedAt: c.monitor_check_completed_at || null,
-        monitoringCheckInProgress: !!(c.monitor_check_started_at && !c.monitor_check_completed_at)
+        monitorCheckError: c.monitor_check_error || '',
+        monitorCheckId: c.monitor_check_id || '',
+        monitorCheckStatus: c.monitor_check_status || '',
+        monitorCheckExpected: Number(c.monitor_check_expected) || 0,
+        monitorCheckAccountsChecked: Number(c.monitor_check_accounts_checked) || 0,
+        monitorCheckCurrentAccount: c.monitor_check_current_account || '',
+        monitorCheckHeartbeatAt: c.monitor_check_heartbeat_at || null,
+        monitorTaskError: c.monitorTaskError || '',
+        monitoringCheckInProgress: String(c.monitor_check_status || '').toLowerCase() === 'running'
+          || (!c.monitor_check_id && !!(c.monitor_check_started_at && !c.monitor_check_completed_at))
           || _cloudCheckAskedActive(c),
       });
       // Handed to this Mac: the checks run HERE, so the engine's copy of the
@@ -26942,6 +26975,7 @@ function renderLiveStage(root, status) {
   // to leave the headline stuck on an earlier inferred step. This shared render
   // path covers VM + This Mac and sending + checking + introducing + monitoring.
   let logEvent = latestBannerEvent(status && status.logs, { phase });
+  const durableSweepFailure = status && ['failed', 'incomplete', 'cancelled'].includes(String(status.monitorCheckStatus || '').toLowerCase());
   const sweepSummary = summarizeLatestMonitoringSweep(
     status && status.logs,
     ((status && (status.participatingProfileIds || status.profileIds)) || []).map((id) => {
@@ -26980,7 +27014,7 @@ function renderLiveStage(root, status) {
   // on its sender pill, but must not leave the whole campaign looking active.
   // Idle monitoring returns to its durable "waiting for next check" view.
   const transientCheckEvent = logEvent && ['local-browser-starting', 'account-browser-opening', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
-  if (logEvent && phase !== 'done' && !(phase === 'monitoring' && transientCheckEvent)) {
+  if (logEvent && phase !== 'done' && !durableSweepFailure && !(phase === 'monitoring' && transientCheckEvent)) {
     if (logEvent.kind === 'check-error' && sweepSummary && !/^Check incomplete/i.test(logEvent.headline)) {
       logEvent = {
         ...logEvent,
