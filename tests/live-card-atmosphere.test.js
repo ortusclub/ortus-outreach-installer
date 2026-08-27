@@ -29,7 +29,8 @@ test('card, stage and banner primitives all carry the approved state gradient', 
 });
 
 test('terminal cards keep their log and render a static outcome stage', () => {
-  assert.match(app, /const terminal = status && status\.state === 'done' \? terminalPresentation\(status\) : null/);
+  assert.match(app, /const terminal = !canonicalOwned && status && status\.state === 'done' \? terminalPresentation\(status\) : null/);
+  assert.match(app, /const phase = canonicalOwned\s*\? String\(\(ca && ca\.phase\) \|\| 'starting'\)/);
   assert.match(app, /terminal \? 'done'/);
   assert.match(app, /phase !== 'done'/);
   assert.match(app, /const logEl = root\.querySelector\('\[data-f="active-log"\]'\)/);

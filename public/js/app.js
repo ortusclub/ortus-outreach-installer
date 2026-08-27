@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.52';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.53';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -46,8 +46,9 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent, bannerEventOwnsIdleMonitoring } from '/js/live-log-banner.mjs?v=3.1.48.52';
-import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.52';
+import { latestBannerEvent, bannerEventOwnsIdleMonitoring } from '/js/live-log-banner.mjs?v=3.1.48.53';
+import { isCampaignStatusSnapshot, overlayCampaignStatus, selectCampaignStatusSnapshot } from '/js/campaign-status-contract.mjs?v=3.1.48.53';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.53';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -7877,6 +7878,22 @@ function _buildCloudActiveStatus(c, leads, counts) {
 // reads this: "updated 3s ago" is a fact about the app↔engine link, and a link
 // that has gone quiet is exactly what "it looks crashed" feels like.
 const _cloudPolledAt = new Map();
+// Canonical engine snapshots are retained per campaign so an older request that
+// resolves later cannot move the card backwards. No log line participates in
+// this selection or overlay.
+const _canonicalCampaignStatus = new Map();
+
+function _withCanonicalCampaignStatus(legacy, incoming) {
+  const id = String((incoming && incoming.campaignId) || (legacy && legacy.id) || '');
+  if (!id) return legacy;
+  const previous = _canonicalCampaignStatus.get(id) || null;
+  const eligible = isCampaignStatusSnapshot(incoming) && String(incoming.campaignId) === id
+    ? incoming : null;
+  const selected = selectCampaignStatusSnapshot(previous, eligible);
+  if (!selected) return legacy;
+  _canonicalCampaignStatus.set(id, selected);
+  return overlayCampaignStatus(legacy, selected);
+}
 // When each campaign's /accounts payload was last fetched for the board (the
 // opened campaign has its own poll).
 const _cloudAccountsAt = new Map();
@@ -8566,6 +8583,10 @@ async function _refreshCloudActiveStatus(id) {
       window.__cloudActiveStatus.connectionUnknown = false;
       window.__cloudActiveStatus.lastVerifiedAt = Date.now();
     }
+    window.__cloudActiveStatus = _withCanonicalCampaignStatus(
+      window.__cloudActiveStatus,
+      d && d.campaignStatus,
+    );
   } catch (err) {
     const previous = window.__cloudActiveStatus && String(window.__cloudActiveStatus.id) === String(id)
       ? window.__cloudActiveStatus : null;
@@ -11584,6 +11605,8 @@ async function _renderCampaignsBoardInner() {
         if (_localRuntimeActive && Array.isArray(_localLive.logs) && _localLive.logs.length) _row.logs = _localLive.logs;
         if (_localRuntimeActive && Array.isArray(_localLive.accountPanel) && _localLive.accountPanel.length) _row.accountPanel = _localLive.accountPanel;
       }
+      const _canonicalIndex = items.length - 1;
+      items[_canonicalIndex] = _withCanonicalCampaignStatus(items[_canonicalIndex], d && d.campaignStatus);
     }
   } catch (_) { /* cloud best-effort */ }
 
@@ -26896,9 +26919,11 @@ function _stageOverview(status, ca, la, phase) {
 function renderLiveStage(root, status) {
   const stage = root && _stgFld(root, 'active-stage');
   if (!stage) return false;
+  const canonicalSnapshot = status && status._canonicalStatusV1;
+  const canonicalOwned = isCampaignStatusSnapshot(canonicalSnapshot);
   // Recovery is still a live-status state. It used to opt out of this component
   // and resurrect the legacy card after a lid-close/runtime interruption.
-  const interrupted = !!(status && (status.state === 'interrupted' || status.interrupted || status.waitingForLocal));
+  const interrupted = !canonicalOwned && !!(status && (status.state === 'interrupted' || status.interrupted || status.waitingForLocal));
   let la = null;
   try { la = buildLiveActivity(status); } catch (_) { la = null; }
   let ca = (status && status.currentAction) || null;
@@ -26915,7 +26940,7 @@ function renderLiveStage(root, status) {
   // A paused local run may deliberately retain only its last browser action.
   // Keep the shared stage visible as PAUSED instead of falling through to the
   // legacy local banner (or incorrectly treating its account list as "done").
-  const terminal = status && status.state === 'done' ? terminalPresentation(status) : null;
+  const terminal = !canonicalOwned && status && status.state === 'done' ? terminalPresentation(status) : null;
   // Monitoring between sweeps is a durable campaign state. Historical lead
   // results remain in `logs`, so buildLiveActivity can legitimately reconstruct
   // an old "introduced" event long after its sweep completed. That event must
@@ -26925,15 +26950,29 @@ function renderLiveStage(root, status) {
   const monitoringIdle = !!(status
     && (status.state === 'monitoring' || status.monitoring || status.monitoringPhase)
     && !status.monitoringCheckInProgress);
-  const phase = (terminal ? 'done' : '')
-    || (interrupted ? 'paused' : '')
-    || (status && status.phase === 'preflight' ? 'starting' : '')
-    || (monitoringIdle ? 'monitoring' : '')
-    || (la && la.phase)
-    || ((la && la.state === 'checking') || (status && status.monitoringCheckInProgress) ? 'checking' : '')
-    || (paused ? 'paused' : (_doneAccts.length ? 'done' : ''));
+  const phase = canonicalOwned
+    ? String((ca && ca.phase) || 'starting')
+    : (terminal ? 'done' : '')
+      || (interrupted ? 'paused' : '')
+      || (status && status.phase === 'preflight' ? 'starting' : '')
+      || (monitoringIdle ? 'monitoring' : '')
+      || (la && la.phase)
+      || ((la && la.state === 'checking') || (status && status.monitoringCheckInProgress) ? 'checking' : '')
+      || (paused ? 'paused' : (_doneAccts.length ? 'done' : ''));
   if (!phase) { stage.hidden = true; root.classList.remove('has-unified-stage'); return false; }
-  if (!la) la = { phase, who: '', l1: '', l2: '' };
+  if (canonicalOwned) {
+    const canonicalVerb = phase === 'monitoring' ? 'Monitoring is active'
+      : phase === 'checking' ? 'Acceptance check update'
+        : phase === 'paused' ? 'Campaign paused'
+          : phase === 'done' ? 'Campaign complete' : 'Campaign update';
+    la = {
+      phase,
+      verb: canonicalVerb,
+      who: String((ca && ca.label) || canonicalSnapshot.headline || ''),
+      l1: String((ca && ca.label) || canonicalSnapshot.headline || ''),
+      l2: String((ca && ca.sub) || canonicalSnapshot.detail || ''),
+    };
+  } else if (!la) la = { phase, who: '', l1: '', l2: '' };
   if (terminal) {
     const processed = Math.max(0, Number(status.totalProcessed) || 0);
     const total = Math.max(processed, Number(status.totalTargets) || 0);
@@ -26986,7 +27025,7 @@ function renderLiveStage(root, status) {
       ],
     };
     la = { phase: 'paused', who: '', l1: ca.label, l2: ca.sub };
-  } else if (status && status.phase === 'preflight' && !ca) {
+  } else if (!canonicalOwned && status && status.phase === 'preflight' && !ca) {
     ca = {
       phase: 'starting',
       label: status.preflightL1 || 'Connecting sender accounts to the primary',
@@ -27002,7 +27041,7 @@ function renderLiveStage(root, status) {
     la = { phase: 'starting', who: '', l1: ca.label, l2: ca.sub };
   }
   const sweepDisposition = monitorSweepDisposition(status || {});
-  if (phase === 'monitoring' && sweepDisposition === 'idle') {
+  if (!canonicalOwned && phase === 'monitoring' && sweepDisposition === 'idle') {
     const scope = Number(status.monitorCheckExpected)
       || ((status.participatingProfileIds || status.profileIds) || []).length;
     const checked = Number(status.monitorCheckAccountsChecked) || scope;
@@ -27057,10 +27096,10 @@ function renderLiveStage(root, status) {
   // supplies counters, safety copy and workflow anatomy, but it no longer gets
   // to leave the headline stuck on an earlier inferred step. This shared render
   // path covers VM + This Mac and sending + checking + introducing + monitoring.
-  let logEvent = latestBannerEvent(status && status.logs, { phase });
+  let logEvent = canonicalOwned ? null : latestBannerEvent(status && status.logs, { phase });
   const durableSweepFailure = sweepDisposition === 'error';
   const durableSweepIdle = sweepDisposition === 'idle';
-  const sweepSummary = summarizeLatestMonitoringSweep(
+  const sweepSummary = canonicalOwned ? null : summarizeLatestMonitoringSweep(
     status && status.logs,
     ((status && (status.participatingProfileIds || status.profileIds)) || []).map((id) => {
       const account = ((cid && _cloudAccountsById.get(cid)) || []).find((a) => a.profileId === id || a.email === id);

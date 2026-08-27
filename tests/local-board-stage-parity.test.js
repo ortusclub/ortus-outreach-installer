@@ -50,7 +50,8 @@ test('runtime interruption stays inside the unified stage instead of restoring l
   const end = source.indexOf('window.stageAcctPick', start);
   assert.ok(start > 0 && end > start);
   const renderer = source.slice(start, end);
-  assert.match(renderer, /const interrupted = !!/);
+  assert.match(renderer, /const interrupted = !canonicalOwned && !!/);
+  assert.match(renderer, /const phase = canonicalOwned\s*\? String\(\(ca && ca\.phase\) \|\| 'starting'\)/);
   assert.match(renderer, /interrupted \? 'paused'/);
   assert.doesNotMatch(renderer,
     /if \(status && \(status\.state === 'interrupted'[\s\S]{0,220}_hideStage\(root\)/,
