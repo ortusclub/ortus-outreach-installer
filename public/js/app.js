@@ -26976,6 +26976,7 @@ function renderLiveStage(root, status) {
   // path covers VM + This Mac and sending + checking + introducing + monitoring.
   let logEvent = latestBannerEvent(status && status.logs, { phase });
   const durableSweepFailure = status && ['failed', 'incomplete', 'cancelled'].includes(String(status.monitorCheckStatus || '').toLowerCase());
+  const durableSweepCompleted = status && String(status.monitorCheckStatus || '').toLowerCase() === 'completed';
   const sweepSummary = summarizeLatestMonitoringSweep(
     status && status.logs,
     ((status && (status.participatingProfileIds || status.profileIds)) || []).map((id) => {
@@ -27014,7 +27015,8 @@ function renderLiveStage(root, status) {
   // on its sender pill, but must not leave the whole campaign looking active.
   // Idle monitoring returns to its durable "waiting for next check" view.
   const transientCheckEvent = logEvent && ['local-browser-starting', 'account-browser-opening', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
-  if (logEvent && phase !== 'done' && !durableSweepFailure && !(phase === 'monitoring' && transientCheckEvent)) {
+  if (logEvent && phase !== 'done' && !durableSweepFailure
+      && !(phase === 'monitoring' && (transientCheckEvent || durableSweepCompleted))) {
     if (logEvent.kind === 'check-error' && sweepSummary && !/^Check incomplete/i.test(logEvent.headline)) {
       logEvent = {
         ...logEvent,

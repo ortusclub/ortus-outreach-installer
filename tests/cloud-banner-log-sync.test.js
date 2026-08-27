@@ -11,3 +11,8 @@ test('a newer authoritative lead result advances the top banner beyond stale bro
   assert.match(app, /sent and confirmed/);
   assert.match(app, /\['Sheet', ok \? 'result stamped' : 'error stamped', 'done'\]/);
 });
+
+test('a completed monitoring sweep returns to the idle monitoring banner', () => {
+  assert.match(app, /const durableSweepCompleted = status && String\(status\.monitorCheckStatus \|\| ''\)\.toLowerCase\(\) === 'completed';/);
+  assert.match(app, /phase === 'monitoring' && \(transientCheckEvent \|\| durableSweepCompleted\)/);
+});
