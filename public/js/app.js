@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.35';
+import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.36';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -47,7 +47,7 @@ import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep } from '/js/monitor-sweep-summary.mjs?v=3.1.48.35';
+import { summarizeLatestMonitoringSweep } from '/js/monitor-sweep-summary.mjs?v=3.1.48.36';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -10987,6 +10987,7 @@ const _cloudDetailCache = new Map();  // id → detail; terminal campaigns cache
 let _boardRenderInFlight = false;     // don't stack renders (each does N cloud fetches)
 let _cloudRaw = [];                   // background snapshot of cloud details; render builds from this
 let _cloudRefreshInFlight = false;
+let _cloudRefreshController = null;   // cancelled when Electron wakes from sleep
 // Successful handovers update ownership immediately. The board snapshot can be
 // five seconds old, which is too stale to decide which poller owns the card.
 const _handoverOwner = new Map();
@@ -11037,13 +11038,16 @@ let _cloudOfflineSince = 0;
 async function _refreshCloudItems() {
   if (_cloudRefreshInFlight) return;
   _cloudRefreshInFlight = true;
+  const controller = new AbortController();
+  _cloudRefreshController = controller;
+  const cloudFetch = (input, init = {}) => fetch(input, { ...init, signal: controller.signal });
   // Only the LIST decides reachability. Everything after it is per-campaign
   // detail with its own fallback, and a throw from one of those says nothing
   // about the engine being up — flagging it offline would put a false banner
   // over a board that is perfectly live.
   let listOk = false;
   try {
-    const _res = await fetch('/api/campaign/cloud-board-summary');
+    const _res = await cloudFetch('/api/campaign/cloud-board-summary');
     const cl = await _res.json();
     // The engine answers a failed list with 502 + {error}, which fetch does NOT
     // throw on. Reading `.campaigns` off it yields undefined, and the old `|| []`
@@ -11085,7 +11089,7 @@ async function _refreshCloudItems() {
       const _missingIds = _needIds.filter((id) => !_bulk[id]);
       try {
         if (!_missingIds.length) throw new Error('summary complete');
-        const br = await (await fetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(_missingIds.join(','))}`)).json();
+        const br = await (await cloudFetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(_missingIds.join(','))}`)).json();
         _bulk = { ..._bulk, ...((br && br.details) || {}) };
       } catch { /* summary was complete, or per-id fallback runs below */ }
     }
@@ -11094,7 +11098,7 @@ async function _refreshCloudItems() {
       if (_isFresh(c)) return _cloudDetailCache.get(c.id);
       if (_bulk[c.id]) d = _bulk[c.id];
       else {
-        try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+        try { d = await (await cloudFetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
         catch { d = { campaign: c, leadCounts: {} }; }
       }
       _cloudDetailCache.set(c.id, d);
@@ -11126,7 +11130,7 @@ async function _refreshCloudItems() {
       if (((_ca && _ca.phase === 'waiting') || _live || _fgDone) && _acctAge > 30000) {
         _cloudAccountsAt.set(c.id, Date.now());
         try {
-          const ar = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/accounts`)).json();
+          const ar = await (await cloudFetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/accounts`)).json();
           if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(c.id, ar.accounts);
         } catch (_) { /* the stage degrades to the reason line alone */ }
       }
@@ -11138,7 +11142,7 @@ async function _refreshCloudItems() {
       if (d && Array.isArray(d.monitorLog)) _cloudMonitorLog.set(c.id, d.monitorLog);
       if (st === 'running' || st === 'paused' || st === 'monitoring' || _snExpanded.has(c.id)) {
         try {
-          const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
+          const lr = await (await cloudFetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
           if (lr && Array.isArray(lr.leads)) {
             d._leads = lr.leads;
             _recordCloudProgress(c.id, d);
@@ -11153,6 +11157,9 @@ async function _refreshCloudItems() {
       return d;
     });
   } catch (_) {
+    // Superseded deliberately by the wake recovery above. Do not turn a
+    // cancelled pre-sleep request into a false "engine offline" warning.
+    if (controller.signal.aborted) return;
     // Keep the last snapshot — a stale board is far more useful than an empty
     // one — but never let it pass for live. Both signals are the same fact said
     // twice: the tile for whoever is looking at the header, the banner for
@@ -11163,7 +11170,14 @@ async function _refreshCloudItems() {
       try { renderVmTile(true); } catch { /* */ }
     }
   }
-  finally { _cloudRefreshInFlight = false; }
+  finally {
+    // A wake may already have replaced this request with a newer refresh.
+    // Only the current controller is allowed to release the shared lock.
+    if (_cloudRefreshController === controller) {
+      _cloudRefreshController = null;
+      _cloudRefreshInFlight = false;
+    }
+  }
   try { _renderCloudOfflineBanner(); } catch { /* */ }
   try { renderCampaignsBoard(); } catch { /* */ }
 }
@@ -11831,6 +11845,47 @@ function startCampaignsBoard() {
   }, 5000);
 }
 window.startCampaignsBoard = startCampaignsBoard;
+
+// macOS suspends Chromium timers and may leave a fetch pending while the lid is
+// closed. A pending cloud refresh used to keep `_cloudRefreshInFlight` true
+// forever after wake, so the dashboard kept rendering yesterday's snapshot
+// even though the VM continued working. Recover from every observable wake
+// path: visibility, window focus/pageshow, and a wall-clock jump (the fallback
+// for macOS versions that emit neither event reliably).
+let _lastRendererHeartbeat = Date.now();
+let _lastWakeRefreshAt = 0;
+function _refreshAfterRendererWake() {
+  const now = Date.now();
+  if (now - _lastWakeRefreshAt < 1000) return;
+  _lastWakeRefreshAt = now;
+
+  if (_cloudRefreshController) {
+    try { _cloudRefreshController.abort(); } catch (_) { /* already settled */ }
+  }
+  _cloudRefreshController = null;
+  _cloudRefreshInFlight = false;
+
+  // Wake the local monitoring scheduler too. This duplicates Electron's native
+  // powerMonitor hook intentionally: Chromium visibility is the reliable
+  // fallback on Macs where the native resume event is missed.
+  fetch('/api/monitoring/wake', { method: 'POST' }).catch(() => {});
+  if (typeof startPolling === 'function') startPolling();
+  if (typeof pollStatus === 'function') pollStatus().catch(() => {});
+  _refreshCloudItems();
+  try { renderCampaignsBoard(); } catch (_) { /* fresh fetch repaints shortly */ }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _refreshAfterRendererWake();
+});
+window.addEventListener('focus', _refreshAfterRendererWake);
+window.addEventListener('pageshow', _refreshAfterRendererWake);
+setInterval(() => {
+  const now = Date.now();
+  const elapsed = now - _lastRendererHeartbeat;
+  _lastRendererHeartbeat = now;
+  if (elapsed > 15_000) _refreshAfterRendererWake();
+}, 5000);
 
 // The board is the top-level Campaigns view — it must start on page load
 // REGARDLESS of whether a campaign is running. (Previously it was only kicked
