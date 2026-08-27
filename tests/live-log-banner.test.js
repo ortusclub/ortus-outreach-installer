@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { latestBannerEvent } from '../public/js/live-log-banner.mjs';
+import { latestBannerEvent, bannerEventOwnsIdleMonitoring } from '../public/js/live-log-banner.mjs';
 
 test('the newest operational log line becomes the banner event', () => {
   const e = latestBannerEvent([
@@ -180,6 +180,18 @@ test('VM browser-opening event identifies one authoritative sender', () => {
   assert.equal(e.headline, 'Opening the sender browser');
   assert.equal(e.detail, 'emanuele.circi@ortus.solutions · 8 of 20 sent today');
   assert.doesNotMatch(e.headline, /@/);
+});
+
+test('resumed sending event outranks a stale idle-monitoring snapshot', () => {
+  const sending = latestBannerEvent([
+    "🖥️ Opening riccardo@ortus.solutions's browser on the VM — 20/50 sent today · 13:19",
+  ], { phase: 'monitoring' });
+  const checking = latestBannerEvent([
+    'Checking riccardo@ortus.solutions… · 13:19',
+  ], { phase: 'monitoring' });
+  assert.equal(sending.kind, 'sender-browser-opening');
+  assert.equal(bannerEventOwnsIdleMonitoring(sending, true), true);
+  assert.equal(bannerEventOwnsIdleMonitoring(checking, true), false);
 });
 
 test('all local check phases expose matching workflow kinds', () => {

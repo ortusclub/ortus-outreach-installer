@@ -246,3 +246,22 @@ export function latestBannerEvent(logs = [], { phase = '', now = new Date() } = 
   }
   return candidates[candidates.length - 1];
 }
+
+// An idle monitoring snapshot may arrive one poll behind a freshly resumed
+// sender. Hide only historical acceptance-check steps in that situation. The
+// previous blanket `durableSweepIdle` guard also hid real sending events such
+// as "Opening riccardo's browser on the VM", leaving the banner frozen on the
+// next-check countdown while the campaign was visibly sending in the log.
+export function bannerEventOwnsIdleMonitoring(event, durableSweepIdle = false) {
+  if (!event) return false;
+  if (!durableSweepIdle) return true;
+  return ![
+    'local-browser-starting',
+    'account-browser-opening',
+    'account-checking',
+    'account-checked',
+    'account-skipped',
+    'check-complete',
+    'check-waiting',
+  ].includes(event.kind);
+}

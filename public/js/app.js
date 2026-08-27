@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.50';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.51';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -46,8 +46,8 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
-import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.50';
+import { latestBannerEvent, bannerEventOwnsIdleMonitoring } from '/js/live-log-banner.mjs?v=3.1.48.51';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.51';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -11218,6 +11218,19 @@ async function _refreshCloudItems() {
   try { renderCampaignsBoard(); } catch { /* */ }
 }
 
+// Operator actions must not wait behind a board poll that began before the
+// action. Cancel that obsolete snapshot, invalidate the changed campaign and
+// immediately request a post-action snapshot. This is shared by VM and
+// local-owned cloud rows because both render from the cloud board source.
+async function _forceCloudItemsAfterAction(id) {
+  if (id) _cloudDetailCache.delete(id);
+  if (_cloudRefreshController) _cloudRefreshController.abort();
+  for (let i = 0; i < 50 && _cloudRefreshInFlight; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  await _refreshCloudItems();
+}
+
 
 function _renderCloudOfflineBanner() {
   const el = document.getElementById('cloud-offline-banner');
@@ -12631,11 +12644,11 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
       if (typeof showCampaignToast === 'function') showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Restart isn’t live yet — engine update pending.', 6000);
-      return;
+      return false;
     }
     if (d.alreadyRunning) {
       if (typeof showCampaignToast === 'function') showCampaignToast('Already sending — nothing to resume.', 4000);
-      return;
+      return true;
     }
     if (d.scheduled) {
       if (typeof showCampaignToast === 'function') {
@@ -12644,7 +12657,7 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
       _pushCloudEvent(id, `⏰ Scheduled to restart ${_fmtCloudStartAt(d.startAt)}`);
       window.location.hash = '#/'; // back to the dashboard, where it shows as Scheduled
       if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
-      return;
+      return true;
     }
     const left = Number(d.pending) || 0;
     if (typeof showCampaignToast === 'function') {
@@ -12654,10 +12667,14 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     _pushCloudEvent(id, fromStart ? '▶️ Started (from the beginning)' : '▶️ Started (continuing where it left off)');
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
-    return;
+    return false;
   }
+  // Paint the accepted restart and its new log event immediately. The normal
+  // board poll then replaces this optimistic transition with engine truth.
   if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
   if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  await _forceCloudItemsAfterAction(id);
+  return true;
 }
 window.restartCloudCampaignUI = restartCloudCampaignUI;
 
@@ -27085,7 +27102,8 @@ function renderLiveStage(root, status) {
   const transientCheckEvent = logEvent && ['local-browser-starting', 'account-browser-opening', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
   const durableErrorEvent = durableSweepFailure && logEvent && logEvent.kind === 'check-error';
   if (logEvent && phase !== 'done' && (!durableSweepFailure || durableErrorEvent)
-      && !(phase === 'monitoring' && (transientCheckEvent || durableSweepIdle))) {
+      && !(phase === 'monitoring' && transientCheckEvent)
+      && !(phase === 'monitoring' && !bannerEventOwnsIdleMonitoring(logEvent, durableSweepIdle))) {
     if (logEvent.kind === 'check-error' && sweepSummary && !/^Check incomplete/i.test(logEvent.headline)) {
       logEvent = {
         ...logEvent,
@@ -28874,6 +28892,7 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
     btn.setAttribute('aria-busy', 'true');
   }
   let committed = false;
+  let accepted = false;
   try {
   const monitoring = requestedPhase === 'monitoring';
   const currentLabel = current === 'vm' ? 'Cloud VM' : 'This Mac';
@@ -28910,7 +28929,10 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   // log line, and a permanently disabled button. Keep the origin explicit in
   // the control contract so current and future monitoring cards cannot regress.
   if (current === 'vm') {
-    if (sendingFromMonitoring) return restartCloudCampaignUI(id, false);
+    if (sendingFromMonitoring) {
+      accepted = await restartCloudCampaignUI(id, false);
+      return accepted;
+    }
     return pauseCloudCampaignUI(id, true);
   }
   const status = await fetch('/api/campaign/status').then((r) => r.json()).catch(() => ({}));
@@ -28922,6 +28944,7 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
       return;
     }
     if (typeof showCampaignToast === 'function') showCampaignToast('Restored on this Mac — continuing where it left off.', 6000);
+    accepted = true;
     return pollStatus();
   }
   // A durable cloud row can still be owned by This Mac after the process that
@@ -28929,15 +28952,19 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   // the handover endpoint to re-adopt that exact campaign instead of invoking
   // the legacy singleton resume preview (which has no campaign to act on).
   if (id && id !== 'local-active' && !status.running && status.state !== 'monitoring') {
-    return campaignHandover(id, 'local', null);
+    const result = await campaignHandover(id, 'local', null);
+    accepted = true;
+    return result;
   }
-  return onResumeClicked();
+  const result = await onResumeClicked();
+  accepted = true;
+  return result;
   } finally {
     _resumeDecisionInFlight.delete(resumeKey);
     // A successful action repaints this control from server state. A cancelled
     // decision restores the same button, while the keyed lock prevents a
     // second request from another copy of the card during the operation.
-    if (btn && btn.isConnected) {
+    if (btn && btn.isConnected && !accepted) {
       btn.disabled = false;
       btn.removeAttribute('aria-busy');
     }
