@@ -783,8 +783,17 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   body[data-dashboard='v3'] .stg-resume b { display: block; color: var(--gold, #d4a24a); font-size: .9rem; }
   body[data-dashboard='v3'] .stg-resume span { display: block; margin-top: 4px; color: var(--gray); font-size: .76rem; }
   body[data-dashboard='v3'] .stg-resume button {
-    border-radius: 999px; padding: 9px 16px; border-color: var(--gold, #d4a24a);
+    border-radius: 999px; padding: 9px 16px; border: 1px solid var(--gold, #d4a24a);
+    background: transparent; color: var(--gold, #d4a24a); cursor: pointer;
     font-family: var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  }
+  body[data-dashboard='v3'] .stg-resume button:hover,
+  body[data-dashboard='v3'] .stg-resume button:focus-visible {
+    background: var(--gold, #d4a24a); color: #111; outline: none;
+  }
+  body[data-dashboard='v3'] .stg-resume button:disabled {
+    background: transparent; color: var(--gray); border-color: var(--hairline-soft);
+    cursor: wait; opacity: .72;
   }
 
   body[data-dashboard='v3'] .vj-stage-drawer:empty { display: none; }

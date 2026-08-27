@@ -37,6 +37,7 @@ test('local runtime overlays only its matching adopted cloud campaign', () => {
 test('monitoring with unsent leads shows the approved restart action band', () => {
   assert.match(app, /resumeAt: c\.resumeTaskDueAt \|\| null/);
   assert.match(app, /class="stg-resume"/);
+  assert.match(app, /ca\.resumeReason === 'daily'/);
   assert.match(app, /Sending starts at \$\{escHtml\(ca\.resumeClock\)\}/);
   assert.match(app, /startMonitoringSendingNow\(this\)/);
   assert.doesNotMatch(app, /Sending starts at \$\{sendResumeClock\} · or choose Start now/);

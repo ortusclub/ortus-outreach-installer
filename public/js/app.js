@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.45';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.46';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -47,7 +47,7 @@ import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.45';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.46';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -7840,6 +7840,7 @@ function _buildCloudActiveStatus(c, leads, counts) {
     // When blocked senders become eligible again. Monitoring continues while
     // this durable resume task waits.
     resumeAt: c.resumeTaskDueAt || null,
+    resumeReason: c.resumeTaskReason || null,
     // Monitor task row → the hero's three states (see monitorHeroState). Absent
     // on a pre-fix engine, which monitorHeroState renders as a plain countdown.
     monitorTaskStatus: c.monitorTaskStatus || null,
@@ -11393,6 +11394,7 @@ async function _renderCampaignsBoardInner() {
         needsReview: c.status === 'needs_review',
         engineStatus: c.status || '',
         resumeAt: c.resumeTaskDueAt || null,
+        resumeReason: c.resumeTaskReason || null,
         stopping: c.status === 'stopping' || c.status === 'pausing',
         monitoringPhase: c.status === 'monitoring' && String(c.runs_on || '') === 'local',
         pausedAt: c.paused_at || null,
@@ -26992,6 +26994,7 @@ function renderLiveStage(root, status) {
       safety: `${Math.max(0, Number(status.pendingCount) || 0)} pending leads remain safely queued · sending is stopped`,
       resumeAt: sendResumeClock ? status.resumeAt : null,
       resumeClock: sendResumeClock,
+      resumeReason: status.resumeReason || null,
       account: '', accountsDone: checked,
       facts: [
         ['Last check', 'complete'],
@@ -27271,7 +27274,7 @@ function renderLiveStage(root, status) {
   const sel = _stageSel.get(cid) || '';
   const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}~${a.sweepChecked ? 'c' : ''}${a.sweepAccepted || 0}${a.sweepAction || ''}`).join(',')
     + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}`
-    + `|${(ca && ca.resumeAt) || ''}`
+    + `|${(ca && ca.resumeAt) || ''}|${(ca && ca.resumeReason) || ''}`
     + `|${[...((cid && _cloudAcctCounts.get(cid)) || new Map()).entries()].map(([k, v]) => `${k}:${v.sent}/${v.total}`).join(',')}`;
   if (stage.dataset.acctkey !== akey) {
     const pills = _stgFld(root, 'stageAccts');
@@ -27290,7 +27293,7 @@ function renderLiveStage(root, status) {
     // Only the stalled state gets advice — during a send there is nothing to fix.
     const fix = _stgFld(root, 'stageFix');
     if (fix) {
-      if (phase === 'monitoring' && ca && ca.resumeClock) {
+      if (phase === 'monitoring' && ca && ca.resumeClock && ca.resumeReason === 'daily') {
         fix.innerHTML = `<div class="stg-resume"><div><b>Sending starts at ${escHtml(ca.resumeClock)}</b><span>Monitoring continues in the meantime.</span></div><button type="button" onclick="startMonitoringSendingNow(this)">Start now</button></div>`;
       } else {
         fix.innerHTML = phase === 'waiting' ? _stageFixHtml(cid, accts) : '';
