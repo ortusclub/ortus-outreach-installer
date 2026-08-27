@@ -15,4 +15,6 @@ test('a newer authoritative lead result advances the top banner beyond stale bro
 test('a completed monitoring sweep returns to the idle monitoring banner', () => {
   assert.match(app, /const durableSweepCompleted = status && String\(status\.monitorCheckStatus \|\| ''\)\.toLowerCase\(\) === 'completed';/);
   assert.match(app, /phase === 'monitoring' && \(transientCheckEvent \|\| durableSweepCompleted\)/);
+  assert.match(app, /const monitoringIdle = !!\(status && status\.state === 'monitoring' && !status\.monitoringCheckInProgress\);/);
+  assert.match(app, /\|\| \(monitoringIdle \? 'monitoring' : ''\)\s*\|\| \(la && la\.phase\)/);
 });

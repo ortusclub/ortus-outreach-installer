@@ -26877,9 +26877,17 @@ function renderLiveStage(root, status) {
   // Keep the shared stage visible as PAUSED instead of falling through to the
   // legacy local banner (or incorrectly treating its account list as "done").
   const terminal = status && status.state === 'done' ? terminalPresentation(status) : null;
+  // Monitoring between sweeps is a durable campaign state. Historical lead
+  // results remain in `logs`, so buildLiveActivity can legitimately reconstruct
+  // an old "introduced" event long after its sweep completed. That event must
+  // not change the card back into an active introduction. During a live sweep
+  // monitoringCheckInProgress is true and the live event is still allowed to
+  // describe the current account/lead.
+  const monitoringIdle = !!(status && status.state === 'monitoring' && !status.monitoringCheckInProgress);
   const phase = (terminal ? 'done' : '')
     || (interrupted ? 'paused' : '')
     || (status && status.phase === 'preflight' ? 'starting' : '')
+    || (monitoringIdle ? 'monitoring' : '')
     || (la && la.phase)
     || ((la && la.state === 'checking') || (status && status.monitoringCheckInProgress) ? 'checking' : '')
     || (paused ? 'paused' : (_doneAccts.length ? 'done' : ''));
