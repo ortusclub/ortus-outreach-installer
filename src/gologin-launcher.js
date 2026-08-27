@@ -238,6 +238,21 @@ export function clearProfileCache() {
   profileAccount.clear();
 }
 
+// Dashboard/cloud payloads sometimes identify an account by its GoLogin
+// display name (normally the login email), while the SDK launch API accepts
+// only the internal profile id. Resolve either form without fuzzy matching:
+// opening the wrong person's saved browser is worse than returning an error.
+export function resolveProfileId(profiles, profileRef) {
+  const ref = String(profileRef || '').trim();
+  if (!ref) return null;
+  const list = Array.isArray(profiles) ? profiles.filter(Boolean) : [];
+  const byId = list.find((p) => String(p.id || '') === ref);
+  if (byId) return String(byId.id);
+  const key = ref.toLowerCase();
+  const byName = list.filter((p) => String(p.name || '').trim().toLowerCase() === key);
+  return byName.length === 1 ? String(byName[0].id) : null;
+}
+
 /**
  * Launch a GoLogin browser profile.
  * The browser window is positioned off-screen to avoid stealing focus.

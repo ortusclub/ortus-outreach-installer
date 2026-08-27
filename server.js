@@ -59,7 +59,7 @@ import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes, isRetiredMode } from './public/js/campaign-modes.mjs';
@@ -6815,9 +6815,13 @@ app.post('/api/browsers/show', async (_req, res) => {
 // buttons so the operator can manually intervene mid-run (e.g. log back in
 // after a session-expired park).
 app.post('/api/profile/:id/open-browser', async (req, res) => {
-  const profileId = req.params.id;
-  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  const profileRef = req.params.id;
+  if (!profileRef) return res.status(400).json({ error: 'profileId required' });
   try {
+    const profileId = resolveProfileId(await getProfiles(), profileRef);
+    if (!profileId) {
+      return res.status(404).json({ error: `No exact GoLogin profile matches ${profileRef}` });
+    }
     const existingPid = getProfilePid(profileId);
     if (existingPid) {
       if (process.platform === 'darwin') {
