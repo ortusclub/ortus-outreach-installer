@@ -280,7 +280,7 @@ test('controls: monitoring local → dashRunCheck bulk + pause + stop', () => {
   const resume = c.extra.find((x) => x.kind === 'play');
   assert.ok(resume);
   assert.equal(resume.once, true);
-  assert.match(resume.onclick, /openCampaignResumeDecision\('local-active','sending','local',this\)/);
+  assert.match(resume.onclick, /openCampaignResumeDecision\('local-active','sending-from-monitoring','local',this\)/);
 });
 test('controls: done → duplicate + delete, no bulk/stop/pause', () => {
   const cloud = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'cD', bucket: 'done' }));
@@ -316,7 +316,7 @@ test('a cloud monitoring campaign with unsent leads offers Resume sending', () =
   const resume = c.extra.find((x) => x.kind === 'play');
   assert.ok(resume, 'a campaign that stopped sending early must offer a way back');
   assert.equal(resume.once, true);
-  assert.match(resume.onclick, /openCampaignResumeDecision\('c1','sending','vm',this\)/,
+  assert.match(resume.onclick, /openCampaignResumeDecision\('c1','sending-from-monitoring','vm',this\)/,
     'resume must use the same machine-choice flow as This Mac');
 });
 

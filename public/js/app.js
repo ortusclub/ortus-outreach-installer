@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.49';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.50';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -47,7 +47,7 @@ import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.49';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.50';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -28864,6 +28864,8 @@ window.dashPauseActive = async function() {
 // consistent in the builder and the cloned expanded dashboard card.
 const _resumeDecisionInFlight = new Set();
 window.openCampaignResumeDecision = async function(id, phase = 'sending', current = 'local', btn = null) {
+  const sendingFromMonitoring = phase === 'sending-from-monitoring';
+  const requestedPhase = sendingFromMonitoring ? 'sending' : phase;
   const resumeKey = `${String(id || 'local-active')}:${String(phase || 'sending')}`;
   if (_resumeDecisionInFlight.has(resumeKey)) return;
   _resumeDecisionInFlight.add(resumeKey);
@@ -28873,7 +28875,7 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   }
   let committed = false;
   try {
-  const monitoring = phase === 'monitoring';
+  const monitoring = requestedPhase === 'monitoring';
   const currentLabel = current === 'vm' ? 'Cloud VM' : 'This Mac';
   const otherLabel = current === 'vm' ? 'This Mac' : 'Cloud VM';
   const keepCurrent = await appConfirm(
@@ -28902,7 +28904,15 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
     if (typeof showCampaignToast === 'function') showCampaignToast('Monitoring remains active on this Mac. Sending was not restarted.', 6000);
     return pollStatus();
   }
-  if (current === 'vm') return pauseCloudCampaignUI(id, true);
+  // A monitoring campaign is not paused. Its Play/Start-now control means
+  // "continue the unsent queue", which is the restart endpoint. Routing this
+  // through /resume used to produce an idempotent no-op: no engine event, no
+  // log line, and a permanently disabled button. Keep the origin explicit in
+  // the control contract so current and future monitoring cards cannot regress.
+  if (current === 'vm') {
+    if (sendingFromMonitoring) return restartCloudCampaignUI(id, false);
+    return pauseCloudCampaignUI(id, true);
+  }
   const status = await fetch('/api/campaign/status').then((r) => r.json()).catch(() => ({}));
   if (status.state === 'interrupted') {
     await fetch('/api/runtime/resumed', { method: 'POST' }).catch(() => {});
@@ -28927,7 +28937,7 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
     // A successful action repaints this control from server state. A cancelled
     // decision restores the same button, while the keyed lock prevents a
     // second request from another copy of the card during the operation.
-    if (btn && !committed && btn.isConnected) {
+    if (btn && btn.isConnected) {
       btn.disabled = false;
       btn.removeAttribute('aria-busy');
     }

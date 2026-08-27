@@ -315,7 +315,7 @@ export function vjCardControlsFor(status = {}) {
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
       c.extra.push({ tip: s.resumeAt ? 'Start now' : 'Resume sending', kind: 'play', once: true,
-        onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending','local',this)` });
+        onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending-from-monitoring','local',this)` });
     }
   } else if (monitor && cloud) {
     c.stop = s.monitoringCheckInProgress
@@ -332,7 +332,7 @@ export function vjCardControlsFor(status = {}) {
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
       c.extra.push({ tip: s.resumeAt ? 'Start now' : 'Resume sending', kind: 'play', once: true,
-        onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending','vm',this)` });
+        onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending-from-monitoring','vm',this)` });
     }
   } else if (done) {
     // Restart controls — only for a STOPPED/CANCELLED/ERRORED campaign (never a
