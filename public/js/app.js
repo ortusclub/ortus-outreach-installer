@@ -8000,8 +8000,14 @@ function _sweepStillRuns(c, pf) {
 
 function _cloudCurrentAction(d) {
   const campaignRow = (d && d.campaign) || {};
-  const durableSweepCompleted = campaignRow.status === 'monitoring'
-    && String(campaignRow.monitor_check_status || '').toLowerCase() === 'completed';
+  // Detail/list responses do not use one casing consistently: raw engine
+  // details carry monitor_check_status while normalized board rows carry
+  // monitorCheckStatus. A completed durable sweep is authoritative in either
+  // shape; never let an older liveProgress introduction outrank it.
+  const durableSweepStatus = String(
+    campaignRow.monitor_check_status || campaignRow.monitorCheckStatus || ''
+  ).toLowerCase();
+  const durableSweepCompleted = durableSweepStatus === 'completed';
   // liveProgress is an ephemeral browser breadcrumb and can outlive the worker
   // that wrote it. Once the durable sweep is complete, it is history—not the
   // campaign's current action.
@@ -8034,11 +8040,11 @@ function _cloudCurrentAction(d) {
     // No browser open. If the engine is telling us why, say THAT — never
     // "Working…", which is the word that made a ten-hour stall look healthy.
     const c = (d && d.campaign) || {};
-    if (c.status === 'monitoring') {
+    if (c.status === 'monitoring' || c.monitoring || c.monitoringPhase || durableSweepCompleted) {
       const requested = _cloudCheckAskedActive(c);
       const startedAt = Date.parse(c.monitor_check_started_at || '');
       const completedAt = Date.parse(c.monitor_check_completed_at || '');
-      const durableSweepStatus = String(c.monitor_check_status || '').toLowerCase();
+      const durableSweepStatus = String(c.monitor_check_status || c.monitorCheckStatus || '').toLowerCase();
       const durableFailure = durableSweepStatus === 'failed' || durableSweepStatus === 'incomplete' || c.monitorTaskStatus === 'error';
       const durableRunning = durableSweepStatus === 'running';
       const hasDurableSweep = !!c.monitor_check_id;

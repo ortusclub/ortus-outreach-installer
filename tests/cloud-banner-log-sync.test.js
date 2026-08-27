@@ -17,5 +17,7 @@ test('a completed monitoring sweep returns to the idle monitoring banner', () =>
   assert.match(app, /phase === 'monitoring' && \(transientCheckEvent \|\| durableSweepCompleted\)/);
   assert.match(app, /status\.state === 'monitoring' \|\| status\.monitoring \|\| status\.monitoringPhase/);
   assert.match(app, /\|\| \(monitoringIdle \? 'monitoring' : ''\)\s*\|\| \(la && la\.phase\)/);
+  assert.match(app, /campaignRow\.monitor_check_status \|\| campaignRow\.monitorCheckStatus/);
+  assert.match(app, /const durableSweepCompleted = durableSweepStatus === 'completed';/);
   assert.match(app, /const lp = durableSweepCompleted \? null : \(d && d\.liveProgress\);/);
 });
