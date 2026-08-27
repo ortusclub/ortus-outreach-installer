@@ -120,6 +120,17 @@ export function statusFromItem(it = {}) {
     accountPanel: Array.isArray(it.accountPanel) ? it.accountPanel : [],
     monitorTaskStatus: it.monitorTaskStatus || null,
     monitorTaskDueAt: it.monitorTaskDueAt || null,
+    monitorTaskError: it.monitorTaskError || '',
+    // Durable sweep lifecycle. These fields come from the engine and must cross
+    // this whitelist intact: they decide whether a historical lead event is
+    // still active work or merely the result of the check that just ended.
+    monitorCheckStatus: it.monitorCheckStatus || '',
+    monitorCheckExpected: Number(it.monitorCheckExpected) || 0,
+    monitorCheckAccountsChecked: Number(it.monitorCheckAccountsChecked) || 0,
+    monitorCheckError: it.monitorCheckError || '',
+    monitorCheckId: it.monitorCheckId || '',
+    monitorCheckCurrentAccount: it.monitorCheckCurrentAccount || '',
+    monitorCheckHeartbeatAt: it.monitorCheckHeartbeatAt || null,
     monitorCheckStartedAt: it.monitorCheckStartedAt || null,
     monitorCheckCompletedAt: it.monitorCheckCompletedAt || null,
     runsOn: it.runsOn || 'vm',
@@ -143,6 +154,15 @@ export function statusFromItem(it = {}) {
     histIdx: it.histIdx,
     hist: it.hist,
   };
+}
+
+/** Authoritative presentation state for a monitoring sweep. */
+export function monitorSweepDisposition(status = {}) {
+  const value = String(status.monitorCheckStatus || '').trim().toLowerCase();
+  if (value === 'running') return 'running';
+  if (value === 'failed' || value === 'incomplete') return 'error';
+  if (value === 'completed' || value === 'cancelled') return 'idle';
+  return status.monitoringCheckInProgress ? 'running' : 'unknown';
 }
 
 /** Computed field values for the card body (no time-based countdown here — that

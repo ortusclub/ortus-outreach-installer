@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '../public/js/vjcard.mjs';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '../public/js/vjcard.mjs';
 
 // ── statusFromItem ──
 test('statusFromItem: cloud monitoring item → monitoring state, cloud flag', () => {
@@ -12,6 +12,42 @@ test('statusFromItem: cloud monitoring item → monitoring state, cloud flag', (
   assert.equal(s.totalTargets, 4);
   assert.equal(s.checkIntervalMinutes, 30);
   assert.equal(s.autoChecksEnabled, false);
+});
+test('real completed sweep payload survives the board adapter and presents idle monitoring', () => {
+  const s = statusFromItem({
+    where: 'cloud', runsOn: 'vm', id: 'coll-chi', bucket: 'running', monitoring: true,
+    monitorCheckStatus: 'completed', monitorCheckExpected: 3, monitorCheckAccountsChecked: 3,
+    monitorCheckId: 'check-123', monitorCheckCurrentAccount: '', monitorCheckHeartbeatAt: '2026-08-27T08:16:00Z',
+    monitorCheckStartedAt: '2026-08-27T08:14:00Z', monitorCheckCompletedAt: '2026-08-27T08:16:00Z',
+    monitoringCheckInProgress: false,
+    logs: ['✓ Benjamin Lombardo · introduced', '✓ Check complete — 0 newly accepted across 3 accounts'],
+  });
+  assert.equal(s.monitorCheckStatus, 'completed');
+  assert.equal(s.monitorCheckExpected, 3);
+  assert.equal(s.monitorCheckAccountsChecked, 3);
+  assert.equal(s.monitorCheckId, 'check-123');
+  assert.equal(s.monitorCheckHeartbeatAt, '2026-08-27T08:16:00Z');
+  assert.equal(s.monitoringCheckInProgress, false);
+  assert.equal(monitorSweepDisposition(s), 'idle');
+  assert.equal(s.logs.length, 2, 'historical lead results remain available in the log');
+});
+test('running, failed, incomplete and cancelled sweep payloads retain their authoritative lifecycle', () => {
+  const base = { where: 'cloud', bucket: 'running', monitoring: true, monitorCheckExpected: 3 };
+  const running = statusFromItem({ ...base, monitorCheckStatus: 'running', monitorCheckAccountsChecked: 1,
+    monitorCheckCurrentAccount: 'sender@example.com', monitoringCheckInProgress: true });
+  assert.equal(monitorSweepDisposition(running), 'running');
+  assert.equal(running.monitorCheckAccountsChecked, 1);
+  assert.equal(running.monitorCheckCurrentAccount, 'sender@example.com');
+  for (const value of ['failed', 'incomplete']) {
+    const s = statusFromItem({ ...base, monitorCheckStatus: value, monitorCheckAccountsChecked: 2,
+      monitorCheckError: 'sender@example.com needs login', monitorTaskError: 'worker failed' });
+    assert.equal(monitorSweepDisposition(s), 'error');
+    assert.equal(s.monitorCheckStatus, value);
+    assert.equal(s.monitorCheckError, 'sender@example.com needs login');
+    assert.equal(s.monitorTaskError, 'worker failed');
+  }
+  const cancelled = statusFromItem({ ...base, monitorCheckStatus: 'cancelled', monitorCheckAccountsChecked: 1 });
+  assert.equal(monitorSweepDisposition(cancelled), 'idle');
 });
 test('statusFromItem preserves participating accounts and per-card sheet URL', () => {
   const s = statusFromItem({ participatingProfileIds: ['p1', 'p2'], sheet_url: 'https://docs.google.com/x' });

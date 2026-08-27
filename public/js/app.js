@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs?v=3.1.48.36';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.43';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -26973,6 +26973,33 @@ function renderLiveStage(root, status) {
     };
     la = { phase: 'starting', who: '', l1: ca.label, l2: ca.sub };
   }
+  const sweepDisposition = monitorSweepDisposition(status || {});
+  if (phase === 'monitoring' && sweepDisposition === 'idle') {
+    const scope = Number(status.monitorCheckExpected)
+      || ((status.participatingProfileIds || status.profileIds) || []).length;
+    const checked = Number(status.monitorCheckAccountsChecked) || scope;
+    const next = _stageNextCheckView(status.nextCheckAt);
+    ca = {
+      phase: 'monitoring',
+      label: 'Waiting for the next acceptance check',
+      sub: next.clock ? `Next check today at ${next.clock} · Nothing needs to be done now` : 'Monitoring remains active · Nothing needs to be done now',
+      safety: `${Math.max(0, Number(status.pendingCount) || 0)} pending leads remain safely queued · sending is stopped`,
+      account: '', accountsDone: checked,
+      facts: [
+        ['Last check', 'complete'],
+        ['Accounts checked', `${checked} of ${scope}`],
+        ['Next check', next.clock ? `today at ${next.clock}` : 'being scheduled'],
+        ['Operator action', 'none required'],
+      ],
+      milestones: [
+        ['Last check', 'complete', 'done'],
+        ['Accounts', `${checked} checked`, 'done'],
+        ['Browsers', 'closed between checks', 'done'],
+        ['Waiting', next.clock ? `next check ${next.clock}` : 'next check being scheduled', 'active'],
+      ],
+    };
+    la = { phase: 'monitoring', verb: 'Monitoring is active', who: ca.label, l1: ca.label, l2: ca.sub };
+  }
   if (!ca && phase === 'checking') {
     const pending = Math.max(0, (Number(status.totalTargets) || 0) - (Number(status.totalProcessed) || 0));
     const scope = ((status.participatingProfileIds || status.profileIds) || []).length;
@@ -26996,8 +27023,8 @@ function renderLiveStage(root, status) {
   // to leave the headline stuck on an earlier inferred step. This shared render
   // path covers VM + This Mac and sending + checking + introducing + monitoring.
   let logEvent = latestBannerEvent(status && status.logs, { phase });
-  const durableSweepFailure = status && ['failed', 'incomplete', 'cancelled'].includes(String(status.monitorCheckStatus || '').toLowerCase());
-  const durableSweepCompleted = status && String(status.monitorCheckStatus || '').toLowerCase() === 'completed';
+  const durableSweepFailure = sweepDisposition === 'error';
+  const durableSweepIdle = sweepDisposition === 'idle';
   const sweepSummary = summarizeLatestMonitoringSweep(
     status && status.logs,
     ((status && (status.participatingProfileIds || status.profileIds)) || []).map((id) => {
@@ -27037,7 +27064,7 @@ function renderLiveStage(root, status) {
   // Idle monitoring returns to its durable "waiting for next check" view.
   const transientCheckEvent = logEvent && ['local-browser-starting', 'account-browser-opening', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
   if (logEvent && phase !== 'done' && !durableSweepFailure
-      && !(phase === 'monitoring' && (transientCheckEvent || durableSweepCompleted))) {
+      && !(phase === 'monitoring' && (transientCheckEvent || durableSweepIdle))) {
     if (logEvent.kind === 'check-error' && sweepSummary && !/^Check incomplete/i.test(logEvent.headline)) {
       logEvent = {
         ...logEvent,
