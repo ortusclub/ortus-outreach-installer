@@ -7999,8 +7999,13 @@ function _sweepStillRuns(c, pf) {
 }
 
 function _cloudCurrentAction(d) {
-  const lp = d && d.liveProgress;
   const campaignRow = (d && d.campaign) || {};
+  const durableSweepCompleted = campaignRow.status === 'monitoring'
+    && String(campaignRow.monitor_check_status || '').toLowerCase() === 'completed';
+  // liveProgress is an ephemeral browser breadcrumb and can outlive the worker
+  // that wrote it. Once the durable sweep is complete, it is history—not the
+  // campaign's current action.
+  const lp = durableSweepCompleted ? null : (d && d.liveProgress);
   // Stop-sending is a handoff, not an instantaneous phase change. The engine
   // intentionally finishes/stamps the current person before closing the
   // browser, so its last liveProgress is still "sending" for a few polls after
@@ -26883,7 +26888,9 @@ function renderLiveStage(root, status) {
   // not change the card back into an active introduction. During a live sweep
   // monitoringCheckInProgress is true and the live event is still allowed to
   // describe the current account/lead.
-  const monitoringIdle = !!(status && status.state === 'monitoring' && !status.monitoringCheckInProgress);
+  const monitoringIdle = !!(status
+    && (status.state === 'monitoring' || status.monitoring || status.monitoringPhase)
+    && !status.monitoringCheckInProgress);
   const phase = (terminal ? 'done' : '')
     || (interrupted ? 'paused' : '')
     || (status && status.phase === 'preflight' ? 'starting' : '')
