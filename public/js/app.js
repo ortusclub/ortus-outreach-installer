@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.46';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.47';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -47,7 +47,7 @@ import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.46';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.47';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -26660,7 +26660,11 @@ function _stageAcctPill(a, isCurrent, counts) {
 function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
   const email = escHtml(_acctLabel(a, { full: true }));
   const benched = !!(a.weeklyCap || a.parkReason === 'weekly' || a.parked);
-  const st = a.needsLogin ? '<span class="st" style="color:var(--red)">needs login</span>'
+  // A failed acceptance sweep reports the login problem through sweepAction,
+  // while an active sending run reports it through needsLogin. They are the
+  // same operator problem and must expose the same one-click recovery action.
+  const needsLogin = !!(a.needsLogin || (a.sweepAction && /login|session[ -]?expired|re-login/i.test(String(a.sweepAction))));
+  const st = needsLogin ? '<span class="st" style="color:var(--red)">needs login</span>'
     : a.bench ? `<span class="st" style="color:var(--red)">${escHtml(_benchWord(a.bench).toLowerCase())}</span>`
     : benched ? '<span class="st" style="color:var(--red)">benched</span>'
     : ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) ? '<span class="st" style="color:var(--gold,#d4a24a)">at daily limit</span>'
@@ -26670,6 +26674,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
   const weekly = !!(a.weeklyCap || a.parkReason === 'weekly');
   const acts = [];
   if (isCurrent && canWatch) acts.push(`<button type="button" onclick="openCloudCampaignView('${escHtml(cid)}')">👁 Watch this browser live</button>`);
+  if (needsLogin && a.profileId) acts.push(`<button type="button" class="stg-login-btn" onclick="openProfileBrowser('${escHtml(a.profileId)}')">Open GoLogin profile</button>`);
   // No Retry on a weekly cap. It's a window, not a cooldown — nothing changes
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
