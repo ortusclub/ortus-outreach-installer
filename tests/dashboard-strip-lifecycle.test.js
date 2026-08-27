@@ -34,8 +34,10 @@ test('local runtime overlays only its matching adopted cloud campaign', () => {
   assert.doesNotMatch(app, /if \(String\(c\.runs_on \|\| ''\) === 'local' && _localLive\)/);
 });
 
-test('monitoring with unsent leads shows the automatic sending resume time', () => {
+test('monitoring with unsent leads shows the approved restart action band', () => {
   assert.match(app, /resumeAt: c\.resumeTaskDueAt \|\| null/);
-  assert.match(app, /Sending paused · no sender available for 15\+ min/);
-  assert.match(app, /sending retries automatically at/);
+  assert.match(app, /class="stg-resume"/);
+  assert.match(app, /Sending starts at \$\{escHtml\(ca\.resumeClock\)\}/);
+  assert.match(app, /startMonitoringSendingNow\(this\)/);
+  assert.doesNotMatch(app, /Sending starts at \$\{sendResumeClock\} · or choose Start now/);
 });

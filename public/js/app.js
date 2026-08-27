@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.44';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.45';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -47,7 +47,7 @@ import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.44';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.45';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -26982,27 +26982,28 @@ function renderLiveStage(root, status) {
     const checked = Number(status.monitorCheckAccountsChecked) || scope;
     const next = _stageNextCheckView(status.nextCheckAt);
     const sendResume = status.resumeAt ? new Date(status.resumeAt) : null;
+    const operatorTimeZone = document.getElementById('op-tz-current')?.dataset?.tz || _detectLocalTz();
     const sendResumeClock = sendResume && !Number.isNaN(sendResume.getTime())
-      ? sendResume.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      ? sendResume.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: operatorTimeZone || undefined }) : '';
     ca = {
       phase: 'monitoring',
       label: 'Waiting for the next acceptance check',
-      sub: sendResumeClock
-        ? `Sending starts at ${sendResumeClock} · or choose Start now`
-        : (next.clock ? `Next check today at ${next.clock} · Nothing needs to be done now` : 'Monitoring remains active · Nothing needs to be done now'),
+      sub: next.clock ? `Next check today at ${next.clock} · Nothing needs to be done now` : 'Monitoring remains active · Nothing needs to be done now',
       safety: `${Math.max(0, Number(status.pendingCount) || 0)} pending leads remain safely queued · sending is stopped`,
+      resumeAt: sendResumeClock ? status.resumeAt : null,
+      resumeClock: sendResumeClock,
       account: '', accountsDone: checked,
       facts: [
         ['Last check', 'complete'],
         ['Accounts checked', `${checked} of ${scope}`],
         ['Next check', next.clock ? `today at ${next.clock}` : 'being scheduled'],
-        ['Operator action', sendResumeClock ? 'Start now, or wait' : 'none required'],
+        ['Operator action', 'none required'],
       ],
       milestones: [
         ['Last check', 'complete', 'done'],
         ['Accounts', `${checked} checked`, 'done'],
         ['Browsers', 'closed between checks', 'done'],
-        ['Waiting', sendResumeClock ? `sending starts ${sendResumeClock}` : (next.clock ? `next check ${next.clock}` : 'next check being scheduled'), 'active'],
+        ['Waiting', next.clock ? `next check ${next.clock}` : 'next check being scheduled', 'active'],
       ],
     };
     la = { phase: 'monitoring', verb: 'Monitoring is active', who: ca.label, l1: ca.label, l2: ca.sub };
@@ -27270,6 +27271,7 @@ function renderLiveStage(root, status) {
   const sel = _stageSel.get(cid) || '';
   const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}~${a.sweepChecked ? 'c' : ''}${a.sweepAccepted || 0}${a.sweepAction || ''}`).join(',')
     + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}`
+    + `|${(ca && ca.resumeAt) || ''}`
     + `|${[...((cid && _cloudAcctCounts.get(cid)) || new Map()).entries()].map(([k, v]) => `${k}:${v.sent}/${v.total}`).join(',')}`;
   if (stage.dataset.acctkey !== akey) {
     const pills = _stgFld(root, 'stageAccts');
@@ -27287,7 +27289,13 @@ function renderLiveStage(root, status) {
     }
     // Only the stalled state gets advice — during a send there is nothing to fix.
     const fix = _stgFld(root, 'stageFix');
-    if (fix) fix.innerHTML = phase === 'waiting' ? _stageFixHtml(cid, accts) : '';
+    if (fix) {
+      if (phase === 'monitoring' && ca && ca.resumeClock) {
+        fix.innerHTML = `<div class="stg-resume"><div><b>Sending starts at ${escHtml(ca.resumeClock)}</b><span>Monitoring continues in the meantime.</span></div><button type="button" onclick="startMonitoringSendingNow(this)">Start now</button></div>`;
+      } else {
+        fix.innerHTML = phase === 'waiting' ? _stageFixHtml(cid, accts) : '';
+      }
+    }
     stage.dataset.acctkey = akey;
   }
 
@@ -27313,6 +27321,15 @@ window.stageAcctPick = function (el, profileId) {
   const root = stage.closest('.vj-card');
   const st = _stageStatus.get(stage);
   if (root && st) { try { renderLiveStage(root, st); } catch (_) { /* */ } }
+};
+
+window.startMonitoringSendingNow = function (btn) {
+  const stage = btn && btn.closest('.vj-stage');
+  if (!stage) return;
+  const status = _stageStatus.get(stage);
+  const id = stage.dataset.cid || (status && status.id) || 'local-active';
+  const current = status && status._cloud ? 'vm' : 'local';
+  return window.openCampaignResumeDecision(id, 'sending', current, btn);
 };
 
 // Elapsed seconds + heartbeat, ticked once a second on every visible stage.

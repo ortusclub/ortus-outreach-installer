@@ -775,6 +775,17 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   }
   body[data-dashboard='v3'] .vj-stage-fix .fixacts button:hover { border-color: var(--gold, #d4a24a); }
   body[data-dashboard='v3'] .vj-stage-fix .fixacts button:disabled { opacity: .5; cursor: default; }
+  body[data-dashboard='v3'] .stg-resume {
+    display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 20px;
+    margin-top: 18px; padding: 15px 18px; border: 1px solid rgba(212,162,74,.58);
+    background: rgba(151,103,27,.12);
+  }
+  body[data-dashboard='v3'] .stg-resume b { display: block; color: var(--gold, #d4a24a); font-size: .9rem; }
+  body[data-dashboard='v3'] .stg-resume span { display: block; margin-top: 4px; color: var(--gray); font-size: .76rem; }
+  body[data-dashboard='v3'] .stg-resume button {
+    border-radius: 999px; padding: 9px 16px; border-color: var(--gold, #d4a24a);
+    font-family: var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  }
 
   body[data-dashboard='v3'] .vj-stage-drawer:empty { display: none; }
   body[data-dashboard='v3'] .stg-drawer {
