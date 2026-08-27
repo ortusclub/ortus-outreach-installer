@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText, stripCadence } from '/js/live-activity.mjs?v=3.1.48.8';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.43';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '/js/vjcard.mjs?v=3.1.48.44';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -47,7 +47,7 @@ import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent } from '/js/live-log-banner.mjs?v=3.1.48.30';
-import { summarizeLatestMonitoringSweep } from '/js/monitor-sweep-summary.mjs?v=3.1.48.36';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.44';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -26817,8 +26817,10 @@ function _stageOverview(status, ca, la, phase) {
   const accountTotal = ids.length;
   const pending = Math.max(0, Number(status && status.pendingCount) ||
     ((Number(status && status.totalTargets) || 0) - (Number(status && status.totalProcessed) || 0)));
-  const accepted = _stageNumberFromMilestones(ca, /accept/i);
-  const introduced = _stageNumberFromMilestones(ca, /introduc|message/i);
+  const accepted = ca && ca.acceptedCount != null
+    ? Number(ca.acceptedCount) : _stageNumberFromMilestones(ca, /accept/i);
+  const introduced = ca && ca.introducedCount != null
+    ? Number(ca.introducedCount) : _stageNumberFromMilestones(ca, /introduc|message/i);
   const currentAccount = String(ca && ca.account || status && status.liveAccount || '');
   const accountDone = Math.max(0, Number(ca && ca.accountsDone) || Number(status && status.accountsDone) || 0);
   const accountRemaining = Math.max(0, accountTotal - accountDone);
@@ -26979,23 +26981,28 @@ function renderLiveStage(root, status) {
       || ((status.participatingProfileIds || status.profileIds) || []).length;
     const checked = Number(status.monitorCheckAccountsChecked) || scope;
     const next = _stageNextCheckView(status.nextCheckAt);
+    const sendResume = status.resumeAt ? new Date(status.resumeAt) : null;
+    const sendResumeClock = sendResume && !Number.isNaN(sendResume.getTime())
+      ? sendResume.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
     ca = {
       phase: 'monitoring',
       label: 'Waiting for the next acceptance check',
-      sub: next.clock ? `Next check today at ${next.clock} · Nothing needs to be done now` : 'Monitoring remains active · Nothing needs to be done now',
+      sub: sendResumeClock
+        ? `Sending starts at ${sendResumeClock} · or choose Start now`
+        : (next.clock ? `Next check today at ${next.clock} · Nothing needs to be done now` : 'Monitoring remains active · Nothing needs to be done now'),
       safety: `${Math.max(0, Number(status.pendingCount) || 0)} pending leads remain safely queued · sending is stopped`,
       account: '', accountsDone: checked,
       facts: [
         ['Last check', 'complete'],
         ['Accounts checked', `${checked} of ${scope}`],
         ['Next check', next.clock ? `today at ${next.clock}` : 'being scheduled'],
-        ['Operator action', 'none required'],
+        ['Operator action', sendResumeClock ? 'Start now, or wait' : 'none required'],
       ],
       milestones: [
         ['Last check', 'complete', 'done'],
         ['Accounts', `${checked} checked`, 'done'],
         ['Browsers', 'closed between checks', 'done'],
-        ['Waiting', next.clock ? `next check ${next.clock}` : 'next check being scheduled', 'active'],
+        ['Waiting', sendResumeClock ? `sending starts ${sendResumeClock}` : (next.clock ? `next check ${next.clock}` : 'next check being scheduled'), 'active'],
       ],
     };
     la = { phase: 'monitoring', verb: 'Monitoring is active', who: ca.label, l1: ca.label, l2: ca.sub };
@@ -27050,12 +27057,13 @@ function renderLiveStage(root, status) {
   // durable campaign state, so it owns the monitoring banner until a later
   // sweep succeeds—regardless of those derived rows' append/sync timestamps.
   if (phase === 'monitoring' && sweepSummary && sweepSummary.incomplete && sweepSummary.error) {
+    const recovery = monitoringRecovery(sweepSummary.error);
     logEvent = {
       line: sweepSummary.error,
       headline: `Check incomplete — ${sweepSummary.checked} of ${sweepSummary.expected} accounts checked`,
       eyebrow: 'Check incomplete', kind: 'check-error', account: '',
-      detail: `${sweepSummary.accepted} acceptance${sweepSummary.accepted === 1 ? '' : 's'} · ${sweepSummary.introduced} introduction${sweepSummary.introduced === 1 ? '' : 's'} · ${sweepSummary.error}`,
-      explanation: 'Monitoring remains active. Fix the named account before the next check.',
+      detail: `${sweepSummary.accepted} acceptance${sweepSummary.accepted === 1 ? '' : 's'} · ${sweepSummary.introduced} introduction${sweepSummary.introduced === 1 ? '' : 's'} · ${recovery.detail}`,
+      explanation: 'Monitoring remains active.', recovery,
       at: Number(logEvent && logEvent.at) || 0,
     };
   }
@@ -27063,7 +27071,8 @@ function renderLiveStage(root, status) {
   // on its sender pill, but must not leave the whole campaign looking active.
   // Idle monitoring returns to its durable "waiting for next check" view.
   const transientCheckEvent = logEvent && ['local-browser-starting', 'account-browser-opening', 'account-checking', 'account-checked', 'account-skipped', 'check-complete'].includes(logEvent.kind);
-  if (logEvent && phase !== 'done' && !durableSweepFailure
+  const durableErrorEvent = durableSweepFailure && logEvent && logEvent.kind === 'check-error';
+  if (logEvent && phase !== 'done' && (!durableSweepFailure || durableErrorEvent)
       && !(phase === 'monitoring' && (transientCheckEvent || durableSweepIdle))) {
     if (logEvent.kind === 'check-error' && sweepSummary && !/^Check incomplete/i.test(logEvent.headline)) {
       logEvent = {
@@ -27114,9 +27123,11 @@ function renderLiveStage(root, status) {
         facts: [['Check', 'complete'], ['Accounts completed', `${scope} of ${scope}`], ['Results', 'saved'], ['Next expected event', 'schedule the next automatic check']],
         milestones: [['Requested', 'complete', 'done'], ['Browsers', 'closed', 'done'], ['Connections', 'loaded', 'done'], ['Acceptances', 'recorded', 'done'], ['Results', 'saved', 'done']] };
     } else if (logEvent.kind === 'check-error' && sweepSummary) {
+      const recovery = logEvent.recovery || monitoringRecovery(sweepSummary.error || logEvent.detail);
       ca = { ...ca, account: '', accountsDone: sweepSummary.checked,
-        facts: [['Check', 'incomplete'], ['Accounts checked', `${sweepSummary.checked} of ${sweepSummary.expected}`], ['Results', `${sweepSummary.accepted} accepted · ${sweepSummary.introduced} introduced`], ['Operator action', logEvent.detail]],
-        milestones: [['Requested', 'complete', 'done'], ['Accounts', `${sweepSummary.checked} checked`, 'done'], ['Unavailable', `${sweepSummary.expected - sweepSummary.checked} needs action`, 'active'], ['Recovery', 'log in, then Retry', 'future']] };
+        acceptedCount: sweepSummary.accepted, introducedCount: sweepSummary.introduced,
+        facts: [['Check', 'incomplete'], ['Accounts checked', `${sweepSummary.checked} of ${sweepSummary.expected}`], ['Result', recovery.result], ['Operator action', recovery.action]],
+        milestones: [['Requested', 'complete', 'done'], ['Accounts', `${sweepSummary.checked} checked`, 'done'], ['Unavailable', `${Math.max(0, sweepSummary.expected - sweepSummary.checked)} not checked`, 'active'], ['Recovery', recovery.action, 'future']] };
     }
     la = {
       ...(la || {}), phase,

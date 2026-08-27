@@ -314,7 +314,7 @@ export function vjCardControlsFor(status = {}) {
     const remaining = Number(s.pending) > 0
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
-      c.extra.push({ tip: 'Resume sending', kind: 'play', once: true,
+      c.extra.push({ tip: s.resumeAt ? 'Start now' : 'Resume sending', kind: 'play', once: true,
         onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending','local',this)` });
     }
   } else if (monitor && cloud) {
@@ -331,7 +331,7 @@ export function vjCardControlsFor(status = {}) {
     const remaining = Number(s.pending) > 0
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
-      c.extra.push({ tip: 'Resume sending', kind: 'play', once: true,
+      c.extra.push({ tip: s.resumeAt ? 'Start now' : 'Resume sending', kind: 'play', once: true,
         onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending','vm',this)` });
     }
   } else if (done) {
