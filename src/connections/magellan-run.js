@@ -17,7 +17,7 @@ import {
 } from './magellan-sheet.js';
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
-  checkMagellanProperties, connectionsPropOptions, mergeContacts,
+  checkMagellanProperties, connectionsPropOptions, addConnectionsOptions, mergeContacts,
 } from './hubspot-client.js';
 import { buildOutcome } from './magellan-outcome.js';
 
@@ -329,7 +329,7 @@ export function startCollect(accounts, deps = {}) {
  */
 export async function buildPreview(accounts, deps = {}) {
   const { lookup = lookupByMemberIds, read = readForPlan, checkProps = checkMagellanProperties,
-    options = connectionsPropOptions, sheet = publishSheet,
+    options = connectionsPropOptions, addOptions = addConnectionsOptions, sheet = publishSheet,
     // Test seam, not a production dependency: fired once, in the finally, the
     // instant after running clears, with a snapshot of the state at that exact
     // moment. Nothing else can observe that instant — the whole tail below is
@@ -353,10 +353,27 @@ export async function buildPreview(accounts, deps = {}) {
   }
 
   // "Linkedin 1st Connections" is a fixed list of Ortus account emails. An
-  // account that isn't on it cannot be written — HubSpot rejects the value —
-  // so it is held back here, named, instead of failing 7,000 rows at a time
-  // during the import.
-  const allowed = await options();
+  // account that isn't on it cannot be written — HubSpot rejects the value.
+  //
+  // Operator decision 2026-08-28: rather than hold a missing account back and
+  // make someone press the "Needs HubSpot list" button, Check adds it to the
+  // property itself, silently, so it imports in the same run. addConnectionsOptions
+  // needs the crm.schemas.contacts.write scope; without it the PATCH throws and
+  // the account falls through to the block+name path below unchanged (nothing is
+  // lost, the operator just fixes it by hand as before).
+  let allowed = await options();
+  const missing = (accounts || []).filter((a) => !allowed.has(String(a).trim().toLowerCase()));
+  if (missing.length) {
+    try {
+      const res = await addOptions(missing);
+      if (res && Array.isArray(res.added) && res.added.length) {
+        log(`✓ Added ${res.added.length} account${res.added.length === 1 ? '' : 's'} to the "Linkedin 1st Connections" list: ${res.added.join(', ')}`);
+        allowed = await options();   // re-read so the just-added accounts count as usable
+      }
+    } catch (err) {
+      log(`⚠ Could not add ${missing.length} account${missing.length === 1 ? '' : 's'} to the HubSpot list — ${err.message}. They will be held back for you to add by hand.`);
+    }
+  }
   const blocked = [];
   const usable = [];
   for (const a of accounts || []) {

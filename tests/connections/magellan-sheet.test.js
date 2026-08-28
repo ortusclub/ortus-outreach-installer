@@ -26,6 +26,13 @@ test('a connection becomes a cleaned-sheet row, keyed by the synthetic email', (
     '']);   // no import has run for this person yet, so nothing to link to
 });
 
+test('a connection with a location fills the Location column (index 1)', () => {
+  const [row] = connectionsRowsForAccount('karl@ortus.solutions', [
+    { memberId: '14258192', firstName: 'Anand', slug: 'anand-choudha', location: 'New York, New York, United States' },
+  ]);
+  assert.equal(row[1], 'New York, New York, United States', 'Location sits in the second column, per CONNECTIONS_HEADER');
+});
+
 // The leading ';' is what makes a CSV import APPEND to the multi-value property
 // instead of replacing it. Without it the import wipes every other Ortus account
 // already on that contact — reported by Abygael, 17 Aug 2026.

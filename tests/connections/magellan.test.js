@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   syntheticEmail, mergeConnections, isHidden, createProperties,
   updateProperties, hasAnyEmail, hasSyntheticEmail, planAccount,
-  CONNECTIONS_PROP, MEMBER_ID_PROP,
+  CONNECTIONS_PROP, MEMBER_ID_PROP, LOCATION_PROP,
 } from '../../src/connections/magellan.js';
 
 const ACCT = 'antonio@ortusclub.com';
@@ -46,6 +46,23 @@ test('create omits blank fields rather than writing empty strings', () => {
   const p = createProperties(person({ company: '', jobTitle: '   ' }), ACCT);
   assert.ok(!('company' in p));
   assert.ok(!('jobtitle' in p));
+});
+
+test('create carries location into the custom Location property', () => {
+  const p = createProperties(person({ location: 'New York, New York, United States' }), ACCT);
+  assert.equal(p[LOCATION_PROP], 'New York, New York, United States');
+  // No location → the property is omitted, not written blank.
+  assert.ok(!(LOCATION_PROP in createProperties(person(), ACCT)));
+});
+
+test('update fills location only when the contact has none (never overwrites)', () => {
+  const withLoc = person({ location: 'London, England, United Kingdom' });
+  // Contact has no location yet → fill it.
+  const filled = updateProperties(withLoc, ACCT, { [MEMBER_ID_PROP]: '29418762' });
+  assert.equal(filled[LOCATION_PROP], 'London, England, United Kingdom');
+  // Contact already has a location → LinkedIn's copy must not overwrite it.
+  const kept = updateProperties(withLoc, ACCT, { [MEMBER_ID_PROP]: '29418762', [LOCATION_PROP]: 'Somewhere a human set' });
+  assert.ok(!(LOCATION_PROP in kept), 'existing location survives');
 });
 
 // The one that matters most: at 400k contacts, writing `email` on update would

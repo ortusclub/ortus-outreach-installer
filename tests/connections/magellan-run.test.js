@@ -120,6 +120,39 @@ test('preview totals up new vs existing across accounts, writing nothing', async
   assert.equal(totals.extraEmails, 1, 'existing contact gets the key as an extra address');
 });
 
+test('Check auto-adds a selected account missing from the connections property, then imports it', async () => {
+  reset();
+  const optionSet = new Set(['a@o.com']);          // b@o.com is NOT on the list yet
+  const added = [];
+  const { blocked, totals } = await buildPreview(['a@o.com', 'b@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    // Re-reads the live set each call, so the second read sees the auto-add.
+    options: async () => new Set(optionSet),
+    addOptions: async (accts) => { for (const a of accts) { optionSet.add(a); added.push(a); } return { added: accts }; },
+    read: (acct) => (acct === 'b@o.com' ? [{ slug: 's3', memberId: '3', firstName: 'C' }] : []),
+    lookup: async () => new Map(),
+    sheet: noSheet,
+  });
+  assert.deepEqual(added, ['b@o.com'], 'the missing account was added to the property');
+  assert.equal(blocked.length, 0, 'nothing is held back once it has been auto-added');
+  assert.equal(totals.created, 1, 'the just-added account is planned and importable');
+});
+
+test('when the token cannot edit the property, the account is held back (not lost)', async () => {
+  reset();
+  const { blocked, totals } = await buildPreview(['a@o.com', 'b@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    addOptions: async () => { throw new Error('HubSpot 403: missing crm.schemas.contacts.write'); },
+    read: (acct) => (acct === 'a@o.com' ? [{ slug: 's1', memberId: '1', firstName: 'A' }] : [{ slug: 's3', memberId: '3', firstName: 'C' }]),
+    lookup: async () => new Map(),
+    sheet: noSheet,
+  });
+  assert.deepEqual(blocked, ['b@o.com'], 'the un-addable account falls through to block+name');
+  assert.equal(totals.created, 1, 'the allowed account still imports');
+  assert.ok(getState().log.some((l) => l.includes('Could not add')), 'the failure is logged, not silent');
+});
+
 test('import reports per-stage errors instead of throwing them away', async () => {
   reset();
   const plans = [{
