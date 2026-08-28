@@ -57,7 +57,7 @@ import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, recla
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
-import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
+import { spreadsheetIdFromUrl, extractSheetGid, withGid, buildSuppressionSet, isRowSuppressed } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
@@ -142,7 +142,7 @@ const UI_PREVIEW = process.env.ORTUS_UI_PREVIEW === '1';
 const pkg = JSON.parse(await readFile(resolve(__dirname, 'package.json'), 'utf8'));
 const APP_VERSION = pkg.version;
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
 // ── Public auth endpoints (no session required) ────────────────────
@@ -335,7 +335,7 @@ function viewerAccount(req) {
  * launch on that would turn a second-account outage into a total outage.
  */
 async function rejectIfForeignProfiles(req, res, profileIds, mode) {
-  const ids = (profileIds || []).filter((id) => id && id !== 'local-browser');
+  const ids = (profileIds || []).filter((id) => id && !id.startsWith('local-'));
   if (!ids.length) return false;
   if (configuredAccounts().length < 2) return false;
   try { await getProfiles(); } catch { return false; }
@@ -743,6 +743,35 @@ app.get('/api/sheet/preview', async (req, res) => {
   }
 });
 
+// Suppression-aware sheet preview — same as GET /api/sheet/preview, but
+// accepts a suppression list (emails / LinkedIn URLs / membership IDs) via
+// POST body and filters those rows out BEFORE computing totalRows/preview.
+// POST (not GET) because a real suppression list can be tens of thousands of
+// entries, too large for a query string.
+app.post('/api/sheet/preview', async (req, res) => {
+  try {
+    const { url, suppressionValues } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'url is required' });
+
+    const rows = await fetchSheet(url);
+    const suppressionSet = buildSuppressionSet(Array.isArray(suppressionValues) ? suppressionValues : []);
+    const filteredRows = suppressionSet.size
+      ? rows.filter((row) => !isRowSuppressed(row, suppressionSet))
+      : rows;
+    const suppressedCount = rows.length - filteredRows.length;
+
+    res.json({
+      totalRows: filteredRows.length,
+      columns: filteredRows.length > 0 ? Object.keys(filteredRows[0]) : (rows.length > 0 ? Object.keys(rows[0]) : []),
+      preview: filteredRows.slice(0, 5),
+      suppressedCount,
+    });
+  } catch (err) {
+    console.error('Sheet preview (suppression) error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Tab enumeration — used by the frontend tab picker (Task 4, Fix A).
 // Returns the list of sheets/tabs in the workbook so the operator can choose
@@ -786,8 +815,9 @@ app.get('/api/check-status/preview', async (req, res) => {
     ]);
 
     const knownNames = new Set(profiles.map(p => p.name));
-    // 2.8.29: local-browser variants are valid pseudo-profiles.
-    const LOCAL_BROWSER_NAMES = new Set(['Local Browser', 'local-browser', 'local-browser - manual']);
+    // (2026-08-28: legacy generic Local Browser labels no longer resolve to a
+    // specific named identity — they fall into "unmatched" below, same as
+    // campaign.js. Named local profiles match via knownNames like any other.)
 
     // 2.8.32: same endpoint serves both check_status (Account Used filled)
     // and message_only (CC ends with " Y") via ?mode= query param.
@@ -807,9 +837,7 @@ app.get('/api/check-status/preview', async (req, res) => {
         if (!/\sY\s*$/.test(ccRaw)) continue;
       }
       totalPending++;
-      if (LOCAL_BROWSER_NAMES.has(acct)) {
-        byAccount['Local Browser'] = (byAccount['Local Browser'] || 0) + 1;
-      } else if (knownNames.has(acct)) {
+      if (knownNames.has(acct)) {
         byAccount[acct] = (byAccount[acct] || 0) + 1;
       } else {
         unmatched[acct] = (unmatched[acct] || 0) + 1;
@@ -972,7 +1000,7 @@ app.post('/api/templates/preview', async (req, res) => {
       // v2.11.14: friendlier fallback for local-browser — if the operator
       // hasn't set a localBrowserFirstName yet, prefer "You" over the raw
       // profile id string so the preview reads naturally.
-      const fallbackFirst = (profileId === 'local-browser')
+      const fallbackFirst = (profileId.startsWith('local-'))
         ? 'You'
         : ((pName || '').split(/\s+/)[0] || '');
       data.senderFirstName = (resolvedFirst && resolvedFirst.trim()) || fallbackFirst;
@@ -1150,7 +1178,10 @@ function buildCampaignConfig(body) {
           multiTab,
           // Fix B Task 3: pause the campaign when a 429/throttle is detected.
           // Defaults to true when absent or undefined so legacy clients opt-in automatically.
-          pauseOnThrottle: pauseOnThrottleRaw } = body || {};
+          pauseOnThrottle: pauseOnThrottleRaw,
+          // Suppression Lists (optional) — raw emails/LinkedIn URLs/membership
+          // IDs gathered client-side from Global + Local uploads/paste boxes.
+          suppressionValues } = body || {};
   const pauseOnThrottle = pauseOnThrottleRaw === false ? false : true;
   // Coerce sheetGid to digits only; fall back to extracting from the URL.
   const sheetGid = sheetGidRaw != null
@@ -1163,6 +1194,7 @@ function buildCampaignConfig(body) {
   }
   return {
     profileIds,
+    suppressionValues: Array.isArray(suppressionValues) ? suppressionValues : [],
     benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.filter((x) => typeof x === 'string') : [],
     sheetUrl,
     templates: templates || {},
@@ -1878,7 +1910,7 @@ async function reconcilePrimaryHandshake(id, detail) {
     const camp = (detail && detail.campaign) || {};
     const cfg = camp.config || {};
     // Only a cloud campaign whose primary is the LOCAL browser + auto-accept on.
-    if (!(cfg.autoAcceptPrimary && cfg.primarySource === 'local-browser')) return;
+    if (!(cfg.autoAcceptPrimary && cfg.primarySource.startsWith('local-'))) return;
     // Owner gate: only the machine that launched it drives ITS local browser.
     // Require a non-empty operator identity that matches the owner (so a missing
     // owner can never accidentally match a machine with no operator set).
@@ -2907,10 +2939,9 @@ app.post('/api/campaign/preflight-ic-senders', async (req, res) => {
     const profiles = token ? await getProfiles(token) : [];
     const nameToId = {};
     for (const p of profiles) nameToId[p.name] = p.id;
-    nameToId['You'] = 'local-browser';
-    nameToId['Local Browser'] = 'local-browser';
-    nameToId['local-browser'] = 'local-browser';
-    nameToId['local-browser - manual'] = 'local-browser';
+    // (2026-08-28: legacy generic 'You'/'Local Browser' mappings removed —
+    // with multiple named Local Browser identities there is no single id to
+    // resolve them to; they now correctly fall into "unmatched" below.)
 
     const matched = new Map();
     const unmatched = new Map();
@@ -3578,10 +3609,10 @@ app.post('/api/fg/send/start', async (req, res) => {
         return;
       }
       const token = process.env.GOLOGIN_API_TOKEN;
-      const isLocal = profileId === 'local-browser';
+      const isLocal = profileId.startsWith('local-');
       preventSleep('fg-invite');
       campaignLog(`[FG-invite] Launching ${isLocal ? 'local browser' : `profile ${profileId}`} for ${operator} — ${queued.length} queued invite(s)`);
-      const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId, token);
+      const launched = isLocal ? await launchLocalBrowser(profileId) : await launchProfile(profileId, token);
       launchedProfile = true;
       const page = launched.page;
       _fgSend.phase = 'inviting';
@@ -3600,7 +3631,7 @@ app.post('/api/fg/send/start', async (req, res) => {
     } catch (err) {
       _fgSend = { ..._fgSend, running: false, phase: 'error', error: err.message };
     } finally {
-      try { if (launchedProfile) { await (profileId === 'local-browser' ? closeLocalBrowser() : _closeProfile(profileId)); } } catch (_) {}
+      try { if (launchedProfile) { await (profileId.startsWith('local-') ? closeLocalBrowser(profileId) : _closeProfile(profileId)); } } catch (_) {}
       try { allowSleep(); } catch (_) {}
     }
   })();
@@ -4479,10 +4510,10 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
           return { rows: out.rows, count: out.count, reason };
         },
         launch: async (pair) => {
-          const isLocal = pair.profileId === 'local-browser';
+          const isLocal = pair.profileId.startsWith('local-');
           campaignLog(`[FG-team] Launching ${isLocal ? 'local browser' : `profile ${pair.profileId}`} for ${pair.account}`);
-          const launched = isLocal ? await launchLocalBrowser() : await launchProfile(pair.profileId, token);
-          return { page: launched.page, close: async () => { await (isLocal ? closeLocalBrowser() : closeProfile(pair.profileId)); } };
+          const launched = isLocal ? await launchLocalBrowser(pair.profileId) : await launchProfile(pair.profileId, token);
+          return { page: launched.page, close: async () => { await (isLocal ? closeLocalBrowser(pair.profileId) : closeProfile(pair.profileId)); } };
         },
         send: ({ page, queued, log, shouldAbort }) => runFollowerInvites({ page, inviteUrl: ORTUS_PAGE_INVITE_URL, queued, log, shouldAbort }),
         // Write-back: append the invited rows then flip them to Invited (+bump budget).
@@ -4677,7 +4708,7 @@ app.post('/api/reply-sweep/open-thread', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'threadId or profileUrl required' });
   try {
     const token = process.env.GOLOGIN_API_TOKEN;
-    const isLocal = profileId === 'local-browser';
+    const isLocal = profileId.startsWith('local-');
     const existingPid = getProfilePid(profileId);
     if (existingPid) {
       // Already open (operator-opened or focus-existing) — bring it onscreen.
@@ -4685,7 +4716,7 @@ app.post('/api/reply-sweep/open-thread', async (req, res) => {
       if (process.platform === 'darwin') { try { await unhideByPids([existingPid]); } catch (_) {} }
       return res.json({ ok: true, action: 'focused-existing', pid: existingPid, url });
     }
-    const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId, token);
+    const launched = isLocal ? await launchLocalBrowser(profileId) : await launchProfile(profileId, token);
     try { await launched.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }); } catch (_) {}
     const newPid = getProfilePid(profileId);
     if (process.platform === 'darwin' && newPid) { try { await unhideByPids([newPid]); } catch (_) {} }
@@ -4761,13 +4792,13 @@ app.post('/api/reply-sweep/start', async (req, res) => {
         _replySweep.currentProfile = pName;
         slot.status = 'running';
         const wasRunning = !!getProfilePid(pid);
-        const isLocal = pid === 'local-browser';
+        const isLocal = pid.startsWith('local-');
         let launched = null, handle = null;
         try {
           stamp(`📬 [${pName}] Scanning inbox…`);
-          launched = isLocal ? await launchLocalBrowser() : await launchProfile(pid, token);
+          launched = isLocal ? await launchLocalBrowser(pid) : await launchProfile(pid, token);
           if (!isLocal) launchedPids.add(pid);
-          handle = { close: async () => { try { await (isLocal ? closeLocalBrowser() : closeProfile(pid)); } catch (_) {} } };
+          handle = { close: async () => { try { await (isLocal ? closeLocalBrowser(pid) : closeProfile(pid)); } catch (_) {} } };
           _replySweepHandle = handle;
 
           const out = await sweepProfileInbox({
@@ -5126,9 +5157,12 @@ app.post('/api/campaign/live/cadence', (req, res) => {
 
 let _recoveryExitRequested = false;
 async function closeCurrentCampaignBrowsers() {
-  const ids = [...new Set((campaign.profileIds || []).filter((id) => id && id !== 'local-browser'))];
+  const ids = [...new Set((campaign.profileIds || []).filter((id) => id && !id.startsWith('local-')))];
   await Promise.allSettled(ids.map((id) => closeProfile(id)));
-  if ((campaign.profileIds || []).includes('local-browser')) {
+  // Any named Local Browser identity selected for this campaign — close
+  // ALL currently-open local sessions (closeLocalBrowser with no argument
+  // closes every one), same as the original single-'local-browser' behavior.
+  if ((campaign.profileIds || []).some((id) => id && id.startsWith('local-'))) {
     try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
   }
 }
@@ -6091,7 +6125,7 @@ app.post('/api/intro-failures/preview', async (req, res) => {
       : !!(campaign.templates && campaign.templates.autoAcceptPrimary);
     let acceptVia = 'local';     // 'gologin' | 'local'
     let acceptViaName = '';
-    if (effSource && effSource !== 'local-browser') {
+    if (effSource && !effSource.startsWith('local-')) {
       acceptVia = 'gologin';
       try {
         const all = await getProfiles(token);
@@ -6939,11 +6973,10 @@ app.post('/api/check-dms/start', async (req, res) => {
 
     const nameToId = {};
     for (const p of profiles) nameToId[p.name] = p.id;
-    // Local browser pseudo-profile aliases (mirror campaign.js).
-    nameToId['You']                    = 'local-browser';
-    nameToId['Local Browser']          = 'local-browser';
-    nameToId['local-browser']          = 'local-browser';
-    nameToId['local-browser - manual'] = 'local-browser';
+    // (2026-08-28: legacy generic 'You'/'Local Browser' aliases removed —
+    // with multiple named Local Browser identities there is no single id to
+    // resolve them to; rows using the old generic label now correctly fall
+    // into "unmatched" below, same as campaign.js.)
 
     // Filter rows to Sent-stage rows. Fall back to legacy Message='sent' if
     // the sheet doesn't have a Stage column yet.
@@ -7037,7 +7070,7 @@ app.post('/api/check-dms/start', async (req, res) => {
           // inside checkProfileDmsPerLead remains the source of truth.
           try {
             const { appendReplies } = await import('./src/replies-log.js');
-            const profileName = Object.keys(nameToId).find((n) => nameToId[n] === profileId && n !== 'local-browser') || profileId;
+            const profileName = Object.keys(nameToId).find((n) => nameToId[n] === profileId && !n.startsWith('local-')) || profileId;
             const entries = (result.replies || []).filter((r) => r.inbound).map((r) => {
               const row = r.match || {};
               const lastMsg = Array.isArray(r.messages) && r.messages.length ? r.messages[r.messages.length - 1] : null;
@@ -7109,7 +7142,8 @@ app.get('/api/check-dms/preview', async (req, res) => {
     ]);
 
     const knownNames = new Set(profiles.map(p => p.name));
-    const LOCAL_BROWSER_NAMES = new Set(['You', 'Local Browser', 'local-browser', 'local-browser - manual']);
+    // (2026-08-28: legacy generic Local Browser labels removed — see the
+    // check-status/preview endpoint above for the same fix + rationale.)
     const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
 
     const byAccount = {};
@@ -7129,9 +7163,7 @@ app.get('/api/check-dms/preview', async (req, res) => {
       ).trim();
       if (!acct) continue;
       totalThreads++;
-      if (LOCAL_BROWSER_NAMES.has(acct)) {
-        byAccount['You'] = (byAccount['You'] || 0) + 1;
-      } else if (knownNames.has(acct)) {
+      if (knownNames.has(acct)) {
         byAccount[acct] = (byAccount[acct] || 0) + 1;
       } else {
         unmatched[acct] = (unmatched[acct] || 0) + 1;

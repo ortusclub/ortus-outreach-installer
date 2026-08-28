@@ -150,5 +150,8 @@
       "allowToChangeInstallationDirectory": true,
       "perMachine": false
     }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
   }
 }

@@ -25,7 +25,7 @@ import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
-import { withGid, extractSheetGid } from './utils.js';
+import { withGid, extractSheetGid, buildSuppressionSet, isRowSuppressed } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
@@ -71,7 +71,7 @@ import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import { plainLine } from './log-voice.js';
 import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy } from './runtime-interruption.js';
-import { writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
+import { writeJsonAtomic, updateJsonAtomic, readJson } from './atomic-json-store.js';
 import {
   sample as rmSample,
   decideThrottle,
@@ -949,7 +949,7 @@ export const registry = new CampaignRegistry();
 const activeBulkChecks = new Set();
 function _forceCloseActiveBulkChecks() {
   for (const pid of activeBulkChecks) {
-    (pid === 'local-browser' ? closeLocalBrowser() : closeProfile(pid)).catch(() => {});
+    (pid.startsWith('local-') ? closeLocalBrowser(pid) : closeProfile(pid)).catch(() => {});
   }
 }
 // v2.78: let other modules (server.js's manual /api/bulk-check-now sweep)
@@ -1639,13 +1639,13 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
   // the profile cleanly. Skip the recovery-prompt UX (which is for when the
   // user just needs to log in once more — sessionExpired means cookies are
   // dead and we should drop this profile from rotation entirely).
-  if (health.sessionExpired && profileId !== 'local-browser') {
+  if (health.sessionExpired && !profileId.startsWith('local-')) {
     // GoLogin cloud profiles can't be logged into interactively mid-run — drop.
     log(`✗ ${pName}: session expired — parking profile for rest of run.`);
     return { page: null, ok: false, sessionExpired: true };
   }
   if (!health.healthy) {
-    if (profileId === 'local-browser') {
+    if (profileId.startsWith('local-')) {
       // Local-browser session expiry (2026-06-15): the operator is at the
       // machine, so recover in place instead of parking. awaitLocalLogin pops
       // the window + the in-app "Done" popup and resumes on login; a 5-min
@@ -1682,7 +1682,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
       }
       if (!loggedIn) {
         log(`✗ Local Browser: login timed out after 120s. Skipping.`);
-        await closeLocalBrowser();
+        await closeLocalBrowser(profileId);
         return { page: null, ok: false };
       }
       log(`✓ Local Browser: logged in! Moving window off-screen.`);
@@ -1974,11 +1974,22 @@ export function normalizeTemplates(templates = {}, mode = '') {
     followUpBody: (templates.followUpBody || '').trim(),
     followUpDelayMinutes: Number(templates.followUpDelayMinutes) > 0 ? Number(templates.followUpDelayMinutes) : 10,
     // primarySource — the primary's ONE identity, used by BOTH auto-accept and
-    // the automated follow-up: 'local-browser' (you) or a GoLogin profileId.
-    // Concrete id, not an enum, so pass it through; empty/falsey → local-browser.
+    // the automated follow-up: a named local-* profile id, or a GoLogin profileId.
+    // Concrete id, not an enum, so pass it through unchanged when set.
+    //
+    // Multi-profile update (2026-08-28): with multiple named Local Browser
+    // identities, there is no longer one single obvious "the local browser"
+    // to silently default to if the operator left this blank — guessing
+    // wrong here means introducing to the wrong LinkedIn account. The
+    // fallback stays the literal 'local-browser' string on purpose: it
+    // matches no real profile, so an unset primarySource fails clearly
+    // (profile not found) instead of silently picking one. The Primary
+    // Person picker in the UI should always let the operator choose a
+    // specific named Local profile explicitly, so this fallback should
+    // rarely if ever actually fire.
     primarySource: (() => {
       const v = (templates.primarySource || '').toString().trim();
-      return v && v !== 'local-browser' ? v : 'local-browser';
+      return v || 'local-browser';
     })(),
   };
 }
@@ -2028,7 +2039,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [], suppressionValues = [] }) {
   clearRuntimeInterruption();
   if (campaign.running) throw new Error('Campaign already running');
   campaign.executionId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -2622,7 +2633,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       const summary = Object.entries(campaignSendCounts)
         .filter(([, n]) => n > 0)
         .map(([pid, n]) => {
-          const pName = profileNameCache[pid] || (pid === 'local-browser' ? 'You' : pid);
+          const pName = profileNameCache[pid] || (pid.startsWith('local-') ? 'Local Browser' : pid);
           return `${pName} ${n}/${dailyLimit}`;
         }).join(' · ');
       log(`▶ Resuming today's counts: ${summary}`);
@@ -2840,18 +2851,47 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     const _allExcludedUrls = [...new Set([...(excludedUrls || []), ..._centralBlocklistUrls])];
     const _pfExcluded = new Set(_allExcludedUrls.map((u) =>
       String(u).toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0]));
-    const _pfRows = _pfExcluded.size
+    // Suppression Lists (optional) — same mechanism/values used by the
+    // Preview Sheet suppression count, applied here as the real, final
+    // exclusion before any lead is contacted. Matches by email OR LinkedIn
+    // URL/membership ID (isRowSuppressed checks every column whose header
+    // mentions email/linkedin/membership).
+    const _suppressionSet = buildSuppressionSet(suppressionValues);
+    const _suppressedRows = [];
+    const _pfRows = (_pfExcluded.size || _suppressionSet.size)
       ? (() => {
           const before = rows.length;
           const filtered = rows.filter((r) => {
             const u = extractLinkedInUrl(r, linkedinColumn) || '';
             const nu = u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0];
-            return !_pfExcluded.has(nu);
+            if (_pfExcluded.has(nu)) return false;
+            if (isRowSuppressed(r, _suppressionSet)) {
+              _suppressedRows.push(r);
+              return false;
+            }
+            return true;
           });
           if (filtered.length !== before) log(`Pre-flight: ${before - filtered.length} row(s) excluded total`);
           return filtered;
         })()
       : rows;
+    // Stamp "Suppressed" into the sheet's Stage column for each excluded lead
+    // so it's visible directly in the sheet, not just in the app's summary
+    // count. Best-effort and non-blocking — a sheet write hiccup here must
+    // never delay or fail the actual campaign launch.
+    if (_suppressedRows.length) {
+      log(`Suppression: ${_suppressedRows.length} lead(s) matched the suppression list and will be marked "Suppressed" in the sheet.`);
+      (async () => {
+        for (const r of _suppressedRows) {
+          const u = extractLinkedInUrl(r, linkedinColumn) || '';
+          if (!u) continue;
+          const leadName = `${r['First Name'] || r.firstName || ''} ${r['Last Name'] || r.lastName || ''}`.trim();
+          try {
+            await trackedSheetWrite(sheetUrl, u, leadName, buildSkipSheetData(mode, 'Suppressed'), linkedinColumn);
+          } catch (_) { /* best-effort — never block or throw into the campaign loop */ }
+        }
+      })().catch(() => {});
+    }
 
     const targets = _pfRows.filter(_isTarget);
     log(`Pre-filter → ${targets.length} to process, ${_pfRows.length - targets.length} skipped (mode: ${mode})`);
@@ -2866,14 +2906,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // 2.8.29: in check_status mode profileIds starts empty (auto-derived from
     // sheet below) — but we still need the GoLogin token to fetch the profile
     // list and resolve Account Used → profile id. Always grab the token here.
-    const hasGoLoginProfiles = profileIds.some(id => id !== 'local-browser');
+    const hasGoLoginProfiles = profileIds.some(id => !id.startsWith('local-'));
     // 2.8.31: message_only also auto-derives profileIds from sheet (only the
     // sender that connected the lead can DM it), so we need the GoLogin token
     // even when the UI didn't pre-select profiles.
     const tokenNeeded = hasGoLoginProfiles || mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back';
     const token = tokenNeeded ? getToken() : null;
     for (const pid of profileIds) {
-      if (pid === 'local-browser') {
+      if (pid.startsWith('local-')) {
         // 2.9.1: display name is "You" (was "Local Browser"). Sheet writeback
         // and dashboard pick this up via profileNameCache.
         profileNameCache[pid] = 'You';
@@ -2905,15 +2945,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       }
       const nameToId = {};
       Object.keys(profileNameCache).forEach(id => { nameToId[profileNameCache[id]] = id; });
-      // 2.8.29: Local browser is a valid pseudo-profile. Sheets store its
-      // Account Used as variants like "local-browser", "local-browser - manual",
-      // or "Local Browser" — all map to the single 'local-browser' pseudo-id.
-      // 2.9.1: keep all historical display names mapped back to the canonical
-      // 'local-browser' id so existing sheet rows still auto-route correctly.
-      nameToId['You']                    = 'local-browser';
-      nameToId['Local Browser']          = 'local-browser';
-      nameToId['local-browser']          = 'local-browser';
-      nameToId['local-browser - manual'] = 'local-browser';
+      // Named Local Browser identities (2026-08-28 multi-profile update) each
+      // have their own real name (e.g. "Emi Jones Yap"), which already lands
+      // in nameToId via profileNameCache above — no special-casing needed for
+      // NEW local sends.
+      //
+      // Legacy rows from BEFORE this update recorded the sender as a generic
+      // "You" / "Local Browser" / "local-browser" — there is no way to know
+      // which of the operator's (now multiple) named local identities actually
+      // sent those, so they intentionally do NOT resolve here. Left unmapped,
+      // they fall into unmatchedSenders below and are skipped with a clear
+      // reason, rather than guessing and risking a follow-up from the wrong
+      // LinkedIn account.
 
       const sendersInSheet = new Map(); // name -> count (uses display name)
       const unmatchedSenders = new Map(); // name -> count
@@ -2924,9 +2967,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           continue;
         }
         if (nameToId[acct]) {
-          // For local-browser variants, bucket under the canonical "You" label. (2.9.1)
-          const displayName = (nameToId[acct] === 'local-browser') ? 'You' : acct;
-          sendersInSheet.set(displayName, (sendersInSheet.get(displayName) || 0) + 1);
+          // Named local profiles resolve via their real name now (no more
+          // canonical "You" bucket — each named local identity is distinct).
+          sendersInSheet.set(acct, (sendersInSheet.get(acct) || 0) + 1);
         } else {
           unmatchedSenders.set(acct, (unmatchedSenders.get(acct) || 0) + 1);
         }
@@ -2958,11 +3001,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
       // Replace the UI-selected list with the derived list.
       profileIds = derivedProfileIds;
-      // 2.8.29: ensure local-browser has a display name in the cache even when
-      // it came from auto-derivation rather than UI selection.
-      if (derivedProfileIds.includes('local-browser') && !profileNameCache['local-browser']) {
-        profileNameCache['local-browser'] = 'You'; // 2.9.1: was 'Local Browser'
-      }
+      // (2026-08-28: the old single-'local-browser'-id display-name backfill
+      // was removed here — named local profiles already carry their real name
+      // in profileNameCache via getProfileName/loadLocalProfileNames, so there
+      // is no longer a single pseudo-id that needs a manual "You" fallback.)
 
       // 2.8.28-P2: Build per-profile target lists. Without this, the shared
       // round-robin leadIndex would burn BATCH_SIZE slots per profile on
@@ -2980,7 +3022,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     }
 
     campaign.profileNames = profileIds.map(id =>
-      profileNameCache[id] || (id === 'local-browser' ? 'You' : id)
+      profileNameCache[id] || (id.startsWith('local-') ? 'You' : id)
     );
     // Mirror the IDs alongside the names so the dashboard's per-row Open
     // Browser / Try Again buttons can call profile-specific endpoints.
@@ -3016,7 +3058,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
       // 2.9.2: never let the raw profileId 'local-browser' leak to the sheet
       // (it bypasses profileNameCache when that's stale). Force 'You'.
-      const pName = profileNameCache[profileId] || (profileId === 'local-browser' ? 'You' : profileId);
+      const pName = profileNameCache[profileId] || (profileId.startsWith('local-') ? 'You' : profileId);
       campaign.currentProfile = pName;
 
       // 2.9.9: hard browser cap is now enforced by the global semaphore in
@@ -3043,8 +3085,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           step: 'opening_browser', stepDetail: 'Starting the GoLogin browser and restoring its LinkedIn session',
         });
         let launched;
-        if (profileId === 'local-browser') {
-          launched = await launchLocalBrowser();
+        if (profileId.startsWith('local-')) {
+          launched = await launchLocalBrowser(profileId);
         } else {
           launched = await launchProfile(profileId, token);
         }
@@ -3055,7 +3097,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         if (campaign._abort) {
           log(`■ ${pName}: stop requested mid-launch — closing immediately.`);
           try {
-            if (profileId === 'local-browser') await closeLocalBrowser();
+            if (profileId.startsWith('local-')) await closeLocalBrowser(profileId);
             else await closeProfile(profileId);
           } catch { /* */ }
           return null;
@@ -3083,7 +3125,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           await markSoONeedsLogin(pName);
           // Close the now-unusable session immediately to free RAM
           try {
-            if (profileId === 'local-browser') await closeLocalBrowser();
+            if (profileId.startsWith('local-')) await closeLocalBrowser(profileId);
             else await closeProfile(profileId);
           } catch { /* */ }
           return null;
@@ -3091,7 +3133,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         if (!ok) return null;
         if (campaign._abort) {
           try {
-            if (profileId === 'local-browser') await closeLocalBrowser();
+            if (profileId.startsWith('local-')) await closeLocalBrowser(profileId);
             else await closeProfile(profileId);
           } catch { /* */ }
           return null;
@@ -3187,8 +3229,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         }
       };
       try {
-        if (profileId === 'local-browser') {
-          await withinCloseDeadline(() => closeLocalBrowser(), 'Local browser');
+        if (profileId.startsWith('local-')) {
+          await withinCloseDeadline(() => closeLocalBrowser(profileId), 'Local browser');
         } else {
           await withinCloseDeadline(async () => {
             const pages = await s.browser.pages().catch(() => []);
@@ -3296,7 +3338,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       } finally {
         activeBulkChecks.delete(profileId);
         try {
-          if (profileId === 'local-browser') await closeLocalBrowser();
+          if (profileId.startsWith('local-')) await closeLocalBrowser(profileId);
           else await closeProfile(profileId);
         } catch { /* */ }
         browserSemaphore.release();
@@ -3595,7 +3637,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // to the primary. Later turns while 'pending': re-read degree only (no
         // re-send) and flip to 'connected' once accepted. Held intros release
         // automatically (willAutoIntro gate below reads campaign._primaryConn).
-        if (mode === 'connect_and_introduce' && profileId !== 'local-browser') {
+        if (mode === 'connect_and_introduce' && !profileId.startsWith('local-')) {
           const _primaryUrl = (tpl && tpl.primaryUrl || '').trim();
           if (!_primaryUrl) {
             // Diagnostic: no primary URL saved → the connection-to-primary check
@@ -3654,7 +3696,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                     });
                     const _stored = await enqueuePrimaryTask(_task);
                     if (_stored) {
-                      const _where = (tpl.primarySource && tpl.primarySource !== 'local-browser')
+                      const _where = (tpl.primarySource && !tpl.primarySource.startsWith('local-'))
                         ? 'the primary\'s GoLogin profile'
                         : 'your local browser';
                       log(`  ⏳ [${pName}] Auto-accept queued — ${_where} will accept this account's invite at the next idle moment.`);
@@ -3714,7 +3756,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // Writes campaign._lastSample and campaign._throttle for the status endpoint to read.
         try {
           const activePids = [...sessions.values()]
-            .filter(s => s.profileId !== 'local-browser')
+            .filter(s => !s.profileId.startsWith('local-'))
             .map(s => getProfilePid(s.profileId))
             .filter(Boolean);
           campaign._lastSample = await rmSample(activePids);
@@ -4842,7 +4884,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               // Only on a 5-min no-response timeout do we fall back to the same
               // park-and-flag below. GoLogin profiles skip recovery entirely.
               let recovered = false;
-              if (profileId === 'local-browser') {
+              if (profileId.startsWith('local-')) {
                 log(`  ⚠ ${pName}: session expired mid-run — opening browser for you to log in.`);
                 const recovery = await awaitLocalLogin(page, profileId, pName);
                 recovered = recovery.ok;
@@ -5277,7 +5319,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // v2.74: bail the instant the operator hits Stop, instead of
             // grinding through every remaining account's bulk-check first.
             if (campaign._abort) break;
-            const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
+            const _pName = profileNameCache[_profileId] || (_profileId.startsWith('local-') ? 'You' : _profileId);
             const _lastBulkCheckAt = _idleCooldown[bulkCheckKey(_idleSheetId, _profileId)] || 0;
             const _fire = shouldFireIdleBulkCheck({
               mode,
@@ -5442,7 +5484,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             if (campaign._abort || err?.name === 'AbortError') return;
             throw err;
           }
-          const launched = (sender === 'local-browser')
+          const launched = (sender.startsWith('local-'))
             ? await launchLocalBrowser()
             : await launchProfile(sender, token);
           const page = launched.page;
@@ -5476,7 +5518,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           log(`  ⚠ Pre-flight: primary accept session failed (${e.message}) — queuing for the idle runner`);
           for (const t of queuedAccepts) { try { await enqueuePrimaryTask(t); } catch { /* */ } }
         } finally {
-          try { (sender === 'local-browser') ? await closeLocalBrowser() : await closeProfile(sender); } catch { /* */ }
+          try { (sender.startsWith('local-')) ? await closeLocalBrowser(sender) : await closeProfile(sender); } catch { /* */ }
           browserSemaphore.release();
         }
       }
@@ -5526,7 +5568,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     for (const profileId of profileIds) {
       // 2.9.2: never let the raw profileId 'local-browser' leak to the sheet
       // (it bypasses profileNameCache when that's stale). Force 'You'.
-      const pName = profileNameCache[profileId] || (profileId === 'local-browser' ? 'You' : profileId);
+      const pName = profileNameCache[profileId] || (profileId.startsWith('local-') ? 'You' : profileId);
       log(`■ ${pName}: ${getCampaignCount(profileId)} processed.`);
     }
 
@@ -5671,7 +5713,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             ]);
             return [...ids].filter(Boolean).map((pid) => ({
               profileId: pid,
-              name: profileNameCache[pid] || (pid === 'local-browser' ? 'You' : pid),
+              name: profileNameCache[pid] || (pid.startsWith('local-') ? 'You' : pid),
               sent: getCampaignSendCount(pid) + getCampaignMessageCount(pid),
               endReason: (campaign.profileEndReasons || []).find((e) => e.profileId === pid)?.reason || '',
             }));
@@ -7148,7 +7190,7 @@ export async function runMonitoringCheck(profileId, profileName) {
   } finally {
     activeBulkChecks.delete(profileId);
     try {
-      if (profileId === 'local-browser') await closeLocalBrowser();
+      if (profileId.startsWith('local-')) await closeLocalBrowser(profileId);
       else await closeProfile(profileId);
     } catch { /* */ }
     browserSemaphore.release();

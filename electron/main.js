@@ -41,6 +41,12 @@ if (existsSync(envPath)) {
   dotenv.config({ path: envPath });
 }
 
+// Dev builds use a separate userData folder so they don't collide with
+// the production app's local data (login state, cache, etc.)
+if (!app.isPackaged) {
+  app.setName('The Ortus Outreach (Dev)');
+}
+
 // ── Per-user data dir — server modules read this via src/paths.js ────────────
 const userDataDir = join(app.getPath('userData'), 'data');
 process.env.ORTUS_DATA_DIR = userDataDir;

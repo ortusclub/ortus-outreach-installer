@@ -2743,9 +2743,16 @@ function filterProfiles() {
     });
   }
 
-  // Search by name/email
+  // Search by name/email — supports pasting multiple emails/names at once,
+  // separated by commas, semicolons, spaces, or newlines. A profile matches
+  // if it matches ANY of the pasted terms.
   if (query) {
-    list = list.filter((p) => p.name.toLowerCase().includes(query) || p.id.includes(query));
+    const terms = query.split(/[\s,;]+/).map(t => t.trim()).filter(Boolean);
+    list = list.filter((p) => {
+      const name = p.name.toLowerCase();
+      const id = p.id;
+      return terms.some((term) => name.includes(term) || id.includes(term));
+    });
   }
 
   renderProfiles(list);
@@ -5821,6 +5828,105 @@ function _looksLikeUrlColumn(col, rows) {
   return false;
 }
 
+// Suppression Lists — reads Global + Local CSV uploads (any column with
+// "email", "linkedin", or "membership" in its header; or a plain one-value-
+// per-line file with no matching headers) plus the two paste boxes, and
+// returns a flat array of raw values ready for buildSuppressionSet on the
+// server. Errors (bad file, empty) are swallowed — suppression is optional,
+// so a problem here should never block the Preview Sheet flow.
+function _parseSuppressionCsvText(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+  // Very small CSV split — good enough for suppression files (email / URL /
+  // ID columns don't contain embedded commas). Header row detection: does
+  // any column name look like email/linkedin/membership?
+  const rows = lines.map((l) => l.split(','));
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const hasRecognizedHeader = header.some((h) => h.includes('email') || h.includes('linkedin') || h.includes('membership'));
+  if (!hasRecognizedHeader) {
+    // No headers we recognize — treat the WHOLE file as a plain list, one
+    // value per line (first column of each line, in case it's still comma-y).
+    return rows.map((r) => r[0]).filter(Boolean);
+  }
+  const colIdxs = header
+    .map((h, i) => ((h.includes('email') || h.includes('linkedin') || h.includes('membership')) ? i : -1))
+    .filter((i) => i >= 0);
+  const values = [];
+  for (let i = 1; i < rows.length; i++) {
+    for (const idx of colIdxs) {
+      if (rows[i][idx]) values.push(rows[i][idx].trim());
+    }
+  }
+  return values;
+}
+
+function _splitPastedSuppression(text) {
+  return (text || '').split(/[\s,;]+/).map((v) => v.trim()).filter(Boolean);
+}
+
+async function _readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+async function collectSuppressionValues() {
+  const values = [];
+  try {
+    const files = document.getElementById('suppress-file')?.files || [];
+    for (const f of files) {
+      try {
+        const text = await _readFileAsText(f);
+        values.push(..._parseSuppressionCsvText(text));
+      } catch (_) { /* one bad file shouldn't block the others */ }
+    }
+    const pasted = document.getElementById('suppress-paste')?.value || '';
+    values.push(..._splitPastedSuppression(pasted));
+  } catch (_) { /* suppression is optional — never throw from here */ }
+  return values;
+}
+
+// Mirrors the chosen file name(s) into the visible label next to the button,
+// since the native file input is hidden behind .suppress-file-btn.
+function _wireSuppressionFileLabel() {
+  const input = document.getElementById('suppress-file');
+  const label = document.getElementById('suppress-file-name');
+  if (!input || !label || input.__labelWired) return;
+  input.__labelWired = true;
+  input.addEventListener('change', () => {
+    const n = input.files?.length || 0;
+    label.textContent = n === 0 ? 'No file chosen' : (n === 1 ? input.files[0].name : `${n} files chosen`);
+  });
+}
+document.addEventListener('DOMContentLoaded', _wireSuppressionFileLabel);
+if (document.readyState !== 'loading') _wireSuppressionFileLabel();
+
+// Live checkmark + count under the paste box, mirroring the file-name label
+// next to Choose File(s) — confirms pasted values were actually detected.
+function _wireSuppressionPasteIndicator() {
+  const textarea = document.getElementById('suppress-paste');
+  const indicator = document.getElementById('suppress-paste-indicator');
+  if (!textarea || !indicator || textarea.__indicatorWired) return;
+  textarea.__indicatorWired = true;
+  const update = () => {
+    const n = _splitPastedSuppression(textarea.value).length;
+    if (n === 0) {
+      indicator.style.display = 'none';
+      indicator.textContent = '';
+    } else {
+      indicator.style.display = '';
+      indicator.textContent = `✓ ${n} value${n === 1 ? '' : 's'} detected`;
+    }
+  };
+  textarea.addEventListener('input', update);
+  update();
+}
+document.addEventListener('DOMContentLoaded', _wireSuppressionPasteIndicator);
+if (document.readyState !== 'loading') _wireSuppressionPasteIndicator();
+
 async function previewSheet() {
   const url = document.getElementById('sheet-url').value.trim();
   const preview = document.getElementById('sheet-preview');
@@ -5828,9 +5934,26 @@ async function previewSheet() {
   preview.classList.remove('hidden');
   preview.innerHTML = 'Loading…';
   try {
-    const res = await fetch(`/api/sheet/preview?url=${encodeURIComponent(url)}`);
+    // Suppression Lists (optional): gathered from the Global/Local file
+    // uploads + paste boxes and sent to the POST variant, which filters
+    // matching rows out of the FULL sheet before totalRows/preview are
+    // computed — the preview count is the real, post-suppression count.
+    const _suppressionValues = await collectSuppressionValues();
+    const res = _suppressionValues.length
+      ? await fetch('/api/sheet/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, suppressionValues: _suppressionValues }),
+        })
+      : await fetch(`/api/sheet/preview?url=${encodeURIComponent(url)}`);
     const data = await res.json();
     if (data.error) { preview.innerHTML = `<p style="color:#f85149">Error: ${escHtml(data.error)}</p>`; return; }
+    const suppressSummaryEl = document.getElementById('suppress-summary');
+    if (suppressSummaryEl) {
+      suppressSummaryEl.textContent = data.suppressedCount
+        ? `${data.suppressedCount} lead${data.suppressedCount === 1 ? '' : 's'} suppressed and excluded from this campaign.`
+        : (_suppressionValues.length ? 'No matches found in this sheet.' : '');
+    }
     // v2.62: count becomes data-count so the CSS in .sheet-hero-preview can
     // render it as the big hero stat via ::before. Plain text fallback also
     // reads sensibly outside the hero context.
@@ -6588,6 +6711,36 @@ async function openBlocklistPanel() {
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
 async function addToQueueCampaign() { return startCampaign({ queueOnly: true }); }
+// Fills the #cc-scrim confirmation modal with the campaign summary and
+// resolves true/false based on which button the operator clicks.
+function showCampaignConfirmSummary({ type, leads, accounts, template, hideAccounts }) {
+  return new Promise((resolve) => {
+    document.getElementById('cc-type').textContent = type;
+    document.getElementById('cc-leads').textContent = leads;
+    document.getElementById('cc-accounts').textContent = accounts;
+    document.getElementById('cc-template').textContent = template;
+    const accountsGroup = document.getElementById('cc-accounts-group');
+    if (accountsGroup) accountsGroup.style.display = hideAccounts ? 'none' : '';
+
+    const scrim = document.getElementById('cc-scrim');
+    const confirmBtn = document.getElementById('cc-confirm');
+    const cancelBtn = document.getElementById('cc-cancel');
+
+    function cleanup(result) {
+      scrim.style.display = 'none';
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onConfirm() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    scrim.style.display = 'flex';
+  });
+}
+
 async function startCampaign(opts = {}) {
   // 2.9.5: when mode is check_dms, this is a separate flow with its own
   // endpoint and no campaign templates. Delegate to startCheckDms() and
@@ -6912,6 +7065,10 @@ async function startCampaign(opts = {}) {
     benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     sheetUrl,
     sheetGid: window._chosenSheetGid || '',
+    // Suppression Lists (optional) — same values collected for the Preview
+    // Sheet suppression count. Sent through so the REAL campaign run also
+    // excludes these leads, not just the preview.
+    suppressionValues: await collectSuppressionValues(),
     multiTab: !!window._tabPickerMulti,
     templates,
     dailyLimit,
@@ -7029,6 +7186,43 @@ async function startCampaign(opts = {}) {
   }
   // Rerun context consumed — clear so a subsequent fresh launch isn't treated as a rerun.
   window._savedSheetGid = '';
+
+  // Confirmation summary modal — shows Campaign Type, Lead Count, GoLogin
+  // Accounts, and Message Template before actually launching. Runs only
+  // after every validation above has passed, and before anything is sent.
+  if (!opts._skipConfirmSummary) {
+    const _modeLabels = {
+      connect_only: 'Connection Campaign',
+      connect_and_message: 'Connect + DM',
+      connect_and_introduce: 'Connect + Introduce Back',
+      introduce_back: 'Introduction Campaign',
+      message_only: 'Direct Messages',
+      check_status: 'Check Status',
+      check_dms: 'Check DMs',
+      follower_growth: 'Follower Growth',
+      post_amplification: 'Post Amplification',
+    };
+    const _summaryType = _modeLabels[mode] || mode;
+    const _summaryLeads = document.querySelector('#sheet-preview p[data-count]')?.dataset.count || 'Unknown';
+    const _summaryAccounts = selectedProfileIds.map((id) => profileLabel(id)).join(', ') || 'None selected';
+    const _summaryTemplate =
+      (mode === 'connect_and_message' && templates.ccDmBody) ||
+      (mode === 'connect_and_introduce' && templates.primaryIntroBody) ||
+      (mode === 'introduce_back' && templates.primaryIntroBody) ||
+      (mode === 'message_only' && templates.inmailBody) ||
+      templates.connectionNote ||
+      '(No template text found)';
+
+    console.log('[DEBUG confirm summary]', { _summaryType, _summaryLeads, _summaryAccounts, _summaryTemplate });
+    const _confirmed = await showCampaignConfirmSummary({
+      type: _summaryType,
+      leads: _summaryLeads,
+      accounts: _summaryAccounts,
+      template: _summaryTemplate,
+      hideAccounts: _autoRoutedModes.has(mode),
+    });
+    if (!_confirmed) return;
+  }
 
   // ⑤+①: instant launch feedback. Only for an immediate Start (not Queue), and
   // only now that every validation early-return above is behind us. Shown BEFORE
@@ -8597,10 +8791,13 @@ function renderCloudAccountsPanel(id) {
     else badges.push(badge('ok', '✓ Active'));
     // This run's invites when we have them (the daily quota is meaningless on a
     // follower campaign — it counts connection requests), else the daily usage.
+    // Local runs have no per-campaign cloud tally to show, and the daily-quota
+    // fallback ("0/50") read as a stuck counter to operators since it never
+    // moves during a local run. The status badge above (Active/Stopped/Logged
+    // out/Throttled) already says what matters, so just skip the tally badge
+    // when there's nothing real to show.
     const tally = counts && counts.get(String(a.profileId || ''));
-    badges.push(tally
-      ? badge('muted', `${tally.sent} of ${tally.total} invited`)
-      : badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
+    if (tally) badges.push(badge('muted', `${tally.sent} of ${tally.total} invited`));
     // Still sending, but bare: LinkedIn's free personalised-invite allowance is
     // spent. Not a blocker, so it sits after the tally rather than replacing the
     // status badge — the campaign is running, the note just isn't attached.
@@ -21360,6 +21557,19 @@ async function startNewCampaign() {
     }
   } catch { /* fall through; wizard still works without a draft id */ }
   try { localStorage.removeItem('campaignName'); } catch {}
+  // Match: our sheet-url persistence (initSheetUrlPersist) must not resurrect
+  // the previous campaign's URL into this fresh wizard on a later reload.
+  try { localStorage.removeItem('ortus-sheet-url'); } catch {}
+  // Same gap, pre-existing: Primary Person (name/url/body) + Intro Title are
+  // saved to localStorage on every keystroke (savePrimaryPersonFields /
+  // saveIntroTitle) and restored on load, but were never cleared here — so a
+  // brand-new campaign's wizard would repopulate with the LAST campaign's
+  // primary-person + intro title after any reload, even though the visible
+  // fields were correctly blanked by _clearIds above.
+  try { localStorage.removeItem('ortus-primary-name'); } catch {}
+  try { localStorage.removeItem('ortus-primary-url'); } catch {}
+  try { localStorage.removeItem('ortus-primary-body'); } catch {}
+  try { localStorage.removeItem('ortus-intro-title'); } catch {}
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
   // v2.86.1 (port): a brand-new campaign is NOT an edit-resume. Drop the
   // edit-resume context and hide the "Editing a stopped campaign" banner so it
@@ -25074,6 +25284,29 @@ async function initCampaignNameInput() {
 }
 document.addEventListener('DOMContentLoaded', initCampaignNameInput);
 if (document.readyState !== 'loading') initCampaignNameInput();
+
+// Sheet URL — same localStorage persistence pattern as campaignName above.
+// Without this, the URL field was the one wizard field that didn't survive
+// a plain reload (Cmd+R) even though name/mode/templates all did.
+function initSheetUrlPersist() {
+  const input = document.getElementById('sheet-url');
+  if (!input || input.__sheetUrlPersistWired) return;
+  input.__sheetUrlPersistWired = true;
+  if (!input.value) {
+    try {
+      const saved = localStorage.getItem('ortus-sheet-url');
+      if (saved) {
+        input.value = saved;
+        if (typeof previewSheet === 'function') Promise.resolve(previewSheet()).catch(() => {});
+      }
+    } catch {}
+  }
+  input.addEventListener('input', () => {
+    try { localStorage.setItem('ortus-sheet-url', input.value); } catch {}
+  });
+}
+document.addEventListener('DOMContentLoaded', initSheetUrlPersist);
+if (document.readyState !== 'loading') initSheetUrlPersist();
 window.syncCampaignNameInput = syncCampaignNameInput;
 
 // True when the wizard is bound to the currently-running campaign — i.e.,
@@ -26496,7 +26729,11 @@ function _stageAcctPill(a, isCurrent, counts) {
   const nm = _acctLabel(a);
   const tally = counts && counts.get(String(a.profileId || ''));
   // Invites sent / queued for THIS run when we have it; the daily quota otherwise.
-  let count = tally ? `${tally.sent}/${tally.total}` : `${a.dailyCount || 0}/${a.dailyLimit || 0}`;
+  // Local runs have no per-campaign tally to show — the daily-quota fallback
+  // read as a stuck "0/50" counter to operators since it never moved during a
+  // local run. Leave count blank when there's nothing real to show; the pill's
+  // status color/label still conveys what matters.
+  let count = tally ? `${tally.sent}/${tally.total}` : '';
   // On a follower run the daily quota is the CONNECTION quota — always 0/50,
   // and nothing to do with why the run stopped. What binds is LinkedIn's
   // monthly "invite to follow" credits, which the payload already carries.

@@ -59,3 +59,50 @@ export function withGid(url, gid) {
   }
   return u;
 }
+
+/**
+ * Suppression list matching — normalizes emails and LinkedIn URLs/membership
+ * IDs so minor formatting differences (http vs https, www, trailing slash,
+ * query params, casing) don't cause a false negative.
+ */
+export function normalizeSuppressionValue(raw) {
+  let v = String(raw || '').trim().toLowerCase();
+  if (!v) return '';
+  // LinkedIn URL normalization: strip protocol, www., trailing slash, query string.
+  if (v.includes('linkedin.com')) {
+    v = v.replace(/^https?:\/\//, '');
+    v = v.replace(/^www\./, '');
+    v = v.replace(/\?.*$/, '');
+    v = v.replace(/\/+$/, '');
+  }
+  return v;
+}
+
+/**
+ * Builds a normalized Set from a list of raw suppression values (emails,
+ * LinkedIn URLs, or membership IDs), skipping blanks.
+ */
+export function buildSuppressionSet(values) {
+  const set = new Set();
+  for (const v of values || []) {
+    const norm = normalizeSuppressionValue(v);
+    if (norm) set.add(norm);
+  }
+  return set;
+}
+
+/**
+ * True if any of the row's candidate values (email, LinkedIn URL/bio,
+ * membership ID) match the suppression set.
+ */
+export function isRowSuppressed(row, suppressionSet) {
+  if (!suppressionSet || suppressionSet.size === 0) return false;
+  for (const key of Object.keys(row || {})) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey.includes('email') || lowerKey.includes('linkedin') || lowerKey.includes('membership')) {
+      const norm = normalizeSuppressionValue(row[key]);
+      if (norm && suppressionSet.has(norm)) return true;
+    }
+  }
+  return false;
+}

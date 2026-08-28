@@ -1204,7 +1204,7 @@
           <div id="primary-person-block" class="ov-idgrid" style="display:none;">
             <div class="intro-config-field">
               <label for="primary-person-name" class="intro-config-label">Full name</label>
-              <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock" oninput="savePrimaryPersonFields()">
+              <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock" oninput="savePrimaryPersonFields()" autocomplete="off">
               <div class="intro-config-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
             </div>
             <!-- v2.78: re-shown per operator request — the primary's profile URL
@@ -1595,6 +1595,22 @@
               <button type="button" class="btn btn-secondary btn-sm" id="wiz-bl-add">Add</button>
             </div>
             <div class="wiz-blocklist-hint">These companies/domains are never contacted by any campaign (applies to cold modes).</div>
+          </div>
+
+          <!-- Suppression List — CSV upload(s) and/or a pasted list of
+               emails/LinkedIn URLs/membership IDs. Optional, not persisted —
+               re-supplied per campaign since these lists change often.
+               Checked at Preview Sheet time and re-applied for real at launch. -->
+          <div class="wiz-blocklist" id="wiz-suppression">
+            <div class="wiz-blocklist-label">Suppression List <span style="font-weight:400;color:var(--gray);font-size:0.7rem">(optional — checked when you Preview Sheet)</span></div>
+            <label class="suppress-file-btn" for="suppress-file">
+              <span>Choose file(s)</span>
+              <input type="file" id="suppress-file" accept=".csv,text/csv" multiple />
+            </label>
+            <span class="suppress-file-name" id="suppress-file-name">No file chosen</span>
+            <textarea id="suppress-paste" rows="3" placeholder="Or paste emails / LinkedIn URLs / membership IDs — comma or newline separated"></textarea>
+            <div class="suppress-paste-indicator" id="suppress-paste-indicator" style="display:none"></div>
+            <div class="wiz-blocklist-hint" id="suppress-summary">People on this list are never contacted by this campaign — matched by email or LinkedIn URL/membership ID.</div>
           </div>
         </div>
 
@@ -2969,7 +2985,7 @@
          field for every connect mode. -->
     <div class="section tpl-section" id="tpl-connect-section">
       <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
-      <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount()"></textarea>
+      <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount()" autocomplete="off"></textarea>
       <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
       <div id="tpl-note-hint" class="note-hint note-hint-callout hidden"><span class="nh-ic">!</span><span class="nh-tx"><b>You usually don't need a note.</b> Requests sent without one tend to get accepted more often and keep the intro thread clean. Only add one if it clearly helps this specific audience.</span></div>
       <div class="placeholder-tags" data-target="tpl-note"></div>
@@ -3008,7 +3024,7 @@
       <h2 data-edit="h2-intro-dm">Group Conversation Body</h2>
       <!-- v2.102: set expectations — this is the opener, not the whole pitch. -->
       <div style="font-size:11px; color:var(--gray); margin-top:-4px; margin-bottom:8px">Keep it short — this is just the opener that creates the group. The bulk of the message goes in the <b>First Follow-up</b> below.</div>
-      <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." oninput="savePrimaryPersonFields()"></textarea>
+      <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." oninput="savePrimaryPersonFields()" autocomplete="off"></textarea>
       <div class="placeholder-tags" data-target="primary-intro-body"></div>
     </div>
 
@@ -4415,6 +4431,44 @@
 </div>
 
 <!-- ══ Campaign debrief overlay (campaign-debrief-A sketch) ══ -->
+<!-- Campaign launch confirmation overlay -->
+<div id="cc-scrim" role="dialog" aria-modal="true" aria-labelledby="cc-title" style="display:none">
+  <div class="pf-panel">
+    <div class="pf-eyebrow">Review - before this campaign goes live</div>
+    <div class="pf-title" id="cc-title">Confirm campaign launch</div>
+    <div class="pf-sub">Double-check the details below before sending.</div>
+
+    <div id="cc-scrim-body">
+    <div class="pf-group pf-passed">
+      <div class="pf-group-head">Campaign Type</div>
+      <div class="pf-rows"><div class="pf-row pf-sheet-level"><span class="reason" id="cc-type"></span></div></div>
+    </div>
+
+    <div class="pf-group pf-passed">
+      <div class="pf-group-head">Number of Leads</div>
+      <div class="pf-rows"><div class="pf-row pf-sheet-level"><span class="reason" id="cc-leads"></span></div></div>
+    </div>
+
+    <div class="pf-group pf-passed" id="cc-accounts-group">
+      <div class="pf-group-head">GoLogin Accounts</div>
+      <div class="pf-rows"><div class="pf-row pf-sheet-level"><span class="reason" id="cc-accounts"></span></div></div>
+    </div>
+
+    <div class="pf-group pf-passed">
+      <div class="pf-group-head">Message Template</div>
+      <div class="pf-rows"><div class="pf-row pf-sheet-level"><span class="reason" id="cc-template" style="white-space:pre-wrap"></span></div></div>
+    </div>
+
+    </div>
+
+    <div class="pf-actions">
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" id="cc-cancel">Cancel</button>
+      <button class="btn btn-primary" id="cc-confirm">Start Campaign</button>
+    </div>
+  </div>
+</div>
+
 <div id="db-scrim" role="dialog" aria-modal="true" aria-labelledby="db-title" style="display:none">
   <div class="db-panel">
     <div class="db-eyebrow">Post-campaign debrief · generated when the campaign finishes</div>
