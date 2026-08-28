@@ -19,6 +19,21 @@ fi
 PF_PID=""
 ELECTRON_PID=""
 
+# `gcloud auth login` expires nightly under the Workspace session policy, and a
+# supervisor that cannot re-authenticate reconnects forever in silence while the
+# app shows a frozen VM card (measured 2026-08-28: card stuck at 01:27, engine
+# swept normally at 03:10, 05:10 and 07:10). scripts/dev-tunnel-kubeconfig.sh
+# writes a kubeconfig holding a Kubernetes ServiceAccount token, which the
+# cluster mints and therefore never expires. Use it when it exists; fall back to
+# the human gcloud session when it does not.
+DEV_KUBECONFIG="${ORTUS_DEV_KUBECONFIG:-$HOME/.kube/ortus-dev.yaml}"
+if [ -f "$DEV_KUBECONFIG" ]; then
+  export KUBECONFIG="$DEV_KUBECONFIG"
+  TUNNEL_IDENTITY="service account (does not expire)"
+else
+  TUNNEL_IDENTITY="your gcloud login (expires — run scripts/dev-tunnel-kubeconfig.sh once to fix)"
+fi
+
 cleanup() {
   trap - EXIT INT TERM
   [ -n "$PF_PID" ] && kill "$PF_PID" 2>/dev/null || true
@@ -82,6 +97,7 @@ echo "Development Electron"
 echo "  app worktree: $(pwd)"
 echo "  dev engine:   $DEV_VERSION"
 echo "  live engine:  $LIVE_VERSION"
+echo "  tunnel auth:  $TUNNEL_IDENTITY"
 
 start_port_forward
 
@@ -122,6 +138,7 @@ ELECTRON_PID=$!
 # Keep the tunnel alive for the lifetime of Electron. A Deployment port-forward
 # is tied to one pod, so any rollout/preemption requires a fresh connection.
 FAILED_HEALTH_CHECKS=0
+AUTH_WARNED=0
 while kill -0 "$ELECTRON_PID" 2>/dev/null; do
   if kill -0 "$PF_PID" 2>/dev/null && engine_ready; then
     FAILED_HEALTH_CHECKS=0
@@ -137,7 +154,20 @@ while kill -0 "$ELECTRON_PID" 2>/dev/null; do
     start_port_forward
     if wait_for_tunnel; then
       FAILED_HEALTH_CHECKS=0
+      AUTH_WARNED=0
       echo "Dev engine tunnel reconnected."
+    elif [ "$AUTH_WARNED" -eq 0 ] \
+      && grep -qiE 'reauthentication|credentials|auth login|invalid_grant' \
+           /tmp/ortus-dev-engine-port-forward.log 2>/dev/null; then
+      # Say the actual reason once. Without this the loop retries forever and the
+      # only visible symptom is a campaign card that stopped updating hours ago.
+      AUTH_WARNED=1
+      echo
+      echo "  The dev tunnel cannot authenticate, so the app is NOT seeing the VM."
+      echo "  Everything it shows for a cloud campaign is a stale snapshot."
+      echo "  Fix permanently (once):  scripts/dev-tunnel-kubeconfig.sh"
+      echo "  Fix for today:           gcloud auth login"
+      echo
     fi
   fi
   sleep 2
