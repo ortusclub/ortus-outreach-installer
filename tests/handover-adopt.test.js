@@ -80,9 +80,16 @@ test('adopting a send-complete campaign lands it in local monitoring, not done',
   assert.equal(s.totalTargets, 199, 'the VM lead ledger survives the move');
   assert.equal(s.totalProcessed, 23, 'the paused card keeps its real progress');
   const adoptionLog = s.logs.find((line) => line.includes('Monitoring moved to this Mac')) || '';
-  assert.match(adoptionLog, /next check .+ \(every 120 min\) · monitoring ends /);
+  assert.match(adoptionLog, /checks every 120 min · monitoring ends /);
   assert.doesNotMatch(adoptionLog, /adopted on this Mac|ends 20\d\d-\d\d-\d\dT/,
     'the operator log must use readable local dates, never backend ISO wording');
+  // The event says what happened; the schedule follows in the one sentence
+  // every writer on both machines uses, so the newest line is always the same
+  // shape and one banner rule understands it (operator, 2026-08-28: three cards
+  // in the identical state read three different headlines).
+  const scheduleLog = s.logs[s.logs.length - 1] || '';
+  assert.match(scheduleLog, /⏱ Next check \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC · nothing happens until then, the campaign stays running\.$/,
+    'the schedule line closes the handover, in the shared wording');
   const nextIn = (Date.parse(s.nextCheckAt) - Date.now()) / 60000;
   assert.ok(nextIn > 115 && nextIn <= 121, `next check is one base interval from now, got ${nextIn} min`);
 

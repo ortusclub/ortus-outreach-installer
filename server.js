@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
+import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin, nextCheckLogLine } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNextReady } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
@@ -85,7 +85,7 @@ _setAlertImpl((msg) => {
 import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } from './src/notification-prefs.js';
 import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs, identityGateEnabled } from './src/operator-prefs.js';
 import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/operator-identity.js';
-import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-configs.js';
+import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
@@ -2153,6 +2153,18 @@ app.get('/api/team-status', async (req, res) => {
   res.json(payload);
 });
 
+// Primary people the operator has actually launched with, newest first, derived
+// from those same snapshots. Feeds the name type-ahead in the CC+IC Primary
+// Person card so a known name recalls its LinkedIn URL instead of being retyped.
+app.get('/api/primary-people', async (_req, res) => {
+  try {
+    res.json({ people: await getPrimaryPeople() });
+  } catch (err) {
+    // Recall is a convenience: a broken store must never block the wizard.
+    res.json({ people: [], error: err.message });
+  }
+});
+
 // The wizard config snapshotted at dispatch — used to Duplicate a cloud campaign.
 app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   const rec = await getCloudLaunchConfig(req.params.id);
@@ -2667,7 +2679,8 @@ async function runPreflightGate(req, res) {
       profileIds: req.body?.profileIds,
       targetCount: gateFindings.targetCount,
       diagnostics: {
-        alreadyProcessed: Math.max(0, gateRows.length - gateFindings.targetCount),
+        alreadyProcessed: Number(gateFindings.stagedCount) || 0,
+        noUrl: Number(gateFindings.noUrlCount) || 0,
         unmatchedSenders: gateFindings.warnings.filter((f) => f.check === 'sender_mismatch').length,
       },
     });
@@ -4968,9 +4981,7 @@ app.post('/api/monitoring/check-now', async (req, res) => {
         // the final account line (often Identity Restricted) permanently owns
         // the banner even though the check has already ended.
         if (finished.state === 'monitoring' && finished.nextCheckAt) {
-          const next = new Date(finished.nextCheckAt);
-          const hhmm = `${String(next.getHours()).padStart(2, '0')}:${String(next.getMinutes()).padStart(2, '0')}`;
-          finished.logs.push(`${stamp()} 🛏 Monitoring active · next check at ${hhmm}.`);
+          finished.logs.push(`${stamp()} ${nextCheckLogLine(finished.nextCheckAt)}`);
         }
       })
       .catch((err) => {
@@ -6460,6 +6471,19 @@ app.post('/api/bulk-check-now', async (req, res) => {
       }
     }
     campaignLog(`📡 Manual bulk check complete — ${totalMatched} Connected, ${totalStamped} Still Pending across ${profileIdsToSweep.length} account(s).`);
+    // A terminal schedule event is part of the sweep contract — the same line
+    // the Check now route writes at server.js:4986, for the same reason. This
+    // route never wrote it, so after a manual sweep the newest line in the log
+    // was "check complete", the banner kept that finished event forever, and
+    // the card sat on FINISHED CHECKING ALL AVAILABLE ACCOUNTS with the
+    // next-check countdown replaced by a check-progress panel. Measured
+    // 2026-08-28 on COLL_CHI_ANTONIO2: state monitoring, no check running,
+    // next check 17:08, and nothing on the card or in the log said so.
+    try {
+      if (campaign && campaign.state === 'monitoring' && campaign.nextCheckAt) {
+        campaignLog(nextCheckLogLine(campaign.nextCheckAt));
+      }
+    } catch (_) { /* the sweep itself already succeeded */ }
     } finally {
       setBulkCheckInProgress(false);
     }

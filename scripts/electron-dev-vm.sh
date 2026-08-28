@@ -132,7 +132,7 @@ env \
   GOLOGIN_API_TOKEN="$DEV_GOLOGIN_API_TOKEN" \
   GOLOGIN_API_TOKEN_LINKEDVELOCITY="" \
   GOLOGIN_API_TOKEN_MARKETING="" \
-  node_modules/.bin/electron . &
+  node_modules/.bin/electron ${ORTUS_ELECTRON_ARGS:-} . &
 ELECTRON_PID=$!
 
 # Keep the tunnel alive for the lifetime of Electron. A Deployment port-forward

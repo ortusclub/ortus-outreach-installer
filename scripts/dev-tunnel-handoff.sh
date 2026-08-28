@@ -28,6 +28,16 @@ fi
 # YAML, smarten the quotes, or eat the indentation.
 BLOB="$(openssl base64 -A < "$SRC")"
 
+# Read the tag off the cluster with the very credential we are about to hand
+# over, rather than hardcoding it. A hardcoded tag is the worst kind of stale:
+# it is the number the new developer checks their boot banner against, so when
+# it drifts it tells them they are on the wrong engine when they are on the
+# right one (it said dev-14 for five deploys).
+DEV_TAG="$(KUBECONFIG="$SRC" kubectl -n salesnav-dev get deploy salesnav-scraper \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].image}' 2>/dev/null)"
+DEV_TAG="${DEV_TAG##*:}"
+[ -n "$DEV_TAG" ] || DEV_TAG="dev-<the current tag>"
+
 cat <<EOF
 
 Send the block below privately (1Password, not Slack). One line, they paste it
@@ -44,7 +54,7 @@ Then, from their clone of the app repo, they launch with:
 cd <their app repo> && KUBECONFIG=~/.kube/ortus-dev.yaml scripts/electron-dev-vm.sh
 ────────────────────────────────────────────────────────────────────────────
 
-The boot banner should read "dev engine: dev-14". If it says v139 they are
+The boot banner should read "dev engine: $DEV_TAG". If it says v139 they are
 still on production — the launcher script is the only thing that moves the app
 off it, so check they did not start the app with npm run dev:app.
 

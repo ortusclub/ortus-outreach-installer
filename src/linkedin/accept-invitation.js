@@ -230,7 +230,13 @@ export async function acceptInvitationFrom(page, target, { log = () => {} } = {}
 
   const { index, reason } = pickInvitation(candidates, target);
   if (index == null) {
-    log(`  ⚠ Auto-accept: no pending invitation matches ${target?.name || 'the account'} (${reason}; ${candidates.length} pending) — accepting nothing.`);
+    // Not a failure — an invitation sent seconds ago often has not surfaced in
+    // the primary's list yet, and the caller retries until it does. Reading
+    // "⚠ … accepting nothing" made a run that went on to accept every sender
+    // look broken (operator, 2026-08-28 14:32; that same run ended
+    // "2 connected, 2 accepted, 0 still pending"). The caller says the final
+    // word when it gives up.
+    log(`  ⏳ Auto-accept: ${target?.name || 'that account'}'s invitation is not in the primary's list yet (${candidates.length} waiting) — looking again shortly.`);
     return { accepted: false, reason };
   }
 
@@ -413,5 +419,8 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
   }
   if (cleared) log(`  ✓ Accept-all: accepted ${cleared} pending invitation(s) on the primary.`);
   else log('  ⓘ Accept-all: no additional pending invitations to accept.');
-  return cleared;
+  // `remaining` is what the caller needs to shortcut the per-sender matcher: an
+  // empty received list means nothing we sent is still outstanding.
+  const remaining = await countAccepts().catch(() => 1);
+  return { cleared, remaining };
 }

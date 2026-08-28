@@ -51,7 +51,7 @@ test('runtime interruption stays inside the unified stage instead of restoring l
   assert.ok(start > 0 && end > start);
   const renderer = source.slice(start, end);
   assert.match(renderer, /const interrupted = !canonicalOwned && !!/);
-  assert.match(renderer, /const phase = canonicalOwned\s*\? String\(\(ca && ca\.phase\) \|\| 'starting'\)/);
+  assert.match(renderer, /let phase = canonicalOwned\s*\? String\(\(ca && ca\.phase\) \|\| 'starting'\)/);
   assert.match(renderer, /interrupted \? 'paused'/);
   assert.doesNotMatch(renderer,
     /if \(status && \(status\.state === 'interrupted'[\s\S]{0,220}_hideStage\(root\)/,

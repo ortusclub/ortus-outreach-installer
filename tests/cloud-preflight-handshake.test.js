@@ -34,7 +34,7 @@ function makeDeps(overrides = {}) {
     async checkAndConnectPrimary() { return { connected: false, connectAttempted: true, connectResult: 'sent' }; },
     async readSelfIdentity(page) { return { name: `self-${page.__id}`, profileUrl: `https://linkedin.com/in/${page.__id}` }; },
     async acceptInvitationFrom(_page, account) { calls.accept.push(account); return { accepted: true }; },
-    async acceptAllPendingInvitations() { return { accepted: 0 }; },
+    async acceptAllPendingInvitations() { return { cleared: 0, remaining: 1 }; },
     async enqueuePrimaryTask(t) { calls.enqueue.push(t); return t; },
     sleep: async () => {},
     now: () => 1_000,
@@ -130,7 +130,7 @@ test('accept-all sweep runs when autoAcceptAllPending even if senders already co
   const key = primaryKeyFromUrl(primaryUrl);
   const store = { [storeKey('a', key)]: { state: 'connected', primaryUrl } };
   let sweeps = 0;
-  const { deps } = makeDeps({ store, deps: { async acceptAllPendingInvitations() { sweeps++; return { accepted: 3 }; } } });
+  const { deps } = makeDeps({ store, deps: { async acceptAllPendingInvitations() { sweeps++; return { cleared: 3, remaining: 1 }; } } });
   const r = await runCloudPreflightHandshake({
     senderProfileIds: ['a'], primaryUrl, autoAcceptAllPending: true, deps,
   });
@@ -152,7 +152,7 @@ test('waits a 20s settle AFTER sending requests, BEFORE opening the primary to a
     async checkAndConnectPrimary(page) { events.push('connect:' + page.__id); return { connected: false, connectAttempted: true, connectResult: 'sent' }; },
     async readSelfIdentity(page) { return { name: 'self-' + page.__id, profileUrl: 'https://linkedin.com/in/' + page.__id }; },
     async acceptInvitationFrom() { events.push('accept'); return { accepted: true }; },
-    async acceptAllPendingInvitations() { return { accepted: 0 }; },
+    async acceptAllPendingInvitations() { return { cleared: 0, remaining: 1 }; },
     async enqueuePrimaryTask(t) { return t; },
     sleep: async (ms) => { events.push('sleep:' + ms); },
     now: () => 1000,
@@ -185,7 +185,7 @@ test('no settle when there is nothing newly sent (pure accept-all sweep of exist
     async checkAndConnectPrimary() { return { connected: true, connectAttempted: false }; },
     async readSelfIdentity() { return {}; },
     async acceptInvitationFrom() { return { accepted: true }; },
-    async acceptAllPendingInvitations() { return { accepted: 0 }; },
+    async acceptAllPendingInvitations() { return { cleared: 0, remaining: 1 }; },
     async enqueuePrimaryTask(t) { return t; },
     sleep: async (ms) => { slept.push(ms); },
     now: () => 1000,
@@ -194,4 +194,42 @@ test('no settle when there is nothing newly sent (pure accept-all sweep of exist
   const r = await runCloudPreflightHandshake({ senderProfileIds: ['a'], primaryUrl, autoAcceptAllPending: true, deps });
   assert.equal(r.ok, true);
   assert.ok(!slept.includes(20000), 'no 20s settle when no fresh request was sent');
+});
+
+test('accept-all that empties the list skips the per-sender wait entirely', async () => {
+  let matcherCalls = 0;
+  let slept = 0;
+  const { deps } = makeDeps({
+    deps: {
+      async acceptAllPendingInvitations() { return { cleared: 2, remaining: 0 }; },
+      async acceptInvitationFrom() { matcherCalls++; return { accepted: false }; },
+      async sleep(ms) { slept += ms; },
+    },
+  });
+  const summary = await runCloudPreflightHandshake({
+    senderProfileIds: ['p1'],
+    primaryUrl: 'https://www.linkedin.com/in/primary/',
+    autoAcceptAllPending: true,
+    deps,
+  });
+  assert.equal(matcherCalls, 0, 'the identifier-matching loop must not run at all');
+  assert.equal(summary.pending, 0);
+  assert.ok(slept <= 20_000, 'no 30s poll cycles — only the settle wait at most');
+});
+
+test('accept-all that leaves something waiting still falls back to the matcher', async () => {
+  let matcherCalls = 0;
+  const { deps } = makeDeps({
+    deps: {
+      async acceptAllPendingInvitations() { return { cleared: 1, remaining: 2 }; },
+      async acceptInvitationFrom() { matcherCalls++; return { accepted: true }; },
+    },
+  });
+  await runCloudPreflightHandshake({
+    senderProfileIds: ['p1'],
+    primaryUrl: 'https://www.linkedin.com/in/primary/',
+    autoAcceptAllPending: true,
+    deps,
+  });
+  assert.ok(matcherCalls >= 1, 'a non-empty list means we cannot assume our own invites were accepted');
 });

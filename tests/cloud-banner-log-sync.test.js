@@ -14,11 +14,12 @@ test('a newer authoritative lead result advances the top banner beyond stale bro
 
 test('a completed monitoring sweep returns to the idle monitoring banner', () => {
   assert.match(app, /const sweepDisposition = monitorSweepDisposition\(status \|\| \{\}\);/);
-  assert.match(app, /!canonicalOwned && phase === 'monitoring' && sweepDisposition === 'idle'/);
+  assert.match(app, /phase === 'monitoring' && sweepDisposition === 'idle'/);
   assert.match(app, /label: 'Waiting for the next acceptance check'/);
   assert.match(app, /who: ca\.label, l1: ca\.label/);
-  assert.match(app, /canonicalOwned \? null : latestBannerEvent/);
-  assert.match(app, /canonicalOwned \? null : summarizeLatestMonitoringSweep/);
+  assert.match(app, /let logEvent = latestBannerEvent\(status && status\.logs, \{ phase \}\)/);
+  assert.match(app, /phase = bannerEventPhase\(logEvent, phase\)/);
+  assert.doesNotMatch(app, /canonicalOwned \? null : latestBannerEvent/);
   assert.match(app, /status\.state === 'monitoring' \|\| status\.monitoring \|\| status\.monitoringPhase/);
   assert.match(app, /\|\| \(monitoringIdle \? 'monitoring' : ''\)\s*\|\| \(la && la\.phase\)/);
   assert.match(app, /campaignRow\.monitor_check_status \|\| campaignRow\.monitorCheckStatus/);

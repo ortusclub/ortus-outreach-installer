@@ -1,3 +1,5 @@
+import { monitoringRecovery } from './monitor-sweep-summary.mjs';
+
 export const CAMPAIGN_STATUS_CONTRACT_VERSION = 1;
 
 const ACTIVE_ACTIVITIES = new Set(['starting', 'sending', 'introducing', 'checking', 'stopping']);
@@ -24,6 +26,26 @@ export function selectCampaignStatusSnapshot(previous, incoming) {
   return incoming;
 }
 
+// A check time an operator can read.
+//
+// The engine sends `next.checkAt` as an ISO string, and this file printed it
+// straight into the card: "NEXT CHECK  2026-08-28T10:28:49.180Z" (operator
+// screenshot, 2026-08-28). The other monitoring renderer has always said
+// "today at 12:36"; only the campaign this contract is enabled for was showing
+// the raw value. Same wording here, and it no longer says "today" about a check
+// that is scheduled for tomorrow.
+export function nextCheckLabel(value, now = Date.now()) {
+  const at = value ? new Date(value) : null;
+  if (!at || Number.isNaN(at.getTime())) return 'being scheduled';
+  const clock = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOf(at) - startOf(new Date(now))) / 86400000);
+  if (days === 0) return `today at ${clock}`;
+  if (days === 1) return `tomorrow at ${clock}`;
+  if (days === -1) return `yesterday at ${clock}`;
+  return `${at.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} at ${clock}`;
+}
+
 function phaseFor(snapshot) {
   if (snapshot.lifecycle === 'monitoring' && snapshot.activity === 'waiting') return 'monitoring';
   if (snapshot.lifecycle === 'paused') return 'paused';
@@ -40,21 +62,63 @@ function currentActionFor(snapshot) {
   const runtime = snapshot.runtime === 'local' ? 'This Mac' : 'Cloud VM';
   const checked = Number(progress.accountsChecked) || 0;
   const expected = Number(progress.accountsExpected) || 0;
+  const pending = Number(progress.pending) || 0;
+  const nextCheck = nextCheckLabel(snapshot.next?.checkAt);
+  // A sweep that did not reach every account. The engine sends the raw error;
+  // the recovery copy that turns "damiano@ortus.solutions — needs re-login"
+  // into "Damiano's LinkedIn session expired · Log Damiano back into LinkedIn in
+  // GoLogin, then retry this check" already exists in this app and the canonical
+  // path simply never called it. The snapshot owns the STATE; the wording stays
+  // where the wording has always been.
+  const checkError = String(snapshot.next?.checkError || '').trim();
+  const recovery = (expected > 0 && checked < expected && checkError)
+    ? monitoringRecovery(checkError) : null;
   let facts;
   let milestones;
+  let label = String(snapshot.headline || '');
+  let sub = String(snapshot.detail || '');
+  // "N pending leads remain safe" is true but incomplete: what an operator needs
+  // to know is that those leads are not moving. The older card has always said
+  // so, and dropping the clause is how the same fact stops being actionable.
+  let safety = String(snapshot.safety || '');
+  if (phase === 'monitoring' && pending > 0) {
+    safety = `${pending} pending lead${pending === 1 ? '' : 's'} remain safely queued · sending is stopped`;
+  }
 
-  if (phase === 'monitoring') {
+  if (phase === 'monitoring' && recovery) {
+    // Monitoring continues, but a card that leads with "monitoring is active,
+    // no browser remains open" while an account is locked out is complacent —
+    // it was showing exactly that beside "Review the named account, then retry".
+    label = recovery.headline;
+    sub = `${checked} of ${expected} accounts were checked · ${recovery.detail}`;
     facts = [
-      ['Monitoring', 'active'],
-      ['Accounts checked', expected ? `${checked} of ${expected}` : 'waiting for the next check'],
-      ['Next check', snapshot.next?.checkAt || 'being scheduled'],
-      ['Operator action', snapshot.next?.action || 'none required'],
+      ['Last check', `${checked} of ${expected} accounts`],
+      ['Result', recovery.result],
+      ['Next check', nextCheck],
+      ['Operator action', recovery.action],
     ];
     milestones = [
-      ['Last check', checked ? `${checked} checked` : 'complete', 'done'],
+      ['Last check', `${checked} checked`, 'done'],
       ['Browsers', 'closed between checks', 'done'],
-      ['Monitoring', 'active', 'active'],
-      ['Next', snapshot.next?.checkAt ? 'check scheduled' : 'being scheduled', 'future'],
+      ['Unavailable', `${Math.max(0, expected - checked)} not checked`, 'active'],
+      ['Next', nextCheck, 'future'],
+    ];
+  } else if (phase === 'monitoring') {
+    facts = [
+      // The same four the older monitoring card has always shown, with the
+      // engine's real counts rather than that card's optimistic literals: it
+      // hardcodes "complete" and falls back to the full account count, so a
+      // sweep that reached nobody still reported "3 of 3".
+      ['Last check', expected ? 'complete' : 'not run yet'],
+      ['Accounts checked', expected ? `${checked} of ${expected}` : 'waiting for the next check'],
+      ['Next check', nextCheck],
+      ['Operator action', 'none required'],
+    ];
+    milestones = [
+      ['Last check', expected ? 'complete' : 'not run yet', expected ? 'done' : 'future'],
+      ['Accounts', expected ? `${checked} checked` : 'checked each sweep', expected ? 'done' : 'future'],
+      ['Browsers', 'closed between checks', 'done'],
+      ['Waiting', `next check ${nextCheck}`, 'active'],
     ];
   } else if (phase === 'checking') {
     facts = [
@@ -92,9 +156,9 @@ function currentActionFor(snapshot) {
 
   return {
     phase,
-    label: String(snapshot.headline || ''),
-    sub: String(snapshot.detail || ''),
-    safety: String(snapshot.safety || ''),
+    label,
+    sub,
+    safety,
     account,
     lead,
     selecting: lead,

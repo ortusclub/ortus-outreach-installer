@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { latestBannerEvent, bannerEventOwnsIdleMonitoring } from '../public/js/live-log-banner.mjs';
+import { latestBannerEvent, bannerEventOwnsIdleMonitoring, bannerEventPhase } from '../public/js/live-log-banner.mjs';
 
 test('the newest operational log line becomes the banner event', () => {
   const e = latestBannerEvent([
@@ -19,32 +19,51 @@ test('banner events expose engine time for monotonic rendering', () => {
   assert.equal(object.at, 1787749513000);
 });
 
-test('timestamp truth outranks append order in merged campaign logs', () => {
+test('a terminal check event owns the banner once it is the log\u2019s newest row', () => {
   const e = latestBannerEvent([
-    { t: Date.parse('2026-08-26T16:04:00Z'), line: 'ERR Check finished with an error — Action required: manoj.kumar@ortus.solutions: log back into LinkedIn in GoLogin, then Retry' },
     { t: Date.parse('2026-08-26T16:01:00Z'), line: 'Juan C. Rojas, MD, MS · Connected sent · via sean.alcosin@ortus.solutions' },
+    { t: Date.parse('2026-08-26T16:04:00Z'), line: 'ERR Check finished with an error — Action required: manoj.kumar@ortus.solutions: log back into LinkedIn in GoLogin, then Retry' },
   ]);
   assert.equal(e.kind, 'check-error');
   assert.equal(e.headline, 'Not every account could be checked');
-  assert.match(e.detail, /manoj\.kumar@ortus\.solutions/);
+  assert.match(e.detail, /log back into LinkedIn/i);
 });
 
-test('clock suffixes also prevent an older derived row from replacing a terminal check event', () => {
+test('an older derived row never replaces a newer terminal check event', () => {
   const e = latestBannerEvent([
-    'ERR Check finished with an error — Action required: manoj needs login · 18:04',
     'Juan C. Rojas · Connected sent · 18:01',
+    'ERR Check finished with an error — Action required: manoj needs login · 18:04',
   ], { now: new Date('2026-08-26T18:10:00+02:00') });
   assert.equal(e.kind, 'check-error');
 });
 
 test('scheduling the next check does not hide a fresh unresolved sweep error', () => {
   const e = latestBannerEvent([
+    'Juan C. Rojas · Connected sent · 18:01',
     'ERR Check finished with an error — Action required: manoj needs login · 18:04',
     'LOG Next check 2026-08-26 16:59 UTC · nothing happens until then, the campaign stays running. · 18:04',
-    'Juan C. Rojas · Connected sent · 18:01',
   ], { now: new Date('2026-08-26T18:10:00+02:00') });
   assert.equal(e.kind, 'check-error');
   assert.match(e.detail, /manoj needs login/i);
+});
+
+// The 15:18 screenshot: a lead row with no sentAt was undated, the merge pinned
+// undated rows below every timestamped one, and the banner then re-ranked rows
+// by their display clock. Between them the card announced an introduction from
+// hours earlier while a connection request was being written.
+test('a live send owns the banner over an older lead row sitting below it', () => {
+  const e = latestBannerEvent([
+    '✓ Jose A. · introduced · 15:44',
+    '✓ Marybeth Wolff · CC sent · 15:18 · via cindy.siapno@ortus.solutions',
+    '✓ cindy.siapno@ortus.solutions invited Marybeth Wolff · 1 of 8 this turn, 17/50 today · 15:18',
+    'INFO ▶ cindy.siapno@ortus.solutions · Marybeth Wolff — Stamping the result to the sheet · Writing the final status back to Google Sheets · 15:18',
+    '──────────',
+    'Σ Total · 91 sent · 1 error · 107 pending',
+  ], { now: new Date(2026, 7, 27, 15, 18) });
+  assert.equal(e.kind, 'saving-result');
+  assert.equal(e.headline, 'Saving Marybeth Wolff\u2019s result');
+  assert.doesNotMatch(e.headline, /@|\d{1,2}:\d{2}/);
+  assert.doesNotMatch(`${e.headline} ${e.detail}`, /Jose A\./);
 });
 
 test('summary and divider rows never pin the banner', () => {
@@ -138,6 +157,7 @@ test('sheet stamping removes duplicate sender and internal wording', () => {
   ]);
   assert.equal(e.headline, 'Saving Michael B.’s result');
   assert.equal(e.detail, 'emanuele.circi@ortus.solutions · Writing to the campaign sheet · Lead 6 of 8');
+  // Once in the detail, never in the headline.
   assert.equal((`${e.headline} ${e.detail}`.match(/emanuele\.circi@ortus\.solutions/g) || []).length, 1);
   assert.doesNotMatch(`${e.headline} ${e.detail}`, /newest verified|Google Sheets|Stamping/i);
 });
@@ -219,6 +239,36 @@ test('real resumed VM sequence advances past an older introduction to the latest
   assert.doesNotMatch(event.headline, /Benjamin Lombardo/);
 });
 
+test('the exact SAS rotation sequence advances a stale canonical starting card to the latest sender', () => {
+  const event = latestBannerEvent([
+    'INFO Resumed sending — 253 leads still to go. Acceptance checks re-arm once they are sent. · 14:38',
+    'INFO Started (continuing where it left off) · 14:38',
+    "LOG Opening damiano@ortus.solutions's browser on the VM — 20/50 sent today · 14:40",
+    'LOG damiano@ortus.solutions is taking up to 8 people this turn · 14:41',
+    'ERR damiano@ortus.solutions — logged out of LinkedIn · parked, needs re-login in GoLogin · 14:41',
+    'LOG damiano@ortus.solutions — browser closed · 0 sent this turn (20/50 today) · benched for 30 min (session) · 14:41',
+    "LOG Opening zhelenandriushz@gmail.com's browser on the VM — 20/50 sent today · 14:41",
+    'SUM ──────────',
+    'SUM Σ Total · 95 sent · 0 errors · 253 pending',
+  ], { phase: 'starting', now: new Date(2026, 7, 27, 14, 41) });
+  assert.equal(event.kind, 'sender-browser-opening');
+  assert.equal(event.account, 'zhelenandriushz@gmail.com');
+  assert.equal(event.headline, 'Opening the sender browser');
+  assert.equal(event.detail, 'zhelenandriushz@gmail.com · 20 of 50 sent today');
+  assert.equal(bannerEventPhase(event, 'starting'), 'sending');
+});
+
+test('summary footer is ignored and the preceding operational event owns the mode', () => {
+  const event = latestBannerEvent([
+    'LOG carlos@virtualroundtable.com is taking up to 8 people this turn · 13:29',
+    'SUM ──────────',
+    'SUM Σ Total · 100 sent · 0 errors · 35 pending',
+  ]);
+  assert.equal(event.kind, 'sender-batch-starting');
+  assert.equal(event.headline, 'Taking up to 8 leads this turn');
+  assert.equal(bannerEventPhase(event, 'monitoring'), 'sending');
+});
+
 test('all local check phases expose matching workflow kinds', () => {
   assert.equal(latestBannerEvent(['📡 [sean@ortus.solutions] Launching browser…']).kind, 'account-browser-opening');
   assert.equal(latestBannerEvent(['📡 [cindy@ortus.solutions] Sweeping recent connections…']).kind, 'account-checking');
@@ -231,4 +281,108 @@ test('check lifecycle events expose progress kinds for the whole panel', () => {
   assert.equal(latestBannerEvent(['Checking sean@ortus.solutions…']).kind, 'account-checking');
   assert.equal(latestBannerEvent(['sean@ortus.solutions — 0 newly accepted, 22 rows updated']).kind, 'account-checked');
   assert.equal(latestBannerEvent(['Check complete · 0 newly accepted']).kind, 'check-complete');
+});
+
+// Operator ask, 2026-08-27: the banner is the log's last real line — the
+// divider and the Σ footer are pinned to the bottom and are not events — with
+// no date, no time and no account address left in it.
+test('the banner is the last log line, minus the summary footer, date, time and email', () => {
+  const e = latestBannerEvent([
+    '✓ Tom Reidy · connection_sent sent · 14:52 · via matt@ortus.solutions · linkedin.com/in/tom-reidy',
+    '✓ Mahnaz Mahmoodzadeh · introduced · 2026-08-27 · 14:56',
+    '──────────',
+    'Σ Total · 95 sent · 0 errors · 253 pending',
+  ], { now: new Date(2026, 7, 27, 15, 0) });
+  assert.equal(e.eyebrow, 'Introduction confirmed');
+  assert.equal(e.headline, 'Mahnaz Mahmoodzadeh · introduced');
+  assert.doesNotMatch(e.headline, /@|\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}|Σ|─/);
+});
+
+// Operator, 2026-08-27: the headline drops the sender address even when it sits
+// mid-sentence; the detail line keeps the engine's words verbatim.
+test('a sender address is dropped from the headline wherever it sits, and kept in the detail', () => {
+  const e = latestBannerEvent([
+    '✓ cindy.siapno@ortus.solutions invited Susan Mena · 7 of 8 this turn, 23/50 today · 15:28',
+  ], { phase: 'sending', now: new Date(2026, 7, 27, 15, 28) });
+  assert.equal(e.headline, 'invited Susan Mena · 7 of 8 this turn, 23/50 today');
+  assert.match(e.detail, /cindy\.siapno@ortus\.solutions/);
+});
+
+test('a "via <address>" segment leaves no stump in the headline', () => {
+  const e = latestBannerEvent([
+    '✓ Marybeth Wolff · CC sent · 15:18 · via cindy.siapno@ortus.solutions · linkedin.com/in/ACwAAC2S',
+  ], { phase: 'sending', now: new Date(2026, 7, 27, 15, 28) });
+  assert.equal(e.headline, 'Marybeth Wolff · CC sent · linkedin.com/in/ACwAAC2S');
+});
+
+// A clock inside a sentence is content, not metadata. Removing it turned
+// "parked until 16:12 (30 min)" into "parked until (30 min)".
+test('a clock inside a sentence survives, and the pause glyph leaves no dangling dash', () => {
+  const e = latestBannerEvent([
+    '⏸ matt@ortus.solutions — rate-limited by LinkedIn (429) · parked until 16:12 (30 min) · 15:28',
+  ], { phase: 'sending', now: new Date(2026, 7, 27, 15, 28) });
+  assert.equal(e.headline, 'rate-limited by LinkedIn (429) · parked until 16:12 (30 min)');
+});
+
+// Operator, 2026-08-27: the engine writes "No account free right now" the moment
+// a sender closes its browser, so it lands seconds after the turn that just
+// finished. Reading it as the headline made a normal three-minute rest between
+// batches look like a stall.
+const CLOSED = '⏹ cindy.siapno@ortus.solutions — browser closed · 8 sent this turn (24/50 today) · rests ~3 min before its next turn';
+const WAIT = '⏳ No account free right now — 1 resting between batches · 1 parked (throttled / needs login / weekly cap) · retrying automatically';
+const at = (t) => new Date(2026, 7, 27, 15, 30);
+
+test('a fresh waiting heartbeat does not bury the turn it interrupted', () => {
+  const e = latestBannerEvent([`${CLOSED} · 15:29`, `${WAIT} · 15:29`], { phase: 'sending', now: at() });
+  assert.equal(e.kind, 'sender-browser-closed');
+  assert.equal(e.headline, 'Sender browser closed');
+  assert.match(e.detail, /rests ~3 min before its next turn/);
+});
+
+test('once the wait has really gone on, the heartbeat owns the banner', () => {
+  const e = latestBannerEvent([`${CLOSED} · 03:45`, `${WAIT} · 15:29`], { phase: 'sending', now: at() });
+  assert.equal(e.kind, 'waiting-for-account');
+  assert.equal(e.headline, 'No account free right now');
+  assert.match(e.detail, /1 parked/);
+  // "retrying automatically" is reassurance, not a reason — it lives in the
+  // explanation so the detail stays a list of causes.
+  assert.doesNotMatch(e.detail, /retrying automatically/);
+});
+
+test('a log of nothing but heartbeats still reports the wait', () => {
+  const e = latestBannerEvent([`${WAIT} · 15:09`, `${WAIT} · 15:29`], { phase: 'sending', now: at() });
+  assert.equal(e.kind, 'waiting-for-account');
+});
+
+// Screenshot 2026-08-27: the card's sub-line read "Check complete — 3 newly
+// accepted across 2 accounts · Check complete — 3 newly accepted across 2
+// accounts". renderLiveStage composes the sub as `detail · explanation`, and
+// this presentation set `explanation` to the raw line while leaving `detail`
+// unset — so the `detail: presentation.detail || line` fallback filled it with
+// the same text. Every sibling presentation carries the tail in `detail` and
+// keeps `explanation` for genuinely additional copy; this one now matches.
+test('a check-complete line never repeats itself across detail and explanation', () => {
+  const e = latestBannerEvent(['✓ Check complete — 3 newly accepted across 2 accounts · 15:52']);
+  assert.equal(e.kind, 'check-complete');
+  assert.equal(e.headline, 'Every available account has finished this check');
+  assert.equal(e.detail, '3 newly accepted across 2 accounts');
+  assert.notEqual(e.detail, e.explanation);
+  const sub = `${e.detail}${e.explanation ? ` · ${e.explanation}` : ''}`;
+  assert.equal(sub, '3 newly accepted across 2 accounts');
+});
+
+// Screenshot 2026-08-27: a resumed campaign's card read "STARTED (CONTINUING
+// WHERE IT LEFT OFF) · MONITORING UPDATE" — the generic fallback — instead of
+// its own "Sending is active" presentation, so the panel kept the previous
+// check's stale facts. `▶️` is U+25B6 followed by the U+FE0F variation
+// selector; the glyph strip removed the arrow and left the selector, which is
+// not whitespace, so every `^Started`-style pattern failed to match.
+test('an emoji glyph with a variation selector is fully stripped', () => {
+  const e = latestBannerEvent(['▶️ Started (continuing where it left off) · 16:33']);
+  assert.equal(e.kind, 'sending-resumed');
+  assert.equal(e.headline, 'Continuing where it left off');
+  assert.equal(e.eyebrow, 'Sending is active');
+  const r = latestBannerEvent(['▶️ Resumed sending — 92 leads still to go. Acceptance checks re-arm once they’re sent.']);
+  assert.equal(r.kind, 'sending-resumed');
+  assert.equal(r.headline, 'Sending resumed');
 });

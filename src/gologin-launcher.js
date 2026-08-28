@@ -113,10 +113,27 @@ async function fetchAccountProfiles(accountId, token) {
   let totalCount = Infinity;
 
   while (allProfiles.length < totalCount) {
-    const res = await fetch(`https://api.gologin.com/browser/v2?page=${page}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    // The ONLY unbounded call on the cloud-launch path (sheets is 30s x2, the
+    // engine 20s). With no signal a hung GoLogin socket blocks handleStartCloud
+    // forever, and the launch card sits on "Reading your lead sheet and
+    // dispatching to the VM…" with nothing able to say why (Sam, 2026-08-27:
+    // five minutes, no campaign row ever created). Same 30s + one retry the
+    // sheet fetch uses, and the reason is named rather than swallowed.
+    let res;
+    try {
+      res = await fetch(`https://api.gologin.com/browser/v2?page=${page}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (err) {
+      const why = err.cause?.code || err.cause?.message || err.name;
+      throw new Error(`GoLogin did not answer while listing accounts (page ${page}) — ${err.message}${why ? ` (${why})` : ''}`);
+    }
     if (!res.ok) throw new Error(`GoLogin API ${res.status}`);
+    // Pagination guard: the loop's only other exits are an empty page or
+    // reaching allProfilesCount. A count that never becomes reachable would
+    // otherwise spin forever against the API.
+    if (page > 100) throw new Error(`GoLogin pagination did not terminate (stopped at page ${page}, ${allProfiles.length}/${totalCount})`);
 
     const data = await res.json();
     totalCount = data.allProfilesCount || 0;

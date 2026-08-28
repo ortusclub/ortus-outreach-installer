@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Pill numbers · remove an account · retry a failed start</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  /* Sketch chrome only — nothing here ships. */
+  body { padding: 26px 34px 90px; }
+  .sk-bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 14px;
+    padding: 14px 0 16px; margin-bottom: 10px; background: var(--bg); border-bottom: 1px solid var(--hairline); }
+  .sk-bar h1 { font-family: var(--display); font-size: 1.5rem; margin: 0 auto 0 0; letter-spacing: .02em; }
+  .sk-bar button { font-family: var(--mono); font-size: .64rem; letter-spacing: .2em; text-transform: uppercase;
+    padding: 8px 16px; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--gray); cursor: pointer; }
+  .sk-note { font-size: .82rem; color: var(--gray); max-width: 76ch; line-height: 1.6; margin: 0 0 8px; }
+  .sk-state { margin: 40px 0 0; }
+  .sk-state > h2 { font-family: var(--mono); font-size: .66rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--gray); margin: 0 0 12px; border-top: 1px solid var(--hairline); padding-top: 22px; }
+  .sk-state > h2 em { font-style: normal; color: var(--ink); }
+  .sk-lab { font-family: var(--mono); font-size: .6rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--gray); margin: 24px 0 9px; }
+  .sk-lab b { color: var(--gold); font-weight: 500; }
+  .sk-why { font-size: .78rem; color: var(--gray); line-height: 1.6; margin: 7px 0 0; max-width: 74ch; }
+  .sk-card { border: 1px solid var(--hairline); border-radius: 14px; padding: 24px 26px 20px; }
+  .sk-card .vj-stage { display: flex !important; }
+
+  /* ── Proposed: the drawer gets a footer row for the one destructive action ── */
+  .stg-danger {
+    display: flex; align-items: center; gap: 12px; margin-top: 13px; padding-top: 12px;
+    border-top: 1px solid var(--hairline-soft);
+  }
+  .stg-danger p { margin: 0; font-size: .74rem; color: var(--gray); line-height: 1.5; }
+  .stg-danger button {
+    margin-left: auto; flex-shrink: 0; font-size: .72rem; padding: 6px 13px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--hairline-soft); background: transparent; color: var(--gray);
+  }
+  .stg-danger button:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── Proposed: a failed start gets one big way back in ── */
+  .stg-retry { display: flex; align-items: center; gap: 22px; margin-top: 16px;
+    border: 1px solid var(--red); border-radius: 12px; padding: 20px 22px; background: rgba(248,81,73,.06); }
+  .stg-retry .t { flex: 1; }
+  .stg-retry .t b { display: block; font-size: 1.02rem; margin-bottom: 5px; }
+  .stg-retry .t span { font-size: .82rem; color: var(--gray); line-height: 1.55; }
+  .btn-retry {
+    font-family: var(--body); font-size: .92rem; font-weight: 600; letter-spacing: .01em;
+    padding: 15px 34px; border-radius: 9999px; cursor: pointer; flex-shrink: 0;
+    border: 1px solid var(--green); color: var(--green); background: transparent;
+  }
+  .btn-retry:hover { background: rgba(63,185,80,.12); }
+  .stg-retry .alt { display: flex; flex-direction: column; gap: 7px; }
+  .stg-retry .alt a { font-family: var(--mono); font-size: .62rem; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--gray); text-decoration: none; cursor: pointer; }
+  .stg-retry .alt a:hover { color: var(--ink); }
+  .stg-retry.centered { flex-direction: column; text-align: center; gap: 16px; padding: 34px 22px; }
+  .stg-retry.centered .t span { max-width: 56ch; display: inline-block; }
+  .stg-retry.centered .alt { flex-direction: row; gap: 20px; }
+  .stg-retry.bare { border-color: var(--hairline); background: transparent; }
+  .stg-retry.bare .btn-retry { border-width: 2px; }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark">
+
+<div class="sk-bar">
+  <h1>Pills, remove, retry</h1>
+  <button data-v="light">Light</button>
+</div>
+
+<p class="sk-note">Three things, each shown as today vs the options. <b>1)</b> the account pill's number,
+always read against the daily limit. <b>2)</b> removing an account from the campaign, from inside its own
+drawer. <b>3)</b> a campaign that failed to start, with one obvious way back in.</p>
+
+<!-- ══ 1 · PILL NUMBERS ══════════════════════════════════ -->
+<section class="sk-state">
+  <h2>01 / <em>Account pill numbers</em></h2>
+
+  <p class="sk-lab">A · today</p>
+  <div class="sk-card">
+    <div class="vj-stage-accts">
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">riccardo</span><span class="n">12/13</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">matt.adcock</span><span class="n">0/7</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge ok"><span class="nm">carlos</span><span class="n">5/5</span></span></button>
+    </div>
+    <p class="sk-why">The denominator is that account's share of <em>this batch</em>, so it changes every run
+      and never matches anything else on screen. 12/13 looks like an account that is nearly finished; 5/5 looks
+      like one that is capped. Neither is what it means.</p>
+  </div>
+
+  <p class="sk-lab"><b>B</b> · sent today, out of the daily limit</p>
+  <div class="sk-card">
+    <div class="vj-stage-accts">
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">riccardo</span><span class="n">12/50</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">matt.adcock</span><span class="n">0/50</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge warn"><span class="nm">carlos</span><span class="n">50/50</span></span></button>
+    </div>
+    <p class="sk-why">Both numbers now mean the same thing on every pill, in every campaign, all day:
+      sent today, out of what this account is allowed today. The same pair the drawer already prints.
+      50/50 goes gold because it genuinely is capped.</p>
+  </div>
+
+  <p class="sk-lab">C · sent today, and what is left</p>
+  <div class="sk-card">
+    <div class="vj-stage-accts">
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">riccardo</span><span class="n">12 sent · 38 left</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">matt.adcock</span><span class="n">0 sent · 50 left</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge warn"><span class="nm">carlos</span><span class="n">50 sent · 0 left</span></span></button>
+    </div>
+    <p class="sk-why">Says the same thing in words. Wider, so a six-account campaign wraps onto two rows.</p>
+  </div>
+</section>
+
+<!-- ══ 2 · REMOVE AN ACCOUNT ═════════════════════════════ -->
+<section class="sk-state">
+  <h2>02 / <em>Removing an account</em> · from its own drawer</h2>
+
+  <p class="sk-lab">A · today — the drawer offers nothing</p>
+  <div class="sk-card">
+    <div class="vj-stage-accts">
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">riccardo</span><span class="n">12/50</span></span></button>
+      <button type="button" class="stg-acct sel"><span class="cap-badge"><span class="nm">matt.adcock</span><span class="n">0/50</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">carlos</span><span class="n">7/50</span></span></button>
+    </div>
+    <div class="vj-stage-drawer">
+      <div class="stg-drawer">
+        <div class="dh"><b>matt.adcock@ortus.solutions</b><span class="st" style="color:var(--gray)">idle</span><span class="x">✕ close</span></div>
+        <div class="dl">0/50 sent today<br>Not currently driving anything.</div>
+      </div>
+    </div>
+    <p class="sk-why">Removing lives in the Accounts panel further down the page, behind a toggle switch.</p>
+  </div>
+
+  <p class="sk-lab"><b>B</b> · a quiet footer row, one line of consequence</p>
+  <div class="sk-card">
+    <div class="vj-stage-accts">
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">riccardo</span><span class="n">12/50</span></span></button>
+      <button type="button" class="stg-acct sel"><span class="cap-badge"><span class="nm">matt.adcock</span><span class="n">0/50</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">carlos</span><span class="n">7/50</span></span></button>
+    </div>
+    <div class="vj-stage-drawer">
+      <div class="stg-drawer">
+        <div class="dh"><b>matt.adcock@ortus.solutions</b><span class="st" style="color:var(--gray)">idle</span><span class="x">✕ close</span></div>
+        <div class="dl">0/50 sent today<br>Not currently driving anything.</div>
+        <div class="stg-danger">
+          <p>It stops sending. Anyone it already invited is still checked for acceptances; its unsent leads
+            go to the other two accounts.</p>
+          <button type="button">Remove from campaign</button>
+        </div>
+      </div>
+    </div>
+    <p class="sk-why">The same action the Accounts panel already runs, said in a sentence instead of a switch.
+      It only appears when the campaign is paused or stopped (removing an account mid-send races the worker,
+      and the engine refuses it), and never on the last remaining account.</p>
+  </div>
+
+  <p class="sk-lab">B · when it cannot be offered yet</p>
+  <div class="sk-card">
+    <div class="vj-stage-drawer">
+      <div class="stg-drawer">
+        <div class="dh"><b>matt.adcock@ortus.solutions</b><span class="st" style="color:var(--green)">working now</span><span class="x">✕ close</span></div>
+        <div class="dl">12/50 sent today<br>Currently driving this campaign on the VM.</div>
+        <div class="acts"><button type="button">👁 Watch this browser live</button></div>
+        <div class="stg-danger">
+          <p>Pause the campaign to remove an account. It cannot be taken out mid-send.</p>
+        </div>
+      </div>
+    </div>
+    <p class="sk-why">The row still appears, so the operator learns the rule instead of hunting for a button
+      that is not there.</p>
+  </div>
+
+  <p class="sk-lab">After removal — the check banner</p>
+  <div class="sk-card">
+    <div class="vj-stage-facts" style="max-width:520px">
+      <div><span>Last check</span><b>today at 09:36</b></div>
+      <div><span>Accounts checked</span><b>2 of 2</b></div>
+    </div>
+    <p class="sk-why">Already correct today: the banner counts the accounts still on the campaign, so a removed
+      one stops being expected rather than being reported as unchecked. Nothing to change here.</p>
+  </div>
+</section>
+
+<!-- ══ 3 · FAILED TO START ═══════════════════════════════ -->
+<section class="sk-state">
+  <h2>03 / <em>Failed to start</em> · nothing was ever sent</h2>
+
+  <p class="sk-lab">A · today</p>
+  <div class="sk-card">
+    <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Error</span></span></div>
+    <h2 class="vj-name">TEST_28/08_CC+IC</h2>
+    <div class="vj-live"><span class="vj-live-ico">⚠</span><span class="vj-live-txt">
+      <span class="vj-live-l1">Stopped — error</span>
+      <span class="vj-live-l2">GoLogin refused the browser for riccardo@ortus.solutions</span></span></div>
+    <div class="vj-controls">
+      <button class="btn-pill">Open campaign tab</button>
+      <div class="dock" role="toolbar"><div class="dock-actions">
+        <button class="dock-btn" data-tip="Continue where it left off"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+        <button class="dock-btn" data-tip="Restart from the beginning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+        <button class="dock-btn" data-tip="Duplicate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        <button class="dock-btn danger" data-tip="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+      </div></div>
+    </div>
+    <p class="sk-why">The way back is a 28px triangle whose tooltip says "continue where it left off" — on a
+      campaign that never left anywhere. Restart-from-the-beginning is the one that is actually wanted, and it
+      is the second unlabelled glyph.</p>
+  </div>
+
+  <p class="sk-lab"><b>B</b> · the reason, and the button, on one line</p>
+  <div class="sk-card">
+    <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Never started</span></span></div>
+    <h2 class="vj-name">TEST_28/08_CC+IC</h2>
+    <div class="stg-retry">
+      <div class="t">
+        <b>This campaign never started</b>
+        <span>GoLogin refused the browser for riccardo@ortus.solutions. Nothing was sent, so all 123 leads
+          are still queued and starting again costs nothing.</span>
+      </div>
+      <button class="btn-retry">Try again</button>
+    </div>
+    <div class="vj-controls">
+      <button class="btn-pill">Open campaign tab</button>
+      <div class="dock" role="toolbar"><div class="dock-actions">
+        <button class="dock-btn" data-tip="Duplicate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        <button class="dock-btn danger" data-tip="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+      </div></div>
+    </div>
+    <p class="sk-why">Because nothing was sent there is only one sensible action, so there is only one button:
+      start it, from the top. The two restart glyphs leave the dock.</p>
+  </div>
+
+  <p class="sk-lab">C · centred, the whole card is the retry</p>
+  <div class="sk-card">
+    <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Never started</span></span></div>
+    <h2 class="vj-name">TEST_28/08_CC+IC</h2>
+    <div class="stg-retry centered">
+      <div class="t">
+        <b>This campaign never started</b>
+        <span>GoLogin refused the browser for riccardo@ortus.solutions. Nothing was sent — all 123 leads are
+          still queued.</span>
+      </div>
+      <button class="btn-retry">Try again</button>
+      <div class="alt"><a>Fix the settings first</a><a>Delete it</a></div>
+    </div>
+  </div>
+
+  <p class="sk-lab">D · same as B, without the red</p>
+  <div class="sk-card">
+    <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Never started</span></span></div>
+    <h2 class="vj-name">TEST_28/08_CC+IC</h2>
+    <div class="stg-retry bare">
+      <div class="t">
+        <b>This campaign never started</b>
+        <span>GoLogin refused the browser for riccardo@ortus.solutions. Nothing was sent, so all 123 leads
+          are still queued.</span>
+      </div>
+      <button class="btn-retry">Try again</button>
+    </div>
+    <p class="sk-why">A failed start is a nuisance, not a disaster. Red on the whole panel may be more alarm
+      than it deserves.</p>
+  </div>
+
+  <p class="sk-lab">B · when it DID send before failing</p>
+  <div class="sk-card">
+    <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Stopped · error</span></span></div>
+    <h2 class="vj-name">TEST_27/08_CC+IC</h2>
+    <div class="stg-retry">
+      <div class="t">
+        <b>Stopped after 31 of 123</b>
+        <span>LinkedIn logged riccardo@ortus.solutions out mid-run. 92 leads are still queued.</span>
+      </div>
+      <button class="btn-retry">Carry on from lead 32</button>
+    </div>
+    <p class="sk-why">Same panel, different sentence and a different verb: here "from the beginning" would
+      re-send to 31 people, so it stays a dock glyph and the big button is the safe one.</p>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll('.sk-bar button').forEach((b) => b.addEventListener('click', () => {
+    document.body.classList.toggle('theme-dark'); b.classList.toggle('on');
+  }));
+</script>
+</body>
+</html>

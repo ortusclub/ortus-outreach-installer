@@ -156,6 +156,54 @@ export function statusFromItem(it = {}) {
   };
 }
 
+// Log events that describe the SEND phase. Each one draws a hero that says the
+// campaign is sending: "Campaign running", "Next account selecting".
+// Work-in-progress events: something was OPENING, SENDING, READING or FINISHING
+// at the moment the line was written. Between checks none of that is happening,
+// so the newest such line describes the past, however recent.
+const WORK_LOG_KINDS = new Set([
+  // sending
+  'sender-browser-opening', 'sender-batch-starting', 'profile-loading',
+  'sending-progress', 'saving-result', 'connection-confirmed',
+  'introduction-confirmed', 'sender-browser-closed', 'sender-unavailable',
+  'sender-backoff', 'sending-resumed',
+  // acceptance checking. 'check-error' is deliberately NOT here: an incomplete
+  // check is something the operator still has to act on, so it keeps the card
+  // until the next check clears it.
+  'local-browser-starting', 'account-browser-opening', 'account-checking',
+  'account-checked', 'account-skipped', 'check-queued', 'check-complete',
+]);
+
+/**
+ * May the newest log line drive the card's headline, phase and step strip?
+ *
+ * Normally yes: the hero follows the log so it can never lag behind what the
+ * operator is reading. But a campaign that stopped sending and kept checking
+ * has, as its newest line, the last thing sending did — possibly days ago. The
+ * card then drew "SENDER BROWSER CLOSED · Campaign sending · Next account
+ * selecting" over a campaign parked waiting for its next acceptance check.
+ * Reported 2026-08-28.
+ *
+ * Takes monitoringIdle, not the rendered phase: the event REWRITES the phase
+ * (that is how a stale send event turned a monitoring card into a sending one),
+ * so asking the rewritten phase whether to trust the event is circular. Idle
+ * means the durable state says monitoring and no sweep is in progress — for a
+ * local run and a VM run alike.
+ *
+ * A sweep in progress keeps the log in charge: those events are happening now.
+ *
+ * The same rule holds for a FINISHED check. "Check complete — 0 Connected, 110
+ * Still Pending" rewrote the phase to 'checking' and pinned the card to
+ * FINISHED CHECKING ALL AVAILABLE ACCOUNTS, with the next-check countdown
+ * replaced by a check-progress panel, for the whole hour until the next sweep.
+ * Reported 2026-08-28. The card falls back to the durable monitoring state,
+ * which knows when the next check is; the log still renders in full underneath.
+ */
+export function heroFollowsLog(kind, monitoringIdle) {
+  if (!monitoringIdle) return true;
+  return !WORK_LOG_KINDS.has(String(kind || ''));
+}
+
 /** Authoritative presentation state for a monitoring sweep. */
 export function monitorSweepDisposition(status = {}) {
   const value = String(status.monitorCheckStatus || '').trim().toLowerCase();
@@ -314,7 +362,7 @@ export function vjCardControlsFor(status = {}) {
     const remaining = Number(s.pending) > 0
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
-      c.extra.push({ tip: s.resumeAt ? 'Start now' : 'Resume sending', kind: 'play', once: true,
+      c.extra.push({ tip: s.resumeAt ? 'Resume now' : 'Resume sending', kind: 'play', once: true,
         onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending-from-monitoring','local',this)` });
     }
   } else if (monitor && cloud) {
@@ -331,13 +379,17 @@ export function vjCardControlsFor(status = {}) {
     const remaining = Number(s.pending) > 0
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
-      c.extra.push({ tip: s.resumeAt ? 'Start now' : 'Resume sending', kind: 'play', once: true,
+      c.extra.push({ tip: s.resumeAt ? 'Resume now' : 'Resume sending', kind: 'play', once: true,
         onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending-from-monitoring','vm',this)` });
     }
   } else if (done) {
     // Restart controls — only for a STOPPED/CANCELLED/ERRORED campaign (never a
     // cleanly-completed one). ▶ Continue where it left off · ⟲ from the beginning.
-    if (s.bad || terminalPresentation(s).pending > 0) {
+    // An ERRORED campaign gets its restart as the card's big labelled button
+    // instead (failedStartRetry). Leaving the glyphs here too would offer the
+    // same action twice, one of them tipped "restart from the beginning" —
+    // which on a campaign that sent 31 invites re-sends to all 31.
+    if ((s.bad || terminalPresentation(s).pending > 0) && !failedStartRetry(s)) {
       c.extra.push({ tip: 'Continue where it left off', kind: 'play', onclick: cloud ? `restartCloudCampaignUI('${id}', false)` : `restartLocalFromItem('${id}', false)` });
       c.extra.push({ tip: 'Restart from the beginning', kind: 'restart', onclick: cloud ? `restartCloudCampaignUI('${id}', true)` : `restartLocalFromItem('${id}', true)` });
     }
@@ -348,4 +400,81 @@ export function vjCardControlsFor(status = {}) {
     c.extra.push({ tip: 'Cancel', kind: 'cancel', onclick: cloud ? `stopCloudCampaignUI('${id}')` : `window.cancelQueuedCampaign && window.cancelQueuedCampaign('${rawId}')` });
   }
   return c;
+}
+
+/** The number on an account pill.
+ *
+ *  It used to be that account's share of THIS batch (sent / leads assigned),
+ *  which is why an operator saw "12/13" on Thursday and "12/7" on Friday for
+ *  the same account, matching nothing else on screen and reading like an
+ *  account that was nearly finished. Both halves are now the same daily
+ *  measure the drawer prints one line below: sent today, out of what this
+ *  account is allowed today.
+ *
+ *  With no daily limit known we say what was sent rather than invent a
+ *  denominator — "12/0" is worse than no denominator at all.
+ */
+export function acctPillCount(account = {}, tally = null) {
+  const limit = Number(account.dailyLimit) || 0;
+  const sent = Number.isFinite(Number(account.dailyCount)) ? Number(account.dailyCount)
+    : (tally ? Number(tally.sent) || 0 : 0);
+  return limit > 0 ? `${sent}/${limit}` : `${sent} sent`;
+}
+
+/** A campaign that ERRORED, and the one action worth a big button.
+ *
+ *  Today the way back is two unlabelled dock glyphs, the first of which is
+ *  tipped "continue where it left off" — on a campaign that never left
+ *  anywhere. Which restart is safe depends entirely on whether anything was
+ *  sent, so that decision is made here rather than by the operator guessing
+ *  between two triangles.
+ *
+ *  Only genuine errors. A campaign the operator stopped on purpose is not a
+ *  failure and keeps its ordinary dock.
+ */
+export function failedStartRetry(status = {}) {
+  const s = status || {};
+  if (!s.bad) return null;
+  const isError = String(s.badLabel || '') === 'Error';
+  // A campaign stopped with leads still queued needs the same big way back in
+  // as one that errored — the operator's own stop is the commonest way to end
+  // up here, and it was getting the small icon row instead (operator,
+  // 2026-08-28 14:34: "Stopped before completion, 4 remaining, no restart/retry
+  // button"). Only a genuinely finished campaign has nothing to offer.
+  if (!s.launchFailed && !isError && terminalPresentation(s).pending === 0) return null;
+  const id = _esc(String(s.id || ''));
+  const sent = Number(s.totalProcessed) || 0;
+  const total = Number(s.totalTargets) || 0;
+  const reason = String(s.endNotice || s.stopReason || '').trim();
+  // A launch that the server refused never created a campaign, so there is
+  // nothing to restart — the operator has to go back and change something. The
+  // strip used to tear itself down the moment the native alert was dismissed,
+  // leaving no trace of why (operator, 2026-08-28 14:09: "the strip, after I
+  // pressed OK, just closed itself").
+  if (s.launchFailed) {
+    return {
+      headline: 'The campaign was not started',
+      detail: [reason, 'Nothing was sent and no lead was used, so nothing has to be undone.'].filter(Boolean).join(' '),
+      label: 'Back to launch settings',
+      onclick: 'dismissCloudLaunch()',
+    };
+  }
+  // Continue-where-it-left-off in both cases: with nothing sent it covers every
+  // lead anyway, and it can never re-invite someone who was already contacted.
+  const onclick = s._cloud ? `restartCloudCampaignUI('${id}', false)` : `restartLocalFromItem('${id}', false)`;
+  if (sent > 0) {
+    const left = Math.max(0, total - sent);
+    return {
+      headline: `Stopped after ${sent} of ${total}`,
+      detail: [reason, left ? `${left} lead${left === 1 ? '' : 's'} ${left === 1 ? 'is' : 'are'} still queued.` : ''].filter(Boolean).join(' '),
+      label: `Carry on from lead ${sent + 1}`,
+      onclick,
+    };
+  }
+  return {
+    headline: isError ? 'This campaign never started' : 'Stopped before anything was sent',
+    detail: [reason, total ? `Nothing was sent, so all ${total} leads are still queued.` : 'Nothing was sent.'].filter(Boolean).join(' '),
+    label: isError ? 'Try again' : 'Start from the first lead',
+    onclick,
+  };
 }

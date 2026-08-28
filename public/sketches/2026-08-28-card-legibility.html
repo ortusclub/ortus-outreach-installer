@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Card legibility + button labels · sketches</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  /* Sketch chrome only — nothing here ships. */
+  body { padding: 26px 34px 90px; }
+  .sk-bar {
+    position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 14px;
+    padding: 14px 0 16px; margin-bottom: 10px; background: var(--bg);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .sk-bar h1 { font-family: var(--display); font-size: 1.5rem; margin: 0 auto 0 0; letter-spacing: .02em; }
+  .sk-bar button { font-family: var(--mono); font-size: .64rem; letter-spacing: .2em; text-transform: uppercase;
+    padding: 8px 16px; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent;
+    color: var(--gray); cursor: pointer; }
+  .sk-bar button.on { border-color: var(--ink); color: var(--ink); }
+  .sk-note { font-size: .82rem; color: var(--gray); max-width: 74ch; line-height: 1.55; margin: 0 0 22px; }
+  .sk-state { margin: 34px 0 0; }
+  .sk-state > h2 { font-family: var(--mono); font-size: .66rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--gray); margin: 0 0 12px; }
+  .sk-state > h2 em { font-style: normal; color: var(--ink); }
+  .sk-card { border: 1px solid var(--hairline); border-radius: 14px; padding: 26px 28px 20px; background: var(--surface, transparent); }
+  .sk-card .vj-stage { display: flex !important; }
+  .sk-card .vj-controls { justify-self: end; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--hairline-soft); justify-content: flex-end; }
+
+  /* ─────────────── B · proposed ───────────────
+     Pill: real size, and it turns gold the moment there is unsent work.
+     Facts: values in the body face at reading size, labels stay quiet mono. */
+  body.sk-b .vj-stage-safety {
+    margin-top: 15px; padding: 10px 18px; font-size: .92rem; letter-spacing: .01em;
+    font-family: var(--body); font-weight: 550;
+  }
+  body.sk-b .vj-stage-safety::before { width: 9px; height: 9px; margin-right: 11px; }
+  body.sk-b .vj-stage-safety .n { font-family: var(--display); font-size: 1.7rem; line-height: 1; margin-right: 10px; letter-spacing: .01em; }
+  body.sk-b .vj-stage-safety.has-pending {
+    border-color: var(--gold); color: var(--gold); background: var(--gold-tint-bg);
+  }
+  body.sk-b .vj-stage-safety.has-pending::before { background: var(--gold); }
+  body.sk-b .vj-stage-facts > div { padding: 14px 14px 14px 0; font-size: .8rem; align-items: baseline; }
+  body.sk-b .vj-stage-facts b { font-family: var(--body); font-size: 1.3rem; font-weight: 600; letter-spacing: 0; }
+
+  /* ─────────────── C · bolder ───────────────
+     Same idea, pushed: the count leads the pill in the display face, and the
+     right-hand values are numerals you can read from across the desk. */
+  body.sk-c .vj-stage-safety {
+    margin-top: 16px; padding: 11px 18px; font-size: .88rem; font-family: var(--body); font-weight: 550;
+  }
+  body.sk-c .vj-stage-safety::before { width: 9px; height: 9px; margin-right: 11px; }
+  body.sk-c .vj-stage-safety .n { font-family: var(--display); font-size: 1.5rem; line-height: 1; margin-right: 9px; }
+  body.sk-c .vj-stage-safety.has-pending {
+    border-color: var(--gold); color: var(--gold); background: var(--gold-tint-bg);
+    box-shadow: 0 0 0 4px var(--gold-tint-shadow);
+  }
+  body.sk-c .vj-stage-safety.has-pending::before { background: var(--gold); }
+  body.sk-c .vj-stage-facts > div { padding: 15px 14px 15px 0; font-size: .72rem; align-items: baseline; }
+  body.sk-c .vj-stage-facts b { font-family: var(--display); font-size: 1.25rem; line-height: 1; letter-spacing: .01em; }
+  body.sk-a .vj-stage-safety .n { display: none; }
+  body:not(.sk-a) .vj-stage-safety .n-inline { display: none; }
+
+  /* ─────────────── Buttons (B and C alike) ───────────────
+     The two actions an operator actually reaches for get words. Everything
+     else stays an icon in the dock. */
+  body.sk-a .lbl-new { display: none; }
+  body:not(.sk-a) .lbl-old { display: none; }
+  body:not(.sk-a) .vj-controls .btn-pill { padding: 9px 18px; font-size: .64rem; letter-spacing: .18em; }
+  body:not(.sk-a) .btn-pill.go { border-color: var(--green); color: var(--green); }
+  body:not(.sk-a) .btn-pill.go:hover { background: rgba(63,185,80,.10); border-color: var(--green); }
+  body:not(.sk-a) .btn-pill.stop { border-color: var(--red); color: var(--red); }
+  body:not(.sk-a) .btn-pill.stop:hover { background: rgba(248,81,73,.10); border-color: var(--red); }
+  body.sk-c .vj-controls .btn-pill { font-size: .7rem; padding: 10px 20px; }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark sk-b">
+
+<div class="sk-bar">
+  <h1>Live card · legibility &amp; button labels</h1>
+  <button data-v="a">A · today</button>
+  <button data-v="b" class="on">B · proposed</button>
+  <button data-v="c">C · bolder</button>
+  <button data-v="light">Light</button>
+</div>
+
+<p class="sk-note">Three changes, shown in every state a campaign can be in. <b>1)</b> the pending-leads pill
+gets real size, and goes gold whenever leads are still unsent, so "92 pending, sending is stopped" cannot be
+mistaken for a quiet detail. <b>2)</b> the fact rows keep their small mono labels but the values on the right
+move up to reading size. <b>3)</b> the two actions that matter get words instead of glyphs:
+<b>Open campaign tab</b>, <b>Resume sending</b>, <b>Stop campaign</b>. Restart, duplicate, check-now and
+show-live stay as icons in the dock.</p>
+
+<!-- ══ 1 · SENDING (cloud) ══ -->
+<section class="sk-state">
+  <h2>01 / <em>Sending</em> · cloud VM</h2>
+  <div class="sk-card">
+    <div class="vj-stage is-sending">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Sending now</div>
+            <div class="vj-stage-name">Connecting with Marta Klein</div>
+            <div class="vj-stage-sub">sean.alcosin@ortus.solutions · lead 31 of 123 · this batch pauses for 4 min after the next send</div>
+          </div>
+          <div class="vj-stage-side">
+            <span>Sent today</span><strong>31</strong><small>across 2 accounts</small>
+          </div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">92</span><span class="n-inline">92&nbsp;</span>pending leads remain safely queued</div>
+        <div class="vj-stage-facts">
+          <div><span>Last action</span><b>connect sent · 12s ago</b></div>
+          <div><span>Accounts sending</span><b>2 of 2</b></div>
+          <div><span>Next action</span><b>in 4 min</b></div>
+          <div><span>Operator action</span><b>none required</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <span class="lbl-old"><button class="btn-pill">Open</button><button class="btn-pill">Open sheet</button></span>
+      <span class="lbl-new"><button class="btn-pill">Open campaign tab</button><button class="btn-pill">Open sheet</button><button class="btn-pill stop">Stop campaign</button></span>
+      <div class="dock" role="toolbar">
+        <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <div class="dock-actions">
+          <span class="lbl-old"><button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button></span>
+          <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 2 · CHECKING ══ -->
+<section class="sk-state">
+  <h2>02 / <em>Checking</em> · a sweep is running right now</h2>
+  <div class="sk-card">
+    <div class="vj-stage is-checking">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Checking</div>
+            <div class="vj-stage-name">Looking for new acceptances</div>
+            <div class="vj-stage-sub">cindy.siapno@ortus.solutions · account 2 of 2 · nothing is sent while a check runs</div>
+          </div>
+          <div class="vj-stage-side">
+            <span>Check started</span><strong>1m 12s ago</strong><small>usually takes about 3 minutes</small>
+          </div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">92</span><span class="n-inline">92&nbsp;</span>pending leads remain safely queued · sending resumes after the check</div>
+        <div class="vj-stage-facts">
+          <div><span>Last check</span><b>today at 09:36</b></div>
+          <div><span>Accounts checked</span><b>1 of 2</b></div>
+          <div><span>Next check</span><b>today at 11:08</b></div>
+          <div><span>Operator action</span><b>none required</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <span class="lbl-old"><button class="btn-pill">Open</button><button class="btn-pill">Open sheet</button></span>
+      <span class="lbl-new"><button class="btn-pill">Open campaign tab</button><button class="btn-pill">Open sheet</button><button class="btn-pill stop">Stop campaign</button></span>
+      <div class="dock" role="toolbar">
+        <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <div class="dock-actions">
+          <span class="lbl-old"><button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button></span>
+          <button class="dock-btn" data-tip="Show live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 3 · MONITORING, SENDING STOPPED (the screenshot) ══ -->
+<section class="sk-state">
+  <h2>03 / <em>Monitoring, sending stopped</em> · 92 leads never sent — the case from the screenshot</h2>
+  <div class="sk-card">
+    <div class="vj-stage is-waiting">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Monitoring update</div>
+            <div class="vj-stage-name">Monitoring · next check at 12:36</div>
+            <div class="vj-stage-sub">Checks keep running on the VM. Sending is stopped, so the 92 queued leads stay where they are until you resume.</div>
+          </div>
+          <div class="vj-stage-side">
+            <span>Until next automatic check</span><strong>1h 50m</strong><small>no browser stays open between checks</small>
+          </div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">92</span><span class="n-inline">92&nbsp;</span>pending leads remain safely queued · sending is stopped</div>
+        <div class="vj-stage-facts">
+          <div><span>Last check</span><b>complete</b></div>
+          <div><span>Accounts checked</span><b>2 of 2</b></div>
+          <div><span>Next check</span><b>today at 12:36</b></div>
+          <div><span>Operator action</span><b>resume to send the rest</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <span class="lbl-old"><button class="btn-pill">Open</button><button class="btn-pill">Open sheet</button></span>
+      <span class="lbl-new"><button class="btn-pill">Open campaign tab</button><button class="btn-pill">Open sheet</button><button class="btn-pill go">Resume sending</button><button class="btn-pill stop">Stop campaign</button></span>
+      <div class="dock" role="toolbar">
+        <span class="lbl-old">
+          <button class="dock-btn" data-tip="Continue"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg></button>
+          <div class="dock-actions"><button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button></div>
+        </span>
+        <div class="dock-actions">
+          <button class="dock-btn" data-tip="Check now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 4 · PAUSED ══ -->
+<section class="sk-state">
+  <h2>04 / <em>Paused</em> · you pressed pause</h2>
+  <div class="sk-card">
+    <div class="vj-stage is-paused">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Paused</div>
+            <div class="vj-stage-name">Nothing is being sent</div>
+            <div class="vj-stage-sub">Paused by you at 10:12. The browser is closed and the queue is untouched.</div>
+          </div>
+          <div class="vj-stage-side">
+            <span>Paused for</span><strong>34m</strong><small>resume any time, nothing expires</small>
+          </div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">92</span><span class="n-inline">92&nbsp;</span>pending leads remain safely queued · no new send will start</div>
+        <div class="vj-stage-facts">
+          <div><span>Last action</span><b>connect sent · 34m ago</b></div>
+          <div><span>Accounts in use</span><b>2 of 2</b></div>
+          <div><span>Next action</span><b>waiting for you</b></div>
+          <div><span>Operator action</span><b>resume when ready</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <span class="lbl-old"><button class="btn-pill">Open</button><button class="btn-pill">Open sheet</button></span>
+      <span class="lbl-new"><button class="btn-pill">Open campaign tab</button><button class="btn-pill">Open sheet</button><button class="btn-pill go">Resume sending</button><button class="btn-pill stop">Stop campaign</button></span>
+      <div class="dock" role="toolbar">
+        <span class="lbl-old"><button class="dock-btn" data-tip="Resume"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg></button></span>
+        <div class="dock-actions">
+          <span class="lbl-old"><button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button></span>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 5 · STOPPED · this Mac ══ -->
+<section class="sk-state">
+  <h2>05 / <em>Stopped</em> · running on this Mac — today this card has no way back</h2>
+  <div class="sk-card">
+    <div class="vj-stage is-waiting">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Stopped</div>
+            <div class="vj-stage-name">Stopped early · checks still running</div>
+            <div class="vj-stage-sub">You stopped sending and kept the checks. This Mac runs them, so keep the app open.</div>
+          </div>
+          <div class="vj-stage-side">
+            <span>Until next automatic check</span><strong>22m</strong><small>this Mac runs the check</small>
+          </div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">44</span><span class="n-inline">44&nbsp;</span>pending leads remain safely queued · sending is stopped</div>
+        <div class="vj-stage-facts">
+          <div><span>Last check</span><b>complete</b></div>
+          <div><span>Accounts checked</span><b>3 of 3</b></div>
+          <div><span>Next check</span><b>today at 11:08</b></div>
+          <div><span>Operator action</span><b>resume to send the rest</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <span class="lbl-old"><button class="btn-pill">Open</button><button class="btn-pill">Open sheet</button></span>
+      <span class="lbl-new"><button class="btn-pill">Open campaign tab</button><button class="btn-pill">Open sheet</button><button class="btn-pill go">Resume sending</button><button class="btn-pill stop">Stop campaign</button></span>
+      <div class="dock" role="toolbar">
+        <div class="dock-actions">
+          <span class="lbl-old"><button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button></span>
+          <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 6 · NOTHING LEFT TO SEND ══ -->
+<section class="sk-state">
+  <h2>06 / <em>Nothing pending</em> · the pill stays quiet when there is no work left</h2>
+  <div class="sk-card">
+    <div class="vj-stage is-waiting">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Monitoring update</div>
+            <div class="vj-stage-name">Every lead has been sent</div>
+            <div class="vj-stage-sub">Checks continue until 12 Sep, then the campaign closes itself.</div>
+          </div>
+          <div class="vj-stage-side">
+            <span>Until next automatic check</span><strong>1h 50m</strong><small>no browser stays open between checks</small>
+          </div>
+        </div>
+        <div class="vj-stage-safety">0 pending leads remain safely queued · sending is complete</div>
+        <div class="vj-stage-facts">
+          <div><span>Last check</span><b>complete</b></div>
+          <div><span>Accounts checked</span><b>3 of 3</b></div>
+          <div><span>Next check</span><b>today at 11:08</b></div>
+          <div><span>Operator action</span><b>none required</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <span class="lbl-old"><button class="btn-pill">Open</button><button class="btn-pill">Open sheet</button></span>
+      <span class="lbl-new"><button class="btn-pill">Open campaign tab</button><button class="btn-pill">Open sheet</button><button class="btn-pill stop">Stop campaign</button></span>
+      <div class="dock" role="toolbar">
+        <div class="dock-actions">
+          <span class="lbl-old"><button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button></span>
+          <button class="dock-btn" data-tip="Check now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const body = document.body;
+  document.querySelectorAll('.sk-bar button').forEach((b) => {
+    b.addEventListener('click', () => {
+      const v = b.dataset.v;
+      if (v === 'light') { body.classList.toggle('theme-dark'); b.classList.toggle('on'); return; }
+      body.classList.remove('sk-a', 'sk-b', 'sk-c');
+      body.classList.add('sk-' + v);
+      document.querySelectorAll('.sk-bar button[data-v]:not([data-v="light"])').forEach((o) => o.classList.toggle('on', o === b));
+    });
+  });
+</script>
+</body>
+</html>

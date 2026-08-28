@@ -648,7 +648,11 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   }
   body[data-dashboard='v3'] .vj-stage-side strong {
     display: block; margin-top: 7px; font-family: var(--display); font-size: 1.7rem;
-    line-height: 1; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    line-height: 1.05; color: var(--ink);
+    /* v3.1.48.74: was nowrap + ellipsis, which showed "Preparing browser runti…"
+       for the whole first minute of a launch. A clipped word is worse than a
+       taller card: let it wrap and be readable. */
+    white-space: normal; overflow-wrap: anywhere;
   }
   body[data-dashboard='v3'] .vj-stage-side small { display: block; margin-top: 5px; color: var(--gray); font-size: .76rem; line-height: 1.35; }
   body[data-dashboard='v3'] .vj-stage-verb {
@@ -671,14 +675,26 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
     font-weight: 500; line-height: 1.5; color: var(--ink);
   }
   body[data-dashboard='v3'] .vj-stage-sub:empty { display: none; }
+  /* v3.1.48.71: the queued-lead count is the one number on this card that
+     decides whether the operator has to do something, and it was set in .7rem
+     mono inside a pill the eye skips. It now leads the pill as a display
+     numeral, and the pill turns gold whenever leads are genuinely still
+     waiting — at zero it stays the quiet green it always was. */
   body[data-dashboard='v3'] .vj-stage-safety {
-    display: inline-flex; align-items: center; margin-top: 12px; padding: 6px 11px;
+    display: inline-flex; align-items: center; margin-top: 15px; padding: 10px 18px;
     border: 1px solid var(--hairline); border-radius: 9999px;
-    font-family: var(--mono); font-size: .7rem; letter-spacing: .035em; color: var(--ink);
+    font-family: var(--body); font-weight: 550; font-size: .92rem; letter-spacing: .01em; color: var(--ink);
   }
   body[data-dashboard='v3'] .vj-stage-safety::before {
-    content: ''; width: 6px; height: 6px; border-radius: 9999px; background: var(--green); margin-right: 8px;
+    content: ''; width: 9px; height: 9px; border-radius: 9999px; background: var(--green); margin-right: 11px;
   }
+  body[data-dashboard='v3'] .vj-stage-safety .n {
+    font-family: var(--display); font-size: 1.7rem; line-height: 1; letter-spacing: .01em; margin-right: 10px;
+  }
+  body[data-dashboard='v3'] .vj-stage-safety.has-pending {
+    border-color: var(--gold); color: var(--gold); background: var(--gold-tint-bg);
+  }
+  body[data-dashboard='v3'] .vj-stage-safety.has-pending::before { background: var(--gold); }
   body[data-dashboard='v3'] .vj-stage-safety[hidden] { display: none; }
   body[data-dashboard='v3'] .vj-stage-facts {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 15px;
@@ -686,13 +702,19 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   }
   body[data-dashboard='v3'] .vj-stage-facts[hidden] { display: none; }
   body[data-dashboard='v3'] .vj-stage-facts > div {
-    display: flex; justify-content: space-between; gap: 14px; padding: 10px 12px 10px 0;
-    border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); font-size: .7rem;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 14px;
+    padding: 14px 12px 14px 0;
+    border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); font-size: .8rem;
   }
   body[data-dashboard='v3'] .vj-stage-facts > div:nth-child(odd) { border-right: 1px solid var(--hairline-soft); margin-right: 12px; }
   body[data-dashboard='v3'] .vj-stage-facts > div:nth-last-child(-n+2) { border-bottom: 0; }
   body[data-dashboard='v3'] .vj-stage-facts span { color: var(--gray); text-transform: uppercase; letter-spacing: .08em; }
-  body[data-dashboard='v3'] .vj-stage-facts b { color: var(--ink); font-weight: 500; text-align: right; }
+  /* The answers are what the operator reads; the labels only say what the
+     answer is about. Values move to the body face at reading size. */
+  body[data-dashboard='v3'] .vj-stage-facts b {
+    color: var(--ink); font-family: var(--body); font-size: 1.3rem; font-weight: 600;
+    letter-spacing: 0; text-align: right;
+  }
   body[data-dashboard='v3'] .vj-stage-miles {
     display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 15px;
     border-top: 1px solid var(--hairline);
@@ -814,6 +836,75 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
     border: 1px solid var(--hairline-soft); background: transparent; color: var(--ink);
   }
   body[data-dashboard='v3'] .stg-drawer .acts button:hover { border-color: var(--gold, #d4a24a); }
+
+  /* v3.1.48.73: taking an account off a campaign used to live only in the
+     Accounts panel further down the page, behind an unlabelled toggle switch.
+     It belongs in the drawer of the account it acts on, and it is destructive,
+     so it gets a sentence of consequence rather than a switch. The same row
+     carries the reason when the engine will not accept a removal yet. */
+  body[data-dashboard='v3'] .stg-drawer .stg-danger {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--hairline-soft);
+  }
+  body[data-dashboard='v3'] .stg-drawer .stg-danger p {
+    margin: 0; font-size: 0.74rem; color: var(--gray); line-height: 1.5;
+  }
+  body[data-dashboard='v3'] .stg-drawer .stg-danger button {
+    /* Not inside .acts, so it inherits none of that row's styling and would
+       otherwise fall back to the app's default grey button chip. */
+    margin-left: auto; flex-shrink: 0; cursor: pointer;
+    font-size: 0.72rem; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid var(--hairline-soft); background: transparent; color: var(--gray);
+  }
+  body[data-dashboard='v3'] .stg-drawer .stg-danger button:hover {
+    border-color: var(--red); color: var(--red);
+  }
+
+  /* v3.1.48.73: a campaign that ERRORED. Its only way back used to be two
+     unlabelled dock glyphs, the first tipped "continue where it left off" on a
+     campaign that never left anywhere. One button, worded for what actually
+     happened, at a size that says this card is waiting on the operator. */
+  body[data-dashboard='v3'] .vj-retry {
+    /* The live slot, the same one a finished FG run's outcome note takes. An
+       errored campaign has no live line worth reading, and renderFailedStart-
+       Retry hides it, so the two never stack. */
+    grid-area: live;
+    display: flex; align-items: center; gap: 22px;
+    margin-top: 16px; padding: 20px 22px;
+    border: 1px solid var(--red); border-radius: 12px; background: rgba(248, 81, 73, 0.06);
+  }
+  body[data-dashboard='v3'] .vj-retry[hidden] { display: none; }
+  /* One slot, one voice. Both card renderers paint the live line and this panel
+     in their own order, so the winner is decided here rather than by whichever
+     ran last. */
+  body[data-dashboard='v3'] .vj-card:has(> .vj-retry:not([hidden])) > .vj-live,
+  body[data-dashboard='v3'] .vj-card:has(> .vj-retry:not([hidden])) > .vj-stage {
+    display: none !important;
+  }
+  /* v3.1.48.74: same rule for the stage and the live line, which are also the
+     same cell. fillVjCard hides the live line when it draws the stage; the
+     wizard's STOPPED branch showed the "Stopped early" outcome banner and then
+     drew the stage under it, so the two collided — reported as "when I press
+     stop and the campaign is a CC, or hasn't started sending yet, the wizard is
+     all wrongly formatted", and reproduced from the card's own markup. Decided
+     here so no renderer's ordering can bring it back. The stage carries the
+     outcome in its own verb and sub-line. */
+  body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .vj-live {
+    display: none !important;
+  }
+  body[data-dashboard='v3'] .vj-retry .t { flex: 1; min-width: 0; }
+  body[data-dashboard='v3'] .vj-retry .t b { display: block; font-size: 1.02rem; margin-bottom: 5px; }
+  body[data-dashboard='v3'] .vj-retry .t span { font-size: 0.82rem; color: var(--gray); line-height: 1.55; }
+  body[data-dashboard='v3'] .vj-retry button {
+    flex-shrink: 0; cursor: pointer;
+    font-family: var(--body); font-size: 0.92rem; font-weight: 600; letter-spacing: 0.01em;
+    padding: 15px 34px; border-radius: 9999px;
+    border: 1px solid var(--green); color: var(--green); background: transparent;
+  }
+  body[data-dashboard='v3'] .vj-retry button:hover { background: rgba(63, 185, 80, 0.12); }
+  @media (max-width: 620px) {
+    body[data-dashboard='v3'] .vj-retry { flex-direction: column; align-items: stretch; }
+  }
 
   /* Heartbeat — "is this thing still alive?" answered without guessing. The
      dot flashes on each poll that brought fresh data; the line goes gold when
@@ -995,8 +1086,18 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
     grid-area: controls;
     align-self: center; justify-self: end;
     display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    /* Four labelled pills take more room than four glyphs did. Let them wrap
+       onto a second line rather than squeeze the card's grid. */
+    flex-wrap: wrap; justify-content: flex-end; row-gap: 8px;
   }
-  body[data-dashboard='v3'] .vj-controls .btn-pill { padding: 6px 14px; font-size: 0.71rem; }
+  body[data-dashboard='v3'] .vj-controls .btn-pill { padding: 9px 18px; font-size: 0.64rem; letter-spacing: 0.18em; }
+  /* The two actions an operator actually reaches for carry words, not glyphs:
+     an unlabelled red square and an unlabelled triangle were being read as
+     "something dangerous" and "no idea". Everything else stays in the dock. */
+  body[data-dashboard='v3'] .btn-pill.go { border-color: var(--green); color: var(--green); }
+  body[data-dashboard='v3'] .btn-pill.go:hover { border-color: var(--green); background: rgba(63, 185, 80, 0.10); }
+  body[data-dashboard='v3'] .btn-pill.stop { border-color: var(--red); color: var(--red); }
+  body[data-dashboard='v3'] .btn-pill.stop:hover { border-color: var(--red); background: rgba(248, 81, 73, 0.10); }
 
   /* ── Up Next (variant C · drag deck) ────────────────────────
      Distinct from the J cards above — no dot pattern, no shadow, no

@@ -164,6 +164,14 @@ async function fetchSheetCsv(sheetUrl) {
     // surfacing as a sweep failure. Bulk-check is gated by a 6h cooldown,
     // so spending a few extra seconds here is cheap insurance.
     console.warn(`[sheets] First CSV fetch failed (${err.message}); retrying once…`);
+    // Wait before retrying. The first attempt failing with UND_ERR_CONNECT_TIMEOUT
+    // means undici could not establish the connection AT ALL, and an immediate
+    // second attempt just meets the same dead network (2026-08-27: a VM CC+IC
+    // launch died on the pre-flight gate with both attempts timing out on
+    // connect, while the same URL answered in ~1.4s a minute later). A short
+    // pause is what makes the retry an independent attempt rather than a
+    // formality; the gate is already a multi-second step, so nobody notices it.
+    await new Promise((r) => setTimeout(r, 2500));
     try {
       response = await tryFetch(30000);
     } catch (err2) {
@@ -176,7 +184,12 @@ async function fetchSheetCsv(sheetUrl) {
       console.error(`[sheets] CSV fetch failed twice: ${err2.message}${why ? ` (${why})` : ''}`);
       throw new Error(
         `Could not reach Google Sheets — ${err2.message}${why ? ` (${why})` : ''}. `
-        + 'The sheet itself is fine; this is the network on this machine — DNS, '
+        + (/CONNECT_TIMEOUT|ENOTFOUND|EAI_AGAIN/i.test(String(why))
+          ? 'The connection could not be opened at all, twice. If this machine was online '
+            + 'a minute ago it was probably a brief network drop, so try again first. If it '
+            + 'keeps happening it is '
+          : 'The sheet itself is fine; this is the network on this machine — ')
+        + 'DNS, '
         + 'firewall, VPN, or an antivirus/corporate TLS proxy the browser trusts '
         + 'but the app does not.',
       );

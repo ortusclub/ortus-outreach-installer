@@ -21,7 +21,7 @@ The launcher prints this at boot:
 
 ```
 Development Electron
-  dev engine:   dev-14
+  dev engine:   dev-19        <- whatever ./deploy-dev.sh last pushed
   live engine:  v139
   tunnel auth:  service account (does not expire)
 ```
