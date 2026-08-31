@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.48.95" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.48.95" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.48.96" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.48.96" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1842,6 +1842,16 @@
   .sn-foot .mini.sn-dismiss{padding:6px 10px;color:var(--gray);}
   .sn-foot .mini.sn-dismiss:hover{color:var(--red);border-color:var(--red);}
 
+  /* Chrome's scroll anchoring picks a node to hold still when content above the
+     viewport changes height, then corrects scrollTop by the distance to it. The
+     board is rebuilt wholesale every poll, so the anchor node it chose no longer
+     exists and it re-anchors onto a different one, correcting by the gap between
+     them. Measured 2026-08-29: a monitoring card whose text rewrapped by 14-20px
+     each refresh sent the page from 2751 to 4721, the end of the dashboard, every
+     two seconds. Only that card, because it was the only one whose height moved.
+     Zero JS scrolled the page; it was entirely the browser's correction. Turning
+     anchoring off in the board took the self-moves from 1 per 14s to 0. */
+  .sn-board, .sn-strip, #campaigns-board, #campaigns-board *{overflow-anchor:none;}
   .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:var(--card-bg);margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
   /* v3.1.48.24 · approved compact option A: the existing flat strip gains the
      lifecycle atmosphere of the expanded card without adding nested boxes. */
@@ -4263,7 +4273,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.48.95"></script>
+<script type="module" src="/js/app.js?v=3.1.48.96"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before

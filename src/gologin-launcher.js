@@ -38,6 +38,57 @@ export function withTimeout(promise, ms, label) {
 // ceiling, not a performance target — a healthy launch takes seconds.
 export const LAUNCH_TIMEOUT_MS = 5 * 60 * 1000;
 
+/**
+ * Attach to a browser GoLogin has just reported as started, tolerating the gap
+ * before Orbita is actually listening.
+ *
+ * GL.start() can return status "success" and a port before the browser has
+ * bound it, and the connect then fails instantly with ECONNREFUSED. Measured
+ * 2026-08-29 on cindy.siapno: the account was skipped, the whole acceptance
+ * check was stamped incomplete, and the card told the operator to go open the
+ * profile by hand. The same profile opened normally 79 minutes later with no
+ * intervention, so nothing was wrong with it.
+ *
+ * Backoff is short (2s, then 4s) rather than the flat 5s that first suggests
+ * itself, because a refusal is answered instantly and a browser that is going
+ * to come up comes up in a second or two. And if the process we spawned is
+ * already dead there is nothing to wait for: no port will ever open, so we fail
+ * immediately instead of spending the backoff. That matters when a sweep has
+ * many accounts to get through.
+ *
+ * Only a connection-level refusal is retried. A protocol error means we DID
+ * reach the browser and something else is wrong, and repeating it would just
+ * delay a real failure.
+ */
+export const CONNECT_RETRY_DELAYS_MS = [2000, 4000];
+
+export async function connectWithRetry(connect, {
+  pid,
+  label = 'profile',
+  delays = CONNECT_RETRY_DELAYS_MS,
+  isAlive = (p) => { try { process.kill(p, 0); return true; } catch { return false; } },
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+} = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      return await connect();
+    } catch (err) {
+      lastErr = err;
+      if (attempt === delays.length) break;
+      if (!/ECONNREFUSED|ECONNRESET|socket hang up/i.test(String(err && err.message))) break;
+      if (typeof pid === 'number' && !isAlive(pid)) {
+        console.warn(`[gologin] ${label}: browser process ${pid} is gone; not retrying the attach`);
+        break;
+      }
+      const wait = delays[attempt];
+      console.warn(`[gologin] ${label}: browser not listening yet (${err.message}); retrying attach in ${wait / 1000}s`);
+      await sleep(wait);
+    }
+  }
+  throw lastErr;
+}
+
 export function selectOrphanPids({ spawned, activePids, isAlive }) {
   const out = [];
   for (const pid of spawned.values()) {
@@ -356,15 +407,18 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
 
   activeProfiles.set(profileId, GL);
 
-  const browser = await puppeteer.connect({
-    browserWSEndpoint: wsUrl,
-    ignoreHTTPSErrors: true,
-    // 2.8.27: bumped 120s -> 180s. Slow profiles (large cookie jars, many
-    // tabs from --restore-last-session) were timing out on Network.enable
-    // before Puppeteer could attach. Rakibul.islam was launch-failing every
-    // round all night because of this.
-    protocolTimeout: 180000,
-  });
+  const browser = await connectWithRetry(
+    () => puppeteer.connect({
+      browserWSEndpoint: wsUrl,
+      ignoreHTTPSErrors: true,
+      // 2.8.27: bumped 120s -> 180s. Slow profiles (large cookie jars, many
+      // tabs from --restore-last-session) were timing out on Network.enable
+      // before Puppeteer could attach. Rakibul.islam was launch-failing every
+      // round all night because of this.
+      protocolTimeout: 180000,
+    }),
+    { pid: _spawnedPid, label: profileId },
+  );
 
   const pages = await browser.pages();
   const page = pages.length > 0 ? pages[0] : await browser.newPage();
