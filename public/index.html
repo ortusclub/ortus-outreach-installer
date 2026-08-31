@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.47" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.48.36" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.48.96" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.48.96" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -372,6 +372,10 @@
             </div>
           </div>
         </div>
+        <!-- v3.1.48.75: an errored campaign's one big way back in. Filled by
+             renderFailedStartRetry() for both this singleton and every strip
+             clone; stays hidden for every other state. -->
+        <div class="vj-retry" id="active-retry" hidden></div>
         <div class="pf-list" id="active-preflight-list" hidden></div>
         <div id="active-sheetwrite-warn" hidden></div>
         <!-- Task 9: primary needs-login banner — filled by renderPrimaryLoginWarn()
@@ -414,18 +418,20 @@
         <div id="primary-panel" hidden></div>
         <div class="vj-profiles" id="active-profiles" hidden></div>
         <div class="vj-controls">
-          <button class="btn-pill" onclick="window.dashOpenActive()">Open</button>
+          <button class="btn-pill" onclick="window.dashOpenActive()">Open campaign tab</button>
           <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleActiveDetails(this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
+          <!-- v3.1.48.71: Stop carries a word. As a bare red square beside a bare
+               triangle it read as "something dangerous", and operators could not
+               tell it apart from Resume. Shown/hidden by _adaptActiveCardControls
+               exactly where the dock icon used to be. -->
+          <button class="btn-pill stop" id="btn-active-stop" onclick="window.dashStopActive()">Stop campaign</button>
           <div class="dock" id="dock-active" role="toolbar" aria-label="Active campaign actions">
             <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="window.dashPauseActive()">
               <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
             </button>
             <div class="dock-actions">
-              <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="window.dashStopActive()">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
-              </button>
               <button class="dock-btn" data-tip="Restart" aria-label="Restart" onclick="window.dashRestartActive()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
               </button>
@@ -534,7 +540,7 @@
           </div>
         </div>
         <div class="vj-controls">
-          <button class="btn-pill" onclick="window.dashOpenActive()">Open</button>
+          <button class="btn-pill" onclick="window.dashOpenActive()">Open campaign tab</button>
           <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleMonitorDetails(this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -1204,7 +1210,18 @@
           <div id="primary-person-block" class="ov-idgrid" style="display:none;">
             <div class="intro-config-field">
               <label for="primary-person-name" class="intro-config-label">Full name</label>
-              <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock" oninput="savePrimaryPersonFields()">
+              <div class="pp-recall-wrap" style="position:relative">
+                <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock"
+                       autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false"
+                       aria-controls="primary-person-recall"
+                       oninput="savePrimaryPersonFields(); primaryRecallOnInput();"
+                       onkeydown="primaryRecallOnKeydown(event)"
+                       onfocus="primaryRecallOnInput()"
+                       onblur="primaryRecallClose(160)">
+                <!-- People this operator has actually launched with, from the
+                     launch-config snapshots. Filled by primaryRecallOnInput(). -->
+                <div id="primary-person-recall" class="pp-recall" role="listbox" hidden></div>
+              </div>
               <div class="intro-config-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
             </div>
             <!-- v2.78: re-shown per operator request — the primary's profile URL
@@ -1289,7 +1306,7 @@
                 <div class="intro-config-toggle-row">
                   <span id="auto-accept-label" class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
                   <label class="notif-pref-toggle" id="auto-accept-toggle-wrap">
-                    <input type="checkbox" id="auto-accept-toggle" disabled onchange="savePrimaryPersonFields(); refreshAutoAcceptGate();">
+                    <input type="checkbox" id="auto-accept-toggle" checked data-wanted="1" disabled onchange="savePrimaryPersonFields(); refreshAutoAcceptGate();">
                     <span class="notif-pref-slider"></span>
                   </label>
                 </div>
@@ -1825,11 +1842,26 @@
   .sn-foot .mini.sn-dismiss{padding:6px 10px;color:var(--gray);}
   .sn-foot .mini.sn-dismiss:hover{color:var(--red);border-color:var(--red);}
 
+  /* Chrome's scroll anchoring picks a node to hold still when content above the
+     viewport changes height, then corrects scrollTop by the distance to it. The
+     board is rebuilt wholesale every poll, so the anchor node it chose no longer
+     exists and it re-anchors onto a different one, correcting by the gap between
+     them. Measured 2026-08-29: a monitoring card whose text rewrapped by 14-20px
+     each refresh sent the page from 2751 to 4721, the end of the dashboard, every
+     two seconds. Only that card, because it was the only one whose height moved.
+     Zero JS scrolled the page; it was entirely the browser's correction. Turning
+     anchoring off in the board took the self-moves from 1 per 14s to 0. */
+  .sn-board, .sn-strip, #campaigns-board, #campaigns-board *{overflow-anchor:none;}
   .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:var(--card-bg);margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
   /* v3.1.48.24 · approved compact option A: the existing flat strip gains the
      lifecycle atmosphere of the expanded card without adding nested boxes. */
   .sn-strip.sn-collapsed.run{
     background:linear-gradient(108deg,color-mix(in srgb,var(--green) 12%,var(--card-bg)) 0%,var(--card-bg) 31%,var(--card-bg) 100%);
+  }
+  /* Local run: same wash in the rail's pink, so the atmosphere and the rail
+     never disagree about where the campaign is running. */
+  .sn-strip.sn-collapsed.local.run{
+    background:linear-gradient(108deg,color-mix(in srgb,#f1a7c9 14%,var(--card-bg)) 0%,var(--card-bg) 31%,var(--card-bg) 100%);
   }
   .sn-strip.sn-collapsed.monitoring{
     background:linear-gradient(108deg,color-mix(in srgb,var(--blue) 14%,var(--card-bg)) 0%,var(--card-bg) 31%,var(--card-bg) 100%);
@@ -3929,16 +3961,31 @@
     </div>
   </div>
 
-  <!-- Phase 2.8.9: Stop confirmation modal (non-CC+IC modes) -->
+  <!-- Phase 2.8.9: Stop confirmation modal (non-CC+IC modes).
+       v3.1.48.75: was three .btn buttons in a flex-end row inside a 480px card,
+       each forced to min-width:120px with no wrapping — "Wait up to 15 seconds"
+       was clipped mid-word and "Stop now" was painted over the top of it
+       (operator, 2026-08-28: "when i press stop ... the wizard is all wrongly
+       formatted"). It is now the app's own two-choice stop card, the same one
+       the CC+IC stop already uses, so a stop always looks like a stop. -->
   <div id="confirm-stop-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeStopModal()">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="stop-modal-title">
+    <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="stop-modal-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeStopModal()">&times;</button>
       <div class="stop-choice-eyebrow">Stop campaign</div>
-      <h3 id="stop-modal-title" class="modal-title">What should happen to the current lead?</h3>
-      <p class="modal-body" id="stop-current-lead-copy">No new lead will start after you choose.</p>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" onclick="closeStopModal()">Cancel</button>
-        <button type="button" class="btn btn-secondary" onclick="confirmStopCampaignNow(false)">Wait up to 15 seconds</button>
-        <button type="button" class="btn btn-stop" onclick="confirmStopCampaignNow(true)">Stop now</button>
+      <h3 id="stop-modal-title" class="modal-title stop-choice-headline">What about the lead in flight?</h3>
+      <p class="stop-choice-sub" id="stop-current-lead-copy">No new lead will start either way.</p>
+      <div class="stop-choice-row">
+        <button type="button" class="stop-choice-pill is-monitor" onclick="confirmStopCampaignNow(false)">
+          <div class="stop-choice-pill-headline">Wait up to<br>15 seconds</div>
+          <div class="stop-choice-pill-sub">Lets the current invitation finish and be verified. Recommended.</div>
+        </button>
+        <button type="button" class="stop-choice-pill is-stop" onclick="confirmStopCampaignNow(true)">
+          <div class="stop-choice-pill-headline">Stop<br>now</div>
+          <div class="stop-choice-pill-sub">Closes the browser immediately. The in-flight lead is verified before any retry.</div>
+        </button>
+      </div>
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="modal-cancel-link" onclick="closeStopModal()">Cancel</button>
       </div>
     </div>
   </div>
@@ -4226,7 +4273,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.48.36"></script>
+<script type="module" src="/js/app.js?v=3.1.48.96"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before

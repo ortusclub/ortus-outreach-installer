@@ -2,6 +2,37 @@ function lineOf(row) {
   return String(row && row.line != null ? row.line : row || '');
 }
 
+export function monitoringRecovery(error = '') {
+  const raw = String(error || '').trim();
+  const email = (raw.match(/[\w.%+-]+@[\w.-]+/) || [])[0] || '';
+  const local = email.split('@')[0] || 'sender';
+  const name = local.split(/[._-]+/).filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') || 'Sender';
+  if (/session[- ]expired|needs? re-?login|log back in|\/uas\/login/i.test(raw)) {
+    return {
+      email,
+      headline: `${name}’s LinkedIn session expired`,
+      detail: `Log ${name} back into LinkedIn in GoLogin, then retry this check.`,
+      result: `${name} needs login`,
+      action: 'Log in, then retry',
+    };
+  }
+  if (/identity restricted/i.test(raw)) return {
+    email,
+    headline: `${name} needs account review`,
+    detail: `Open ${name} in GoLogin, resolve the LinkedIn restriction, then retry this check.`,
+    result: `${name} needs review`,
+    action: 'Review, then retry',
+  };
+  return {
+    email,
+    headline: `${name} could not be checked`,
+    detail: `Open ${name} in GoLogin, confirm LinkedIn is available, then retry this check.`,
+    result: `${name} not checked`,
+    action: 'Open, then retry',
+  };
+}
+
 export function summarizeLatestMonitoringSweep(logs = [], expectedAccounts = []) {
   const lines = Array.isArray(logs) ? logs.map(lineOf) : [];
   let start = -1;

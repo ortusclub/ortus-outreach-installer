@@ -222,3 +222,20 @@ test('previously stamped rows surface as a passed note, not silence', () => {
   assert.equal(out.blockers.length, 0);
   assert.equal(out.targetCount, 1);
 });
+
+test('lintLeads: a blank linkedinColumn still finds the URLs the runner would find', () => {
+  const rows = [
+    { rowNumber: 2, row: { 'First Name': 'Geriluz', 'Last Name': 'Limun', 'linkedin url': 'https://www.linkedin.com/in/geriluz-limun-74985a39a', Stage: '' } },
+    { rowNumber: 3, row: { 'First Name': 'Franco', 'Last Name': 'Espino', 'linkedin url': 'https://www.linkedin.com/in/franco-espino-6b9322307', Stage: '' } },
+  ];
+  const named = lintLeads({ rows, linkedinColumn: 'linkedin url', mode: 'connect_and_introduce', templates: {}, blocklist: [], tabCount: 1, gidExplicit: true });
+  const auto = lintLeads({ rows, linkedinColumn: '', mode: 'connect_and_introduce', templates: {}, blocklist: [], tabCount: 1, gidExplicit: true });
+  assert.equal(named.targetCount, 2);
+  assert.equal(auto.targetCount, 2, 'auto-detect must agree with the named column');
+});
+
+test('lintLeads: a row with no LinkedIn URL anywhere is still not a target', () => {
+  const rows = [{ rowNumber: 2, row: { 'First Name': 'Nobody', 'linkedin url': '', Stage: '' } }];
+  const f = lintLeads({ rows, linkedinColumn: '', mode: 'connect_and_introduce', templates: {}, blocklist: [], tabCount: 1, gidExplicit: true });
+  assert.equal(f.targetCount, 0);
+});

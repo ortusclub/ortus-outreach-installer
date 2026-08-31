@@ -17,3 +17,12 @@ test('generic stopped accounts are not automatically labelled throttled', () => 
   assert.match(src, /Stopped — \$\{reason\}/);
   assert.doesNotMatch(src, /else if \(a\.parked \|\| a\.parkReason === 'throttle'\)/);
 });
+
+test('expanded needs-login account offers its exact GoLogin profile', () => {
+  const drawer = src.slice(src.indexOf('function _stageDrawerHtml'), src.indexOf('function _stageFixHtml'));
+  assert.match(drawer, /a\.needsLogin \|\| a\.sweepAction/,
+    'both sending and monitoring login failures must use the same recovery UI');
+  assert.match(drawer, /openProfileBrowser\('\$\{escHtml\(a\.profileId\)\}'\)/,
+    'the button must open the selected account, never a campaign-level or guessed profile');
+  assert.match(drawer, />Open GoLogin profile<\/button>/);
+});

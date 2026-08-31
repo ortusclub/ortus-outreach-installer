@@ -216,6 +216,31 @@ export async function runCloudPreflightHandshake(opts = {}) {
       primaryPage = launched && launched.page;
 
       let pending = [...queuedAccepts];
+
+      // Accept-all runs FIRST when it is on. The slow, retry-prone part of this
+      // phase is identifying one specific person's invitation card; a blanket
+      // sweep needs no identification at all. If it leaves the received list
+      // empty then nothing we sent is still outstanding, so every sender is
+      // accepted and the campaign dispatches now instead of waiting out the
+      // matcher (up to CAP_MS). It used to run last, after that whole wait,
+      // which made the option strictly slower than leaving it off.
+      if (autoAcceptAllPending) {
+        log('🧹 Accept-all: clearing every pending invitation on the primary in one pass…');
+        let swept = null;
+        try { swept = await deps.acceptAllPendingInvitations(primaryPage, { log }); }
+        catch (e) { log(`  ⚠ Accept-all sweep error: ${e.message}`); }
+        if (swept && Number(swept.remaining) === 0) {
+          if (pending.length) {
+            log(`  ✓ Nothing is left waiting on the primary, so all ${pending.length} sender invitation(s) are accepted — skipping the per-sender wait.`);
+          }
+          for (const t of pending) {
+            primaryConn.set(t.campaignProfileId, 'connected');
+            emit(t.campaignProfileId, 'connected');
+          }
+          pending = [];
+        }
+      }
+
       while (pending.length) {
         const still = [];
         for (const t of pending) {
@@ -238,14 +263,13 @@ export async function runCloudPreflightHandshake(opts = {}) {
       }
 
       // Leftover accepts finish in the background via the existing idle runner.
+      // Say so — this is the only place the wizard's per-attempt "looking again"
+      // lines turn into a real, final outcome.
+      if (pending.length) {
+        log(`  ⚠ ${pending.length} invitation(s) never appeared on the primary within ${Math.round(CAP_MS / 1000)}s — handed to the background accept runner, they will be accepted the next time your primary browser opens.`);
+      }
       for (const t of pending) { try { await deps.enqueuePrimaryTask(t); } catch { /* */ } }
       summary.pending = pending.length;
-
-      if (autoAcceptAllPending) {
-        log('🧹 Accept-all: clearing remaining pending invitations on the primary…');
-        try { await deps.acceptAllPendingInvitations(primaryPage, { log }); }
-        catch (e) { log(`  ⚠ Accept-all sweep error: ${e.message}`); }
-      }
 
       // Best-effort: capture the primary's session so a follow-up can later run
       // AS the primary on the VM. A capture/post failure must never fail the

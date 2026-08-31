@@ -2091,6 +2091,30 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   font-family: var(--body); font-size: 1rem; font-weight: 500; outline: none;
 }
 .intro-config-input:focus { border-bottom-color: var(--ink); }
+
+/* Primary-person name recall (2026-08-27). Anchored under the name field, which
+   is an underline-only input, so the panel is the only boxed thing here — it
+   reads as a list hanging off the field rather than a second control. */
+.pp-recall {
+  position: absolute; z-index: 40; left: 0; right: 0; top: 100%;
+  background: #0d0d0d; border: 1px solid var(--hairline);
+  border-radius: 0 0 9px 9px; overflow: hidden;
+  box-shadow: 0 12px 28px rgba(0,0,0,.55);
+}
+.pp-recall[hidden] { display: none; }
+.pp-recall-item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 9px 12px; cursor: pointer; border-top: 1px solid var(--hairline-soft);
+}
+.pp-recall-item:first-child { border-top: none; }
+.pp-recall-item.on, .pp-recall-item:hover { background: rgba(255,255,255,.06); }
+.pp-recall-name { font-size: .92rem; font-weight: 500; }
+.pp-recall-name mark { background: none; color: var(--gold); border-bottom: 1px solid var(--gold); }
+.pp-recall-url {
+  font-family: var(--mono); font-size: .74rem; color: var(--gray);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 58%;
+}
+.pp-recall-filled { color: var(--green); font-size: .78rem; margin-top: 6px; }
 .intro-config-input::placeholder { color: var(--gray-faint, #b8b8b6); font-weight: 400; }
 /* v2.104 — primary URL hard-lock: red underline + inline error when the pasted
    value isn't a real personal /in/ profile link. Clears the moment it's valid. */
@@ -2952,7 +2976,7 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .rt-tab .s { font-size:10.5px; color:var(--gray); }
 .rt-tab.on { background:var(--ink); }
 .rt-tab.on .t { color:var(--bg); }
-.rt-tab.on .s { color:rgba(255,255,255,.65); }
+.rt-tab.on .s { color:var(--bg); opacity:.7; }  /* hardcoded white vanished on the light-on-dark selected tile */
 .rt-tab:disabled, .rt-tab.rt-tab-disabled { opacity:.4; cursor:not-allowed; }
 .rt-facts { display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; padding:0 6px; }
 .rt-fact { font-size:11px; color:var(--gray); display:flex; gap:6px; align-items:baseline; }
@@ -8432,6 +8456,30 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .hs-eyebrow .lk{font-size:12px;line-height:1;}
 .hs-eyebrow .cnt{margin-left:auto;color:var(--ink);font-weight:600;letter-spacing:.06em;}
 .hs-head{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:500;line-height:1.4;}
+/* Two-step handshake header. The wizard's single bar could not show that the
+   primary's own accept pass is a separate, slower step, so the settle wait and
+   the accept both read as a hang (operator, 2026-08-28). */
+.phl-accept-all{display:flex;gap:11px;align-items:flex-start;margin:16px 0 0;padding:12px 13px;border:1px solid var(--hairline);border-radius:10px;background:var(--bg-soft);cursor:pointer;}
+.phl-accept-all input{margin-top:2px;flex:none;}
+.phl-accept-all b{display:block;font-family:var(--mono);font-size:.7rem;font-weight:600;color:var(--ink);}
+.phl-accept-all em{display:block;font-style:normal;font-family:var(--mono);font-size:.62rem;color:var(--gray);line-height:1.55;margin-top:4px;text-transform:none;letter-spacing:0;}
+.phl-accept-all:hover{border-color:var(--gold);}
+.hs-steps{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0 0;}
+.hs-step{border:1px solid var(--hairline);border-radius:8px;padding:8px 10px;background:var(--card-bg);}  /* --card-bg, never #fff: a hardcoded white tile puts white text on white in dark mode. */
+.hs-step .n{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);}
+.hs-step .l{font-family:var(--mono);font-size:11px;color:var(--ink);font-weight:500;line-height:1.35;margin-top:3px;}
+.hs-step.on{border-color:var(--gold);background:rgba(197,160,66,.10);}
+.hs-step.on .n{color:#8a6d1f;}
+.hs-step.on .n::after{content:' · now';}
+.hs-step.did{border-color:rgba(47,125,71,.4);background:rgba(47,125,71,.06);}
+.hs-step.did .n{color:#2f7d47;}
+.hs-step.did .n::after{content:' · done';}
+.hs-step.failed{border-color:var(--red);background:rgba(178,59,59,.06);}
+.hs-step.failed .n{color:var(--red);}
+.hs-step.failed .n::after{content:' · not here';}
+.hs-panel.partial{border-left-color:var(--red);}
+.hs-panel.partial .hs-eyebrow{color:var(--red);}
+@media (max-width:520px){.hs-steps{grid-template-columns:1fr;}}
 .hs-bar{height:5px;border-radius:9999px;background:#e7e3d4;margin:11px 0 0;overflow:hidden;}
 .hs-bar i{display:block;height:100%;width:40%;background:var(--gold);transition:width .5s;}
 .hs-expl{font-size:11.5px;color:var(--gray);line-height:1.6;margin:11px 0 0;}

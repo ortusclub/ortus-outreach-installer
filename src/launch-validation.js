@@ -6,7 +6,10 @@ export function launchValidation({ mode, profileIds, targetCount, diagnostics = 
   const fixes = [];
   if (!DERIVED_PROFILE_MODES.has(m) && (!Array.isArray(profileIds) || !profileIds.filter(Boolean).length)) fixes.push({ code: 'accounts', label: 'Choose accounts' });
   if (ACTION_MODES.has(m) && Number(targetCount) === 0) {
-    if (Number(diagnostics.alreadyProcessed) > 0) fixes.push({ code: 'rows', label: 'Review filtered rows' });
+    // Name the actual reason. "Review filtered rows" on a sheet whose rows were
+    // never touched sends the operator to look at the wrong thing.
+    if (Number(diagnostics.alreadyProcessed) > 0) fixes.push({ code: 'rows', label: `${diagnostics.alreadyProcessed} row(s) already have a Stage — clear it to send them again` });
+    if (Number(diagnostics.noUrl) > 0) fixes.push({ code: 'url', label: `${diagnostics.noUrl} row(s) have no LinkedIn URL — check the LinkedIn column` });
     if (Number(diagnostics.unmatchedSenders) > 0) fixes.push({ code: 'sender', label: 'Change sender column' });
     if (!fixes.length) fixes.push({ code: 'sheet', label: 'Review sheet and filters' });
   }

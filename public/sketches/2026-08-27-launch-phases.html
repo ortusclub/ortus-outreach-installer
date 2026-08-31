@@ -1,0 +1,162 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Launch card — the phases, live</title>
+<style>
+:root{--bg:#0b0b0c;--card:#151517;--ink:#f2f2f0;--gray:#8a8a86;--dim:#5c5c58;--hair:#2a2a2c;--gold:#caa24a;--green:#4a9d5f;--red:#c4553f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:36px}
+h1{font:600 15px/1.3 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);margin:0 0 6px}
+.lede{color:var(--gray);max-width:78ch;margin:0 0 30px;font-size:13px}
+.lede b{color:var(--ink);font-weight:600}
+h2{font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin:34px 0 4px}
+.note{color:var(--dim);font-size:12px;margin:0 0 14px;max-width:78ch}
+.card{background:var(--card);border:1px solid var(--hair);border-radius:3px;padding:22px 24px;margin-bottom:16px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--gold)}
+.card.is-slow::before{background:var(--gold);box-shadow:0 0 14px var(--gold)}
+.card.is-fail::before{background:var(--red)}
+.card.is-ok::before{background:var(--green)}
+.eyebrow{font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin-bottom:9px}
+.is-fail .eyebrow{color:var(--red)} .is-ok .eyebrow{color:var(--green)}
+.head{font:700 25px/1.15 'Oswald','Arial Narrow',sans-serif;letter-spacing:.01em;text-transform:uppercase;margin:0 0 7px}
+.sub{color:var(--gray);font-size:13px;margin:0 0 14px;max-width:70ch}
+.pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--hair);border-radius:999px;padding:5px 13px;font-size:11.5px;color:var(--gray)}
+.pill i{width:6px;height:6px;border-radius:50%;background:var(--green);display:block;font-style:normal}
+.pill.warn i{background:var(--gold)} .pill.bad i{background:var(--red)}
+.steps{display:grid;grid-template-columns:repeat(6,1fr);gap:0;margin:20px 0 0;border-top:1px solid var(--hair);padding-top:0}
+.st{padding:13px 14px 14px 0;border-top:2px solid var(--hair);margin-top:-1px}
+.st.done{border-top-color:var(--green)} .st.now{border-top-color:var(--gold)} .st.fail{border-top-color:var(--red)}
+.st .n{font:600 9.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);display:block;margin-bottom:6px}
+.st .v{font-size:12.5px;color:var(--gray);display:block}
+.st.done .v{color:var(--ink)} .st.now .v{color:var(--gold);font-weight:600} .st.fail .v{color:var(--red);font-weight:600}
+.st .t{font:10px/1 ui-monospace,Menlo,monospace;color:var(--dim);display:block;margin-top:5px}
+.why{margin-top:18px;border:1px solid var(--hair);border-left:2px solid var(--red);padding:13px 15px;border-radius:2px;background:#1a1416}
+.why .k{font:600 9.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--red);margin-bottom:7px}
+.why .m{font:12px/1.55 ui-monospace,Menlo,monospace;color:var(--ink);word-break:break-word}
+.why .fix{color:var(--gray);font-size:12.5px;margin-top:9px}
+.why.warn{border-left-color:var(--gold);background:#1a1710}.why.warn .k{color:var(--gold)}
+.log{margin-top:18px;border-top:1px solid var(--hair);padding-top:13px}
+.log .lh{font:600 9.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:9px}
+.log div.l{font:11.5px/1.85 ui-monospace,Menlo,monospace;color:var(--gray)}
+.log div.l b{color:var(--ink);font-weight:400}
+.log div.l .ts{color:var(--dim)}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:1100px){.cmp{grid-template-columns:1fr}.steps{grid-template-columns:repeat(3,1fr)}}
+.tag{display:inline-block;font:600 9px/1 ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--bg);background:var(--gray);padding:4px 7px;border-radius:2px;margin-left:8px;vertical-align:2px}
+</style></head><body>
+
+<h1>Launch card · every phase</h1>
+<p class="lede">Today the card shows one frozen line, <b>“Normal startup can take a few minutes”</b>, for as long as the launch takes, and its live log is empty by construction (<code>logs: []</code>). Sam watched it for five minutes with no way to tell waiting from broken. Every step below is a <b>real await in <code>handleStartCloud</code></b>, in the order it runs. Nothing here is invented.</p>
+
+<h2>1 · Handshake — per sender, live</h2>
+<p class="note">Already real: <code>primaryConn</code> carries pending / sent / accepting / connected / unverified per sender.</p>
+<div class="card">
+  <div class="eyebrow">Phase 0 · primary handshake</div>
+  <div class="head">Connecting senders to the primary</div>
+  <p class="sub">2 of 4 connected · your Mac is doing this locally, then the campaign moves to the cloud.</p>
+  <span class="pill"><i></i>No campaign lead is consumed during setup</span>
+  <div class="steps">
+    <div class="st done"><span class="n">01 / Accounts</span><span class="v">4 verified</span><span class="t">6s</span></div>
+    <div class="st now"><span class="n">02 / Primary</span><span class="v">2 of 4 connected</span><span class="t">48s</span></div>
+    <div class="st"><span class="n">03 / Sheet</span><span class="v">not read yet</span></div>
+    <div class="st"><span class="n">04 / Leads</span><span class="v">waiting</span></div>
+    <div class="st"><span class="n">05 / Dispatch</span><span class="v">waiting</span></div>
+    <div class="st"><span class="n">06 / VM</span><span class="v">waiting</span></div>
+  </div>
+</div>
+
+<h2>2 · Reading the sheet — the step that was invisible</h2>
+<p class="note">This is where Sam's launch actually was. Each step reports its own elapsed time and its own result.</p>
+<div class="card">
+  <div class="eyebrow">Phase 1 · preparing the campaign</div>
+  <div class="head">Reading your lead sheet</div>
+  <p class="sub">Fetching the CSV export of the selected tab. Google normally answers in under 30 seconds.</p>
+  <span class="pill"><i></i>No campaign lead is consumed during setup</span>
+  <div class="steps">
+    <div class="st done"><span class="n">01 / Accounts</span><span class="v">4 verified</span><span class="t">6s</span></div>
+    <div class="st done"><span class="n">02 / Primary</span><span class="v">4 of 4 connected</span><span class="t">1m 12s</span></div>
+    <div class="st now"><span class="n">03 / Sheet</span><span class="v">reading…</span><span class="t">9s</span></div>
+    <div class="st"><span class="n">04 / Leads</span><span class="v">waiting</span></div>
+    <div class="st"><span class="n">05 / Dispatch</span><span class="v">waiting</span></div>
+    <div class="st"><span class="n">06 / VM</span><span class="v">waiting</span></div>
+  </div>
+  <div class="log">
+    <div class="lh">Live log · launch</div>
+    <div class="l"><span class="ts">15:07:02</span> &nbsp;⚡ Launch started · CCSAMTEST · 4 accounts</div>
+    <div class="l"><span class="ts">15:07:08</span> &nbsp;✓ <b>GoLogin accounts listed</b> · 41 profiles across 1 workspace</div>
+    <div class="l"><span class="ts">15:08:20</span> &nbsp;✓ <b>Primary handshake complete</b> · 4 of 4 senders connected</div>
+    <div class="l"><span class="ts">15:08:21</span> &nbsp;🖥️ <b>Reading the lead sheet</b> · tab “SAS_EMEA_VIE”</div>
+  </div>
+</div>
+
+<h2>3 · Slow — past its own normal, and says which step</h2>
+<p class="note">Escalation is <b>per step</b>, against that step's own budget (sheet 30s, GoLogin 30s, engine 20s). Not one blanket “a few minutes”.</p>
+<div class="card is-slow">
+  <div class="eyebrow">Phase 1 · taking longer than normal</div>
+  <div class="head">Still reading your lead sheet</div>
+  <p class="sub">This step normally finishes in under 30 seconds. It has been going for 2m 41s.</p>
+  <span class="pill warn"><i></i>No campaign lead is consumed · nothing has been sent</span>
+  <div class="steps">
+    <div class="st done"><span class="n">01 / Accounts</span><span class="v">4 verified</span><span class="t">6s</span></div>
+    <div class="st done"><span class="n">02 / Primary</span><span class="v">4 of 4 connected</span><span class="t">1m 12s</span></div>
+    <div class="st now"><span class="n">03 / Sheet</span><span class="v">slow — 2m 41s</span><span class="t">budget 30s</span></div>
+    <div class="st"><span class="n">04 / Leads</span><span class="v">waiting</span></div>
+    <div class="st"><span class="n">05 / Dispatch</span><span class="v">waiting</span></div>
+    <div class="st"><span class="n">06 / VM</span><span class="v">waiting</span></div>
+  </div>
+  <div class="why warn">
+    <div class="k">What this usually means</div>
+    <div class="m">Google Sheets has not answered the CSV export.</div>
+    <div class="fix">It retries once automatically, then gives up with the exact network reason. You can wait, or cancel — no lead has been consumed and nothing has been sent, so re-launching is safe.</div>
+  </div>
+</div>
+
+<h2>4 · Failed — the reason, verbatim<span class="tag">the one that was missing</span></h2>
+<p class="note">The error strings already exist in the code and were being thrown into a void. Sam's launch died here and showed nothing.</p>
+<div class="card is-fail">
+  <div class="eyebrow">Launch failed · nothing was created</div>
+  <div class="head">GoLogin did not answer</div>
+  <p class="sub">The launch stopped at step 1 of 6. No campaign exists on the VM and no lead was consumed.</p>
+  <span class="pill bad"><i></i>Safe to try again · 0 leads consumed</span>
+  <div class="steps">
+    <div class="st fail"><span class="n">01 / Accounts</span><span class="v">failed</span><span class="t">30s</span></div>
+    <div class="st"><span class="n">02 / Primary</span><span class="v">not reached</span></div>
+    <div class="st"><span class="n">03 / Sheet</span><span class="v">not reached</span></div>
+    <div class="st"><span class="n">04 / Leads</span><span class="v">not reached</span></div>
+    <div class="st"><span class="n">05 / Dispatch</span><span class="v">not reached</span></div>
+    <div class="st"><span class="n">06 / VM</span><span class="v">not reached</span></div>
+  </div>
+  <div class="why">
+    <div class="k">Reason</div>
+    <div class="m">GoLogin did not answer while listing accounts (page 1) — The operation was aborted due to timeout (TimeoutError)</div>
+    <div class="fix">This is the network on this machine, not your sheet or your accounts. Check VPN / firewall, then press Launch again.</div>
+  </div>
+</div>
+
+<h2>5 · Handed over — the card becomes the real campaign</h2>
+<div class="card is-ok">
+  <div class="eyebrow">Handed to the VM</div>
+  <div class="head">CCSAMTEST is running in the cloud</div>
+  <p class="sub">388 leads dispatched. It keeps running even if you close the app.</p>
+  <span class="pill"><i></i>388 leads queued · 0 consumed during setup</span>
+  <div class="steps">
+    <div class="st done"><span class="n">01 / Accounts</span><span class="v">4 verified</span><span class="t">6s</span></div>
+    <div class="st done"><span class="n">02 / Primary</span><span class="v">4 of 4</span><span class="t">1m 12s</span></div>
+    <div class="st done"><span class="n">03 / Sheet</span><span class="v">412 rows</span><span class="t">11s</span></div>
+    <div class="st done"><span class="n">04 / Leads</span><span class="v">388 built</span><span class="t">1s</span></div>
+    <div class="st done"><span class="n">05 / Dispatch</span><span class="v">accepted</span><span class="t">3s</span></div>
+    <div class="st done"><span class="n">06 / VM</span><span class="v">campaign created</span><span class="t">2s</span></div>
+  </div>
+  <div class="log">
+    <div class="lh">Live log · launch</div>
+    <div class="l"><span class="ts">15:08:32</span> &nbsp;✓ <b>Sheet read</b> · 412 rows from “SAS_EMEA_VIE”</div>
+    <div class="l"><span class="ts">15:08:33</span> &nbsp;✓ <b>Leads built</b> · 388 with a LinkedIn URL · 24 excluded (blocklist 6, pre-flight 18)</div>
+    <div class="l"><span class="ts">15:08:36</span> &nbsp;✓ <b>Dispatched to the VM</b> · engine accepted 388 leads</div>
+    <div class="l"><span class="ts">15:08:38</span> &nbsp;⚡ <b>Campaign created</b> · cmp_9f2a… · now watching it live</div>
+  </div>
+</div>
+
+<h2>What has to change to make this real</h2>
+<p class="note">Three things, all small, none cosmetic:<br>
+<b>1.</b> <code>handleStartCloud</code> reports step transitions instead of being one opaque await — it already knows every step, it just never says so.<br>
+<b>2.</b> <code>cloudLaunchStatus()</code> stops hardcoding <code>logs: []</code> and carries those steps, so the live log is live during launch.<br>
+<b>3.</b> Each step escalates against its own budget, and a throw becomes the Reason block verbatim rather than an <code>alert()</code> that disappears.</p>
+</body></html>

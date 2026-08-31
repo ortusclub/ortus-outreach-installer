@@ -70,7 +70,7 @@ import { blocklistExcludedUrls } from './preflight-lint.js';
 import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import { plainLine } from './log-voice.js';
-import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy } from './runtime-interruption.js';
+import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy, isInterruption, interruptionMatches } from './runtime-interruption.js';
 import { writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
 import {
   sample as rmSample,
@@ -6040,6 +6040,13 @@ export function stopCampaign({ full = false, reason = 'operator-stopped' } = {})
   log(full
     ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
     : '■ Stop requested.');
+  // An operator stop ANSWERS any outstanding interruption journal. Without this
+  // a journal written hours earlier (app quit, Mac asleep) outlived the campaign
+  // it described and re-labelled every later stop as "Stopped because this Mac
+  // became unavailable" — the card said that while the log directly above it
+  // said the operator had stopped it, 2.5 hours after the journal was written
+  // (operator, 2026-08-28 15:09).
+  try { clearRuntimeInterruption(); } catch { /* absent is already clear */ }
   // P-02 fix (2.8.18): return a real shape instead of undefined so
   // /api/campaign/stop sends `{ok:true}` like every other endpoint.
   return { ok: true, full: !!full };
@@ -6400,12 +6407,25 @@ export function getCampaignStatus() {
   const thr = campaign._throttle   || amb.throttle;
   const panel = buildAccountPanel();
   const working = panel.find((a) => a.live) || null;
-  const interruption = (!campaign.running && campaign.state !== 'monitoring')
+  // Two gates, both learned the hard way (2026-08-28):
+  //   isInterruption      — an `active-run` heartbeat is not a stop.
+  //   interruptionMatches — a journal must describe THIS campaign. A stale one
+  //                         gave an empty local cockpit the name and state of a
+  //                         campaign that had moved on, and the board then drew
+  //                         that campaign twice: once real, once as a ghost row.
+  const _journal = (!campaign.running && campaign.state !== 'monitoring')
     ? readRuntimeInterruption() : null;
+  const interruption = (isInterruption(_journal)
+    && interruptionMatches(_journal, campaign.id || SINGLETON_CAMPAIGN_ID))
+    ? _journal : null;
   const interrupted = !!interruption;
   const interruptedCopy = interrupted ? interruptionCopy(interruption) : null;
   const interruptionLog = interrupted
-    ? `[${interruption.recordedAt}] STOPPED ${interruptedCopy.title}. ${interruptedCopy.detail}`
+    // No "STOPPED " prefix: the title already starts with "Stopped because …",
+    // so the line read "STOPPED Stopped because this Mac became unavailable" —
+    // and the card, which uses this line as its headline, shouted it twice
+    // (operator, 2026-08-28 15:09).
+    ? `[${interruption.recordedAt}] ${interruptedCopy.title}. ${interruptedCopy.detail}`
     : null;
   return {
     // The per-account panel, and the three live fields the sending banner reads.
@@ -6839,8 +6859,7 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
         campaign.nextCheckAt = new Date(nextNext).toISOString();
         _preFireNotifiedFor = null; // new cycle — re-arm the pre-fire heads-up
         try { await writeMonitoringState(campaign); } catch { /* */ }
-        const hhmm = (d) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-        campaign.logs.push(`[${new Date().toISOString()}] 🛏 Monitoring · next check at ${hhmm(new Date(campaign.nextCheckAt))}`);
+        campaign.logs.push(`[${new Date().toISOString()}] ${nextCheckLogLine(campaign.nextCheckAt)}`);
         schedulePreFireHeadsUp();
       }
       // Clear the stop AFTER the sweep unwinds, never before: an early clear
@@ -6896,9 +6915,18 @@ export async function resumeMonitoringFromDisk() {
     campaign.nextCheckAt = decision.recomputedNextCheckAt.toISOString();
     _preFireNotifiedFor = null; // resume after restart — re-arm
     const ts = `[${new Date().toISOString()}]`;
-    const _hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     campaign.logs = campaign.logs || [];
-    campaign.logs.push(`${ts} 🛏 Monitoring resumed · next check at ${_hhmm(decision.recomputedNextCheckAt)}`);
+    // Idempotent function, idempotent log: this runs on every app boot, so a
+    // day of restarts stamped ten identical "Monitoring resumed · next check at
+    // 14:36" lines into the same campaign (operator, 2026-08-28). Only write it
+    // when it actually says something new.
+    const _resumeLine = '🛏 Monitoring resumed on this Mac.';
+    const _lastLine = campaign.logs.length ? String(campaign.logs[campaign.logs.length - 1]) : '';
+    if (!_lastLine.endsWith(_resumeLine)) campaign.logs.push(`${ts} ${_resumeLine}`);
+    // The event says WHAT happened; the schedule always follows it in the one
+    // sentence every writer uses, so the newest line is the same shape wherever
+    // the campaign has been.
+    campaign.logs.push(`${ts} ${nextCheckLogLine(decision.recomputedNextCheckAt)}`);
     schedulePreFireHeadsUp();
     try {
       const _sheetId = _extractSheetIdFromUrl(campaign.sheetUrl);
@@ -6961,7 +6989,8 @@ export async function adoptMonitoring(slice = {}) {
   const endsLocal = new Date(campaign.monitoringUntil).toLocaleString('en-GB', {
     weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   });
-  campaign.logs.push(`[${now.toISOString()}] 🛏 Monitoring moved to this Mac · next check ${nextLocal} (every ${cadence} min) · monitoring ends ${endsLocal}`);
+  campaign.logs.push(`[${now.toISOString()}] 🖥 Monitoring moved to this Mac · checks every ${cadence} min · monitoring ends ${endsLocal}`);
+  campaign.logs.push(`[${now.toISOString()}] ${nextCheckLogLine(campaign.nextCheckAt)}`);
 
   // Log bus, same registration resume does, so sheet writes narrate into this
   // campaign's log instead of disappearing.
@@ -7023,6 +7052,33 @@ export function getCampaignState() {
  * runAutoIntros, updates cooldown, closes. Failures non-fatal — logs to the
  * campaign log via the bus.
  */
+/**
+ * The one sentence this app uses to say when the next acceptance check is.
+ *
+ * It is byte-identical to the line the cloud engine writes
+ * (campaign-runtime.js: "⏱ Next check … · nothing happens until then, the
+ * campaign stays running."), and that is the whole point. The app used to have
+ * four phrasings of its own — "Monitoring · next check at 18:08", "Monitoring
+ * active · next check at 17:08.", "Monitoring resumed · next check at 17:08",
+ * "Monitoring moved to this Mac · next check Fri, 28 Aug, 17:12 (every 60 min)"
+ * — so three cards in the identical state read three different headlines and
+ * every new phrasing needed its own banner rule to be understood. Operator,
+ * 2026-08-28: "why do they say 2 different things despite them being in the
+ * exact same state?!"
+ *
+ * Date-carrying and in UTC, like the engine's: a bare "HH:MM" on a multi-hour
+ * backoff reads as "later today" when it is not.
+ */
+export function nextCheckLogLine(at) {
+  // new Date(null) is the epoch, not an error — a missing schedule must produce
+  // no line at all rather than "Next check 1970-01-01".
+  if (at === null || at === undefined || at === '') return '';
+  const d = at instanceof Date ? at : new Date(at);
+  if (Number.isNaN(d.getTime())) return '';
+  const txt = d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  return `⏱ Next check ${txt} · nothing happens until then, the campaign stays running.`;
+}
+
 export async function runMonitoringCheck(profileId, profileName) {
   if (campaign.state !== 'monitoring') {
     return { ok: false, error: 'Campaign not in monitoring state' };
@@ -7051,7 +7107,17 @@ export async function runMonitoringCheck(profileId, profileName) {
     });
     campaign.currentAction.done = campaign._monitoringAccountDone || 1;
     campaign.currentAction.total = campaign._monitoringAccountTotal || 1;
+    // The card can only ever say what the log says. This path used to write ONE
+    // line per account (the "pass starting" line above) and then nothing until
+    // the account finished, so for the whole browser launch plus the whole
+    // sweep the newest line was still "pass starting" and the card was pinned
+    // to "Browser not open yet" — measured 2026-08-28, 54 seconds after
+    // riccardo's browser was demonstrably open on the connections page.
+    // Same two lines the manual bulk check already writes (server.js), so the
+    // banner maps them with no new UI.
+    campaign.logs.push(`[${new Date().toISOString()}] 📡 [${profileName}] Launching browser…`);
     launched = await launchProfile(profileId, token);
+    campaign.logs.push(`[${new Date().toISOString()}] 📡 [${profileName}] Sweeping recent connections…`);
     setAction(`Checking ${profileName} for new acceptances`, {
       account: profileName, phase: 'checking', step: 'loading_invitations',
       stepLabel: 'Loading sent invitations', stepDetail: 'Comparing LinkedIn results with the campaign sheet',

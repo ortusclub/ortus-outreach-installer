@@ -34,8 +34,23 @@ test('local runtime overlays only its matching adopted cloud campaign', () => {
   assert.doesNotMatch(app, /if \(String\(c\.runs_on \|\| ''\) === 'local' && _localLive\)/);
 });
 
-test('monitoring with unsent leads shows the automatic sending resume time', () => {
+test('monitoring with unsent leads shows the approved restart action band', () => {
   assert.match(app, /resumeAt: c\.resumeTaskDueAt \|\| null/);
-  assert.match(app, /Sending paused · no sender available for 15\+ min/);
-  assert.match(app, /sending retries automatically at/);
+  assert.match(app, /class="stg-resume"/);
+  assert.match(app, /ca\.resumeReason === 'daily'/);
+  assert.match(app, /Sending starts at \$\{escHtml\(ca\.resumeClock\)\}/);
+  assert.match(app, /startMonitoringSendingNow\(this\)/);
+  assert.doesNotMatch(app, /Sending starts at \$\{sendResumeClock\} · or choose Start now/);
+});
+
+test('cloud Start now from monitoring restarts pending sending instead of resuming a pause', () => {
+  assert.match(app, /sendingFromMonitoring = phase === 'sending-from-monitoring'/);
+  assert.match(app, /if \(sendingFromMonitoring\) \{\s*accepted = await restartCloudCampaignUI\(id, false\);\s*return accepted;/);
+  assert.match(app, /await _forceCloudItemsAfterAction\(id\)/);
+  assert.match(app, /if \(btn && btn\.isConnected && !accepted\)/);
+});
+
+test('expanded banner cannot override the visible log with a private remembered event', () => {
+  assert.doesNotMatch(app, /_stageNewestLogEvent/);
+  assert.match(app, /latestBannerEvent\(status && status\.logs, \{ phase \}\)/);
 });

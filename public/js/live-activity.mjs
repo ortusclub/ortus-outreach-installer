@@ -159,6 +159,34 @@ export function monitorHeroView(status, fmtCountdown, now = Date.now()) {
  * @param {number} [o.now]
  * @returns {string|null} text to write, or null to leave the DOM untouched
  */
+/**
+ * Has this Mac lost its link to the VM, to the point where the card must stop
+ * speaking in the present tense?
+ *
+ * Measured 2026-08-28: the dev tunnel died at 01:27 (expired gcloud session) and
+ * at 09:11 the card still read "MONITORING IS ACTIVE · until next automatic
+ * check: NOW". Every word was seven hours old. The VM itself was fine — it swept
+ * at 03:10, 05:10 and 07:10 — so the card invented a frozen campaign out of its
+ * own silence. Nothing about this is dev-only: a closed lid, a dropped Wi-Fi or a
+ * preempted API pod produces the same silence for any operator.
+ *
+ * A campaign handed to THIS Mac is excluded: its checks run here and pollStatus
+ * owns the card, so the cloud poll deliberately stands down and its age climbs
+ * for a healthy reason.
+ *
+ * 90s = eighteen missed 5s polls — past any slow answer or pod rollout, well
+ * short of a real outage.
+ *
+ * @param {number} ageSeconds   seconds since the last successful cloud poll
+ * @param {boolean} runsLocally campaign is running on this Mac, not the VM
+ * @returns {boolean}
+ */
+export const LOST_LINK_AFTER_S = 90;
+export function linkIsLost(ageSeconds, runsLocally = false) {
+  if (runsLocally) return false;
+  return Number(ageSeconds) > LOST_LINK_AFTER_S;
+}
+
 export function monitorTickText({ nextCheckAt, busy, fmtCountdown, now = Date.now() }) {
   if (busy) return null;
   if (!nextCheckAt) return '—';
@@ -381,4 +409,68 @@ export function buildLiveActivity(status, now = Date.now()) {
   }
 
   return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
+}
+
+// The safety pill's copy always leads with the count ("92 pending leads remain
+// safely queued · sending is stopped"). Split it so the card can set that
+// number at a size an operator actually sees, and so "still work waiting" is a
+// decision made once, here, rather than by eye.
+export function splitSafetyCount(safety) {
+  const text = String(safety == null ? '' : safety);
+  const m = /^(\d+)\s/.exec(text);
+  if (!m) return { count: null, rest: text, pending: false };
+  return { count: m[1], rest: text.slice(m[0].length), pending: Number(m[1]) > 0 };
+}
+
+// The four steps of a cloud launch, as they actually advance.
+//
+// They used to be a literal array in the render path: "01 launch accepted ·
+// 02 reading your leads (active) · 03 handing over · 04 starts automatically",
+// identical at every moment of the launch. Measured 2026-08-28 11:59: the
+// headline read "Campaign accepted by the VM — 4 lead(s) loaded" while the
+// strip below it still said we were reading the sheet and had not handed over.
+// A card that contradicts itself reads as a stalled campaign.
+export function launchMilestones({ phase = '', hasHandshake = false, leadsRead = null,
+  sendersDone = 0, sendersTotal = 0 } = {}) {
+  const accepted = phase === 'accepted';
+  const shaking = phase === 'handshake';
+  const leads = Number.isFinite(Number(leadsRead)) ? Number(leadsRead) : null;
+  const readValue = leads == null ? 'your leads read' : `${leads} lead${leads === 1 ? '' : 's'} read`;
+  const sheet = accepted
+    ? ['Sheet', readValue, 'done']
+    : shaking
+      ? ['Sheet', 'reading your leads', 'future']
+      : ['Sheet', 'reading your leads', 'active'];
+  const vm = accepted
+    ? ['VM', 'waiting for a worker', 'active']
+    : ['VM', 'handing over', 'future'];
+  if (!hasHandshake) {
+    return [
+      ['Request', 'launch accepted', 'done'],
+      sheet, vm,
+      ['Campaign', 'starts automatically', 'future'],
+    ];
+  }
+  return [
+    ['Request', 'handshake started', 'done'],
+    shaking
+      ? ['Accounts', `${sendersDone} of ${sendersTotal} connected`, 'active']
+      : ['Accounts', `${sendersTotal} connected`, 'done'],
+    sheet, vm,
+  ];
+}
+
+// One log line every 30 seconds while a cloud campaign waits for a worker.
+//
+// Workers scale to zero, so a launch normally spends up to two minutes queued —
+// and the log said nothing at all for the whole of it (measured 2026-08-28: one
+// line between 11:59 and 12:01). Silence and a dead engine looked identical.
+export function queueWaitLine(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  const m = Math.floor(s / 60);
+  const rest = s % 60;
+  const elapsed = m ? `${m}m ${String(rest).padStart(2, '0')}s` : `${rest}s`;
+  return s >= 180
+    ? `⏳ Still waiting for a VM worker · ${elapsed} · longer than the usual 2 minutes. Nothing is lost: the campaign is still queued and starts when a worker frees up.`
+    : `⏳ Still waiting for a VM worker · ${elapsed} · workers sleep when idle and take about 2 minutes to wake`;
 }

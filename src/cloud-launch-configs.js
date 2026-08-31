@@ -53,3 +53,38 @@ export async function getCloudLaunchConfig(id) {
   await load();
   return cache[id] || null;
 }
+
+// ── Primary people, derived from what was already dispatched ────────────────
+// Operator ask, 2026-08-27: typing a primary's name should recall their
+// LinkedIn URL. Every CC+IC launch already snapshots primaryName + primaryUrl
+// here, so the recall list is the operator's own history rather than a second
+// store to keep in sync. Pure so it can be unit-tested without touching disk.
+//
+// Identity is the URL, not the name: the same person typed as "Sam" once and
+// "Sam Adcock" the next time is ONE entry (the most recent spelling wins), and
+// two different people who share a first name stay separate because their URLs
+// differ. An entry with no URL is dropped — a name that recalls nothing is
+// exactly the typing this feature exists to remove.
+export function listPrimaryPeople(entries = {}) {
+  const byUrl = new Map();
+  for (const entry of Object.values(entries || {})) {
+    const t = (entry && entry.config && entry.config.templates) || {};
+    const url = String(t.primaryUrl || '').trim();
+    const name = String(t.primaryName || '').trim();
+    if (!url || !name) continue;
+    // linkedin.com/in/x/ and linkedin.com/in/X are the same profile.
+    const key = url.toLowerCase().replace(/\/+$/, '');
+    const ts = Number(entry.ts) || 0;
+    const seen = byUrl.get(key);
+    if (!seen) { byUrl.set(key, { name, url, count: 1, lastUsed: ts }); continue; }
+    seen.count += 1;
+    // Keep the spelling and the exact URL from the most RECENT launch.
+    if (ts >= seen.lastUsed) { seen.lastUsed = ts; seen.name = name; seen.url = url; }
+  }
+  return [...byUrl.values()].sort((a, b) => b.lastUsed - a.lastUsed);
+}
+
+export async function getPrimaryPeople() {
+  await load();
+  return listPrimaryPeople(cache);
+}
