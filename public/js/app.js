@@ -1575,9 +1575,17 @@ function gatherCampaignFormState() {
   };
 
   const senderFirstNames = {};
+  // {senderName} resolves at send time to the GoLogin account's NAME
+  // (campaign.js: profileNameCache[profileId]). The preview server has no live
+  // GoLogin session, so it used to stand the raw profile id in for the name and
+  // an operator's preview signed off "Thanks, 6a5ee8d17da88c4708b30689"
+  // (2026-09-01). We already know every selected account's name here — send it,
+  // and never send an id dressed up as a name.
+  const senderNames = {};
   for (const id of selectedProfileIds) {
     const pName = profileLabel(id);
     senderFirstNames[id] = resolveSenderFirstName(id, pName);
+    if (pName && pName !== id) senderNames[id] = pName;
   }
 
   // v2.59.x — Send mode + senderColumn so the backend preview can do per-
@@ -1597,6 +1605,7 @@ function gatherCampaignFormState() {
     profileIds: [...selectedProfileIds],
     benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     senderFirstNames,
+    senderNames,
     mode,
     senderColumn,
   };
@@ -6856,9 +6865,17 @@ async function startCampaign(opts = {}) {
   // in favour of the post-launch tips card. Sheet-snapshot disclaimer lives
   // there now too.
   const senderFirstNames = {};
+  // {senderName} resolves at send time to the GoLogin account's NAME
+  // (campaign.js: profileNameCache[profileId]). The preview server has no live
+  // GoLogin session, so it used to stand the raw profile id in for the name and
+  // an operator's preview signed off "Thanks, 6a5ee8d17da88c4708b30689"
+  // (2026-09-01). We already know every selected account's name here — send it,
+  // and never send an id dressed up as a name.
+  const senderNames = {};
   for (const id of selectedProfileIds) {
     const pName = profileLabel(id);
     senderFirstNames[id] = resolveSenderFirstName(id, pName);
+    if (pName && pName !== id) senderNames[id] = pName;
   }
 
   const mode = document.getElementById('campaign-mode').value;
@@ -7664,6 +7681,11 @@ let _cloudCardTimer = null;
 // merge them into the log so section 7 reads like the local machine's log.
 const _cloudEventLog = new Map();        // campaignId -> [{ t, line }]  (user actions)
 const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine per-account check events)
+// When this Mac last started failing to reach the VM, per campaign. Drives one
+// log line per quiet spell instead of one per failed poll.
+const _cloudQuietSince = new Map();
+let _followupHealth = null;
+window._followupHealth = () => _followupHealth;
 const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
 const _cloudProgressSeen = new Map();     // campaignId -> last verified browser milestone
 // Cloud load + the global queue order, refreshed once per board poll and only
@@ -7724,6 +7746,103 @@ function _pushCloudEvent(id, line, at) {
   if (arr.length > 60) arr.splice(0, arr.length - 60); // keep the tail bounded
 }
 window._pushCloudEvent = _pushCloudEvent;
+
+// Logging an operator action is only half of telling them it registered. The
+// card repaints from window.__cloudActiveStatus, which is only rebuilt by the
+// next poll — so Stop and Resume wrote their line instantly and the card still
+// sat there for six or seven seconds, countdown ticking, looking untouched.
+// That is exactly how an operator ends up clicking Resume three times
+// (operator, 2026-09-01 19:04). Splice the line into the status the card is
+// already holding and repaint on the spot; the next poll replaces all of it
+// with engine truth either way.
+// Optimistic "the resume is in flight" flag. Same contract as the stop's
+// slate state: set on the click, cleared by the next poll rebuild (which
+// replaces the whole status object) or by a failure below.
+const _cloudResumeClickedAt = new Map();
+// There are TWO live cards and the operator can be on either: the campaign
+// tab's #active-card (repainted from window.__cloudActiveStatus) and the
+// dashboard's expanded strip (its own [data-cid] node, rebuilt from the cloud
+// items list). v3.1.48.116 only reached the first, so an operator working from
+// the dashboard clicked Resume and watched nothing happen for six seconds while
+// _forceCloudItemsAfterAction refetched every campaign off the VM — measured
+// off the card's own "updated Ns ago", which read 3, 4, 5, 6 before anything
+// moved (operator recording, 2026-09-01 20:12). This set is the card-agnostic
+// answer: whichever renderer paints, it asks here.
+const _resumingIds = new Set();
+window._resumingIds = _resumingIds;
+
+// The optimistic flag, with its two ways out: the engine has moved off
+// monitoring (the resume landed), or 90s have passed (it did not, and a stuck
+// flag must never pin a card green forever).
+function _isResumingId(id, state) {
+  if (!id) return false;
+  const key = String(id);
+  if (!_resumingIds.has(key)) return false;
+  const st = String(state || '').toLowerCase();
+  if (st && st !== 'monitoring' && st !== 'checking') { _markCloudResuming(key, false); return false; }
+  if (Date.now() - (_cloudResumeClickedAt.get(key) || 0) > 90000) { _markCloudResuming(key, false); return false; }
+  return true;
+}
+
+// Repaint the dashboard strip for one campaign, now, without a board rebuild
+// (renderCampaignsBoard refetches; that is the very latency we are hiding).
+// The strip already carries data-cid, so this is a direct node lookup.
+function _repaintCloudStripNow(id) {
+  try {
+    const key = String(id);
+    for (const strip of document.querySelectorAll(`[data-cid="${CSS.escape(key)}"]`)) {
+      const card = strip.classList.contains('vj-card') ? strip : strip.querySelector('.vj-card');
+      if (!card) continue;
+      card.classList.remove('is-monitor', 'is-monitoring');
+      card.classList.add('is-resuming');
+    }
+  } catch (_) { /* the board poll still repaints a moment later */ }
+}
+
+// Append one line to the dashboard strip's log box, now. The line is already
+// in _cloudEvents; this only saves it the wait for the next board render.
+function _repaintCloudStripLog(id, line) {
+  try {
+    const key = String(id);
+    for (const strip of document.querySelectorAll(`[data-cid="${CSS.escape(key)}"]`)) {
+      const logEl = strip.querySelector('[data-f="active-log"]');
+      if (!logEl) continue;
+      logEl.insertAdjacentHTML('beforeend', v3RenderLogLine({ t: Date.now(), line }));
+      while (logEl.children.length > 15) logEl.removeChild(logEl.firstElementChild);
+      const head = strip.querySelector('.vj-log-head .vj-details-head');
+      if (head) head.textContent = `Live log · last ${logEl.children.length} events`;
+      _pinLogToNewest(logEl, key);
+    }
+  } catch (_) { /* the board poll still redraws it a moment later */ }
+}
+
+function _markCloudResuming(id, on) {
+  if (on) { _cloudResumeClickedAt.set(String(id), Date.now()); _resumingIds.add(String(id)); }
+  else { _cloudResumeClickedAt.delete(String(id)); _resumingIds.delete(String(id)); }
+  try {
+    const s = window.__cloudActiveStatus;
+    if (s && String(s.id) === String(id)) { s.resuming = !!on; renderActiveCard(s); }
+  } catch (_) { /* the poll still repaints a moment later */ }
+  if (on) _repaintCloudStripNow(id);
+}
+window._markCloudResuming = _markCloudResuming;
+
+function _pushCloudEventNow(id, line) {
+  _pushCloudEvent(id, line);
+  try {
+    const s = window.__cloudActiveStatus;
+    if (s && String(s.id) === String(id)) {
+      // Append, never rebuild: rebuilding from the event log alone would drop
+      // every per-lead line until the next poll.
+      s.logs = (Array.isArray(s.logs) ? s.logs : []).concat([{ t: Date.now(), line }]);
+      renderActiveCard(s);
+    }
+    // Same line, other card. _pushCloudEvent already stored it; the strip's log
+    // box just has not been told to redraw yet.
+    _repaintCloudStripLog(id, line);
+  } catch (_) { /* the poll still repaints a moment later */ }
+}
+window._pushCloudEventNow = _pushCloudEventNow;
 
 // One truthful sending-turn counter for every card surface. The VM briefly
 // publishes done=0 while it moves from LinkedIn confirmation to the sheet
@@ -8676,8 +8795,29 @@ async function _refreshCloudActiveStatus(id) {
       if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(id, ar.accounts);
     } catch (_) { /* engine may not expose it yet — panel just won't show */ }
     try { if (_viewingCloudId === id) renderCloudAccountsPanel(id); } catch (_) { /* */ }
+    // Follow-up health for THIS app (the queue is local, not per-campaign): how
+    // many went out, how many are parked on a signed-out browser. Cheap, and it
+    // is the only place the operator can learn a follow-up did not land.
+    try {
+      const fh = await (await fetch('/api/followups/health')).json();
+      if (fh && fh.ok) _followupHealth = fh;
+    } catch (_) { /* the line just does not render */ }
     _recordCloudProgress(id, d);
+    // Carry the optimistic "resuming" flag across the rebuild. Dropping it here
+    // is what made the card flip green on the click and straight back to blue on
+    // the next 2s poll, before the engine had reported 'running' — worse than not
+    // reacting at all. It survives until the engine's own status leaves monitoring
+    // (or 90s, so a refused resume cannot pin the card green forever).
+    const _wasResuming = window.__cloudActiveStatus
+      && String(window.__cloudActiveStatus.id) === String(id)
+      && window.__cloudActiveStatus.resuming;
+    const _engineStatus = String((d && d.campaign && d.campaign.status) || '').toLowerCase();
     window.__cloudActiveStatus = _buildCloudActiveStatus((d && d.campaign) || {}, leads, (d && d.leadCounts) || {});
+    if (_wasResuming && window.__cloudActiveStatus
+        && _engineStatus === 'monitoring'
+        && Date.now() - (_cloudResumeClickedAt.get(String(id)) || 0) < 90000) {
+      window.__cloudActiveStatus.resuming = true;
+    }
     // Live-browser flag from the engine (top-level of the /:id detail) — drives
     // the LIVE dot on card #2's Show button (component 5 → component 7).
     if (window.__cloudActiveStatus) {
@@ -8717,6 +8857,11 @@ async function _refreshCloudActiveStatus(id) {
         if (Array.isArray(_localLive.accountPanel)) window.__cloudActiveStatus.accountPanel = _localLive.accountPanel;
       }
       _cloudPolledAt.set(id, Date.now());
+      if (_cloudQuietSince.has(String(id))) {
+        const _quiet = Math.round((Date.now() - _cloudQuietSince.get(String(id))) / 1000);
+        _cloudQuietSince.delete(String(id));
+        _pushCloudEvent(id, `✅ The VM is answering again — it was quiet for ${_quiet}s. Nothing was missed; the campaign kept running throughout.`);
+      }
       window.__cloudActiveStatus.connectionUnknown = false;
       window.__cloudActiveStatus.lastVerifiedAt = Date.now();
     }
@@ -8730,8 +8875,20 @@ async function _refreshCloudActiveStatus(id) {
     if (previous) {
       // Keep the last truth, but mark it as stale. A transport failure is not a
       // campaign transition and must never repaint Running as Finished/Idle.
+      const _why = String((err && err.message) || 'VM did not answer');
+      // Say it in the LOG, not only on the card. Until now the reason was put on
+      // the status object, shown in the hero, and thrown away — so when the card
+      // read "This Mac cannot see the campaign" there was no record anywhere of
+      // whether it was a timeout, a 500 or a dropped tunnel, and the next
+      // occurrence started the diagnosis from zero (operator, 2026-09-01).
+      // Once per quiet spell, not once per failed poll: the hero needs 90s of
+      // silence to appear, and eighteen identical lines would bury the log.
+      if (!_cloudQuietSince.has(String(id))) {
+        _cloudQuietSince.set(String(id), Date.now());
+        _pushCloudEvent(id, `⚠️ No answer from the VM (${_why}) — retrying automatically. The campaign itself is unaffected; only this Mac's view of it is.`);
+      }
       window.__cloudActiveStatus = { ...previous, connectionUnknown: true,
-        connectionError: String((err && err.message) || 'VM did not answer') };
+        connectionError: _why };
     } else {
       // First read failed: say exactly that. Do not fabricate running:true.
       window.__cloudActiveStatus = {
@@ -10183,11 +10340,26 @@ function applyVjCardAppearance(root, status, fields) {
   const phase = String((status && status.phase) || '').toLowerCase();
   const state = String((status && status.state) || '').toLowerCase();
   const interrupted = !!(f.isInterrupted || state === 'interrupted' || (status && status.interrupted));
-  const monitoring = !!(f.isMonitor || state === 'monitoring' || phase === 'monitoring' || phase === 'checking');
+  const _resumingNow = !!(status && status.resuming) || _isResumingId(status && status.id, state);
+  const monitoring = !_resumingNow
+    && !!(f.isMonitor || state === 'monitoring' || phase === 'monitoring' || phase === 'checking');
   const queued = !!(status && (status.queued || state === 'queued'));
   const starting = phase === 'starting' || phase === 'preflight' || state === 'launching';
   const waiting = !!(f.isWaiting || state === 'waiting');
   const paused = !!(status && (status.paused || status._paused || state === 'paused'));
+  // The stop is in flight: the operator clicked, the VM has not confirmed yet.
+  // Until v3.1.48.112 the card stayed green through the whole wait, with step
+  // 01 still reading "running", so a click that had registered looked identical
+  // to one that had not.
+  const stopping = !!(status && (status.stopping || state === 'stopping' || state === 'pausing'
+    || phase === 'stopping' || String(status.engineStatus || '').toLowerCase() === 'stopping'));
+  // The resume is in flight: the operator clicked, the VM has not confirmed yet.
+  // Set optimistically on the click and cleared by the next poll rebuild. Without
+  // it the card kept the blue monitoring tint for the whole round-trip, so a
+  // click that HAD registered looked identical to one that had not (operator,
+  // 2026-09-01). Green is the default tone, so dropping `monitoring` is the whole
+  // colour change — no new palette.
+  const resuming = _resumingNow;
   // Older/local payloads may only retain logs after completion rather than an
   // explicit finished state. Keep those legacy shapes on the same visual path.
   const inferredDone = !!(status && !status.running && !monitoring && !interrupted
@@ -10198,7 +10370,7 @@ function applyVjCardAppearance(root, status, fields) {
 
   root.classList.remove('is-monitor', 'is-monitoring', 'is-waiting',
     'is-interrupted', 'is-error', 'is-queued', 'is-starting', 'is-paused',
-    'is-done', 'is-stopped', 'is-local');
+    'is-done', 'is-stopped', 'is-stopping', 'is-resuming', 'is-local');
   root.classList.toggle('is-monitor', monitoring);
   root.classList.toggle('is-monitoring', monitoring);
   root.classList.toggle('is-waiting', waiting);
@@ -10209,6 +10381,9 @@ function applyVjCardAppearance(root, status, fields) {
   root.classList.toggle('is-paused', paused);
   root.classList.toggle('is-done', done);
   root.classList.toggle('is-stopped', !!(done && terminal && !terminal.complete));
+  // Not while done: a finished stop owns 'is-stopped', this is only the wait.
+  root.classList.toggle('is-stopping', stopping && !done);
+  root.classList.toggle('is-resuming', resuming && !done);
   root.classList.toggle('is-local', local);
 }
 
@@ -11412,7 +11587,16 @@ async function _refreshCloudItems() {
       // old running-only gate left the expanded dashboard card with no account
       // payload, so its cloned .sp panel correctly hid itself.
       const _liveStatus = ((d && d.campaign) || c).status;
-      const _live = _liveStatus === 'running' || _liveStatus === 'paused';
+      // 'monitoring' belongs here too. Sending pauses when an account hits its
+      // daily limit, and the campaign sits in 'monitoring' — exactly when the
+      // operator most needs to see WHY. Without it this fetch never ran, the
+      // accounts map stayed empty, _cloudAccountPanel fell back to its
+      // placeholder rows (dailyCount: 0), and both pills read "0/50" on a
+      // campaign whose first account had sent 50/50 and whose second was at a
+      // weekly cap (operator, 2026-09-01: "I might assume that it sent zero
+      // connections"). The weekly-cap state was lost with the same payload.
+      // 'stopping' for the same reason: the numbers must survive the wind-down.
+      const _live = ['running', 'paused', 'monitoring', 'stopping'].includes(String(_liveStatus || ''));
       // A FINISHED FG run needs them exactly once, to say why it stopped short.
       // Once fetched the run is over and the answer can't change, so this never
       // repeats — `has()` is the whole gate.
@@ -12311,8 +12495,25 @@ async function _cloudMutationRequest(url, verb) {
 
 // Fire the actual engine stop (shared by the plain confirm + both choice pills).
 async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', immediate = false } = {}) {
+  // Say it the moment the operator clicks, NOT after the VM answers. The engine
+  // call below retries a timeout up to three times, which left the card reading
+  // "STOPPING…" for a full minute with nothing whatsoever in the log — the
+  // operator had no way to tell a slow VM from a click that never registered.
+  _pushCloudEventNow(id, keepMonitoring
+    ? (immediate
+      ? '⏹️ Stop requested — sending stops now, the VM keeps monitoring for acceptances. Waiting for the VM to confirm…'
+      : '⏹️ Stop requested — the account finishes the person it is on, then sending stops and the VM keeps monitoring for acceptances. Waiting for the VM to confirm…')
+    : (immediate
+      ? '⏹️ Stop requested — stopping now, without finishing the person in progress. Waiting for the VM to confirm…'
+      : '⏹️ Stop requested — the account finishes the person it is on, then the campaign stops. Waiting for the VM to confirm…'));
   try {
-    const qs = keepMonitoring ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}` : (immediate ? '?immediate=1' : '?finishCurrent=1');
+    // `immediate` used to be dropped the moment keepMonitoring was set, so
+    // "Stop sending, keep monitoring" could never stop now — it always finished
+    // the person in flight first. The two are independent: keepMonitoring says
+    // what happens AFTER the stop, immediate says how fast the stop is.
+    const qs = keepMonitoring
+      ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}${immediate ? '&immediate=1' : '&finishCurrent=1'}`
+      : (immediate ? '?immediate=1' : '?finishCurrent=1');
     await _cloudMutationRequest(`/api/campaign/cloud/${encodeURIComponent(id)}/stop${qs}`, 'stop');
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(keepMonitoring
@@ -12322,8 +12523,12 @@ async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', im
     _pushCloudEvent(id, keepMonitoring ? '⏹️ Sending stopped — VM keeps monitoring for acceptances' : '⏹️ Campaign stopped');
   } catch (e) {
     const message = `Stop was not confirmed by the VM: ${e.message}. The last displayed campaign state has been kept; retry after the connection recovers.`;
+    // The toast disappears. A stop that did not take must survive in the log,
+    // or the campaign looks stopped while the VM is still sending.
+    _pushCloudEventNow(id, `⚠️ The VM did not confirm the stop (${e.message}). Sending may still be running — press Stop again once the connection recovers.`);
     if (typeof showCampaignToast === 'function') showCampaignToast(message, 9000);
     else alert(message);
+    if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
     return false;
   }
   if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
@@ -12931,6 +13136,18 @@ window.restartLocalFromItem = restartLocalFromItem;
 // engine parks the campaign in 'scheduled' behind a durable task and restarts it
 // itself at that instant — this app can be closed.
 async function restartCloudCampaignUI(id, fromStart, startAt) {
+  // Say it before the VM is asked, exactly like the stop does. The card is
+  // log-driven, and this line classifies as 'sending-resumed' (live-log-banner),
+  // so it also switches the card off the monitoring view immediately — the
+  // countdown to the next acceptance check used to keep ticking for ten seconds
+  // after the click, which reads as "nothing happened" (operator recording,
+  // 2026-09-01 18:12). A failure below puts the card back.
+  if (!startAt) {
+    _markCloudResuming(id, true);
+    _pushCloudEventNow(id, fromStart
+      ? '▶️ Started (from the beginning) — waiting for the VM to confirm…'
+      : '▶️ Started (continuing where it left off) — waiting for the VM to confirm…');
+  }
   try {
     // Carry the wizard's (possibly edited) daily limit so a change made while the
     // campaign was stopped actually takes effect on the engine when it restarts.
@@ -12943,6 +13160,9 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
       if (typeof showCampaignToast === 'function') showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Restart isn’t live yet — engine update pending.', 6000);
+      _markCloudResuming(id, false);
+      _pushCloudEventNow(id, `⚠️ The VM did not accept the restart (${d.error || `HTTP ${res.status}`}). Nothing was resumed — try again once the connection recovers.`);
+      if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
       return false;
     }
     if (d.alreadyRunning) {
@@ -12963,9 +13183,13 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
       showCampaignToast(fromStart ? 'Restarting the cloud campaign from the beginning…'
         : `Resuming — the VM will send the ${left ? `${left} remaining` : 'remaining'} lead(s).`, 4500);
     }
+    // The optimistic line above already said this; confirm it as fact.
     _pushCloudEvent(id, fromStart ? '▶️ Started (from the beginning)' : '▶️ Started (continuing where it left off)');
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
+    _markCloudResuming(id, false);
+    _pushCloudEventNow(id, `⚠️ Could not reach the VM to resume (${e.message}). Nothing was resumed — try again once the connection recovers.`);
+    if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
     return false;
   }
   // Paint the accepted restart and its new log event immediately. The normal
@@ -13491,7 +13715,15 @@ function endCloudLaunch() {
 function cloudLaunchStatus() {
   const L = _cloudLaunch;
   if (!L) return null;
-  const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+  const nameOf = (id) => {
+    const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
+    if (picked) return picked;
+    // profileLabel() falls back to the raw id, so guard against handing the
+    // operator a 24-hex hash where an account name belongs (2026-09-01: the
+    // handshake wizard named a sender "6a5f1605f264c576fd2fcabf").
+    const label = (typeof profileLabel === 'function' ? profileLabel(id) : '') || '';
+    return (label && label !== id) ? label : 'this account';
+  };
   const primaryConn = {};
   for (const id of L.profileIds) primaryConn[id] = _HS_STATE_TO_PF[L.conn[id]] || 'pending';
   const doneN = L.profileIds.filter((id) => primaryConn[id] === 'connected').length;
@@ -13552,7 +13784,15 @@ function paintCloudLaunch() {
 function cloudLaunchBoardItem() {
   const L = _cloudLaunch;
   if (!L) return null;
-  const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+  const nameOf = (id) => {
+    const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
+    if (picked) return picked;
+    // profileLabel() falls back to the raw id, so guard against handing the
+    // operator a 24-hex hash where an account name belongs (2026-09-01: the
+    // handshake wizard named a sender "6a5f1605f264c576fd2fcabf").
+    const label = (typeof profileLabel === 'function' ? profileLabel(id) : '') || '';
+    return (label && label !== id) ? label : 'this account';
+  };
   return {
     where: 'cloud', id: '__launching__', rawId: '__launching__',
     name: L.name, mode: 'connect_and_introduce', isFG: false,
@@ -13645,7 +13885,15 @@ function _hsRowIconHtml(view) {
 }
 function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource = 'local-browser', autoAcceptAllPending = false }) {
   return new Promise((resolve) => {
-    const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+    const nameOf = (id) => {
+    const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
+    if (picked) return picked;
+    // profileLabel() falls back to the raw id, so guard against handing the
+    // operator a 24-hex hash where an account name belongs (2026-09-01: the
+    // handshake wizard named a sender "6a5f1605f264c576fd2fcabf").
+    const label = (typeof profileLabel === 'function' ? profileLabel(id) : '') || '';
+    return (label && label !== id) ? label : 'this account';
+  };
     const total = senderProfileIds.length;
     const back = document.createElement('div');
     back.className = 'modal-backdrop';
@@ -13842,7 +14090,7 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
           if (snap && snap.active) paint(snap.senders, snap.lines);
           if (snap && snap.done) {
             clearInterval(poll); poll = null;
-            const outcome = handshakeOutcome({ senders: snap.senders, summary: snap.summary, error: snap.error });
+            const outcome = handshakeOutcome({ senders: snap.senders, summary: snap.summary, error: snap.error, nameFor: nameOf });
             if (outcome.kind === 'error') { showError('Handshake error: ' + outcome.detail); return; }
             if (outcome.kind === 'partial') { showPartial(outcome); return; }
             // Success — brief beat so the operator sees the ✓s, then dispatch.
@@ -13875,7 +14123,15 @@ window.runHandshakeWizard = runHandshakeWizard;
 // and the draft is untouched, so a dismissal costs the operator nothing.
 function runPreflightPrompt({ accounts = [], earliest = null }) {
   return new Promise((resolve) => {
-    const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+    const nameOf = (id) => {
+    const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
+    if (picked) return picked;
+    // profileLabel() falls back to the raw id, so guard against handing the
+    // operator a 24-hex hash where an account name belongs (2026-09-01: the
+    // handshake wizard named a sender "6a5f1605f264c576fd2fcabf").
+    const label = (typeof profileLabel === 'function' ? profileLabel(id) : '') || '';
+    return (label && label !== id) ? label : 'this account';
+  };
     const label = (a) => {
       if (a.reason === 'needslogin') return 'Needs re-login in GoLogin';
       if (a.reason === 'proxy') return 'Proxy — fix the profile';
@@ -14681,7 +14937,7 @@ async function stopAndKeepMonitoring() {
 async function _finishStopAndKeepMonitoring(target, scope) {
   if (target.cloud && target.id) {
     const chooseMachine = async (where) => {
-      const stopped = await _doStopCloud(target.id, { keepMonitoring: true, scope });
+      const stopped = await _doStopCloud(target.id, { keepMonitoring: true, scope, immediate: true });
       if (!stopped) return;
       if (where === 'local') {
         await window.campaignHandover(target.id, 'local', null, 'monitoring');
@@ -27544,6 +27800,59 @@ function _nextMondayText() {
   return `${when} (in ${days} day${days === 1 ? '' : 's'})`;
 }
 
+// The follow-up state, in the card's existing "What you can do" language.
+// Silent while follow-ups are working: a count with nothing wrong belongs in the
+// facts row, not in a block headed "what you can do".
+function _followupFixHtml() {
+  const h = _followupHealth;
+  if (!h || !h.ok) return '';
+  const stuck = (h.blocked || 0) + (h.failed || 0);
+  if (!stuck) return '';
+  const n = stuck === 1 ? 'follow-up' : 'follow-ups';
+  const row = h.reason === 'signed-out' || h.blocked
+    ? `<b>${stuck} ${n} are waiting.</b> The follow-up browser is signed out of LinkedIn. It is its own Chrome window, separate from your everyday one — which is why you never saw it open. Sign in once and they go out on their own; nothing is lost and no lead was messaged twice.`
+    : `<b>${stuck} ${n} could not be sent.</b> ${escHtml(h.lastError || 'LinkedIn did not open the message box')}. The leads themselves are fine — only the follow-up is missing.`;
+  const acts = [
+    '<button type="button" onclick="openFollowupLogin(this)">Open the follow-up browser to log in</button>',
+    `<button type="button" onclick="retryFollowups(this)">Retry the ${stuck} now</button>`,
+  ];
+  return `<div class="fixhd">What you can do</div><ul><li>${row}</li></ul>`
+    + `<div class="fixacts">${acts.join('')}</div>`;
+}
+
+// Opens the SAME Chrome profile the follow-up runner uses, on screen this time,
+// at the LinkedIn login page. Left open deliberately — closing it is the
+// operator's way of saying they are done.
+window.openFollowupLogin = async function (btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening…'; }
+  try {
+    const r = await fetch('/api/followups/open-login', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    if (btn) btn.textContent = 'Opened — sign in, then hit Retry';
+    if (typeof showCampaignToast === 'function') showCampaignToast('The follow-up browser is open. Sign in to LinkedIn, then press Retry.', 8000);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Open the follow-up browser to log in'; }
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Could not open it: ${e.message}`, 6000);
+  }
+};
+
+window.retryFollowups = async function (btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Re-queueing…'; }
+  try {
+    const r = await fetch('/api/followups/retry', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    if (btn) btn.textContent = `${d.revived || 0} back in the queue`;
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`${d.revived || 0} follow-up(s) re-queued — they go out on the next idle run.`, 6000);
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry now'; }
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Retry failed: ${e.message}`, 6000);
+  }
+};
+
 function _stageFixHtml(cid, accts) {
   if (!accts.length) return '';
   const nm = (a) => escHtml(_acctLabel(a));
@@ -28116,8 +28425,31 @@ function renderLiveStage(root, status) {
     ? 'Paused — queued leads are safe'
     : pausing ? 'Pausing — finishing the current lead' : la.verb;
 
+  // The cloud engine reports the account as the GoLogin PROFILE ID, not a
+  // label. The sub-line below has resolved that since 2026-08-06; the HEADLINE
+  // never did, so the card's biggest text printed a raw hex id
+  // ("6A5F1605F264C576FD2FCABF", operator screenshot 2026-09-01) while the pills
+  // underneath showed the friendly names. Same data, resolved in one place and
+  // not the other. Hoisted here so the headline, the sub-line and the facts all
+  // use the one resolver and no surface can print an id again.
+  const _acctList = (cid && _cloudAccountsById.get(cid)) || [];
+  const _label = (id) => {
+    const hit = _acctList.find((a) => a.profileId === id || a.email === id);
+    // Not-yet-loaded account list → fall back to the local roster rather than
+    // to the raw id (profileLabel returns the id itself only as a last resort).
+    return (hit && (hit.email || hit.name)) || profileLabel(id);
+  };
+  // A GoLogin profile id is 24 hex characters and nothing an operator should
+  // ever read. Anything matching that shape is resolved, or replaced.
+  const _isProfileId = (v) => /^[0-9a-f]{24}$/i.test(String(v == null ? '' : v).trim());
+  const _named = (v, fallback) => {
+    if (!_isProfileId(v)) return v;
+    const resolved = _label(String(v).trim());
+    return (resolved && !_isProfileId(resolved)) ? resolved : fallback;
+  };
+
   // Name: only when the person changes, or the slide-in replays every poll.
-  const who = la.who || '';
+  const who = _named(la.who || '', 'This account');
   const nameEl = _stgFld(root, 'stageName');
   if (nameEl && stage.dataset.who !== who) {
     nameEl.textContent = who.toUpperCase();
@@ -28133,13 +28465,6 @@ function renderLiveStage(root, status) {
     // one place and not the other. Resolve it here from the same map the pills
     // use; fall back to the raw value so a not-yet-loaded account list still
     // shows something rather than going blank.
-    const _acctList = (cid && _cloudAccountsById.get(cid)) || [];
-    const _label = (id) => {
-      const hit = _acctList.find((a) => a.profileId === id || a.email === id);
-      // Not-yet-loaded account list → fall back to the local roster rather than
-      // to the raw id (profileLabel returns the id itself only as a last resort).
-      return (hit && (hit.email || hit.name)) || profileLabel(id);
-    };
     const acct = ca && ca.account && ca.account !== who ? _label(ca.account) : '';
     const detail = String((ca && ca.sub) || '');
     const alreadyNamed = acct && detail.toLowerCase().includes(String(acct).toLowerCase());
@@ -28167,8 +28492,18 @@ function renderLiveStage(root, status) {
   }
   const factsEl = _stgFld(root, 'stageFacts');
   if (factsEl) {
-    const facts = Array.isArray(ca && ca.facts) ? ca.facts : [];
-    const html = facts.map(([label, value]) => `<div><span>${escHtml(label)}</span><b>${escHtml(value)}</b></div>`).join('');
+    const facts = (Array.isArray(ca && ca.facts) ? ca.facts : []).slice();
+    // Follow-ups get a fact of their own once any have run. Without it the only
+    // evidence a follow-up ever happened was the lead's LinkedIn thread, so five
+    // that never sent looked exactly like five that did (operator, 2026-09-01).
+    const _fh = _followupHealth;
+    if (_fh && _fh.ok && ((_fh.sent || 0) + (_fh.blocked || 0) + (_fh.failed || 0)) > 0) {
+      const stuck = (_fh.blocked || 0) + (_fh.failed || 0);
+      facts.push(['Follow-ups', stuck
+        ? `${_fh.sent || 0} sent · ${stuck} could not send`
+        : `${_fh.sent || 0} sent`]);
+    }
+    const html = facts.map(([label, value]) => `<div><span>${escHtml(label)}</span><b>${escHtml(_named(value, 'this account'))}</b></div>`).join('');
     if (factsEl.dataset.html !== html) { factsEl.innerHTML = html; factsEl.dataset.html = html; }
     factsEl.hidden = !html;
   }
@@ -28249,7 +28584,11 @@ function renderLiveStage(root, status) {
       if (phase === 'monitoring' && ca && ca.resumeClock && ca.resumeReason === 'daily') {
         fix.innerHTML = `<div class="stg-resume"><div><b>Sending starts at ${escHtml(ca.resumeClock)}</b><span>Monitoring continues in the meantime.</span></div><button type="button" onclick="startMonitoringSendingNow(this)">Start now</button></div>`;
       } else {
-        fix.innerHTML = phase === 'waiting' ? _stageFixHtml(cid, accts) : '';
+        // Follow-up trouble is worth saying in EVERY phase, not only 'waiting':
+        // a signed-out follow-up browser is just as broken while the campaign is
+        // mid-send, and that is exactly when nobody is looking at the card.
+        const _fuFix = _followupFixHtml();
+        fix.innerHTML = (phase === 'waiting' ? _stageFixHtml(cid, accts) : '') || _fuFix;
       }
     }
     stage.dataset.acctkey = akey;
@@ -28303,7 +28642,13 @@ window.startMonitoringSendingNow = function (btn) {
 // reach them; this function is only the DOM half.
 function _applyLostLinkOverride(stage, cid, age) {
   const lost = linkIsLost(age, _checkRunsLocally(cid));
-  if (!lost) { delete stage.dataset.lostLink; return; }
+  if (!lost) {
+    delete stage.dataset.lostLink;
+    // Take the retry block back down with the hero, or it outlives the problem.
+    const back = stage.querySelector('[data-f="stageFix"], #stageFix');
+    if (back && back.dataset.lostLinkActs) { delete back.dataset.lostLinkActs; back.innerHTML = ''; }
+    return;
+  }
   // Reasserted every tick, not cached: the 5s cloud repaint keeps writing the
   // stale hero back in, and a one-shot override would lose that race and leave
   // the lie on screen. Each put() compares before writing, so this is cheap.
@@ -28319,7 +28664,27 @@ function _applyLostLinkOverride(stage, cid, age) {
   put('stageSideLabel', 'LAST HEARD FROM THE VM');
   put('stageSideValue', ago);
   put('stageSideHelp', 'everything below is from that moment, not from now');
+  // One button, so the operator is not left waiting out a poll interval to find
+  // out whether the link is back. It only re-polls this Mac's view; the campaign
+  // on the VM is untouched either way.
+  const fix = stage.querySelector('[data-f="stageFix"], #stageFix');
+  if (fix && !fix.dataset.lostLinkActs) {
+    fix.dataset.lostLinkActs = '1';
+    fix.innerHTML = '<div class="fixhd">What you can do</div>'
+      + '<ul><li><b>Nothing, usually.</b> The campaign runs on the VM and keeps going whether or not this Mac can see it. This clears itself the moment the connection comes back, and the log records how long it was quiet.</li></ul>'
+      + `<div class="fixacts"><button type="button" onclick="retryCloudLink('${escHtml(String(cid || ''))}',this)">Check the connection now</button></div>`;
+  }
 }
+
+window.retryCloudLink = async function (cid, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    await _refreshCloudActiveStatus(cid);
+    if (btn) btn.textContent = 'Checked';
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Check the connection now'; }
+  }
+};
 
 // Elapsed seconds + heartbeat, ticked once a second on every visible stage.
 // Deliberately NOT part of the poll render: these are clocks, and a clock that

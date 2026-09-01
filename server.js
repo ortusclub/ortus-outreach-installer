@@ -42,7 +42,7 @@ import { startScheduler as startPostCampaignScheduler, listSchedule as listPostC
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
 import { startCloudFollowupPoller, lastLateCount } from './src/cloud-followup-poller.js';
-import { loadTasks as loadPrimaryTasks, summarizeFollowUps } from './src/primary-tasks.js';
+import { loadTasks as loadPrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
 import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
@@ -850,6 +850,9 @@ app.post('/api/templates/preview', async (req, res) => {
       templates = {},
       profileIds = [],
       senderFirstNames = {},
+      // Account id → the account's NAME, resolved by the app (it rendered the
+      // picker with them). See the pName comment below for why.
+      senderNames = {},
       // v2.59.x — IC + message_only resolve {senderFirstName} per-row from
       // the sheet's sender column (the real send path does this). Without
       // mode + senderColumn the preview falls back to the operator's
@@ -919,7 +922,18 @@ app.post('/api/templates/preview', async (req, res) => {
     }
 
     const profileId = profileIds[0] || '';
-    const pName = profileId; // no live GoLogin session in preview — id stands in for name
+    // {senderName} resolves at send time to the GoLogin account's NAME
+    // (campaign.js: profileNameCache[profileId]). There is no live GoLogin
+    // session in a preview, so this used to stand the raw profile id in for the
+    // name — and an operator's preview signed off "Thanks,
+    // 6a5ee8d17da88c4708b30689" (2026-09-01). A preview that does not match what
+    // will actually be sent is worse than no preview: it hid that the template
+    // was using {senderName} where {senderFirstName} was meant.
+    //
+    // The app knows every selected account's name and now sends it. Falling back
+    // to the id would reintroduce the same lie, so when the name is genuinely
+    // unknown {senderName} resolves to nothing rather than to a hash.
+    const pName = (senderNames && senderNames[profileId]) || '';
 
     // v2.59.x — Build SoO email → firstName map for per-row sender lookup
     // in IC and message_only previews. Done once per request, so picking 3
@@ -2189,13 +2203,26 @@ app.post('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   }
 });
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
+  // NOTE: monitoringScope is computed and passed for the day the engine honours
+  // it; stopCloudCampaign does not forward it, and the engine's stop route has
+  // no scope parameter at all. The scope pill only affects "Check now" today.
+  const how = req.query.keepMonitoring ? 'stop sending, keep monitoring'
+    : req.query.pause ? 'pause'
+    : req.query.immediate ? 'stop now' : 'stop after the current person';
+  // The stop left no trace anywhere: not here, not in the campaign's live log.
+  // A control the operator presses must say it was heard, and say what came back.
+  cloudLog(`[cloud] stop requested for ${req.params.id} — ${how}`);
   const r = await stopCloudCampaign(req.params.id, {
     pause: !!req.query.pause,
     keepMonitoring: !!req.query.keepMonitoring, // "Stop sending, keep monitoring"
     monitoringScope: req.query.monitoringScope === 'tab' ? 'tab' : 'campaign',
     immediate: !!req.query.immediate,
   });
-  if (r.error) return res.status(502).json(r);
+  if (r.error) {
+    cloudLog(`[cloud] stop for ${req.params.id} was NOT accepted by the VM: ${r.error} — sending may still be running.`);
+    return res.status(502).json(r);
+  }
+  cloudLog(`[cloud] stop for ${req.params.id} accepted by the VM — now ${r.status || (r.campaign && r.campaign.status) || 'unknown'}`);
   res.json(r);
 });
 // Resume a paused cloud campaign (mirror of local Resume).
@@ -2536,6 +2563,67 @@ app.post('/api/campaign/:id/handover', async (req, res) => {
 // Monitoring controls (Task 3 Part B) — proxy ⚡ Check now / auto-checks toggle to
 // the engine. Surface the engine's error (incl. 404 until it ships these routes)
 // so the client degrades gracefully rather than throwing.
+// ── follow-up health: what the card's follow-up line and banner read ──
+// Counts straight off the local primary-task queue. `blocked` is the number
+// parked because the follow-up browser is signed out — the one state the
+// operator can clear in a click, and the one that used to be invisible.
+app.get('/api/followups/health', async (_req, res) => {
+  try {
+    const tasks = await loadPrimaryTasks();
+    const fu = (Array.isArray(tasks) ? tasks : []).filter((t) => t && t.type === 'follow-up');
+    const blocked = fu.filter((t) => t.blockedBySession && t.status === 'pending');
+    const failed = fu.filter((t) => t.status === 'failed');
+    res.json({
+      ok: true,
+      sent: fu.filter((t) => t.status === 'done').length,
+      pending: fu.filter((t) => t.status === 'pending' && !t.blockedBySession).length,
+      blocked: blocked.length,
+      failed: failed.length,
+      // The single reason to show. Signed-out outranks everything: it is the
+      // only one with a one-click fix.
+      reason: blocked.length ? 'signed-out' : (failed.length ? 'error' : ''),
+      lastError: (failed[failed.length - 1] || {}).lastError || '',
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── open the follow-up browser ON SCREEN so the operator can sign in ──
+// Same Chrome profile the follow-up runner uses, so signing in here is what
+// unblocks the parked follow-ups. Deliberately left OPEN: closing it is the
+// operator's signal that they are done.
+app.post('/api/followups/open-login', async (_req, res) => {
+  try {
+    const { page } = await launchLocalBrowser({ visible: true });
+    await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 45000 })
+      .catch(() => { /* the window is open either way — that is the point */ });
+    console.log('[followups] opened the follow-up browser on screen for sign-in');
+    res.json({ ok: true });
+  } catch (e) {
+    console.warn(`[followups] could not open the follow-up browser: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── put failed / parked follow-ups back in the queue ──
+// Revives BOTH: tasks parked on a signed-out browser, and tasks that already
+// burned their three attempts before parking existed (1 Sep left five of those).
+app.post('/api/followups/retry', async (_req, res) => {
+  try {
+    const tasks = await loadPrimaryTasks();
+    const targets = (Array.isArray(tasks) ? tasks : []).filter((t) => t && t.type === 'follow-up'
+      && (t.status === 'failed' || (t.status === 'pending' && t.blockedBySession)));
+    for (const t of targets) {
+      await markPrimaryTask(t.id, 'pending', { attempts: 0, lastError: '', blockedBySession: false, dueAt: Date.now() });
+    }
+    console.log(`[followups] revived ${targets.length} follow-up(s) to pending`);
+    res.json({ ok: true, revived: targets.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/campaign/cloud/:id/check-now', async (req, res) => {
   const r = await cloudCheckNow(req.params.id, (req.body && req.body.scope) === 'all' ? 'all' : 'campaign');
   if (r && r.error) return res.status(r.status || 502).json(r);

@@ -26,8 +26,10 @@ import {
   loadTasks as _loadTasks, markTask as _markTask, resetInProgress,
   selectDue, partitionByBrowser,
 } from './primary-tasks.js';
+import { isSignedOut } from './linkedin/thread-message.js';
 
 const MAX_ATTEMPTS = 3;
+const SESSION_BACKOFF_MS = 30 * 60 * 1000;
 let _timer = null;
 
 /** Pure gate: only act when the whole app is idle. */
@@ -35,10 +37,33 @@ export function shouldRun({ campaignRunning, browserCount }) {
   return !campaignRunning && browserCount === 0;
 }
 
+// A signed-out follow-up browser is not the task's fault, and no number of
+// retries fixes it — only the operator signing in does. Counting it toward
+// MAX_ATTEMPTS is what turned five recoverable follow-ups into five dead ones on
+// 1 Sep: three attempts each, then 'failed', terminal, while the leads sat there
+// having received an intro and no follow-up. So it parks instead: pending,
+// attempts untouched, waiting for a session rather than for a miracle.
+export function isBlockedBySession(err) {
+  return /FOLLOWUP_SIGNED_OUT/i.test(String((err && err.message) || err || ''));
+}
+
 async function _settleFailure(task, err, markTask) {
+  if (isBlockedBySession(err)) {
+    // Parked, not failed — but pushed out half an hour. A pending task whose
+    // dueAt is in the past is selected on EVERY tick, so parking without a
+    // backoff would relaunch Chrome once a minute forever. Signing in clears it
+    // sooner via the Retry button, which resets dueAt to now.
+    await markTask(task.id, 'pending', {
+      attempts: task.attempts || 0,
+      lastError: 'FOLLOWUP_SIGNED_OUT',
+      blockedBySession: true,
+      dueAt: Date.now() + SESSION_BACKOFF_MS,
+    });
+    return;
+  }
   const attempts = (task.attempts || 0) + 1;
   const status = attempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
-  await markTask(task.id, status, { attempts, lastError: err.message || String(err) });
+  await markTask(task.id, status, { attempts, lastError: err.message || String(err), blockedBySession: false });
 }
 
 /** Persist a TERMINAL status; never throw. A failure here (disk pressure) after
@@ -90,6 +115,7 @@ export async function runDueTasks(now, deps) {
     loadTasks, markTask, launchLocal, closeLocal, launchAccount, closeAccount,
     acceptInvitationFrom: acceptFn, sendInThread: sendFn, semaphore, log,
     guardIdle = async () => true, emit = () => {},
+    checkSignedOut = isSignedOut,
   } = deps;
   const pdeps = { acceptFn, sendFn, markTask, emit, log };
 
@@ -104,7 +130,16 @@ export async function runDueTasks(now, deps) {
       try {
         log(`  🖥 Opening your local browser — ${local.length} primary task(s) due`);
         const { page } = await launchLocal();
-        for (const t of local) { if (await _processOne(t, page, pdeps)) ran++; }
+        // Ask once, not once per lead. Without this every task opens a thread,
+        // waits 15s for a composer that an authwall will never show, and settles
+        // separately — five leads' worth of silence on 1 Sep. One probe parks the
+        // whole batch and says it in words.
+        if (await checkSignedOut(page)) {
+          log('  🔑 Your follow-up browser is signed out of LinkedIn — the follow-ups are parked, not lost. Sign in once and they go out on their own.');
+          for (const t of local) { try { await _settleFailure(t, new Error('FOLLOWUP_SIGNED_OUT'), markTask); } catch { /* */ } }
+        } else {
+          for (const t of local) { if (await _processOne(t, page, pdeps)) ran++; }
+        }
       } catch (e) {
         log(`  ⚠ Primary runner: local browser session failed: ${e.message}`);
         for (const t of local) { try { await _settleFailure(t, e, markTask); } catch { /* */ } }

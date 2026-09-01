@@ -32,6 +32,11 @@ const ROW = {
   'sent-no-identity': { icon: 'dot',   label: 'Sent · accept manually', done: false },
   accepting:          { icon: 'spin',  label: 'Accepting…',        done: false },
   connected:          { icon: 'check', label: 'Connected',         done: true },
+  // Nothing was sent for this account — the handshake could not read it (a
+  // logged-out account lands on LinkedIn's sign-in wall) and deliberately did
+  // not send a connect. It used to be reported as 'sent', so the wizard said the
+  // primary had failed to accept an invitation that never existed.
+  'not-sent':         { icon: 'x',     label: 'Nothing sent',      done: false },
   error:              { icon: 'x',     label: 'Error',             done: false },
 };
 
@@ -81,18 +86,33 @@ export function handshakeStepView(senders = [], summary = null, everInvited = nu
 // the background runner, and the modal closed saying "done" (dev-app.log,
 // 2026-08-28: "primary accept session failed … 1 connected, 0 accepted, 1 still
 // pending"). That one stops and asks.
-export function handshakeOutcome({ senders = [], summary = null, error = '' } = {}) {
+export function handshakeOutcome({ senders = [], summary = null, error = '', nameFor = null } = {}) {
   if (error) return { kind: 'error', headline: 'Handshake error', detail: String(error) };
   const v = handshakeStepView(senders, summary);
   const unaccepted = Math.max(0, v.total - v.connected);
   if (unaccepted === 0) return { kind: 'ok', headline: 'All senders are connected to the primary', detail: '' };
-  const who = (senders || [])
-    .filter((s) => String((s && s.state) || '') !== 'connected')
-    .map((s) => String((s && s.name) || s.profileId || 'a sender'));
-  const names = who.length === 1 ? who[0] : `${who.length} senders`;
-  return {
-    kind: 'partial',
-    headline: `${v.connected} of ${v.total} connected`,
-    detail: `${names} sent the invitation but the primary did not accept it here. The app will accept it in the background the next time your primary Chrome opens, and the campaign picks it up on its next check.`,
-  };
+  const stuck = (senders || []).filter((s) => String((s && s.state) || '') !== 'connected');
+  // A sender that never sent anything is a DIFFERENT outcome from one waiting to
+  // be accepted, and it needs a different instruction. Blaming the primary for
+  // not accepting an invitation that was never sent sent an operator looking for
+  // a fault in the primary, and made "accept all pending" look broken when it had
+  // correctly found nothing to accept (2026-09-01).
+  const nameOf = (s) => String((s && s.name) || (nameFor && nameFor(s && s.profileId)) || 'a sender');
+  const notSent = stuck.filter((s) => String((s && s.state) || '') === 'not-sent');
+  if (notSent.length === stuck.length) {
+    const lines = notSent.map((s) => {
+      const why = String((s && s.reason) || 'this account could not be read');
+      return `${nameOf(s)} — ${why}`;
+    });
+    return {
+      kind: 'partial',
+      headline: `${v.connected} of ${v.total} connected`,
+      detail: `No invitation was sent for ${notSent.length === 1 ? 'this sender' : 'these senders'}, so there is nothing for the primary to accept:\n${lines.join('\n')}\n\nReconnect ${notSent.length === 1 ? 'it' : 'them'} in GoLogin, then Try the primary again.`,
+    };
+  }
+  const names = stuck.length === 1 ? nameOf(stuck[0]) : `${stuck.length} senders`;
+  const detail = notSent.length
+    ? `${names} could not all be handled here. ${notSent.map((s) => `${nameOf(s)} sent nothing (${String((s && s.reason) || 'could not be read')})`).join('; ')}. The rest sent their invitation and the primary will accept it in the background the next time your primary Chrome opens.`
+    : `${names} sent the invitation but the primary did not accept it here. The app will accept it in the background the next time your primary Chrome opens, and the campaign picks it up on its next check.`;
+  return { kind: 'partial', headline: `${v.connected} of ${v.total} connected`, detail };
 }

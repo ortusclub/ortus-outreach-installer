@@ -28,7 +28,7 @@ import { buildAcceptTask, enqueuePrimaryTask } from './primary-tasks.js';
 import { _shouldQueueAutoAccept } from './linkedin/auto-intro.js';
 import {
   primaryKeyFromUrl, storeKey, getEntry, mergeLiveRead, resolveDisplayState,
-  seedConnectedIds, loadPrimaryStatus, savePrimaryStatus,
+  seedConnectedIds, staleConnectedIds, loadPrimaryStatus, savePrimaryStatus,
 } from './primary-status-store.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
@@ -98,9 +98,60 @@ export async function runCloudPreflightHandshake(opts = {}) {
   const pUrl = (primaryUrl || '').trim();
 
   const nameById = new Map();
-  const emit = (profileId, state, name) => {
+  const reasonById = new Map();
+  const emit = (profileId, state, name, reason) => {
     if (name) nameById.set(profileId, name);
-    try { onProgress({ profileId, state, name: nameById.get(profileId) || '' }); } catch { /* progress is best-effort */ }
+    if (reason) reasonById.set(profileId, reason);
+    try {
+      onProgress({
+        profileId,
+        state,
+        name: nameById.get(profileId) || '',
+        reason: reasonById.get(profileId) || '',
+      });
+    } catch { /* progress is best-effort */ }
+  };
+
+  /**
+   * Put a freshly-launched sender window off-screen.
+   *
+   * The wizard promises "an off-screen GoLogin browser" and an operator watched
+   * one open on their screen (2026-09-01). --window-position=-2400,-2400 is
+   * passed at launch, but GoLogin's SDK passes its own --window-position=0,0 and
+   * appends --restore-last-session, which restores the previous run's window
+   * bounds. campaign.js has always followed the flag with this CDP call for
+   * exactly that reason; the handshake never did.
+   *
+   * Best-effort: a window that refuses to move is a cosmetic problem, and it
+   * must not fail a handshake.
+   */
+  const tuckAway = async (page) => {
+    try {
+      const client = await page.target().createCDPSession();
+      const { windowId } = await client.send('Browser.getWindowForTarget');
+      await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
+    } catch { /* cosmetic only */ }
+  };
+
+  /**
+   * Why a sender's page could not be read.
+   *
+   * checkAndConnectPrimary returns connected:null for several different reasons
+   * and the handshake used to treat them all the same. The one that actually
+   * happens is a logged-out account: LinkedIn bounces it to the sign-in wall, no
+   * degree badge exists, nothing is sent. Operator 2026-09-01 watched
+   * somnath.mandal@ortus.solutions sit on that wall while the wizard said the
+   * invitation had been sent and asked why "accept all pending" hadn't accepted
+   * it — there was nothing to accept.
+   */
+  const whyUnreadable = async (page) => {
+    let url = '';
+    try { url = String((page && page.url && page.url()) || ''); } catch { /* page may be gone */ }
+    let path = '';
+    try { path = new URL(url).pathname || ''; } catch { path = url; }
+    if (/\/authwall|\/login|\/uas\//.test(path)) return 'logged out';
+    if (/\/checkpoint/.test(path)) return 'stopped by a LinkedIn security checkpoint';
+    return '';
   };
   const buildSenders = (primaryConn) => senderProfileIds.map((id) => ({
     profileId: id, name: nameById.get(id) || '', state: primaryConn.get(id) || 'unverified',
@@ -123,6 +174,12 @@ export async function runCloudPreflightHandshake(opts = {}) {
     const runSet = new Set(senderProfileIds);
     for (const pid of seedConnectedIds(store, primaryKey)) {
       if (runSet.has(pid)) primaryConn.set(pid, 'connected');
+    }
+    // Say out loud when a remembered 'connected' has expired, otherwise the
+    // re-check looks like an unexplained extra browser launch in the log.
+    const stale = staleConnectedIds(store, primaryKey).filter((pid) => runSet.has(pid));
+    if (stale.length) {
+      log(`  ⓘ ${stale.length} account(s) were last confirmed connected to the primary over a week ago — checking them against LinkedIn again rather than taking it on trust.`);
     }
   }
   // Surface already-connected senders to the wizard immediately (they never enter
@@ -155,6 +212,7 @@ export async function runCloudPreflightHandshake(opts = {}) {
       continue;
     }
     const page = launched && launched.page;
+    if (page) await tuckAway(page);
     try {
       const res = await deps.checkAndConnectPrimary(page, pUrl, { log, pName: profileId, attemptConnect: true });
       const live = primaryConnState(res.connected);
@@ -184,6 +242,18 @@ export async function runCloudPreflightHandshake(opts = {}) {
         }
       } else if (primaryConn.get(profileId) === 'connected') {
         emit(profileId, 'connected');
+      } else if (primaryConn.get(profileId) === 'unverified') {
+        // NOTHING WAS SENT. checkAndConnectPrimary could not read the page, so it
+        // deliberately did not send a connect ("leaving unverified, not sending a
+        // connect"). Reporting 'sent' here told the wizard an invitation existed:
+        // it then blamed the primary for not accepting an invitation that was
+        // never sent, and the operator's accept-all sweep correctly found nothing
+        // to accept (2026-09-01).
+        const why = await whyUnreadable(page);
+        log(why
+          ? `  🔒 [${profileId}] ${why} — no invitation was sent. Reconnect this account in GoLogin, then try the primary again.`
+          : `  ❓ [${profileId}] couldn't read this account against the primary — no invitation was sent.`);
+        emit(profileId, 'not-sent', '', why || 'this account could not be read');
       } else {
         emit(profileId, 'sent');
       }

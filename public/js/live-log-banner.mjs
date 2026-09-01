@@ -144,6 +144,13 @@ function readablePresentation(line, phase = '', now = new Date()) {
     kind: 'sending-resumed', eyebrow: 'Sending is active',
     headline: 'Continuing where it left off', detail: '', explanation: '',
   };
+  // Its twin. Only the "continuing" wording was matched, so a restart from the
+  // beginning left the card sitting in the monitoring view with the acceptance
+  // countdown still running.
+  if (/^Started\s*\(from the beginning\)/i.test(clean)) return {
+    kind: 'sending-resumed', eyebrow: 'Sending is active',
+    headline: 'Started from the beginning', detail: '', explanation: '',
+  };
   if ((m = clean.match(/^📡?\s*\[([^\]]+)\]\s*Sweeping recent connections/iu))) return {
     kind: 'account-checking', account: m[1], eyebrow: 'Checking acceptances',
     headline: 'Checking recent connections', detail: m[1], explanation: '',
