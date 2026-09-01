@@ -4,6 +4,7 @@
 // Spec: docs/superpowers/specs/2026-07-07-preflight-linter-blocklist-design.md
 import { extractLinkedInUrl } from './campaign.js';
 import { findUnresolvedPlaceholders } from './linkedin/helpers.js';
+import { parsePersonUrl } from './blocklist.js';
 
 const COMPANY_ALIASES = ['Company', 'company', 'Company Name', 'Organization'];
 const EMAIL_ALIASES = ['Email', 'email', 'E-mail', 'Email Address'];
@@ -162,6 +163,10 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
     if (!seenUrls.has(nu)) seenUrls.set(nu, []);
     seenUrls.get(nu).push(rowNumber);
 
+    // This lead's stable identity for person-blocklist matching. urn matches
+    // scraped rows (keyed by memberUrn); slug matches manually-added vanity URLs.
+    const leadPerson = parsePersonUrl(url);
+
     const slug = vanitySlug(url);
     if (slug && !nameMatchesSlug(
       row['First Name'] || row.firstName || row.first_name,
@@ -180,13 +185,20 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
     // warm modes (message_only / introduce_back) included.
     {
       for (const entry of blocklist) {
-        const hit = entry.kind === 'domain'
-          ? domainMatches(firstCell(row, EMAIL_ALIASES), entry.value)
-          : companyMatches(firstCell(row, COMPANY_ALIASES), entry.value);
+        let hit;
+        if (entry.kind === 'person') {
+          hit = (entry.urn && leadPerson.urn && entry.urn === leadPerson.urn)
+            || (entry.slug && leadPerson.slug && entry.slug === leadPerson.slug);
+        } else if (entry.kind === 'domain') {
+          hit = domainMatches(firstCell(row, EMAIL_ALIASES), entry.value);
+        } else {
+          hit = companyMatches(firstCell(row, COMPANY_ALIASES), entry.value);
+        }
         if (hit) {
+          const label = entry.kind === 'person' ? 'Profile' : entry.kind === 'domain' ? 'Email domain' : 'Company';
           blockers.push({
             check: 'blocklist_match', severity: 'blocker', rowIndex: rowNumber, leadName: name,
-            detail: `${entry.kind === 'domain' ? 'Email domain' : 'Company'} matches blocklist entry "${entry.value}"${entry.reason ? ` (${entry.reason})` : ''}`,
+            detail: `${label} matches blocklist entry "${entry.value}"${entry.reason ? ` (${entry.reason})` : ''}`,
             stampText: `Skipped: blocklist — ${entry.value}`, url,
           });
           break;
