@@ -711,6 +711,32 @@ function _snCardControlsHtml(c) {
   return `${openHtml}<div class="dock" role="toolbar" aria-label="Scrape actions">${dock}<div class="dock-actions">${actions}</div></div>`;
 }
 
+/**
+ * How far along a scrape really is, as a fraction of its searches.
+ *
+ * The percentage used to count only FINISHED searches, so a one-search scrape
+ * read 0% from start to finish and then jumped to 100 — it sat on "0% · 0 of 1
+ * searches done" through 1,270 leads and 51 pages, which reads as stuck. The
+ * engine now reports each job's page ceiling (maxPages, from the search API's
+ * own result count), so a running job counts by its pages instead of counting
+ * as nothing.
+ *
+ * Capped just under 1 so a running job never reads as finished, and a job with
+ * no ceiling (maxPages 0 = LinkedIn never gave a total, which the scrape log
+ * says out loud) contributes nothing rather than a made-up fraction.
+ */
+function scrapeProgressUnits(jobs) {
+  return (jobs || []).reduce((sum, j) => {
+    if (!j) return sum;
+    if (j.state === 'done') return sum + 1;
+    if (j.state === 'running' && Number(j.maxPages) > 0) {
+      return sum + Math.min((Number(j.pages) || 0) / Number(j.maxPages), 0.99);
+    }
+    return sum;
+  }, 0);
+}
+window.scrapeProgressUnits = scrapeProgressUnits;
+
 function _snFillStripCard(root, c) {
   if (!root || !c) return;
   const strip = root.closest('.sn-strip');
@@ -728,13 +754,12 @@ function _snFillStripCard(root, c) {
   const leads = Number(c.totalProfiles) || 0;
   const pages = jobs.reduce((n, j) => n + (Number(j && j.pages) || 0), 0);
   const accounts = (c.profileIds || []).length;
-  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-  // The percentage counts FINISHED searches, so a one-search scrape reads 0%
-  // from start to finish and then jumps to 100 — it sat on "0% · 0 of 1 searches
-  // done" through 1,270 leads and 51 pages, which reads as stuck. The engine
-  // reports no expected row total, so an honest percentage cannot be computed:
-  // show an indeterminate bar rather than a number that means nothing.
-  const indeterminate = c.status === 'running' && total <= 1 && done === 0;
+  const units = scrapeProgressUnits(jobs);
+  const pct = total > 0 ? Math.min(100, Math.round((Math.max(units, done) / total) * 100)) : 0;
+  // Only indeterminate when there is genuinely nothing to measure: a running
+  // scrape whose jobs carry no page ceiling. With a ceiling the bar moves per
+  // page, so it no longer sits on 0% through a thousand leads.
+  const indeterminate = c.status === 'running' && units === 0 && total <= 1 && done === 0;
 
   // Relabel the hero ONCE per clone — the campaign card counts sent/accepted,
   // a scrape counts searches/pages/leads.
@@ -4581,6 +4606,7 @@ async function pollScrapeJobs() {
     _setScrapeFoot(totalLeads, doneCount, jobs.length);
     _setScrapeVjCard({
       leads: totalLeads, pages: totalPages, accounts, done: doneCount, total: jobs.length,
+      units: scrapeProgressUnits(jobs),
       status: campaignStatus(jobs),
       name: _scrapeVjName(),
       errorText: (jobs.find((j) => j.error) || {}).error || '',
@@ -4734,7 +4760,7 @@ function _setScrapeVjCard(s) {
   setF('scrapePages', pages);
   setF('scrapeLeads', leads);
   setF('activeAccounts', accounts);
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  const pct = total ? Math.min(100, Math.round((Math.max(s.units || 0, done) / total) * 100)) : 0;
   setF('activePct', pct);
   const bar = root.querySelector('[data-f="activeBar"]'); if (bar) bar.style.width = pct + '%';
   const glyph = root.querySelector('[data-f="activeGlyph"]'); if (glyph) glyph.textContent = 'SN';
