@@ -168,7 +168,9 @@ export async function findButtonByText(page, text) {
  * Fetch the account's recent connections via Voyager. One paginated API call
  * per page (up to MAX_PAGES) — far cheaper than checking N pending invites
  * individually. Returns an array of { urn, publicId, firstName, lastName,
- * connectedAt } objects sorted recent-first. Empty array on any failure
+ * memberNumber, location, connectedAt } objects sorted recent-first (location
+ * is filled only for connections that go through the enrichment pass). Empty
+ * array on any failure
  * (caller should fall back to per-lead checks if needed).
  *
  * The page must already be on a LinkedIn URL so JSESSIONID is available.
@@ -510,12 +512,16 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2, on
               firstName: c.firstName || e.firstName || '',
               lastName: c.lastName || e.lastName || '',
               memberNumber: c.memberNumber || e.memberNumber || '',
+              // Location lives ONLY on the enriched profile — the slim
+              // connections payload never carries it (Operation Magellan 2026-08).
+              location: c.location || e.location || '',
             };
           });
           const filledSlugs = conns.filter((c) => c.publicId).length;
           const filledNames = conns.filter((c) => c.firstName || c.lastName).length;
           const filledNums = conns.filter((c) => c.memberNumber).length;
-          console.log(`[helpers] Profile enrichment: ${filledSlugs} slugs, ${filledNames} names, ${filledNums} member-numbers filled (of ${conns.length})`);
+          const filledLocs = conns.filter((c) => c.location).length;
+          console.log(`[helpers] Profile enrichment: ${filledSlugs} slugs, ${filledNames} names, ${filledNums} member-numbers, ${filledLocs} locations filled (of ${conns.length})`);
         }
       } catch (err) {
         console.log(`[helpers] Profile enrichment threw: ${err.message}`);
@@ -586,26 +592,74 @@ async function _enrichProfilesByUrn(page, urns, onProgress = null) {
 
         // Voyager's List(...) format with each URN URL-encoded individually.
         const idsParam = 'List(' + urnBatch.map((u) => encodeURIComponent(u)).join(',') + ')';
-        const url = `https://www.linkedin.com/voyager/api/identity/dash/profiles?ids=${idsParam}`;
+        const base = `https://www.linkedin.com/voyager/api/identity/dash/profiles?ids=${idsParam}`;
 
-        const resp = await fetch(url, {
-          headers: {
-            'accept': 'application/vnd.linkedin.normalized+json+2.1',
-            'csrf-token': token,
-            'x-restli-protocol-version': '2.0.0',
-          },
-          credentials: 'include',
-        });
-        if (!resp.ok) return { error: `http-${resp.status}` };
+        // A DECORATION is what makes LinkedIn resolve each profile's geoLocation
+        // into a named Geo entity inside `included` (e.g. "New York, New York,
+        // United States"). The plain call returns only an unresolvable geo URN.
+        // The -NN version rotates and a stale one 400s, so try a couple of
+        // known-good full-profile decorations, then fall back to the plain call —
+        // identity (name / publicId / member id) still works there, just without
+        // location. Full-profile decorations carry objectUrn, so the member id
+        // the sheet matches on is preserved.
+        const attempts = [
+          `${base}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.FullProfile-58`,
+          `${base}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.FullProfileWithEntities-66`,
+          base,
+        ];
+        let data = null;
+        for (const u of attempts) {
+          const resp = await fetch(u, {
+            headers: {
+              'accept': 'application/vnd.linkedin.normalized+json+2.1',
+              'csrf-token': token,
+              'x-restli-protocol-version': '2.0.0',
+            },
+            credentials: 'include',
+          });
+          if (resp.ok) { data = await resp.json(); break; }
+        }
+        if (!data) return { error: 'http-all-decorations-failed' };
 
-        const data = await resp.json();
+        // Index `included` by entityUrn so a profile's geoLocation reference can
+        // be resolved to a human location string (e.g. "New York, United
+        // States"). The dash Profile carries geo as a URN pointing at a Geo
+        // entity; the display name lives on that entity.
+        const includedById = {};
+        if (Array.isArray(data?.included)) {
+          for (const it of data.included) if (it && it.entityUrn) includedById[it.entityUrn] = it;
+        }
+        // Defensive: LinkedIn returns geo in several shapes across decorations.
+        // Try the direct string forms, then a nested geo object, then resolve a
+        // geo URN against `included`. Returns '' when nothing usable is present.
+        const locationOf = (item) => {
+          if (!item || typeof item !== 'object') return '';
+          if (typeof item.geoLocationName === 'string' && item.geoLocationName) return item.geoLocationName;
+          if (typeof item.locationName === 'string' && item.locationName) return item.locationName;
+          const gl = item.geoLocation;
+          let geoUrn = '';
+          if (typeof gl === 'string') geoUrn = gl;
+          else if (gl && typeof gl === 'object') {
+            if (gl.geo && typeof gl.geo === 'object' && gl.geo.defaultLocalizedName) return gl.geo.defaultLocalizedName;
+            geoUrn = gl['*geo'] || gl['*geoLocation'] || gl.geoUrn || gl.entityUrn || '';
+          }
+          if (!geoUrn && typeof item['*geoLocation'] === 'string') geoUrn = item['*geoLocation'];
+          const g = geoUrn && includedById[geoUrn];
+          if (g) {
+            return g.defaultLocalizedName
+              || g.defaultLocalizedNameWithoutCountryName
+              || (g.geo && g.geo.defaultLocalizedName) || '';
+          }
+          return '';
+        };
+
         // Walk both `results` (newer) and `included` (normalized) for profile
         // entities — different decorations land them in different places.
         const profiles = [];
         if (data?.results && typeof data.results === 'object') {
           for (const u of urnBatch) {
             const p = data.results[u];
-            if (p) profiles.push({ urn: u, ...p });
+            if (p) profiles.push({ urn: u, ...p, location: locationOf(p) });
           }
         }
         if (Array.isArray(data?.included)) {
@@ -620,6 +674,7 @@ async function _enrichProfilesByUrn(page, urns, onProgress = null) {
                 // column matches on.
                 memberNumber: (typeof item.objectUrn === 'string'
                   && (item.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
+                location: locationOf(item),
               });
             }
           }
@@ -645,6 +700,7 @@ async function _enrichProfilesByUrn(page, urns, onProgress = null) {
         memberNumber: p.memberNumber
           || (typeof p.objectUrn === 'string' && (p.objectUrn.match(/urn:li:member:(\d+)/) || [])[1])
           || '',
+        location: p.location || '',
       });
     }
   }

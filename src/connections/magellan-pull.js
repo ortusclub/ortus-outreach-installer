@@ -57,8 +57,11 @@ export function migrateLegacyConnections({ from = LEGACY_CONNECTIONS_DIR, to = C
 // and the walk stops early on the first short page anyway.
 const MAX_PAGES = 500;
 
+// 'Location' is appended LAST so older CSVs (written before this column existed)
+// still read correctly — readExistingBySlug resolves columns by header name, and
+// a missing 'Location' header simply yields ''.
 export const CSV_HEADER = ['First Name', 'Last Name', 'URL', 'Email Address',
-  'Company', 'Position', 'Connected On', 'Member ID'];
+  'Company', 'Position', 'Connected On', 'Member ID', 'Location'];
 
 const CONNECTIONS_URL = 'https://www.linkedin.com/mynetwork/invite-connect/connections/';
 
@@ -101,6 +104,7 @@ export function readExistingBySlug(filePath) {
       email: col('Email Address') >= 0 ? (r[col('Email Address')] || '').trim() : '',
       connectedOn: col('Connected On') >= 0 ? (r[col('Connected On')] || '').trim() : '',
       memberId: col('Member ID') >= 0 ? (r[col('Member ID')] || '').trim() : '',
+      location: col('Location') >= 0 ? (r[col('Location')] || '').trim() : '',
     });
   }
   return bySlug;
@@ -123,6 +127,9 @@ export function mergeRows(live, existingBySlug) {
       position: prev.position || '',
       connectedOn: formatConnectedOn(c.connectedAt) || prev.connectedOn || '',
       memberId: c.memberNumber || prev.memberId || '',
+      // Live wins: the enriched profile carries the current location; disk is the
+      // fallback for a connection that skipped enrichment this run.
+      location: c.location || prev.location || '',
       slug,
     };
   });
@@ -132,7 +139,7 @@ export function toCsv(rows) {
   const lines = [CSV_HEADER.join(',')];
   for (const r of rows) {
     lines.push([r.firstName, r.lastName, r.url, r.email, r.company, r.position,
-      r.connectedOn, r.memberId].map(csvCell).join(','));
+      r.connectedOn, r.memberId, r.location].map(csvCell).join(','));
   }
   return `${lines.join('\n')}\n`;
 }
@@ -288,6 +295,7 @@ export function readForPlan(account, { dir = CONNECTIONS_DIR } = {}) {
       lastName: '',
       company: v.company,
       jobTitle: v.position,
+      location: v.location || '',
     });
   }
   // Names live in the file too — re-read them positionally rather than

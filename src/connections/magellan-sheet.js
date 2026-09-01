@@ -213,8 +213,9 @@ export function hubspotIdCount() { return loadIds().size; }
  * dedupes on, exactly as the manual process does it. People with no member id
  * have no key, so they are left out rather than written as a half-row.
  *
- * Location is blank: neither the archive export nor the connections API carries
- * it. Nothing is invented to fill the column.
+ * Location comes from the enrichment pass (identity/dash/profiles) — the slim
+ * connections payload and the archive export don't carry it, so it's blank for
+ * any connection that skipped enrichment. Nothing is invented to fill it.
  *
  * "Linkedin First Connections" carries a LEADING SEMICOLON, and that is not
  * cosmetic. The HubSpot property is multi-value, and on a CSV import a bare
@@ -233,7 +234,7 @@ export function connectionsRowsForAccount(account, rows, ids = loadIds()) {
     .filter((r) => r && r.memberId)
     .map((r) => [
       s(r.memberId),
-      '',                                   // Location — not collected, see above
+      s(r.location),                        // Location — from enrichment, see above
       s(r.firstName),
       s(r.lastName),
       r.slug ? `https://www.linkedin.com/in/${r.slug}` : '',
