@@ -1575,9 +1575,17 @@ function gatherCampaignFormState() {
   };
 
   const senderFirstNames = {};
+  // {senderName} resolves at send time to the GoLogin account's NAME
+  // (campaign.js: profileNameCache[profileId]). The preview server has no live
+  // GoLogin session, so it used to stand the raw profile id in for the name and
+  // an operator's preview signed off "Thanks, 6a5ee8d17da88c4708b30689"
+  // (2026-09-01). We already know every selected account's name here — send it,
+  // and never send an id dressed up as a name.
+  const senderNames = {};
   for (const id of selectedProfileIds) {
     const pName = profileLabel(id);
     senderFirstNames[id] = resolveSenderFirstName(id, pName);
+    if (pName && pName !== id) senderNames[id] = pName;
   }
 
   // v2.59.x — Send mode + senderColumn so the backend preview can do per-
@@ -1597,6 +1605,7 @@ function gatherCampaignFormState() {
     profileIds: [...selectedProfileIds],
     benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     senderFirstNames,
+    senderNames,
     mode,
     senderColumn,
   };
@@ -6856,9 +6865,17 @@ async function startCampaign(opts = {}) {
   // in favour of the post-launch tips card. Sheet-snapshot disclaimer lives
   // there now too.
   const senderFirstNames = {};
+  // {senderName} resolves at send time to the GoLogin account's NAME
+  // (campaign.js: profileNameCache[profileId]). The preview server has no live
+  // GoLogin session, so it used to stand the raw profile id in for the name and
+  // an operator's preview signed off "Thanks, 6a5ee8d17da88c4708b30689"
+  // (2026-09-01). We already know every selected account's name here — send it,
+  // and never send an id dressed up as a name.
+  const senderNames = {};
   for (const id of selectedProfileIds) {
     const pName = profileLabel(id);
     senderFirstNames[id] = resolveSenderFirstName(id, pName);
+    if (pName && pName !== id) senderNames[id] = pName;
   }
 
   const mode = document.getElementById('campaign-mode').value;

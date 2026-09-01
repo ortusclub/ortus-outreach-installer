@@ -850,6 +850,9 @@ app.post('/api/templates/preview', async (req, res) => {
       templates = {},
       profileIds = [],
       senderFirstNames = {},
+      // Account id → the account's NAME, resolved by the app (it rendered the
+      // picker with them). See the pName comment below for why.
+      senderNames = {},
       // v2.59.x — IC + message_only resolve {senderFirstName} per-row from
       // the sheet's sender column (the real send path does this). Without
       // mode + senderColumn the preview falls back to the operator's
@@ -919,7 +922,18 @@ app.post('/api/templates/preview', async (req, res) => {
     }
 
     const profileId = profileIds[0] || '';
-    const pName = profileId; // no live GoLogin session in preview — id stands in for name
+    // {senderName} resolves at send time to the GoLogin account's NAME
+    // (campaign.js: profileNameCache[profileId]). There is no live GoLogin
+    // session in a preview, so this used to stand the raw profile id in for the
+    // name — and an operator's preview signed off "Thanks,
+    // 6a5ee8d17da88c4708b30689" (2026-09-01). A preview that does not match what
+    // will actually be sent is worse than no preview: it hid that the template
+    // was using {senderName} where {senderFirstName} was meant.
+    //
+    // The app knows every selected account's name and now sends it. Falling back
+    // to the id would reintroduce the same lie, so when the name is genuinely
+    // unknown {senderName} resolves to nothing rather than to a hash.
+    const pName = (senderNames && senderNames[profileId]) || '';
 
     // v2.59.x — Build SoO email → firstName map for per-row sender lookup
     // in IC and message_only previews. Done once per request, so picking 3
