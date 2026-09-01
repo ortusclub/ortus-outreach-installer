@@ -70,11 +70,15 @@ export function startHandshakeJob(body = {}, { run = runCloudPreflightHandshake 
 
   const onProgress = (evt) => {
     if (!evt || !evt.profileId) return;
-    const cur = _job.senders.get(evt.profileId) || { profileId: evt.profileId, state: 'pending', name: '' };
+    const cur = _job.senders.get(evt.profileId) || { profileId: evt.profileId, state: 'pending', name: '', reason: '' };
     const next = {
       profileId: evt.profileId,
       state: evt.state || cur.state,
       name: evt.name || cur.name,
+      // Why this sender is where it is — carried through so the wizard can say
+      // "logged out" instead of blaming the primary for not accepting an
+      // invitation that was never sent.
+      reason: evt.reason || cur.reason || '',
     };
     // Log only real transitions — onProgress can re-emit the same state.
     if (next.state !== cur.state) log(`  ${next.name || next.profileId}: ${next.state}`);

@@ -13508,7 +13508,15 @@ function endCloudLaunch() {
 function cloudLaunchStatus() {
   const L = _cloudLaunch;
   if (!L) return null;
-  const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+  const nameOf = (id) => {
+    const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
+    if (picked) return picked;
+    // profileLabel() falls back to the raw id, so guard against handing the
+    // operator a 24-hex hash where an account name belongs (2026-09-01: the
+    // handshake wizard named a sender "6a5f1605f264c576fd2fcabf").
+    const label = (typeof profileLabel === 'function' ? profileLabel(id) : '') || '';
+    return (label && label !== id) ? label : 'this account';
+  };
   const primaryConn = {};
   for (const id of L.profileIds) primaryConn[id] = _HS_STATE_TO_PF[L.conn[id]] || 'pending';
   const doneN = L.profileIds.filter((id) => primaryConn[id] === 'connected').length;
@@ -13569,7 +13577,15 @@ function paintCloudLaunch() {
 function cloudLaunchBoardItem() {
   const L = _cloudLaunch;
   if (!L) return null;
-  const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+  const nameOf = (id) => {
+    const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
+    if (picked) return picked;
+    // profileLabel() falls back to the raw id, so guard against handing the
+    // operator a 24-hex hash where an account name belongs (2026-09-01: the
+    // handshake wizard named a sender "6a5f1605f264c576fd2fcabf").
+    const label = (typeof profileLabel === 'function' ? profileLabel(id) : '') || '';
+    return (label && label !== id) ? label : 'this account';
+  };
   return {
     where: 'cloud', id: '__launching__', rawId: '__launching__',
     name: L.name, mode: 'connect_and_introduce', isFG: false,
@@ -13662,7 +13678,15 @@ function _hsRowIconHtml(view) {
 }
 function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource = 'local-browser', autoAcceptAllPending = false }) {
   return new Promise((resolve) => {
-    const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+    const nameOf = (id) => {
+    const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
+    if (picked) return picked;
+    // profileLabel() falls back to the raw id, so guard against handing the
+    // operator a 24-hex hash where an account name belongs (2026-09-01: the
+    // handshake wizard named a sender "6a5f1605f264c576fd2fcabf").
+    const label = (typeof profileLabel === 'function' ? profileLabel(id) : '') || '';
+    return (label && label !== id) ? label : 'this account';
+  };
     const total = senderProfileIds.length;
     const back = document.createElement('div');
     back.className = 'modal-backdrop';
@@ -13859,7 +13883,7 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
           if (snap && snap.active) paint(snap.senders, snap.lines);
           if (snap && snap.done) {
             clearInterval(poll); poll = null;
-            const outcome = handshakeOutcome({ senders: snap.senders, summary: snap.summary, error: snap.error });
+            const outcome = handshakeOutcome({ senders: snap.senders, summary: snap.summary, error: snap.error, nameFor: nameOf });
             if (outcome.kind === 'error') { showError('Handshake error: ' + outcome.detail); return; }
             if (outcome.kind === 'partial') { showPartial(outcome); return; }
             // Success — brief beat so the operator sees the ✓s, then dispatch.
@@ -13892,7 +13916,15 @@ window.runHandshakeWizard = runHandshakeWizard;
 // and the draft is untouched, so a dismissal costs the operator nothing.
 function runPreflightPrompt({ accounts = [], earliest = null }) {
   return new Promise((resolve) => {
-    const nameOf = (id) => (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || id;
+    const nameOf = (id) => {
+    const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
+    if (picked) return picked;
+    // profileLabel() falls back to the raw id, so guard against handing the
+    // operator a 24-hex hash where an account name belongs (2026-09-01: the
+    // handshake wizard named a sender "6a5f1605f264c576fd2fcabf").
+    const label = (typeof profileLabel === 'function' ? profileLabel(id) : '') || '';
+    return (label && label !== id) ? label : 'this account';
+  };
     const label = (a) => {
       if (a.reason === 'needslogin') return 'Needs re-login in GoLogin';
       if (a.reason === 'proxy') return 'Proxy — fix the profile';
