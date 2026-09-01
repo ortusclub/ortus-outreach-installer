@@ -30,8 +30,10 @@ test('the click also writes the log line before the fetch', () => {
 test('resuming beats monitoring, so the card leaves the blue tint', () => {
   const i = APP.indexOf('function applyVjCardAppearance');
   const body = APP.slice(i, i + 5000);
-  assert.ok(/const monitoring = !\(status && status\.resuming\)/.test(body),
+  assert.ok(/const monitoring = !_resumingNow/.test(body),
     'a resuming card must not still count as monitoring');
+  assert.ok(/_isResumingId\(status && status\.id, state\)/.test(body),
+    'the flag must be readable by BOTH card renderers, not only card #2');
 });
 
 test('green is the default tone, so no monitoring class means green', () => {

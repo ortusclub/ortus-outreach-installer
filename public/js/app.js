@@ -7754,12 +7754,71 @@ window._pushCloudEvent = _pushCloudEvent;
 // slate state: set on the click, cleared by the next poll rebuild (which
 // replaces the whole status object) or by a failure below.
 const _cloudResumeClickedAt = new Map();
+// There are TWO live cards and the operator can be on either: the campaign
+// tab's #active-card (repainted from window.__cloudActiveStatus) and the
+// dashboard's expanded strip (its own [data-cid] node, rebuilt from the cloud
+// items list). v3.1.48.116 only reached the first, so an operator working from
+// the dashboard clicked Resume and watched nothing happen for six seconds while
+// _forceCloudItemsAfterAction refetched every campaign off the VM — measured
+// off the card's own "updated Ns ago", which read 3, 4, 5, 6 before anything
+// moved (operator recording, 2026-09-01 20:12). This set is the card-agnostic
+// answer: whichever renderer paints, it asks here.
+const _resumingIds = new Set();
+window._resumingIds = _resumingIds;
+
+// The optimistic flag, with its two ways out: the engine has moved off
+// monitoring (the resume landed), or 90s have passed (it did not, and a stuck
+// flag must never pin a card green forever).
+function _isResumingId(id, state) {
+  if (!id) return false;
+  const key = String(id);
+  if (!_resumingIds.has(key)) return false;
+  const st = String(state || '').toLowerCase();
+  if (st && st !== 'monitoring' && st !== 'checking') { _markCloudResuming(key, false); return false; }
+  if (Date.now() - (_cloudResumeClickedAt.get(key) || 0) > 90000) { _markCloudResuming(key, false); return false; }
+  return true;
+}
+
+// Repaint the dashboard strip for one campaign, now, without a board rebuild
+// (renderCampaignsBoard refetches; that is the very latency we are hiding).
+// The strip already carries data-cid, so this is a direct node lookup.
+function _repaintCloudStripNow(id) {
+  try {
+    const key = String(id);
+    for (const strip of document.querySelectorAll(`[data-cid="${CSS.escape(key)}"]`)) {
+      const card = strip.classList.contains('vj-card') ? strip : strip.querySelector('.vj-card');
+      if (!card) continue;
+      card.classList.remove('is-monitor', 'is-monitoring');
+      card.classList.add('is-resuming');
+    }
+  } catch (_) { /* the board poll still repaints a moment later */ }
+}
+
+// Append one line to the dashboard strip's log box, now. The line is already
+// in _cloudEvents; this only saves it the wait for the next board render.
+function _repaintCloudStripLog(id, line) {
+  try {
+    const key = String(id);
+    for (const strip of document.querySelectorAll(`[data-cid="${CSS.escape(key)}"]`)) {
+      const logEl = strip.querySelector('[data-f="active-log"]');
+      if (!logEl) continue;
+      logEl.insertAdjacentHTML('beforeend', v3RenderLogLine({ t: Date.now(), line }));
+      while (logEl.children.length > 15) logEl.removeChild(logEl.firstElementChild);
+      const head = strip.querySelector('.vj-log-head .vj-details-head');
+      if (head) head.textContent = `Live log · last ${logEl.children.length} events`;
+      _pinLogToNewest(logEl, key);
+    }
+  } catch (_) { /* the board poll still redraws it a moment later */ }
+}
+
 function _markCloudResuming(id, on) {
-  if (on) _cloudResumeClickedAt.set(String(id), Date.now()); else _cloudResumeClickedAt.delete(String(id));
+  if (on) { _cloudResumeClickedAt.set(String(id), Date.now()); _resumingIds.add(String(id)); }
+  else { _cloudResumeClickedAt.delete(String(id)); _resumingIds.delete(String(id)); }
   try {
     const s = window.__cloudActiveStatus;
     if (s && String(s.id) === String(id)) { s.resuming = !!on; renderActiveCard(s); }
   } catch (_) { /* the poll still repaints a moment later */ }
+  if (on) _repaintCloudStripNow(id);
 }
 window._markCloudResuming = _markCloudResuming;
 
@@ -7773,6 +7832,9 @@ function _pushCloudEventNow(id, line) {
       s.logs = (Array.isArray(s.logs) ? s.logs : []).concat([{ t: Date.now(), line }]);
       renderActiveCard(s);
     }
+    // Same line, other card. _pushCloudEvent already stored it; the strip's log
+    // box just has not been told to redraw yet.
+    _repaintCloudStripLog(id, line);
   } catch (_) { /* the poll still repaints a moment later */ }
 }
 window._pushCloudEventNow = _pushCloudEventNow;
@@ -10249,7 +10311,8 @@ function applyVjCardAppearance(root, status, fields) {
   const phase = String((status && status.phase) || '').toLowerCase();
   const state = String((status && status.state) || '').toLowerCase();
   const interrupted = !!(f.isInterrupted || state === 'interrupted' || (status && status.interrupted));
-  const monitoring = !(status && status.resuming)
+  const _resumingNow = !!(status && status.resuming) || _isResumingId(status && status.id, state);
+  const monitoring = !_resumingNow
     && !!(f.isMonitor || state === 'monitoring' || phase === 'monitoring' || phase === 'checking');
   const queued = !!(status && (status.queued || state === 'queued'));
   const starting = phase === 'starting' || phase === 'preflight' || state === 'launching';
@@ -10267,7 +10330,7 @@ function applyVjCardAppearance(root, status, fields) {
   // click that HAD registered looked identical to one that had not (operator,
   // 2026-09-01). Green is the default tone, so dropping `monitoring` is the whole
   // colour change — no new palette.
-  const resuming = !!(status && status.resuming);
+  const resuming = _resumingNow;
   // Older/local payloads may only retain logs after completion rather than an
   // explicit finished state. Keep those legacy shapes on the same visual path.
   const inferredDone = !!(status && !status.running && !monitoring && !interrupted
@@ -11495,7 +11558,16 @@ async function _refreshCloudItems() {
       // old running-only gate left the expanded dashboard card with no account
       // payload, so its cloned .sp panel correctly hid itself.
       const _liveStatus = ((d && d.campaign) || c).status;
-      const _live = _liveStatus === 'running' || _liveStatus === 'paused';
+      // 'monitoring' belongs here too. Sending pauses when an account hits its
+      // daily limit, and the campaign sits in 'monitoring' — exactly when the
+      // operator most needs to see WHY. Without it this fetch never ran, the
+      // accounts map stayed empty, _cloudAccountPanel fell back to its
+      // placeholder rows (dailyCount: 0), and both pills read "0/50" on a
+      // campaign whose first account had sent 50/50 and whose second was at a
+      // weekly cap (operator, 2026-09-01: "I might assume that it sent zero
+      // connections"). The weekly-cap state was lost with the same payload.
+      // 'stopping' for the same reason: the numbers must survive the wind-down.
+      const _live = ['running', 'paused', 'monitoring', 'stopping'].includes(String(_liveStatus || ''));
       // A FINISHED FG run needs them exactly once, to say why it stopped short.
       // Once fetched the run is over and the answer can't change, so this never
       // repeats — `has()` is the whole gate.
