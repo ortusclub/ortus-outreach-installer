@@ -42,7 +42,7 @@ import { startScheduler as startPostCampaignScheduler, listSchedule as listPostC
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
 import { startCloudFollowupPoller, lastLateCount } from './src/cloud-followup-poller.js';
-import { loadTasks as loadPrimaryTasks, summarizeFollowUps } from './src/primary-tasks.js';
+import { loadTasks as loadPrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
 import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
@@ -2563,6 +2563,67 @@ app.post('/api/campaign/:id/handover', async (req, res) => {
 // Monitoring controls (Task 3 Part B) — proxy ⚡ Check now / auto-checks toggle to
 // the engine. Surface the engine's error (incl. 404 until it ships these routes)
 // so the client degrades gracefully rather than throwing.
+// ── follow-up health: what the card's follow-up line and banner read ──
+// Counts straight off the local primary-task queue. `blocked` is the number
+// parked because the follow-up browser is signed out — the one state the
+// operator can clear in a click, and the one that used to be invisible.
+app.get('/api/followups/health', async (_req, res) => {
+  try {
+    const tasks = await loadPrimaryTasks();
+    const fu = (Array.isArray(tasks) ? tasks : []).filter((t) => t && t.type === 'follow-up');
+    const blocked = fu.filter((t) => t.blockedBySession && t.status === 'pending');
+    const failed = fu.filter((t) => t.status === 'failed');
+    res.json({
+      ok: true,
+      sent: fu.filter((t) => t.status === 'done').length,
+      pending: fu.filter((t) => t.status === 'pending' && !t.blockedBySession).length,
+      blocked: blocked.length,
+      failed: failed.length,
+      // The single reason to show. Signed-out outranks everything: it is the
+      // only one with a one-click fix.
+      reason: blocked.length ? 'signed-out' : (failed.length ? 'error' : ''),
+      lastError: (failed[failed.length - 1] || {}).lastError || '',
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── open the follow-up browser ON SCREEN so the operator can sign in ──
+// Same Chrome profile the follow-up runner uses, so signing in here is what
+// unblocks the parked follow-ups. Deliberately left OPEN: closing it is the
+// operator's signal that they are done.
+app.post('/api/followups/open-login', async (_req, res) => {
+  try {
+    const { page } = await launchLocalBrowser({ visible: true });
+    await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 45000 })
+      .catch(() => { /* the window is open either way — that is the point */ });
+    console.log('[followups] opened the follow-up browser on screen for sign-in');
+    res.json({ ok: true });
+  } catch (e) {
+    console.warn(`[followups] could not open the follow-up browser: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── put failed / parked follow-ups back in the queue ──
+// Revives BOTH: tasks parked on a signed-out browser, and tasks that already
+// burned their three attempts before parking existed (1 Sep left five of those).
+app.post('/api/followups/retry', async (_req, res) => {
+  try {
+    const tasks = await loadPrimaryTasks();
+    const targets = (Array.isArray(tasks) ? tasks : []).filter((t) => t && t.type === 'follow-up'
+      && (t.status === 'failed' || (t.status === 'pending' && t.blockedBySession)));
+    for (const t of targets) {
+      await markPrimaryTask(t.id, 'pending', { attempts: 0, lastError: '', blockedBySession: false, dueAt: Date.now() });
+    }
+    console.log(`[followups] revived ${targets.length} follow-up(s) to pending`);
+    res.json({ ok: true, revived: targets.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/campaign/cloud/:id/check-now', async (req, res) => {
   const r = await cloudCheckNow(req.params.id, (req.body && req.body.scope) === 'all' ? 'all' : 'campaign');
   if (r && r.error) return res.status(r.status || 502).json(r);

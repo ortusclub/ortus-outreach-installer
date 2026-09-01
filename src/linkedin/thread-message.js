@@ -20,6 +20,31 @@ export function isUsableThreadUrl(url) {
   return !!m && m[1] !== 'new';
 }
 
+/** Is this page a signed-out LinkedIn?
+ *
+ *  Every follow-up failure on 1 Sep read FOLLOWUP_COMPOSER_NOT_FOUND, because an
+ *  authwall has no composer — exactly like a LinkedIn DOM change would. The two
+ *  causes need completely different actions from the operator (sign in vs. wait
+ *  for a fix), so they must stop sharing an error. Measured that day: the
+ *  follow-up browser was signed in at 17:12 (its session captured and uploaded)
+ *  and serving guest cookies by 17:46; five follow-ups then died three attempts
+ *  at a time without a word.
+ */
+export async function isSignedOut(page) {
+  try {
+    const u = String(page.url() || '');
+    if (/\/(login|uas\/login|authwall|checkpoint)/i.test(u)) return true;
+    return await page.evaluate(() => {
+      // A signed-in page always carries the global nav. The guest pages carry a
+      // sign-in form or the join wall instead.
+      if (document.querySelector('.global-nav__me, #global-nav, [data-control-name="nav.settings"]')) return false;
+      return !!document.querySelector(
+        'form.login__form, input#username, .authwall-join-form, [data-tracking-control-name*="authwall"], .sign-in-form',
+      );
+    });
+  } catch (_) { return false; }
+}
+
 /**
  * Type `body` into the composer of the thread at `threadUrl` and send it.
  * Falls back to searching messaging by lead name when the URL is unusable.
@@ -32,7 +57,10 @@ export async function sendInThread(page, threadUrl, body, { introTitle = '', lea
   if (!isUsableThreadUrl(target)) {
     log(`  ↻ Follow-up: thread URL unusable, searching messaging for "${leadName}"…`);
     target = await _findThreadByLead(page, leadName, introTitle);
-    if (!target) throw new Error('FOLLOWUP_THREAD_NOT_FOUND');
+    if (!target) {
+      if (await isSignedOut(page)) throw new Error('FOLLOWUP_SIGNED_OUT');
+      throw new Error('FOLLOWUP_THREAD_NOT_FOUND');
+    }
   }
 
   await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -42,7 +70,12 @@ export async function sendInThread(page, threadUrl, body, { introTitle = '', lea
     'div.msg-form__contenteditable[contenteditable="true"], div[role="textbox"][contenteditable="true"]',
     { timeout: 15000 },
   ).catch(() => null);
-  if (!box) throw new Error('FOLLOWUP_COMPOSER_NOT_FOUND');
+  if (!box) {
+    // Ask WHY before naming it. A signed-out browser is the operator's to fix in
+    // one click; a missing composer on a signed-in page is ours.
+    if (await isSignedOut(page)) throw new Error('FOLLOWUP_SIGNED_OUT');
+    throw new Error('FOLLOWUP_COMPOSER_NOT_FOUND');
+  }
 
   await box.click();
   await page.keyboard.type(body, { delay: 12 });

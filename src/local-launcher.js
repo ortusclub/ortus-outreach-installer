@@ -40,7 +40,7 @@ function findChromePath() {
  *
  * Returns { browser, page } — same interface as GoLogin launcher.
  */
-export async function launchLocalBrowser() {
+export async function launchLocalBrowser({ visible = false } = {}) {
   // Phase 2.8.20 (W3-C2): disk-space pre-flight (same gate as GoLogin launcher).
   const disk = await checkDiskFree();
   if (!disk.ok) {
@@ -63,7 +63,11 @@ export async function launchLocalBrowser() {
     headless: false,
     userDataDir: LOCAL_PROFILE_DIR,
     args: [
-      '--window-position=-2400,-2400',
+      // Parked off-screen for automated runs, on-screen when the operator is
+      // being asked to DO something in it. The operator's own words, 2026-09-01:
+      // "it has never really opened my local browser" — it always had, at
+      // -2400,-2400, where nobody could see it.
+      ...(visible ? ['--window-position=60,60'] : ['--window-position=-2400,-2400']),
       '--window-size=1600,1000',
       '--no-first-run',
       '--no-default-browser-check',

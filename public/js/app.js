@@ -7681,6 +7681,11 @@ let _cloudCardTimer = null;
 // merge them into the log so section 7 reads like the local machine's log.
 const _cloudEventLog = new Map();        // campaignId -> [{ t, line }]  (user actions)
 const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine per-account check events)
+// When this Mac last started failing to reach the VM, per campaign. Drives one
+// log line per quiet spell instead of one per failed poll.
+const _cloudQuietSince = new Map();
+let _followupHealth = null;
+window._followupHealth = () => _followupHealth;
 const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
 const _cloudProgressSeen = new Map();     // campaignId -> last verified browser milestone
 // Cloud load + the global queue order, refreshed once per board poll and only
@@ -8790,6 +8795,13 @@ async function _refreshCloudActiveStatus(id) {
       if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(id, ar.accounts);
     } catch (_) { /* engine may not expose it yet — panel just won't show */ }
     try { if (_viewingCloudId === id) renderCloudAccountsPanel(id); } catch (_) { /* */ }
+    // Follow-up health for THIS app (the queue is local, not per-campaign): how
+    // many went out, how many are parked on a signed-out browser. Cheap, and it
+    // is the only place the operator can learn a follow-up did not land.
+    try {
+      const fh = await (await fetch('/api/followups/health')).json();
+      if (fh && fh.ok) _followupHealth = fh;
+    } catch (_) { /* the line just does not render */ }
     _recordCloudProgress(id, d);
     // Carry the optimistic "resuming" flag across the rebuild. Dropping it here
     // is what made the card flip green on the click and straight back to blue on
@@ -8845,6 +8857,11 @@ async function _refreshCloudActiveStatus(id) {
         if (Array.isArray(_localLive.accountPanel)) window.__cloudActiveStatus.accountPanel = _localLive.accountPanel;
       }
       _cloudPolledAt.set(id, Date.now());
+      if (_cloudQuietSince.has(String(id))) {
+        const _quiet = Math.round((Date.now() - _cloudQuietSince.get(String(id))) / 1000);
+        _cloudQuietSince.delete(String(id));
+        _pushCloudEvent(id, `✅ The VM is answering again — it was quiet for ${_quiet}s. Nothing was missed; the campaign kept running throughout.`);
+      }
       window.__cloudActiveStatus.connectionUnknown = false;
       window.__cloudActiveStatus.lastVerifiedAt = Date.now();
     }
@@ -8858,8 +8875,20 @@ async function _refreshCloudActiveStatus(id) {
     if (previous) {
       // Keep the last truth, but mark it as stale. A transport failure is not a
       // campaign transition and must never repaint Running as Finished/Idle.
+      const _why = String((err && err.message) || 'VM did not answer');
+      // Say it in the LOG, not only on the card. Until now the reason was put on
+      // the status object, shown in the hero, and thrown away — so when the card
+      // read "This Mac cannot see the campaign" there was no record anywhere of
+      // whether it was a timeout, a 500 or a dropped tunnel, and the next
+      // occurrence started the diagnosis from zero (operator, 2026-09-01).
+      // Once per quiet spell, not once per failed poll: the hero needs 90s of
+      // silence to appear, and eighteen identical lines would bury the log.
+      if (!_cloudQuietSince.has(String(id))) {
+        _cloudQuietSince.set(String(id), Date.now());
+        _pushCloudEvent(id, `⚠️ No answer from the VM (${_why}) — retrying automatically. The campaign itself is unaffected; only this Mac's view of it is.`);
+      }
       window.__cloudActiveStatus = { ...previous, connectionUnknown: true,
-        connectionError: String((err && err.message) || 'VM did not answer') };
+        connectionError: _why };
     } else {
       // First read failed: say exactly that. Do not fabricate running:true.
       window.__cloudActiveStatus = {
@@ -27771,6 +27800,59 @@ function _nextMondayText() {
   return `${when} (in ${days} day${days === 1 ? '' : 's'})`;
 }
 
+// The follow-up state, in the card's existing "What you can do" language.
+// Silent while follow-ups are working: a count with nothing wrong belongs in the
+// facts row, not in a block headed "what you can do".
+function _followupFixHtml() {
+  const h = _followupHealth;
+  if (!h || !h.ok) return '';
+  const stuck = (h.blocked || 0) + (h.failed || 0);
+  if (!stuck) return '';
+  const n = stuck === 1 ? 'follow-up' : 'follow-ups';
+  const row = h.reason === 'signed-out' || h.blocked
+    ? `<b>${stuck} ${n} are waiting.</b> The follow-up browser is signed out of LinkedIn. It is its own Chrome window, separate from your everyday one — which is why you never saw it open. Sign in once and they go out on their own; nothing is lost and no lead was messaged twice.`
+    : `<b>${stuck} ${n} could not be sent.</b> ${escHtml(h.lastError || 'LinkedIn did not open the message box')}. The leads themselves are fine — only the follow-up is missing.`;
+  const acts = [
+    '<button type="button" onclick="openFollowupLogin(this)">Open the follow-up browser to log in</button>',
+    `<button type="button" onclick="retryFollowups(this)">Retry the ${stuck} now</button>`,
+  ];
+  return `<div class="fixhd">What you can do</div><ul><li>${row}</li></ul>`
+    + `<div class="fixacts">${acts.join('')}</div>`;
+}
+
+// Opens the SAME Chrome profile the follow-up runner uses, on screen this time,
+// at the LinkedIn login page. Left open deliberately — closing it is the
+// operator's way of saying they are done.
+window.openFollowupLogin = async function (btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening…'; }
+  try {
+    const r = await fetch('/api/followups/open-login', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    if (btn) btn.textContent = 'Opened — sign in, then hit Retry';
+    if (typeof showCampaignToast === 'function') showCampaignToast('The follow-up browser is open. Sign in to LinkedIn, then press Retry.', 8000);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Open the follow-up browser to log in'; }
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Could not open it: ${e.message}`, 6000);
+  }
+};
+
+window.retryFollowups = async function (btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Re-queueing…'; }
+  try {
+    const r = await fetch('/api/followups/retry', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    if (btn) btn.textContent = `${d.revived || 0} back in the queue`;
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`${d.revived || 0} follow-up(s) re-queued — they go out on the next idle run.`, 6000);
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry now'; }
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Retry failed: ${e.message}`, 6000);
+  }
+};
+
 function _stageFixHtml(cid, accts) {
   if (!accts.length) return '';
   const nm = (a) => escHtml(_acctLabel(a));
@@ -28410,7 +28492,17 @@ function renderLiveStage(root, status) {
   }
   const factsEl = _stgFld(root, 'stageFacts');
   if (factsEl) {
-    const facts = Array.isArray(ca && ca.facts) ? ca.facts : [];
+    const facts = (Array.isArray(ca && ca.facts) ? ca.facts : []).slice();
+    // Follow-ups get a fact of their own once any have run. Without it the only
+    // evidence a follow-up ever happened was the lead's LinkedIn thread, so five
+    // that never sent looked exactly like five that did (operator, 2026-09-01).
+    const _fh = _followupHealth;
+    if (_fh && _fh.ok && ((_fh.sent || 0) + (_fh.blocked || 0) + (_fh.failed || 0)) > 0) {
+      const stuck = (_fh.blocked || 0) + (_fh.failed || 0);
+      facts.push(['Follow-ups', stuck
+        ? `${_fh.sent || 0} sent · ${stuck} could not send`
+        : `${_fh.sent || 0} sent`]);
+    }
     const html = facts.map(([label, value]) => `<div><span>${escHtml(label)}</span><b>${escHtml(_named(value, 'this account'))}</b></div>`).join('');
     if (factsEl.dataset.html !== html) { factsEl.innerHTML = html; factsEl.dataset.html = html; }
     factsEl.hidden = !html;
@@ -28492,7 +28584,11 @@ function renderLiveStage(root, status) {
       if (phase === 'monitoring' && ca && ca.resumeClock && ca.resumeReason === 'daily') {
         fix.innerHTML = `<div class="stg-resume"><div><b>Sending starts at ${escHtml(ca.resumeClock)}</b><span>Monitoring continues in the meantime.</span></div><button type="button" onclick="startMonitoringSendingNow(this)">Start now</button></div>`;
       } else {
-        fix.innerHTML = phase === 'waiting' ? _stageFixHtml(cid, accts) : '';
+        // Follow-up trouble is worth saying in EVERY phase, not only 'waiting':
+        // a signed-out follow-up browser is just as broken while the campaign is
+        // mid-send, and that is exactly when nobody is looking at the card.
+        const _fuFix = _followupFixHtml();
+        fix.innerHTML = (phase === 'waiting' ? _stageFixHtml(cid, accts) : '') || _fuFix;
       }
     }
     stage.dataset.acctkey = akey;
@@ -28546,7 +28642,13 @@ window.startMonitoringSendingNow = function (btn) {
 // reach them; this function is only the DOM half.
 function _applyLostLinkOverride(stage, cid, age) {
   const lost = linkIsLost(age, _checkRunsLocally(cid));
-  if (!lost) { delete stage.dataset.lostLink; return; }
+  if (!lost) {
+    delete stage.dataset.lostLink;
+    // Take the retry block back down with the hero, or it outlives the problem.
+    const back = stage.querySelector('[data-f="stageFix"], #stageFix');
+    if (back && back.dataset.lostLinkActs) { delete back.dataset.lostLinkActs; back.innerHTML = ''; }
+    return;
+  }
   // Reasserted every tick, not cached: the 5s cloud repaint keeps writing the
   // stale hero back in, and a one-shot override would lose that race and leave
   // the lie on screen. Each put() compares before writing, so this is cheap.
@@ -28562,7 +28664,27 @@ function _applyLostLinkOverride(stage, cid, age) {
   put('stageSideLabel', 'LAST HEARD FROM THE VM');
   put('stageSideValue', ago);
   put('stageSideHelp', 'everything below is from that moment, not from now');
+  // One button, so the operator is not left waiting out a poll interval to find
+  // out whether the link is back. It only re-polls this Mac's view; the campaign
+  // on the VM is untouched either way.
+  const fix = stage.querySelector('[data-f="stageFix"], #stageFix');
+  if (fix && !fix.dataset.lostLinkActs) {
+    fix.dataset.lostLinkActs = '1';
+    fix.innerHTML = '<div class="fixhd">What you can do</div>'
+      + '<ul><li><b>Nothing, usually.</b> The campaign runs on the VM and keeps going whether or not this Mac can see it. This clears itself the moment the connection comes back, and the log records how long it was quiet.</li></ul>'
+      + `<div class="fixacts"><button type="button" onclick="retryCloudLink('${escHtml(String(cid || ''))}',this)">Check the connection now</button></div>`;
+  }
 }
+
+window.retryCloudLink = async function (cid, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    await _refreshCloudActiveStatus(cid);
+    if (btn) btn.textContent = 'Checked';
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Check the connection now'; }
+  }
+};
 
 // Elapsed seconds + heartbeat, ticked once a second on every visible stage.
 // Deliberately NOT part of the poll render: these are clocks, and a clock that
