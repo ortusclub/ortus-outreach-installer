@@ -1,0 +1,104 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Primary handshake ask — 3 variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0a0a;--bg-soft:rgba(255,255,255,.03);--ink:#fafafa;--gray:#999;
+        --hairline:rgba(255,255,255,.15);--hairline-soft:rgba(255,255,255,.06);
+        --gold:#F7BE68;--red:#f85149;
+        --display:'Bebas Neue','Arial Narrow',sans-serif;
+        --body:'Hanken Grotesk',-apple-system,sans-serif;}
+  *{box-sizing:border-box}
+  body{margin:0;background:#000;color:var(--ink);font-family:var(--body);padding:40px 28px 64px}
+  h1{font-family:var(--display);font-size:2rem;letter-spacing:.02em;margin:0 0 6px}
+  .lede{color:var(--gray);max-width:70ch;margin:0 0 34px;line-height:1.5}
+  .row{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap}
+  .col{flex:1 1 330px;min-width:315px;max-width:400px}
+  .tag{font-family:var(--display);font-size:1.15rem;letter-spacing:.08em;color:var(--gold);margin:0 0 4px}
+  .note{color:var(--gray);font-size:.85rem;line-height:1.45;margin:0 0 14px;min-height:3.2em}
+  .card{background:var(--bg);border:1px solid var(--hairline);border-radius:14px;padding:26px 24px}
+  .q{font-family:var(--display);font-size:1.55rem;line-height:1.06;letter-spacing:.01em;margin:0 0 10px}
+  .sub{color:var(--gray);font-size:.86rem;line-height:1.5;margin:0 0 18px}
+  .opt{display:flex;gap:11px;align-items:flex-start;border:1px solid var(--hairline-soft);
+       border-radius:11px;padding:13px 14px;margin-bottom:9px;cursor:pointer}
+  .opt.on{border-color:var(--ink);background:var(--bg-soft)}
+  .dot{width:13px;height:13px;border-radius:9999px;border:1px solid var(--gray);flex:none;margin-top:3px}
+  .opt.on .dot{border-color:var(--ink);box-shadow:inset 0 0 0 3px var(--bg),inset 0 0 0 9px var(--ink)}
+  .ot{font-weight:600;font-size:.95rem;display:block;margin-bottom:2px}
+  .oc{color:var(--gray);font-size:.83rem;line-height:1.4;display:block}
+  .warn{color:var(--red)}
+  .acts{display:flex;gap:16px;align-items:center;margin-top:20px}
+  .btn{font-family:var(--display);letter-spacing:.06em;font-size:1rem;padding:11px 26px;
+       border-radius:9999px;border:1px solid var(--ink);background:var(--ink);color:#000;cursor:pointer}
+  .lnk{color:var(--gray);font-size:.86rem;text-decoration:none;cursor:pointer}
+  /* B: segmented */
+  .seg{display:inline-flex;border:1px solid var(--hairline);border-radius:9999px;padding:3px;margin-bottom:16px}
+  .seg span{padding:8px 20px;border-radius:9999px;font-size:.87rem;font-weight:500;cursor:pointer;color:var(--gray)}
+  .seg span.on{background:var(--ink);color:#000}
+  .conseq{border-left:2px solid var(--hairline);padding-left:14px;color:var(--gray);
+          font-size:.86rem;line-height:1.5;min-height:4.2em}
+  /* C: two doors */
+  .door{border:1px solid var(--hairline-soft);border-radius:11px;padding:16px 15px;margin-bottom:9px}
+  .door b{display:block;font-size:.95rem;margin-bottom:3px}
+  .door .oc{margin-bottom:11px}
+  .door button{font-family:var(--body);font-size:.85rem;font-weight:600;padding:8px 16px;
+               border-radius:9999px;border:1px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
+  .door.pri button{background:var(--ink);color:#000}
+  .count{font-size:.78rem;color:var(--gray);letter-spacing:.06em;text-transform:uppercase}
+</style>
+
+<h1>Primary handshake — where does it run?</h1>
+<p class="lede">Same decision, three amounts of words. Current build is roughly 90 words; these are 34, 22 and 30.
+The one fact that must survive every cut: this Mac opens a browser either way.</p>
+
+<div class="row">
+
+  <div class="col">
+    <p class="tag">A · Trimmed</p>
+    <p class="note">Same shape as today. Every sentence cut to its claim, the limitation kept but reduced to one line.</p>
+    <div class="card">
+      <p class="q">Connect your senders to the primary now?</p>
+      <p class="sub">This Mac opens a browser either way — the primary accepts here.</p>
+      <div class="opt on"><span class="dot"></span><span>
+        <b class="ot">Now, on this Mac</b>
+        <span class="oc">3 senders connect off-screen, then it moves to the cloud.</span></span></div>
+      <div class="opt"><span class="dot"></span><span>
+        <b class="ot">Later, on the VM</b>
+        <span class="oc"><span class="warn">Introductions only fire after someone accepts.</span> Nothing opens now.</span></span></div>
+      <div class="acts"><button class="btn">Continue</button><a class="lnk">Cancel launch</a></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <p class="tag">B · Segmented</p>
+    <p class="note">Reuses the RUNNING ON control you already read on every card. One consequence line, swapped by the choice.</p>
+    <div class="card">
+      <p class="q">Connect senders to the primary</p>
+      <div class="seg"><span class="on">This Mac, now</span><span>The VM, later</span></div>
+      <p class="conseq">3 senders connect off-screen, your primary accepts, then the campaign moves to the cloud.
+        This Mac opens either way.</p>
+      <div class="acts"><button class="btn">Continue</button><a class="lnk">Cancel launch</a></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <p class="tag">C · Two doors</p>
+    <p class="note">No radios, no Continue. Each choice is its own button, so the decision is one click instead of two.</p>
+    <div class="card">
+      <p class="q">Connect senders to the primary</p>
+      <p class="sub">This Mac opens a browser either way — the primary accepts here.</p>
+      <div class="door pri">
+        <b>Now, on this Mac</b>
+        <span class="oc">3 senders connect off-screen, then it moves to the cloud.</span>
+        <button>Do it now</button>
+      </div>
+      <div class="door">
+        <b>Later, on the VM</b>
+        <span class="oc"><span class="warn">Introductions only fire after someone accepts.</span></span>
+        <button>Leave it to the VM</button>
+      </div>
+      <div class="acts"><a class="lnk">Cancel launch</a></div>
+    </div>
+  </div>
+
+</div>

@@ -28,10 +28,13 @@ import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { fgActiveDoor, fgActivePayload } from '/js/fg-source.mjs';
 import { fgEyebrowWithPage } from '/js/fg-eyebrow.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
-import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText } from '/js/live-activity.mjs';
+import { buildLiveActivity, launchMilestones, linkIsLost, monitorHeroState, monitorHeroView, monitorTickText, queueWaitLine, splitSafetyCount, stripCadence } from '/js/live-activity.mjs?v=3.1.48.95';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
-import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
+import { needsHandshakeFromBody, handshakeRowView, handshakeStepView, handshakeOutcome } from '/js/handshake-gate.mjs';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition, heroFollowsLog, acctPillCount, failedStartRetry } from '/js/vjcard.mjs?v=3.1.48.95';
+import { terminalPresentation } from '/js/campaign-terminal.mjs';
+import { shouldPoll } from '/js/pollgate.mjs';
+import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
@@ -43,6 +46,9 @@ import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-ta
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
 import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
+import { latestBannerEvent, bannerEventPhase } from '/js/live-log-banner.mjs?v=3.1.48.95';
+import { isCampaignStatusSnapshot, nextCheckLabel, overlayCampaignStatus, selectCampaignStatusSnapshot } from '/js/campaign-status-contract.mjs?v=3.1.48.95';
+import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.95';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -196,16 +202,8 @@ function _snStatusDot(status) {
 }
 
 let _snPrevStatus = new Map(); // cid -> status
-function _snDetectHandover(campaigns) {
+function _snStampFinished(campaigns) {
   const nowStatus = new Map(campaigns.map((c) => [c.id, c.status]));
-  let stopped = null, started = null;
-  for (const [cid, prev] of _snPrevStatus) {
-    const cur = nowStatus.get(cid);
-    if (prev === 'running' && (cur === 'done' || cur === 'error' || cur === undefined)) stopped = cid;
-  }
-  for (const c of campaigns) {
-    if (_snPrevStatus.get(c.id) === 'queued' && c.status === 'running') started = c.id;
-  }
   // Stamp the finish time ONLY when we witness a live scrape turn done/error this
   // session (so pre-existing done scrapes stay time-less instead of "just now").
   let stampedAny = false;
@@ -216,23 +214,40 @@ function _snDetectHandover(campaigns) {
     if (isDoneNow && wasLive && !_snDoneSeen[c.id]) { _snDoneSeen[c.id] = Date.now(); stampedAny = true; }
   }
   if (stampedAny) _snSaveDoneSeen();
+  // Scrape ROLLOVER on the Sales Nav board: one scrape finishing as the next one
+  // starts. This is a different event from the campaign's local/VM handover
+  // (which lives on the card as .vj-live.is-handover), and it shares only the
+  // word. It was removed by mistake while moving that other banner and is
+  // restored here: without it the board says nothing when the queue advances.
+  let stopped = null, started = null;
+  for (const [cid, prev] of _snPrevStatus) {
+    const cur = nowStatus.get(cid);
+    if (prev === 'running' && (cur === 'done' || cur === 'error' || cur === undefined)) stopped = cid;
+  }
+  for (const c of campaigns) {
+    if (_snPrevStatus.get(c.id) === 'queued' && c.status === 'running') started = c.id;
+  }
   _snPrevStatus = nowStatus;
-  if (stopped || started) _snShowHandover(campaigns, stopped, started);
+  if (stopped || started) _snShowScrapeRollover(campaigns, stopped, started);
 }
 function _snName(campaigns, cid) { const c = campaigns.find((x) => x.id === cid); return c ? (c.name || 'a scrape') : 'a scrape'; }
-function _snShowHandover(campaigns, stopped, started) {
+function _snShowScrapeRollover(campaigns, stopped, started) {
   const ho = document.getElementById('sn-handover'), txt = document.getElementById('sn-handover-txt');
   if (!ho || !txt) return;
   if (stopped && started) {
     ho.className = 'sn-handover show launching';
-    txt.innerHTML = `<b>Handover</b> — ${escHtml(_snName(campaigns, stopped))} stopped, now launching <b>${escHtml(_snName(campaigns, started))}</b>.`;
+    txt.innerHTML = `<b>${escHtml(_snName(campaigns, stopped))}</b> finished, now starting <b>${escHtml(_snName(campaigns, started))}</b>.`;
   } else if (stopped) {
     ho.className = 'sn-handover show stopping';
     txt.innerHTML = `<b>Stopped</b> ${escHtml(_snName(campaigns, stopped))}.`;
   } else {
     ho.className = 'sn-handover show launching';
-    txt.innerHTML = `<b>Launching</b> ${escHtml(_snName(campaigns, started))}…`;
+    txt.innerHTML = `<b>Starting</b> ${escHtml(_snName(campaigns, started))}…`;
   }
+  // A scrape rollover is a moment, not a state: it has already happened by the
+  // time it is announced, so a timed dismissal is right here. That is the
+  // opposite of the campaign handover on the card, which describes something
+  // still in progress and so must hold until it genuinely finishes.
   clearTimeout(ho._t); ho._t = setTimeout(() => { ho.className = 'sn-handover'; }, 5000);
 }
 
@@ -245,7 +260,7 @@ let _snLastCampaigns = null; // last rendered board data — for optimistic re-r
 function renderSalesNavBoard(campaigns) {
   campaigns = (campaigns || []).map(_snEnrich); // backfill name/owner/profiles the engine dropped
   _snLastCampaigns = campaigns;
-  _snDetectHandover(campaigns);
+  _snStampFinished(campaigns);
   _snStrips.clear();
   for (const c of campaigns) _snStrips.set(c.id, { profileIds: c.profileIds || [], tabName: c.tabName || '', owner: c.owner || '', mine: !!c.mine });
   const host = document.getElementById('sn-board');
@@ -393,6 +408,9 @@ function _snCarryLiveNodes(prev, next) {
 // rows. This set holds the cids the operator explicitly expanded; it survives
 // re-renders (the board rebuilds its innerHTML on every 2.5s poll).
 const _snExpanded = new Set();
+// Active rows start expanded, but an operator may still fold them. This is
+// separate from _snExpanded because inactive rows start collapsed.
+const _snCollapsedActive = new Set();
 // cids whose strip should show the LOGS tab active (vs the default Jobs tab).
 // Persisted like _snExpanded so the 2.5s board re-render doesn't snap the pane
 // back to Jobs — set when the operator opens a running scrape's log or clicks
@@ -479,7 +497,7 @@ function _snSaveDoneSeen() {
   try { localStorage.setItem('snDoneSeen2', JSON.stringify(_snDoneSeen)); } catch (_) { /* */ }
 }
 // The ONLY trustworthy finish time: the moment we witnessed this scrape turn
-// done this session (set in _snDetectHandover). We deliberately do NOT read
+// done this session (set in _snStampFinished). We deliberately do NOT read
 // timestamps off the engine jobs — the engine sends no reliable finish epoch,
 // and guessing fields produced garbage ("20636d ago"). Unknown → 0 → plain "Done".
 function _snDoneTs(c) {
@@ -1070,8 +1088,14 @@ document.addEventListener('click', (e) => {
   const strip = btn.closest('.sn-strip');
   const cid = strip?.dataset.cid;
   if (!cid) return;
-  if (_snExpanded.has(cid)) _snExpanded.delete(cid); else _snExpanded.add(cid);
-  strip.classList.toggle('sn-collapsed', !_snExpanded.has(cid));
+  const active = _snItemsById.get(cid)?.bucket === 'running';
+  if (active) {
+    if (_snCollapsedActive.has(cid)) _snCollapsedActive.delete(cid); else _snCollapsedActive.add(cid);
+    strip.classList.toggle('sn-collapsed', _snCollapsedActive.has(cid));
+  } else {
+    if (_snExpanded.has(cid)) _snExpanded.delete(cid); else _snExpanded.add(cid);
+    strip.classList.toggle('sn-collapsed', !_snExpanded.has(cid));
+  }
   // A Sales Nav strip's rich card (and therefore its live log) is built by
   // renderSalesNavBoard, which this handler never called — it called the
   // CAMPAIGNS board's renderer instead. So expanding a scrape only did
@@ -1706,7 +1730,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // already-running campaign across page refreshes. If a campaign is live,
   // this also kickstarts continuous polling via the running-detect path.
   pollStatus().then(() => {
-    if (__cockpit.running) startPolling();
+    // Monitoring campaigns poll too. See pollgate.mjs for why this used to
+    // render once and freeze.
+    if (shouldPoll(__cockpit)) startPolling();
   }).catch(() => {});
 
   // Phase 2.8.14: relocate the Throughput section (#nav-pace) to sit right
@@ -2509,7 +2535,7 @@ function renderProfiles(profiles) {
       else if (_state.state === 'blocked') {
         if (_reason === 'na') _sub = 'No credits for this campaign.';
         else if (_reason === 'unavailable') _sub = _label ? `Not available — <b>${_label}</b>.` : 'Not available for this campaign.';
-        else _sub = 'Restricted by LinkedIn.';
+        else _sub = '<b>Identity Restricted</b> in the SoO · selection disabled.';
       } else _sub = 'Anyone can use.';
       // Workspace beats every SoO verdict: an account you cannot drive at all is
       // not "free", whatever its credits say.
@@ -3991,14 +4017,16 @@ function openCloudCampaignView(id, label) {
     // Opened from a click (scope is the event object, not a valid scope) → ask the
     // same scope question as the local check, then re-enter with the choice.
     if (scope !== 'campaign' && scope !== 'all') {
-      // Two-step (v2.160.87): scope, then where (VM vs this machine) — matching
-      // the board strip's Check-now flow. 'vm' re-enters with a valid scope.
+      // Scope only. The old second step asked WHERE to run the check, which is
+      // now a question the card already answers: RUNNING ON says which side owns
+      // the campaign, and a check runs where the campaign runs. Asking again made
+      // the two disagreeable (an operator could run a VM check on a campaign
+      // sitting on their Mac) and put a modal in front of the one button people
+      // press when they are already unsure the app is working.
       _soloCheckHandler = (mode) => {
         const sc = mode === 'sheet' ? 'all' : 'campaign';
-        _checkWhereHandler = (where) => (where === 'local'
-          ? cloudCheckLocal(id, document.getElementById('cloud-cv-check-now'), sc)
-          : queueCheckNow(sc));
-        _showCheckWhereModal();
+        if (_checkRunsLocally(id)) cloudCheckLocal(id, document.getElementById('cloud-cv-check-now'), sc);
+        else queueCheckNow(sc);
       };
       _showSoloCheckModal();
       return;
@@ -6590,11 +6618,13 @@ async function startCampaign(opts = {}) {
     return startPostAmplification();
   }
 
-  // One-at-a-time: a campaign in the monitoring phase occupies the single
-  // campaign slot. Launching a new one resets that state (campaign.js
-  // startCampaign), silently ending the acceptance watch. Warn first.
+  // The local engine has one singleton campaign slot, so a LOCAL launch can
+  // replace local monitoring. VM campaigns are independent engine records and
+  // may run alongside any monitoring campaign; never show the destructive
+  // local warning for a VM launch.
   try {
-    if (typeof __cockpit !== 'undefined' && __cockpit && __cockpit.state === 'monitoring') {
+    if (!isCloudRunOn()
+      && typeof __cockpit !== 'undefined' && __cockpit && __cockpit.state === 'monitoring') {
       const ok = confirm('A campaign is currently monitoring for acceptances. Starting a new campaign will end that monitoring. Continue?');
       if (!ok) return;
     }
@@ -7062,10 +7092,7 @@ async function startCampaign(opts = {}) {
   // only for engine-supported modes. Gated on the mode so a non-cloud mode NEVER
   // routes to cloud even if the (hidden) checkbox is checked. The checkbox mirrors
   // the run-target tabs (setRunTarget); default is 💻 This machine (unchecked → local).
-  const _cloudModeNow = new Set(['connect_only', 'message_only', 'introduce_back',
-    'connect_and_introduce', 'connect_and_message', 'follower_growth',
-    'inmail_only', 'open_profile_only', 'check_status']).has(document.getElementById('campaign-mode')?.value);
-  const _cloudOn = _cloudModeNow && !!document.getElementById('cloud-run-checkbox')?.checked;
+  const _cloudOn = isCloudRunOn();
   if (_cloudOn && !opts.queueOnly) {
     opts = { ...opts, cloud: true };
     // Schedule on the VM: same dispatch, one extra field. The engine parks the
@@ -7254,6 +7281,30 @@ function _cloudSaveDismissed() {
 // the source Google Sheet.
 const _cloudSheetUrls = new Map();
 
+// campaign id → when the operator asked the VM for a sweep. The engine only
+// stamps monitor_check_started_at once a worker claims the task, and the board's
+// cloud snapshot refreshes on its own timer, so between the click and that
+// moment the card still read "nothing running right now" — directly under a
+// button the operator had just pressed. This bridges exactly that gap: the
+// engine's own started/completed pair takes over the instant it arrives, and the
+// marker expires by itself so a sweep that never starts cannot leave the card
+// claiming one is.
+const _cloudCheckAsked = new Map();
+// A cold VM has been observed taking a little over two minutes before opening
+// the first browser. Keep the operator's single-flight lock for the same
+// 15-minute recovery window used by the worker instead of expiring it after
+// 90 seconds and re-enabling a duplicate check while the first one is queued.
+const CLOUD_CHECK_ASK_TTL_MS = 15 * 60 * 1000;
+function _cloudCheckAskedActive(c) {
+  const asked = _cloudCheckAsked.get(c.id);
+  if (!asked) return false;
+  // The engine has spoken since we asked — its answer wins, either way.
+  const done = Date.parse(c.monitor_check_completed_at || '');
+  if (Number.isFinite(done) && done >= asked) { _cloudCheckAsked.delete(c.id); return false; }
+  if (Date.now() - asked > CLOUD_CHECK_ASK_TTL_MS) { _cloudCheckAsked.delete(c.id); return false; }
+  return true;
+}
+
 // Reconstruct a per-lead log (parity with a local campaign's live log) from the
 // cloud engine's per-lead status rows (GET /api/campaign/:id/leads). Ordered
 // chronologically (oldest → newest) so the render's slice(-8) shows the most
@@ -7265,10 +7316,12 @@ const _cloudSheetUrls = new Map();
 // as out-of-order to the operator.
 function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
   leads = Array.isArray(leads) ? leads : [];
+  // Dated like every other log line: a lead sent yesterday must not read as a
+  // bare clock time on today's board.
   const hhmm = (iso) => {
     if (!iso) return '';
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return isNaN(d.getTime()) ? '' : logClock(d, new Date(), false);
   };
   const ts = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? t : null; };
   // profileId → sender email (from the campaign config the engine ships on the
@@ -7307,7 +7360,13 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
       const email = !isFG ? (emails[l.account] || l.account || '') : '';
       const url = !isFG ? shortUrl(l.leadUrl) : '';
       const extra = `${email ? ` · via ${email}` : ''}${url ? ` · ${url}` : ''}`;
-      return { t: ts(l.sentAt), line: `✓ ${name} · ${verb}${when ? ` · ${when}` : ''}${extra}` };
+      // Fall back to dateLastAction for the SORT KEY the way the error branch
+      // below already does. A lead can carry a sent status with no sentAt (the
+      // stamp failed, or the row predates the field), and an undated row used
+      // to sort below every timestamped one — which is how a hours-old
+      // "Connected sent" line sat at the bottom of a live log, under events
+      // from minutes ago, and became the campaign's newest event.
+      return { t: ts(l.sentAt) || ts(l.dateLastAction), line: `✓ ${name} · ${verb}${when ? ` · ${when}` : ''}${extra}` };
     }
     // Error rows: timestamped from dateLastAction (engine v93 stamps the error
     // moment) so ✗ lines carry a time and sort chronologically like the rest.
@@ -7348,8 +7407,9 @@ function _cloudLeadsToLog(leads, isFG = false, monitor = {}) {
   if (checkDone) {
     const accepted = Math.max(0, Number(monitor.monitor_check_newly_accepted) || 0);
     const checkError = String(monitor.monitor_check_error || '').trim();
+    const stopped = /^check stopped by you\b/i.test(checkError);
     entries.push({ t: ts(checkDone), line: checkError
-      ? `✗ Check finished with an error${checkWhen ? ` · ${checkWhen}` : ''} · ${checkError}`
+      ? `${stopped ? '🛑 Check stopped' : '✗ Check finished with an error'}${checkWhen ? ` · ${checkWhen}` : ''} · ${checkError}`
       : `✓ Check complete${checkWhen ? ` · ${checkWhen}` : ''} · ${accepted} newly accepted` });
   } else if (checkStarted) {
     entries.push({ t: ts(checkStarted), line: `◌ Check in progress${checkWhen ? ` · ${checkWhen}` : ''}` });
@@ -7545,6 +7605,7 @@ let _cloudCardTimer = null;
 const _cloudEventLog = new Map();        // campaignId -> [{ t, line }]  (user actions)
 const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine per-account check events)
 const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
+const _cloudProgressSeen = new Map();     // campaignId -> last verified browser milestone
 // Cloud load + the global queue order, refreshed once per board poll and only
 // while something is waiting. Shape: { queue:[id…], active, ceiling, full }.
 // Empty until the first reading, which is why queueState treats an id it cannot
@@ -7554,15 +7615,204 @@ let _cloudCapacity = { queue: [] };
 // EDGE-triggered. The dashboard polls every 5s; logging on level would write
 // the same line ~24 times per wake.
 const _lastHeroState = new Map();
-function _pushCloudEvent(id, line) {
+// The engine's own step time for an observed VM event, or 0 when it did not
+// publish one. Accepts ms or ISO, because liveProgress has carried both.
+function _engineStepTime(at) {
+  const n = Number(at);
+  if (Number.isFinite(n) && n > 1e12) return n;
+  const p = Date.parse(at || '');
+  return Number.isFinite(p) ? p : 0;
+}
+
+// `at` is WHEN THE THING HAPPENED, per the engine. Date.now() is only when this
+// app noticed, and the two are a whole poll interval apart.
+//
+// 2026-08-27, COLL_CHI_ANTONIO2: matt.adcock's browser closed at 13:44:54, but
+// the app saw its liveProgress breadcrumb vanish on a poll after 13:45:29 and
+// stamped the event then. _mergeCloudLog sorts by t, so "browser closed" landed
+// BELOW the engine's own "Check complete · 13:45:29" and "Next check" lines —
+// and the banner, which reads the log's last row, then painted a monitoring
+// campaign as actively sending. The log was wrong first; the card just agreed
+// with it.
+// A tick in the log every 30 seconds while a campaign waits for a VM worker.
+//
+// Workers scale to zero, so the first launch after an idle spell waits ~2
+// minutes — and the log said nothing at all for the whole of it (operator
+// recording, 2026-08-28: one line at 11:59, the next at 12:01). An operator
+// cannot tell that silence apart from a dead engine, and reasonably reads it as
+// a campaign that never started. The wording lives in queueWaitLine.
+const _queueTickBucket = new Map();
+function _tickQueueWait(id, campaign) {
+  const st = String((campaign && campaign.status) || '');
+  if (st !== 'queued' && st !== 'pending') { _queueTickBucket.delete(id); return; }
+  const startedAt = new Date((campaign && (campaign.created_at || campaign.createdAt)) || 0).getTime();
+  if (!Number.isFinite(startedAt) || !startedAt) return;
+  const secs = Math.floor((Date.now() - startedAt) / 1000);
+  const bucket = Math.floor(secs / 30);
+  // Bucket 0 is the launch itself, which already has its own line.
+  if (bucket < 1 || _queueTickBucket.get(id) === bucket) return;
+  _queueTickBucket.set(id, bucket);
+  _pushCloudEvent(id, queueWaitLine(bucket * 30));
+}
+
+function _pushCloudEvent(id, line, at) {
   if (!id || !line) return;
   let arr = _cloudEventLog.get(id);
   if (!arr) { arr = []; _cloudEventLog.set(id, arr); }
   if (arr.length && arr[arr.length - 1].line === line) return; // dedup consecutive
-  arr.push({ t: Date.now(), line });
+  arr.push({ t: _engineStepTime(at) || Date.now(), line });
   if (arr.length > 60) arr.splice(0, arr.length - 60); // keep the tail bounded
 }
 window._pushCloudEvent = _pushCloudEvent;
+
+// One truthful sending-turn counter for every card surface. The VM briefly
+// publishes done=0 while it moves from LinkedIn confirmation to the sheet
+// stamp, even though the preceding verified event already says (for example)
+// "3 of 8 this turn". Never let that sub-step reset the visible batch.
+function _cloudSendingTurn(id, d) {
+  const p = (d && d.liveProgress) || {};
+  if (p.phase !== 'sending') return { done: null, total: null };
+  const pid = String((d && d.liveAccount) || '');
+  const account = (_acctLabel({ profileId: pid, email: '' }, { full: true }) || pid).toLowerCase();
+  let done = Number(p.done) || 0;
+  let total = Number(p.total) || 0;
+  const lines = Array.isArray(d && d.monitorLog) ? d.monitorLog : [];
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = String((lines[i] && lines[i].line) || lines[i] || '');
+    const lower = line.toLowerCase();
+    if (account && !lower.includes(account)) continue;
+    // Do not borrow a count from this account's previous turn.
+    if (/opening .+browser|browser (?:opened|opening)/i.test(line)) break;
+    const m = line.match(/(\d+)\s+of\s+(\d+)\s+this turn/i);
+    if (m) { done = Math.max(done, Number(m[1]) || 0); total = Math.max(total, Number(m[2]) || 0); break; }
+  }
+  const remembered = _cloudProgressSeen.get(id);
+  if (remembered && remembered.live && remembered.phase === 'sending' && remembered.profileId === pid) {
+    done = Math.max(done, Number(remembered.done) || 0);
+    total = Math.max(total, Number(remembered.total) || 0);
+  }
+  return { done, total };
+}
+
+// Turn the VM's short-lived liveProgress stamp into the same readable recorder
+// the local runner emits. A stamp is polled repeatedly, so key it by its real
+// step timestamp and only append on a transition. These are verified browser
+// events from campaign-action, not an animated/fake checklist.
+function _recordCloudProgress(id, d) {
+  if (!id || !d) return;
+  const p = d.liveProgress;
+  const prev = _cloudProgressSeen.get(id);
+  if (!p || !p.phase) {
+    if (prev && prev.live) {
+      // Stamped with the turn's LAST engine step, not with this poll: the
+      // browser closed back then, we are only finding out now.
+      _pushCloudEvent(id, `■ ${prev.account || 'VM account'} — browser closed · waiting for the next account turn`, prev.stepAt);
+      // Retain the completed turn. The quiet interval between two browsers is
+      // account rotation, not campaign startup, and the account rail still
+      // needs its N-of-batch counter while the next browser is selected.
+      _cloudProgressSeen.set(id, { ...prev, live: false, closedAt: Date.now() });
+    }
+    return;
+  }
+  const account = _acctLabel({ profileId: d.liveAccount || '', email: '' }, { full: true }) || d.liveAccount || 'VM account';
+  const lead = String(p.selecting || '').trim();
+  const signature = [d.liveAccount, p.phase, p.step, p.stepAt, lead, p.done, p.total].join('|');
+  if (prev && prev.signature === signature) return;
+  const label = String(p.stepLabel || (p.phase === 'checking' ? 'Checking connection acceptances'
+    : p.phase === 'introducing' ? 'Writing the introduction' : 'Opening the LinkedIn profile'));
+  const detail = String(p.stepDetail || '').trim();
+  const sendingTurn = _cloudSendingTurn(id, d);
+  const turn = Number(p.total) > 0
+    ? (p.phase === 'sending'
+      ? ` · ${Number(p.done) || 0} of ${Number(p.total)} this sending batch`
+      : p.phase === 'checking'
+        ? ` · account ${Number(p.done) || 0} of ${Number(p.total)} this check`
+        : ` · ${Number(p.done) || 0} of ${Number(p.total)} introductions completed this check`)
+    : '';
+  _pushCloudEvent(id, `▶ ${account}${lead ? ` · ${lead}` : ''} — ${label}${detail ? ` · ${detail}` : ''}${turn}`, p.stepAt);
+  _cloudProgressSeen.set(id, {
+    // Remembered so the close line above can be stamped with the engine's own
+    // last step time once this turn's breadcrumb disappears.
+    stepAt: p.stepAt,
+    live: true, signature, account, phase: p.phase,
+    profileId: String(d.liveAccount || ''),
+    done: p.phase === 'sending' ? sendingTurn.done : (Number(p.done) || 0),
+    total: p.phase === 'sending' ? sendingTurn.total : (Number(p.total) || 0),
+  });
+}
+
+// Adapt the VM account snapshot to the exact accountPanel contract used by the
+// local runner. That shared contract drives the three-column working / waiting /
+// stopped rail; execution location must not select a different interface.
+function _cloudAccountPanel(id, d, leads) {
+  const c = (d && d.campaign) || {};
+  const snapshot = _cloudAccountsById.get(id) || [];
+  // Account-status polling is independent from the campaign-detail poll. On a
+  // fresh render or a reconnect it may not have arrived yet; an empty snapshot
+  // must not erase the entire three-account rail. The campaign row already has
+  // the authoritative roster and its profile→email map, enough for stable idle
+  // placeholders until the richer status response lands.
+  const rows = snapshot.length ? snapshot : (c.profile_ids || []).map((profileId) => ({
+    profileId,
+    email: (c.config && c.config.accountEmails && c.config.accountEmails[profileId]) || '',
+    dailyCount: 0,
+    dailyLimit: c.daily_limit || 0,
+  }));
+  const p = (d && d.liveProgress) || {};
+  const liveId = String((d && d.liveAccount) || '');
+  const remembered = _cloudProgressSeen.get(id) || null;
+  const today = new Date().toDateString();
+  const sent = (Array.isArray(leads) ? leads : []).filter((l) => l && l.status === 'sent' && l.sentAt
+    && new Date(l.sentAt).toDateString() === today);
+  return rows.map((a) => {
+    const pid = String(a.profileId || '');
+    const activePhase = c.status === 'running' || c.status === 'monitoring';
+    const live = !!(d && d.live && liveId && pid === liveId && activePhase);
+    let state = live ? 'working' : (activePhase ? 'waiting' : (c.status === 'paused' ? 'paused' : 'idle'));
+    let sub = live ? 'Working now on the Cloud VM.' : (activePhase ? (c.status === 'monitoring' ? 'Waiting for the next check.' : 'Waiting for its turn.') : '');
+    if (a.identityRestricted) {
+      state = 'identity-restricted';
+      sub = `${a.restrictionLabel || 'Identity Restricted'} in the SoO. Removed from rotation; queued leads are safe.`;
+    }
+    else if (a.needsLogin) { state = 'stopped'; sub = 'This account needs to be logged in again in GoLogin.'; }
+    else if (a.weeklyCap) { state = 'stopped'; sub = 'LinkedIn weekly invitation limit reached.'; }
+    else if (a.parked) {
+      state = 'stopped';
+      sub = a.parkReason === 'unconfirmed_streak'
+        ? 'Five leads in a row could not be confirmed. Open this account, then choose Retry.'
+        : (a.parkReason ? `Stopped: ${String(a.parkReason).replace(/_/g, ' ')}.` : 'Stopped for this run.');
+    }
+    const reached = sent.filter((l) => String(l.account || '') === pid).map((l) => l.fullName || l.firstName || l.leadUrl || 'Lead');
+    // A "batch" belongs only to sending. During a monitoring sweep liveProgress
+    // total means accounts checked or introductions due; presenting that as
+    // "1 of 1 this batch" made a single accepted person look like a new send.
+    const isSendingTurn = p.phase === 'sending';
+    const rememberedTurn = remembered && remembered.profileId === pid && remembered.total > 0 && remembered.phase === 'sending';
+    const turnDone = isSendingTurn && live && p.total ? Number(p.done) || 0 : (rememberedTurn ? remembered.done : null);
+    const turnTotal = isSendingTurn && live && p.total ? Number(p.total) || 0 : (rememberedTurn ? remembered.total : null);
+    const eventLines = (Array.isArray(d && d.monitorLog) ? d.monitorLog : []).map((e) => String((e && e.line) || ''));
+    const accountNeedle = String(a.email || pid).toLowerCase();
+    const accountEvents = eventLines.filter((line) => line.toLowerCase().includes(accountNeedle));
+    const acceptedNow = accountEvents.reduce((best, line) => {
+      const m = line.match(/(\d+) newly accepted/i); return m ? Math.max(best, Number(m[1]) || 0) : best;
+    }, 0);
+    const introducedNow = accountEvents.filter((line) => /introduced|introduction.+(?:sent|complete)/i.test(line)).length;
+    const monitorResult = c.status === 'monitoring' && (acceptedNow || introducedNow)
+      ? `Checked · ${acceptedNow} newly accepted · ${introducedNow} introduced` : '';
+    return {
+      email: a.email || _acctLabel(a, { full: true }) || pid,
+      state, live,
+      batchDone: turnDone,
+      batchSize: turnTotal,
+      sentToday: Number(a.dailyCount) || 0,
+      dailyLimit: Number(a.dailyLimit || c.daily_limit) || 0,
+      sub, reached, missed: [], result: monitorResult,
+      // Browser narration lives in the top workflow and shared event log. This
+      // rail is deliberately only account health + N-of-batch progress.
+      steps: [],
+    };
+  });
+}
 // Combine the two event streams — user actions (start/stop/pause/check-now, logged
 // immediately app-side) and the engine's per-account check-sweep events (from the
 // campaign detail's monitorLog) — into one time-ordered list.
@@ -7579,13 +7829,29 @@ function _combineCloudEvents(id) {
 // pins the Σ footer last. Stable sort keeps same-time lines in emit order.
 function _mergeCloudLog(leadEntries, events) {
   leadEntries = Array.isArray(leadEntries) ? leadEntries : [];
-  const stamp = (t) => { const d = new Date(t); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
-  const evEntries = (Array.isArray(events) ? events : []).map((e) => {
+  events = Array.isArray(events) ? events : [];
+  // The campaign snapshot carries a synthesized completion marker for older
+  // engines. Modern engines also emit the authoritative sweep summary. Never
+  // show both (and especially never show a synthetic success after a stop).
+  const eventHasTerminalCheck = events.some((e) => /(?:✓\s*)?Check complete|🛑\s*Check stopped|Check finished with an error/i.test(String(e && e.line || '')));
+  if (eventHasTerminalCheck) {
+    leadEntries = leadEntries.filter((e) => !/^(?:✓\s*Check complete|🛑\s*Check stopped|✗\s*Check finished with an error)/i.test(String(e && e.line || '')));
+  }
+  // A line from another day gets its date, exactly as the other log renderer
+  // does. "· 16:34" on yesterday's line read as sixteen minutes ago.
+  const stamp = (t) => { const d = new Date(t); return isNaN(d.getTime()) ? '' : logClock(d, new Date(), false); };
+  const evEntries = events.map((e) => {
     const hh = stamp(e.t);
     return { t: Number(e.t) || null, line: hh ? `${e.line} · ${hh}` : e.line };
   });
-  const key = (e) => (e.t === -Infinity ? -8.64e15 : e.t === Infinity ? 8.64e15 : (e.t == null ? 8.63e15 : e.t));
-  return leadEntries.concat(evEntries)
+  // Undated rows sort by SOURCE, not into one bucket. An undated ENGINE event
+  // was just emitted, so it belongs at the end. An undated LEAD row is
+  // historical sheet state with no usable timestamp — putting it last told the
+  // operator (and the status banner, which reads the log's newest line) that
+  // the oldest unstamped row was the campaign's latest action.
+  const key = (e) => (e.t === -Infinity ? -8.64e15 : e.t === Infinity ? 8.64e15
+    : (e.t == null ? (e._undatedLead ? -8.63e15 : 8.63e15) : e.t));
+  return leadEntries.map((e) => (e.t == null ? { ...e, _undatedLead: true } : e)).concat(evEntries)
     .sort((a, b) => key(a) - key(b))
     .map((e) => e.line);
 }
@@ -7609,6 +7875,7 @@ function _buildCloudActiveStatus(c, leads, counts) {
       monitorTaskStatus: c.monitorTaskStatus || null,
       monitorTaskDueAt: c.monitorTaskDueAt || null,
       monitorCheckStartedAt: c.monitor_check_started_at || null,
+      monitorCheckCompletedAt: c.monitor_check_completed_at || null,
     });
     if (_lastHeroState.get(c.id) !== _hero.state) {
       if (_hero.state === 'waking') _pushCloudEvent(c.id, '⏰ Check due — waking a worker, sweeping in ~2 min');
@@ -7617,7 +7884,11 @@ function _buildCloudActiveStatus(c, leads, counts) {
   } catch (_) { /* the log line must never break the status render */ }
   return {
     _cloud: true, id: c.id, running: c.status === 'running' || c.status === 'paused', paused: c.status === 'paused',
-    state: isMon ? 'monitoring' : undefined, queued: isQueued,
+    // When the pause started, so the card can say when the engine will stop it
+    // for good (48h). Absent on an older engine build — pauseAutoStop then
+    // renders nothing rather than a made-up deadline.
+    pausedAt: c.paused_at || null,
+    state: isMon ? 'monitoring' : (isQueued ? 'queued' : undefined), queued: isQueued,
     // Why it hasn't started, in the same words the board strip uses — card #2
     // and the board are two render paths over one campaign, and an operator who
     // opens the campaign after reading the board must not be told a new story.
@@ -7627,6 +7898,12 @@ function _buildCloudActiveStatus(c, leads, counts) {
     // Raw engine status ('cancelled'/'error'/'done'/…) — drives the live-status
     // card's ▶ Continue / ⟲ Restart swap for stopped campaigns.
     engineStatus: c.status || '',
+    // Which side owns it. The engine's own column, so it survives this app being
+    // closed and reopened: a campaign released to this Mac still reads 'local'
+    // here, which is what lets the card say it is WAITING on the laptop instead
+    // of looking stalled. Absent on an older engine ⇒ the VM owns it.
+    runsOn: c.runs_on || 'vm',
+    handoverAt: c.handover_at || null,
     name: c.name || '(unnamed)', mode: c.mode,
     totalTargets: total, totalProcessed: sent,
     // Leads that still have to be sent. 'claimed' is counted with 'pending': a
@@ -7637,12 +7914,31 @@ function _buildCloudActiveStatus(c, leads, counts) {
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
     acceptedCount: accepted, logs: _mergeCloudLog(_cloudLeadsToLog(leads, c.mode === 'follower_growth', c), _combineCloudEvents(c.id)),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
+    // When blocked senders become eligible again. Monitoring continues while
+    // this durable resume task waits.
+    resumeAt: c.resumeTaskDueAt || null,
+    resumeReason: c.resumeTaskReason || null,
     // Monitor task row → the hero's three states (see monitorHeroState). Absent
     // on a pre-fix engine, which monitorHeroState renders as a plain countdown.
     monitorTaskStatus: c.monitorTaskStatus || null,
     monitorTaskDueAt: c.monitorTaskDueAt || null,
     monitorCheckStartedAt: c.monitor_check_started_at || null,
+    monitorCheckCompletedAt: c.monitor_check_completed_at || null,
+    monitorCheckError: c.monitor_check_error || '',
+    monitorCheckId: c.monitor_check_id || '',
+    monitorCheckStatus: c.monitor_check_status || '',
+    monitorCheckExpected: Number(c.monitor_check_expected) || 0,
+    monitorCheckAccountsChecked: Number(c.monitor_check_accounts_checked) || 0,
+    monitorCheckCurrentAccount: c.monitor_check_current_account || '',
+    monitorCheckHeartbeatAt: c.monitor_check_heartbeat_at || null,
+    monitorTaskError: c.monitorTaskError || '',
     autoChecksEnabled: c.auto_checks_enabled !== false, checkIntervalMinutes: c.check_interval_minutes || 60,
+    // The engine sends check_interval_minutes as the EFFECTIVE cadence and the
+    // operator's own setting beside it; the difference is what makes the card say
+    // "slowed to 4h". An engine that predates this sends neither, and
+    // checkSlowdown() then reports no slowdown — today's wording exactly.
+    checkIntervalBaseMinutes: c.check_interval_base_minutes || c.check_interval_minutes || 60,
+    emptyCheckStreak: c.empty_check_streak || 0,
     // Task 9 — primary needs-login surfacing on card #2 (Task 5's c.primarySession).
     primarySession: c.primarySession,
     // Needed to run the local primary handshake for an account ADDED to a paused
@@ -7658,6 +7954,22 @@ function _buildCloudActiveStatus(c, leads, counts) {
 // reads this: "updated 3s ago" is a fact about the app↔engine link, and a link
 // that has gone quiet is exactly what "it looks crashed" feels like.
 const _cloudPolledAt = new Map();
+// Canonical engine snapshots are retained per campaign so an older request that
+// resolves later cannot move the card backwards. No log line participates in
+// this selection or overlay.
+const _canonicalCampaignStatus = new Map();
+
+function _withCanonicalCampaignStatus(legacy, incoming) {
+  const id = String((incoming && incoming.campaignId) || (legacy && legacy.id) || '');
+  if (!id) return legacy;
+  const previous = _canonicalCampaignStatus.get(id) || null;
+  const eligible = isCampaignStatusSnapshot(incoming) && String(incoming.campaignId) === id
+    ? incoming : null;
+  const selected = selectCampaignStatusSnapshot(previous, eligible);
+  if (!selected) return legacy;
+  _canonicalCampaignStatus.set(id, selected);
+  return overlayCampaignStatus(legacy, selected);
+}
 // When each campaign's /accounts payload was last fetched for the board (the
 // opened campaign has its own poll).
 const _cloudAccountsAt = new Map();
@@ -7781,11 +8093,192 @@ function _sweepStillRuns(c, pf) {
 }
 
 function _cloudCurrentAction(d) {
-  const lp = d && d.liveProgress;
+  const campaignRow = (d && d.campaign) || {};
+  // Detail/list responses do not use one casing consistently: raw engine
+  // details carry monitor_check_status while normalized board rows carry
+  // monitorCheckStatus. A completed durable sweep is authoritative in either
+  // shape; never let an older liveProgress introduction outrank it.
+  const durableSweepStatus = String(
+    campaignRow.monitor_check_status || campaignRow.monitorCheckStatus || ''
+  ).toLowerCase();
+  const durableSweepCompleted = durableSweepStatus === 'completed';
+  // liveProgress is an ephemeral browser breadcrumb and can outlive the worker
+  // that wrote it. Once the durable sweep is complete, it is history—not the
+  // campaign's current action.
+  const lp = durableSweepCompleted ? null : (d && d.liveProgress);
+  // Stop-sending is a handoff, not an instantaneous phase change. The engine
+  // intentionally finishes/stamps the current person before closing the
+  // browser, so its last liveProgress is still "sending" for a few polls after
+  // the durable campaign status has become monitoring. Explain that transition
+  // instead of showing either the stale send or an empty monitoring card.
+  if (campaignRow.status === 'monitoring' && lp && lp.phase === 'sending') {
+    const account = String((d && d.liveAccount) || '');
+    const label = _acctLabel({ profileId: account, email: '' }, { full: true }) || 'the current account';
+    const lead = String(lp.selecting || '').trim();
+    const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
+    return {
+      phase: 'monitoring', label: `Finishing ${lead || 'the current lead'} safely`, account, lead,
+      sub: `closing ${label} after the final sheet confirmation · monitoring starts immediately after`,
+      safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safely queued · no new send will start`,
+      facts: [
+        ['Sending', 'stop accepted'], ['Current lead', lead || 'finishing safely'],
+        ['Current account', label], ['Next expected event', 'monitoring becomes armed'],
+      ],
+      milestones: [
+        ['Stop', 'request accepted', 'done'], ['Current lead', 'finishing and stamping', 'active'],
+        ['Browser', 'closes next', 'future'], ['Monitoring', 'arms after close', 'future'],
+      ],
+    };
+  }
   if (!lp || !lp.phase) {
     // No browser open. If the engine is telling us why, say THAT — never
     // "Working…", which is the word that made a ten-hour stall look healthy.
     const c = (d && d.campaign) || {};
+    if (c.status === 'monitoring' || c.monitoring || c.monitoringPhase || durableSweepCompleted) {
+      const requested = _cloudCheckAskedActive(c);
+      const startedAt = Date.parse(c.monitor_check_started_at || '');
+      const completedAt = Date.parse(c.monitor_check_completed_at || '');
+      const durableSweepStatus = String(c.monitor_check_status || c.monitorCheckStatus || '').toLowerCase();
+      const durableFailure = durableSweepStatus === 'failed' || durableSweepStatus === 'incomplete' || c.monitorTaskStatus === 'error';
+      const durableRunning = durableSweepStatus === 'running';
+      const hasDurableSweep = !!c.monitor_check_id;
+      const checking = !durableFailure && (requested || c.monitorTaskStatus === 'claimed'
+        || durableRunning
+        || (!hasDurableSweep && Number.isFinite(startedAt) && (!Number.isFinite(completedAt) || startedAt > completedAt)));
+      const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
+      const accounts = (c.profile_ids || []).length;
+      const dueAt = Date.parse(c.next_check_at || '');
+      if (durableFailure) {
+        const expected = Number(c.monitor_check_expected) || accounts;
+        const checked = Math.min(expected, Number(c.monitor_check_accounts_checked) || 0);
+        const reason = String(c.monitor_check_error || c.monitorTaskError || 'The worker could not finish this check.');
+        return {
+          phase: 'monitoring', label: `Check incomplete — ${checked} of ${expected} accounts checked`,
+          account: '', lead: '', sub: reason,
+          safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safe · monitoring stays active`,
+          facts: [['Check', 'incomplete'], ['Accounts checked', `${checked} of ${expected}`], ['Result', reason], ['Operator action', 'Retry check']],
+          milestones: [['Requested', 'complete', 'done'], ['Accounts', `${checked} checked`, checked ? 'done' : 'active'], ['Incomplete', `${Math.max(0, expected - checked)} not checked`, 'active'], ['Recovery', 'Retry check', 'future']],
+        };
+      }
+      // A fresh manual request supersedes an old scheduled due time. Otherwise
+      // a two-minute cold start can inherit yesterday's `next_check_at` and be
+      // announced as a 15-minute outage while it is visibly starting.
+      const overdue = !requested && !checking
+        && Number.isFinite(dueAt) && Date.now() > dueAt + 15 * 60 * 1000;
+      const claimedTooLong = c.monitorTaskStatus === 'claimed' && Number.isFinite(startedAt)
+        && Date.now() > startedAt + 15 * 60 * 1000;
+      if (overdue || claimedTooLong) return {
+        phase: 'monitoring', label: 'Monitoring check is overdue', account: '',
+        lead: 'No successful check completed within the expected window',
+        sub: claimedTooLong
+          ? 'The current check has exceeded 15 minutes. The engine will recover the task automatically; use Run check now if it does not recover.'
+          : 'The VM worker has not completed the scheduled check. Use Run check now; if it remains overdue, the engine needs attention.',
+        safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safe · no invitations are being resent`,
+        facts: [
+          ['Scheduled', Number.isFinite(dueAt) ? new Date(dueAt).toLocaleString([], { hour: '2-digit', minute: '2-digit' }) : 'unknown'],
+          ['Delay', 'more than 15 minutes'], ['Accounts expected', String(accounts)],
+          ['Operator action', 'Run check now'],
+        ],
+        milestones: [
+          ['Scheduled', 'due', 'done'], ['Worker', 'overdue', 'active'],
+          ['Accounts', 'not fully checked', 'future'], ['Recovery', 'Run check now', 'future'],
+        ],
+      };
+      if (checking) {
+        const queuedForWorker = c.monitorTaskStatus === 'pending' || (requested && c.monitorTaskStatus !== 'claimed');
+        return {
+        phase: 'checking', label: queuedForWorker ? 'Waiting for the VM worker' : 'Checking acceptances',
+        account: '', lead: queuedForWorker ? 'No account selected yet' : 'Selecting the next account',
+        sub: queuedForWorker ? 'The VM is waking. A cold start normally takes about two minutes.' : 'Selecting the next eligible sender account',
+        safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safe · sending stays stopped`,
+        facts: [
+          ['Check trigger', requested ? 'Run check now' : 'scheduled check'],
+          ['Scope', `${accounts} campaign account${accounts === 1 ? '' : 's'}`],
+          ['Current account', queuedForWorker ? 'not selected yet' : 'selecting'],
+          ['Next expected event', queuedForWorker ? 'VM worker claims the check' : 'sender browser opens'],
+        ],
+        milestones: [
+          ['Requested', 'check queued', 'done'],
+          ['Worker', queuedForWorker ? 'waking' : 'ready', queuedForWorker ? 'active' : 'done'],
+          ['Browser', queuedForWorker ? 'not opened yet' : 'opening eligible account', queuedForWorker ? 'future' : 'active'],
+          ['Accounts', 'waiting', 'future'], ['Results', 'waiting', 'future'],
+        ],
+      };
+      }
+      const next = c.next_check_at ? new Date(c.next_check_at).toLocaleString([], { hour: '2-digit', minute: '2-digit' }) : 'being scheduled';
+      const last = c.monitor_check_completed_at
+        ? new Date(c.monitor_check_completed_at).toLocaleString([], { hour: '2-digit', minute: '2-digit' }) : 'not run yet';
+      const checkStarted = Date.parse(c.monitor_check_started_at || '');
+      const checkCompleted = Date.parse(c.monitor_check_completed_at || '');
+      const checkedLeads = (Array.isArray(d && d._leads) ? d._leads : []).filter((lead) => {
+        const changed = Date.parse((lead && lead.dateLastAction) || '');
+        return Number.isFinite(changed) && Number.isFinite(checkCompleted)
+          && (!Number.isFinite(checkStarted) || changed >= checkStarted - 5000)
+          && changed <= checkCompleted + 5000;
+      });
+      const acceptedLast = Math.max(0, Number(c.monitor_check_newly_accepted) || 0);
+      const checkError = String(c.monitor_check_error || '').trim();
+      const introducedLast = checkedLeads.filter((lead) => {
+        const value = String((lead && lead.introductionStatus) || '').trim();
+        return value && !/fail|error|not in your connections|couldn'?t|unable/i.test(value);
+      }).length;
+      const resultBits = [
+        `${acceptedLast} newly accepted`,
+        `${introducedLast} introduction${introducedLast === 1 ? '' : 's'} sent`,
+      ];
+      const hasCompletedCheck = Number.isFinite(checkCompleted);
+      return {
+        phase: 'monitoring',
+        label: checkError
+          ? 'Monitoring needs attention'
+          : hasCompletedCheck
+          ? `Last check complete — ${introducedLast} introduction${introducedLast === 1 ? '' : 's'} sent`
+          : 'Nothing is running right now — this is expected',
+        account: '', lead: 'Waiting between acceptance checks',
+        sub: checkError
+          ? checkError
+          : hasCompletedCheck
+          ? `${resultBits.join(' · ')} · next check ${next}`
+          : 'No browser stays open between sweeps · the VM starts the next check automatically',
+        safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safely queued · sending is stopped`,
+        facts: [
+          ['Last check', last], ['Last check result', checkError || (hasCompletedCheck ? resultBits.join(' · ') : 'not run yet')],
+          ['Next check', next],
+          ['Scope', `${accounts} campaign account${accounts === 1 ? '' : 's'}`], ['Operator action', checkError ? 'Follow the account instruction, then Retry' : 'none required'],
+        ],
+        milestones: [
+          ['Last check', hasCompletedCheck ? 'complete' : 'not run yet', hasCompletedCheck ? 'done' : 'future'],
+          ['Acceptances', hasCompletedCheck ? `${acceptedLast} found` : 'matched during check', hasCompletedCheck ? 'done' : 'future'],
+          ['Introductions', hasCompletedCheck ? `${introducedLast} sent` : 'sent after matches', hasCompletedCheck ? 'done' : 'future'],
+          ['Waiting', `next check ${next}`, 'active'],
+        ],
+      };
+    }
+    if (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') {
+      const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
+      return {
+        phase: 'starting',
+        label: c.status === 'scheduled' ? 'Waiting for the scheduled start' : 'Starting the cloud machine',
+        account: '',
+        lead: c.status === 'scheduled' ? 'The VM will claim it at the scheduled time' : 'The campaign is safely queued on the VM',
+        sub: c.status === 'scheduled'
+          ? 'nothing is sending before the scheduled time'
+          : 'warming a worker and preparing the GoLogin browser runtime · normally about 2 minutes',
+        safety: `${pending || 'All'} pending lead${pending === 1 ? '' : 's'} safe · none consumed while warming`,
+        facts: [
+          ['Campaign queue', c.status],
+          ['Current account', 'not selected yet'],
+          ['Next expected event', 'first GoLogin browser opens'],
+          ['Normal warm-up', 'about 2 minutes'],
+        ],
+        milestones: [
+          ['Received', `${pending || 'All'} leads ready`, 'done'],
+          ['Worker', c.status === 'scheduled' ? 'waiting for schedule' : 'VM pod waking', 'active'],
+          ['Browser runtime', 'opens automatically', 'future'],
+          ['First lead', 'remains safely queued', 'future'],
+        ],
+      };
+    }
     if (c.status !== 'running') return null;
     const why = _cloudWaitingReason(d && d.monitorLog);
     // Asleep on the engine's blocked_until: no account can work before then, so
@@ -7824,24 +8317,218 @@ function _cloudCurrentAction(d) {
         account: d._fgLast.account, lead: d._fgLast.name || '',
         sub: `last invite ${ago}` };
     }
-    if (!why) return null;
+    const rotation = c.id && _cloudProgressSeen.get(c.id);
+    if (rotation && !rotation.live && rotation.account) {
+      const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
+      return {
+        phase: 'sending',
+        label: `Closing ${rotation.account}'s browser`,
+        account: rotation.profileId || '',
+        lead: 'Selecting the next available account',
+        sub: 'the completed browser is closed · the VM will open the next eligible account automatically',
+        safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safely queued`,
+        facts: [
+          ['Previous account', rotation.account],
+          ['Completed turn', rotation.total ? `${rotation.done} of ${rotation.total}` : 'finished'],
+          ['Current phase', 'rotating accounts'],
+          ['Next expected event', 'next GoLogin browser opens'],
+        ],
+        milestones: [
+          ['Browser', 'closed safely', 'done'],
+          ['Rotation', 'selecting the next eligible account', 'active'],
+          ['Next account', 'opens automatically', 'future'],
+          ['Next batch', 'remains safely queued', 'future'],
+        ],
+      };
+    }
+    if (!why) {
+      // status:'running' precedes the first named browser action while KEDA
+      // wakes a worker and Orbita starts. That gap is a real operational phase.
+      const started = Date.parse(c.updated_at || c.created_at || '');
+      const ageMs = Number.isFinite(started) ? Math.max(0, Date.now() - started) : 0;
+      const overrun = ageMs > 3 * 60 * 1000;
+      const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
+      return {
+        phase: 'starting',
+        label: overrun ? 'Worker startup is taking longer than expected' : 'Starting the campaign worker',
+        account: '',
+        lead: overrun ? 'No sender browser has opened yet' : 'Preparing the Cloud VM',
+        sub: overrun
+          ? 'the VM is responding, but startup exceeded the normal 3-minute window'
+          : 'waking the worker and preparing the GoLogin browser runtime',
+        safety: `${pending || 'All'} pending lead${pending === 1 ? '' : 's'} safe · 0 consumed`,
+        overrun,
+        facts: [
+          ['Campaign queue', 'claimed / starting'],
+          ['Current account', 'not selected yet'],
+          ['Next expected event', 'first GoLogin browser opens'],
+          ['Normal startup', '1–3 minutes'],
+        ],
+        milestones: [
+          ['Received', `${pending || 'All'} leads ready`, 'done'],
+          ['Worker', 'VM pod waking', 'done'],
+          ['Browser runtime', overrun ? 'startup delayed' : 'preparing Orbita', 'active'],
+          ['First lead', 'not claimed yet', 'future'],
+        ],
+      };
+    }
     return { phase: 'waiting', label: 'Waiting for a free account',
-      account: '', lead: 'No account free', sub: why };
+      account: '', lead: 'All accounts are resting between batches',
+      sub: `${why} · This is normal pacing — the VM retries automatically`,
+      safety: 'No action needed · the campaign is safe and still running',
+      facts: [
+        ['Why it is waiting', why || 'accounts are in their safety pause'],
+        ['What happens next', 'the first available account is selected'],
+        ['Operator action', 'none — keep the campaign running'],
+        ['Engine heartbeat', 'watching for availability'],
+      ],
+      milestones: [
+        ['Campaign', 'running', 'done'],
+        ['Account rotation', 'safety pause', 'active'],
+        ['Next browser', 'opens automatically', 'future'],
+        ['Next lead', 'remains safely queued', 'future'],
+      ] };
   }
   const who = String(lp.selecting || '').trim();
   const acct = String((d && d.liveAccount) || '').trim();
+  const acctName = acct ? _acctLabel({ profileId: acct, email: '' }, { full: true }) : '';
   const n = Number(lp.done) || 0, tot = Number(lp.total) || 0;
+  const pending = Number(d && d.leadCounts && d.leadCounts.pending) || 0;
+  // The lead ledger is authoritative for completed work. `liveProgress` is a
+  // transient browser stamp and can remain on "Opening profile" for one poll
+  // after the lead endpoint has already confirmed the send. When both refer to
+  // the same person and the ledger event is newer, advance the top stage too so
+  // it can never lag behind the log underneath it.
+  const normLead = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const lpAtRaw = Number(lp.stepAt);
+  const lpAt = Number.isFinite(lpAtRaw) && lpAtRaw > 0 ? lpAtRaw : (Date.parse(lp.stepAt || '') || 0);
+  const outcome = ((d && d._leads) || [])
+    .filter((l) => l && normLead(l.fullName) === normLead(who) && (l.status === 'sent' || l.status === 'error'))
+    .map((l) => ({ lead: l, at: Date.parse(l.sentAt || l.dateLastAction || '') || 0 }))
+    .filter((x) => x.at && (!lpAt || x.at >= lpAt))
+    .sort((a, b) => b.at - a.at)[0];
+  if (who && outcome) {
+    const ok = outcome.lead.status === 'sent';
+    return {
+      phase: ok ? 'sending' : 'error',
+      label: ok ? `${who} sent and confirmed` : `${who} finished with an error`,
+      account: acct, lead: who,
+      sub: ok ? 'LinkedIn confirmed the result · stamping complete' : String(outcome.lead.error || 'See the newest log event'),
+      safety: `${pending} lead${pending === 1 ? '' : 's'} remain safely queued`,
+      facts: [
+        ['Current account', acctName || 'selected'],
+        ['Latest verified event', ok ? 'send confirmed' : 'error recorded'],
+        ['Current lead', who],
+        ['Next expected event', 'select the next lead or rest this account'],
+      ],
+      milestones: [
+        ['Profile', 'opened', 'done'], ['Connect', 'pressed', 'done'],
+        ['Note', 'handled', 'done'], ['Confirm', ok ? 'LinkedIn accepted it' : 'failed', 'done'],
+        ['Sheet', ok ? 'result stamped' : 'error stamped', 'done'],
+      ],
+    };
+  }
+  const activeFacts = (phase, next) => ({
+    safety: `${pending} lead${pending === 1 ? '' : 's'} remain pending`,
+    facts: [
+      ['Current account', acctName || who || 'selecting'],
+      ['Current phase', phase],
+      ['Next expected event', next],
+      ['Engine heartbeat', 'live'],
+    ],
+    milestones: [
+      ['Received', 'campaign imported', 'done'],
+      ['Worker', 'VM pod active', 'done'],
+      ['Browser runtime', 'GoLogin ready', 'done'],
+      ['Current work', who || phase, 'active'],
+    ],
+  });
   if (lp.phase === 'checking') {
+    const checkFlow = [
+      ['Account', 'browser opened', ['opening_account', 'account_open']],
+      ['Invitations', 'loaded', ['loading_invitations', 'invitations_loaded']],
+      ['Acceptances', 'matched', ['matching_acceptances', 'acceptances_matched']],
+      ['Introductions', 'queued', ['queueing_intros', 'intros_queued']],
+      ['Check', 'complete', ['check_complete']],
+    ];
+    const checkFlat = checkFlow.flatMap((x) => x[2]);
+    const checkStep = String(lp.step || 'loading_invitations');
+    const checkAt = Math.max(0, checkFlat.indexOf(checkStep));
     // `selecting` IS the account being swept here — there's no lead in a sweep.
     return { phase: 'checking', label: who ? `Checking ${who} for acceptances` : 'Checking for new acceptances',
-      account: who || acct, lead: '', sub: tot ? `account ${n} of ${tot}` : '' };
+      account: who || acct, lead: '', done: n, total: tot, sub: tot ? `account ${n} of ${tot}` : '',
+      safety: `${pending} lead${pending === 1 ? '' : 's'} remain safely queued`,
+      facts: [
+        ['Current account', who || acctName || 'selecting'],
+        ['Live check step', lp.stepLabel || 'Reading sent invitations'],
+        ['Next expected event', lp.stepDetail || 'match newly accepted connections'],
+        ['Engine heartbeat', 'live'],
+      ],
+      milestones: checkFlow.map(([label, doneText, steps]) => {
+        const first = checkFlat.indexOf(steps[0]);
+        const last = Math.max(...steps.map((x) => checkFlat.indexOf(x)));
+        const state = checkAt > last ? 'done' : checkAt >= first && checkAt <= last ? 'active' : 'future';
+        return [label, state === 'done' ? doneText : state === 'active' ? (lp.stepLabel || doneText) : 'waiting', state];
+      }) };
   }
   if (lp.phase === 'introducing') {
+    const introFlow = [
+      ['Primary', 'verified', ['verifying_primary', 'primary_verified']],
+      ['Compose', 'opened', ['opening_compose', 'compose_open']],
+      ['Recipients', 'selected', ['selecting_recipients', 'recipients_selected']],
+      ['Message', 'sent and confirmed', ['writing_message', 'sending_message', 'message_confirmed']],
+      ['Sheet', 'result stamped', ['stamping_sheet', 'intro_complete']],
+    ];
+    const introFlat = introFlow.flatMap((x) => x[2]);
+    const introStep = String(lp.step || 'opening_compose');
+    const introAt = Math.max(0, introFlat.indexOf(introStep));
     return { phase: 'introducing', label: who ? `Introducing ${who}` : 'Writing introductions',
-      account: acct, lead: who, sub: tot ? `${n} of ${tot} accepted connections` : '' };
+      account: acct, lead: who, done: n, total: tot,
+      step: introStep, stepLabel: lp.stepLabel || 'Preparing the introduction',
+      sub: `${tot ? `${n} of ${tot} introductions completed this check · ` : ''}${lp.stepLabel || 'preparing the introduction'}${lp.stepDetail ? ` · ${lp.stepDetail}` : ''}`,
+      safety: `${pending} lead${pending === 1 ? '' : 's'} remain safely queued`,
+      facts: [
+        ['Current account', acctName || 'selected'],
+        ['Live introduction step', lp.stepLabel || 'Preparing the introduction'],
+        ['Current lead', who || 'selecting'],
+        ['Engine heartbeat', 'live'],
+      ],
+      milestones: introFlow.map(([label, doneText, steps]) => {
+        const first = introFlat.indexOf(steps[0]);
+        const last = Math.max(...steps.map((x) => introFlat.indexOf(x)));
+        const state = introAt > last ? 'done' : introAt >= first && introAt <= last ? 'active' : 'future';
+        return [label, state === 'done' ? doneText : state === 'active' ? (lp.stepLabel || doneText) : 'waiting', state];
+      }) };
   }
-  return { phase: 'sending', label: who ? `Sending connection to ${who}` : 'Sending connection',
-    account: acct, lead: who, sub: '' };
+  const step = String(lp.step || 'opening_profile');
+  const stepLabel = String(lp.stepLabel || 'Opening the LinkedIn profile');
+  const stepDetail = String(lp.stepDetail || 'Waiting for the next verified browser event');
+  const flow = [
+    ['Profile', 'opened', ['opening_profile', 'profile_loading', 'profile_open', 'profile_ready']],
+    ['Connect', 'pressed', ['finding_connect', 'connect_pressed', 'invite_open']],
+    ['Note', 'written', ['opening_note', 'writing_note', 'note_written']],
+    ['Confirm', 'LinkedIn accepted it', ['pressing_send', 'confirming_send', 'confirmed', 'saving_result']],
+    ['Sheet', 'result stamped', ['stamping_sheet']],
+  ];
+  const flat = flow.flatMap((x) => x[2]);
+  const at = Math.max(0, flat.indexOf(step));
+  const milestones = flow.map(([label, doneText, steps]) => {
+    const first = flat.indexOf(steps[0]);
+    const last = Math.max(...steps.map((s) => flat.indexOf(s)));
+    const state = at > last ? 'done' : at >= first && at <= last ? 'active' : 'future';
+    const value = state === 'done' ? doneText : state === 'active' ? stepLabel : 'waiting';
+    return [label, value, state];
+  });
+  return { phase: 'sending', label: who ? `Working on ${who}` : 'Sending connection',
+    account: acct, lead: who, sub: `Now: ${stepLabel} · ${stepDetail}`,
+    safety: `${pending} lead${pending === 1 ? '' : 's'} remain safely queued`,
+    facts: [
+      ['Current account', acctName || 'selecting'],
+      ['Live browser step', stepLabel],
+      ['Current lead', who || 'selecting'],
+      ['Engine heartbeat', 'live'],
+    ],
+    milestones };
 }
 
 // A finished FG run that sent 258 of 1567 says nothing about WHY the other 1309
@@ -7896,7 +8583,9 @@ function _fgFinishedNote(status) {
 
 async function _refreshCloudActiveStatus(id) {
   try {
-    const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
+    const detailRes = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`);
+    const d = await detailRes.json();
+    if (!detailRes.ok || (d && d.error)) throw new Error((d && d.error) || `HTTP ${detailRes.status}`);
     let leads = [];
     try { const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json(); if (lr && Array.isArray(lr.leads)) leads = lr.leads; } catch (_) { /* */ }
     // Live Status is a SECOND render path — the board's _refreshCloudItems does
@@ -7906,6 +8595,7 @@ async function _refreshCloudActiveStatus(id) {
       _cloudAcctCounts.set(id, _cloudCountsByAccount(leads));
       if (d) d._fgLast = _fgLastActivity(leads);
     }
+    if (d) d._leads = leads;
     // The detail cache is what renderCloudAccountsPanel reads the mode off.
     if (d) _cloudDetailCache.set(id, d);
     // This route can be open without the board ever having polled, so card #2
@@ -7914,6 +8604,7 @@ async function _refreshCloudActiveStatus(id) {
       try { _cloudCapacity = await (await fetch('/api/campaign/cloud-capacity')).json(); }
       catch (_) { /* queueState says nothing without a reading, which is correct */ }
     }
+    if (d && d.campaign) _tickQueueWait(id, d.campaign);
     // Engine's per-account check-sweep events (reliable — one line per account the
     // VM opens, e.g. "🖥️ Checking liza.advocate@ortus.solutions…"). Captured here
     // and merged into the log by _combineCloudEvents. Newest-first from Redis.
@@ -7925,6 +8616,7 @@ async function _refreshCloudActiveStatus(id) {
       if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(id, ar.accounts);
     } catch (_) { /* engine may not expose it yet — panel just won't show */ }
     try { if (_viewingCloudId === id) renderCloudAccountsPanel(id); } catch (_) { /* */ }
+    _recordCloudProgress(id, d);
     window.__cloudActiveStatus = _buildCloudActiveStatus((d && d.campaign) || {}, leads, (d && d.leadCounts) || {});
     // Live-browser flag from the engine (top-level of the /:id detail) — drives
     // the LIVE dot on card #2's Show button (component 5 → component 7).
@@ -7933,9 +8625,70 @@ async function _refreshCloudActiveStatus(id) {
       window.__cloudActiveStatus.liveAccount = (d && d.liveAccount) || '';
       window.__cloudActiveStatus.paused = !!(d && d.campaign && d.campaign.status === 'paused');
       window.__cloudActiveStatus.currentAction = _cloudCurrentAction(d);
+      window.__cloudActiveStatus.accountPanel = _cloudAccountPanel(id, d, leads);
+      const activeTurn = _cloudSendingTurn(id, d);
+      window.__cloudActiveStatus.batchDone = activeTurn.done;
+      window.__cloudActiveStatus.batchSize = activeTurn.total;
+      // Handed to this Mac: the checks run HERE, so the engine's view of them is
+      // stale by definition. Its monitor task was retired at handover and
+      // monitor_check_started_at stays null, so without this overlay the card
+      // reads "nothing running right now" while a GoLogin browser is open on
+      // screen. That exact lie is what this whole feature was built to end, so
+      // the local snapshot wins for the fields it owns.
+      if (String((d && d.campaign && d.campaign.runs_on) || '') === 'local' && _localLive) {
+        window.__cloudActiveStatus.runsOn = 'local';
+        window.__cloudActiveStatus.monitoringCheckInProgress = !!_localLive.monitoringCheckInProgress;
+        window.__cloudActiveStatus.live = !!_localLive.live;
+        window.__cloudActiveStatus.liveAccount = _localLive.liveAccount || _localLive.currentProfile || '';
+        window.__cloudActiveStatus.currentAction = _localLive.currentAction || null;
+        window.__cloudActiveStatus.batchDone = _localLive.batchDone;
+        window.__cloudActiveStatus.batchSize = _localLive.batchSize;
+        if (Array.isArray(_localLive.profileIds) && _localLive.profileIds.length) {
+          window.__cloudActiveStatus.profileIds = _localLive.profileIds;
+          window.__cloudActiveStatus.participatingProfileIds = Array.isArray(_localLive.participatingProfileIds)
+            && _localLive.participatingProfileIds.length
+            ? _localLive.participatingProfileIds : _localLive.profileIds;
+        }
+        if (Array.isArray(_localLive.logs)) window.__cloudActiveStatus.logs = _localLive.logs;
+        if (_localLive.nextCheckAt) window.__cloudActiveStatus.nextCheckAt = _localLive.nextCheckAt;
+        if (_localLive.emptyCheckStreak != null) window.__cloudActiveStatus.emptyCheckStreak = _localLive.emptyCheckStreak;
+        // Same for the per-account panel: only this Mac knows what its own
+        // accounts are doing, so its snapshot owns that field too.
+        if (Array.isArray(_localLive.accountPanel)) window.__cloudActiveStatus.accountPanel = _localLive.accountPanel;
+      }
       _cloudPolledAt.set(id, Date.now());
+      window.__cloudActiveStatus.connectionUnknown = false;
+      window.__cloudActiveStatus.lastVerifiedAt = Date.now();
     }
-  } catch (_) { if (!window.__cloudActiveStatus) window.__cloudActiveStatus = { _cloud: true, id, name: 'Cloud campaign', running: true, logs: [] }; }
+    window.__cloudActiveStatus = _withCanonicalCampaignStatus(
+      window.__cloudActiveStatus,
+      d && d.campaignStatus,
+    );
+  } catch (err) {
+    const previous = window.__cloudActiveStatus && String(window.__cloudActiveStatus.id) === String(id)
+      ? window.__cloudActiveStatus : null;
+    if (previous) {
+      // Keep the last truth, but mark it as stale. A transport failure is not a
+      // campaign transition and must never repaint Running as Finished/Idle.
+      window.__cloudActiveStatus = { ...previous, connectionUnknown: true,
+        connectionError: String((err && err.message) || 'VM did not answer') };
+    } else {
+      // First read failed: say exactly that. Do not fabricate running:true.
+      window.__cloudActiveStatus = {
+        _cloud: true, id, name: 'Cloud campaign', running: false, queued: true,
+        state: 'connection-unknown', connectionUnknown: true,
+        connectionError: String((err && err.message) || 'VM did not answer'),
+        totalTargets: 0, totalProcessed: 0, profileIds: [], logs: [], runsOn: 'vm',
+        currentAction: {
+          phase: 'offline', label: 'Unable to verify the Cloud VM', account: '',
+          lead: 'The campaign state is unknown — no stop or completion has been inferred',
+          sub: 'the app is retrying automatically', safety: 'Last verified campaign state is unavailable',
+          facts: [['Connection', 'temporarily unavailable'], ['Next action', 'retrying automatically']],
+          milestones: [['App', 'waiting for the VM response', 'active'], ['Campaign', 'state not changed by this error', 'future']],
+        },
+      };
+    }
+  }
 }
 
 // Render the per-account status panel below the Live Status card (Account | Status)
@@ -7959,13 +8712,21 @@ function renderCloudAccountsPanel(id) {
     const who = escHtml(a.email || _acctLabel(a) || 'account');
     const badges = [];
     // Blocking status first (most important), then daily usage, then primary link.
-    const benched = !!(a.weeklyCap || a.parkReason === 'weekly');
+    const weekly = !!(a.weeklyCap || a.parkReason === 'weekly');
+    const benched = !!(weekly || a.parked);
     if (a.needsLogin) badges.push(badge('bad', '⚠ Not logged in'));
     // Parked by 3 consecutive proxy 407s — the VM literally cannot open this
     // profile's browser. Distinct from a throttle: waiting won't fix it.
     else if (a.parkReason === 'proxy') badges.push(badge('bad', '⛔ Proxy refused — fix the GoLogin profile, then Retry'));
-    else if (benched) badges.push(badge('bad', `🚫 Benched — weekly invitation limit · resets ${_nextMondayText()}`));
-    else if (a.parked || a.parkReason === 'throttle') badges.push(badge('warn', '⏸ Throttled'));
+    else if (weekly) badges.push(badge('bad', `🚫 Benched — weekly invitation limit · resets ${_nextMondayText()}`));
+    else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') badges.push(badge('warn', '⏸ Throttled'));
+    else if (a.parkReason === 'unconfirmed_streak') {
+      badges.push(badge('bad', '5 unconfirmed in a row — open the account, then Retry'));
+    }
+    else if (a.parked) {
+      const reason = String(a.parkReason || 'stopped').replace(/[_-]+/g, ' ');
+      badges.push(badge('bad', `Stopped — ${reason}`));
+    }
     else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
     else badges.push(badge('ok', '✓ Active'));
     // This run's invites when we have them (the daily quota is meaningless on a
@@ -7978,6 +8739,10 @@ function renderCloudAccountsPanel(id) {
     // spent. Not a blocker, so it sits after the tally rather than replacing the
     // status badge — the campaign is running, the note just isn't attached.
     if (a.noteExhausted) badges.push(badge('warn', '✉ No note — free personalised invites used up'));
+    if (a.lastMonitorSuccessAt) {
+      const checked = new Date(a.lastMonitorSuccessAt);
+      if (!Number.isNaN(checked.getTime())) badges.push(badge('muted', `Last checked ${checked.toLocaleString([], { hour: '2-digit', minute: '2-digit' })}`));
+    }
     // Primary-connection (CC+IC only; null when N/A).
     if (a.primaryConnected === true) badges.push(badge('ok', '🔗 Connected to primary'));
     else if (a.primaryConnected === false) badges.push(badge('muted', 'Primary not yet connected'));
@@ -7987,7 +8752,7 @@ function renderCloudAccountsPanel(id) {
     // A weekly cap gets no Retry — it's a window, not a cooldown. Offering one
     // here while the live stage says "don't retry before Monday" is the app
     // arguing with itself, and taking it spends strikes for nothing.
-    if (benched && !a.needsLogin && !(a.weeklyCap || a.parkReason === 'weekly')) {
+    if (benched && !a.needsLogin && !weekly) {
       badges.push(`<button type="button" class="cap-retry" onclick="unbenchCloudAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)" title="Clear the bench and let this account try again">Retry</button>`);
     }
     // Editable (paused/stopped) → a toggle that REMOVES the account from the
@@ -8306,6 +9071,14 @@ function _startCloudCardPoll() {
   _stopCloudCardPoll();
   _cloudCardTimer = setInterval(async () => {
     if (!_viewingCloudId) { _stopCloudCardPoll(); return; }
+    // A campaign handed to this Mac RUNS here, so pollStatus owns the card and
+    // its data is the live one. This 5s cloud repaint was still firing at the
+    // same element, so the card alternated between two different logs (measured
+    // 2026-08-21: 15 lines / 460px from pollStatus, then 9 lines / 262px from
+    // here, and back) and jumped 198px every five seconds while the operator
+    // was trying to read it. Stand down once the campaign is local: one card,
+    // one writer.
+    if (_checkRunsLocally(_viewingCloudId)) { _stopCloudCardPoll(); return; }
     await _refreshCloudActiveStatus(_viewingCloudId);
     try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
     try { if (typeof _enforceCloudReadOnlyView === 'function') _enforceCloudReadOnlyView(); } catch (_) { /* */ }
@@ -8351,16 +9124,27 @@ function _adaptActiveCardControls(card, status) {
     && /^connect/.test(String(status.mode || ''))
     && _pendingLeft > 0
     && ['monitoring', 'done'].includes(String(status.engineStatus || ''));
+  // Same for a campaign monitoring on THIS Mac: its unsent leads are just as
+  // stranded as a VM campaign's, but the local card offered no way back at all
+  // (operator, 2026-08-28: "for a lm campaign there is no Resume sending
+  // button"). The decision sheet is the local one.
+  const _localMonitoring = !cloud && !!status && !status.running && !status.queued
+    && (status.state === 'monitoring' || !!status.monitoring || !!status.monitoringPhase)
+    && _pendingLeft > 0;
+  const _resumeAny = _resumeOnly || _localMonitoring;
   let ctBtn = document.getElementById('dock-cloud-continue');
   let rsBtn = document.getElementById('dock-cloud-restart');
-  if ((_stoppedCloud || _resumeOnly) && dock) {
+  const controlsRow = card ? card.querySelector('.vj-controls') : null;
+  if ((_stoppedCloud || _resumeAny) && dock) {
     if (!ctBtn) {
+      // A labelled pill, not a bare ▶: beside the red square it was unreadable.
       ctBtn = document.createElement('button');
       ctBtn.id = 'dock-cloud-continue';
-      ctBtn.className = 'dock-btn';
-      ctBtn.setAttribute('data-tip', 'Continue where it left off'); ctBtn.setAttribute('aria-label', 'Continue where it left off');
-      ctBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
-      dock.insertBefore(ctBtn, dock.firstChild);
+      ctBtn.className = 'btn-pill go';
+      ctBtn.textContent = 'Resume sending';
+      const stopPill = document.getElementById('btn-active-stop');
+      if (controlsRow) controlsRow.insertBefore(ctBtn, stopPill || null);
+      else dock.insertBefore(ctBtn, dock.firstChild);
     }
     if (!rsBtn) {
       rsBtn = document.createElement('button');
@@ -8370,30 +9154,33 @@ function _adaptActiveCardControls(card, status) {
       rsBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36L3 16"/><path d="M3 21v-5h5"/></svg>';
       dock.insertBefore(rsBtn, ctBtn.nextSibling);
     }
-    ctBtn.onclick = () => { try { window.restartCloudCampaignUI(_viewingCloudId, false); } catch (_) { /* */ } };
+    ctBtn.onclick = _localMonitoring
+      ? () => { try { window.openCampaignResumeDecision(String(status.id || 'local-active'), 'sending-from-monitoring', 'local', ctBtn); } catch (_) { /* */ } }
+      : () => { try { window.restartCloudCampaignUI(_viewingCloudId, false); } catch (_) { /* */ } };
     rsBtn.onclick = () => { try { window.restartCloudCampaignUI(_viewingCloudId, true); } catch (_) { /* */ } };
     const _resumeTip = `Resume sending — ${_pendingLeft} still to go`;
-    ctBtn.setAttribute('data-tip', _resumeOnly ? _resumeTip : 'Continue where it left off');
-    ctBtn.setAttribute('aria-label', _resumeOnly ? _resumeTip : 'Continue where it left off');
+    ctBtn.textContent = _resumeAny ? 'Resume sending' : 'Continue where it left off';
+    ctBtn.setAttribute('title', _resumeAny ? _resumeTip : 'Continue where it left off');
+    ctBtn.setAttribute('aria-label', _resumeAny ? _resumeTip : 'Continue where it left off');
     ctBtn.style.display = '';
     // Restart-from-the-beginning only makes sense for a genuinely stopped run.
     // On a monitoring campaign it would re-send every lead — never offer it.
-    rsBtn.style.display = _resumeOnly ? 'none' : '';
+    rsBtn.style.display = _resumeAny ? 'none' : '';
     // Monitoring keeps its own Pause/Stop (the checks are still running); a
     // stopped campaign has nothing to pause or stop.
-    if (!_resumeOnly) {
+    if (!_resumeAny) {
       if (pauseBtn) pauseBtn.style.display = 'none';
-      const stopBtn = dock.querySelector('[data-tip="Stop"]');
+      const stopBtn = document.getElementById('btn-active-stop');
       if (stopBtn) stopBtn.style.display = 'none';
     } else {
-      const stopBtn = dock.querySelector('[data-tip="Stop"]');
+      const stopBtn = document.getElementById('btn-active-stop');
       if (stopBtn) stopBtn.style.removeProperty('display');
     }
   } else {
     if (ctBtn) ctBtn.style.display = 'none';
     if (rsBtn) rsBtn.style.display = 'none';
     if (!cloud || (status && (status.running || status.queued || status.state === 'monitoring'))) {
-      const stopBtn = dock ? dock.querySelector('[data-tip="Stop"]') : null;
+      const stopBtn = document.getElementById('btn-active-stop');
       if (stopBtn) stopBtn.style.removeProperty('display');
     }
   }
@@ -8542,6 +9329,14 @@ async function deleteBoardCampaign(id, btn) {
       // even if the stop call fails.
       try { await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop`, { method: 'POST' }); } catch (_) { /* still hide it below */ }
       _cloudDismissed.add(id); _cloudSaveDismissed();
+    } else if (it && it.id === 'local-active' && it.interrupted) {
+      const r = await fetch('/api/campaign/interrupted', { method: 'DELETE' });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        alert('Could not delete: ' + (e.error || r.status));
+        return;
+      }
+      _localDismissed.add(id);
     } else if (it && it.histIdx != null) {
       const r = await fetch('/api/history/' + encodeURIComponent(it.histIdx), { method: 'DELETE' });
       if (!r.ok) {
@@ -8962,7 +9757,8 @@ function _buildSkippedSection(it) {
 // An expanded dashboard strip renders the SAME .vj-card as the campaign-tab
 // live-status card (card #2). vjCardSkeleton clones the real #active-card node
 // (id→data-f so ids don't collide) — zero markup drift. fillVjCard populates it
-// per-campaign, scoped by data-f. The collapsed strip is unchanged. See
+// per-campaign, scoped by data-f. Active campaigns never fall back to the old
+// compact renderer: collapse is reserved for queue/archive rows. See
 // docs/superpowers/specs/2026-07-11-expanded-strip-card2-parity-design.md
 let _snItemsById = new Map();
 
@@ -8988,20 +9784,35 @@ function vjCardSkeleton(cid) {
   // controls/bulk panel so an unfilled clone is neutral, never local-looking.
   ['activeName', 'activeEyebrow', 'activePct', 'activeSent', 'activeTotal', 'activeAccounts',
    'activeAccepted', 'sendingLbl', 'activeLiveIco', 'activeLiveL1', 'activeLiveL2', 'monCount', 'monLine',
-   'stageVerb', 'stageName', 'stageSub', 'stageBeatTxt', 'stageBeatRight']
-    .forEach((fld) => { const el = clone.querySelector(`[data-f="${fld}"]`); if (el) el.textContent = ''; });
+   'stageVerb', 'stageName', 'stageSub', 'stageSafety', 'stageFacts', 'stageMiles', 'stageBeatTxt', 'stageBeatRight',
+   'stageSideLabel', 'stageSideValue', 'stageSideHelp', 'stageMetricAccepted', 'stageMetricIntroduced',
+   'stageMetricRemaining', 'stageNextLabel', 'stageNextTitle', 'stageNextDetail', 'active-retry']
+    .forEach((fld) => {
+      const el = clone.querySelector(`[data-f="${fld}"]`);
+      if (!el) return;
+      el.textContent = '';
+      // stageFacts/stageMiles cache their last rendered markup here. Keeping
+      // this cache while deleting the DOM makes renderLiveStage conclude the
+      // blank clone is already current, so the expanded dashboard loses the
+      // exact progress detail still visible in Campaign Builder.
+      delete el.dataset.html;
+    });
   // The live stage arrives carrying the singleton's person, phase glyph and
   // render-guard dataset. Blank it so an unfilled clone can never show someone
   // else's lead, and so renderLiveStage redraws it from scratch for THIS card.
   const _cstage = clone.querySelector('[data-f="active-stage"]');
   if (_cstage) {
     _cstage.hidden = true;
-    _cstage.dataset.phase = ''; _cstage.dataset.who = ''; _cstage.dataset.acctkey = ''; _cstage.dataset.cid = '';
+    _cstage.dataset.phase = ''; _cstage.dataset.glyphphase = ''; _cstage.dataset.who = '';
+    _cstage.dataset.acctkey = ''; _cstage.dataset.cid = '';
     const _cg = _cstage.querySelector('[data-f="stageGly"]'); if (_cg) _cg.innerHTML = '';
     const _ca = _cstage.querySelector('[data-f="stageAccts"]'); if (_ca) _ca.innerHTML = '';
     const _cd = _cstage.querySelector('[data-f="stageDrawer"]'); if (_cd) _cd.innerHTML = '';
     const _cf = _cstage.querySelector('[data-f="stageFix"]'); if (_cf) _cf.innerHTML = '';
   }
+  // Same reason: the clone arrives carrying the local campaign's account
+  // columns. Blank + hide them so renderRunPanel redraws from THIS campaign.
+  const _cpanel = clone.querySelector('.sp'); if (_cpanel) { _cpanel.hidden = true; _cpanel.innerHTML = ''; }
   const _cbar = clone.querySelector('[data-f="activeBar"]'); if (_cbar) _cbar.style.width = '0%';
   const _clog = clone.querySelector('[data-f="active-log"]'); if (_clog) _clog.innerHTML = '';
   const _cctrl = clone.querySelector('.vj-controls'); if (_cctrl) _cctrl.innerHTML = '';
@@ -9064,30 +9875,347 @@ function _fillVjMonitorHero(root, status) {
 function _vjControlsHtml(c, status) {
   const dib = (svg, tip, onclick, cls = '') => `<button type="button" class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
   let dock = '';
-  if (c.pause) dock += dib(status.paused ? V3_SVG_PLAY : V3_SVG_PAUSE, status.paused ? 'Resume' : 'Pause', c.pause.onclick);
+  const interrupted = status && (status.state === 'interrupted' || status.interrupted || status.waitingForLocal);
+  if (c.pause && !interrupted) dock += dib(status.paused ? V3_SVG_PLAY : V3_SVG_PAUSE, status.paused ? 'Resume' : 'Pause', c.pause.onclick, c.pause.once ? 'one-shot' : '');
   let actions = '';
-  if (c.stop) actions += dib(V3_SVG_STOP, c.stop.tip || 'Stop', c.stop.onclick, 'danger');
   if (c.restart) actions += dib(V3_SVG_RESTART, 'Restart', c.restart.onclick);
   if (c.copy) actions += dib(V3_SVG_COPY, 'Copy to queue', c.copy.onclick);
+  // v3.1.48.71: the go-again action leaves the dock and becomes a labelled
+  // pill. As an unlabelled ▶ next to an unlabelled ■ it was unreadable — an
+  // operator looking at a stopped campaign with 92 leads left could not tell
+  // which glyph sent them. Its wording already comes from the matrix
+  // ("Resume sending" / "Start now" / "Continue where it left off").
+  let goHtml = '';
   for (const e of (c.extra || [])) {
-    if (e.kind === 'show') actions += `<button type="button" class="dock-btn" data-tip="Show" aria-label="Show" onclick="${e.onclick}">👁</button>`;
-    else {
+    if (e.kind === 'show') actions += dib(V3_SVG_EYE, 'Show', e.onclick);
+    else if (e.kind === 'play') {
+      goHtml += `<button class="btn-pill go${e.once ? ' one-shot' : ''}" onclick="${e.onclick}">${escHtml(e.tip || 'Resume sending')}</button>`;
+    } else {
       const svg = e.kind === 'debrief' ? V3_SVG_DOC : e.kind === 'dup' ? V3_SVG_COPY
-        : e.kind === 'play' ? V3_SVG_PLAY : e.kind === 'restart' ? V3_SVG_RESTART
+        : e.kind === 'restart' ? V3_SVG_RESTART
         : e.kind === 'delete' ? V3_SVG_TRASH : V3_SVG_XMARK;
-      actions += dib(svg, e.tip, e.onclick);
+      actions += dib(svg, e.tip, e.onclick, e.once ? 'one-shot' : '');
     }
   }
-  const openHtml = c.open ? `<button class="btn-pill" onclick="${c.open.onclick}">Open</button>` : '';
-  return `${openHtml}<div class="dock" role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`;
+  // Same reasoning for Stop: a red square is a warning shape, not a sentence.
+  // The matrix already says which stop this is (Stop check / Stop monitoring /
+  // End campaign); a bare "Stop" becomes "Stop campaign".
+  const stopTip = (c.stop && c.stop.tip) || 'Stop';
+  const stopHtml = c.stop
+    ? `<button class="btn-pill stop" onclick="${c.stop.onclick}">${escHtml(stopTip === 'Stop' ? 'Stop campaign' : stopTip)}</button>`
+    : '';
+  const openHtml = c.open ? `<button class="btn-pill" onclick="${c.open.onclick}">Open campaign tab</button>` : '';
+  const sheetHtml = c.sheet ? `<button class="btn-pill" onclick="${c.sheet.onclick}">Open sheet</button>` : '';
+  const resumeHtml = interrupted && c.pause
+    ? `<button class="btn-pill go one-shot" onclick="${c.pause.onclick}">Resume ${status.interruption?.phase === 'monitoring' || status.monitoringPhase ? 'checks' : 'campaign'}</button>`
+    : '';
+  const resumeSendingHtml = interrupted && c.resumeSending
+    ? `<button class="btn-pill go one-shot" onclick="${c.resumeSending.onclick}">Resume sending</button>`
+    : '';
+  const deleteForeverHtml = interrupted && c.deleteForever
+    ? `<button class="btn-pill delete-forever" onclick="${c.deleteForever.onclick}">Delete for good</button>`
+    : '';
+  const dockHtml = (dock || actions)
+    ? `<div class="dock" role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`
+    : '';
+  return `${resumeHtml}${resumeSendingHtml}${deleteForeverHtml}${openHtml}${sheetHtml}${goHtml}${stopHtml}${dockHtml}`;
+}
+
+// The banner is the SAME .vj-live band, promoted. One component, four tones, so
+// checking, waking, stopping and sending all read alike. Both card fillers call
+// this one function (#active-card and the board strip's clone are the same
+// markup) so the two surfaces cannot drift.
+//
+// It never un-hides the band: .vj-live and .vj-stage share one grid slot and are
+// mutually exclusive, so whichever the caller chose stays chosen.
+function applyLiveBanner(live, status) {
+  if (!live) return;
+  const liveCard = live.closest('.vj-card');
+  const move = _hoFor(status);
+  // Mid-fade: leave the banner exactly where it is. A poll landing inside the
+  // 460ms fade would otherwise rebuild it and restart the animation.
+  if (move && move.out && live.classList.contains('is-handover')) return;
+  // Torn down and rebuilt every render, never reused: the fillers run on every
+  // 2s poll, and appending without removing stacks a new beacon every 2 seconds.
+  live.classList.remove('is-checking', 'is-sending', 'is-waking',
+    'is-handover', 'to-cloud', 'to-local', 'landed', 'out');
+  live.querySelector('.ck-beacon')?.remove();
+  live.querySelector('.ck-right')?.remove();
+  live.querySelector('.ck-stop')?.remove();
+  live.querySelector('.ho-track')?.remove();
+  live.querySelector('.ho-right')?.remove();
+  // A move between this Mac and the VM outranks every other tone: it is the
+  // moment the operator is most likely to think the app has hung, and while it
+  // is on the wire nothing else on the card is true yet.
+  if (move) { _paintHandover(live, move); return; }
+  if (liveCard) liveCard.classList.remove('is-handover-active');
+  const b = bannerFor(status);
+  if (!b) return;
+  const l1 = live.querySelector('.vj-live-l1');
+  const l2 = live.querySelector('.vj-live-l2');
+  if (l1) l1.textContent = b.l1;
+  if (l2) l2.textContent = b.l2;
+  live.classList.add(b.tone === 'wake' ? 'is-waking' : 'is-checking');
+  if (b.tone === 'send') live.classList.add('is-sending');
+  const beacon = document.createElement('i');
+  beacon.className = 'ck-beacon';
+  live.prepend(beacon);
+  if (b.big) {
+    const right = document.createElement('div');
+    right.className = 'ck-right';
+    right.innerHTML = `<b>${escHtml(b.big)}</b><span>${escHtml(b.cap)}</span>`;
+    live.append(right);
+  }
+  // A check can be stopped wherever it runs. The local route reaches into this
+  // Mac's own campaign; the cloud one raises a flag the VM's sweep consumes at
+  // its next account boundary. Offering it only on local was why the button was
+  // missing on exactly the campaigns most operators watch — the ones on the VM.
+  if (b.tone === 'check') {
+    const onCloud = !!(status && status._cloud);
+    const cid = String((status && (status.rawId || status.id)) || '');
+    if (!onCloud || cid) {
+      const stop = document.createElement('button');
+      stop.className = 'btn-pill ck-stop';
+      stop.textContent = 'Stop the check';
+      stop.onclick = async () => {
+        stop.disabled = true;
+        const url = onCloud
+          ? `/api/campaign/cloud/${encodeURIComponent(cid)}/check/stop`
+          : '/api/campaign/check/stop';
+        try {
+          const r = await fetch(url, { method: 'POST' });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok || d.error) {
+            stop.disabled = false;
+            if (typeof showCampaignToast === 'function') {
+              showCampaignToast(d.error && !/HTTP 404/.test(d.error)
+                ? d.error
+                : 'Stopping a VM check isn’t live yet — engine update pending.', 6000);
+            }
+            return;
+          }
+          // The VM finishes the account it is on before it stops, so say that
+          // rather than letting a dead button imply it already has.
+          if (onCloud && typeof showCampaignToast === 'function') {
+            showCampaignToast(d.wasRunning === false
+              ? 'Nothing was running — no check to stop.'
+              : '🛑 Stopping — the VM will finish the account it is on, then stop.', 5000);
+          }
+          if (onCloud) _cloudCheckAsked.delete(cid);
+        } catch (_) { stop.disabled = false; }
+      };
+      live.append(stop);
+    }
+  }
+}
+
+// ── The per-account panel ───────────────────────────────────────────────────
+// One column per account, three visible, the account that is working centred.
+// Both card fillers call this one function, exactly like applyLiveBanner above:
+// #active-card and the board strip's clone are the same markup, so the two
+// surfaces cannot drift.
+//
+// Everything here comes from accountColumns(); nothing is invented. An account
+// with no turn size shows no batch counter at all rather than a confident "of
+// 8", and an account this campaign never selected shows no daily cap rather
+// than "0 of 0 sent today".
+
+// Only these four step marks have a mark glyph in the CSS. The engine only ever
+// sends 'now' today, but a class straight off the payload could land unstyled.
+const SP_STEP_MARKS = new Set(['ok', 'now', 'wait', 'miss']);
+
+function _spStateClass(state) {
+  // The state vocabulary is a fixed set of lowercase words; anything else would
+  // be an unstyled class at best and a broken attribute at worst.
+  return String(state || '').toLowerCase().replace(/[^a-z-]/g, '');
+}
+
+function _spColHtml(c) {
+  const cls = _spStateClass(c.state);
+  const steps = c.steps.length
+    ? `<div class="sp-steps">${c.steps.map((s) => {
+        const mark = SP_STEP_MARKS.has(s[0]) ? s[0] : 'now';
+        return `<div class="sp-step ${mark}"><i class="sp-mk"></i><span>${escHtml(s[1] || '')}</span>`
+          + `<span class="sp-t">${escHtml(s[2] || '')}</span></div>`;
+      }).join('')}</div>`
+    : '';
+  // The turn. An absent size means the mode drains everything in one go, so
+  // there is no turn to be N of, and the day counter carries the whole story.
+  const batch = c.batchSize == null ? '' :
+    `<div class="sp-count"><b>${c.batchDone} of ${c.batchSize}</b><span>this batch</span></div>`
+    + `<div class="sp-cbar">${batchPips(c.batchDone, c.batchSize, c.live).map((k) => `<i class="${k}"></i>`).join('')}</div>`;
+  // The day. A zero cap means a sweep found this account but the campaign never
+  // selected it, so it gets said plainly instead of an invented "0 of 0".
+  const day = c.dailyLimit > 0
+    ? `<div class="sp-day"><b>${c.sentToday}</b> of <b>${c.dailyLimit}</b> sent today<span>${escHtml(c.sub)}</span></div>`
+    : `<div class="sp-day"><span>Not one of this campaign's accounts.</span><span>${escHtml(c.sub)}</span></div>`;
+  const miss = c.missed.length
+    ? `<div class="sp-miss"><div class="sp-miss-h">Nobody reached, and why</div>${c.missed.map((m) =>
+        `<div class="sp-miss-r"><b>${escHtml(m.who)}</b><span>${escHtml(m.why)}</span></div>`).join('')}</div>`
+    : '';
+  const res = c.result ? `<div class="sp-res">${escHtml(c.result)}</div>` : '';
+  return `<div class="sp-col ${cls}">`
+    + `<div class="sp-who">${escHtml(c.email)}</div>`
+    + `<div class="sp-state">${escHtml(c.state)}</div>`
+    // People already reached are historical events and belong in the shared
+    // live log. Repeating them here pushed the current batch position below
+    // the fold, exactly when an operator most needs to see it.
+    + steps + batch + day + miss + res
+    + '</div>';
+}
+
+function renderRunPanel(card, status) {
+  const panel = card && card.querySelector('.sp');
+  if (!panel) return;
+  const cols = accountColumns(status);
+  if (!cols.length) {
+    panel.hidden = true;
+    if (panel.innerHTML) panel.innerHTML = '';
+    panel._spHtml = ''; panel._spIdx = null;
+    return;
+  }
+  panel.hidden = false;
+
+  const idx = railIndex(cols);
+  const html = `<div class="sp-head"><span class="sp-pos">‹ ${idx + 1} of ${cols.length} ›</span></div>`
+    + `<div class="sp-grid">${cols.map(_spColHtml).join('')}</div>`;
+
+  // This runs on every 2s poll. Rebuilding identical markup would drop the
+  // operator's scroll on the floor for nothing, so an unchanged panel is left
+  // completely alone.
+  if (panel._spHtml !== html) {
+    // The working account's timer ticks, so the panel DOES change on most
+    // polls. Carry the operator's scroll across the rebuild; only the centring
+    // below may move it, and only when the working account changes.
+    const prev = panel.querySelector('.sp-grid');
+    const keep = prev ? prev.scrollLeft : 0;
+    panel.innerHTML = html;
+    panel._spHtml = html;
+    const railNow = panel.querySelector('.sp-grid');
+    // The rail's CSS scroll-behavior is smooth, which is right for a drag and
+    // wrong for us: every scrollLeft we set below would animate from 0, once a
+    // second, and read as the panel twitching. Ours are instant.
+    if (railNow) railNow.style.scrollBehavior = 'auto';
+    if (railNow && keep) railNow.scrollLeft = keep;
+  }
+
+  // Centre the working account. The first one sits flush left instead, because
+  // there is no previous account to show beside it. Done only when the working
+  // account CHANGES: doing it every poll would drag the rail back every two
+  // seconds while the operator was scrolling through the other accounts.
+  if (panel._spIdx !== idx) {
+    const rail = panel.querySelector('.sp-grid');
+    if (rail) {
+      const w = rail.scrollWidth / cols.length;
+      rail.scrollLeft = idx <= 0 ? 0 : Math.max(0, (idx - 1) * w);
+    }
+    panel._spIdx = idx;
+  }
+}
+
+// One appearance contract for every incarnation of a live campaign card.
+// Both the Campaign Builder singleton and every expanded dashboard clone call
+// this on every paint. Removing the full set first prevents a reused DOM node
+// from carrying a VM/LM or lifecycle tint from its previous state.
+function applyVjCardAppearance(root, status, fields) {
+  if (!root) return;
+  const f = fields || vjCardFields(status || {});
+  const phase = String((status && status.phase) || '').toLowerCase();
+  const state = String((status && status.state) || '').toLowerCase();
+  const interrupted = !!(f.isInterrupted || state === 'interrupted' || (status && status.interrupted));
+  const monitoring = !!(f.isMonitor || state === 'monitoring' || phase === 'monitoring' || phase === 'checking');
+  const queued = !!(status && (status.queued || state === 'queued'));
+  const starting = phase === 'starting' || phase === 'preflight' || state === 'launching';
+  const waiting = !!(f.isWaiting || state === 'waiting');
+  const paused = !!(status && (status.paused || status._paused || state === 'paused'));
+  // Older/local payloads may only retain logs after completion rather than an
+  // explicit finished state. Keep those legacy shapes on the same visual path.
+  const inferredDone = !!(status && !status.running && !monitoring && !interrupted
+    && !queued && !starting && Array.isArray(status.logs) && status.logs.length > 0);
+  const done = !!(status && (state === 'done' || state === 'finished' || phase === 'done' || inferredDone));
+  const terminal = done ? terminalPresentation(status) : null;
+  const local = _whSide(status || {}) === 'local';
+
+  root.classList.remove('is-monitor', 'is-monitoring', 'is-waiting',
+    'is-interrupted', 'is-error', 'is-queued', 'is-starting', 'is-paused',
+    'is-done', 'is-stopped', 'is-local');
+  root.classList.toggle('is-monitor', monitoring);
+  root.classList.toggle('is-monitoring', monitoring);
+  root.classList.toggle('is-waiting', waiting);
+  root.classList.toggle('is-interrupted', interrupted);
+  root.classList.toggle('is-error', state === 'error' || phase === 'error');
+  root.classList.toggle('is-queued', queued);
+  root.classList.toggle('is-starting', starting);
+  root.classList.toggle('is-paused', paused);
+  root.classList.toggle('is-done', done);
+  root.classList.toggle('is-stopped', !!(done && terminal && !terminal.complete));
+  root.classList.toggle('is-local', local);
+}
+
+// An errored campaign's one big way back in. Both card renderers call this —
+// the #active-card singleton and every expanded strip clone — so the wording
+// and the action cannot drift apart. Everything it decides (which restart is
+// safe, and what to call it) lives in failedStartRetry; this only paints.
+function renderFailedStartRetry(root, status) {
+  const el = root && (root.querySelector('#active-retry') || root.querySelector('[data-f="active-retry"]'));
+  if (!el) return false;
+  // The live line and this panel share one grid slot; the CSS hides the live
+  // line whenever this one is showing, so neither renderer's ordering can put
+  // them on top of each other.
+  const r = status ? failedStartRetry(status) : null;
+  if (!r) { el.hidden = true; el.innerHTML = ''; el.dataset.html = ''; return false; }
+  const html = `<div class="t"><b>${escHtml(r.headline)}</b><span>${escHtml(r.detail)}</span></div>`
+    + `<button type="button" onclick="${r.onclick}">${escHtml(r.label)}</button>`;
+  if (el.dataset.html !== html || !el.firstElementChild) { el.innerHTML = html; el.dataset.html = html; }
+  el.hidden = false;
+  return true;
+}
+
+// The newest line is at the BOTTOM of the log, and the box shows about six of
+// its fifteen lines. Nothing ever scrolled it, so the operator only ever saw
+// the OLDEST six — and because the dashboard board rebuilds its whole innerHTML
+// on every poll (app.js, `board.innerHTML = final`) the box was a brand new
+// node each time with scrollTop back at 0, which reads as the log jumping
+// upwards every two seconds. Measured 2026-08-28: height 200, scrollHeight 400
+// to 469, scrollTop 0 on every sample, and the node identity lost on each poll.
+//
+// So: stick to the newest line by default, and remember per campaign when the
+// operator has scrolled up to read something, because that intent has to
+// survive a rebuild that throws the element away.
+const _vjLogPin = new Map(); // campaign id → { bottom, top }
+// A WeakSet, not a data- attribute: every board card is a CLONE of the
+// dashboard's #active-card, so an attribute set on the template's log box is
+// inherited by every clone. Flagged that way, the clones all believed they were
+// already wired and none of them ever recorded a scroll (measured: the memory
+// map stayed empty and a scrolled-up log snapped back within two seconds).
+const _vjLogWired = new WeakSet();
+function _pinLogToNewest(logEl, key) {
+  if (!logEl) return;
+  const atBottomNow = () => logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 8;
+  if (!_vjLogWired.has(logEl)) {
+    _vjLogWired.add(logEl);
+    logEl.addEventListener('scroll', () => {
+      // A scroll event can land on a box that is mid-rebuild and not laid out
+      // yet, where every measurement is 0 and "am I at the bottom" answers YES.
+      // That false yes overwrote the operator's scrolled-up position about
+      // three seconds after they scrolled, snapping the log back down.
+      if (!logEl.clientHeight) return;
+      _vjLogPin.set(key, { bottom: atBottomNow(), top: logEl.scrollTop });
+    }, { passive: true });
+  }
+  const mem = key ? _vjLogPin.get(key) : null;
+  if (!mem || mem.bottom) logEl.scrollTop = logEl.scrollHeight;
+  else logEl.scrollTop = Math.min(mem.top, logEl.scrollHeight);
 }
 
 function fillVjCard(root, status) {
   if (!root || !status) return;
+  root.dataset.campaignId = String(status.rawId || status.id || '');
+  root.dataset.sheetUrl = String(status.sheetUrl || status.sheet_url
+    || _cloudSheetUrls.get(String(status.rawId || status.id || '')) || '');
   const f = vjCardFields(status);
   const set = (name, text) => { const el = root.querySelector(`[data-f="${name}"]`); if (el) el.textContent = text; };
-  root.classList.toggle('is-monitor', f.isMonitor);
-  root.classList.toggle('is-waiting', f.isWaiting);
+  applyVjCardAppearance(root, status, f);
   root.classList.add('is-detailed');
   root.classList.remove('is-empty', 'is-preflight');
 
@@ -9119,14 +10247,30 @@ function fillVjCard(root, status) {
     // it's the one place the operator already looks for "what is going on".
     const note = _fgFinishedNote(status);
     if (live && note) {
+      // Same slot, so taking it back from the stage means hiding the stage —
+      // otherwise this note draws on top of it (see the guard in renderLiveStage).
+      if (staged) _hideStage(root);
       live.hidden = false;
       live.classList.remove('is-checking', 'is-waking', 'is-paused');
       live.classList.add('is-outcome');
       set('activeLiveIco', note.icon); set('activeLiveL1', note.l1); set('activeLiveL2', note.l2);
     } else if (live) live.classList.remove('is-outcome');
+    // Promote the band into the loud banner whenever something is genuinely in
+    // flight. Last, so it wins over the plain one-line text above it, and
+    // unconditional so a finished card clears the beacon a running one left.
+    applyLiveBanner(live, status);
   } catch (_) { /* live line best-effort */ }
 
+  try { renderFailedStartRetry(root, status); } catch (_) { /* retry panel is best-effort */ }
+
+  // The per-account panel, from the same builder the dashboard card uses.
+  try { renderRunPanel(root, status); } catch (_) { /* panel is best-effort */ }
+
   if (f.isMonitor) _fillVjMonitorHero(root, status);
+
+  // Same RUNNING ON control as #active-card — the board strip's clone is the
+  // other place an operator asks "which machine is doing this".
+  try { renderWhereControl(root, status); } catch (_) { /* handover control is best-effort */ }
 
   const logEl = root.querySelector('[data-f="active-log"]');
   if (logEl) {
@@ -9134,18 +10278,22 @@ function fillVjCard(root, status) {
     logEl.innerHTML = lines.map((l) => v3RenderLogLine(l)).join('');
     const head = root.querySelector('.vj-log-head .vj-details-head');
     if (head) head.textContent = `Live log · last ${lines.length} events`;
+    _pinLogToNewest(logEl, String(status.id || (root.closest('.sn-strip') || {}).dataset?.cid || ''));
   }
 
   // The cloned log-action buttons carry singleton-targeting onclicks
   // (openRunningSheet / dashCopyLog read the local cockpit campaign). Rewire
-  // "Copy all" to copy THIS card's log; hide "Open sheet" + the wizard-only
-  // "Show more" so a strip can't act on the wrong campaign.
+  // "Copy all" and "Open sheet" act on THIS card. Only the wizard-specific
+  // show-more button remains hidden on board clones.
   const logActs = root.querySelector('.vj-log-acts');
   if (logActs) {
     logActs.querySelectorAll('.vj-log-act').forEach((b) => {
       const txt = (b.textContent || '').toLowerCase();
-      if (b.getAttribute('data-f') === 'wiz-log-more' || txt.includes('open sheet')) { b.style.display = 'none'; return; }
+      if (b.getAttribute('data-f') === 'wiz-log-more') { b.style.display = 'none'; return; }
       if (txt.includes('copy')) b.setAttribute('onclick', 'copyVjCardLog(this)');
+      // Open sheet has one canonical home in the main control row. Keeping a
+      // second copy here made the same action appear twice beside each other.
+      if (txt.includes('open sheet')) { b.style.display = 'none'; return; }
     });
   }
 
@@ -9157,8 +10305,14 @@ function fillVjCard(root, status) {
   if (bulkWrap) {
     if (c.bulk) {
       bulkWrap.style.display = '';
-      const bb = root.querySelector('[data-f="vj-bulk-btn"]'); if (bb) bb.setAttribute('onclick', c.bulk.onclick);
-      const lbl = root.querySelector('[data-f="vj-bulk-btn-label"]'); if (lbl) lbl.textContent = c.bulk.label || 'Run check now';
+      const bb = root.querySelector('[data-f="vj-bulk-btn"]');
+      if (bb) {
+        bb.setAttribute('onclick', c.bulk.onclick);
+        bb.disabled = !!status.monitoringCheckInProgress;
+        bb.setAttribute('aria-disabled', bb.disabled ? 'true' : 'false');
+      }
+      const lbl = root.querySelector('[data-f="vj-bulk-btn-label"]');
+      if (lbl) lbl.textContent = status.monitoringCheckInProgress ? 'Check in progress' : (c.bulk.label || 'Run check now');
     } else {
       bulkWrap.style.display = 'none';
     }
@@ -9172,6 +10326,21 @@ window.copyVjCardLog = function (btn) {
   const text = log ? [...log.children].map((c) => c.textContent.trim()).join('\n') : '';
   try { navigator.clipboard.writeText(text); } catch (_) { /* clipboard best-effort */ }
   const orig = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = orig; }, 1200);
+};
+
+// Open the sheet belonging to the card that contains the clicked control.
+// Expanded board cards must never inherit the singleton campaign's handler.
+window.openVjCardSheet = function (btn) {
+  const card = btn && btn.closest('.vj-card');
+  const url = String((card && card.dataset.sheetUrl) || '').trim();
+  if (url) {
+    try { window.open(url, '_blank', 'noopener'); } catch (_) { location.href = url; }
+    return;
+  }
+  if (card && card.id === 'active-card') {
+    try { openRunningSheet(); return; } catch (_) { /* fall through */ }
+  }
+  if (typeof showCampaignToast === 'function') showCampaignToast('This campaign has no Google Sheet URL saved yet.', 4500);
 };
 
 // Board-strip monitoring countdowns, ticked once a second.
@@ -9250,7 +10419,10 @@ function renderUnifiedStrip(it) {
   const running = it.bucket === 'running';
   const queued = it.bucket === 'queued';
   const done = it.bucket === 'done';
-  const monitoring = cloud && it.monitoring;   // Task 3 — post-send acceptance-watch (still ACTIVE)
+  // Monitoring is a lifecycle, not a location. Local monitoring must use the
+  // same blue state and controls as VM monitoring instead of looking paused.
+  const monitoring = !!(it.monitoring || it.monitoringPhase || it.engineStatus === 'monitoring');
+  const locallyOwnedMonitoring = monitoring && String(it.runsOn || (cloud ? 'vm' : 'local')) === 'local';
   // Asleep on blocked_until: sending is gated until a real unblock time, but the
   // DB status stays 'running' SO THE MONITOR SWEEP KEEPS RUNNING. The chip must
   // report the truth about SENDING, not echo the raw status word — a green
@@ -9260,7 +10432,11 @@ function renderUnifiedStrip(it) {
   const waiting = !!(it.currentAction && it.currentAction.phase === 'waiting');
   const scheduled = queued && !!it.scheduledAt;
   const whenTxt = scheduled && typeof v3FormatScheduledAt === 'function' ? v3FormatScheduledAt(it.scheduledAt) : '';
-  const collapsed = queued ? true : !_snExpanded.has(it.id);
+  // One active campaign, one component. A previously-unexpanded live row used
+  // the legacy compact markup, then swapped to the canonical card on expand.
+  // Besides looking unrelated, the two paths derived WAITING/RUNNING differently.
+  // Every active lifecycle state now stays on the literal #active-card clone.
+  const collapsed = queued ? true : running ? _snCollapsedActive.has(it.id) : !_snExpanded.has(it.id);
   const badge = _cloudBadge(it.mode);
   const acctWord = it.accounts === 1 ? 'account' : 'accounts';
 
@@ -9273,8 +10449,13 @@ function renderUnifiedStrip(it) {
   // classes override its rail via :not(.stopped):not(.cancelled).
   const errored = it.bad && it.badLabel === 'Error';
   const cancelled = it.bad && !errored;            // 'Cancelled' / 'Stopped' — benign
+  // Ownership, not provenance — same rule as the "This machine" pill below. A
+  // cloud campaign handed over to this Mac RUNS here, so it gets the pink local
+  // rail; keying the rail off `where` alone painted it cloud-green while the
+  // pill on the same row said This machine (operator, 2026-08-28).
+  const _ownedLocal = it.where === 'local' || String(it.runsOn || '') === 'local';
   const stateCls = [
-    it.where === 'local' ? 'local' : '',
+    _ownedLocal ? 'local' : '',
     running && !monitoring && !waiting ? 'run' : '',
     (monitoring || waiting) ? 'monitoring' : '',
     queued ? 'queued' : '',
@@ -9285,14 +10466,17 @@ function renderUnifiedStrip(it) {
     cancelled ? 'cancelled' : '',
   ].filter(Boolean).join(' ');
 
-  const wherePill = cloud
-    ? '<span class="sn-where cloud">☁︎ VM</span>'
-    : '<span class="sn-where local">💻 This machine</span>';
+  // Saying "☁︎ VM" on a campaign running here is the exact lie the handover
+  // feature exists to kill. runsOn is absent on pre-handover campaigns ⇒ VM.
+  const wherePill = _ownedLocal
+    ? '<span class="sn-where local">💻 This machine</span>'
+    : '<span class="sn-where cloud">☁︎ VM</span>';
   const whenPill = scheduled ? '<span class="sn-when-pill">⏰ Scheduled</span>' : '';
   const dot = errored ? '<span class="dot red"></span>'
     : it.bad ? '<span class="dot cancel"></span>'   // cancelled / stopped — gray, not red
     : (monitoring || waiting) ? '<span class="dot mon"></span>'
-    : running ? (cloud ? '<span class="dot run"></span>' : '<span class="dot runlocal"></span>')
+    // Pink dot follows the pink rail: where it RUNS, not where it came from.
+    : running ? (_ownedLocal ? '<span class="dot runlocal"></span>' : '<span class="dot run"></span>')
     : scheduled ? '<span class="dot gold"></span>'
     : queued ? '<span class="dot q"></span>'
     : '<span class="dot done"></span>';            // done — ink (black light / white dark)
@@ -9308,7 +10492,7 @@ function renderUnifiedStrip(it) {
     : queued ? 'Queued'
     : monitoring ? 'Monitoring'
     : waiting ? 'Waiting'
-    : running ? (it.paused ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
+    : running ? (it.paused && !locallyOwnedMonitoring ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
   // Phase 0 primary-handshake lock (Task 3.4): the engine pauses a cloud
@@ -9361,8 +10545,8 @@ function renderUnifiedStrip(it) {
   const flow = it.isFG
     ? `<b>${it.total || '—'} invites</b> → <b>${it.accounts || 1} account${(it.accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
     : `<b>${it.total || 0} leads</b> → <b>${it.accounts || 0} ${acctWord}</b> → feeds <b>${escHtml(it.name || '')}</b> · ${escHtml(_cloudModeLabel(it.mode))}`;
-  const whereNote = cloud ? 'runs in the cloud — keeps going if you close the app'
-    : 'runs on this machine — closing the app stops it';
+  const whereNote = _ownedLocal ? 'runs on this machine — closing the app stops it'
+    : 'runs in the cloud — keeps going if you close the app';
   const progLine = running
     ? `<div class="sn-progtxt"><b>${it.sent || 0}</b> of ${it.total || 0} ${it.isFG ? 'invites' : 'sent'} · ${whereNote}</div>`
     : '';
@@ -9410,16 +10594,25 @@ function renderUnifiedStrip(it) {
       const d1 = Math.floor(ms / 86400000), h1 = Math.floor((ms % 86400000) / 3600000), m1 = Math.floor((ms % 3600000) / 60000);
       return d1 > 0 ? `${d1}d ${h1}h` : h1 > 0 ? `${h1}h ${m1}m` : `${m1}m`;
     };
+    // `every 60m` when the campaign is on the operator's own interval (unchanged
+    // wording), `slowed to 4h` when the engine has backed the cadence off — the
+    // hero caption's words, from the same helper, so the strip can't state a
+    // temporary slowdown as if the operator had chosen it.
+    const cad = stripCadence(it);
     const line = endingSoon
       ? `Window ends in <b>${fmtRem(remMs)}</b> — then still-pending leads stay <i>Connection Request Sent</i>`
-      : `Next check <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(fmtRem(remMs))}</b> · every <b>${it.checkIntervalMinutes || 60}m</b>`;
+      : `Next check <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(fmtRem(remMs))}</b> · ${cad.label} <b>${escHtml(cad.value)}</b>`;
+    const resume = it.resumeAt ? new Date(it.resumeAt) : null;
+    const resumeLine = resume && !isNaN(resume.getTime()) && Number(it.pendingCount || 0) > 0
+      ? `<span class="sn-mon-resume"><b>Sending paused · no sender available for 15+ min.</b> Monitoring continues; sending retries automatically at ${escHtml(_wakeWhenText(resume.getTime()))}.</span>`
+      : '';
     monBlock = `<div class="sn-mon${endingSoon ? ' ending' : ''}">`
       + `<span class="sn-mon-badge">${endingSoon ? '● ENDING SOON' : '● MONITORING'}</span>`
       + `<span class="sn-mon-line">${line}</span>`
-      + `<span class="sn-mon-ctl">`
+      + (cloud ? `<span class="sn-mon-ctl">`
       + `<button type="button" class="mini sn-mon-btn" onclick="event.stopPropagation();promptCloudCheckScope('${escHtml(it.id)}',this)" title="Run an acceptance check now">Check now</button>`
       + `<label class="sn-mon-auto" title="When off, the VM won't run automatic checks — use ⚡ Check now."><input type="checkbox" ${it.autoChecksEnabled ? 'checked' : ''} onclick="event.stopPropagation()" onchange="setCloudAutoChecks('${escHtml(it.id)}',this.checked,this)"> Auto</label>`
-      + `</span></div>`;
+      + `</span>` : '') + resumeLine + `</div>`;
   }
 
   // Handshake lock panel — replaces the log switchBlock while
@@ -9478,8 +10671,12 @@ function renderUnifiedStrip(it) {
     // and every cloud control here would be called with a placeholder id. The
     // handshake modal owns Cancel / Dispatch anyway while it's up.
     foot = '';
+  } else if (it.where === 'local' && it.interrupted) {
+    foot = `<button type="button" class="mini sn-delete-forever" onclick="event.stopPropagation();deleteBoardCampaign('${escHtml(it.id)}', this)">Delete for good</button>`;
   } else if (running && it.where === 'local') {
-    foot = (it.paused
+    foot = monitoring
+      ? _dib(V3_SVG_STOP, 'Stop monitoring', 'window.dashStopActive && window.dashStopActive()', 'danger') + _openPill
+      : (it.paused
         ? _dib(V3_SVG_PLAY, 'Resume', 'window.dashPauseActive && window.dashPauseActive()')
         : _dib(V3_SVG_PAUSE, 'Pause', 'window.dashPauseActive && window.dashPauseActive()'))
       + _dib(V3_SVG_STOP, 'Stop', 'window.dashStopActive && window.dashStopActive()', 'danger')
@@ -9555,9 +10752,8 @@ function renderUnifiedStrip(it) {
     foot = _cloudCheck + restartBtns + dismiss + dup + debriefBtn + _doneOpen;
   }
 
-  // Expanded (non-queued) strips render card #2 (.sn-vjcard) instead of the
-  // compact body. The compact body is wrapped in .sn-compact so CSS can swap the
-  // two by collapsed state; collapsed strips are byte-for-byte as before.
+  // Active and expanded historical strips render card #2 (.sn-vjcard) instead
+  // of the compact body. Active strips never switch renderer when clicked.
   // No card #2 clone for a launch: it has no campaign status to fill, and
   // _fillVjCards would paint the generic "running" hero over the handshake panel.
   const richCard = (queued || it.launching) ? '' : vjCardSkeleton(it.id);
@@ -9863,6 +11059,11 @@ function maybeOpenHandshakeModal(items) {
   if (!scrim) return;
   if (scrim.classList.contains('open')) return; // don't hijack an already-open modal for a different campaign
   const it = (items || []).find((x) => x && x.where === 'cloud'
+    // A pre-dispatch launch is represented on the board by a synthetic
+    // `__launching__` item. runHandshakeWizard already owns that state. Opening
+    // this legacy post-dispatch modal over it hid the real progress UI, and its
+    // Stop button sent `__launching__` to the engine → HTTP 404 not found.
+    && !x.launching && x.id !== '__launching__'
     && x.state === 'awaiting_primary_accept' && Array.isArray(x.senders) && !_hsModalShown.has(x.id));
   if (!it) return;
   _hsModalShown.add(it.id);
@@ -10017,6 +11218,23 @@ const _cloudDetailCache = new Map();  // id → detail; terminal campaigns cache
 let _boardRenderInFlight = false;     // don't stack renders (each does N cloud fetches)
 let _cloudRaw = [];                   // background snapshot of cloud details; render builds from this
 let _cloudRefreshInFlight = false;
+let _cloudRefreshController = null;   // cancelled when Electron wakes from sleep
+// Successful handovers update ownership immediately. The board snapshot can be
+// five seconds old, which is too stale to decide which poller owns the card.
+const _handoverOwner = new Map();
+
+// Does a Check now for this cloud campaign run on THIS Mac? A check runs where
+// the campaign runs, so this reads the same ownership field the card's RUNNING ON
+// control shows. Absent means the VM: every campaign that predates the handover
+// feature was cloud-dispatched, and it is also the safe default, since a check
+// that opens no browser here is a wasted click rather than a surprise.
+function _checkRunsLocally(id) {
+  if (_handoverOwner.has(String(id))) return _handoverOwner.get(String(id)) === 'local';
+  const hit = (_cloudRaw || []).find((c) => c && (c.id === id || (c.campaign && c.campaign.id === id)));
+  const c = hit && hit.campaign ? hit.campaign : hit;
+  const side = String((c && (c.runs_on || c.runsOn)) || "").toLowerCase();
+  return side === "local";
+}
 
 // Cloud data comes from the remote engine (0.5–2s per call) — fetching it inside
 // the 4s render made every render block ~1.5s. Fetch it on a BACKGROUND timer
@@ -10044,12 +11262,38 @@ async function _mapLimit(items, limit, fn) {
 }
 const CLOUD_FANOUT_LIMIT = 3;
 
+// When the cloud engine first stopped answering, 0 while it is answering. Drives
+// both the NO LINK tile and the banner; reset on the first successful list.
+let _cloudOfflineSince = 0;
+
 async function _refreshCloudItems() {
   if (_cloudRefreshInFlight) return;
   _cloudRefreshInFlight = true;
+  const controller = new AbortController();
+  _cloudRefreshController = controller;
+  const cloudFetch = (input, init = {}) => fetch(input, { ...init, signal: controller.signal });
+  // Only the LIST decides reachability. Everything after it is per-campaign
+  // detail with its own fallback, and a throw from one of those says nothing
+  // about the engine being up — flagging it offline would put a false banner
+  // over a board that is perfectly live.
+  let listOk = false;
   try {
-    const cl = await (await fetch('/api/campaign/cloud-list')).json();
+    const _res = await cloudFetch('/api/campaign/cloud-board-summary');
+    const cl = await _res.json();
+    // The engine answers a failed list with 502 + {error}, which fetch does NOT
+    // throw on. Reading `.campaigns` off it yields undefined, and the old `|| []`
+    // turned that into "there are no cloud campaigns": every strip vanished from
+    // the board and the VM tile printed ASLEEP. An unreachable engine rendered as
+    // everything-is-fine. Throw instead, so the catch below keeps the last good
+    // snapshot on screen, and flag it so the tile and banner say it is stale.
+    if (!_res.ok || (cl && cl.error)) throw new Error((cl && cl.error) || `engine ${_res.status}`);
+    listOk = true;
+    _cloudOfflineSince = 0;
     const cloudCamps = (cl && cl.campaigns) || [];
+    cloudCamps.forEach((c) => {
+      const side = String((c && c.runs_on) || '').toLowerCase();
+      if (side === 'local' || side === 'vm') _handoverOwner.set(String(c.id), side);
+    });
     // One reading per poll for the whole board: the queue is global, so every
     // waiting strip asks the same question and the answer is memoised server
     // side. Only worth the request when something is actually waiting.
@@ -10060,10 +11304,7 @@ async function _refreshCloudItems() {
     // ceiling that froze the board once — so an unconditional fetch here would
     // cost a connection every 2.5s to re-learn a constant.
     const _vmLive = cloudCamps.some((c) => ['queued', 'running', 'monitoring', 'paused'].includes(c.status));
-    if (_vmLive) {
-      try { _cloudCapacity = await (await fetch('/api/campaign/cloud-capacity')).json(); }
-      catch { _cloudCapacity = { queue: [], unavailable: true }; }
-    }
+    if (_vmLive) _cloudCapacity = cl.capacity || { queue: [], unavailable: true };
     renderVmTile(_vmLive);
     // Everything that still needs refreshing comes back in ONE request. Asking
     // per campaign meant 89 of them, which pinned the browser at its six
@@ -10074,19 +11315,21 @@ async function _refreshCloudItems() {
       return Boolean(cached && cached.campaign && ['done', 'cancelled', 'error'].includes(cached.campaign.status));
     };
     const _needIds = cloudCamps.filter((c) => !_isFresh(c)).map((c) => c.id);
-    let _bulk = {};
+    let _bulk = (cl && cl.details) || {};
     if (_needIds.length) {
+      const _missingIds = _needIds.filter((id) => !_bulk[id]);
       try {
-        const br = await (await fetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(_needIds.join(','))}`)).json();
-        _bulk = (br && br.details) || {};
-      } catch { /* fall back to the per-campaign path below */ }
+        if (!_missingIds.length) throw new Error('summary complete');
+        const br = await (await cloudFetch(`/api/campaign/cloud-details?ids=${encodeURIComponent(_missingIds.join(','))}`)).json();
+        _bulk = { ..._bulk, ...((br && br.details) || {}) };
+      } catch { /* summary was complete, or per-id fallback runs below */ }
     }
     _cloudRaw = await _mapLimit(cloudCamps, CLOUD_FANOUT_LIMIT, async (c) => {
       let d;
       if (_isFresh(c)) return _cloudDetailCache.get(c.id);
       if (_bulk[c.id]) d = _bulk[c.id];
       else {
-        try { d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+        try { d = await (await cloudFetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
         catch { d = { campaign: c, leadCounts: {} }; }
       }
       _cloudDetailCache.set(c.id, d);
@@ -10104,7 +11347,12 @@ async function _refreshCloudItems() {
       // built from this payload, so fetching it only in the waiting phase meant a
       // healthy running campaign showed no per-account breakdown at all — you
       // could see 88 of 1567 sent but not which of the 66 accounts sent them.
-      const _live = ((d && d.campaign) || c).status === 'running';
+      // A paused campaign still needs the same account rail as Campaign
+      // Builder: who sent today, who is paused, and who needs attention. The
+      // old running-only gate left the expanded dashboard card with no account
+      // payload, so its cloned .sp panel correctly hid itself.
+      const _liveStatus = ((d && d.campaign) || c).status;
+      const _live = _liveStatus === 'running' || _liveStatus === 'paused';
       // A FINISHED FG run needs them exactly once, to say why it stopped short.
       // Once fetched the run is over and the answer can't change, so this never
       // repeats — `has()` is the whole gate.
@@ -10113,16 +11361,25 @@ async function _refreshCloudItems() {
       if (((_ca && _ca.phase === 'waiting') || _live || _fgDone) && _acctAge > 30000) {
         _cloudAccountsAt.set(c.id, Date.now());
         try {
-          const ar = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/accounts`)).json();
+          const ar = await (await cloudFetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/accounts`)).json();
           if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(c.id, ar.accounts);
         } catch (_) { /* the stage degrades to the reason line alone */ }
       }
       const st = ((d && d.campaign) || c).status;
-      if (st === 'running' || _snExpanded.has(c.id)) {
+      // Monitoring is live work too. Excluding it here made the dashboard lose
+      // the lead-derived acceptance/introduction history and render "0 events"
+      // immediately after a successful sweep. Cache the engine event stream on
+      // every board refresh as well; previously that happened only after OPEN.
+      if (d && Array.isArray(d.monitorLog)) _cloudMonitorLog.set(c.id, d.monitorLog);
+      if (st === 'running' || st === 'paused' || st === 'monitoring' || _snExpanded.has(c.id)) {
         try {
-          const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
+          const lr = await (await cloudFetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}/leads`)).json();
           if (lr && Array.isArray(lr.leads)) {
-            d._logLines = _mergeCloudLog(_cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c), null);
+            d._leads = lr.leads;
+            _recordCloudProgress(c.id, d);
+            d._logLines = _mergeCloudLog(
+              _cloudLeadsToLog(lr.leads, ((d && d.campaign) || c).mode === 'follower_growth', (d && d.campaign) || c),
+              _combineCloudEvents(c.id));
             _cloudAcctCounts.set(c.id, _cloudCountsByAccount(lr.leads));
             d._fgLast = _fgLastActivity(lr.leads);
           }
@@ -10130,9 +11387,57 @@ async function _refreshCloudItems() {
       }
       return d;
     });
-  } catch (_) { /* keep last snapshot on engine hiccup */ }
-  finally { _cloudRefreshInFlight = false; }
+  } catch (_) {
+    // Superseded deliberately by the wake recovery above. Do not turn a
+    // cancelled pre-sleep request into a false "engine offline" warning.
+    if (controller.signal.aborted) return;
+    // Keep the last snapshot — a stale board is far more useful than an empty
+    // one — but never let it pass for live. Both signals are the same fact said
+    // twice: the tile for whoever is looking at the header, the banner for
+    // whoever is looking at the strips.
+    if (!listOk) {
+      if (!_cloudOfflineSince) _cloudOfflineSince = Date.now();
+      _cloudCapacity = { unreachable: true };
+      try { renderVmTile(true); } catch { /* */ }
+    }
+  }
+  finally {
+    // A wake may already have replaced this request with a newer refresh.
+    // Only the current controller is allowed to release the shared lock.
+    if (_cloudRefreshController === controller) {
+      _cloudRefreshController = null;
+      _cloudRefreshInFlight = false;
+    }
+  }
+  try { _renderCloudOfflineBanner(); } catch { /* */ }
   try { renderCampaignsBoard(); } catch { /* */ }
+}
+
+// Operator actions must not wait behind a board poll that began before the
+// action. Cancel that obsolete snapshot, invalidate the changed campaign and
+// immediately request a post-action snapshot. This is shared by VM and
+// local-owned cloud rows because both render from the cloud board source.
+async function _forceCloudItemsAfterAction(id) {
+  if (id) _cloudDetailCache.delete(id);
+  if (_cloudRefreshController) _cloudRefreshController.abort();
+  for (let i = 0; i < 50 && _cloudRefreshInFlight; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  await _refreshCloudItems();
+}
+
+
+function _renderCloudOfflineBanner() {
+  const el = document.getElementById('cloud-offline-banner');
+  if (!el) return;
+  if (!_cloudOfflineSince) { el.hidden = true; el.textContent = ''; return; }
+  const since = new Date(_cloudOfflineSince)
+    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Says what is known and what is not. It deliberately does NOT claim the
+  // campaigns have stopped: the engine runs on the VM and keeps sending whether
+  // or not this laptop can reach it.
+  el.textContent = `⚠ Can't reach the cloud engine since ${since} — showing the last state we saw. Campaigns on the VM keep running; this board is not live.`;
+  el.hidden = false;
 }
 window._refreshCloudItems = _refreshCloudItems;
 
@@ -10168,20 +11473,71 @@ async function _renderCampaignsBoardInner() {
   // "Live log appears here…" placeholder.
   let _endedLogs = null, _endedName = '';
   try {
-    const s = await (await fetch('/api/campaign/status')).json();
-    if (s && !s.running && s.state !== 'monitoring' && Array.isArray(s.logs) && s.logs.length) {
+    // Feed the dashboard the same normalized local snapshot used by Campaign
+    // Builder card #2. Consuming the raw payload here bypassed the synthesized
+    // five-stage recorder after reopening the app.
+    const _cachedLocal = _localLive && (Date.now() - Number(_localLive.lastVerifiedAt || 0) < 5000)
+      ? _localLive
+      : null;
+    const s = _decorateLocalLiveStatus(_cachedLocal || await (await fetch('/api/campaign/status')).json());
+    s.lastVerifiedAt = s.lastVerifiedAt || Date.now();
+    _localLive = s;
+    if (s && !s.running && s.state !== 'monitoring' && s.state !== 'waiting_daily_reset' && Array.isArray(s.logs) && s.logs.length) {
       _endedLogs = s.logs; _endedName = s.name || '';
     }
-    if (s && (s.running || s.state === 'monitoring')) {
+    // An ADOPTED cloud campaign lives on this Mac but still has its row in
+    // Postgres, so step 3 already lists it. Pushing it here too put the same
+    // campaign on the board twice with contradictory states: one strip
+    // RUNNING/"Working…"/"next batch in 39m" (this builder hardcodes
+    // bucket:'running' and carries no monitoring fields) beside one strip
+    // MONITORING/VM. The cloud strip is the real one; card #2 already overlays
+    // the live local state onto it.
+    const _adopted = s && s.id && s.id !== 'legacy-singleton';
+    if (s && (s.running || s.state === 'monitoring' || s.state === 'interrupted' || s.state === 'waiting_daily_reset') && !_adopted) {
       items.push({
         where: 'local', id: 'local-active', name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
         bucket: 'running', sent: s.totalProcessed || 0, total: s.totalTargets || 0,
-        accounts: (s.profileIds || []).length, mine: true, paused: !!(s.paused || s._paused),
+        pending: Math.max(0, (Number(s.totalTargets) || 0) - (Number(s.totalProcessed) || 0)),
+        interrupted: s.state === 'interrupted' || !!s.interrupted,
+        dailyWait: s.state === 'waiting_daily_reset',
+        resumeAt: s.resumeAt || null,
+        engineStatus: s.state || '',
+        interruption: s.interruption || null,
+        accounts: (s.profileIds || []).length, mine: true,
+        profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+        participatingProfileIds: Array.isArray(s.participatingProfileIds) && s.participatingProfileIds.length
+          ? s.participatingProfileIds : (Array.isArray(s.profileIds) ? s.profileIds : []),
+        // A monitoring snapshot restored after an app restart is represented by
+        // the native local row (legacy-singleton), not the cloud-row overlay.
+        // Carry the same phase→pause mapping here or that one render path falls
+        // back to RUNNING / Working even though only scheduled checks remain.
+        monitoringPhase: s.state === 'monitoring',
+        monitoring: s.state === 'monitoring',
+        paused: s.state === 'monitoring' || !!(s.paused || s._paused),
+        monitoringCheckInProgress: !!s.monitoringCheckInProgress,
+        live: !!s.live,
+        liveAccount: s.liveAccount || s.currentProfile || '',
+        currentAction: s.currentAction || null,
+        batchDone: s.batchDone,
+        batchSize: s.batchSize,
+        nextCheckAt: s.nextCheckAt || null,
+        monitoringUntil: s.monitoringUntil || null,
+        acceptedCount: s.acceptedCount,
         logs: Array.isArray(s.logs) ? s.logs : [],
         skippedCount: s.skippedCount || 0,
         // v2.160.35: carry the follow-up summary so the strip clone's monitor
         // hero shows the same dual countdown as card #2.
         followUp: s.followUp || null,
+        // statusFromItem now defaults an absent runsOn to 'vm' (every campaign
+        // that pre-dates this feature was cloud-dispatched) — a genuinely local
+        // campaign MUST say so explicitly here or the board's RUNNING ON control
+        // would show it as VM-owned while it is actually running on this Mac.
+        // The server already defaults this to 'local'; this just carries it.
+        runsOn: s.runsOn || 'local',
+        handoverAt: s.handoverAt || null,
+        // The per-account panel. statusFromItem whitelists it, so without this
+        // line the board strip's card renders no panel at all.
+        accountPanel: Array.isArray(s.accountPanel) ? s.accountPanel : [],
       });
     }
   } catch (_) { /* local status best-effort */ }
@@ -10190,9 +11546,11 @@ async function _renderCampaignsBoardInner() {
   try {
     const q = await (await fetch('/api/queue')).json();
     for (const it of (q.queue || [])) {
+      if (it.dailyContinuation && _localLive?.state === 'waiting_daily_reset') continue;
       items.push({ where: 'local', id: 'q-' + it.id, rawId: it.id, name: it.name, mode: it.mode,
-        isFG: it.mode === 'follower_growth', bucket: 'queued', accounts: (it.profileIds || []).length,
-        mine: true, scheduledAt: it.scheduledAt || null });
+        isFG: it.mode === 'follower_growth', bucket: it.dailyContinuation ? 'running' : 'queued', accounts: (it.profileIds || []).length,
+        mine: true, scheduledAt: it.scheduledAt || null, dailyWait: !!it.dailyContinuation,
+        resumeAt: it.scheduledAt || null, engineStatus: it.dailyContinuation ? 'waiting_daily_reset' : 'queued' });
     }
   } catch (_) { /* */ }
 
@@ -10234,16 +11592,27 @@ async function _renderCampaignsBoardInner() {
       // 'scheduled' — dispatched to the VM with a start time; the engine holds it
       // and starts it itself. Same bucket as queued, and scheduledAt makes the
       // strip read "Scheduled · <when>" (the shape the local queue already uses).
-      const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused') ? 'running'
+      const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing' || c.status === 'waiting_daily_reset' || c.status === 'needs_review') ? 'running'
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
+        identityKey: `${c.mode || ''}|${c.name || ''}|${c.sheet_url || ''}|${(c.profile_ids || []).slice().sort().join(',')}`,
         paused: c.status === 'paused',
+        dailyWait: c.status === 'waiting_daily_reset',
+        needsReview: c.status === 'needs_review',
+        engineStatus: c.status || '',
+        resumeAt: c.resumeTaskDueAt || null,
+        resumeReason: c.resumeTaskReason || null,
+        stopping: c.status === 'stopping' || c.status === 'pausing',
+        monitoringPhase: c.status === 'monitoring' && String(c.runs_on || '') === 'local',
+        pausedAt: c.paused_at || null,
         // Live-browser flag from the engine (top-level of the /:id detail, NOT
         // inside d.campaign) — drives the green LIVE dot on the Show button.
         live: !!(d && d.live), liveAccount: (d && d.liveAccount) || '',
         // The engine's per-person phase tick → the strip card's live stage.
         currentAction: _cloudCurrentAction(d),
+        batchDone: _cloudSendingTurn(c.id, d).done,
+        batchSize: _cloudSendingTurn(c.id, d).total,
         // _preActioned (Sam 2026-07-23): leads whose sheet row already carried a
         // Connection Request Status on import — the engine parks them in
         // status='sent' so they're never re-opened, but they aren't part of this
@@ -10257,14 +11626,24 @@ async function _renderCampaignsBoardInner() {
         accounts: (c.profile_ids || []).length, profileIds: c.profile_ids || [], mine,
         // Per-account states — feeds _fgFinishedNote's "why it stopped short".
         benchAccounts: _cloudAccountsById.get(c.id) || null,
+        // Same contract as the local runner: this makes board strips render the
+        // identical working / waiting / stopped account rail on the VM.
+        accountPanel: _cloudAccountPanel(c.id, d, d._leads || []),
         dupes: _dupes,
         // When the VM will start it — the engine reads this off the pending
         // start_campaign task itself, so it can't drift from the real timer.
         scheduledAt: c.scheduled_start_at || null,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Stopped' : 'Error',
+        endReason: c.status === 'done' ? 'completed' : c.status,
+        endNotice: c.end_notice || null,
+        stopReason: c.stop_reason || '',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
-        logs: d._logLines || null, // per-lead log rows (running/expanded only)
+        logs: Array.isArray(d._logLines) && d._logLines.length
+          ? d._logLines
+          : _mergeCloudLog(
+            _cloudLeadsToLog(d._leads || [], c.mode === 'follower_growth', c),
+            _combineCloudEvents(c.id)),
         // Phase 0 handshake lock (Task 3.4) — undefined until the engine ships
         // them, in which case the lock panel in renderUnifiedStrip stays dormant.
         state: c.state, senders: c.senders, primary: c.primary,
@@ -10273,16 +11652,180 @@ async function _renderCampaignsBoardInner() {
         // Task 3 — monitoring card (parity with local renderMonitoringCard). The
         // engine carries these top-level; nextCheckAt/monitoringUntil drive the
         // "Next check · ends in" countdown, exactly like the local mon-card.
-        monitoring: c.status === 'monitoring',
+        // Older handovers can retain status='running' after sending was stopped,
+        // but a durable next-check/deadline exists only for monitoring. Preserve
+        // that stronger phase evidence across sleep/restart recovery.
+        // An old monitoring deadline may remain on a campaign after sending is
+        // resumed. The engine's active status is authoritative: stale timers
+        // must never turn a running sender back into a monitoring card.
+        monitoring: c.status === 'monitoring'
+          || (c.status !== 'running' && c.status !== 'paused'
+            && (!!c.next_check_at || !!c.monitoring_until)),
         nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
         autoChecksEnabled: c.auto_checks_enabled !== false,
         checkIntervalMinutes: c.check_interval_minutes || 60,
+        checkIntervalBaseMinutes: c.check_interval_base_minutes || c.check_interval_minutes || 60,
+        emptyCheckStreak: c.empty_check_streak || 0,
         // v2.160.35: follow-up dual countdown — lights up once the engine
         // exposes c.follow_up {count,dueAt,sender} on the cloud detail.
         followUp: c.follow_up || null,
+        // Which side owns it, mirrors _buildCloudActiveStatus. Absent on an
+        // older engine ⇒ the VM owns it, which is also statusFromItem's default,
+        // but set it explicitly here rather than leaning on that default.
+        runsOn: c.runs_on || 'vm',
+        handoverAt: c.handover_at || null,
+        // A sweep running ON THE VM. Card #2 reads these three off the same `c`
+        // (see _buildCloudActiveStatus) and says "Checking now"; this row never
+        // carried them, so the board card said "nothing running right now" while
+        // its own log, built from these very fields, printed "Check in progress".
+        // Two sentences from one object, disagreeing. The started/completed pair
+        // is the same test the log line uses, so they cannot drift again.
+        monitorTaskStatus: c.monitorTaskStatus || null,
+        monitorTaskDueAt: c.monitorTaskDueAt || null,
+        monitorCheckStartedAt: c.monitor_check_started_at || null,
+        monitorCheckCompletedAt: c.monitor_check_completed_at || null,
+        monitorCheckError: c.monitor_check_error || '',
+        monitorCheckId: c.monitor_check_id || '',
+        monitorCheckStatus: c.monitor_check_status || '',
+        monitorCheckExpected: Number(c.monitor_check_expected) || 0,
+        monitorCheckAccountsChecked: Number(c.monitor_check_accounts_checked) || 0,
+        monitorCheckCurrentAccount: c.monitor_check_current_account || '',
+        monitorCheckHeartbeatAt: c.monitor_check_heartbeat_at || null,
+        monitorTaskError: c.monitorTaskError || '',
+        monitoringCheckInProgress: String(c.monitor_check_status || '').toLowerCase() === 'running'
+          || (!c.monitor_check_id && !!(c.monitor_check_started_at && !c.monitor_check_completed_at))
+          || _cloudCheckAskedActive(c),
       });
+      // Handed to this Mac: the checks run HERE, so the engine's copy of the
+      // monitor state froze at handover. Same overlay card #2 gets.
+      // Only the cloud row that was actually adopted by the singleton on this
+      // Mac may receive its live state. Several historical/duplicate rows can
+      // retain runs_on='local'; overlaying the singleton onto all of them made
+      // stopped campaigns display the current campaign's monitoring schedule.
+      // Ownership says where a row last ran. The campaign id says WHICH row is
+      // running now, and both must match.
+      //
+      // The canonical engine snapshot is applied FIRST, before the local
+      // overlay below, and that order is load-bearing. It used to run last, so
+      // `overlayCampaignStatus` put the engine's `next.checkAt` back over the
+      // live local one. Measured 2026-08-28 on COLL_CHI_ANTONIO2: monitoring
+      // had moved to this Mac, the local runtime and the log both said the next
+      // check was 17:12, and the card's countdown panel said 19:08 — the VM's
+      // schedule, frozen at handover. Two times on one card, from two sources.
+      // When this Mac owns the campaign its runtime is authoritative, so it
+      // must be the LAST writer, not the first.
+      const _canonicalIndex = items.length - 1;
+      items[_canonicalIndex] = _withCanonicalCampaignStatus(items[_canonicalIndex], d && d.campaignStatus);
+      const _isCurrentLocalCampaign = String(c.runs_on || '') === 'local'
+        && _localLive
+        && String(_localLive.id || '') === String(c.id || '');
+      if (_isCurrentLocalCampaign) {
+        const _row = items[items.length - 1];
+        const _localInterrupted = _localLive.state === 'interrupted' || !!_localLive.interrupted;
+        const _localRuntimeActive = !!(_localLive.running || _localLive.state === 'monitoring' || _localInterrupted);
+        if (!_localRuntimeActive) {
+          // The engine deliberately keeps its released row alive, and older
+          // rows can therefore still say status='running' after the local
+          // singleton has stopped. Ownership alone is not execution. Without
+          // this reconciliation the dashboard says RUNNING / Working while no
+          // browser, sender loop or monitoring watcher exists on this Mac.
+          const _interruptedPhase = (_row.monitoring || _row.monitoringPhase
+            || c.status === 'monitoring' || !!c.next_check_at || !!c.monitoring_until)
+            ? 'monitoring' : 'sending';
+          _row.waitingForLocal = true;
+          _row.interrupted = true;
+          _row.interruption = {
+            phase: _interruptedPhase,
+            title: _interruptedPhase === 'monitoring'
+              ? 'Monitoring stopped because this Mac became unavailable'
+              : 'Campaign stopped because this Mac became unavailable',
+            detail: _interruptedPhase === 'monitoring'
+              ? 'Sending remains stopped. Scheduled acceptance checks stopped when this Mac went to sleep. Resume checks here or move monitoring to the Cloud VM.'
+              : 'Nothing is running on this Mac. The remaining leads are safe. Choose where to continue.',
+            reason: 'local-runtime-missing',
+          };
+          _row.monitoringPhase = _interruptedPhase === 'monitoring';
+          _row.monitoring = false;
+          _row.paused = true;
+          _row.live = false;
+          _row.liveAccount = '';
+          _row.currentAction = null;
+          if (!Array.isArray(_row.logs) || !_row.logs.length) {
+            _row.logs = [_interruptedPhase === 'monitoring'
+              ? 'INFO Monitoring on this Mac stopped when the local runtime became unavailable. Sending remains stopped; scheduled checks can be resumed safely.'
+              : 'INFO Campaign work on this Mac stopped when the local runtime became unavailable. No queued lead was consumed.'];
+          }
+        }
+        // Once handed to this Mac, the local runtime is authoritative for the
+        // whole live card, not only monitoring. Keeping the frozen VM counts and
+        // omitting currentAction produced "12 of 0", "0 accounts" and the old
+        // one-line "Working…" placeholder even though /api/campaign/status had
+        // the full roster, target count, live account, action and recorder log.
+        if (_localRuntimeActive) {
+          _row.waitingForLocal = false;
+          _row.monitoringPhase = _localLive.state === 'monitoring';
+          _row.monitoring = _row.monitoringPhase;
+          // v3.1.48.75: the engine row can sit at status='stopping'/'pausing'
+          // long after the stop landed — the campaign is MONITORING on this Mac,
+          // and every other part of the card says so. Ownership is local, so the
+          // local runtime's phase is the truth. Left as it was, 'stopping'
+          // outranks 'monitoring' in statusFromItem: the card read "Stopping…",
+          // took the sending control set, and 92 queued leads had no Resume
+          // sending button anywhere (operator, 2026-08-28).
+          if (_row.monitoringPhase) _row.stopping = false;
+          _row.paused = !!(_localLive.paused || _localLive._paused) && _localLive.state !== 'monitoring';
+        }
+        const localDone = Number(_localLive.totalProcessed);
+        const localTotal = Number(_localLive.totalTargets);
+        if (Number.isFinite(localDone) && (localDone > 0 || (Number.isFinite(localTotal) && localTotal > 0))) _row.sent = localDone;
+        if (Number.isFinite(localTotal) && localTotal > 0) _row.total = localTotal;
+        _row.pending = Math.max(0, _row.total - _row.sent);
+        if (Array.isArray(_localLive.profileIds) && _localLive.profileIds.length) _row.profileIds = _localLive.profileIds;
+        _row.accounts = _row.profileIds.length;
+        if (_localRuntimeActive) {
+          _row.live = !!_localLive.live;
+          _row.liveAccount = _localLive.liveAccount || _localLive.currentProfile || '';
+          _row.currentAction = _localLive.currentAction || null;
+          _row.interrupted = _localInterrupted;
+          _row.interruption = _localLive.interruption || null;
+        }
+        _row.batchDone = _localLive.batchDone;
+        _row.batchSize = _localLive.batchSize;
+        _row.sentToday = _localLive.sentToday;
+        _row.dailyLimit = _localLive.dailyLimit;
+        _row.monitoringCheckInProgress = !!_localLive.monitoringCheckInProgress;
+        if (_localLive.nextCheckAt) _row.nextCheckAt = _localLive.nextCheckAt;
+        if (_localLive.emptyCheckStreak != null) _row.emptyCheckStreak = _localLive.emptyCheckStreak;
+        if (_localRuntimeActive && Array.isArray(_localLive.logs) && _localLive.logs.length) _row.logs = _localLive.logs;
+        if (_localRuntimeActive && Array.isArray(_localLive.accountPanel) && _localLive.accountPanel.length) _row.accountPanel = _localLive.accountPanel;
+      }
     }
   } catch (_) { /* cloud best-effort */ }
+
+  // A handover/re-run can leave an older engine row owned by This Mac while a
+  // newer identical run is actively monitoring on the VM. The local singleton
+  // cannot own both. Once its runtime is gone, that older row is terminal—not a
+  // permanently paused browser that still needs closing. Keep it visible under
+  // Stopped so the operator can inspect its log or delete it normally.
+  const activeVmKeys = new Set(items.filter((item) => item.where === 'cloud'
+    && item.bucket === 'running' && item.runsOn === 'vm' && !item.interrupted)
+    .map((item) => item.identityKey).filter(Boolean));
+  for (const item of items) {
+    if (item.where !== 'cloud' || !item.interrupted || !item.identityKey || !activeVmKeys.has(item.identityKey)) continue;
+    item.bucket = 'done';
+    item.paused = false;
+    item.interrupted = false;
+    item.waitingForLocal = false;
+    item.monitoring = false;
+    item.monitoringPhase = false;
+    item.bad = true;
+    item.badLabel = 'Stopped duplicate';
+    item.engineStatus = 'cancelled';
+    item.endReason = 'stopped';
+    item.stopReason = 'A newer identical run is active on the Cloud VM.';
+    item.currentAction = null;
+    item.live = false;
+  }
 
   // 4) Local done — recent history (limit 8).
   try {
@@ -10415,7 +11958,6 @@ async function _renderCampaignsBoardInner() {
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
-  _renderPrimaryNudge(items);
 }
 
 // Lazy-fill done-strip log boxes from the persisted campaign log. Cached per
@@ -10464,18 +12006,18 @@ function appConfirm(message, opts = {}) {
   return new Promise((resolve) => {
     const back = document.createElement('div');
     back.className = 'modal-backdrop';
-    back.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" style="max-width:420px">
+    back.innerHTML = `<div class="modal-card${opts.machineChoice ? ' machine-choice-card' : ''}" role="dialog" aria-modal="true" style="max-width:${opts.machineChoice ? '620px' : '420px'}">
       <h3 class="modal-title">${escHtml(opts.title || 'Are you sure?')}</h3>
       <div class="modal-body">${escHtml(message)}</div>
-      <div class="modal-actions" style="justify-content:flex-end;gap:10px;margin-top:18px">
-        <button type="button" class="modal-cancel-link ac-cancel">${escHtml(opts.cancelLabel || 'Cancel')}</button>
-        <button type="button" class="btn btn-primary ac-ok">${escHtml(opts.okLabel || 'Delete all')}</button>
+      <div class="modal-actions${opts.machineChoice ? ' machine-choice-actions' : ''}" style="justify-content:flex-end;gap:10px;margin-top:18px">
+        <button type="button" class="${opts.machineChoice ? 'machine-choice-option' : 'modal-cancel-link'} ac-cancel">${escHtml(opts.cancelLabel || 'Cancel')}</button>
+        <button type="button" class="${opts.machineChoice ? 'machine-choice-option is-current' : 'btn btn-primary'} ac-ok">${escHtml(opts.okLabel || 'Delete all')}</button>
       </div></div>`;
     const done = (v) => { document.removeEventListener('keydown', onKey); back.remove(); resolve(v); };
-    const onKey = (e) => { if (e.key === 'Escape') done(false); else if (e.key === 'Enter') done(true); };
+    const onKey = (e) => { if (e.key === 'Escape') done(opts.machineChoice ? null : false); else if (e.key === 'Enter') done(true); };
     back.querySelector('.ac-ok').onclick = () => done(true);
     back.querySelector('.ac-cancel').onclick = () => done(false);
-    back.onclick = (e) => { if (e.target === back) done(false); };
+    back.onclick = (e) => { if (e.target === back) done(opts.machineChoice ? null : false); };
     document.body.appendChild(back);
     document.addEventListener('keydown', onKey);
     setTimeout(() => { try { back.querySelector('.ac-ok').focus(); } catch { /* */ } }, 0);
@@ -10567,12 +12109,57 @@ function startCampaignsBoard() {
   renderCampaignsBoard();
   _refreshCloudItems();   // kick a background cloud fetch (renders again when it lands)
   if (_campaignsBoardTimer) clearInterval(_campaignsBoardTimer);
-  _campaignsBoardTimer = setInterval(renderCampaignsBoard, 4000);
+  _campaignsBoardTimer = setInterval(() => {
+    if (!document.hidden) renderCampaignsBoard();
+  }, 4000);
   // Cloud snapshot refreshes on its own slower timer — off the render path.
   if (_cloudRefreshTimer) clearInterval(_cloudRefreshTimer);
-  _cloudRefreshTimer = setInterval(_refreshCloudItems, 5000);
+  _cloudRefreshTimer = setInterval(() => {
+    if (!document.hidden) _refreshCloudItems();
+  }, 5000);
 }
 window.startCampaignsBoard = startCampaignsBoard;
+
+// macOS suspends Chromium timers and may leave a fetch pending while the lid is
+// closed. A pending cloud refresh used to keep `_cloudRefreshInFlight` true
+// forever after wake, so the dashboard kept rendering yesterday's snapshot
+// even though the VM continued working. Recover from every observable wake
+// path: visibility, window focus/pageshow, and a wall-clock jump (the fallback
+// for macOS versions that emit neither event reliably).
+let _lastRendererHeartbeat = Date.now();
+let _lastWakeRefreshAt = 0;
+function _refreshAfterRendererWake() {
+  const now = Date.now();
+  if (now - _lastWakeRefreshAt < 1000) return;
+  _lastWakeRefreshAt = now;
+
+  if (_cloudRefreshController) {
+    try { _cloudRefreshController.abort(); } catch (_) { /* already settled */ }
+  }
+  _cloudRefreshController = null;
+  _cloudRefreshInFlight = false;
+
+  // Wake the local monitoring scheduler too. This duplicates Electron's native
+  // powerMonitor hook intentionally: Chromium visibility is the reliable
+  // fallback on Macs where the native resume event is missed.
+  fetch('/api/monitoring/wake', { method: 'POST' }).catch(() => {});
+  if (typeof startPolling === 'function') startPolling();
+  if (typeof pollStatus === 'function') pollStatus().catch(() => {});
+  _refreshCloudItems();
+  try { renderCampaignsBoard(); } catch (_) { /* fresh fetch repaints shortly */ }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _refreshAfterRendererWake();
+});
+window.addEventListener('focus', _refreshAfterRendererWake);
+window.addEventListener('pageshow', _refreshAfterRendererWake);
+setInterval(() => {
+  const now = Date.now();
+  const elapsed = now - _lastRendererHeartbeat;
+  _lastRendererHeartbeat = now;
+  if (elapsed > 15_000) _refreshAfterRendererWake();
+}, 5000);
 
 // The board is the top-level Campaigns view — it must start on page load
 // REGARDLESS of whether a campaign is running. (Previously it was only kicked
@@ -10600,73 +12187,195 @@ let _stopChoiceTarget = { cloud: false, id: null };
 // (1:1). Other modes — or a campaign already in monitoring/done — get the plain
 // confirm → cancel.
 async function stopCloudCampaignUI(id) {
-  let mode = '', status = '';
+  let mode = '', status = '', liveProgress = null, sentCount = 0;
   try {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`, { cache: 'no-store' })).json();
     mode = (d && d.campaign && d.campaign.mode) || '';
     status = (d && d.campaign && d.campaign.status) || '';
+    liveProgress = d && d.liveProgress;
+    sentCount = Number(d && d.leadCounts && d.leadCounts.sent) || 0;
   } catch { /* fall through to plain confirm */ }
+  const hasCurrentSendingLead = status === 'running' && liveProgress
+    && liveProgress.phase === 'sending' && !!String(liveProgress.selecting || liveProgress.lead || '').trim();
 
-  const isMonitorMode = (mode === 'connect_and_introduce' || mode === 'connect_and_message');
-  // paused counts as "still sending": its unsent leads + pending invitations are
-  // exactly the state the choice is about.
-  const isSending = (status === 'running' || status === 'queued' || status === 'paused');
-  const modal = document.getElementById('stop-choice-modal');
-  if (isMonitorMode && isSending && modal) {
-    _stopChoiceTarget = { cloud: true, id };
-    const isDm = mode === 'connect_and_message';
-    const eyebrow = modal.querySelector('.stop-choice-eyebrow');
-    const monitorSub = modal.querySelector('.stop-choice-pill.is-monitor .stop-choice-pill-sub');
-    if (eyebrow) eyebrow.textContent = isDm ? 'Stop cloud campaign · Connect + DM' : 'Stop cloud campaign · Connect + Introduce Back';
-    if (monitorSub) monitorSub.textContent = isDm
-      ? 'Sending stops. The VM keeps checking for acceptances (every 60 min, 7 days) and auto-DMs still fire.'
-      : 'Sending stops. The VM keeps checking for acceptances (every 60 min, 7 days) and auto-intros still fire.';
-    modal.classList.remove('hidden');
+  // A campaign with invitations already out can still be watched for
+  // acceptances, so what happens to them is the operator's call. That question
+  // is about the SENT invites and has nothing to do with whichever lead happens
+  // to be mid-flight — but it used to be reachable ONLY through the in-flight
+  // branch below. Press Stop in the gap between two account turns and the code
+  // fell straight through to keepMonitoring:false, answering it for you.
+  //
+  // 2026-08-27, cmp_13s04kukmt7b0ro6: Stop landed at 15:46 between "browser
+  // closed, resting" and the next lead being claimed. 106 sent invites were
+  // cancelled without a prompt, and the row still carries monitor_state
+  // 'monitoring' with next_check_at 15:59 — a schedule that can never fire,
+  // because campaign-monitor-tick bails on any status that isn't 'monitoring'.
+  const stillSending = status === 'running' || status === 'queued';
+  if (usesMonitoringCadence(mode) && stillSending && sentCount > 0) {
+    _stopChoiceTarget = { cloud: true, id, immediatePrompt: hasCurrentSendingLead };
+    const sub = document.getElementById('stop-choice-sub');
+    if (sub) {
+      sub.textContent = `${sentCount} invitation${sentCount === 1 ? '' : 's'} `
+        + `${sentCount === 1 ? 'is' : 'are'} still waiting on acceptance — choose what happens to them.`;
+    }
+    document.getElementById('stop-choice-modal')?.classList.remove('hidden');
     return;
   }
-  if (!confirm('Stop this cloud campaign? Leads not yet actioned will not be sent.')) return;
+  if (hasCurrentSendingLead) {
+    _stopChoiceTarget = { cloud: true, id };
+    const modal = document.getElementById('confirm-stop-modal');
+    const copy = document.getElementById('stop-current-lead-copy');
+    if (copy) copy.textContent = 'A lead is mid-send on the VM. No new lead will start either way.';
+    modal?.classList.remove('hidden');
+    return;
+  }
+  // Monitoring, queued work, and idle/paused campaigns have no verified current
+  // lead. Never ask a hypothetical lead question in those states.
   await _doStopCloud(id, { keepMonitoring: false });
 }
 window.stopCloudCampaignUI = stopCloudCampaignUI;
 
+async function _cloudMutationRequest(url, verb) {
+  const res = await fetch(url, { method: 'POST' });
+  const raw = await res.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = {}; }
+  if (!res.ok || data.error) {
+    const detail = data.error || raw || `HTTP ${res.status}`;
+    const err = new Error(detail);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 // Fire the actual engine stop (shared by the plain confirm + both choice pills).
-async function _doStopCloud(id, { keepMonitoring = false } = {}) {
+async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', immediate = false } = {}) {
   try {
-    const qs = keepMonitoring ? '?keepMonitoring=1' : '';
-    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop${qs}`, { method: 'POST' });
-    const d = await res.json();
-    if (d.error) { alert('Could not stop: ' + d.error); return; }
+    const qs = keepMonitoring ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}` : (immediate ? '?immediate=1' : '?finishCurrent=1');
+    await _cloudMutationRequest(`/api/campaign/cloud/${encodeURIComponent(id)}/stop${qs}`, 'stop');
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(keepMonitoring
         ? 'Sending stopped — the VM keeps monitoring for acceptances (7 days).'
         : 'Cloud campaign stopped.', 5000);
     }
     _pushCloudEvent(id, keepMonitoring ? '⏹️ Sending stopped — VM keeps monitoring for acceptances' : '⏹️ Campaign stopped');
-  } catch (e) { alert('Could not stop: ' + e.message); return; }
+  } catch (e) {
+    const message = `Stop was not confirmed by the VM: ${e.message}. The last displayed campaign state has been kept; retry after the connection recovers.`;
+    if (typeof showCampaignToast === 'function') showCampaignToast(message, 9000);
+    else alert(message);
+    return false;
+  }
   if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
   if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  return true;
 }
 
 // Pause / Resume a cloud campaign — 1:1 with the local Pause/Resume. isPaused is
 // the CURRENT state: true → resume (paused→running, scheduler continues from
 // where it left off); false → pause (stop?pause=1; the engine worker re-checks
 // status between leads, so sending stops after the lead in flight).
+// Which campaigns have already had the 48h warning. Per machine, not per
+// engine: it is a fact about what this operator has been told, and the operator
+// is the one sitting at this laptop.
+const PAUSE_WARNED_KEY = 'pauseWarnedCampaigns';
+function _pauseWarned() {
+  try { return new Set(JSON.parse(localStorage.getItem(PAUSE_WARNED_KEY) || '[]')); }
+  catch (_) { return new Set(); }
+}
+function _markPauseWarned(id) {
+  try {
+    const seen = _pauseWarned();
+    seen.add(String(id));
+    // Bounded: the newest 200 campaigns is far more than anyone pauses, and it
+    // stops a years-old board from growing this key without limit.
+    localStorage.setItem(PAUSE_WARNED_KEY, JSON.stringify([...seen].slice(-200)));
+  } catch (_) { /* private mode / quota — the toast still says it */ }
+}
+
+/**
+ * The first time a campaign is paused, say the 48h rule in a dialog that has to
+ * be acknowledged. Every pause after that gets the toast instead: the rule is
+ * worth one interruption per campaign, and a modal on every press of a
+ * reversible action only teaches the operator to click through it.
+ *
+ * Resolves true to go ahead, false if they chose Keep sending. Missing markup
+ * (older shell) resolves true — a warning that cannot render must never be the
+ * reason a pause does not happen.
+ */
+function _confirmFirstPause(id) {
+  const modal = document.getElementById('pause-warn-modal');
+  const ok = document.getElementById('pause-warn-confirm');
+  if (!modal || !ok || _pauseWarned().has(String(id))) return Promise.resolve(true);
+
+  // What the operator is really asking about: the leads that have not gone out.
+  const pending = Number(((_cloudDetailCache.get(id) || {}).leadCounts || {}).pending) || 0;
+  ok.textContent = pending
+    ? `Pause · ${pending.toLocaleString()} lead${pending === 1 ? '' : 's'} stay queued`
+    : 'Pause · got it';
+
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (val) => {
+      if (done) return;
+      done = true;
+      modal.classList.add('hidden');
+      ok.onclick = null;
+      modal.removeEventListener('click', onScrim);
+      document.removeEventListener('keydown', onKey);
+      window.closePauseWarnModal = _closePauseWarnModal;
+      resolve(val);
+    };
+    // Scrim, Escape and "Keep sending" all mean the same thing: do not pause.
+    // Answering the dialog by dismissing it must never be read as consent.
+    const onScrim = (e) => { if (e.target === modal) finish(false); };
+    const onKey = (e) => { if (e.key === 'Escape') finish(false); };
+    ok.onclick = () => { _markPauseWarned(id); finish(true); };
+    modal.addEventListener('click', onScrim);
+    document.addEventListener('keydown', onKey);
+    window.closePauseWarnModal = () => finish(false);
+    modal.classList.remove('hidden');
+    ok.focus();
+  });
+}
+
+function _closePauseWarnModal() {
+  const m = document.getElementById('pause-warn-modal');
+  if (m) m.classList.add('hidden');
+}
+window.closePauseWarnModal = _closePauseWarnModal;
+
 async function pauseCloudCampaignUI(id, isPaused) {
   const path = isPaused ? 'resume' : 'stop?pause=1';
   const verb = isPaused ? 'resume' : 'pause';
+  if (!isPaused && !(await _confirmFirstPause(id))) return;   // they chose to keep sending
   try {
-    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/${path}`, { method: 'POST' });
-    const d = await res.json();
-    if (d.error) { alert(`Could not ${verb}: ` + d.error); return; }
+    await _cloudMutationRequest(`/api/campaign/cloud/${encodeURIComponent(id)}/${path}`, verb);
     if (typeof showCampaignToast === 'function') {
-      showCampaignToast(isPaused ? 'Resuming…' : 'Pausing — sending stops after the current lead.', 4000);
+      // The 48h rule is said HERE, at the press, as well as on the card. A rule
+      // the operator only meets when their campaign is already gone is not a
+      // rule they were told. Cloud only — a local pause has no such deadline.
+      showCampaignToast(isPaused
+        ? 'Resuming…'
+        : 'Pausing — sending stops after the current lead. Left paused for 48h it stops for good and releases its accounts.', 7000);
     }
-    _pushCloudEvent(id, isPaused ? '▶️ Resumed' : '⏸️ Paused — sending stops after the current lead');
-  } catch (e) { alert(`Could not ${verb}: ` + e.message); return; }
+    _pushCloudEvent(id, isPaused
+      ? '▶️ Resumed'
+      : '⏸️ Paused — sending stops after the current lead. Auto-stops after 48h paused.');
+  } catch (e) {
+    const network = /fetch failed|network|abort|timeout/i.test(String(e && e.message));
+    const message = network
+      ? `The app temporarily lost its connection to the development VM. The campaign was not ${verb === 'pause' ? 'paused' : 'resumed'} by this request. The tunnel reconnects automatically — try ${verb === 'pause' ? 'Pause' : 'Resume'} again in a few seconds.`
+      : `Could not ${verb}: ${e.message}`;
+    if (typeof showCampaignToast === 'function') showCampaignToast(message, 9000);
+    else alert(message);
+    return false;
+  }
   // Refresh the viewed card immediately, plus the board.
   if (typeof _refreshCloudActiveStatus === 'function' && _viewingCloudId === id) { try { await _refreshCloudActiveStatus(id); } catch {} }
   if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
   if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  return true;
 }
 window.pauseCloudCampaignUI = pauseCloudCampaignUI;
 
@@ -11174,11 +12883,11 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
       if (typeof showCampaignToast === 'function') showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Restart isn’t live yet — engine update pending.', 6000);
-      return;
+      return false;
     }
     if (d.alreadyRunning) {
       if (typeof showCampaignToast === 'function') showCampaignToast('Already sending — nothing to resume.', 4000);
-      return;
+      return true;
     }
     if (d.scheduled) {
       if (typeof showCampaignToast === 'function') {
@@ -11187,7 +12896,7 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
       _pushCloudEvent(id, `⏰ Scheduled to restart ${_fmtCloudStartAt(d.startAt)}`);
       window.location.hash = '#/'; // back to the dashboard, where it shows as Scheduled
       if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
-      return;
+      return true;
     }
     const left = Number(d.pending) || 0;
     if (typeof showCampaignToast === 'function') {
@@ -11197,10 +12906,14 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     _pushCloudEvent(id, fromStart ? '▶️ Started (from the beginning)' : '▶️ Started (continuing where it left off)');
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
-    return;
+    return false;
   }
+  // Paint the accepted restart and its new log event immediately. The normal
+  // board poll then replaces this optimistic transition with engine truth.
   if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
   if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  await _forceCloudItemsAfterAction(id);
+  return true;
 }
 window.restartCloudCampaignUI = restartCloudCampaignUI;
 
@@ -11209,7 +12922,25 @@ window.restartCloudCampaignUI = restartCloudCampaignUI;
 // 404/HTTP error → a clear "engine update pending" toast, no throw.
 async function cloudCheckNow(id, btn, scope) {
   scope = scope === 'all' ? 'all' : 'campaign';
+  const existingAsk = _cloudCheckAsked.get(id);
+  if (existingAsk && Date.now() - existingAsk < CLOUD_CHECK_ASK_TTL_MS) {
+    if (btn) btn.disabled = true;
+    return false;
+  }
+  // A check runs where the campaign runs. The guard lives HERE, not in each
+  // caller, because a caller that forgets it fires a VM sweep on a campaign
+  // sitting on this Mac: the card said RUNNING ON = THIS MAC while the toast
+  // said "the VM is opening a browser". Worse than cosmetic for CC+IC, where
+  // two sweeps both read a blank Introduction Status and send two intro DMs.
+  if (_checkRunsLocally(id)) return cloudCheckLocal(id, btn, scope);
   if (btn) btn.disabled = true;
+  // Optimistic UI belongs before the network await. The engine may take 20–30s
+  // to wake/queue a worker, but the operator's click was accepted locally now.
+  // _cloudCurrentAction reads this marker, so both dashboard and builder copies
+  // switch to the same "Starting acceptance check" card in this tick.
+  const askedAt = Date.now();
+  _cloudCheckAsked.set(id, askedAt);
+  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
   let queued = false;
   try {
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, {
@@ -11217,6 +12948,8 @@ async function cloudCheckNow(id, btn, scope) {
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
+      if (_cloudCheckAsked.get(id) === askedAt) _cloudCheckAsked.delete(id);
+      try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
       showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Check now isn’t live yet — engine update pending.', 6000);
     } else {
       queued = true;
@@ -11225,9 +12958,13 @@ async function cloudCheckNow(id, btn, scope) {
         ? '⚡ Check queued — the VM will sweep every account in the sheet’s Account Used column…'
         : '⚡ Check queued — the VM is opening a browser to sweep… (takes ~10s)', 4500);
     }
-  } catch (e) { showCampaignToast('Could not reach the engine: ' + e.message, 6000); }
-  finally { if (btn) btn.disabled = false; }
-  if (!queued) return;
+  } catch (e) {
+    if (_cloudCheckAsked.get(id) === askedAt) _cloudCheckAsked.delete(id);
+    try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+    showCampaignToast('Could not reach the engine: ' + e.message, 6000);
+  }
+  finally { if (btn && !queued) btn.disabled = false; }
+  if (!queued) return false;
 
   // Real feedback tied to the actual browser (fixes "no indication when it
   // starts / no logs"): poll the live flag so the operator SEES the sweep begin
@@ -11235,23 +12972,54 @@ async function cloudCheckNow(id, btn, scope) {
   // for only a few seconds, so this narrates that short window.
   (async () => {
     let sawLive = false;
-    for (let i = 0; i < 40; i++) {                 // ~60s
+    for (let i = 0; i < 120; i++) {                // ~3 min cold-start window
       await new Promise((r) => setTimeout(r, 1500));
       let dd = {};
       try { dd = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json(); } catch { /* */ }
+      if (i === 39 && !dd.live && !sawLive) {
+        showCampaignToast('The VM worker is still waking. No account has started yet; cold starts normally take about two minutes.', 7000);
+      }
       if (dd.live && !sawLive) {
         sawLive = true;
         showCampaignToast('🟢 VM checking now — browser is open. Click 👁 Show to watch it live.', 6000);
       } else if (!dd.live && sawLive) {
+        _cloudCheckAsked.delete(id);
         showCampaignToast('✓ VM check complete.', 4000);
         if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
         return;
       }
     }
-    if (!sawLive) showCampaignToast('VM check ran, but no browser opened — it may already be up to date, or a check was already in progress. Try again in a moment.', 7000);
+    if (!sawLive && _cloudCheckAsked.get(id) === askedAt) {
+      _cloudCheckAsked.delete(id);
+      showCampaignToast('The VM did not start the check within three minutes. The request remains queued; use Stop check to cancel it.', 8000);
+      try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+    }
   })();
+  return true;
 }
 window.cloudCheckNow = cloudCheckNow;
+
+async function stopCloudCheckUI(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check/stop`, { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    _cloudCheckAsked.delete(id);
+    showCampaignToast(d.wasQueued
+      ? 'Queued check cancelled. No browser was opened; monitoring remains active.'
+      : d.wasRunning === false
+      ? 'Nothing was queued or running — no check to stop.'
+      : 'Stopping the check now. The current browser is closing; unconfirmed work will retry next time. Monitoring remains active.', 7000);
+    if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+    return true;
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    showCampaignToast('Could not stop the check: ' + e.message, 7000);
+    return false;
+  }
+}
+window.stopCloudCheckUI = stopCloudCheckUI;
 
 // Local check of a CLOUD campaign (v2.160.87) — runs the app's OWN GoLogin
 // sweep (/api/bulk-check-now — the exact engine local campaigns use: opens each
@@ -11264,6 +13032,12 @@ async function cloudCheckLocal(id, btn, scope) {
   if (!id) return;
   scope = scope === 'all' ? 'all' : 'campaign';
   if (btn) btn.disabled = true;
+  // Same immediate state transition as the VM path. Opening a local GoLogin
+  // browser can also take several seconds; never leave the old waiting card on
+  // screen after the operator has explicitly started a check.
+  const askedAt = Date.now();
+  _cloudCheckAsked.set(id, askedAt);
+  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
   showCampaignToast('🖥 Local check starting — opening GoLogin browsers on this machine. Keep the app open…', 7000);
   _pushCloudEvent(id, scope === 'all'
     ? '🖥 Local check — every account in the Account Used column (on this machine)'
@@ -11294,9 +13068,19 @@ async function cloudCheckLocal(id, btn, scope) {
     };
     if (scope === 'all') body.allSenders = true;
     else body.profileIds = camp.profile_ids || camp.profileIds || [];
-    const res = await fetch('/api/bulk-check-now', {
+    const _sweepReq = fetch('/api/bulk-check-now', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
+    // The request above is dispatched, not awaited yet: the sweep runs for
+    // 30-120s and the card must not wait that long to admit it started. The
+    // server flips its checking flag on route entry, so a short burst of polls
+    // catches it within a few hundred ms instead of on the next 2s tick. These
+    // ask the server what is true, they do not paint an optimistic guess, so a
+    // request that fails simply never flips the card.
+    [120, 400, 900, 1800].forEach((ms) => setTimeout(() => {
+      try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* */ }
+    }, ms));
+    const res = await _sweepReq;
     const j = await res.json().catch(() => ({}));
     if (!res.ok || j.error) {
       showCampaignToast('Local check failed: ' + (j.error || `HTTP ${res.status}`), 9000);
@@ -11327,6 +13111,11 @@ async function cloudCheckLocal(id, btn, scope) {
   } catch (e) {
     showCampaignToast('Local check failed: ' + e.message, 9000);
   } finally {
+    // The local sweep has completed (successfully or not), so the optimistic
+    // "starting/checking" marker must not survive until its 90-second TTL.
+    // Keeping it around made the hero disagree with the completed live log.
+    if (_cloudCheckAsked.get(id) === askedAt) _cloudCheckAsked.delete(id);
+    try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
     if (btn) btn.disabled = false;
   }
 }
@@ -11338,15 +13127,13 @@ window.cloudCheckLocal = cloudCheckLocal;
 // 'all' scope (Account Used column) and 'campaign' to this campaign's accounts.
 function promptCloudCheckScope(id, btn) {
   if (!id) return;
-  // Two-step prompt (v2.160.87): scope (this campaign / all senders), THEN
-  // where (cloud VMs / this machine). 'local' runs the app's own GoLogin sweep
-  // — the exact engine local campaigns use — against this cloud campaign.
+  // Scope only: this campaign's accounts, or every account in the sheet's
+  // Account Used column. WHERE it runs is no longer asked, it follows the
+  // campaign's own side. See _checkRunsLocally.
   _soloCheckHandler = (mode) => {
     const scope = mode === 'sheet' ? 'all' : 'campaign';
-    _checkWhereHandler = (where) => (where === 'local'
-      ? cloudCheckLocal(id, btn, scope)
-      : cloudCheckNow(id, btn, scope));
-    _showCheckWhereModal();
+    if (_checkRunsLocally(id)) cloudCheckLocal(id, btn, scope);
+    else cloudCheckNow(id, btn, scope);
   };
   _showSoloCheckModal();
 }
@@ -11525,10 +13312,48 @@ function beginCloudLaunch({ name, profileIds, handshake = true } = {}) {
     // a handshake row (same filter the pf-list renderer applies).
     profileIds: (profileIds || []).filter((id) => id && id !== 'local-browser'),
     conn: {},
+    logs: [],
+    leadsRead: null,
     startedAt: Date.now(),
   };
+  // A launch is operational status immediately, even before an engine campaign
+  // row exists. Reveal section 7 now so the handshake/dispatch card cannot sit
+  // hidden below the Launch form until a later poll discovers the real row.
+  liveStatusForcedOpen = true;
+  try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+  try { placeLiveCard(); } catch (_) { /* */ }
+  paintCloudLaunch();
+  setTimeout(() => {
+    const sec = document.getElementById('nav-status');
+    if (sec) { sec.classList.remove('collapsed'); try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {} }
+  }, 100);
+}
+
+// Narrate one launch step into the live log.
+//
+// Operator ask, 2026-08-27: "it needs to have costant updates, literally as
+// much as possible, also in the log". A VM launch spends up to a minute reading
+// the sheet, running the pre-flight gate and dispatching, and the log rail read
+// LIVE LOG · LAST 0 EVENTS for the whole of it, because cloudLaunchStatus()
+// returned a hardcoded empty array. Every step now says what it is ABOUT TO DO
+// before it blocks, so a slow step is a step you can name rather than a frozen
+// card, and says its result after.
+function launchLog(line) {
+  if (!_cloudLaunch || !line) return;
+  if (!Array.isArray(_cloudLaunch.logs)) _cloudLaunch.logs = [];
+  const at = new Date();
+  const clock = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  // A STRING, not { t, line }. v3RenderLogLine takes strings, and String(obj)
+  // is "[object Object]" — which matches its own `[timestamp] message` pattern,
+  // so it read "object Object" as the time and the EMPTY remainder as the
+  // message. Every launch line was written, counted in the header, and rendered
+  // as a blank row (operator recording, 2026-08-28 11:59: eleven blank rows).
+  _cloudLaunch.logs.push(`${line} · ${clock}`);
+  // A launch is a minute or two, but a retry loop must never grow this forever.
+  if (_cloudLaunch.logs.length > 60) _cloudLaunch.logs.splice(0, _cloudLaunch.logs.length - 60);
   paintCloudLaunch();
 }
+window.launchLog = launchLog;
 
 // The handshake wizard's poll snapshot → our per-sender map. Same data the modal
 // paints, so the modal and the two cards can never disagree.
@@ -11549,8 +13374,52 @@ function setCloudLaunchPhase(phase) {
   paintCloudLaunch();
 }
 
+// A launch the server refused. The card stays up, in a failed state, until the
+// operator dismisses it — see failedStartRetry({ launchFailed:true }).
+function failCloudLaunch(message, fixes = []) {
+  if (!_cloudLaunch) return;
+  _cloudLaunch.phase = 'failed';
+  _cloudLaunch.failure = { message: String(message || 'The launch was refused.'), fixes: fixes || [] };
+  paintCloudLaunch();
+}
+
+// Stop pressed while a cloud launch is still in flight. The launch is one long
+// server call — read the sheet, resolve the GoLogin profiles, POST the engine —
+// that cannot be interrupted half way, and Stop used to fall straight through to
+// the LOCAL campaign stop instead. Measured 2026-08-28 15:08: two "■ Stop
+// requested (full halt)" lines against some other campaign, and then this one
+// "dispatched to engine — 4 leads, 2 account(s)" seven seconds later. So record
+// the intent here and let the submit path cancel the campaign the moment it
+// exists — the one promise we can actually keep is that nothing is left running.
+function cancelCloudLaunch() {
+  if (!_cloudLaunch || _cloudLaunch.failure) return false;
+  if (_cloudLaunch.stopRequested) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Already cancelling this launch — hang on.', 4000);
+    return true;
+  }
+  _cloudLaunch.stopRequested = true;
+  launchLog('■ Cancel requested — this launch will not be left running.');
+  paintCloudLaunch();
+  if (typeof showCampaignToast === 'function') {
+    showCampaignToast('Cancelling this launch. If it has already reached the VM it is stopped straight away.', 6000);
+  }
+  return true;
+}
+window.cancelCloudLaunch = cancelCloudLaunch;
+
+// Force-clear a failed launch card once the operator has read it.
+function dismissCloudLaunch() {
+  if (_cloudLaunch) _cloudLaunch.failure = null;
+  endCloudLaunch();
+}
+window.dismissCloudLaunch = dismissCloudLaunch;
+
 function endCloudLaunch() {
   if (!_cloudLaunch) return;
+  // A failed launch is the one case the card must OUTLIVE the launch: the
+  // `finally` below runs on every exit path, and it used to wipe the only place
+  // the failure was written down.
+  if (_cloudLaunch.failure) { paintCloudLaunch(); return; }
   _cloudLaunch = null;
   // Repaint both surfaces once more so the synthetic strip/card are replaced by
   // the real campaign (or by the idle state if the launch was cancelled).
@@ -11566,15 +13435,35 @@ function cloudLaunchStatus() {
   const primaryConn = {};
   for (const id of L.profileIds) primaryConn[id] = _HS_STATE_TO_PF[L.conn[id]] || 'pending';
   const doneN = L.profileIds.filter((id) => primaryConn[id] === 'connected').length;
+  if (L.failure) {
+    const fixes = (L.failure.fixes || []).map((f) => String(f.label || '')).filter(Boolean);
+    return {
+      running: false, paused: false, state: 'error', phase: 'done',
+      bad: true, badLabel: 'Error', launchFailed: true,
+      id: '__launching__', name: L.name, mode: 'connect_and_introduce',
+      profileIds: L.profileIds.slice(), profileNames: L.profileIds.map(nameOf),
+      totalTargets: 0, totalProcessed: 0, acceptedCount: '—',
+      endNotice: fixes.length ? `${L.failure.message} Try: ${fixes.join(', ')}.` : L.failure.message,
+      logs: (L.logs || []).slice(), skippedCount: 0, _launching: true,
+    };
+  }
   return {
     running: true, paused: false, state: 'preflight', phase: 'preflight',
+    // Whether Phase 0 actually runs. A launch that sends the primary handshake
+    // to the VM has NO local phase 0, and labelling it "Phase 0 · Primary
+    // handshake / handshake started" describes work that is not happening.
+    hasHandshake: !!L.hasHandshake,
     mode: 'connect_and_introduce',
     name: L.name,
     profileIds: L.profileIds.slice(),
     profileNames: L.profileIds.map(nameOf),
     primaryConn,
     totalTargets: 0, totalProcessed: 0, acceptedCount: '—',
-    logs: [], skippedCount: 0,
+    logs: (L.logs || []).slice(), skippedCount: 0,
+    // What the step strip advances on. 'handshake' → 'dispatching' → 'accepted'.
+    launchPhase: L.phase || '',
+    leadsRead: L.leadsRead == null ? null : L.leadsRead,
+    sendersDone: doneN,
     preflightL1: L.phase === 'handshake'
       ? 'Sending connections to the primary account'
       : 'Handing the campaign over to the VM',
@@ -11590,6 +13479,8 @@ function cloudLaunchStatus() {
 // Repaint the card and the board immediately rather than waiting for their 2s /
 // 4s polls — during a launch those polls have nothing new to say anyway.
 function paintCloudLaunch() {
+  try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+  try { placeLiveCard(); } catch (_) { /* */ }
   try { if (typeof window.renderActiveCard === 'function') window.renderActiveCard(null); } catch (_) { /* */ }
   try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
 }
@@ -11627,6 +13518,64 @@ function cloudLaunchBoardItem() {
 // dispatches without the handshake, or { ok:false, proceedAnyway:false } on
 // Cancel (dispatch is aborted). See feedback_two_live_status_cards / the Path A
 // spec (docs/superpowers/specs/2026-07-11-cloud-handshake-path-a-...).
+// ── Connecting the senders to the primary (operator ask, 2026-08-27/28) ─────
+// This used to offer a choice: run the handshake on this Mac, or "on the VM".
+// The second one did nothing. It set templates.primaryHandshakeOn='vm', the app
+// then skipped the handshake (handshake-gate.mjs), and the engine has no code
+// that reads that value anywhere — grepped 2026-08-28, zero matches. So the
+// senders were never connected to the primary, no local browser opened despite
+// the option promising one, and no account could ever earn its "Primary ✓"
+// badge (primaryConnected is only ever written by this local handshake).
+//
+// The honest framing is that this Mac opens EITHER WAY: accepting the
+// invitations happens in the primary's browser, and that browser only exists
+// here. There was never a second place for this to run, so there is no longer a
+// question — just a statement of what is about to happen.
+//
+// Resolves 'local', or null if the operator backs out of the launch.
+function askPrimaryHandshakeLocation({ senderCount = 0, acceptAll = false } = {}) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    const senders = `${senderCount} sender${senderCount === 1 ? '' : 's'}`;
+    back.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Connecting your senders to the primary">
+        <div class="stop-choice-eyebrow">Before the campaign starts</div>
+        <h3 class="modal-title">Connecting your senders to the primary</h3>
+        <div class="modal-body">
+          Two steps on this Mac: your ${escHtml(senders)} invite the primary, the primary accepts.
+          Then the campaign moves to the cloud.
+        </div>
+        <label class="phl-accept-all">
+          <input type="checkbox" class="phl-all"${acceptAll ? ' checked' : ''}>
+          <span>
+            <b>Accept all pending invitations</b>
+            <em>Clears the primary's whole invitation list, not just your senders'. Also the faster start.</em>
+          </span>
+        </label>
+        <div class="modal-actions" style="display:flex; gap:10px; flex-wrap:wrap">
+          <button type="button" class="btn btn-primary phl-go">Start</button>
+          <button type="button" class="btn modal-cancel-link phl-cancel">Cancel launch</button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      try { back.remove(); } catch (_) { /* already gone */ }
+      resolve(value);
+    };
+    back.querySelector('.phl-go').addEventListener('click', () => finish({
+      where: 'local', acceptAll: !!back.querySelector('.phl-all')?.checked,
+    }));
+    back.querySelector('.phl-cancel').addEventListener('click', () => finish(null));
+    // Same rule as the handshake wizard: dismissable, never by accident.
+    back.addEventListener('click', (e) => { if (e.target === back) finish(null); });
+  });
+}
+window.askPrimaryHandshakeLocation = askPrimaryHandshakeLocation;
+
 function _hsRowIconHtml(view) {
   if (view.icon === 'check') return '<span class="chk">✓</span>';
   if (view.icon === 'x') return '<span class="chk" style="color:#b23b3b">✕</span>';
@@ -11642,16 +13591,25 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
     back.className = 'modal-backdrop';
     back.innerHTML = `
       <div class="modal-card" role="dialog" aria-modal="true" aria-label="Connecting senders to the primary">
-        <h3 class="modal-title">🤝 Connecting your senders to the primary</h3>
+        <h3 class="modal-title">Connecting your senders to the primary</h3>
         <div class="modal-body">
           <div class="hs-panel">
-            <div class="hs-eyebrow"><span class="lk">🔒</span> Phase 0 · Primary handshake<span class="cnt"><span class="hs-wiz-count">0</span> / ${total}</span></div>
-            <div class="hs-head">Your Mac connects each sender to the primary, then accepts the invites in your local browser. The campaign moves to the cloud as soon as this finishes.</div>
+            <div class="hs-eyebrow">Phase 0 · Primary handshake<span class="cnt"><span class="hs-wiz-count">0</span> / ${total} accepted</span></div>
+            <div class="hs-steps">
+              <div class="hs-step hs-step1"><div class="n">Step 1</div><div class="l">Senders invite the primary</div></div>
+              <div class="hs-step hs-step2"><div class="n">Step 2</div><div class="l">Primary accepts the invites</div></div>
+            </div>
             <div class="hs-bar"><i class="hs-wiz-bar" style="width:0%"></i></div>
+            <div class="hs-wiz-now" role="status">
+              <span class="hs-wiz-now-label">NOW</span>
+              <strong class="hs-wiz-now-text">Starting the handshake…</strong>
+              <span class="hs-wiz-elapsed">0s</span>
+            </div>
             <div class="hs-list hs-wiz-list">
               ${senderProfileIds.map((id) => `<div class="hs-row" data-hid="${escHtml(String(id))}"><span class="ic"><span class="dotwait"></span></span><span class="who">${escHtml(nameOf(id))}</span><span class="st">Waiting</span></div>`).join('')}
             </div>
-            <div class="hs-keep">◈ Keep this app open — this is the only local step this campaign needs.</div>
+            <div class="hs-wiz-log" aria-label="Handshake activity log"><div class="hs-wiz-log-line">Waiting for the first browser step…</div></div>
+            <div class="hs-keep">Keep this app open — this is the only local step this campaign needs.</div>
           </div>
           <div class="hs-wiz-error intro-config-error" hidden style="margin-top:12px"></div>
         </div>
@@ -11665,8 +13623,26 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
 
     const $ = (sel) => back.querySelector(sel);
     let poll = null;
+    let elapsedTimer = null;
+    const startedAt = Date.now();
     let done = false;
-    const cleanup = () => { if (poll) { clearInterval(poll); poll = null; } try { back.remove(); } catch (_) { /* */ } };
+    let settleStartedAt = null;
+    let settleTotal = 20;
+    // Senders that actually sent an invitation. A sender that was already a 1st
+    // degree connection goes straight to `connected` and is never in here, and
+    // then step 2 has nothing to do — the primary's browser is not opened at all.
+    const everInvited = new Set();
+    // Seconds left in the settle wait, or null when it is over / not running.
+    const settleSecondsLeft = () => {
+      if (settleStartedAt == null) return null;
+      const left = settleTotal - Math.floor((Date.now() - settleStartedAt) / 1000);
+      return left > 0 ? left : null;
+    };
+    const cleanup = () => {
+      if (poll) { clearInterval(poll); poll = null; }
+      if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+      try { back.remove(); } catch (_) { /* */ }
+    };
     const finish = (result) => { if (done) return; done = true; cleanup(); resolve(result); };
     // Dismissable, but never by accident. A bare scrim-click used to resolve
     // {ok:false} and silently abandon the whole launch — one stray click outside
@@ -11680,11 +13656,14 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
       }
     });
 
-    const paint = (senders) => {
+    const paint = (senders, lines = []) => {
       let connected = 0;
+      let activeSender = null;
       for (const s of (senders || [])) {
+        if (['sent', 'sent-no-identity', 'accepting'].includes(s.state)) everInvited.add(s.profileId);
         const view = handshakeRowView(s.state);
         if (view.done) connected++;
+        if (!activeSender && ['connecting', 'sent', 'sent-no-identity', 'accepting'].includes(s.state)) activeSender = s;
         const row = $(`.hs-row[data-hid="${CSS.escape(String(s.profileId))}"]`);
         if (!row) continue;
         row.classList.toggle('done', view.done);
@@ -11694,6 +13673,53 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
       }
       const cnt = $('.hs-wiz-count'); if (cnt) cnt.textContent = String(connected);
       const bar = $('.hs-wiz-bar'); if (bar) bar.style.width = total ? `${Math.round((connected / total) * 100)}%` : '0%';
+      // Step strip. Step 2 is the part that used to be invisible: the settle
+      // wait plus the primary's own browser accepting. It stays on screen now.
+      const view = handshakeStepView(senders || [], null, everInvited);
+      const s1 = $('.hs-step1'); const s2 = $('.hs-step2');
+      if (s1) { s1.classList.toggle('did', view.step1Done); s1.classList.toggle('on', !view.step1Done); }
+      if (s2) {
+        const skipped = view.step === 2 && view.needsAccept === false;
+        s2.classList.toggle('on', view.step === 2 && !skipped && !view.step2Done);
+        s2.classList.toggle('did', view.step2Done && !skipped);
+        s2.classList.toggle('skip', skipped);
+        const l = s2.querySelector('.l');
+        if (l) l.textContent = skipped ? 'Nothing to accept, they were already connected' : 'Primary accepts the invites';
+      }
+
+      const now = $('.hs-wiz-now-text');
+      if (now) {
+        const left = settleSecondsLeft();
+        if (activeSender && activeSender.state === 'connecting') {
+          now.textContent = `Opening ${activeSender.name || nameOf(activeSender.profileId)} in an off-screen GoLogin browser…`;
+        } else if (activeSender && activeSender.state === 'accepting') {
+          now.textContent = `Your primary Chrome is open, accepting ${activeSender.name || nameOf(activeSender.profileId)}'s invitation. Leave it alone, it closes itself.`;
+        } else if (left != null) {
+          now.textContent = `Waiting ${left}s for the invitations to land in the primary's invitations, then your primary Chrome opens to accept them.`;
+        } else if (activeSender) {
+          now.textContent = `Checking ${activeSender.name || nameOf(activeSender.profileId)} against the primary…`;
+        } else if (view.step === 2 && view.needsAccept === false) {
+          now.textContent = 'Every sender was already connected to the primary, so there is nothing to accept and your primary Chrome does not need to open.';
+        } else if (view.step === 2) {
+          now.textContent = 'Opening your primary Chrome to accept the invitations…';
+        } else {
+          now.textContent = 'Preparing the next sender browser…';
+        }
+      }
+      // The handshake logs "…reach the primary's invites (20s) before accepting…"
+      // right before it sleeps. That sleep is where the wizard used to look
+      // frozen, so turn it into a countdown the operator can watch.
+      if (Array.isArray(lines)) {
+        for (const raw of lines) {
+          const m = /reach the primary's invites \((\d+)s\)/.exec(String(raw));
+          if (m && settleStartedAt == null) { settleStartedAt = Date.now(); settleTotal = Number(m[1]) || 20; }
+        }
+      }
+      const log = $('.hs-wiz-log');
+      if (log && Array.isArray(lines) && lines.length) {
+        log.innerHTML = lines.slice(-8).map((line) => `<div class="hs-wiz-log-line">${escHtml(String(line).replace(/^\[handshake\]\s*/, ''))}</div>`).join('');
+        log.scrollTop = log.scrollHeight;
+      }
       // Mirror the same per-sender states onto the card + board so the modal is
       // no longer the ONLY place this is visible — and so closing it (or its
       // 700ms auto-close on success) doesn't drop the operator into a blank UI.
@@ -11703,20 +13729,48 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
     // On error, reveal Retry. When another handshake is already running (409),
     // hide "Dispatch anyway" — dispatching now would run the campaign with
     // un-handshaked senders while the other campaign drives the local browsers.
+    // The invites are out but the primary never accepted them HERE — usually
+    // because its Chrome would not launch. Dispatching now is allowed, but it
+    // costs those senders their introductions until the accept happens, so the
+    // wizard says so instead of auto-closing on a "done" that accepted nothing.
+    const showPartial = (outcome) => {
+      if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+      const panel = $('.hs-panel'); if (panel) panel.classList.add('partial');
+      const eyebrow = $('.hs-eyebrow');
+      if (eyebrow) eyebrow.innerHTML = `Phase 0 · Primary handshake<span class="cnt">${escHtml(outcome.headline)}</span>`;
+      const s2 = $('.hs-step2');
+      if (s2) { s2.classList.remove('on', 'did'); s2.classList.add('failed'); s2.querySelector('.l').textContent = 'The primary did not accept here'; }
+      const label = $('.hs-wiz-now-label'); if (label) label.textContent = 'WHAT NOW';
+      const now = $('.hs-wiz-now-text'); if (now) now.textContent = outcome.detail;
+      const el = $('.hs-wiz-elapsed'); if (el) el.textContent = '';
+      const retry = $('.hs-wiz-retry'); if (retry) { retry.style.display = ''; retry.textContent = 'Try the primary again'; retry.dataset.acceptOnly = '1'; }
+      const anyway = $('.hs-wiz-anyway'); if (anyway) { anyway.style.display = ''; anyway.textContent = 'Send anyway'; }
+      const cancel = $('.hs-wiz-cancel'); if (cancel) cancel.textContent = 'Cancel launch';
+    };
+
     const showError = (msg, { is409 = false } = {}) => {
       const err = $('.hs-wiz-error'); if (err) { err.hidden = false; err.textContent = msg; }
       const retry = $('.hs-wiz-retry'); if (retry) retry.style.display = '';
       const anyway = $('.hs-wiz-anyway'); if (anyway) anyway.style.display = is409 ? 'none' : '';
     };
 
-    const start = async () => {
+    const start = async ({ acceptOnly = false } = {}) => {
       const err = $('.hs-wiz-error'); if (err) { err.hidden = true; err.textContent = ''; }
-      const retry = $('.hs-wiz-retry'); if (retry) retry.style.display = 'none';
+      const retry = $('.hs-wiz-retry'); if (retry) { retry.style.display = 'none'; delete retry.dataset.acceptOnly; }
       const anyway = $('.hs-wiz-anyway'); if (anyway) anyway.style.display = '';
+      const panel = $('.hs-panel'); if (panel) panel.classList.remove('partial');
+      const label = $('.hs-wiz-now-label'); if (label) label.textContent = 'NOW';
+      settleStartedAt = null;
       try {
         const res = await fetch('/api/campaign/cloud-preflight-handshake', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ senderProfileIds, primaryUrl, primarySource, autoAcceptAllPending }),
+          body: JSON.stringify({
+            senderProfileIds, primaryUrl, primarySource,
+            // A retry after a partial has nothing left to send: the invitations
+            // are already sitting on the primary, so force the accept sweep or
+            // the run would skip Phase 2 entirely and change nothing.
+            autoAcceptAllPending: acceptOnly ? true : autoAcceptAllPending,
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { showError(data.error || `Could not start the handshake (${res.status}).`, { is409: res.status === 409 }); return; }
@@ -11725,10 +13779,12 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
       poll = setInterval(async () => {
         try {
           const snap = await fetch('/api/campaign/cloud-preflight-handshake/status').then((r) => r.json());
-          if (snap && snap.active) paint(snap.senders);
+          if (snap && snap.active) paint(snap.senders, snap.lines);
           if (snap && snap.done) {
             clearInterval(poll); poll = null;
-            if (snap.error) { showError('Handshake error: ' + snap.error); return; }
+            const outcome = handshakeOutcome({ senders: snap.senders, summary: snap.summary, error: snap.error });
+            if (outcome.kind === 'error') { showError('Handshake error: ' + outcome.detail); return; }
+            if (outcome.kind === 'partial') { showPartial(outcome); return; }
             // Success — brief beat so the operator sees the ✓s, then dispatch.
             setTimeout(() => finish({ ok: true }), 700);
           }
@@ -11736,7 +13792,14 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
       }, 800);
     };
 
-    $('.hs-wiz-retry').addEventListener('click', () => start());
+    elapsedTimer = setInterval(() => {
+      const el = $('.hs-wiz-elapsed');
+      if (!el) return;
+      const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      el.textContent = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    }, 1000);
+
+    $('.hs-wiz-retry').addEventListener('click', (e) => start({ acceptOnly: e.currentTarget.dataset.acceptOnly === '1' }));
     $('.hs-wiz-anyway').addEventListener('click', () => finish({ ok: false, proceedAnyway: true }));
     $('.hs-wiz-cancel').addEventListener('click', () => finish({ ok: false, proceedAnyway: false }));
     start();
@@ -11833,7 +13896,38 @@ async function _submitCloudCampaign(body) {
   // Publish the launch on the card + board for its WHOLE duration — the
   // handshake AND the dispatch. Cleared in the finally below, by which point
   // either a real campaign row exists or the launch was abandoned.
-  beginCloudLaunch({ name: body.name, profileIds: body.profileIds, handshake: needsHandshakeFromBody(body) });
+  // Operator ask, 2026-08-27: a VM CC+IC launch must ASK where the connections to
+  // the primary are sent from, instead of silently running the local handshake.
+  // Asked before beginCloudLaunch so a cancel here leaves no launch card behind,
+  // and only when the handshake would otherwise have run unasked.
+  if (needsHandshakeFromBody(body)) {
+    const where = await askPrimaryHandshakeLocation({
+      senderCount: (body.profileIds || []).length,
+      // Whatever the campaign settings already say — the modal is a second
+      // place to change it at the moment it applies, not a separate setting.
+      acceptAll: !!(body.templates || {}).autoAcceptAllPending,
+    });
+    if (!where) {
+      if (typeof showCampaignToast === 'function') {
+        showCampaignToast('Launch cancelled — nothing was sent, and your campaign is still saved as a draft.', 6000);
+      }
+      _cloudSubmitInFlight = false;
+      return;
+    }
+    body.templates = {
+      ...(body.templates || {}),
+      primaryHandshakeOn: where.where,
+      autoAcceptAllPending: !!where.acceptAll,
+    };
+  }
+  const _hsHere = needsHandshakeFromBody(body);
+  beginCloudLaunch({ name: body.name, profileIds: body.profileIds, handshake: _hsHere });
+  launchLog(`▶ Launch started — ${(body.profileIds || []).length} account${(body.profileIds || []).length === 1 ? '' : 's'}, Cloud VM`);
+  if (body.mode === 'connect_and_introduce') {
+    launchLog(_hsHere
+      ? '🤝 Connecting your senders to the primary — sender browsers open next'
+      : '🤝 No primary handshake needed for this campaign');
+  }
   try {
     // Path A: run the primary handshake locally BEFORE dispatch when this is a
     // cloud CC+IC campaign with auto-accept and a local-only primary. Otherwise
@@ -11847,6 +13941,9 @@ async function _submitCloudCampaign(body) {
         primarySource: t.primarySource || 'local-browser',
         autoAcceptAllPending: !!t.autoAcceptAllPending,
       });
+      launchLog(hs.ok
+        ? '🤝 Handshake complete — every sender is connected to the primary'
+        : (hs.proceedAnyway ? '🤝 Handshake skipped — dispatching anyway, as you chose' : '🤝 Handshake cancelled'));
       if (!hs.ok && !hs.proceedAnyway) {
         // Never exit silently. This return abandons the launch AND the finally
         // below wipes the board card, so without a word on screen the campaign
@@ -11866,6 +13963,8 @@ async function _submitCloudCampaign(body) {
     try {
       const ids = body.profileIds || [];
       if (ids.length) {
+        setCloudLaunchPhase('preflight');
+        launchLog(`🔎 Pre-flight check on ${ids.length} account${ids.length === 1 ? '' : 's'}…`);
         // 3s and no longer. This proxies to the engine through requestWithRetry
         // (3 attempts × 20s + 1s + 2s backoff), so a 502 or a hung engine held
         // Start for ~63s between the handshake and 'dispatching' with no phase on
@@ -11878,6 +13977,11 @@ async function _submitCloudCampaign(body) {
         )).json();
         // usable===null means the engine was unreachable — NOT that nothing can
         // send. Only a hard 0 fires the prompt.
+        if (pf && typeof pf.usable === 'number') {
+          launchLog(pf.usable === 0
+            ? '🔎 Pre-flight — no account can send yet'
+            : `🔎 Pre-flight passed — ${pf.usable} account${pf.usable === 1 ? '' : 's'} usable`);
+        }
         if (pf && pf.usable === 0) {
           const verdict = await runPreflightPrompt({ accounts: pf.accounts || [], earliest: pf.earliest });
           if (!verdict.proceedAnyway) {
@@ -11889,11 +13993,29 @@ async function _submitCloudCampaign(body) {
         }
       }
     } catch (_) { /* fail open — never block a launch on this check */ }
+    // Cancelled during the handshake — nothing has been dispatched, so this one
+    // really is a clean stop.
+    if (_cloudLaunch && _cloudLaunch.stopRequested) {
+      launchLog('■ Launch cancelled before it reached the VM — nothing was dispatched.');
+      if (typeof showCampaignToast === 'function') {
+        showCampaignToast('Launch cancelled — nothing reached the VM, and your campaign is still saved as a draft.', 6000);
+      }
+      return;
+    }
     setCloudLaunchPhase('dispatching');
+    // The long one. The server reads the whole lead sheet here, so say so BEFORE
+    // it blocks — this await is what produced the silent minute.
+    launchLog('📄 Reading your lead sheet and handing the campaign to the VM…');
+    // Backstop for the server hop. Every await inside handleStartCloud is now
+    // bounded, but an unbounded request here means ANY future unbounded await
+    // shows up as a card that spins forever instead of an error the operator
+    // can read. 4 minutes clears the worst honest case (a big sheet: 30s x2 for
+    // the CSV, plus GoLogin, plus a 20s engine call) with room to spare.
     const res = await fetch('/api/campaign/start-cloud', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(4 * 60 * 1000),
     });
     const txt = await res.text();
     let data; try { data = JSON.parse(txt); } catch { data = { error: txt }; }
@@ -11901,8 +14023,42 @@ async function _submitCloudCampaign(body) {
       openOperatorEmailModal({ mandatory: true }); return;
     }
     if (!res.ok || data.error) {
-      alert(`Could not start cloud campaign:\n\n${data.error || txt}`); return;
+      const why = String(data.error || txt).split('\n')[0];
+      launchLog(`✗ Launch failed — ${why}`);
+      // No native alert: it blocks the whole app, says nothing about what to do
+      // next, and the card underneath it was being torn down anyway.
+      failCloudLaunch(why, (data.diagnostic && data.diagnostic.fixes) || []);
+      if (typeof showCampaignToast === 'function') showCampaignToast(`✗ ${why}`, 8000);
+      return;
     }
+    // The strip's last two steps: the sheet is read, and the campaign is now
+    // the engine's. Without this the strip stayed on "reading your leads" while
+    // the headline said the VM had already accepted it.
+    // Cancelled while the server was working. The campaign now exists on the
+    // engine, so the only honest thing is to stop it at once and say so.
+    if (_cloudLaunch && _cloudLaunch.stopRequested) {
+      launchLog(`☁︎ The campaign reached the VM before the cancel landed — stopping it now.`);
+      let stopped = false;
+      if (data.id) {
+        try {
+          const sr = await fetch(`/api/campaign/cloud/${encodeURIComponent(data.id)}/stop`, { method: 'POST' });
+          stopped = sr.ok;
+        } catch (_) { /* reported below */ }
+      }
+      launchLog(stopped
+        ? '■ Cancelled — the campaign was stopped on the VM. No lead was sent.'
+        : '⚠ Cancelled, but the VM did not confirm the stop — open the campaign and stop it by hand.');
+      if (typeof showCampaignToast === 'function') {
+        showCampaignToast(stopped
+          ? 'Launch cancelled — the campaign reached the VM and was stopped straight away. Nothing was sent.'
+          : 'Launch cancelled, but the VM did not confirm. Open the campaign and stop it by hand.', 9000);
+      }
+      if (!stopped) failCloudLaunch('The campaign reached the VM but the stop was not confirmed. Open it and stop it by hand.');
+      return;
+    }
+    if (_cloudLaunch) _cloudLaunch.leadsRead = Number(data.leadsAdded) || 0;
+    setCloudLaunchPhase('accepted');
+    launchLog(`☁︎ Campaign accepted by the VM — ${data.leadsAdded || 0} lead(s) loaded`);
     // Draft consumed on launch, same as the local path.
     try {
       const draftId = getActiveDraftId();
@@ -11924,9 +14080,18 @@ async function _submitCloudCampaign(body) {
     // card (card #2) for the new VM campaign. See feedback_two_live_status_cards.
     if (data.id) { try { await openCloudLive(data.id); } catch (_) { /* */ } }
   } catch (e) {
-    alert('Could not reach the cloud engine:\n\n' + e.message);
+    launchLog(`✗ Launch stopped — ${e.name === 'TimeoutError' || e.name === 'AbortError' ? 'it did not finish within 4 minutes' : e.message}`);
+    // Name the reason. A timeout here is not "could not reach the engine" — the
+    // request may never have got past reading the sheet — and saying so sent
+    // operators looking at the wrong thing.
+    failCloudLaunch(e.name === 'TimeoutError' || e.name === 'AbortError'
+      ? 'The launch did not finish within 4 minutes. It stalled before the VM was reached, and the usual causes are the Google Sheet or the GoLogin account list not answering.'
+      : `Could not start the cloud campaign: ${e.message}`);
   } finally {
     _cloudSubmitInFlight = false;
+    // A dispatch is the only moment the primary-recall list can change while
+    // the app is open, so drop the cache and let the next keystroke refetch.
+    try { if (typeof window.primaryRecallInvalidate === 'function') window.primaryRecallInvalidate(); } catch (_) { /* */ }
     // Runs on every exit path — success, cancel, and error — so the synthetic
     // strip/card can never outlive the launch and strand the board.
     endCloudLaunch();
@@ -11965,6 +14130,10 @@ async function submitStartCampaign(body, opts = {}) {
       if (res.status === 409 && _parsed409.preflight) {
         showCampaignToast('Lead sheet changed since pre-flight check — press Start again to re-run the check.', 8000);
         return;
+      }
+      if (_parsed409.launchRejected || res.status === 400) {
+        let parsed; try { parsed = JSON.parse(txt); } catch { parsed = null; }
+        if (parsed?.launchRejected && parsed.diagnostic) { showLaunchDiagnostic(parsed.diagnostic); return; }
       }
       alert(`Could not ${opts.queueOnly ? 'queue' : 'start'} campaign:\n\n${txt}`);
       return;
@@ -12028,6 +14197,32 @@ async function submitStartCampaign(body, opts = {}) {
   } catch (e) {
     alert(`Network error starting campaign:\n\n${e.message}`);
   }
+}
+
+function closeLaunchDiagnostic() { document.getElementById('launch-diagnostic-modal')?.classList.add('hidden'); }
+window.closeLaunchDiagnostic = closeLaunchDiagnostic;
+function resolveLaunchDiagnostic(code) {
+  closeLaunchDiagnostic();
+  const target = code === 'accounts' ? 'nav-accounts' : 'nav-sheet';
+  if (typeof scrollToSection === 'function') scrollToSection(target);
+  if (code === 'sender') setTimeout(() => document.getElementById('ic-sender-col-select')?.focus(), 350);
+  if (code === 'sheet') setTimeout(() => document.getElementById('sheet-url')?.focus(), 350);
+  if (code === 'rows') window.openRunningSheet?.();
+}
+window.resolveLaunchDiagnostic = resolveLaunchDiagnostic;
+function showLaunchDiagnostic(diagnostic = {}) {
+  const modal = document.getElementById('launch-diagnostic-modal');
+  const copy = document.getElementById('launch-diagnostic-copy');
+  const actions = document.getElementById('launch-diagnostic-actions');
+  if (!modal || !actions) return alert(diagnostic.message || 'Campaign not started.');
+  if (copy) copy.textContent = `${diagnostic.message || 'Campaign not started.'} Nothing was sent.`;
+  actions.replaceChildren(...(diagnostic.fixes || []).map((fix, index) => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = index === 0 ? 'btn btn-start' : 'btn btn-secondary';
+    button.textContent = fix.label; button.onclick = () => resolveLaunchDiagnostic(fix.code);
+    return button;
+  }));
+  modal.classList.remove('hidden');
 }
 
 // ── v2.106.0 — Mandatory per-machine operator identity ──────────────────
@@ -12278,6 +14473,9 @@ async function stopCampaign() {
 // (stop-sending-keep-monitoring vs. stop-everything) instead of the simple
 // yes/no modal. Other modes keep the original single-question modal.
 function confirmStopCampaign() {
+  // A launch still in flight is not a campaign yet — cancel THAT, not whatever
+  // local campaign happens to be running.
+  if (cancelCloudLaunch()) return;
   // Viewing a CLOUD campaign (wizard read-only Stop, runbar Stop, legacy
   // #btn-stop) → the choice belongs to the ENGINE, not the local cockpit.
   // Without this the VM campaign fell through to the local confirm modal
@@ -12297,34 +14495,21 @@ function confirmStopCampaign() {
       showCampaignToast('Still ending monitoring — hang tight, sheet stamping in progress…', 8000);
       return;
     }
-    const modal = document.getElementById('confirm-stop-monitoring-modal');
-    if (modal) modal.classList.remove('hidden');
+    confirmStopMonitoringNow();
     return;
   }
-  // CC+IC and CC+DM both run a phase-2 monitoring loop after the
-  // connection phase. Give the operator the choice between halting
-  // everything vs. just stopping new sends and letting acceptances
-  // continue to flow through auto-intro / auto-DM dispatch.
-  if (__cockpit && (__cockpit.mode === 'connect_and_introduce' || __cockpit.mode === 'connect_and_message')) {
-    const modal = document.getElementById('stop-choice-modal');
-    if (modal) {
-      const isDm = __cockpit.mode === 'connect_and_message';
-      const eyebrow = modal.querySelector('.stop-choice-eyebrow');
-      const monitorSub = modal.querySelector('.stop-choice-pill.is-monitor .stop-choice-pill-sub');
-      if (eyebrow) {
-        eyebrow.textContent = isDm
-          ? 'Stop campaign · Connect + DM'
-          : 'Stop campaign · Connect + Introduce Back';
-      }
-      if (monitorSub) {
-        monitorSub.textContent = isDm
-          ? 'Bulk-check fires now, then every 6 h for 7 days. Auto-DMs still fire on accept.'
-          : 'Bulk-check fires now, then every 6 h for 7 days. Auto-intro DMs still fire on accept.';
-      }
-      modal.classList.remove('hidden');
-    }
-    return;
-  }
+  _stopChoiceTarget = { cloud: false, id: null };
+  // No lead in flight, no question. A campaign that has not started sending has
+  // nothing to wait for, and asking "what about the lead in flight?" about a
+  // lead that does not exist is what made the operator read this modal as
+  // broken (2026-08-28). The cloud path already skips it in this state
+  // (hasCurrentSendingLead); this one asked unconditionally and named "the
+  // current lead" as a placeholder.
+  const lead = String(__cockpit?.currentAction?.lead || '').trim();
+  const sendingNow = !!lead && !!__cockpit?.running && __cockpit?.state !== 'monitoring';
+  if (!sendingNow) { confirmStopCampaignNow(true); return; }
+  const copy = document.getElementById('stop-current-lead-copy');
+  if (copy) copy.textContent = `${lead} is mid-send. No new lead will start either way.`;
   const modal = document.getElementById('confirm-stop-modal');
   if (modal) modal.classList.remove('hidden');
 }
@@ -12401,11 +14586,15 @@ async function confirmStopMonitoringNow() {
 }
 window.confirmStopMonitoringNow = confirmStopMonitoringNow;
 
-async function confirmStopCampaignNow() {
+async function confirmStopCampaignNow(immediate = false) {
   closeStopModal();
-  // Visual feedback while the server force-closes browsers (~1-2s).
-  showCampaignToast('Stopping campaign — closing browsers…', 4000);
-  await stopCampaign();
+  const target = _stopChoiceTarget;
+  showCampaignToast(immediate ? 'Stopping now — if the result is uncertain, the strip will tell you exactly what to check.' : 'Waiting up to 15 seconds for the current lead…', 15000);
+  if (target.cloud && target.id) await _doStopCloud(target.id, { immediate });
+  else {
+    try { await fetch('/api/campaign/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full: true, immediate }) }); } catch { /* status polling surfaces recovery */ }
+    try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
+  }
 }
 
 // v2.14.x: "Stop sending, keep monitoring" — CC+IC only. Fires the
@@ -12416,12 +14605,68 @@ async function confirmStopCampaignNow() {
 async function stopAndKeepMonitoring() {
   const target = _stopChoiceTarget; // capture before close resets it
   closeStopChoiceModal();
+  _soloCheckHandler = (scope) => _finishStopAndKeepMonitoring(target, scope);
+  const modal = document.getElementById('solo-check-modal');
+  if (modal) {
+    const eyebrow = modal.querySelector('.stop-choice-eyebrow');
+    const title = modal.querySelector('.stop-choice-headline');
+    const sub = modal.querySelector('.stop-choice-sub');
+    if (eyebrow) eyebrow.textContent = 'Stop sending · keep monitoring';
+    if (title) title.textContent = 'Who should monitoring check?';
+    if (sub) sub.textContent = 'This scope belongs to this sheet tab only. It never pulls senders from another tab.';
+  }
+  _showSoloCheckModal();
+}
+
+async function _finishStopAndKeepMonitoring(target, scope) {
   if (target.cloud && target.id) {
-    await _doStopCloud(target.id, { keepMonitoring: true });
+    const chooseMachine = async (where) => {
+      const stopped = await _doStopCloud(target.id, { keepMonitoring: true, scope });
+      if (!stopped) return;
+      if (where === 'local') {
+        await window.campaignHandover(target.id, 'local', null, 'monitoring');
+      } else {
+        await cloudCheckNow(String(target.id), null, scope);
+      }
+    };
+    const whereModal = document.getElementById('check-where-modal');
+    if (!whereModal) {
+      // An older cached shell must still complete safely. Keep monitoring on
+      // the current VM rather than silently doing nothing after scope choice.
+      await chooseMachine('vm');
+      return;
+    }
+    _checkWhereHandler = chooseMachine;
+    const eyebrow = whereModal.querySelector('.stop-choice-eyebrow');
+    const title = whereModal.querySelector('.stop-choice-headline');
+    const sub = whereModal.querySelector('.stop-choice-sub');
+    const pills = whereModal.querySelectorAll('.stop-choice-pill');
+    if (eyebrow) eyebrow.textContent = 'Stop sending · keep monitoring';
+    if (title) title.textContent = 'Where should monitoring run?';
+    if (sub) sub.textContent = 'The selected machine checks connections and sends introduction messages. It starts one check immediately.';
+    if (pills[0]) {
+      const head = pills[0].querySelector('.stop-choice-pill-headline');
+      const detail = pills[0].querySelector('.stop-choice-pill-sub');
+      if (head) head.textContent = 'Cloud VM';
+      if (detail) detail.textContent = 'Checks and introductions continue in the cloud. You can close the app.';
+    }
+    if (pills[1]) {
+      const head = pills[1].querySelector('.stop-choice-pill-headline');
+      const detail = pills[1].querySelector('.stop-choice-pill-sub');
+      if (head) head.textContent = 'This Mac';
+      if (detail) detail.textContent = 'Moves monitoring here and checks immediately. Keep the app open.';
+    }
+    _showCheckWhereModal();
     return;
   }
-  showCampaignToast('Stopping new sends — monitoring stays active for 7 days.', 5000);
-  try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
+  showCampaignToast(`Stopping new sends — monitoring ${scope === 'sheet' ? 'all senders in this tab' : 'this campaign’s accounts'} for 7 days.`, 6000);
+  try {
+    await fetch('/api/campaign/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monitoringScope: scope === 'sheet' ? 'tab' : 'campaign' }),
+    });
+  } catch { /* */ }
   try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
 }
 window.stopAndKeepMonitoring = stopAndKeepMonitoring;
@@ -12443,6 +14688,16 @@ async function stopEverything() {
   const target = _stopChoiceTarget; // capture before close resets it
   closeStopChoiceModal();
   if (target.cloud && target.id) {
+    // A lead is mid-flight, so the wait-or-cut question is still owed. Re-arm
+    // the target: closeStopChoiceModal() above cleared it, and
+    // confirmStopCampaignNow reads it back off the module.
+    if (target.immediatePrompt) {
+      _stopChoiceTarget = { cloud: true, id: target.id };
+      const copy = document.getElementById('stop-current-lead-copy');
+      if (copy) copy.textContent = 'A lead is mid-send on the VM. No new lead will start either way.';
+      document.getElementById('confirm-stop-modal')?.classList.remove('hidden');
+      return;
+    }
     await _doStopCloud(target.id, { keepMonitoring: false });
     return;
   }
@@ -12820,7 +15075,12 @@ function updateCockpit(s) {
   // navigate (page reload starts fresh).
   const prevState = __cockpit.state;
   const nextState = s.state || 'idle';
-  const justEnded = prevState === 'monitoring' && nextState === 'done';
+  // A source runtime deliberately reports `done` for a short gap while a
+  // handover adopts the same campaign on the destination. Only an explicit,
+  // non-handover terminal notice may announce completion.
+  const handoverStop = String(s.stopReason || '').startsWith('handover-');
+  const justEnded = prevState === 'monitoring' && nextState === 'done'
+    && !!s.endNotice && !handoverStop && !_whBusy && !_hoMove;
 
   __cockpit.running = !!s.running;
   __cockpit.paused = !!s.paused;
@@ -13115,7 +15375,11 @@ function formatMode(m) {
 }
 
 // 250ms client-side tick keeps the countdown smooth without re-polling.
-setInterval(renderCockpit, 250);
+setInterval(() => {
+  if (document.hidden) return;
+  if (!__cockpit.running && __cockpit.state !== 'monitoring') return;
+  renderCockpit();
+}, 1000);
 
 // Phase 11.2 (D-18): un-hide all active browser processes (debug aid).
 // Calls the session-gated POST /api/browsers/show shipped in Plan 01.
@@ -13600,10 +15864,119 @@ function stopPolling() {
   pollInterval = null;
 }
 
+// Last /api/campaign/status payload. A campaign handed to this Mac RUNS here,
+// but card #2 for a cloud campaign is built from ENGINE data, so anything that
+// only exists locally, above all a sweep in flight, is invisible to it. This is
+// the snapshot that overlay reads.
+let _localLive = null;
+
+function _decorateLocalLiveStatus(s) {
+  if (!s) return s;
+  const reportedPhase = String(s.currentAction?.phase || '').toLowerCase();
+  const hasLiveWork = ['checking', 'introducing', 'sending'].includes(reportedPhase);
+  if (!s.running && !s.monitoringCheckInProgress && !hasLiveWork) return s;
+  // A manual local check announces itself before the browser emits its first
+  // action. Build that honest initial action here so the shared five-stage card
+  // is visible from click zero instead of briefly reverting to the old banner.
+  const ca = s.currentAction || {};
+  const phase = s.monitoringCheckInProgress ? (ca.phase || 'checking') : (ca.phase || 'sending');
+  const step = String(ca.step || (phase === 'checking' ? 'check_requested' : 'opening_profile'));
+  const stepLabel = String(ca.stepLabel || ca.label || (phase === 'checking'
+    ? 'Selecting the next account' : 'Opening the LinkedIn profile'));
+  const stepDetail = String(ca.stepDetail || (phase === 'checking'
+    ? 'The first eligible sender browser will open next'
+    : 'Waiting for the next verified local-browser event'));
+  const flows = {
+    checking: [
+      ['Request', 'check queued', ['check_requested', 'selecting_account']],
+      ['Browser', 'account opened', ['opening_account', 'account_open']],
+      ['Invitations', 'loaded', ['loading_invitations', 'invitations_loaded']],
+      ['Acceptances', 'matched', ['matching_acceptances', 'acceptances_matched']],
+      ['Introductions', 'sent', ['queueing_intros', 'intros_queued', 'writing_message', 'sending_message', 'message_confirmed', 'check_complete']],
+    ],
+    introducing: [
+      ['Primary', 'verified', ['verifying_primary', 'primary_verified']],
+      ['Compose', 'opened', ['opening_compose', 'compose_open']],
+      ['Recipients', 'selected', ['selecting_recipients', 'recipients_selected']],
+      ['Message', 'sent and confirmed', ['writing_message', 'sending_message', 'message_confirmed']],
+      ['Sheet', 'result stamped', ['stamping_sheet', 'intro_complete']],
+    ],
+    sending: [
+    ['Profile', 'opened', ['opening_profile', 'profile_loading', 'profile_open', 'profile_ready']],
+    ['Connect', 'pressed', ['finding_connect', 'connect_pressed', 'invite_open']],
+    ['Note', 'written', ['opening_note', 'writing_note', 'note_written']],
+    ['Confirm', 'LinkedIn accepted it', ['pressing_send', 'confirming_send', 'confirmed', 'saving_result']],
+    ['Sheet', 'result stamped', ['stamping_sheet']],
+    ],
+  };
+  const flow = flows[phase] || flows.sending;
+  const flat = flow.flatMap((x) => x[2]);
+  const at = Math.max(0, flat.indexOf(step));
+  const pending = Math.max(0, (Number(s.totalTargets) || 0) - (Number(s.totalProcessed) || 0));
+  s.currentAction = {
+    ...ca, phase,
+    label: phase === 'introducing' && ca.lead ? `Introducing ${ca.lead}`
+      : phase === 'checking' ? (ca.label || 'Checking for new acceptances')
+      : ca.lead ? `Working on ${ca.lead}` : stepLabel,
+    sub: `Now: ${stepLabel} · ${stepDetail}`,
+    safety: `${pending} lead${pending === 1 ? '' : 's'} remain safely queued`,
+    facts: [
+      ['Current account', s.liveAccount || ca.account || s.currentProfile || 'selecting'],
+      [phase === 'checking' ? 'Live check step' : phase === 'introducing' ? 'Live introduction step' : 'Live browser step', stepLabel],
+      ['Current lead', ca.lead || 'selecting'],
+      ['Runtime', 'this Mac · live'],
+    ],
+    milestones: flow.map(([label, doneText, steps]) => {
+      const first = flat.indexOf(steps[0]);
+      const last = Math.max(...steps.map((x) => flat.indexOf(x)));
+      const state = at > last ? 'done' : at >= first && at <= last ? 'active' : 'future';
+      return [label, state === 'done' ? doneText : state === 'active' ? stepLabel : 'waiting', state];
+    }),
+  };
+  const cid = String(s.id || 'local-active');
+  if (Array.isArray(s.accountPanel)) {
+    const mappedAccounts = s.accountPanel.map((a, i) => {
+      // Local's durable account panel uses state="stopped" plus a precise
+      // sentence for several causes. Do not collapse that generic state into
+      // "Throttled": session-expired / login copy is authoritative and must
+      // win in the compact pill too.
+      const reason = `${a.state || ''} ${a.sub || ''} ${a.result || ''}`.toLowerCase();
+      const needsLogin = a.state === 'needs-login'
+        || /needs? (?:to )?(?:be )?logged|needs? login|log(?:ged)? (?:back )?in|session expired/.test(reason);
+      const parkReason = needsLogin ? 'needslogin'
+        : /proxy|407/.test(reason) ? 'proxy'
+        : /weekly|invitation limit/.test(reason) ? 'weekly'
+        : /throttl|429|rate.?limit/.test(reason) ? 'throttle'
+        : /cannot.?open|browser/.test(reason) ? 'browser-error'
+        : (a.state || 'stopped');
+      return {
+        profileId: (s.profileIds || [])[i] || a.email || '',
+        email: a.email || '', name: a.email || '',
+        dailyCount: Number(a.sentToday) || 0,
+        dailyLimit: Number(a.dailyLimit) || 0,
+        parked: ['benched', 'stopped', 'cannot-open', 'needs-login', 'identity-restricted'].includes(a.state),
+        needsLogin,
+        parkReason,
+      };
+    });
+    _cloudAccountsById.set(cid, mappedAccounts);
+    // The local API persists under legacy-singleton while the dashboard uses
+    // local-active as its stable row id. Both ids must resolve to the same
+    // sender pills or the shared card can appear partially legacy after reload.
+    if (cid === 'legacy-singleton') _cloudAccountsById.set('local-active', mappedAccounts);
+  }
+  return s;
+}
+
 async function pollStatus() {
   try {
     const res = await fetch('/api/campaign/status');
-    const s = await res.json();
+    const body = await res.json();
+    if (!res.ok || (body && body.error)) throw new Error((body && body.error) || `HTTP ${res.status}`);
+    const s = _decorateLocalLiveStatus(body);
+    s.connectionUnknown = false;
+    s.lastVerifiedAt = Date.now();
+    _localLive = s;
 
     // 2.9.7: Check DMs runs as a separate flow with its own state. When a
     // Check DMs scan is active, overlay its status onto the cockpit so the
@@ -13702,7 +16075,8 @@ async function pollStatus() {
     // Detect campaign completion and refresh history
     if (wasRunning && !s.running) {
       fetchHistory();
-      notify('Campaign finished', `${s.processedToday} connections sent. ${(s.errors || []).length} errors.`);
+      const terminal = terminalPresentation(s);
+      notify(`Campaign ${terminal.label.toLowerCase()}`, `${terminal.explanation} ${s.processedToday} connections sent; ${terminal.pending} pending.`);
     }
     // Detect new errors
     if (s.running && (s.errors || []).length > (wasErrorCount || 0)) {
@@ -13848,7 +16222,24 @@ async function pollStatus() {
     // drafts/queue/schedule views so the Launch section becomes the last
     // visible section (no blank space underneath).
     try { syncLiveStatusVisibility(); } catch (err) { console.warn('[live-status] sync failed:', err.message); }
-  } catch { /* */ }
+  } catch (err) {
+    // Preserve the last verified local state and make the loss of telemetry
+    // visible. A failed status request is not evidence that sending stopped.
+    if (_localLive) {
+      _localLive = { ..._localLive, connectionUnknown: true,
+        connectionError: String((err && err.message) || 'local engine did not answer') };
+      try {
+        const stale = { ..._localLive, currentAction: {
+          phase: 'offline', label: 'Local engine connection unavailable',
+          account: '', lead: 'The last verified campaign state is being kept',
+          sub: 'retrying automatically', safety: 'No campaign transition was inferred from this failed request',
+          facts: [['Connection', 'temporarily unavailable'], ['Next action', 'retrying automatically']],
+          milestones: [['App', 'waiting for the local engine', 'active'], ['Campaign', 'last verified state retained', 'future']],
+        } };
+        if (typeof window.renderActiveCard === 'function') window.renderActiveCard(stale);
+      } catch (_) { /* the next successful poll repairs the card */ }
+    }
+  }
 }
 
 // v2.61: Live Status section visibility. The section (#nav-status) and its
@@ -13898,6 +16289,16 @@ function syncLiveStatusVisibility() {
   const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
   const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || cloudView || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
+  // A live ownership transition is operational status, not optional wizard
+  // content. Accordion defaults and renderer reloads used to collapse section 7
+  // while the campaign was actively moving/running, making a healthy campaign
+  // appear to have vanished. Keep it open for every active state; once finished,
+  // the operator may collapse it normally.
+  const cloudStatus = window.__cloudActiveStatus || null;
+  const cloudOperational = !!(cloudStatus && (cloudStatus.running || cloudStatus.queued || cloudStatus.state === 'monitoring'));
+  if (show && (liveStatusForcedOpen || running || monitoring || cloudOperational || _whBusy)) {
+    sec.classList.remove('collapsed');
+  }
   const navBtn = document.querySelector('[data-nav="nav-status"]');
   if (navBtn) navBtn.style.display = show ? '' : 'none';
   // v2.59.22: relocate the live card into / out of the wizard slot.
@@ -15562,7 +17963,13 @@ function applyPresetConfig(config) {
 
   // v2.91: restore CC+IC auto-accept + automated first follow-up. Without these
   // a Re-run / preset load drops the toggles back to defaults.
-  if (document.getElementById('auto-accept-toggle')) document.getElementById('auto-accept-toggle').checked = !!t.autoAcceptPrimary;
+  const _aaEl = document.getElementById('auto-accept-toggle');
+  if (_aaEl) {
+    // A saved campaign recorded a real decision, so it outranks the default —
+    // write `wanted` too or the gate re-applies ON over a saved OFF.
+    _aaEl.checked = !!t.autoAcceptPrimary;
+    _aaEl.dataset.wanted = t.autoAcceptPrimary ? '1' : '0';
+  }
   if (document.getElementById('auto-accept-all-toggle')) document.getElementById('auto-accept-all-toggle').checked = !!t.autoAcceptAllPending;
   if (document.getElementById('follow-up-toggle')) document.getElementById('follow-up-toggle').checked = !!t.followUpEnabled;
   setV('follow-up-body', t.followUpBody || '');
@@ -16760,6 +19167,129 @@ if (typeof window !== 'undefined') window.renderManifest = renderManifest;
 
 // Connect + Introduce Back fields (mode-specific to connect_and_introduce).
 // Persisted to localStorage so the wizard repopulates after navigation.
+// ── Primary-person name recall (operator ask, 2026-08-27) ───────────────────
+// "when i type the name of the primary it remembers the url of the linkedin".
+// The list is /api/primary-people — the primaries this operator has actually
+// launched with, derived from the launch-config snapshots the app already
+// writes. Matching is on the NAME only, because the name is what gets typed.
+let _ppRecall = null;      // people, once fetched
+let _ppRecallIdx = -1;     // keyboard cursor
+let _ppRecallShown = [];   // what the panel is currently showing
+
+// One fetch per app run. Refreshed after a launch adds a new primary, which is
+// the only moment the answer can change while the wizard is open.
+async function primaryRecallLoad(force = false) {
+  if (_ppRecall && !force) return _ppRecall;
+  try {
+    const r = await fetch('/api/primary-people', { cache: 'no-store' });
+    const d = await r.json();
+    _ppRecall = Array.isArray(d && d.people) ? d.people : [];
+  } catch (_) {
+    _ppRecall = [];  // recall is a convenience; never block typing on it
+  }
+  return _ppRecall;
+}
+window.primaryRecallInvalidate = () => { _ppRecall = null; };
+
+function _ppMatch(people, typed) {
+  const q = String(typed || '').trim().toLowerCase();
+  // An empty field offers the whole (short) history rather than nothing: the
+  // most common case is re-running with the same primary as last time.
+  if (!q) return people.slice(0, 6);
+  return people.filter((p) => String(p.name || '').toLowerCase().includes(q)).slice(0, 6);
+}
+
+function primaryRecallClose(delay = 0) {
+  const panel = document.getElementById('primary-person-recall');
+  const input = document.getElementById('primary-person-name');
+  const hide = () => {
+    if (panel) { panel.hidden = true; panel.innerHTML = ''; }
+    if (input) input.setAttribute('aria-expanded', 'false');
+    _ppRecallIdx = -1; _ppRecallShown = [];
+  };
+  // A blur fires BEFORE the click on a panel row, so closing has to wait long
+  // enough for that click to land.
+  if (delay) setTimeout(hide, delay); else hide();
+}
+window.primaryRecallClose = primaryRecallClose;
+
+async function primaryRecallOnInput() {
+  const input = document.getElementById('primary-person-name');
+  const panel = document.getElementById('primary-person-recall');
+  if (!input || !panel) return;
+  const people = await primaryRecallLoad();
+  const typed = input.value;
+  const hits = _ppMatch(people, typed);
+  // Nothing to recall, or the field already holds exactly this person: no panel.
+  const exact = hits.length === 1 && hits[0].name.toLowerCase() === String(typed).trim().toLowerCase();
+  if (!hits.length || exact) { primaryRecallClose(); return; }
+  _ppRecallShown = hits;
+  _ppRecallIdx = -1;
+  const q = String(typed || '').trim();
+  panel.innerHTML = hits.map((p, i) => {
+    let label = escHtml(p.name);
+    if (q) {
+      const at = p.name.toLowerCase().indexOf(q.toLowerCase());
+      if (at >= 0) {
+        label = escHtml(p.name.slice(0, at)) + '<mark>' + escHtml(p.name.slice(at, at + q.length))
+          + '</mark>' + escHtml(p.name.slice(at + q.length));
+      }
+    }
+    const short = String(p.url || '').replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '');
+    return `<div class="pp-recall-item" role="option" data-i="${i}" onmousedown="primaryRecallPick(${i})">`
+      + `<span class="pp-recall-name">${label}</span>`
+      + `<span class="pp-recall-url">${escHtml(short)}</span></div>`;
+  }).join('');
+  panel.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
+window.primaryRecallOnInput = primaryRecallOnInput;
+
+// mousedown, not click: blur would have torn the panel down first.
+function primaryRecallPick(i) {
+  const person = _ppRecallShown[i];
+  if (!person) return;
+  const name = document.getElementById('primary-person-name');
+  const url = document.getElementById('primary-person-url');
+  if (name) name.value = person.name;
+  if (url) {
+    url.value = person.url;
+    // The URL field has its own validation + gates hanging off input events,
+    // and setting .value fires none of them.
+    url.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  primaryRecallClose();
+  try { savePrimaryPersonFields(); } catch (_) { /* storage blocked */ }
+  try { if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate(); } catch (_) { /* */ }
+  // Say what just happened. A field filling itself silently is the thing an
+  // operator re-checks by hand, which defeats the point.
+  const hint = document.getElementById('primary-person-url-error');
+  if (hint && hint.parentElement) {
+    let ok = hint.parentElement.querySelector('.pp-recall-filled');
+    if (!ok) {
+      ok = document.createElement('div');
+      ok.className = 'pp-recall-filled';
+      hint.parentElement.insertBefore(ok, hint.nextSibling);
+    }
+    ok.textContent = `\u2713 Filled from your last campaign with ${person.name}`;
+  }
+}
+window.primaryRecallPick = primaryRecallPick;
+
+function primaryRecallOnKeydown(e) {
+  const panel = document.getElementById('primary-person-recall');
+  if (!panel || panel.hidden || !_ppRecallShown.length) return;
+  const move = (d) => {
+    _ppRecallIdx = (_ppRecallIdx + d + _ppRecallShown.length) % _ppRecallShown.length;
+    panel.querySelectorAll('.pp-recall-item').forEach((el, i) => el.classList.toggle('on', i === _ppRecallIdx));
+  };
+  if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+  else if (e.key === 'Enter' && _ppRecallIdx >= 0) { e.preventDefault(); primaryRecallPick(_ppRecallIdx); }
+  else if (e.key === 'Escape') { primaryRecallClose(); }
+}
+window.primaryRecallOnKeydown = primaryRecallOnKeydown;
+
 function savePrimaryPersonFields() {
   try {
     localStorage.setItem('ortus-primary-name', document.getElementById('primary-person-name')?.value || '');
@@ -16881,8 +19411,18 @@ function refreshAutoAcceptGate() {
   const gate = document.getElementById('auto-accept-gate');
   const hasUrl = /linkedin\.com\/in\//i.test(url);
   if (toggle) {
+    // Auto-accept is ON by default (operator, 2026-08-27) — without it every
+    // CC+IC launch needs a manual accept before the intro can fire, which is
+    // the step people forget and then read as the campaign being stuck.
+    //
+    // The default cannot just live on the `checked` attribute: this gate blanks
+    // the box whenever there is no primary URL, so it would be lost the moment
+    // the wizard first renders. `data-wanted` carries the operator's intent
+    // across that, seeded to 1 in the markup and rewritten only while the
+    // control is actually usable.
+    if (hasUrl && !toggle.disabled) toggle.dataset.wanted = toggle.checked ? '1' : '0';
     toggle.disabled = !hasUrl;
-    if (!hasUrl) toggle.checked = false;
+    toggle.checked = hasUrl ? toggle.dataset.wanted !== '0' : false;
   }
   if (gate) gate.style.display = hasUrl ? 'none' : '';
   // v2.107: the accept-all sub-toggle is only meaningful while auto-accept is on
@@ -17249,7 +19789,7 @@ function startDashboardPolling() {
       // away and back. Paint directly here every 5s so the tile reflects
       // reality even when pollStatus is dead.
       try {
-        const s = await fetch('/api/campaign/status').then(r => r.json());
+        const s = _localLive || await fetch('/api/campaign/status').then(r => r.json());
         if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
         if (typeof window.renderMonitoringCard === 'function') window.renderMonitoringCard(s);
         maybeShowCampaignDoneModal(s);
@@ -17366,6 +19906,7 @@ let _lastEndNoticeTs = (() => {
 function maybeShowCampaignDoneModal(status) {
   try {
     const n = status && status.endNotice;
+    if (_whBusy || _hoMove || String(status?.stopReason || '').startsWith('handover-')) return;
     if (!n || !n.ts || status.running) return;
     if (status.state === 'monitoring') return;       // still watching — not "stopped"
     if (n.reason === 'operator_stopped') return;     // you stopped it on purpose — log stays, no nag popup
@@ -24691,6 +27232,7 @@ function _stgFld(root, name) {
 function _hideStage(root) {
   const stage = root && _stgFld(root, 'active-stage');
   if (!stage) return;
+  root.classList.remove('has-unified-stage');
   stage.hidden = true;
   stage.dataset.phase = ''; stage.dataset.who = ''; stage.dataset.acctkey = '';
   const fix = _stgFld(root, 'stageFix'); if (fix) fix.innerHTML = '';
@@ -24711,6 +27253,8 @@ function _stageGlyphHtml(phase) {
   // A finished run is a record, not an activity: anything that spins or pulses
   // claims the VM is still working. Static mark only.
   if (phase === 'done') return '<span class="stg-done">✓</span>';
+  if (phase === 'paused') return '<span class="stg-paused" aria-label="Paused"><i></i><i></i></span>';
+  if (phase === 'starting') return '<span class="stg-boot"><i></i></span>';
   if (phase === 'sending') return '<span class="stg-fly"><u></u><i>➤</i><i>➤</i><i>➤</i></span>';
   if (phase === 'introducing') return '<span class="stg-typ"><i></i><i></i><i></i></span>';
   // Waiting gets a SLOW pulse, not a spinner: nothing is turning, and a spinner
@@ -24794,8 +27338,11 @@ function _fgCreditTip(cr) {
 function _stageAcctPill(a, isCurrent, counts) {
   const nm = _acctLabel(a);
   const tally = counts && counts.get(String(a.profileId || ''));
-  // Invites sent / queued for THIS run when we have it; the daily quota otherwise.
-  let count = tally ? `${tally.sent}/${tally.total}` : `${a.dailyCount || 0}/${a.dailyLimit || 0}`;
+  // Sent today, out of what this account is allowed today — the same pair the
+  // drawer prints, on every pill, in every campaign. It used to be this run's
+  // share of the batch ("12/13"), a denominator that changed every launch and
+  // matched nothing else on screen (operator, 2026-08-28).
+  let count = acctPillCount(a, tally);
   // On a follower run the daily quota is the CONNECTION quota — always 0/50,
   // and nothing to do with why the run stopped. What binds is LinkedIn's
   // monthly "invite to follow" credits, which the payload already carries.
@@ -24810,17 +27357,38 @@ function _stageAcctPill(a, isCurrent, counts) {
   }
   const benchWord = _benchWord(a.bench);
   let cls = '', text = count, tip = '';
-  if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; }
+  if (a.sweepAction) { cls = 'bad'; text = 'Needs login'; tip = a.sweepAction; }
+  else if (a.sweepChecked && Number(a.sweepAccepted) > 0) { cls = 'ok'; text = `${a.sweepAccepted} accepted`; tip = 'Checked successfully during the latest acceptance sweep.'; }
+  else if (a.sweepChecked) { cls = ''; text = '0 accepted'; tip = 'Checked successfully during the latest acceptance sweep.'; }
+  else if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; }
   else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
   else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly cap'; }
   else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
-  else if (a.parked || a.parkReason === 'throttle') { cls = 'warn'; text = 'Throttled'; }
+  else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') { cls = 'warn'; text = 'Throttled'; }
+  else if (a.parkReason === 'unconfirmed_streak') { cls = 'bad'; text = '5 unconfirmed'; tip = 'Five leads in a row could not be confirmed. Open this account, then choose Retry.'; }
+  else if (a.parked) { cls = 'bad'; text = 'Stopped'; tip = String(a.parkReason || 'Reason recorded in the account details'); }
   // Out of credits having sent NOTHING is a blocked account; out of credits
   // having spent them all is just a finished one. Same number, different news.
   else if (cr && cr.available === 0 && !(tally && tally.sent)) cls = 'bad';
   else if (cr && cr.available > 0) cls = 'ok';
   else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) cls = 'warn';
   else if (isCurrent) cls = 'ok';
+  // CC+IC's primary handshake is a launch prerequisite, not secondary account
+  // trivia. Keep its verified result visible in the top pill row so operators
+  // do not have to scroll below the large status card to find it.
+  if (a.primaryConnected === true && !['bad', 'warn'].includes(cls)) {
+    cls = 'ok';
+    text = `${text} · Primary ✓`;
+  } else if (a.primaryConnected === false && !['bad', 'warn'].includes(cls)) {
+    // The badge had no opposite, so a sender that was never connected to the
+    // primary looked identical to one that was (operator, 2026-08-28: "I don't
+    // see any indication that the three accounts have sent connections to the
+    // primary"). null still means "not checked" and stays silent; false means
+    // we looked and it is not connected, which no introduction can survive.
+    cls = 'warn';
+    text = `${text} · no primary`;
+    tip = tip || 'This sender is not connected to the primary, so no introduction can be sent for its leads.';
+  }
   // Out of free personalised invites — the account IS still sending, so this is
   // never the pill's headline (a blocking state always wins above). It rides as a
   // suffix on the count so the operator can see the campaign has gone bare
@@ -24843,10 +27411,17 @@ function _stageAcctPill(a, isCurrent, counts) {
 // The pill's drawer. Only actions that already exist and act on THIS account:
 // watching its browser, and clearing a bench. Add/remove live in the accounts
 // panel below the card — this doesn't duplicate them.
-function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
+function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '') {
   const email = escHtml(_acctLabel(a, { full: true }));
   const benched = !!(a.weeklyCap || a.parkReason === 'weekly' || a.parked);
-  const st = a.needsLogin ? '<span class="st" style="color:var(--red)">needs login</span>'
+  // A failed acceptance sweep reports the login problem through sweepAction,
+  // while an active sending run reports it through needsLogin. They are the
+  // same operator problem and must expose the same one-click recovery action.
+  // Keep this identical to _stageAcctPill: sweepAction is the authoritative
+  // monitoring signal that makes the pill say "Needs login". Do not parse its
+  // prose here or the pill and drawer can disagree (e.g. "log back in").
+  const needsLogin = !!(a.needsLogin || a.sweepAction);
+  const st = needsLogin ? '<span class="st" style="color:var(--red)">needs login</span>'
     : a.bench ? `<span class="st" style="color:var(--red)">${escHtml(_benchWord(a.bench).toLowerCase())}</span>`
     : benched ? '<span class="st" style="color:var(--red)">benched</span>'
     : ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) ? '<span class="st" style="color:var(--gold,#d4a24a)">at daily limit</span>'
@@ -24856,18 +27431,36 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch) {
   const weekly = !!(a.weeklyCap || a.parkReason === 'weekly');
   const acts = [];
   if (isCurrent && canWatch) acts.push(`<button type="button" onclick="openCloudCampaignView('${escHtml(cid)}')">👁 Watch this browser live</button>`);
+  if (needsLogin && a.profileId) acts.push(`<button type="button" class="stg-login-btn" onclick="openProfileBrowser('${escHtml(a.profileId)}')">Open GoLogin profile</button>`);
   // No Retry on a weekly cap. It's a window, not a cooldown — nothing changes
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
-  const why = a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
+  const why = a.parkReason === 'unconfirmed_streak' ? ' · five leads in a row could not be confirmed; open the account, then Retry'
+    : a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
     : a.bench ? ` · ${escHtml(String(a.bench))} — sits out the rest of this run, retries next run`
     : weekly ? ` · LinkedIn weekly invitation cap — resets ${_nextMondayText()}`
     : a.parkReason === 'throttle' ? ' · rate-limited, backing off' : '';
+  const lastMonitor = a.lastMonitorSuccessAt && !Number.isNaN(new Date(a.lastMonitorSuccessAt).getTime())
+    ? ` Last successful acceptance check: ${new Date(a.lastMonitorSuccessAt).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}.`
+    : '';
+  // Taking this account off the campaign, said in a sentence rather than
+  // offered as an unlabelled toggle in a panel further down the page. It is the
+  // same call the Accounts panel makes. The engine refuses a removal while the
+  // campaign is running (it would race a worker mid-send), so when it cannot be
+  // offered the row still appears and says why — an operator hunting for a
+  // button that is not there learns nothing.
+  const danger = remove === 'yes'
+    ? `<div class="stg-danger"><p>It stops sending. Anyone it already invited is still checked for`
+      + ` acceptances; its unsent leads go to the remaining accounts.</p>`
+      + `<button type="button" onclick="removeCloudCampaignAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Remove from campaign</button></div>`
+    : remove === 'pause-first'
+      ? '<div class="stg-danger"><p>Pause the campaign to remove an account. It cannot be taken out mid-send.</p></div>'
+      : '';
   return `<div class="stg-drawer"><div class="dh"><b>${email}</b>${st}`
     + `<span class="x" onclick="stageAcctPick(this,'')">✕ close</span></div>`
     + `<div class="dl">${a.dailyCount || 0}/${a.dailyLimit || 0} sent today${why}<br>`
-    + `${isCurrent ? 'Currently driving this campaign on the VM.' : 'Not currently driving anything.'}</div>`
-    + (acts.length ? `<div class="acts">${acts.join('')}</div>` : '') + '</div>';
+    + `${isCurrent ? 'Currently driving this campaign on the VM.' : 'Not currently driving anything.'}${lastMonitor}</div>`
+    + (acts.length ? `<div class="acts">${acts.join('')}</div>` : '') + danger + '</div>';
 }
 
 // What can actually be done about a stall, derived from the accounts' real
@@ -24938,12 +27531,144 @@ window.stageRetryBlocked = async function (cid, btn) {
   try { await _refreshCloudActiveStatus(cid); } catch (_) { /* the poll catches up anyway */ }
 };
 
+// The first live heartbeat can arrive before the detailed browser progress.
+// Keep the complete workflow visible from that first tick instead of showing
+// an empty box and suddenly adding the steps after the first action finishes.
+function _stageMilestoneFallback(ca, phase) {
+  const p = String((ca && ca.phase) || phase || '').toLowerCase();
+  if (p === 'sending') {
+    const labels = ['Profile', 'Connect', 'Note', 'Confirm', 'Sheet'];
+    const values = ['Opening the LinkedIn profile', 'waiting', 'waiting', 'waiting', 'waiting'];
+    return labels.map((label, i) => [label, values[i], i === 0 ? 'active' : 'future']);
+  }
+  if (p === 'checking') {
+    const labels = ['Request', 'Browser', 'Invitations', 'Acceptances', 'Introductions'];
+    const values = ['Check queued', 'opening eligible account', 'waiting', 'waiting', 'waiting'];
+    return labels.map((label, i) => [label, values[i], i === 1 ? 'active' : i === 0 ? 'done' : 'future']);
+  }
+  if (p === 'introducing') {
+    const labels = ['Primary', 'Compose', 'Recipients', 'Message', 'Sheet'];
+    return labels.map((label, i) => [label, i === 0 ? 'Verifying the primary' : 'waiting', i === 0 ? 'active' : 'future']);
+  }
+  if (p === 'monitoring') {
+    return [
+      ['Request', 'last check complete', 'done'], ['Browser', 'closed between checks', 'done'],
+      ['Invitations', 'compared', 'done'], ['Acceptances', 'checked', 'done'],
+      ['Introductions', 'sent after matches', 'done'],
+    ];
+  }
+  if (p === 'done') {
+    return [
+      ['Leads', 'eligibility confirmed', 'done'], ['Work', 'results recorded', 'done'],
+      ['Monitoring', 'not active', 'done'], ['Campaign', 'closed', 'done'],
+    ];
+  }
+  return [];
+}
+
+function _stageNumberFromMilestones(ca, pattern) {
+  const rows = Array.isArray(ca && ca.milestones) ? ca.milestones : [];
+  for (const row of rows) {
+    if (!pattern.test(String(row && row[0] || ''))) continue;
+    const hit = String(row && row[1] || '').match(/\d+/);
+    if (hit) return Number(hit[0]);
+  }
+  return null;
+}
+
+function _stageNextCheckView(value, now = Date.now()) {
+  const at = value ? new Date(value) : null;
+  const ms = at && !isNaN(at.getTime()) ? at.getTime() : NaN;
+  if (!Number.isFinite(ms)) return { countdown: 'Being scheduled', clock: '' };
+  return {
+    countdown: v3FmtCountdown(ms - now),
+    clock: at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  };
+}
+
+// One information model for the one live-stage component. It is intentionally
+// location-neutral: VM/This Mac and Dashboard/Campaign Builder receive the same
+// status object and therefore the same hierarchy, labels and progress anatomy.
+function _stageOverview(status, ca, la, phase) {
+  const ids = ((status && (status.participatingProfileIds || status.profileIds)) || []);
+  const accountTotal = ids.length;
+  const pending = Math.max(0, Number(status && status.pendingCount) ||
+    ((Number(status && status.totalTargets) || 0) - (Number(status && status.totalProcessed) || 0)));
+  const accepted = ca && ca.acceptedCount != null
+    ? Number(ca.acceptedCount) : _stageNumberFromMilestones(ca, /accept/i);
+  const introduced = ca && ca.introducedCount != null
+    ? Number(ca.introducedCount) : _stageNumberFromMilestones(ca, /introduc|message/i);
+  const currentAccount = String(ca && ca.account || status && status.liveAccount || '');
+  const accountDone = Math.max(0, Number(ca && ca.accountsDone) || Number(status && status.accountsDone) || 0);
+  const accountRemaining = Math.max(0, accountTotal - accountDone);
+  let side = ['Current account', currentAccount ? profileLabel(currentAccount) : 'Selecting next', 'The card updates from verified engine events'];
+  let next = ['Next expected event', String(ca && ca.sub || 'The next verified engine event'), 'No action is needed unless this panel says otherwise.'];
+  let metricLabels = ['Newly accepted', 'Introductions sent', 'Accounts remaining'];
+  let metricValues = [accepted == null ? '—' : accepted, introduced == null ? '—' : introduced, accountRemaining];
+
+  if (phase === 'monitoring') {
+    const check = _stageNextCheckView(status && status.nextCheckAt);
+    side = ['Until next automatic check', check.countdown,
+      check.clock ? `scheduled for ${check.clock} · no browser remains open between checks` : 'The engine is scheduling the next check'];
+    next = ['What happens next', 'Monitoring continues automatically', 'The selected machine opens each eligible sender only when the next check begins.'];
+    metricValues = [accepted == null ? 0 : accepted, introduced == null ? 0 : introduced, accountTotal];
+  } else if (phase === 'checking') {
+    side = ['Check progress', accountTotal ? `${Math.min(accountDone + 1, accountTotal)} of ${accountTotal} accounts` : 'Selecting account', 'Sending remains stopped during this acceptance check'];
+    next = ['Next expected event', String(ca && ca.sub || 'Open the next eligible sender'), 'Completed account results are preserved as the check advances.'];
+  } else if (phase === 'sending') {
+    const done = Number(status && status.batchDone);
+    const size = Number(status && status.batchSize);
+    side = ['This account batch', Number.isFinite(done) && Number.isFinite(size) ? `${done} of ${size}` : 'In progress', 'The next lead starts only after this result is verified'];
+    next = ['Next expected event', String(ca && ca.sub || 'Verify this LinkedIn action'), `${pending} lead${pending === 1 ? '' : 's'} remain safely queued.`];
+    metricLabels = ['Sent so far', 'This batch', 'Leads remaining'];
+    metricValues = [Number(status && status.totalProcessed) || 0, Number.isFinite(done) && Number.isFinite(size) ? `${done}/${size}` : '—', pending];
+  } else if (phase === 'introducing') {
+    side = ['Current lead', String(la && la.who || ca && ca.lead || 'Accepted connection'), currentAccount ? `via ${profileLabel(currentAccount)}` : 'Preparing introduction'];
+    next = ['Next expected event', String(ca && ca.sub || 'Confirm the introduction'), 'The result is written to the campaign sheet after confirmation.'];
+  } else if (phase === 'starting') {
+    // The value is the ONE line of this panel the operator reads, and it is
+    // clipped to a single line — "Preparing browser runti…" is what it actually
+    // showed for the whole first minute of the 2026-08-28 launch. Keep it to two
+    // or three words, and say what is happening NOW: during a launch the sheet
+    // is being read on this Mac, and nothing on the VM has started at all.
+    const _lp = String((status && status.launchPhase) || '');
+    side = _lp === 'handshake'
+      ? ['Connecting to the primary', 'on this Mac', 'Nothing has been sent yet']
+      : _lp === 'preflight'
+        ? ['Checking your accounts', 'on this Mac', 'Nothing has been sent yet']
+        : _lp === 'accepted'
+          ? ['Waking a VM worker', 'about 2 minutes', 'Workers sleep when idle · nothing is lost while it wakes']
+          : _lp === 'dispatching'
+            ? ['Reading your sheet', 'on this Mac', 'Nothing has been sent yet']
+            : ['Starting up', 'about 2 minutes', 'Workers sleep when idle · nothing is lost while it wakes'];
+    next = ['Next expected event', 'First sender browser opens', `${pending} lead${pending === 1 ? '' : 's'} remain safe and unconsumed.`];
+  } else if (phase === 'paused') {
+    side = ['Campaign state', 'Paused safely', 'No new lead starts until the operator resumes'];
+    next = ['Operator action', 'Resume here or switch machines', 'The campaign continues from its saved queue position.'];
+  } else if (phase === 'done') {
+    const terminal = terminalPresentation(status || {});
+    side = ['Outcome', terminal.complete ? 'Completed normally' : 'Stopped before completion',
+      terminal.complete ? 'No actionable work remains' : `${terminal.pending} lead${terminal.pending === 1 ? '' : 's'} remain safe`];
+    next = terminal.complete
+      ? ['Next', 'Nothing is scheduled', 'Open the sheet or debrief whenever you need the final record.']
+      : ['Next', 'Continue or archive', 'Continuing starts at the first unprocessed lead; confirmed work is not repeated.'];
+    metricLabels = ['Processed', 'Remaining', 'Monitoring'];
+    metricValues = [Number(status && status.totalProcessed) || 0, terminal.pending, 'Off'];
+  }
+  return { side, next, metricLabels, metricValues };
+}
+
 function renderLiveStage(root, status) {
   const stage = root && _stgFld(root, 'active-stage');
   if (!stage) return false;
+  const canonicalSnapshot = status && status._canonicalStatusV1;
+  const canonicalOwned = isCampaignStatusSnapshot(canonicalSnapshot);
+  // Recovery is still a live-status state. It used to opt out of this component
+  // and resurrect the legacy card after a lid-close/runtime interruption.
+  const interrupted = !canonicalOwned && !!(status && (status.state === 'interrupted' || status.interrupted || status.waitingForLocal));
   let la = null;
   try { la = buildLiveActivity(status); } catch (_) { la = null; }
-  const ca = (status && status.currentAction) || null;
+  let ca = (status && status.currentAction) || null;
   const cid = String((status && status.id) || '');
   // A finished run has no live phase, and the stage used to vanish with it —
   // taking the account pills, which are the ONLY place per-account state is
@@ -24952,18 +27677,359 @@ function renderLiveStage(root, status) {
   // finished run whenever we still have its accounts; it renders in a past-tense
   // 'done' phase with no spinner.
   const _doneAccts = (cid && _cloudAccountsById.get(cid)) || [];
-  const phase = (la && la.phase) || (_doneAccts.length ? 'done' : '');
-  if (!phase) { stage.hidden = true; return false; }
-  if (!la) la = { phase, who: '', l1: '', l2: '' };
+  const paused = !!(status.paused || status._paused);
+  const pausing = !paused && !!status.pauseRequested;
+  // A paused local run may deliberately retain only its last browser action.
+  // Keep the shared stage visible as PAUSED instead of falling through to the
+  // legacy local banner (or incorrectly treating its account list as "done").
+  const terminal = !canonicalOwned && status && status.state === 'done' ? terminalPresentation(status) : null;
+  // Monitoring between sweeps is a durable campaign state. Historical lead
+  // results remain in `logs`, so buildLiveActivity can legitimately reconstruct
+  // an old "introduced" event long after its sweep completed. That event must
+  // not change the card back into an active introduction. During a live sweep
+  // monitoringCheckInProgress is true and the live event is still allowed to
+  // describe the current account/lead.
+  const monitoringIdle = !!(status
+    && (status.state === 'monitoring' || status.monitoring || status.monitoringPhase)
+    && !status.monitoringCheckInProgress);
+  let phase = canonicalOwned
+    ? String((ca && ca.phase) || 'starting')
+    : (terminal ? 'done' : '')
+      || (interrupted ? 'paused' : '')
+      || (status && status.phase === 'preflight' ? 'starting' : '')
+      || (monitoringIdle ? 'monitoring' : '')
+      || (la && la.phase)
+      || ((la && la.state === 'checking') || (status && status.monitoringCheckInProgress) ? 'checking' : '')
+      || (paused ? 'paused' : (_doneAccts.length ? 'done' : ''));
+  // The visible log is the live event authority. Canonical status supplies a
+  // durable fallback when there is no operational row, but may never pin the
+  // card to an older activity after the log advances.
+  let logEvent = latestBannerEvent(status && status.logs, { phase });
+  // Between checks there is no sending, so the newest line in the log is the
+  // last thing sending ever did — a day old on a campaign that was stopped and
+  // left monitoring. Dropped here rather than further down because the next
+  // line lets the event REWRITE the phase: that is how a day-old
+  // "sender browser closed" turned a monitoring card into a live sending one,
+  // step strip and all. The log itself still renders in full underneath.
+  if (logEvent && !heroFollowsLog(logEvent.kind, monitoringIdle)) logEvent = null;
+  if (logEvent && phase !== 'done' && !paused && !interrupted) {
+    phase = bannerEventPhase(logEvent, phase);
+  }
+  if (!phase) { stage.hidden = true; root.classList.remove('has-unified-stage'); return false; }
+  if (canonicalOwned) {
+    const canonicalVerb = phase === 'monitoring' ? 'Monitoring is active'
+      : phase === 'checking' ? 'Acceptance check update'
+        : phase === 'paused' ? 'Campaign paused'
+          : phase === 'done' ? 'Campaign complete' : 'Campaign update';
+    la = {
+      phase,
+      verb: canonicalVerb,
+      who: String((ca && ca.label) || canonicalSnapshot.headline || ''),
+      l1: String((ca && ca.label) || canonicalSnapshot.headline || ''),
+      l2: String((ca && ca.sub) || canonicalSnapshot.detail || ''),
+    };
+  } else if (!la) la = { phase, who: '', l1: '', l2: '' };
+  if (terminal) {
+    const processed = Math.max(0, Number(status.totalProcessed) || 0);
+    const total = Math.max(processed, Number(status.totalTargets) || 0);
+    ca = {
+      phase: 'done',
+      // The stage now speaks alone on a stopped card (the outcome banner used to
+      // draw on top of it), so it has to carry the outcome itself. A campaign
+      // stopped before it sent anything says exactly that rather than the
+      // generic "work ended before every lead was processed", which reads like
+      // something went wrong halfway.
+      label: terminal.complete
+        ? 'All eligible leads have a final result'
+        : processed === 0
+          ? 'Stopped before any connection was sent'
+          : 'Work ended before every lead was processed',
+      sub: terminal.complete
+        ? 'Nothing is running or scheduled. The campaign can be safely archived.'
+        : `${terminal.explanation} Nothing is running, checking, or scheduled.`,
+      safety: terminal.complete
+        ? 'No actionable work remains'
+        : `${terminal.pending} lead${terminal.pending === 1 ? '' : 's'} remain safe and untouched`,
+      facts: [
+        ['Outcome', terminal.complete ? 'Completed normally' : terminal.label],
+        ['Processed', `${processed} of ${total}`],
+        ['Monitoring', 'Off'],
+        ['Next', terminal.complete ? 'Nothing scheduled' : 'Continue or archive'],
+      ],
+      milestones: terminal.complete
+        ? [['Leads', `${total} eligible`, 'done'], ['Processed', `${processed} confirmed`, 'done'], ['Monitoring', 'finished', 'done'], ['Complete', 'no work remains', 'done']]
+        : [['Leads', `${total} eligible`, 'done'], ['Processed', `${processed} confirmed`, 'done'], ['Stopped', `${terminal.pending} remain safe`, 'active'], ['Next', 'continue or archive', 'future']],
+    };
+    la = {
+      phase: 'done',
+      // "Stopped early" / "Stopped by you" — the banner's own words, now that
+      // the banner is gone and this is the only place they can appear.
+      verb: terminal.complete ? 'Campaign complete' : terminal.label,
+      who: ca.label,
+      l1: ca.label,
+      l2: ca.sub,
+    };
+  } else if (interrupted) {
+    const monitoring = !!(status.monitoring || status.monitoringPhase || status.keepMonitoring);
+    ca = {
+      phase: 'paused',
+      label: monitoring ? 'Monitoring stopped because this Mac became unavailable' : 'Campaign stopped because this Mac became unavailable',
+      sub: monitoring
+        ? 'Sending remains stopped · resume checks here or move monitoring to the Cloud VM'
+        : 'Queued leads are safe · resume here or continue on the Cloud VM',
+      safety: `${Math.max(0, Number(status.pendingCount) || ((Number(status.totalTargets) || 0) - (Number(status.totalProcessed) || 0)))} queued lead(s) remain safe`,
+      facts: [
+        ['Campaign state', 'Stopped safely'],
+        ['Reason', 'This Mac became unavailable'],
+        ['Operator action', monitoring ? 'Resume checks or resume sending' : 'Resume sending'],
+        ['Machine choice', 'Use this Mac or switch to Cloud VM'],
+      ],
+      milestones: [
+        ['Saved', 'queue position preserved', 'done'],
+        ['Runtime', 'this Mac unavailable', 'active'],
+        ['Choice', 'select machine', 'future'],
+        ['Resume', 'continues from saved position', 'future'],
+      ],
+    };
+    la = { phase: 'paused', who: '', l1: ca.label, l2: ca.sub };
+  } else if (!canonicalOwned && status && status.phase === 'preflight' && !ca) {
+    ca = {
+      phase: 'starting',
+      label: status.preflightL1 || 'Connecting sender accounts to the primary',
+      sub: status.preflightSub || 'The campaign starts automatically when the handshake completes',
+      safety: 'No campaign lead is consumed during setup',
+      // Two different journeys. With Phase 0 the senders are being connected to
+      // the primary here; without it nothing local happens and the only steps
+      // are reading the sheet and handing over.
+      // Driven by the launch's real phase, not a literal. See launchMilestones.
+      milestones: launchMilestones({
+        phase: status.launchPhase || '',
+        hasHandshake: status.hasHandshake !== false,
+        leadsRead: status.leadsRead,
+        sendersDone: status.sendersDone || 0,
+        sendersTotal: (status.profileIds || []).length,
+      }),
+    };
+    la = { phase: 'starting', who: '', l1: ca.label, l2: ca.sub };
+  }
+  const sweepDisposition = monitorSweepDisposition(status || {});
+  if (!canonicalOwned && phase === 'monitoring' && sweepDisposition === 'idle') {
+    const scope = Number(status.monitorCheckExpected)
+      || ((status.participatingProfileIds || status.profileIds) || []).length;
+    const checked = Number(status.monitorCheckAccountsChecked) || scope;
+    const next = _stageNextCheckView(status.nextCheckAt);
+    const sendResume = status.resumeAt ? new Date(status.resumeAt) : null;
+    const operatorTimeZone = document.getElementById('op-tz-current')?.dataset?.tz || _detectLocalTz();
+    const sendResumeClock = sendResume && !Number.isNaN(sendResume.getTime())
+      ? sendResume.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: operatorTimeZone || undefined }) : '';
+    ca = {
+      phase: 'monitoring',
+      label: 'Waiting for the next acceptance check',
+      // nextCheckLabel, not a hardcoded "today": a check scheduled for tomorrow
+      // was announced as today's.
+      sub: next.clock ? `Next check ${nextCheckLabel(status.nextCheckAt)} · Nothing needs to be done now` : 'Monitoring remains active · Nothing needs to be done now',
+      safety: `${Math.max(0, Number(status.pendingCount) || 0)} pending leads remain safely queued · sending is stopped`,
+      resumeAt: sendResumeClock ? status.resumeAt : null,
+      resumeClock: sendResumeClock,
+      resumeReason: status.resumeReason || null,
+      account: '', accountsDone: checked,
+      facts: [
+        ['Last check', 'complete'],
+        ['Accounts checked', `${checked} of ${scope}`],
+        ['Next check', nextCheckLabel(status.nextCheckAt)],
+        ['Operator action', 'none required'],
+      ],
+      milestones: [
+        ['Last check', 'complete', 'done'],
+        ['Accounts', `${checked} checked`, 'done'],
+        ['Browsers', 'closed between checks', 'done'],
+        ['Waiting', next.clock ? `next check ${next.clock}` : 'next check being scheduled', 'active'],
+      ],
+    };
+    la = { phase: 'monitoring', verb: 'Monitoring is active', who: ca.label, l1: ca.label, l2: ca.sub };
+  }
+  if (!ca && phase === 'checking') {
+    const pending = Math.max(0, (Number(status.totalTargets) || 0) - (Number(status.totalProcessed) || 0));
+    const scope = ((status.participatingProfileIds || status.profileIds) || []).length;
+    ca = {
+      phase: 'checking', step: 'check_requested', label: 'Selecting the next account',
+      sub: 'The first eligible sender browser will open next',
+      safety: `${pending} pending lead${pending === 1 ? '' : 's'} remain safe · sending stays stopped`,
+      facts: [
+        ['Check trigger', status.checkTrigger || 'Run check now'],
+        ['Scope', `${scope} campaign account${scope === 1 ? '' : 's'}`],
+        ['Current account', 'selecting'],
+        ['Next expected event', 'sender browser opens'],
+      ],
+      milestones: _stageMilestoneFallback(null, 'checking'),
+    };
+  }
+
+  // One source of live truth: whenever the visible log advances, the headline
+  // advances from that exact event on the very same render. Durable state still
+  // supplies counters, safety copy and workflow anatomy, but it no longer gets
+  // to leave the headline stuck on an earlier inferred step. This shared render
+  // path covers VM + This Mac and sending + checking + introducing + monitoring.
+  const sweepSummary = summarizeLatestMonitoringSweep(
+    status && status.logs,
+    ((status && (status.participatingProfileIds || status.profileIds)) || []).map((id) => {
+      const account = ((cid && _cloudAccountsById.get(cid)) || []).find((a) => a.profileId === id || a.email === id);
+      return (account && account.email) || id;
+    }),
+  );
+  // Do not keep a banner-only event cache. `status.logs` is the exact stream
+  // rendered below the card, and the banner must select from that same current
+  // snapshot on every render. The former cache could overwrite this freshly
+  // selected event with an older introduction whose timestamp compared higher,
+  // leaving the headline pinned while the visible log had already advanced.
+  // The merged stream also contains derived lead events (for example an
+  // introduction reconstructed from the sheet). They can carry a later sync
+  // timestamp than the sweep that produced them. An unresolved sweep error is
+  // durable campaign state, so it owns the monitoring banner until a later
+  // sweep succeeds—regardless of those derived rows' append/sync timestamps.
+  if (phase === 'monitoring' && sweepSummary && sweepSummary.incomplete && sweepSummary.error) {
+    const recovery = monitoringRecovery(sweepSummary.error);
+    logEvent = {
+      line: sweepSummary.error,
+      headline: `Check incomplete — ${sweepSummary.checked} of ${sweepSummary.expected} accounts checked`,
+      eyebrow: 'Check incomplete', kind: 'check-error', account: '',
+      detail: `${sweepSummary.accepted} acceptance${sweepSummary.accepted === 1 ? '' : 's'} · ${sweepSummary.introduced} introduction${sweepSummary.introduced === 1 ? '' : 's'} · ${recovery.detail}`,
+      explanation: 'Monitoring remains active.', recovery,
+      at: Number(logEvent && logEvent.at) || 0,
+    };
+  }
+  // Once a sweep has ended, an account result remains useful in the log and
+  // on its sender pill, but must not leave the whole campaign looking active.
+  // Idle monitoring returns to its durable "waiting for next check" view.
+  if (logEvent) {
+    if (logEvent.kind === 'check-error' && sweepSummary && !/^Check incomplete/i.test(logEvent.headline)) {
+      logEvent = {
+        ...logEvent,
+        headline: `Check incomplete — ${sweepSummary.checked} of ${sweepSummary.expected} accounts checked`,
+        detail: `${sweepSummary.accepted} acceptance${sweepSummary.accepted === 1 ? '' : 's'} · ${sweepSummary.introduced} introduction${sweepSummary.introduced === 1 ? '' : 's'} · ${logEvent.detail}`,
+      };
+    }
+    ca = { ...(ca || {}), label: logEvent.headline,
+      sub: `${logEvent.detail}${logEvent.explanation ? ` · ${logEvent.explanation}` : ''}` };
+    // During account rotation the durable action can be one poll behind the
+    // log. Never combine the previous sender with the new sender's event.
+    if (logEvent.account) ca.account = logEvent.account;
+    // The headline above is the log's, in every state. The per-kind panels
+    // below describe work that is still running, so a finished campaign keeps
+    // its terminal facts and milestones and only borrows the headline.
+    if (phase !== 'done') {
+    const allLogs = Array.isArray(status && status.logs) ? status.logs.map((x) => String(x && x.line != null ? x.line : x || '')) : [];
+    let runStart = -1;
+    allLogs.forEach((line, i) => { if (/Check now|Check started/i.test(line)) runStart = i; });
+    const currentRun = runStart >= 0 ? allLogs.slice(runStart) : allLogs;
+    const completedAccounts = new Set();
+    currentRun.forEach((line) => {
+      const hit = line.match(/(?:OK|LOG|WARN)?\s*[✓✔⚠]?\s*(\S+@\S+|[\w.-]+)\s+[—–]\s+(?:\d+ newly accepted|Identity Restricted)/i)
+        || line.match(/Nobody has accepted\s+(\S+@\S+)'s\s+\d+\s+outstanding invitations/i);
+      if (hit) completedAccounts.add(hit[1].toLowerCase());
+    });
+    const done = completedAccounts.size;
+    const scope = ((status.participatingProfileIds || status.profileIds) || []).length;
+    if (logEvent.kind === 'check-queued') {
+      ca = { ...ca, account: '', accountsDone: 0,
+        facts: [['Check trigger', 'Run check now'], ['Scope', `${scope} campaign account${scope === 1 ? '' : 's'}`], ['Current account', 'not selected yet'], ['Next expected event', 'VM worker claims the check']],
+        milestones: [['Requested', 'check queued', 'done'], ['Worker', 'waking', 'active'], ['Browser', 'not opened yet', 'future'], ['Accounts', 'waiting', 'future'], ['Results', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'local-browser-starting') {
+      ca = { ...ca, account: logEvent.account, accountsDone: done,
+        facts: [['Check', 'starting'], ['Current account', logEvent.account], ['Browser', 'not open yet'], ['Next expected event', 'local browser opens']],
+        milestones: [['Requested', 'complete', 'done'], ['Browser', 'starting on this Mac', 'active'], ['Connections', 'waiting', 'future'], ['Acceptances', 'waiting', 'future'], ['Results', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'account-browser-opening') {
+      ca = { ...ca, account: logEvent.account, accountsDone: done,
+        facts: [['Check', 'running'], ['Current account', logEvent.account], ['Browser', 'opening'], ['Next expected event', 'read recent connections']],
+        milestones: [['Requested', 'complete', 'done'], ['Browser', 'opening now', 'active'], ['Connections', 'waiting', 'future'], ['Acceptances', 'waiting', 'future'], ['Results', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'account-checking') {
+      ca = { ...ca, account: logEvent.account, accountsDone: done,
+        facts: [['Check', 'running'], ['Current account', logEvent.account], ['Accounts completed', `${done} of ${scope}`], ['Next expected event', 'recent connections result']],
+        milestones: [['Requested', 'complete', 'done'], ['Browser', 'open', 'done'], ['Connections', 'reading now', 'active'], ['Acceptances', 'waiting', 'future'], ['Introductions', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'account-checked' || logEvent.kind === 'account-skipped') {
+      ca = { ...ca, account: logEvent.account, accountsDone: done,
+        facts: [['Check', 'running'], ['Last account', logEvent.account], ['Accounts completed', `${done} of ${scope}`], ['Next expected event', done >= scope ? 'finish and schedule next check' : 'open the next account']],
+        milestones: [['Requested', 'complete', 'done'], ['Browser', 'complete', 'done'], ['Connections', 'loaded', 'done'], ['Acceptances', 'recorded', 'done'], ['Next account', done >= scope ? 'finishing check' : 'selecting', 'active']] };
+    } else if (logEvent.kind === 'check-complete') {
+      ca = { ...ca, account: '', accountsDone: scope,
+        facts: [['Check', 'complete'], ['Accounts completed', `${scope} of ${scope}`], ['Results', 'saved'], ['Next expected event', 'schedule the next automatic check']],
+        milestones: [['Requested', 'complete', 'done'], ['Browsers', 'closed', 'done'], ['Connections', 'loaded', 'done'], ['Acceptances', 'recorded', 'done'], ['Results', 'saved', 'done']] };
+    } else if (logEvent.kind === 'check-error' && sweepSummary) {
+      const recovery = logEvent.recovery || monitoringRecovery(sweepSummary.error || logEvent.detail);
+      ca = { ...ca, account: '', accountsDone: sweepSummary.checked,
+        acceptedCount: sweepSummary.accepted, introducedCount: sweepSummary.introduced,
+        facts: [['Check', 'incomplete'], ['Accounts checked', `${sweepSummary.checked} of ${sweepSummary.expected}`], ['Result', recovery.result], ['Operator action', recovery.action]],
+        milestones: [['Requested', 'complete', 'done'], ['Accounts', `${sweepSummary.checked} checked`, 'done'], ['Unavailable', `${Math.max(0, sweepSummary.expected - sweepSummary.checked)} not checked`, 'active'], ['Recovery', recovery.action, 'future']] };
+    } else if (logEvent.kind === 'sender-browser-opening') {
+      ca = { ...ca, phase: 'sending', account: logEvent.account,
+        facts: [['Campaign', 'sending'], ['Current account', logEvent.account], ['Browser', 'opening'], ['Next expected event', 'select a lead']],
+        milestones: [['Campaign', 'running', 'done'], ['Browser', 'opening now', 'active'], ['Lead', 'selecting', 'future'], ['Result', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'sender-batch-starting') {
+      ca = { ...ca, phase: 'sending', account: logEvent.account,
+        facts: [['Campaign', 'sending'], ['Current account', logEvent.account], ['Sender turn', logEvent.headline], ['Next expected event', 'open the next lead']],
+        milestones: [['Campaign', 'running', 'done'], ['Browser', 'open', 'done'], ['Lead', 'selecting', 'active'], ['Result', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'profile-loading' || logEvent.kind === 'sending-progress') {
+      ca = { ...ca, phase: 'sending', account: logEvent.account || ca.account,
+        facts: [['Campaign', 'sending'], ['Current account', logEvent.account || ca.account || 'active sender'], ['Current event', logEvent.headline], ['Next expected event', logEvent.detail || 'verify the LinkedIn action']],
+        milestones: [['Campaign', 'running', 'done'], ['Browser', 'open', 'done'], ['Lead', 'in progress', 'active'], ['Result', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'saving-result') {
+      ca = { ...ca, phase: 'sending', account: logEvent.account || ca.account,
+        facts: [['Campaign', 'sending'], ['Current account', logEvent.account || ca.account || 'active sender'], ['Result', 'writing to the sheet'], ['Next expected event', 'select the next lead']],
+        milestones: [['Campaign', 'running', 'done'], ['Browser', 'open', 'done'], ['Lead', 'processed', 'done'], ['Result', 'saving now', 'active']] };
+    } else if (logEvent.kind === 'connection-confirmed' || logEvent.kind === 'introduction-confirmed') {
+      ca = { ...ca, phase: 'sending', account: logEvent.account || ca.account,
+        facts: [['Campaign', 'sending'], ['Current result', logEvent.headline], ['Result', 'confirmed'], ['Next expected event', 'continue with the next lead']],
+        milestones: [['Campaign', 'running', 'done'], ['Browser', 'open', 'done'], ['Lead', 'confirmed', 'done'], ['Next lead', 'selecting', 'active']] };
+    } else if (logEvent.kind === 'sender-browser-closed') {
+      ca = { ...ca, phase: 'sending', account: logEvent.account,
+        facts: [['Campaign', 'sending'], ['Last account', logEvent.account], ['Sender turn', 'complete'], ['Next expected event', 'select the next available account']],
+        milestones: [['Campaign', 'running', 'done'], ['Sender turn', 'complete', 'done'], ['Browser', 'closed', 'done'], ['Next account', 'selecting', 'active']] };
+    } else if (logEvent.kind === 'sender-unavailable') {
+      ca = { ...ca, phase: 'sending', account: logEvent.account,
+        facts: [['Campaign', 'sending'], ['Unavailable account', logEvent.account], ['Reason', logEvent.headline], ['Next expected event', 'continue with another eligible account']],
+        milestones: [['Campaign', 'running', 'done'], ['Account', 'needs attention', 'active'], ['Other accounts', 'continue', 'active'], ['Next lead', 'selecting', 'future']] };
+    } else if (logEvent.kind === 'sender-backoff') {
+      ca = { ...ca, phase: 'sending', account: logEvent.account,
+        facts: [['Campaign', 'sending'], ['Cooling-down account', logEvent.account], ['Delay', logEvent.detail], ['Next expected event', 'retry automatically']],
+        milestones: [['Campaign', 'running', 'done'], ['Account', 'cooling down', 'active'], ['Retry', 'automatic', 'future'], ['Next lead', 'waiting', 'future']] };
+    } else if (logEvent.kind === 'sending-resumed') {
+      ca = { ...ca, phase: 'sending', account: '',
+        facts: [['Campaign', 'sending'], ['Queue', 'resumed'], ['Current account', 'selecting'], ['Next expected event', 'open an eligible sender browser']],
+        milestones: [['Campaign', 'resumed', 'done'], ['Account', 'selecting', 'active'], ['Browser', 'waiting', 'future'], ['Lead', 'waiting', 'future']] };
+    }
+    }
+    la = {
+      ...(la || {}), phase,
+      verb: logEvent.eyebrow || 'Latest campaign event',
+      who: logEvent.headline,
+      l1: logEvent.headline,
+      l2: ca.sub,
+    };
+  }
 
   stage.hidden = false;
+  // .vj-live and .vj-stage share `grid-area: live` and are documented as
+  // mutually exclusive (index.html), but the exclusion was left to each caller.
+  // Two branches of renderActiveCard un-hide the live line and THEN render the
+  // stage — the finished branch is one, which is how a "Stopped early" outcome
+  // banner came to be drawn on top of the check step strip (screenshot,
+  // 2026-08-27). The stage owns the slot the moment it draws, so the guard
+  // belongs here, once, rather than in every caller.
+  const _liveSlot = _stgFld(root, 'active-live');
+  if (_liveSlot) _liveSlot.hidden = true;
+  // This is the signed-off full-card composition. Once it is available it owns
+  // the card, so the old hero, per-account rail and profile roster cannot be
+  // rendered around it as a second (conflicting) design.
+  root.classList.add('has-unified-stage');
   stage.dataset.cid = cid;
   _stageStatus.set(stage, status);
-  const paused = !!(status.paused || status._paused);
   stage.classList.toggle('is-checking', phase === 'checking');
-  stage.classList.toggle('is-waiting', phase === 'waiting');
+  stage.classList.toggle('is-waiting', phase === 'waiting' || phase === 'monitoring');
+  stage.classList.toggle('is-starting', phase === 'starting');
+  stage.classList.toggle('is-delayed', phase === 'starting' && !!(ca && ca.overrun));
   stage.classList.toggle('is-done', phase === 'done');
   stage.classList.toggle('is-paused', paused);
+  stage.classList.toggle('is-interrupted', interrupted);
 
   // Elapsed clock — restarted only when the phase or the person changes, and
   // held per CAMPAIGN so a re-created strip clone doesn't reset it to 0.
@@ -24971,14 +28037,24 @@ function renderLiveStage(root, status) {
   const rec = _stagePhaseAt.get(cid);
   if (!rec || rec.key !== key) _stagePhaseAt.set(cid, { key, at: Date.now() });
 
-  // Glyph: only on a phase change, or its animation restarts every poll.
-  if (stage.dataset.phase !== phase) {
+  // Paused visually outranks a stale in-flight phase. Key the glyph separately
+  // so pressing Pause swaps the animated send mark immediately even when the
+  // engine keeps the last lead's phase visible while it closes the browser.
+  const glyphPhase = paused ? 'paused' : phase;
+  if (stage.dataset.glyphphase !== glyphPhase) {
     const g = _stgFld(root, 'stageGly');
-    if (g) g.innerHTML = _stageGlyphHtml(phase) + '<span class="vj-stage-secs"></span>';
-    stage.dataset.phase = phase;
+    if (g) g.innerHTML = _stageGlyphHtml(glyphPhase) + (paused ? '' : '<span class="vj-stage-secs"></span>');
+    stage.dataset.glyphphase = glyphPhase;
   }
+  stage.dataset.phase = phase;
+  // A scheduled check is a clock, not a poll-derived label. Cache its absolute
+  // due time on every clone so the shared one-second ticker can update both the
+  // dashboard card and Campaign Builder without waiting for another fetch.
+  stage.dataset.nextCheckAt = phase === 'monitoring' ? String(status.nextCheckAt || '') : '';
   const verbEl = _stgFld(root, 'stageVerb');
-  if (verbEl) verbEl.textContent = paused ? 'Paused — finishing this lead' : la.verb;
+  if (verbEl) verbEl.textContent = paused
+    ? 'Paused — queued leads are safe'
+    : pausing ? 'Pausing — finishing the current lead' : la.verb;
 
   // Name: only when the person changes, or the slide-in replays every poll.
   const who = la.who || '';
@@ -25005,18 +28081,93 @@ function renderLiveStage(root, status) {
       return (hit && (hit.email || hit.name)) || profileLabel(id);
     };
     const acct = ca && ca.account && ca.account !== who ? _label(ca.account) : '';
-    const sub = [acct, ca && ca.sub].filter(Boolean).join(' · ');
+    const detail = String((ca && ca.sub) || '');
+    const alreadyNamed = acct && detail.toLowerCase().includes(String(acct).toLowerCase());
+    const sub = [alreadyNamed ? '' : acct, detail].filter(Boolean).join(' · ');
     if (subEl.textContent !== sub) subEl.textContent = sub;
   }
 
+  const safetyEl = _stgFld(root, 'stageSafety');
+  if (safetyEl) {
+    const safety = String((ca && ca.safety) || '');
+    // Every one of these strings leads with the count ("92 pending leads remain
+    // safely queued · sending is stopped"). Lift that number out so it reads
+    // at a glance, and tint the pill gold while leads are genuinely still
+    // waiting — an operator scanning the card must not have to parse a
+    // sentence to learn that 92 people were never contacted. Zero stays green.
+    // Only a count that means something gets the big numeral. A 1.7rem "0"
+    // would shout the one state that needs no attention at all.
+    const { count, rest, pending } = splitSafetyCount(safety);
+    const html = pending
+      ? `<span class="n">${escHtml(count)}</span>${escHtml(rest)}`
+      : escHtml(safety);
+    if (safetyEl.dataset.html !== html) { safetyEl.innerHTML = html; safetyEl.dataset.html = html; }
+    safetyEl.classList.toggle('has-pending', pending);
+    safetyEl.hidden = !safety;
+  }
+  const factsEl = _stgFld(root, 'stageFacts');
+  if (factsEl) {
+    const facts = Array.isArray(ca && ca.facts) ? ca.facts : [];
+    const html = facts.map(([label, value]) => `<div><span>${escHtml(label)}</span><b>${escHtml(value)}</b></div>`).join('');
+    if (factsEl.dataset.html !== html) { factsEl.innerHTML = html; factsEl.dataset.html = html; }
+    factsEl.hidden = !html;
+  }
+  const milesEl = _stgFld(root, 'stageMiles');
+  if (milesEl) {
+    const supplied = Array.isArray(ca && ca.milestones) ? ca.milestones : [];
+    const miles = supplied.length ? supplied : _stageMilestoneFallback(ca, phase);
+    const html = miles.map(([label, value, state], i) => `<div class="${escHtml(state || 'future')}"><small>0${i + 1} / ${escHtml(label)}</small><b>${escHtml(value)}</b></div>`).join('');
+    if (milesEl.dataset.html !== html) { milesEl.innerHTML = html; milesEl.dataset.html = html; }
+    milesEl.hidden = !html;
+  }
+
+  const overview = _stageOverview(status, ca, la, phase);
+  const put = (name, value) => { const el = _stgFld(root, name); if (el) el.textContent = value == null ? '' : String(value); };
+  put('stageSideLabel', overview.side[0]); put('stageSideValue', overview.side[1]); put('stageSideHelp', overview.side[2]);
+  put('stageMetricAccepted', overview.metricValues[0]); put('stageMetricAcceptedLabel', overview.metricLabels[0]);
+  put('stageMetricIntroduced', overview.metricValues[1]); put('stageMetricIntroducedLabel', overview.metricLabels[1]);
+  put('stageMetricRemaining', overview.metricValues[2]); put('stageMetricRemainingLabel', overview.metricLabels[2]);
+  put('stageNextLabel', overview.next[0]); put('stageNextTitle', overview.next[1]); put('stageNextDetail', overview.next[2]);
+
   // Account pills + drawer — keyed on everything they draw, so they're rewritten
   // when (and only when) something in them actually changed.
-  const accts = (cid && _cloudAccountsById.get(cid)) || [];
+  const cloudAccts = (cid && _cloudAccountsById.get(cid)) || [];
+  // The cloud payload already has stage-account objects. Local campaigns expose
+  // the same truth through accountPanel/accountColumns; normalise those rows so
+  // LM and VM use the identical pill row instead of restoring the legacy rail.
+  let accts = cloudAccts.length ? cloudAccts : accountColumns(status).map((a) => ({
+    profileId: a.email,
+    email: a.email,
+    dailyCount: a.sentToday,
+    dailyLimit: a.dailyLimit,
+    needsLogin: /needs-login|logged-out|stopped/.test(String(a.state || '').toLowerCase())
+      && /login|logged/.test(`${a.state || ''} ${a.sub || ''}`.toLowerCase()),
+    weeklyCap: /weekly/.test(`${a.state || ''} ${a.sub || ''}`.toLowerCase()),
+    parked: /stopped|benched|identity-restricted/.test(String(a.state || '').toLowerCase()),
+    parkReason: /identity-restricted/.test(String(a.state || '').toLowerCase()) ? 'identity restricted' : '',
+  }));
+  if (sweepSummary) {
+    accts = accts.map((account) => {
+      const result = sweepSummary.accounts.find((item) => {
+        const key = String(item.account || '').toLowerCase();
+        return key === String(account.email || '').toLowerCase() || key === String(account.profileId || '').toLowerCase();
+      });
+      return result ? { ...account, sweepChecked: result.checked, sweepAccepted: result.accepted, sweepAction: result.action } : account;
+    });
+  }
   const cur = (ca && ca.account) || status.liveAccount || '';
   const isCur = (a) => !paused && !!cur && (a.profileId === cur || a.email === cur);
+  // The engine owns a cloud campaign's account set, and it 409s a removal while
+  // the campaign is running or still queuing — the same rule the Accounts panel
+  // enforces, read off THIS card's campaign rather than whichever one card #2
+  // happens to be showing. Never on the last account: a campaign needs one.
+  const _engStatus = String(status.engineStatus || '');
+  const _removeState = (!cid || cloudAccts.length < 2 || !_engStatus) ? ''
+    : (['running', 'queued', 'pending'].includes(_engStatus) ? 'pause-first' : 'yes');
   const sel = _stageSel.get(cid) || '';
-  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}`).join(',')
-    + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}`
+  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}~${a.sweepChecked ? 'c' : ''}${a.sweepAccepted || 0}${a.sweepAction || ''}`).join(',')
+    + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}|${_removeState}`
+    + `|${(ca && ca.resumeAt) || ''}|${(ca && ca.resumeReason) || ''}`
     + `|${[...((cid && _cloudAcctCounts.get(cid)) || new Map()).entries()].map(([k, v]) => `${k}:${v.sent}/${v.total}`).join(',')}`;
   if (stage.dataset.acctkey !== akey) {
     const pills = _stgFld(root, 'stageAccts');
@@ -25030,11 +28181,17 @@ function renderLiveStage(root, status) {
     const drawer = _stgFld(root, 'stageDrawer');
     if (drawer) {
       const a = accts.find((x) => x.profileId === sel);
-      drawer.innerHTML = a ? _stageDrawerHtml(cid, a, isCur(a), !!status.live) : '';
+      drawer.innerHTML = a ? _stageDrawerHtml(cid, a, isCur(a), !!status.live, _removeState) : '';
     }
     // Only the stalled state gets advice — during a send there is nothing to fix.
     const fix = _stgFld(root, 'stageFix');
-    if (fix) fix.innerHTML = phase === 'waiting' ? _stageFixHtml(cid, accts) : '';
+    if (fix) {
+      if (phase === 'monitoring' && ca && ca.resumeClock && ca.resumeReason === 'daily') {
+        fix.innerHTML = `<div class="stg-resume"><div><b>Sending starts at ${escHtml(ca.resumeClock)}</b><span>Monitoring continues in the meantime.</span></div><button type="button" onclick="startMonitoringSendingNow(this)">Start now</button></div>`;
+      } else {
+        fix.innerHTML = phase === 'waiting' ? _stageFixHtml(cid, accts) : '';
+      }
+    }
     stage.dataset.acctkey = akey;
   }
 
@@ -25062,6 +28219,48 @@ window.stageAcctPick = function (el, profileId) {
   if (root && st) { try { renderLiveStage(root, st); } catch (_) { /* */ } }
 };
 
+window.startMonitoringSendingNow = function (btn) {
+  const stage = btn && btn.closest('.vj-stage');
+  if (!stage) return;
+  const status = _stageStatus.get(stage);
+  const id = stage.dataset.cid || (status && status.id) || 'local-active';
+  const current = status && status._cloud ? 'vm' : 'local';
+  return window.openCampaignResumeDecision(id, 'sending', current, btn);
+};
+
+// A cloud card whose link to the VM has gone quiet must stop speaking in the
+// present tense. Measured 2026-08-28: the tunnel died at 01:27 and by 09:11 the
+// card still read "MONITORING IS ACTIVE · until next automatic check: NOW · next
+// check 02:08", with the only contradiction a grey footnote. Every one of those
+// words was seven hours old, and the operator reasonably read it as the VM being
+// frozen — the VM had in fact swept normally at 03:10, 05:10 and 07:10.
+//
+// The rule: the card may show what the VM last said, never assert that it is
+// still true. Applied from the tick, so it needs no cooperation from whichever
+// render path painted the card, and it lifts by itself on the next good poll.
+//
+// The threshold and the decision live in live-activity.mjs so node --test can
+// reach them; this function is only the DOM half.
+function _applyLostLinkOverride(stage, cid, age) {
+  const lost = linkIsLost(age, _checkRunsLocally(cid));
+  if (!lost) { delete stage.dataset.lostLink; return; }
+  // Reasserted every tick, not cached: the 5s cloud repaint keeps writing the
+  // stale hero back in, and a one-shot override would lose that race and leave
+  // the lie on screen. Each put() compares before writing, so this is cheap.
+  const ago = _fmtElapsed(age);
+  stage.dataset.lostLink = '1';
+  const put = (name, text) => {
+    const el = stage.querySelector(`[data-f="${name}"], #${name}`);
+    if (el && el.textContent !== text) el.textContent = text;
+  };
+  put('stageVerb', 'No answer from the VM');
+  put('stageName', 'This Mac cannot see the campaign');
+  put('stageSub', `Last update ${ago} ago · the campaign may well still be running, this Mac just cannot reach it`);
+  put('stageSideLabel', 'LAST HEARD FROM THE VM');
+  put('stageSideValue', ago);
+  put('stageSideHelp', 'everything below is from that moment, not from now');
+}
+
 // Elapsed seconds + heartbeat, ticked once a second on every visible stage.
 // Deliberately NOT part of the poll render: these are clocks, and a clock that
 // only moves when the network answers is the thing that looks frozen.
@@ -25078,13 +28277,29 @@ function _tickLiveStages() {
     }
     const rec = _stagePhaseAt.get(cid);
     const secs = stage.querySelector('.vj-stage-secs');
-    if (secs && rec) {
-      const s = _fmtElapsed(Math.max(0, Math.round((Date.now() - rec.at) / 1000)));
+    const nextCheckAt = Date.parse(stage.dataset.nextCheckAt || '');
+    const isMonitoringCountdown = stage.dataset.phase === 'monitoring' && Number.isFinite(nextCheckAt);
+    if (secs && (rec || isMonitoringCountdown)) {
+      const s = isMonitoringCountdown
+        ? v3FmtCountdown(nextCheckAt - Date.now())
+        : _fmtElapsed(Math.max(0, Math.round((Date.now() - rec.at) / 1000)));
       if (secs.textContent !== s) secs.textContent = s;
+    }
+    // A countdown is a claim about now. With the link down it counts toward a
+    // check this Mac has no way of knowing happened, so leave the side panel to
+    // _applyLostLinkOverride below.
+    if (isMonitoringCountdown && !stage.dataset.lostLink) {
+      const value = stage.querySelector('[data-f="stageSideValue"], #stageSideValue');
+      const help = stage.querySelector('[data-f="stageSideHelp"], #stageSideHelp');
+      const view = _stageNextCheckView(nextCheckAt);
+      if (value && value.textContent !== view.countdown) value.textContent = view.countdown;
+      const helpText = `scheduled for ${view.clock} · no browser remains open between checks`;
+      if (help && help.textContent !== helpText) help.textContent = helpText;
     }
     const polled = _cloudPolledAt.get(cid) || 0;
     if (!polled) return;
     const age = Math.max(0, Math.round((Date.now() - polled) / 1000));
+    _applyLostLinkOverride(stage, cid, age);
     const txtEl = stage.querySelector('.vj-stage-beat .l > span:last-child');
     // 20s: the cloud detail polls every 5s, so three missed polls in a row is a
     // real silence, not a slow one.
@@ -25101,9 +28316,431 @@ function _tickLiveStages() {
 }
 setInterval(_tickLiveStages, 1000);
 
+// ── RUNNING ON: which side a live campaign runs on, and moving it ───────────
+// Design: public/sketches/2026-08-21-vm-local-handover.html, variant C — the
+// switch ASKS FIRST, inline on the card, never a modal, and names what the move
+// costs before it happens. One renderer for both card surfaces (#active-card
+// and the board strip's clone), same as fillVjCard/renderActiveCard.
+//
+// The three states the operator must never be without (the incident this whole
+// feature came from was an operator who could not tell which machine was doing
+// the work): HANDING OVER (both sides locked), MOVED (new side filled, "moved N
+// min ago"), and WAITING FOR THIS MAC (owned here, nothing running — stated as
+// waiting, never as stalled).
+let _whAsk = null;   // { id, to } — the open confirm strip
+let _whBusy = null;  // { id, to } — a move in flight; both sides locked
+let _whMsg = null;   // { id, text } — the last refusal, shown until dismissed
+let _whHold = null;  // last truthful source status, held until the target answers
+
+// Which side owns it. An absent runsOn means nobody has moved this campaign:
+// a cloud campaign is on the VM, a local one is on this Mac.
+function _whSide(status) {
+  const r = String((status && status.runsOn) || '').toLowerCase();
+  if (r === 'vm' || r === 'local') return r;
+  return (status && status._cloud) ? 'vm' : 'local';
+}
+
+// Leads still to send. Real, never a placeholder: pendingCount is the cloud
+// detail's number, pending the board item's, and totals are the local pair.
+function _whPending(status) {
+  const c = Number(status && status.pendingCount);
+  if (Number.isFinite(c)) return c;
+  const p = Number(status && status.pending);
+  if (Number.isFinite(p) && p > 0) return p;
+  return Math.max(0, (Number(status && status.totalTargets) || 0) - (Number(status && status.totalProcessed) || 0));
+}
+
+// The operator's OWN cadence, not the adaptive one — a switch resets the
+// stretch, so the sentence has to name the interval it goes back to.
+function _whBaseMins(status) {
+  const m = Number((status && status.checkIntervalBaseMinutes) || (status && status.checkIntervalMinutes)) || 0;
+  if (!m) return 'the base interval';
+  if (m % 60 === 0) return (m / 60) + 'h';
+  return m + ' min';
+}
+
+function _whAgo(ts) {
+  const min = Math.floor(Math.max(0, Date.now() - Number(ts)) / 60000);
+  if (min < 1) return 'moved just now';
+  if (min < 60) return `moved ${min} min ago`;
+  const h = Math.floor(min / 60);
+  return `moved ${h}h ago`;
+}
+
+function _whConfirmHtml(id, to, status) {
+  const n = _whPending(status);
+  const leads = `${n} lead${n === 1 ? '' : 's'}`;
+  const every = _whBaseMins(status);
+  if (to === 'local') {
+    return `<div class="wh-confirm">
+      Move this campaign to <b>this Mac</b>?<br>
+      · The VM stops now. ${leads} still to send continue here.<br>
+      · The lead being sent right now is retried here, so that one person may get a second request.<br>
+      · GoLogin browsers open on this Mac. Keep the app open or the campaign waits.<br>
+      · An acceptance check starts automatically on this Mac as soon as the move completes.<br>
+      · Acceptance checks go back to every ${every} from the switch.
+      <span class="row"><button type="button" class="go" onclick="campaignHandover('${escHtml(id)}','local',this)">Move it here</button><button type="button" onclick="whereCancel()">Stay on the VM</button></span>
+    </div>`;
+  }
+  return `<div class="wh-confirm">
+    Move this campaign to the <b>Cloud VM</b>?<br>
+    · This Mac stops now and its GoLogin browsers close. ${leads} still to send continue on the VM.<br>
+    · The lead being sent right now is retried there, so that one person may get a second request.<br>
+    · The VM keeps going with this app closed, so the laptop can sleep.<br>
+    · An acceptance check starts automatically on the VM as soon as the move completes.<br>
+    · Acceptance checks go back to every ${every} from the switch.
+    <span class="row"><button type="button" class="go" onclick="campaignHandover('${escHtml(id)}','vm',this)">Move it to the VM</button><button type="button" onclick="whereCancel()">Stay on this Mac</button></span>
+  </div>`;
+}
+
+// The whole block as one string, so the render path can skip a rewrite when
+// nothing changed (a 2s poll that re-wrote it would eat the operator's click).
+// Returns '' when the control does not belong on this card at all.
+function whereBlockHtml(status) {
+  if (!status) return '';
+  const id = String(status.id || status.rawId || '');
+  if (!id) return '';
+  const side = _whSide(status);
+  const running = !!status.running;
+  // Monitoring is a state of its own, and it outlives the SENDING status: an
+  // operator stop that keeps the checks leaves status 'stopping' with the
+  // monitor still armed (engine row cmp_13s04kukmt7b0ro6, 2026-08-27 —
+  // status 'stopping', monitor_state 'monitoring', next check 17:36). Keying
+  // on the coarse status alone hid this control exactly when the operator
+  // wants to move the checks between machines. Same predicate renderLiveStage
+  // already uses.
+  const monitoring = status.state === 'monitoring' || !!status.monitoring || !!status.monitoringPhase;
+  const queued = !!status.queued || status.state === 'queued';
+  // Owned here but nothing is running here: the app was closed, or the campaign
+  // was stopped. This is the load-bearing state — it must read as waiting on
+  // this Mac, not as a stalled or broken campaign.
+  const deliberatelyStopped = status.stopReason === 'operator-stopped';
+  const waiting = side === 'local' && !running && !monitoring && !status.queued && !deliberatelyStopped
+    && (status._cloud || !!status.handoverAt);
+  if (!running && !monitoring && !waiting && !queued) return '';
+
+  const busy = _whBusy && _whBusy.id === id ? _whBusy.to : '';
+  const ask = _whAsk && _whAsk.id === id ? _whAsk.to : '';
+  const msg = _whMsg && _whMsg.id === id ? _whMsg.text : '';
+
+  let tail;
+  if (busy) tail = '<span class="wh-warn">moving, both locked</span>';
+  else if (msg) tail = '<span class="wh-warn">not moved</span>';
+  else if (ask) tail = '<span class="wh-warn">confirm below</span>';
+  else if (waiting) tail = '<span class="wh-warn">waiting on this Mac, nothing running here</span>';
+  else if (status.handoverAt) tail = `<span class="wh-note">${_whAgo(status.handoverAt)}</span>`;
+  else if (side === 'vm') tail = '<span class="wh-note">tap to move it here · the destination checks automatically</span>';
+  else tail = '<span class="wh-note">keep the app open · switching starts a check automatically</span>';
+
+  const btn = (to, label) => {
+    const on = side === to ? ' on' : '';
+    const bz = busy === to ? ' busy' : '';
+    const dis = busy || side === to ? ' disabled' : '';
+    return `<button type="button" class="${(on + bz).trim()}"${dis} onclick="whereAsk('${escHtml(id)}','${to}')">${label}</button>`;
+  };
+  let html = `<div class="wh">
+    <span class="wh-lab">Running on</span>
+    <span class="wh-seg">${btn('vm', 'Cloud VM')}${btn('local', 'This Mac')}</span>
+    ${tail}
+  </div>`;
+  // A refusal is never a bare "failed": the server's sentence says what the VM
+  // did, and both sides stay exactly where they were.
+  if (msg) html += `<div class="wh-confirm">${escHtml(msg)}<span class="row"><button type="button" onclick="whereCancel()">OK</button></span></div>`;
+  else if (ask && !busy) html += _whConfirmHtml(id, ask, status);
+  return html;
+}
+
+// Paint the control into a card. Keeps the status it drew from on the host node
+// so a click can repaint immediately instead of waiting for the next poll.
+function renderWhereControl(root, status) {
+  if (!root) return;
+  let slot = root.querySelector(':scope > .wh-host');
+  let markup = '';
+  try { markup = whereBlockHtml(status); } catch (_) { markup = ''; }
+  if (!markup) { if (slot) slot.remove(); return; }
+  if (!slot) {
+    slot = document.createElement('div');
+    slot.className = 'wh-host';
+    const anchor = root.querySelector('.vj-controls') || root.querySelector('.vj-details');
+    if (anchor && anchor.parentNode === root) root.insertBefore(slot, anchor);
+    else root.appendChild(slot);
+  }
+  slot._status = status;
+  // Written ONLY when the markup actually changes: both surfaces re-render on a
+  // poll, and a blind rewrite would eat the operator's click on the confirm.
+  if (slot.dataset.h !== markup) { slot.innerHTML = markup; slot.dataset.h = markup; }
+}
+
+function whereRepaint() {
+  document.querySelectorAll('.wh-host').forEach((h) => {
+    const card = h.parentElement;
+    if (card && h._status) renderWhereControl(card, h._status);
+  });
+}
+
+window.whereAsk = function(id, to) {
+  if (_whBusy) return;
+  _whMsg = null;
+  _whAsk = { id: String(id), to };
+  whereRepaint();
+};
+
+window.whereCancel = function() {
+  _whAsk = null; _whMsg = null;
+  whereRepaint();
+};
+
+// ── The handover banner ───────────────────────────────────────────────────
+// Design: public/sketches/2026-08-21-handover-banner.html. It is the SAME
+// .vj-live band the checking and sending banners promote, so it lands on the
+// dashboard's #active-card and on the board strip's clone through the one
+// applyLiveBanner painter. The standalone #sn-handover strip above the scrape
+// board is gone: it only ever showed on one surface, in one voice.
+//
+// It is deliberately NOT named .sn-switch. That class is the Log/Counts tab
+// switcher already.
+//
+// One campaign moves at a time (campaignHandover refuses a second while one is
+// in flight, and the server refuses it again), so a single slot is enough.
+let _hoMove = null; // { id, to: 'cloud'|'local', name, landed, out }
+
+function _hoFor(status) {
+  if (!_hoMove || !status) return null;
+  const id = String(status.id || status.rawId || '');
+  return id && id === _hoMove.id ? _hoMove : null;
+}
+
+function _paintHandover(live, m) {
+  const b = handoverBanner({ to: m.to, name: m.name, landed: m.landed });
+  live.hidden = false;
+  const card = live.closest('.vj-card');
+  if (card) card.classList.add('is-handover-active');
+  live.classList.add('is-handover', b.tone);
+  if (m.landed) live.classList.add('landed');
+  if (m.out) live.classList.add('out');
+  const l1 = live.querySelector('.vj-live-l1');
+  const l2 = live.querySelector('.vj-live-l2');
+  if (l1) l1.textContent = b.l1;
+  if (l2) l2.textContent = b.l2;
+  // The shuttle carries DIRECTION, which a spinner cannot: 💻 is this Mac, ☁︎ is
+  // the VM. While it is travelling the origin end is lit; once it has landed the
+  // destination is.
+  const lit = m.landed ? (m.to === 'cloud' ? 'b' : 'a') : (m.to === 'cloud' ? 'a' : 'b');
+  const track = document.createElement('div');
+  track.className = 'ho-track';
+  track.innerHTML = `<span class="ho-end a${lit === 'a' ? ' lit' : ''}">💻</span>`
+    + '<span class="ho-rail"></span><span class="ho-dot"></span>'
+    + `<span class="ho-end b${lit === 'b' ? ' lit' : ''}">☁︎</span>`;
+  live.prepend(track);
+  // What the operator DOES. Not a percentage and not an ETA we cannot honestly
+  // promise.
+  const right = document.createElement('div');
+  right.className = 'ho-right';
+  right.innerHTML = `<b>${escHtml(b.right[0])}</b><span>${escHtml(b.right[1])}</span>`;
+  live.append(right);
+}
+
+// A machine switch is also an explicit request to look at the campaign now.
+// Make that an actual handover postcondition instead of relying on the next
+// cadence tick. Monitoring uses the destination's native route; active sending
+// uses the same Check-now workflow the card button uses, so pause/locking and
+// duplicate-introduction safeguards remain identical to a manual check.
+async function _startHandoverCheck(id, to, phase, response) {
+  const targetId = String((response && response.id) || id);
+  const monitoring = phase === 'monitoring'
+    || (response && (response.adopted === 'monitoring' || response.phase === 'monitoring'));
+  try {
+    if (to === 'local' && monitoring) {
+      const r = await fetch('/api/monitoring/check-now', { method: 'POST' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+      showCampaignToast('✓ Moved to this Mac · acceptance check started automatically.', 6500);
+      return true;
+    }
+    if (to === 'local') {
+      // The local sweep can take minutes; start it without holding the handover
+      // banner open. cloudCheckLocal immediately paints its own truthful status
+      // and reports any later failure in the card/toast.
+      void cloudCheckLocal(targetId, null, 'campaign');
+      showCampaignToast('✓ Moved to this Mac · acceptance check is starting automatically.', 6500);
+      return true;
+    }
+    const queued = await cloudCheckNow(targetId, null, 'campaign');
+    if (!queued) throw new Error('the VM did not accept the check request');
+    showCampaignToast('✓ Moved to the Cloud VM · acceptance check queued automatically.', 6500);
+    return true;
+  } catch (e) {
+    showCampaignToast(`Campaign moved, but its automatic acceptance check could not start (${e && e.message ? e.message : 'no answer'}). Use Run check now.`, 9000);
+    return false;
+  }
+}
+
+// Both card surfaces repaint off their own polls (2s local, 5s cloud); this
+// just stops them sitting a tick behind the move.
+function _hoRefresh() {
+  try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* best-effort */ }
+}
+
+// The handover is finished when the SERVER says so, never when a timer says so.
+// POST /api/campaign/:id/handover answers only after stopLocalAndConfirm has
+// watched this Mac actually stop and the target side has actually started, so
+// its 2xx is the one honest completion signal available. The old banner removed
+// itself after five seconds whether or not the switch had finished, which is
+// the UI reporting a state it has not verified.
+function _hoLanded() {
+  if (!_hoMove) return;
+  _hoMove.landed = true;
+  _hoRefresh();
+  // One beat of confirmation, then it steps aside. It does not blink out.
+  setTimeout(() => {
+    if (!_hoMove) return;
+    _hoMove.out = true;
+    document.querySelectorAll('.vj-live.is-handover').forEach((el) => el.classList.add('out'));
+    setTimeout(() => {
+      _hoMove = null;
+      // Some state branches render only the rich stage and therefore do not
+      // call applyLiveBanner on this exact tick. Clear the transfer class here
+      // as well so the destination stage can never remain hidden after arrival.
+      document.querySelectorAll('.vj-card.is-handover-active')
+        .forEach((el) => el.classList.remove('is-handover-active'));
+      _hoRefresh();
+    }, 460);
+  }, 2600);
+}
+
+// The move itself. NO client-side timeout on purpose: the local → VM direction
+// can take up to 120s while the send loop unwinds, and a client that gives up
+// early reports a failure for a move that actually succeeded — which is the
+// exact bug this feature exists to end.
+window.campaignHandover = async function(id, to, btn, phase = '') {
+  if (_whBusy) return;
+  _whAsk = null; _whMsg = null;
+  liveStatusForcedOpen = true;
+  _whBusy = { id: String(id), to };
+  // The card that was clicked knows the campaign's name, so the banner can say
+  // it out loud instead of "this campaign".
+  const _handoverStatus = (() => {
+    try {
+      const fromButton = btn && btn.closest('.wh-host') && btn.closest('.wh-host')._status;
+      if (fromButton) return fromButton;
+      const item = _snItemsById.get(String(id));
+      return item ? statusFromItem(item) : null;
+    } catch (_) { return null; }
+  })();
+  const _hoName = (() => {
+    try { return (_handoverStatus || {}).name || ''; }
+    catch (_) { return ''; }
+  })();
+  // stopLocalAndConfirm intentionally clears the local singleton before the VM
+  // campaign is created. Keep the last truthful source snapshot through that
+  // gap; otherwise the 2s local poll paints "FINISHED / unnamed / 0 of 0" and
+  // makes a healthy handover look destructive.
+  try { _whHold = _handoverStatus || null; }
+  catch (_) { _whHold = null; }
+  _hoMove = { id: String(id), to: to === 'local' ? 'local' : 'cloud', name: _hoName, landed: false, out: false };
+  whereRepaint();
+  _hoRefresh();
+  try {
+    const r = await fetch(`/api/campaign/${encodeURIComponent(id)}/handover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, phase }),
+    });
+    let d = {};
+    try { d = await r.json(); } catch (_) { d = {}; }
+    if (!r.ok) {
+      // Every refusal the server sends carries its own sentence (sweep_in_flight,
+      // not_local, not_resumable, source_still_running all do). Only a server
+      // that answered nothing at all falls back, and even that says where the
+      // campaign is.
+      _whMsg = { id: String(id), text: d.error || `The move was refused (HTTP ${r.status}), so the campaign is still where it was.` };
+      // Refused: nothing moved, so there is nothing to confirm. The banner goes
+      // at once and the server's own sentence takes over on the control.
+      _hoMove = null;
+    } else {
+      // A local → VM continuation is a newly-dispatched engine campaign and
+      // therefore has a NEW id. Follow the id returned by handleStartCloud, not
+      // the local singleton id used to initiate the request.
+      const targetId = String(d.id || id);
+      _handoverOwner.set(targetId, to === 'local' ? 'local' : 'vm');
+      if (_hoMove) _hoMove.id = targetId;
+      if (_whBusy) _whBusy.id = targetId;
+      // The card must FOLLOW the campaign, not stay with the corpse it left
+      // behind. A handover to the VM halts the local singleton, so the campaign
+      // tab went on rendering that singleton's end state and announced FINISHED
+      // for a campaign that was alive on the VM with every lead still to do.
+      // Pointing the cloud view at it makes renderActiveCard take over with the
+      // real side's status (it already does this whenever no LOCAL campaign is
+      // running or monitoring). Moving BACK to this Mac drops the cloud view for
+      // the same reason, so the local poll owns the card again.
+      try {
+        if (to === 'local') {
+          if (typeof stopViewingCloudCampaign === 'function') stopViewingCloudCampaign();
+          // The cloud card owns a separate poller. Returning here stops that
+          // poller, but the local poller may also have been retired when the
+          // source singleton ended during the earlier VM handover. Without
+          // explicitly restarting it the card freezes on the ONE snapshot from
+          // _hoRefresh; Pause appears to "fix" it only because Pause performs a
+          // fresh read. Ownership handover must include polling ownership too.
+          if (typeof startPolling === 'function') startPolling();
+        } else {
+          _viewingCloudId = targetId;
+          await _refreshCloudActiveStatus(targetId);
+          if (typeof _startCloudCardPoll === 'function') _startCloudCardPoll();
+        }
+      } catch (_) { /* the board still shows the truth if this fails */ }
+      // Do not declare the switch complete until the destination has been asked
+      // to check. A failed check does NOT roll back a successful ownership move;
+      // it is reported separately and Run check now remains available.
+      await _startHandoverCheck(targetId, to, phase, d);
+      _hoLanded();
+    }
+  } catch (e) {
+    _whMsg = { id: String(id), text: `This app could not reach the server to move the campaign (${e && e.message ? e.message : 'no answer'}). Nothing was moved.` };
+    _hoMove = null;
+  } finally {
+    _whBusy = null;
+    _whHold = null;
+    whereRepaint();
+    // Both surfaces re-poll on their own (2s local, 5s cloud); this just stops
+    // the card sitting on a stale side for a tick.
+    try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* best-effort */ }
+  }
+};
+
+// While the operator is viewing ONE campaign's live status, a poller carrying a
+// DIFFERENT campaign must not repaint the shared #active-card.
+//
+// pollStatus (app.js:15668) fires every 2s on EVERY route with the local
+// /api/campaign/status snapshot and had no such check, so opening a stopped
+// cloud campaign painted it correctly for one tick and was then overwritten by
+// whatever campaign happened to be live on this Mac (screen recording
+// 2026-08-27 17:18: Open on "CC+IC TOAST TEST" showed TEST_24/08_CC+IC_A,
+// which had been handed to this Mac and was monitoring).
+//
+// Fails OPEN on purpose: an unidentified status still paints, so clearing the
+// card (renderActiveCard(null)) and any legacy caller keep working. A campaign
+// ADOPTED by this Mac reports the cloud id it adopted (src/campaign.js:6428),
+// so viewing the campaign that is genuinely running locally still matches.
+function activeCardAcceptsStatus(viewingId, statusId) {
+  if (!viewingId || !statusId) return true;
+  return String(statusId) === String(viewingId);
+}
+window.activeCardAcceptsStatus = activeCardAcceptsStatus;
+
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
+  // During a handover the source is stopped before the target is created. The
+  // empty singleton status in that deliberate interval is not a finished
+  // campaign; preserve the source card and let the handover banner explain the
+  // transition until the POST returns the target's real status.
+  if (_whBusy && _whHold) {
+    status = { ..._whHold, running: true };
+  }
+  // The operator is looking at one specific campaign — every other campaign's
+  // poller has to wait its turn. See activeCardAcceptsStatus above.
+  if (!activeCardAcceptsStatus(_viewingCloudId, status && (status.id || status.rawId))) return;
   // Launch takeover: a cloud CC+IC launch spends minutes in the local primary
   // handshake + the start-cloud dispatch, during which NO campaign row exists
   // anywhere — the 2s local poll would paint "No campaign running" over the top.
@@ -25111,12 +28748,12 @@ window.renderActiveCard = function(status) {
   // outright. Cleared by endCloudLaunch(). See cloudLaunchStatus().
   const _launchStatus = (typeof cloudLaunchStatus === 'function') ? cloudLaunchStatus() : null;
   if (_launchStatus) status = _launchStatus;
-  // Cloud-view takeover (card #2): when the operator opened a VM campaign, render
-  // THAT campaign's live status into this same card — unless a LOCAL campaign is
-  // genuinely running/monitoring (local always wins, never hijacked). See
-  // feedback_two_live_status_cards.
-  if (_viewingCloudId && !(status && (status.running || status.state === 'monitoring'))) {
-    if (window.__cloudActiveStatus) {
+  // Cloud-view takeover (card #2): the campaign explicitly opened by the
+  // operator owns this card. The old local-always-wins exception let each local
+  // poll overwrite SAS with TEST, then the cloud poll painted SAS back.
+  if (_viewingCloudId) {
+    if (window.__cloudActiveStatus
+        && String(window.__cloudActiveStatus.id || '') === String(_viewingCloudId)) {
       status = window.__cloudActiveStatus;
     } else {
       // v2.160.53: viewing a SPECIFIC cloud campaign but its status hasn’t loaded
@@ -25126,12 +28763,37 @@ window.renderActiveCard = function(status) {
       return;
     }
   }
+  // The singleton and dashboard clone share the same card actions. Keep the
+  // campaign identity and sheet target on the card itself so Open sheet never
+  // depends on whichever campaign happens to be selected in the wizard.
+  card.dataset.campaignId = String((status && (status.rawId || status.id)) || '');
+  card.dataset.sheetUrl = String((status && (status.sheetUrl || status.sheet_url))
+    || _cloudSheetUrls.get(String((status && (status.rawId || status.id)) || '')) || '');
+  // The singleton uses the same complete state-to-appearance contract as each
+  // expanded dashboard clone. This must happen before any early-return branch.
+  try { applyVjCardAppearance(card, status); } catch (_) { /* appearance is best-effort */ }
+  // Before the branching too: every one of the state branches below returns
+  // early, and an errored campaign must not keep a panel a previous one left.
+  try { renderFailedStartRetry(card, status); } catch (_) { /* retry panel is best-effort */ }
   try { _adaptActiveCardControls(card, status); } catch (_) { /* control adaptation is best-effort */ }
+  // Which side is doing the work, and the control that moves it. Painted once
+  // here rather than inside each state branch below: it is the same answer for
+  // a sending, checking or monitoring campaign, and it removes itself for any
+  // state that has no side to name.
+  try { renderWhereControl(card, status); } catch (_) { /* handover control is best-effort */ }
+  // The per-account panel. Painted here rather than inside a state branch: the
+  // finished and idle branches below return early, and an empty accountPanel
+  // hides the panel by itself, so one call covers every state.
+  try { renderRunPanel(card, status); } catch (_) { /* panel is best-effort */ }
   // A campaign in the monitoring phase has running:false but is NOT idle —
   // it's watching for acceptances. The card must render it, not fall through
   // to "No campaign running" (the dashboard's half of the CC+IC/CC+DM
   // monitoring story; the cockpit ring already handled this state).
   const isMonitoring = !!(status && !status.running && status.state === 'monitoring');
+  const isInterrupted = !!(status && (status.state === 'interrupted' || status.interrupted));
+  const isDailyWait = !!(status && status.state === 'waiting_daily_reset');
+  const isNeedsReview = !!(status && status.state === 'needs_review');
+  card.classList.toggle('is-interrupted', isInterrupted);
   // A cloud campaign that's still pending/queued on the VM (worker scaling up,
   // hasn’t claimed it yet). Not running, not monitoring, and NOT finished —
   // render a "Launching…" state so the operator doesn't mistake it for done and
@@ -25142,14 +28804,97 @@ window.renderActiveCard = function(status) {
   // stopped, or errored) — keep the log + details visible so the operator can
   // review what happened, instead of wiping straight to "No campaign running".
   // Detected by: not running, not monitoring, but logs exist from this session.
-  const isFinished = !!(status && !status.running && !isMonitoring && !isLaunching
+  const isFinished = !!(status && !status.running && !isMonitoring && !isInterrupted && !isLaunching && !isDailyWait && !isNeedsReview
     && Array.isArray(status.logs) && status.logs.length > 0);
+  if (isDailyWait || isNeedsReview) {
+    card.classList.remove('is-empty', 'is-monitor', 'is-queued', 'is-done');
+    card.classList.toggle('is-waiting', isDailyWait);
+    card.classList.toggle('is-interrupted', isNeedsReview);
+    const total = Number(status.totalTargets) || 0;
+    const done = Number(status.totalProcessed) || 0;
+    const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+    v3SetText('activeName', status.name || '(unnamed)');
+    v3SetText('activeEyebrow', isDailyWait ? 'Waiting for daily reset' : 'Needs review');
+    v3SetText('activePct', String(pct));
+    v3SetText('activeSent', String(done));
+    v3SetText('activeTotal', String(total));
+    v3SetText('activeAccounts', String((status.profileIds || []).length));
+    v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
+    v3SetText('sendingLbl', isDailyWait ? 'Sending resumes automatically' : 'Automatic work paused');
+    const resume = status.resumeAt ? new Date(status.resumeAt) : null;
+    const resumeLabel = resume && !Number.isNaN(resume.getTime())
+      ? resume.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'after the daily reset';
+    v3SetText('batchEta', isDailyWait ? resumeLabel : 'operator action required');
+    const bar = card.querySelector('.vj-hbar > i');
+    if (bar) bar.style.width = `${pct}%`;
+    const liveEl = document.getElementById('active-live');
+    if (liveEl) {
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-checking', 'is-waking', 'is-paused', 'is-outcome');
+      liveEl.classList.toggle('is-interrupted', isNeedsReview);
+      v3SetText('activeLiveIco', isDailyWait ? '◷' : '■');
+      v3SetText('activeLiveL1', isDailyWait ? 'Daily invitation limit reached' : 'Campaign needs attention');
+      v3SetText('activeLiveL2', isDailyWait
+        ? `${Math.max(0, total - done)} leads remain safely queued · resumes ${resumeLabel}`
+        : 'Open the log for the named problem and its recommended action. Nothing retries in the background.');
+      applyLiveBanner(liveEl, status);
+    }
+    if (!renderLiveStage(card, status)) _hideStage(card);
+    _setActiveDetails(true);
+    const logEl = document.getElementById('active-log');
+    if (logEl) logEl.innerHTML = (status.logs || []).slice(-200).map(v3RenderLogLine).join('');
+    window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
+    window.__activeCardActive = true;
+    return;
+  }
+  if (isInterrupted) {
+    card.classList.remove('is-empty', 'is-monitor', 'is-queued');
+    const f = vjCardFields(status);
+    v3SetText('activeName', f.name);
+    v3SetText('activeEyebrow', f.eyebrow);
+    v3SetText('activePct', String(f.pct));
+    v3SetText('activeSent', String(f.done));
+    v3SetText('activeTotal', String(f.total));
+    v3SetText('activeAccounts', String(f.accountsCount));
+    v3SetText('activeAccepted', f.accepted);
+    v3SetText('sendingLbl', f.sendingLbl);
+    v3SetText('batchEta', 'stopped safely');
+    const bar = card.querySelector('.vj-hbar > i');
+    if (bar) bar.style.width = `${f.pct}%`;
+    const liveEl = document.getElementById('active-live');
+    const la = buildLiveActivity(status);
+    if (liveEl) {
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-checking', 'is-waking', 'is-paused');
+      liveEl.classList.add('is-interrupted');
+      v3SetText('activeLiveIco', la.icon);
+      const _sendResume = isMonitoring && !status.monitoringCheckInProgress && status.resumeAt
+        ? new Date(status.resumeAt) : null;
+      const _sendResumeLabel = _sendResume && !Number.isNaN(_sendResume.getTime())
+        ? _sendResume.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      v3SetText('activeLiveL1', _sendResumeLabel ? 'Acceptance checks continue' : la.l1);
+      v3SetText('activeLiveL2', _sendResumeLabel
+        ? `${Math.max(0, (Number(status.totalTargets) || 0) - (Number(status.totalProcessed) || 0))} unsent leads resume ${_sendResumeLabel}`
+        : la.l2);
+      applyLiveBanner(liveEl, status);
+    }
+    // Recovery uses the same complete card as every other state. The controls
+    // below it remain the existing Resume checks / Resume sending actions.
+    const staged = renderLiveStage(card, status);
+    if (liveEl && staged) liveEl.hidden = true;
+    _setActiveDetails(true);
+    const logEl = document.getElementById('active-log');
+    if (logEl) logEl.innerHTML = (status.logs || []).slice(-200).map(v3RenderLogLine).join('');
+    window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
+    window.__activeCardActive = true;
+    return;
+  }
   if (isLaunching) {
     card.classList.remove('is-empty', 'is-monitor');
     card.classList.add('is-queued');
     const total = Number(status.totalTargets) || 0;
     v3SetText('activeName', status.name || '(unnamed)');
-    v3SetText('activeEyebrow', 'Launching…');
+    v3SetText('activeEyebrow', status.connectionUnknown ? 'Connection unavailable' : 'Launching…');
     v3SetText('activePct', '0');
     v3SetText('activeSent', '0');
     v3SetText('activeTotal', String(total));
@@ -25163,7 +28908,9 @@ window.renderActiveCard = function(status) {
     if (bar) bar.style.width = '0%';
     const liveEl = document.getElementById('active-live');
     if (liveEl) liveEl.hidden = true;
-    _hideStage(card);
+    // The preparation/connection stage is useful from the FIRST queued tick,
+    // not only after the worker publishes its first browser event.
+    if (!renderLiveStage(card, status)) _hideStage(card);
     const profEl = document.getElementById('active-profiles');
     if (profEl) { profEl.hidden = true; profEl.innerHTML = ''; }
     try { applyCheckSectionMode(status.mode); } catch (_) { /* section relabel best-effort */ }
@@ -25185,26 +28932,55 @@ window.renderActiveCard = function(status) {
     return;
   }
   card.classList.remove('is-queued');
+  // Handed to this Mac, and nothing is running here: the app was closed, or the
+  // move landed on an idle machine. "Finished" is a lie in that state, and it is
+  // exactly the lie that makes an operator stop a campaign that was still owed
+  // work. The card says WAITING, and the RUNNING ON control below it says which
+  // side has to move for it to carry on.
+  const isWaitingHere = isFinished && status.stopReason !== 'operator-stopped'
+    && _whSide(status) === 'local' && (status._cloud || !!status.handoverAt);
   if (isFinished) {
     card.classList.remove('is-empty', 'is-monitor');
+    card.classList.toggle('is-waiting', isWaitingHere);
+    card.classList.toggle('is-done', !isWaitingHere);
     const total = Number(status.totalTargets) || 0;
     const done = Number(status.totalProcessed) || 0;
     const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+    const terminal = terminalPresentation(status);
+    card.classList.toggle('is-stopped', !isWaitingHere && !terminal.complete);
     v3SetText('activeName', status.name || '(unnamed)');
-    v3SetText('activeEyebrow', 'Finished');
+    v3SetText('activeEyebrow', isWaitingHere ? 'Waiting for this Mac' : terminal.label);
     v3SetText('activePct', String(pct));
     v3SetText('activeSent', String(done));
     v3SetText('activeTotal', String(total));
     v3SetText('activeAccounts', String((status.profileIds || []).length));
     v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
-    v3SetText('sendingLbl', 'Finished');
+    v3SetText('sendingLbl', isWaitingHere ? 'Waiting' : terminal.activity);
     v3SetText('batchEta', '—');
     const glyph = document.getElementById('activeGlyph');
     if (glyph) glyph.textContent = (typeof v3ModeBadge === 'function') ? v3ModeBadge(status.mode) : '';
     const bar = card.querySelector('.vj-hbar > i');
     if (bar) bar.style.width = pct + '%';
     const liveEl = document.getElementById('active-live');
-    if (liveEl) liveEl.hidden = true;
+    if (liveEl && isWaitingHere) {
+      // Waiting is a state, not a silence: say what stopped and what starts it
+      // again. Wording from the signed-off sketch's waiting card.
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-checking', 'is-waking', 'is-paused', 'is-outcome');
+      v3SetText('activeLiveIco', '◷');
+      v3SetText('activeLiveL1', 'Waiting for this Mac');
+      v3SetText('activeLiveL2', 'the app was closed · nothing is running · move it to the VM to keep going');
+      // Clears any beacon / readout / Stop the running card left behind.
+      applyLiveBanner(liveEl, status);
+    } else if (liveEl && !terminal.complete) {
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-checking', 'is-waking', 'is-paused');
+      liveEl.classList.add('is-outcome');
+      v3SetText('activeLiveIco', '■');
+      v3SetText('activeLiveL1', terminal.label);
+      v3SetText('activeLiveL2', terminal.explanation);
+      applyLiveBanner(liveEl, status);
+    } else if (liveEl) liveEl.hidden = true;
     // A finished run keeps its account pills. They are the only surface carrying
     // per-account state - sent counts, No credits / Logged out / Weekly cap - and
     // hiding the stage outright here is what made this card differ from the
@@ -25222,7 +28998,7 @@ window.renderActiveCard = function(status) {
       const lastN = status.logs.slice(-200);
       logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
       const head = card.querySelector('.vj-log-head .vj-details-head');
-      if (head) head.textContent = `Live log · ${lastN.length} events (finished)`;
+      if (head) head.textContent = `Live log · ${lastN.length} events${isWaitingHere ? ' (waiting)' : ' (finished)'}`;
       const moreBtn = document.getElementById('wiz-log-more');
       if (moreBtn) moreBtn.hidden = true;
     }
@@ -25325,6 +29101,8 @@ window.renderActiveCard = function(status) {
       v3SetText('activeLiveIco', la.icon);
       v3SetText('activeLiveL1', la.l1);
       v3SetText('activeLiveL2', la.l2);
+      // Same promoted band as the board strip's card, same function.
+      applyLiveBanner(liveEl, status);
     }
     // The stage supersedes the one-line version whenever the engine is naming a
     // person — they share the grid slot, so exactly one of them is ever shown.
@@ -25335,15 +29113,16 @@ window.renderActiveCard = function(status) {
   // so buildLiveActivity has nothing true to say. State what is actually
   // happening on this Mac — the operator's #1 question during the handshake.
   if (_isPreflight) {
-    _hideStage(card);
     const liveEl = document.getElementById('active-live');
-    if (liveEl) {
+    const staged = renderLiveStage(card, status);
+    if (liveEl && !staged) {
       liveEl.hidden = false;
       liveEl.classList.remove('is-checking', 'is-waking', 'is-paused');
       v3SetText('activeLiveIco', '🤝');
       v3SetText('activeLiveL1', status.preflightL1 || 'Sending connections to the primary account');
       v3SetText('activeLiveL2', status.preflightSub || 'Your Mac is doing this locally — the campaign moves to the cloud the moment it finishes.');
-    }
+      applyLiveBanner(liveEl, status);
+    } else if (liveEl) liveEl.hidden = true;
   }
   // Bug 14: once a campaign is launched, keep the live log visible through the
   // whole running → monitoring lifecycle. Auto-open the details panel on the
@@ -25359,8 +29138,10 @@ window.renderActiveCard = function(status) {
   const done = Number(status.totalProcessed) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   v3SetText('activeName', status.name || '(unnamed)');
-  v3SetText('activeEyebrow', _isPreflight ? 'Phase 0 · Primary handshake'
-    : isMonitoring ? 'Monitoring' : (status._paused || status.paused ? 'Paused' : 'Running'));
+  v3SetText('activeEyebrow', _isPreflight ? (status.hasHandshake === false ? 'Starting the campaign' : 'Phase 0 · Primary handshake')
+    : isMonitoring
+      ? (status.monitoringCheckInProgress ? 'Monitoring' : 'Paused · Monitoring')
+      : (status._paused || status.paused ? 'Paused' : 'Running'));
   v3SetText('activePct', String(pct));
   v3SetText('activeSent', String(done));
   v3SetText('activeTotal', String(total));
@@ -25373,7 +29154,7 @@ window.renderActiveCard = function(status) {
   const _waiting = !!(status.currentAction && status.currentAction.phase === 'waiting');
   v3SetText('sendingLbl', _isPreflight ? 'Connecting to primary'
     : isMonitoring
-      ? (status.monitoringCheckInProgress ? 'Checking now…' : 'Monitoring')
+      ? (status.monitoringCheckInProgress ? 'Checking now…' : 'Paused between checks')
       : (isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : (_waiting ? 'Waiting' : 'Sending'))));
   const glyph = document.getElementById('activeGlyph');
   if (glyph) glyph.textContent = v3ModeBadge(status.mode);
@@ -25400,6 +29181,7 @@ window.renderActiveCard = function(status) {
     logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
     const head = card.querySelector('.vj-log-head .vj-details-head');
     if (head) head.textContent = `Live log · last ${lastN.length} events`;
+    _pinLogToNewest(logEl, 'active-card');
     const moreBtn = document.getElementById('wiz-log-more');
     if (moreBtn) {
       // Show the toggle whenever there's more to reveal (or we're expanded).
@@ -25605,6 +29387,7 @@ function v3RenderMonitorHero(status) {
   }
   const lineEl = document.getElementById('monLine');
   if (lineEl) {
+    const monitorError = String(status.monitorCheckError || '').trim();
     const sent = Number(status.totalProcessed) || 0;
     const accepted = status.acceptedCount ?? '—';
     const cadMin = Number(status.checkIntervalMinutes) || 60;
@@ -25614,7 +29397,9 @@ function v3RenderMonitorHero(status) {
       ends = new Date(status.monitoringUntil).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
     }
     // Bug 10: "replies" removed from the dashboard.
-    lineEl.innerHTML = _monLineHtml(sent, accepted, cad, ends, status.followUp);
+    lineEl.innerHTML = monitorError
+      ? `<b style="color:var(--red)">Monitoring needs attention</b> · ${escHtml(monitorError)}`
+      : _monLineHtml(sent, accepted, cad, ends, status.followUp);
   }
   // v2.160.35: follow-up dual hero — the ETA stands beside the check timer.
   const fu = status.followUp;
@@ -25672,6 +29457,32 @@ function _tickMonHeroCountdown() {
 }
 setInterval(_tickMonHeroCountdown, 1000);
 
+function _humanizeLegacyMonitoringLog(message) {
+  const text = String(message || '');
+  const old = text.match(/^🛏 Monitoring adopted on this Mac · next check in (\d+) min · ends (\S+)$/);
+  if (!old) return text;
+  const end = new Date(old[2]);
+  const endText = Number.isFinite(end.getTime())
+    ? end.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : 'the saved monitoring end date';
+  return `🛏 Monitoring moved to this Mac · checks every ${old[1]} min · monitoring ends ${endText}`;
+}
+
+// HH:MM:SS for today, "27 Aug · 16:36" for anything older. A clock alone made a
+// day-old log indistinguishable from a live one: a campaign stranded mid-stop
+// since yesterday 16:36 drew a STOPPING… card whose newest line read "16:36",
+// and it took a database query to prove it was not happening now (operator,
+// 2026-08-28). Exported for tests via window.
+function logClock(t, now = new Date(), seconds = true) {
+  const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+  const hhmmss = hhmm + ':' + String(t.getSeconds()).padStart(2, '0');
+  const sameDay = t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth() && t.getDate() === now.getDate();
+  if (sameDay) return seconds ? hhmmss : hhmm;
+  const day = t.toLocaleDateString([], { day: 'numeric', month: 'short' });
+  return `${day} · ${hhmm}`;
+}
+window.logClock = logClock;
+
 function v3RenderLogLine(rawLine) {
   const safe = (typeof escHtml === 'function') ? escHtml : (s) =>
     String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -25680,15 +29491,21 @@ function v3RenderLogLine(rawLine) {
   // Best-effort parse to extract a short time + event class.
   let timeStr = '';
   let evtStr = 'log';
-  let restStr = String(rawLine);
+  // Some producers hand us { t, line } rows. Take the line; never let
+  // String(obj) become "[object Object]", which this function's own timestamp
+  // pattern then strips down to an empty message and draws as a blank row.
+  let restStr = (rawLine && typeof rawLine === 'object' && rawLine.line != null)
+    ? String(rawLine.line) : String(rawLine);
+  if (restStr === '[object Object]') return '';
   const isoMatch = restStr.match(/^\[([^\]]+)\]\s*(.*)$/);
   if (isoMatch) {
     const t = new Date(isoMatch[1]);
     if (!Number.isNaN(t.getTime())) {
-      timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0');
+      timeStr = logClock(t);
     }
     restStr = isoMatch[2];
   }
+  restStr = _humanizeLegacyMonitoringLog(restStr);
   let cls = '';
   // Roll-up summary lines are neutral, not errors — "— N sent · N errors",
   // the cloud footer "Σ Total · N sent · N errors · N pending", and its
@@ -25731,11 +29548,11 @@ function _logLineToPlain(raw) {
       const hh = String(t.getHours()).padStart(2, '0');
       const mm = String(t.getMinutes()).padStart(2, '0');
       const ss = String(t.getSeconds()).padStart(2, '0');
-      return `${hh}:${mm}:${ss}  ${m[2]}`;
+      return `${hh}:${mm}:${ss}  ${_humanizeLegacyMonitoringLog(m[2])}`;
     }
-    return m[2];
+    return _humanizeLegacyMonitoringLog(m[2]);
   }
-  return s;
+  return _humanizeLegacyMonitoringLog(s);
 }
 
 // Copy the FULL live log (all events, not just the 6 shown) to the clipboard.
@@ -26018,7 +29835,102 @@ window.dashPauseActive = async function() {
   } catch (err) { console.error('[v3] dashPauseActive:', err); }
 };
 
+// Resume is deliberately a decision, never an icon that silently changes
+// execution phase or machine. The existing Ortus confirm surface keeps this
+// consistent in the builder and the cloned expanded dashboard card.
+const _resumeDecisionInFlight = new Set();
+window.openCampaignResumeDecision = async function(id, phase = 'sending', current = 'local', btn = null) {
+  const sendingFromMonitoring = phase === 'sending-from-monitoring';
+  const requestedPhase = sendingFromMonitoring ? 'sending' : phase;
+  const resumeKey = `${String(id || 'local-active')}:${String(phase || 'sending')}`;
+  if (_resumeDecisionInFlight.has(resumeKey)) return;
+  _resumeDecisionInFlight.add(resumeKey);
+  if (btn) {
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+  }
+  let committed = false;
+  let accepted = false;
+  try {
+  const monitoring = requestedPhase === 'monitoring';
+  const currentLabel = current === 'vm' ? 'Cloud VM' : 'This Mac';
+  const otherLabel = current === 'vm' ? 'This Mac' : 'Cloud VM';
+  const keepCurrent = await appConfirm(
+    monitoring
+      ? `Resume acceptance checks only on ${currentLabel}? Sending will stay stopped.`
+      : `Continue sending where it left off on ${currentLabel}? Already-actioned leads will not be sent again.`,
+    { title: monitoring ? 'Resume monitoring' : 'Resume campaign', okLabel: `Continue on ${currentLabel}`, cancelLabel: `Continue on ${otherLabel}`, machineChoice: true },
+  );
+  if (keepCurrent == null) return;
+  if (!keepCurrent) {
+    const target = current === 'vm' ? 'local' : 'vm';
+    committed = true;
+    return campaignHandover(id, target, null, monitoring ? 'monitoring' : 'sending');
+  }
+  committed = true;
+  if (monitoring) {
+    if (current === 'vm') return setCloudAutoChecks(id, true, null);
+    const localStatus = await fetch('/api/campaign/status').then((r) => r.json()).catch(() => ({}));
+    await fetch('/api/runtime/resumed', { method: 'POST' }).catch(() => {});
+    // After sleep/quit there is no local monitoring singleton left to wake.
+    // Re-adopt the durable campaign; the handover endpoint preserves its
+    // monitoring phase and must not restart sender work.
+    if (id && id !== 'local-active' && localStatus.state !== 'monitoring') {
+      return campaignHandover(id, 'local', null, 'monitoring');
+    }
+    if (typeof showCampaignToast === 'function') showCampaignToast('Monitoring remains active on this Mac. Sending was not restarted.', 6000);
+    return pollStatus();
+  }
+  // A monitoring campaign is not paused. Its Play/Start-now control means
+  // "continue the unsent queue", which is the restart endpoint. Routing this
+  // through /resume used to produce an idempotent no-op: no engine event, no
+  // log line, and a permanently disabled button. Keep the origin explicit in
+  // the control contract so current and future monitoring cards cannot regress.
+  if (current === 'vm') {
+    if (sendingFromMonitoring) {
+      accepted = await restartCloudCampaignUI(id, false);
+      return accepted;
+    }
+    return pauseCloudCampaignUI(id, true);
+  }
+  const status = await fetch('/api/campaign/status').then((r) => r.json()).catch(() => ({}));
+  if (status.state === 'interrupted') {
+    await fetch('/api/runtime/resumed', { method: 'POST' }).catch(() => {});
+    const restored = await fetch('/api/campaign/restore', { method: 'POST' });
+    if (!restored.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('This Mac could not restore the campaign. Nothing was sent; choose the Cloud VM or retry.', 8000);
+      return;
+    }
+    if (typeof showCampaignToast === 'function') showCampaignToast('Restored on this Mac — continuing where it left off.', 6000);
+    accepted = true;
+    return pollStatus();
+  }
+  // A durable cloud row can still be owned by This Mac after the process that
+  // adopted it disappeared. There is no local paused singleton to resume; ask
+  // the handover endpoint to re-adopt that exact campaign instead of invoking
+  // the legacy singleton resume preview (which has no campaign to act on).
+  if (id && id !== 'local-active' && !status.running && status.state !== 'monitoring') {
+    const result = await campaignHandover(id, 'local', null);
+    accepted = true;
+    return result;
+  }
+  const result = await onResumeClicked();
+  accepted = true;
+  return result;
+  } finally {
+    _resumeDecisionInFlight.delete(resumeKey);
+    // A successful action repaints this control from server state. A cancelled
+    // decision restores the same button, while the keyed lock prevents a
+    // second request from another copy of the card during the operation.
+    if (btn && btn.isConnected && !accepted) {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+    }
+  }
+};
+
 window.dashStopActive = async function() {
+  if (cancelCloudLaunch()) return;
   // Viewing a cloud campaign's card → Stop must hit the ENGINE, not the local
   // campaign (there isn't one). See feedback_two_live_status_cards.
   if (_viewingCloudId) { stopCloudCampaignUI(_viewingCloudId); return; }
@@ -26420,6 +30332,7 @@ const V3_SVG_ARCHIVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 // Campaign-control glyphs for the dashboard strip footer (pause/stop/dismiss).
 const V3_SVG_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg>';
 const V3_SVG_STOP = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+const V3_SVG_EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.7"/></svg>';
 const V3_SVG_XMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
 
 function v3Ordinal(n) {

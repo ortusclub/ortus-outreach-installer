@@ -1,0 +1,142 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Primary recall — 3 variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0a0a;--bg-soft:rgba(255,255,255,.03);--ink:#fafafa;--gray:#999;
+        --hairline:rgba(255,255,255,.15);--hairline-soft:rgba(255,255,255,.06);--gold:#F7BE68;
+        --display:'Bebas Neue','Arial Narrow',sans-serif;--body:'Hanken Grotesk',-apple-system,sans-serif;}
+  *{box-sizing:border-box}
+  body{margin:0;background:#000;color:var(--ink);font-family:var(--body);padding:40px 28px 70px}
+  h1{font-family:var(--display);font-size:2rem;letter-spacing:.02em;margin:0 0 6px}
+  .lede{color:var(--gray);max-width:78ch;margin:0 0 32px;line-height:1.55}
+  .lede code{color:var(--ink);background:var(--bg-soft);padding:1px 5px;border-radius:4px;font-size:.85em}
+  .row{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap}
+  .col{flex:1 1 340px;min-width:330px;max-width:410px}
+  .tag{font-family:var(--display);font-size:1.15rem;letter-spacing:.08em;color:var(--gold);margin:0 0 4px}
+  .note{color:var(--gray);font-size:.85rem;line-height:1.45;margin:0 0 14px;min-height:4.3em}
+  .card{background:var(--bg);border:1px solid var(--hairline);border-radius:14px;padding:22px 20px}
+  .sec{font-family:var(--display);font-size:1rem;letter-spacing:.09em;color:var(--gray);margin:0 0 14px}
+  .lab{font-size:.78rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin:0 0 6px}
+  .inp{width:100%;background:var(--bg-soft);border:1px solid var(--hairline);border-radius:9px;
+       padding:11px 13px;color:var(--ink);font-family:var(--body);font-size:.92rem}
+  .inp.typed{border-color:var(--ink)}
+  .hint{color:var(--gray);font-size:.78rem;margin:6px 0 16px;line-height:1.4}
+  .caret{float:right;color:var(--gray)}
+  /* dropdown */
+  .dd{border:1px solid var(--ink);border-top:none;border-radius:0 0 9px 9px;background:#0d0d0d;margin-top:-1px}
+  .dd .it{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+          padding:10px 13px;border-top:1px solid var(--hairline-soft);cursor:pointer}
+  .dd .it:first-child{border-top:none}
+  .dd .it.on{background:var(--bg-soft)}
+  .dd .nm{font-size:.9rem;font-weight:500}
+  .dd .nm em{font-style:normal;border-bottom:1px solid var(--gold);color:var(--gold)}
+  .dd .sl{color:var(--gray);font-size:.76rem;font-family:ui-monospace,monospace}
+  .dd .use{color:var(--gray);font-size:.72rem;white-space:nowrap}
+  .dd .new{color:var(--gold);font-size:.85rem;padding:10px 13px;border-top:1px solid var(--hairline-soft)}
+  /* filled url */
+  .filled{display:flex;justify-content:space-between;align-items:center;gap:10px;
+          background:var(--bg-soft);border:1px solid var(--hairline-soft);border-radius:9px;padding:10px 13px}
+  .filled .u{font-family:ui-monospace,monospace;font-size:.79rem;color:var(--gray);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .filled .ch{color:var(--gray);font-size:.78rem;text-decoration:underline;cursor:pointer;flex:none}
+  .ok{color:#3fb950;font-size:.78rem;margin:6px 0 16px}
+  /* chips */
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .chip{border:1px solid var(--hairline);border-radius:9999px;padding:6px 13px;font-size:.83rem;cursor:pointer}
+  .chip.on{border-color:var(--ink);background:var(--ink);color:#000;font-weight:600}
+  .chip .n{opacity:.55;font-size:.75rem;margin-left:6px}
+  .chip.on .n{opacity:.6}
+  /* B rows */
+  .prow{display:flex;justify-content:space-between;align-items:center;gap:10px;
+        border:1px solid var(--hairline-soft);border-radius:9px;padding:12px 13px;margin-bottom:7px;cursor:pointer}
+  .prow.on{border-color:var(--ink);background:var(--bg-soft)}
+  .prow .l{min-width:0}
+  .prow .nm{font-size:.92rem;font-weight:500;margin-bottom:2px}
+  .prow .sl{color:var(--gray);font-size:.76rem;font-family:ui-monospace,monospace;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src{color:var(--gray);font-size:.72rem;white-space:nowrap;text-align:right}
+  .where{margin-top:16px;padding-top:14px;border-top:1px solid var(--hairline-soft);
+         color:var(--gray);font-size:.78rem;line-height:1.5}
+  .where b{color:var(--ink);font-weight:600}
+</style>
+
+<h1>Primary person — remember who it was</h1>
+<p class="lede">Every CC+IC campaign already saves <code>primaryName</code>, <code>primaryUrl</code>,
+<code>primaryIntroBody</code> and <code>primarySource</code> in its config, readable through
+<code>/launch-config</code>. So the list of people below is real history, not a new thing to maintain:
+nothing needs typing twice because it was already typed once. Today only the LAST one survives, in
+two localStorage keys.</p>
+
+<div class="row">
+
+  <div class="col">
+    <p class="tag">A · Type-ahead</p>
+    <p class="note">Exactly what you described. Keep both fields, and match on the name as you type.
+      Pick a match and the URL fills itself. Typing a brand-new name behaves exactly as it does today.</p>
+    <div class="card">
+      <p class="sec">PRIMARY PERSON</p>
+      <p class="lab">Name</p>
+      <input class="inp typed" value="Sam" style="border-radius:9px 9px 0 0">
+      <div class="dd">
+        <div class="it on"><span class="nm"><em>Sam</em> Adcock</span><span class="use">4 campaigns</span></div>
+        <div class="it"><span class="nm"><em>Sam</em>antha Reid</span><span class="use">1 campaign</span></div>
+        <div class="new">+ Use "Sam" as a new primary</div>
+      </div>
+      <p class="hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</p>
+      <p class="lab">LinkedIn URL</p>
+      <div class="filled"><span class="u">linkedin.com/in/sam-adcock</span><span class="ch">change</span></div>
+      <p class="ok">✓ Filled from your last campaign with Sam Adcock</p>
+      <div class="where">Cost: <b>one dropdown</b>. The URL field stays exactly where it is, so nothing
+        you already know how to use moves.</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <p class="tag">B · One picker</p>
+    <p class="note">The two fields collapse into one choice. A primary is a person, not a name and a
+      URL that happen to sit together, and picking the person fills everything at once, including the
+      intro body and which browser sends.</p>
+    <div class="card">
+      <p class="sec">PRIMARY PERSON</p>
+      <p class="lab">Who introduces</p>
+      <div class="prow on">
+        <span class="l"><div class="nm">Sam Adcock</div><div class="sl">linkedin.com/in/sam-adcock</div></span>
+        <span class="src">4 campaigns<br>your Chrome</span>
+      </div>
+      <div class="prow">
+        <span class="l"><div class="nm">Antonio Varlese</div><div class="sl">linkedin.com/in/antoniovarlese</div></span>
+        <span class="src">2 campaigns<br>GoLogin</span>
+      </div>
+      <div class="prow" style="border-style:dashed">
+        <span class="l"><div class="nm" style="color:var(--gold)">+ Someone else</div>
+        <div class="sl">type a name and a URL</div></span>
+      </div>
+      <div class="where">Also restores this person's <b>intro DM body</b> and <b>primary source</b>,
+        since the campaign config already carries both. Biggest change to what you look at today.</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <p class="tag">C · Recent chips</p>
+    <p class="note">Smallest possible change. The fields are untouched; a row of the people you have
+      actually used sits above them. One click fills both. No dropdown, nothing to dismiss.</p>
+    <div class="card">
+      <p class="sec">PRIMARY PERSON</p>
+      <p class="lab">Recent</p>
+      <div class="chips">
+        <span class="chip on">Sam Adcock<span class="n">4</span></span>
+        <span class="chip">Antonio Varlese<span class="n">2</span></span>
+        <span class="chip">Marigona<span class="n">1</span></span>
+      </div>
+      <p class="lab">Name</p>
+      <input class="inp typed" value="Sam Adcock">
+      <p class="hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</p>
+      <p class="lab">LinkedIn URL</p>
+      <input class="inp typed" value="https://www.linkedin.com/in/sam-adcock">
+      <p class="ok">✓ Filled from your last campaign with Sam Adcock</p>
+      <div class="where">Nothing is hidden and nothing is clever. Stops scaling past about
+        <b>5 people</b>, at which point A is the answer.</div>
+    </div>
+  </div>
+
+</div>

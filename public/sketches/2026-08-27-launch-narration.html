@@ -1,0 +1,152 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Launch narration + the waiting line</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0a0a;--bg-soft:rgba(255,255,255,.03);--ink:#fafafa;--gray:#999;
+        --hairline:rgba(255,255,255,.15);--hairline-soft:rgba(255,255,255,.06);
+        --gold:#F7BE68;--red:#f85149;--green:#3fb950;--blue:#6ea3d4;
+        --display:'Bebas Neue','Arial Narrow',sans-serif;--body:'Hanken Grotesk',-apple-system,sans-serif;
+        --mono:'JetBrains Mono',ui-monospace,monospace;}
+  *{box-sizing:border-box}
+  body{margin:0;background:#000;color:var(--ink);font-family:var(--body);padding:38px 28px 70px}
+  h1{font-family:var(--display);font-size:2rem;letter-spacing:.02em;margin:0 0 6px}
+  .lede{color:var(--gray);max-width:82ch;margin:0 0 30px;line-height:1.55}
+  h2{font-family:var(--display);font-size:1.3rem;letter-spacing:.06em;margin:34px 0 4px}
+  .sub{color:var(--gray);font-size:.87rem;margin:0 0 16px;max-width:80ch;line-height:1.5}
+  .row{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+  .col{flex:1 1 430px;min-width:400px}
+  .tag{font-size:.75rem;letter-spacing:.09em;text-transform:uppercase;color:var(--gray);margin:0 0 8px}
+  .tag.bad{color:var(--red)} .tag.good{color:var(--green)}
+  .logbox{background:var(--bg);border:1px solid var(--hairline);border-radius:11px;
+          padding:12px 14px;font-family:var(--mono);font-size:.735rem;line-height:1.75}
+  .l{display:flex;gap:10px}
+  .l .ts{color:#5c5c5c;flex:none;width:42px}
+  .l .k{flex:none;width:38px;font-size:.66rem;letter-spacing:.05em}
+  .k.LOG{color:var(--gray)} .k.INFO{color:var(--blue)} .k.OK{color:var(--green)}
+  .k.WARN{color:var(--gold)} .k.ERR{color:var(--red)}
+  .l .m{color:#d7d7d7}
+  .l.new .m{color:var(--ink)}
+  .empty{color:#5c5c5c;font-style:italic;padding:22px 0;text-align:center}
+  .gap{color:var(--red);font-family:var(--body);font-size:.78rem;text-align:center;
+       padding:10px 0;border-top:1px dashed rgba(248,81,73,.35);border-bottom:1px dashed rgba(248,81,73,.35);margin:8px 0}
+  .card{background:var(--bg);border:1px solid var(--hairline);border-radius:13px;padding:20px 20px;margin-bottom:14px}
+  .eye{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin:0 0 6px}
+  .eye.b{color:var(--blue)}
+  .hl{font-family:var(--display);font-size:1.5rem;line-height:1.08;margin:0 0 8px}
+  .det{color:var(--gray);font-size:.87rem;line-height:1.5;margin:0 0 14px}
+  .facts{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;border-top:1px solid var(--hairline-soft);padding-top:11px}
+  .f{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:.82rem;border-bottom:1px solid var(--hairline-soft)}
+  .f span:first-child{color:var(--gray)} .f b{font-weight:500}
+  .accts{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+  .a{border:1px solid var(--hairline-soft);border-radius:9999px;padding:5px 12px;font-size:.79rem;color:var(--gray)}
+  .a b{color:var(--ink);font-weight:500}
+  .a.soon{border-color:var(--gold)} .a.soon b{color:var(--gold)}
+  .note{border-left:2px solid var(--hairline);padding-left:13px;color:var(--gray);
+        font-size:.83rem;line-height:1.55;margin-top:14px}
+  .note b{color:var(--ink);font-weight:600}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  td,th{text-align:left;padding:7px 10px;border-bottom:1px solid var(--hairline-soft);font-size:.83rem;vertical-align:top}
+  th{color:var(--gray);font-weight:500;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase}
+  td.w{color:var(--gray);white-space:nowrap;font-family:var(--mono);font-size:.75rem}
+</style>
+
+<h1>Constant updates, and what the waiting line should say</h1>
+<p class="lede">Three things from the recording: the log said <b>LAST 0 EVENTS</b> for the whole launch,
+the account-wait line does not explain itself, and the card lags reality by up to 10 seconds.
+Nothing below is built yet.</p>
+
+<h2>1 · The launch log</h2>
+<p class="sub">The launch card already exists and already narrates its four steps. What it does not do is
+write anything to the log, because <code>cloudLaunchStatus()</code> returns a hardcoded empty array.
+The rule I would apply: <b>every step says what it is about to do BEFORE it blocks</b>, so a slow step is
+a step you can name.</p>
+<div class="row">
+  <div class="col">
+    <p class="tag bad">NOW — the recording</p>
+    <div class="logbox">
+      <div class="empty">No events yet</div>
+      <div class="gap">↑ 58 seconds of this, then the engine's first line ↑</div>
+      <div class="l"><span class="ts">17:46</span><span class="k LOG">LOG</span><span class="m">📦 Campaign received by the engine — 23 leads imported</span></div>
+    </div>
+  </div>
+  <div class="col">
+    <p class="tag good">PROPOSED</p>
+    <div class="logbox">
+      <div class="l new"><span class="ts">17:45</span><span class="k LOG">LOG</span><span class="m">▶ Launch started — 3 accounts, Cloud VM</span></div>
+      <div class="l new"><span class="ts">17:45</span><span class="k INFO">INFO</span><span class="m">🤝 Primary handshake: on the VM — nothing opens on this Mac now</span></div>
+      <div class="l new"><span class="ts">17:45</span><span class="k INFO">INFO</span><span class="m">📄 Reading your lead sheet…</span></div>
+      <div class="l new"><span class="ts">17:46</span><span class="k OK">OK</span><span class="m">📄 Sheet read — 247 rows, 23 still to action</span></div>
+      <div class="l new"><span class="ts">17:46</span><span class="k INFO">INFO</span><span class="m">🔎 Pre-flight check on 3 accounts…</span></div>
+      <div class="l new"><span class="ts">17:46</span><span class="k OK">OK</span><span class="m">🔎 Pre-flight passed — 3 accounts usable, 0 blockers</span></div>
+      <div class="l new"><span class="ts">17:46</span><span class="k INFO">INFO</span><span class="m">☁︎ Handing the campaign to the VM…</span></div>
+      <div class="l"><span class="ts">17:46</span><span class="k LOG">LOG</span><span class="m">📦 Campaign received by the engine — 23 leads imported</span></div>
+    </div>
+  </div>
+</div>
+<div class="note">Every one of those lines wraps an <b>await that already exists</b> in the launch — the sheet
+read, the pre-flight call, the dispatch POST. No new work, no new requests. And when a step fails, the
+same line carries the reason instead of the launch dying into an alert box.</div>
+
+<h2>2 · The account-wait line</h2>
+<p class="sub">Today: <code>⏳ No account free right now — 3 resting between batches · retrying automatically</code>.
+It is true and it is useless: it names no account, gives no time, and "resting between batches" is
+internal vocabulary. It is also throttled to <b>one line every 10 minutes</b>, so the log goes quiet
+under it.</p>
+<div class="row">
+  <div class="col">
+    <p class="tag bad">NOW</p>
+    <div class="card">
+      <p class="eye">CAMPAIGN UPDATE</p>
+      <p class="hl">No account free right now</p>
+      <p class="det">3 resting between batches · retrying automatically</p>
+      <div class="facts">
+        <div class="f"><span>Why it is waiting</span><b>3 resting between batches</b></div>
+        <div class="f"><span>What happens next</span><b>the first available account is selected</b></div>
+        <div class="f"><span>Operator action</span><b>none</b></div>
+        <div class="f"><span>Engine heartbeat</span><b>watching for availability</b></div>
+      </div>
+      <div class="note">No answer to the only question worth asking: <b>how long?</b></div>
+    </div>
+  </div>
+  <div class="col">
+    <p class="tag good">PROPOSED</p>
+    <div class="card">
+      <p class="eye b">WAITING FOR AN ACCOUNT</p>
+      <p class="hl">First account free in 4 min 10 s</p>
+      <p class="det">Every account rests 6 minutes after finishing a batch, so none can start yet.
+        ton is next.</p>
+      <div class="facts">
+        <div class="f"><span>Soonest free</span><b>ton · 4 min 10 s</b></div>
+        <div class="f"><span>Then</span><b>gwyneth.samson · 5 min</b></div>
+        <div class="f"><span>Operator action</span><b>none, it starts itself</b></div>
+        <div class="f"><span>Leads</span><b>23 safely queued</b></div>
+      </div>
+      <div class="accts">
+        <span class="a soon"><b>ton</b> free in 4:10</span>
+        <span class="a"><b>khushbus</b> free in 5:02</span>
+        <span class="a"><b>gwyneth.samson</b> free in 5:44</span>
+      </div>
+      <div class="note">Log line becomes: <b>⏳ All 3 accounts are resting after their last batch · ton is
+        free first, in about 4 minutes · nothing to do</b>, and the countdown ticks on the card
+        between engine events.</div>
+    </div>
+  </div>
+</div>
+
+<h2>3 · The 10-second lag</h2>
+<p class="sub">Pressing Stop showed "Cloud campaign stopped" while the card kept saying it was sending.
+The card is not slow to draw, it is slow to <b>ask</b>.</p>
+<table>
+  <tr><th>Moment</th><th>Today</th><th>Proposed</th></tr>
+  <tr><td>You press Stop / Pause</td><td class="w">wait for the next 5s poll</td>
+      <td class="w">repaint immediately from the action's own response</td></tr>
+  <tr><td>Engine changes state on its own</td><td class="w">up to 5s</td>
+      <td class="w">up to 5s, unchanged</td></tr>
+  <tr><td>While a launch is in flight</td><td class="w">no log, 4-step card</td>
+      <td class="w">a log line per step, as above</td></tr>
+</table>
+<div class="note">Only the first row changes. An action you just took should never wait for a poll to be
+believed, and that is one repaint at the end of the existing Stop / Pause handlers, not a faster timer.
+<b>Polling harder is the wrong fix</b> — it costs an engine request every second for every open card, and
+the board already saturates its connection budget.</div>

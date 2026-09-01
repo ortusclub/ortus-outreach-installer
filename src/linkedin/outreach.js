@@ -100,6 +100,9 @@ async function waitForDomSettle(page, { settleMs = 1500, maxWait = 15000 } = {})
 
 export async function performOutreach(page, targetUrl, templates, state = {}, modeHint = null) {
   try {
+    const progress = (step, stepLabel, stepDetail = '') => {
+      try { if (typeof state.onProgress === 'function') state.onProgress({ step, stepLabel, stepDetail }); } catch (_) { /* cosmetic */ }
+    };
     // v2.58.x — Standalone Introduction Campaign fast-path.
     //
     // IC leads are guaranteed 1st-degree (operator confirms via the
@@ -344,8 +347,10 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     // Defaults to navigating (state.skipNavigation absent/false) for every
     // other caller, so behaviour is unchanged everywhere else.
     if (state && state.skipNavigation) {
+      progress('profile_open', 'Profile opened and identity confirmed', 'Reusing the verified LinkedIn profile');
       console.log('[outreach] Identity pre-verified by caller — reusing verified page, skipping re-navigation.');
     } else {
+      progress('opening_profile', 'Opening the LinkedIn profile', 'Waiting for the profile page to load');
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
       } catch (e) {
@@ -356,11 +361,13 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     // ── Step 2: DOM settle / buffer / zoom — only needed for paths that
     // interact with the page. check_only reads the Voyager API and exits.
     if (modeHint !== 'check_only') {
+      progress('profile_loading', 'Profile opened — preparing the page', 'Waiting for LinkedIn controls to become ready');
       console.log('[outreach] Waiting for DOM to settle…');
       await waitForDomSettle(page, { settleMs: 1500, maxWait: 15000 });
       await new Promise(r => setTimeout(r, 2000));
       console.log('[outreach] DOM settled.');
       await page.evaluate(() => { document.body.style.zoom = '75%'; });
+      progress('profile_ready', 'Profile ready', 'Checking connection status and available actions');
     }
 
     // ── Step 2b: Human-like browsing — scroll profile and dwell ──
@@ -731,7 +738,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (status === 'message') return { action: 'skipped', error: 'Already connected' };
       if (status === 'pending') return { action: 'already_processed' };
       try {
-        const r = await sendConnectionRequest(page, note);
+        const r = await sendConnectionRequest(page, note, state.onProgress);
         return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
       } catch (err) {
         // v2.14.x: actions.js detected the lead's invitation is already
@@ -753,7 +760,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         if (state.connectionSent) return { action: 'already_processed' };
         const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
         try {
-          const r = await sendConnectionRequest(page, note);
+          const r = await sendConnectionRequest(page, note, state.onProgress);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (err) {
           if (String(err.message).includes('INVITATION_ALREADY_PENDING')) {
@@ -844,7 +851,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         console.log('[outreach] Follow → trying Connect via More…');
         try {
           const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
-          const r = await sendConnectionRequest(page, note);
+          const r = await sendConnectionRequest(page, note, state.onProgress);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (e) {
           if (String(e.message).includes('INVITATION_ALREADY_PENDING')) {
@@ -873,7 +880,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         console.log(`[outreach] Unknown → trying Connect via More…`);
         try {
           const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
-          const r = await sendConnectionRequest(page, note);
+          const r = await sendConnectionRequest(page, note, state.onProgress);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (err) {
           if (String(err.message).includes('INVITATION_ALREADY_PENDING')) {

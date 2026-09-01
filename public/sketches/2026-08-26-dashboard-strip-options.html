@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dashboard strip options</title>
+  <style>
+    :root{color-scheme:dark;--bg:#090a0a;--panel:#151616;--line:#343636;--muted:#8f9292;--text:#f2f3f1;--green:#45ca68;--blue:#62ace0;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;--sans:Inter,Arial,sans-serif}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans)}
+    main{width:min(1500px,calc(100% - 64px));margin:56px auto 100px}.intro{display:flex;justify-content:space-between;gap:40px;align-items:end;margin-bottom:42px}.kicker,.eyebrow,.state,.label{font:700 11px/1.2 var(--mono);letter-spacing:.16em;text-transform:uppercase}.kicker{color:var(--muted)}h1{font-size:42px;letter-spacing:-.04em;margin:10px 0 0}.intro p{max-width:540px;color:#b6b8b7;line-height:1.6;margin:0}.option{margin:0 0 54px}.option-head{display:flex;align-items:center;gap:16px;margin-bottom:15px}.option-head h2{font-size:18px;margin:0}.tag{border:1px solid #4b4d4c;border-radius:999px;padding:6px 10px;font:700 10px var(--mono);letter-spacing:.12em}.tag.recommended{color:#c9f7d5;border-color:#347245}.stack{display:grid;gap:16px}
+    .strip{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:15px;padding:24px 26px 20px 29px;background:var(--panel)}
+    .strip:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent)}
+    .strip.running{--accent:var(--green);background:linear-gradient(108deg,rgba(45,130,69,.18) 0,rgba(21,22,22,.96) 30%,#151616 72%)}
+    .strip.monitoring{--accent:var(--blue);background:linear-gradient(108deg,rgba(49,112,156,.2) 0,rgba(21,22,22,.96) 30%,#151616 72%)}
+    .top{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:start}.eyebrow{color:#9a9d9c;margin-bottom:9px}.title{font-family:Impact,"Arial Narrow",sans-serif;font-size:29px;letter-spacing:.01em}.state{color:var(--accent);display:flex;align-items:center;gap:8px;padding-top:3px}.dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+    .facts{color:#aeb1b0;font-size:13px;margin-top:14px}.facts strong{color:#f2f3f1}.bottom{border-top:1px solid rgba(255,255,255,.12);margin-top:19px;padding-top:14px;display:flex;justify-content:space-between;gap:20px;align-items:center}.activity{font-size:13px;color:#c8cac9}.activity b{color:var(--accent)}.actions{display:flex;gap:9px}.button{border:1px solid #4a4d4c;border-radius:999px;padding:9px 15px;font:700 10px var(--mono);letter-spacing:.14em}.button.primary{background:#f4f5f3;color:#141515;border-color:#f4f5f3}
+    .compact{padding:0}.compact .top{padding:22px 26px 18px 29px}.compact .bottom{margin:0;padding:14px 26px 14px 29px;background:rgba(0,0,0,.14)}.compact .facts{margin-top:9px}.compact .title{font-size:26px}
+    .note{color:#858887;font:12px/1.55 var(--mono);margin:14px 0 0 4px;max-width:920px}
+    @media(max-width:760px){main{width:calc(100% - 28px);margin-top:30px}.intro{display:block}.intro p{margin-top:20px}.top{grid-template-columns:1fr}.state{grid-row:1}.bottom{align-items:flex-start;flex-direction:column}.actions{width:100%}.button{text-align:center;flex:1}}
+  </style>
+</head>
+<body><main>
+  <header class="intro"><div><div class="kicker">Dashboard strip study · v3.1.48.22 base</div><h1>Clear lifecycle, less furniture.</h1></div><p>Both options retain the gradient you liked. Green means leads are actively sending; blue means sending is complete and acceptance monitoring is active.</p></header>
+
+  <section class="option"><div class="option-head"><h2>Option A — Quiet status rail</h2><span class="tag recommended">Recommended</span></div><div class="stack">
+    <article class="strip running"><div class="top"><div><div class="eyebrow">Campaign · Connect + Introduce · Cloud VM</div><div class="title">SAS EMEA VIE — 26.08 ANTONIO</div><div class="facts"><strong>42 of 348 sent</strong> · 3 sender accounts · continues if you close the app</div></div><div class="state"><span class="dot"></span>Running</div></div><div class="bottom"><div class="activity"><b>Sending now</b> · Vanessa Knapp · batch 6 of 8</div><div class="actions"><span class="button">Show</span><span class="button primary">Open</span></div></div></article>
+    <article class="strip monitoring"><div class="top"><div><div class="eyebrow">Campaign · Connect + Introduce · This machine</div><div class="title">TEST_24/08_CC+IC_A</div><div class="facts"><strong>73 of 198 sent</strong> · 124 waiting for acceptance · 3 sender accounts</div></div><div class="state"><span class="dot"></span>Monitoring</div></div><div class="bottom"><div class="activity"><b>Next check today at 16:58</b> · every 60 minutes · ends in 6 days</div><div class="actions"><span class="button">Check now</span><span class="button primary">Open</span></div></div></article>
+  </div><p class="note">Closest to the expanded status card: one lifecycle rail, one summary, one live operational line. Nothing is boxed inside the strip.</p></section>
+
+  <section class="option"><div class="option-head"><h2>Option B — Separated activity band</h2><span class="tag">Alternative</span></div><div class="stack">
+    <article class="strip compact running"><div class="top"><div><div class="eyebrow">Campaign · Connect + Introduce · Cloud VM</div><div class="title">SAS EMEA VIE — 26.08 ANTONIO</div><div class="facts"><strong>42 / 348 sent</strong> · 3 accounts</div></div><div class="state"><span class="dot"></span>Running</div></div><div class="bottom"><div class="activity"><b>Sending now</b> · Vanessa Knapp · batch 6 of 8 · safe to close the app</div><div class="actions"><span class="button">Show</span><span class="button primary">Open</span></div></div></article>
+    <article class="strip compact monitoring"><div class="top"><div><div class="eyebrow">Campaign · Connect + Introduce · This machine</div><div class="title">TEST_24/08_CC+IC_A</div><div class="facts"><strong>73 / 198 sent</strong> · 124 pending</div></div><div class="state"><span class="dot"></span>Monitoring</div></div><div class="bottom"><div class="activity"><b>Monitoring automatically</b> · next check today at 16:58 · 3 accounts</div><div class="actions"><span class="button">Check now</span><span class="button primary">Open</span></div></div></article>
+  </div><p class="note">Slightly denser. The lower band separates changing activity from stable campaign facts, while remaining visually lighter than the rejected boxed layout.</p></section>
+</main></body></html>

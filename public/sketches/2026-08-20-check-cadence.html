@@ -1,0 +1,141 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sketch — telling the operator the checks have slowed down</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  /* The real card's CSS is scoped to the shipping page's container chain
+     (body[data-dashboard=v3] > .app > main.main > .container), so the sketch
+     reproduces that chain exactly rather than restyling anything. */
+  .container { max-width: 980px; }
+  .main { padding: 32px 40px 80px; }
+  h1 { font-family: var(--display); font-size: 2rem; margin: 0 0 4px; }
+  .lede { font-family: var(--mono); font-size: .82rem; color: var(--gray); max-width: 62ch; line-height: 1.5; margin: 0 0 28px; }
+  .vtitle { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--gray); margin: 34px 0 10px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+  .vnote { font-family: var(--mono); font-size: .76rem; color: var(--gray); max-width: 66ch; line-height: 1.5; margin: 8px 0 0; }
+  .stack > .vj-card { margin-bottom: 14px; }
+</style>
+
+<body data-dashboard="v3">
+<main class="main"><div class="container">
+<h1>Checks slow down when nothing is being accepted</h1>
+<p class="lede">
+  Same card, four moments. Option A: 1h → 2h → 4h after consecutive empty sweeps,
+  snapping straight back to hourly the moment one finds an acceptance. The question
+  is only how the card SAYS it, so the operator never reads a longer countdown as a
+  fault. Every card below is the real <code>#active-card</code> cloned out of the
+  shipping index.html — real CSS, real hero, nothing redrawn.
+</p>
+
+<div id="out"></div>
+</div></main>
+
+<script type="module">
+const OUT = document.getElementById('out');
+
+// The real card, lifted from the shipping page rather than re-typed.
+const doc = new DOMParser().parseFromString(await (await fetch('/index.html')).text(), 'text/html');
+const TEMPLATE = doc.getElementById('active-card');
+
+function card({ name, count, cap, l1, l2, line, state }) {
+  const el = TEMPLATE.cloneNode(true);
+  el.removeAttribute('id');
+  el.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+  el.querySelector('.vj-name').textContent = name;
+  el.querySelector('.vj-tag .dot')?.parentElement
+    .querySelector('span:last-child')?.replaceChildren(document.createTextNode('MONITORING'));
+
+  // Monitoring hero on, send hero off — what is-monitor does on the real card.
+  el.classList.add('is-monitor');
+  const mon = el.querySelector('.vj-monitor');
+  mon.removeAttribute('aria-hidden');
+  el.querySelector('.vj-hero')?.remove();
+  el.querySelector('.vj-hbar')?.remove();
+  el.querySelector('.fu-dual')?.remove();
+  mon.querySelector('.vj-mon-count').textContent = count;
+  mon.querySelector('.vj-mon-cap').textContent = cap;
+  mon.querySelector('.vj-mon-line').textContent = line;
+  if (state) mon.querySelector('.vj-mon-hero').classList.add(`is-${state}`);
+
+  const live = el.querySelector('.vj-live');
+  live.hidden = false;
+  live.querySelector('.vj-live-ico').textContent = '◷';
+  live.querySelector('.vj-live-l1').textContent = l1;
+  live.querySelector('.vj-live-l2').textContent = l2;
+
+  el.querySelector('.vj-profiles')?.remove();
+  el.querySelector('.vj-controls')?.remove();
+  return el;
+}
+
+function section(title, note, cards) {
+  const h = document.createElement('div');
+  h.className = 'vtitle'; h.textContent = title;
+  OUT.append(h);
+  const wrap = document.createElement('div');
+  wrap.className = 'stack';
+  cards.forEach((c) => wrap.append(card(c)));
+  OUT.append(wrap);
+  const n = document.createElement('p');
+  n.className = 'vnote'; n.textContent = note;
+  OUT.append(n);
+}
+
+// ── A. The countdown just gets longer. No new words. ────────────────────────
+section(
+  'Variant A — the countdown alone',
+  'Nothing new is said. The number simply reads 3:412 instead of 48:12. Cheapest to build and the most likely to be misread: a four-hour countdown with no explanation looks exactly like something being stuck.',
+  [{
+    name: 'CC7 - NICE MEL_a', count: '3:41:08', cap: 'until next check',
+    l1: 'Waiting for next check', l2: '5 accounts · checks every 4h · nothing running right now',
+    line: '190 sent · 17 accepted',
+  }]
+);
+
+// ── B. The caption carries the reason. ─────────────────────────────────────
+section(
+  'Variant B — the reason rides on the line the card already has',
+  'The second line is already where cadence is stated ("checks every 1h"). It gains the WHY and the promise to speed back up. No new DOM, no new colour — the operator reads one sentence and knows both that it is deliberate and what undoes it.',
+  [{
+    name: 'CC7 - NICE MEL_a', count: '3:41:08', cap: 'until next check',
+    l1: 'Waiting for next check',
+    l2: '5 accounts · slowed to every 4h — nothing accepted in the last 9 checks · back to hourly the moment someone accepts',
+    line: '190 sent · 17 accepted',
+  }, {
+    name: 'MAEN_ANZ_HOB - CCII+CCIII+CCIV', count: '41:22', cap: 'until next check',
+    l1: 'Waiting for next check',
+    l2: '13 accounts · checks every 1h · nothing running right now',
+    line: '712 sent · 14 accepted',
+  }]
+);
+
+// ── C. The cadence becomes part of the hero. ────────────────────────────────
+section(
+  'Variant C — the hero says the cadence, the line says why',
+  'The caption under the big number stops being the constant "until next check" and names the current cadence. Strongest at a glance from across the room, but it spends the one line that never changes today — and on a busy campaign it says "next check · hourly", which is noise.',
+  [{
+    name: 'CC7 - NICE MEL_a', count: '3:41:08', cap: 'next check · slowed to 4h',
+    l1: 'Quiet — checking less often',
+    l2: 'nothing accepted in the last 9 checks · hourly again as soon as one lands',
+    line: '190 sent · 17 accepted',
+  }, {
+    name: 'MAEN_ANZ_HOB - CCII+CCIII+CCIV', count: '41:22', cap: 'next check · hourly',
+    l1: 'Waiting for next check',
+    l2: '13 accounts · acceptances still arriving · staying hourly',
+    line: '712 sent · 14 accepted',
+  }]
+);
+
+// ── The moment it snaps back — every variant needs this to read well. ───────
+section(
+  'The snap-back (shown in variant B wording)',
+  'Whichever variant wins, this is the moment that has to be legible: one sweep finds an acceptance and the cadence returns to hourly immediately. If the card cannot show the recovery, the operator never learns that the slowdown was temporary.',
+  [{
+    name: 'CC7 - NICE MEL_a', count: '58:04', cap: 'until next check',
+    l1: 'Waiting for next check',
+    l2: '5 accounts · back to hourly — 8 accepted on the last check',
+    line: '190 sent · 25 accepted',
+  }]
+);
+</script>

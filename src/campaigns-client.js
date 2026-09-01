@@ -90,7 +90,12 @@ async function requestOnce(method, path, body) {
     try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
     if (!res.ok) {
       const detail = parsed && parsed.error ? `: ${parsed.error}` : '';
-      return { error: `HTTP ${res.status}${detail}`, status: res.status };
+      // Carry `reason` through. The handover routes refuse with a reason and no
+      // `error` field ({ ok:false, reason:'sweep_in_flight' | 'not_local' |
+      // 'not_resumable' }), and the caller has to tell those apart to say
+      // anything honest to the operator.
+      const reason = parsed && parsed.reason ? { reason: parsed.reason } : {};
+      return { error: `HTTP ${res.status}${detail}`, status: res.status, ...reason };
     }
     return parsed;
   } catch (err) {
@@ -315,8 +320,8 @@ export function ackLocalFollowups(taskIds, owner) {
  *   stopAndKeepMonitoring path. pause + keepMonitoring are mutually exclusive;
  *   keepMonitoring wins.
  */
-export function stopCloudCampaign(id, { pause = false, keepMonitoring = false } = {}) {
-  const qs = keepMonitoring ? '?keepMonitoring=1' : (pause ? '?pause=1' : '');
+export function stopCloudCampaign(id, { pause = false, keepMonitoring = false, immediate = false } = {}) {
+  const qs = keepMonitoring ? '?keepMonitoring=1' : (pause ? '?pause=1' : (immediate ? '?immediate=1' : '?finishCurrent=1'));
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${qs}`);
 }
 
@@ -357,6 +362,11 @@ export function restartCloudCampaign(id, { fromStart = false, dailyLimit, startA
 export function cloudCheckNow(id, scope = 'campaign') {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check-now`, { scope: scope === 'all' ? 'all' : 'campaign' });
 }
+// Stop the sweep the VM is running right now. The engine raises a flag its
+// sweep consumes at the next account boundary; the campaign itself is untouched.
+export function cloudCheckStop(id) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/check/stop`, {});
+}
 export function setCloudAutoChecks(id, enabled) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });
 }
@@ -366,6 +376,28 @@ export function setCloudAutoChecks(id, enabled) {
 // refuses this while the campaign is running/queued (a worker is mid-batch).
 export function setCloudCampaignAccounts(id, { add = [], remove = [] } = {}) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts`, { add, remove });
+}
+// Handover, VM → this Mac: ask the engine to give up ownership of a campaign.
+// The engine flips runs_on to 'local', stops claiming work and resets its
+// empty-check streak — but ONLY if it can prove nothing is mid-sweep. It fails
+// CLOSED: a live sweep, a lost race, or an engine too old to know the route all
+// answer HTTP 409, which the caller must treat as ABORT, never as retry-anyway.
+// Single attempt on purpose: withWriteRetry would re-POST a refusal.
+export function releaseCloudCampaign(id) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/handover-release`, {});
+}
+// Handover, this Mac → VM, for a campaign the VM never destroyed: a MONITORING
+// campaign kept status='monitoring' through handover-release (only a running or
+// paused one was cancelled), so its engine row is still intact and can simply be
+// taken back rather than re-dispatched as a new campaign with a new id. The
+// engine sets runs_on='vm', resets empty_check_streak and re-arms the monitor
+// task one base interval out.
+// Two refusals, both HTTP 409: `not_local` (the VM already owns it) and
+// `not_resumable` (its status is not 'monitoring', so a done or cancelled
+// campaign is never quietly revived by a handover). Single attempt for the same
+// reason as releaseCloudCampaign: a retry would re-POST a refusal.
+export function reclaimCloudCampaign(id) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/handover-reclaim`, {});
 }
 // Un-bench a weekly-capped account (operator Retry in the Accounts panel).
 export function unbenchCloudAccount(id, profileId) {

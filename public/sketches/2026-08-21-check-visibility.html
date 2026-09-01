@@ -1,0 +1,277 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sketch: making a running check visible</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  /* Real card CSS is scoped to body[data-dashboard=v3] > main.main > .container,
+     so the sketch reproduces that chain exactly and restyles nothing. */
+  .container { max-width: 1040px; }
+  .main { padding: 32px 40px 80px; }
+  h1 { font-family: var(--display); font-size: 2rem; margin: 0 0 4px; }
+  .lede { font-family: var(--mono); font-size: .82rem; color: var(--gray); max-width: 74ch; line-height: 1.5; margin: 0 0 20px; }
+  .vtitle { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--gray); margin: 34px 0 10px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+  .vnote { font-family: var(--mono); font-size: .76rem; color: var(--gray); max-width: 78ch; line-height: 1.55; margin: 8px 0 0; }
+  .stack > .vj-card { margin-bottom: 14px; }
+  body[data-dashboard='v3'] .vj-log-head { flex-wrap: wrap; row-gap: 6px; }
+  .themebar { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+              color: var(--gray); margin-bottom: 26px; }
+  .themebar button { font: inherit; padding: 5px 14px; border: 1px solid var(--hairline);
+                     border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; margin-left: 6px; }
+  .themebar button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  /* ── NEW COMPONENT 1: the check band (variant A) ─────────────────────────
+     Same hairline / mono language as .vj-live above it. No new colour. */
+  .ckb { border-top: 1px solid var(--hairline); padding: 12px 14px 4px; }
+  .ckb-top { display: flex; align-items: baseline; gap: 12px; }
+  .ckb-verb { font-family: var(--body); font-size: .95rem; }
+  .ckb-dot { display: inline-block; width: 7px; height: 7px; border-radius: 9999px; background: var(--ink);
+             margin-right: 8px; animation: ckp 1.1s ease-in-out infinite; }
+  @keyframes ckp { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  .ckb-el { margin-left: auto; font-family: var(--mono); font-size: .7rem; color: var(--gray); }
+  .ckb-sub { font-family: var(--mono); font-size: .72rem; color: var(--gray); margin-top: 5px; }
+  .ckb-bar { height: 2px; background: var(--hairline-soft); margin: 11px 0 2px; }
+  .ckb-bar i { display: block; height: 100%; background: var(--ink); }
+
+  /* ── NEW COMPONENT 2: per-account step list (variant B) ──────────────────
+     Slots INSIDE the existing .vj-prof-row, as a sub-line under the name. */
+  .ckstep { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 14px;
+            font-family: var(--mono); font-size: .68rem; color: var(--gray); padding: 6px 0 2px; }
+  .ckstep span.ok::before { content: "✓ "; }
+  .ckstep span.now::before { content: "▸ "; }
+  .ckstep span.wait::before { content: "· "; }
+  .ckstep span.ok, .ckstep span.now { color: var(--ink); }
+
+  /* ── NEW COMPONENT 3: the activity rail (variant C) ──────────────────────
+     Sits beside the existing .vj-monitor countdown, same row. */
+  .ckrail-wrap { display: flex; align-items: stretch; gap: 20px;
+                 border-top: 1px solid var(--hairline); width: 100%; }
+  .ckrail-wrap > .vj-monitor { flex: 1 1 0; min-width: 0; border-top: 0; }
+  .ckrail-sep { flex: 0 0 1px; background: var(--hairline-soft); }
+  .ckrail { flex: 1 1 0; min-width: 0; padding: 12px 14px; }
+  .ckrail-h { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+  .ckrail-t { font-family: var(--mono); font-size: .64rem; letter-spacing: .14em; text-transform: uppercase; }
+  .ckrail-now { font-family: var(--body); font-size: .9rem; }
+  .ckrail-sub { font-family: var(--mono); font-size: .7rem; color: var(--gray); margin-top: 4px; line-height: 1.5; }
+
+  /* ── NEW COMPONENT 4: the log gains a WHERE column + filter chips ────────
+     .vj-log-line already renders .time / .evt / .what; this adds .where
+     between .time and .evt and leaves the rest of the log untouched. */
+  body[data-dashboard='v3'] .vj-log-line { grid-template-columns: 64px 38px 70px 1fr; }
+  body[data-dashboard='v3'] .vj-log-line .where { font-family: var(--mono); font-size: .62rem;
+                        color: var(--gray); letter-spacing: .06em; }
+  .lgf { display: flex; gap: 5px; }
+  .lgf span { font-family: var(--mono); font-size: .6rem; letter-spacing: .1em; text-transform: uppercase;
+              padding: 4px 9px; border: 1px solid var(--hairline); border-radius: 9999px;
+              color: var(--gray); cursor: pointer; }
+  .lgf span.on { border-color: var(--ink); color: var(--ink); }
+</style>
+
+<body data-dashboard="v3" class="theme-light">
+<main class="main"><div class="container">
+<h1>Making a running check visible</h1>
+<p class="lede">
+  Measured today: the sweep DID run (server log 12:34:17, three accounts, two full diag lines)
+  while the card read "nothing running right now". Two causes. The status poll only runs while
+  <code>running === true</code>, so a monitoring campaign polls once at page load and then freezes.
+  And the sweep's own detail goes to stdout, never into <code>campaign.logs</code>, so the Live Log
+  could not show it however often it polled. Every card below is the real <code>#active-card</code>
+  cloned out of the shipping index.html, with its accounts, its controls and its details panel
+  left exactly as they are. Only the marked component is new.
+</p>
+<p class="themebar">Theme
+  <button class="on" data-t="light">Light</button><button data-t="dark">Dark</button>
+</p>
+
+<div id="out"></div>
+</div></main>
+
+<script type="module">
+const OUT = document.getElementById('out');
+const doc = new DOMParser().parseFromString(await (await fetch('/index.html')).text(), 'text/html');
+const TEMPLATE = doc.getElementById('active-card');
+
+document.querySelectorAll('.themebar button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.themebar button').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    document.body.classList.toggle('theme-light', b.dataset.t === 'light');
+    document.body.classList.toggle('theme-dark', b.dataset.t === 'dark');
+  };
+});
+
+const ACCOUNTS = [
+  { name: 'mefanier@ortus.solutions', chip: 'Done', today: '0 today' },
+  { name: 'camillec@ortus.solutions', chip: 'Checking', today: '0 today' },
+  { name: 'selassie.a@ortus.solutions', chip: 'Queued', today: '0 today' },
+];
+
+// Real log lines, in the real markup, plus the one new .where column.
+function logLine({ t, where, evt, what, cls = '' }) {
+  return `<div class="vj-log-line ${cls}"><span class="time">${t}</span>`
+    + `<span class="where">${where}</span><span class="evt">${evt}</span>`
+    + `<span class="what">${what}</span></div>`;
+}
+const LOG = [
+  { t: '12:34:17', where: 'MAC', evt: 'info', what: '▶ Local check started · scope=campaign · 3 accounts · 66 pending' },
+  { t: '12:34:17', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · opening GoLogin profile 686c9573…' },
+  { t: '12:34:29', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · browser ready in 12.4s' },
+  { t: '12:34:31', where: 'MAC', evt: 'log', what: 'Voyager GET invitations/sent · 200 · 22 rows' },
+  { t: '12:34:32', where: 'MAC', evt: 'log', what: 'match: scanned=22 withUrl=0 slugs=379 memberIds=381 names=379 pidMatched=0' },
+  { t: '12:34:32', where: 'MAC', evt: 'log', what: 'match: alreadyConnected=0 alreadyIntroduced=0 crossSender=0 alreadyDeclined=0 stamped=0' },
+  { t: '12:34:33', where: 'MAC', evt: 'log', what: 'sheet: 0 rows to write · nothing sent to Apps Script' },
+  { t: '12:34:34', where: 'VM', evt: 'err', what: 'selassie.a@ortus.solutions · 429 from Voyager · backing off 90s', cls: 'is-err' },
+  { t: '12:34:35', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · finished · 0 newly accepted · browser closed', cls: 'is-ok' },
+  { t: '12:34:36', where: 'MAC', evt: 'log', what: 'camillec@ortus.solutions · opening GoLogin profile 686c6a33…' },
+];
+
+function baseCard({ tag, count, cap, l1, l2, line, steps }) {
+  const el = TEMPLATE.cloneNode(true);
+  el.removeAttribute('id');
+  el.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+  el.querySelector('.vj-name').textContent = 'TEST_FOR_CCLAUDE';
+  const tagEl = el.querySelector('.vj-tag .dot')?.parentElement.querySelector('span:last-child');
+  if (tagEl) tagEl.textContent = tag;
+
+  el.classList.add('is-monitor', 'is-detailed');
+  const mon = el.querySelector('.vj-monitor');
+  mon.removeAttribute('aria-hidden');
+  el.querySelector('.vj-hero')?.remove();
+  el.querySelector('.vj-hbar')?.remove();
+  el.querySelector('.fu-dual')?.remove();
+  mon.querySelector('.vj-mon-count').textContent = count;
+  mon.querySelector('.vj-mon-cap').textContent = cap;
+  mon.querySelector('.vj-mon-line').textContent = line;
+
+  const live = el.querySelector('.vj-live');
+  live.hidden = false;
+  live.querySelector('.vj-live-ico').textContent = l1 === null ? '◷' : '↻';
+  live.querySelector('.vj-live-l1').textContent = l1 || 'Waiting for next check';
+  live.querySelector('.vj-live-l2').textContent = l2;
+
+  // Accounts stay exactly as the app renders them.
+  const prof = el.querySelector('.vj-profiles');
+  prof.hidden = false;
+  prof.innerHTML = ACCOUNTS.map((a, i) => `
+    <div class="vj-prof-row">
+      <span class="vj-prof-name" title="${a.name}">${a.name}</span>
+      <span></span>
+      <span class="vj-prof-chip">${a.chip}</span>
+      <span class="vj-prof-today">${a.today}</span>
+      <button type="button" class="prof-open-btn">Open</button>
+      <span></span>
+      ${steps ? `<div class="ckstep">${steps[i]}</div>` : ''}
+    </div>`).join('');
+
+  // Details panel stays: same log box, same bulk-check block, plus the new
+  // WHERE column and the filter chips in the log head.
+  const logEl = el.querySelector('.vj-log');
+  logEl.innerHTML = LOG.map(logLine).join('');
+  const acts = el.querySelector('.vj-log-acts');
+  const chips = document.createElement('span');
+  chips.className = 'lgf';
+  chips.innerHTML = ['All', 'Check', 'Send', 'Sheet', 'Errors', 'Verbose']
+    .map((f, i) => `<span class="${i === 0 ? 'on' : ''}">${f}</span>`).join('');
+  acts.prepend(chips);
+  el.querySelector('.vj-bulk-status').innerHTML =
+    'Last sweep · <b>12:34</b> · <span>0</span> newly accepted';
+  return el;
+}
+
+function section(title, note, build) {
+  const h = document.createElement('div');
+  h.className = 'vtitle'; h.textContent = title; OUT.append(h);
+  const wrap = document.createElement('div'); wrap.className = 'stack';
+  build(wrap);
+  OUT.append(wrap);
+  const n = document.createElement('p'); n.className = 'vnote'; n.textContent = note; OUT.append(n);
+}
+
+// ── A: the check band replaces the countdown for the duration of the sweep ──
+section(
+  'Variant A: while a check runs, a band replaces the countdown',
+  'The countdown is meaningless during a sweep, so it stands down and the band takes its place: verb, where, elapsed, account N of M, and a progress hairline. Loudest of the three and impossible to read as idle. Cost: the countdown disappears for a minute or two, which is the thing operators use to know the campaign is alive.',
+  (wrap) => {
+    const a = baseCard({
+      tag: 'CHECKING', count: '', cap: '', l1: 'Checking for new acceptances…',
+      l2: 'camillec@ortus.solutions · sweeping recent connections',
+      line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
+    });
+    const band = document.createElement('div');
+    band.className = 'ckb';
+    band.innerHTML = `
+      <div class="ckb-top">
+        <span class="ckb-verb"><i class="ckb-dot"></i>Checking for new acceptances</span>
+        <span class="ckb-el">💻 This Mac · 00:41 elapsed · account 2 of 3</span>
+      </div>
+      <div class="ckb-sub">Scope: this campaign's 3 accounts · 66 pending connection requests to scan</div>
+      <div class="ckb-bar"><i style="width:42%"></i></div>`;
+    a.querySelector('.vj-monitor').replaceWith(band);
+    wrap.append(a);
+  }
+);
+
+// ── B: the existing account rows grow a step list ───────────────────────────
+section(
+  'Variant B: the accounts you already have grow a step list',
+  'Nothing is replaced or moved. The account rows already on the card gain one sub-line each: browser opened, Voyager read, matched, sheet write, intro DMs, browser closed, each ticking as it happens. A stall stops being a spinner that never ends and becomes a named step that never ticked, which is also what makes a VM stall diagnosable. Smallest change to the card; densest row.',
+  (wrap) => {
+    const b = baseCard({
+      tag: 'CHECKING', count: '20:56', cap: 'until next check',
+      l1: 'Checking for new acceptances…',
+      l2: '💻 This Mac · account 2 of 3 · 00:41 elapsed',
+      line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
+      steps: [
+        '<span class="ok">browser 12.4s</span><span class="ok">Voyager 22</span><span class="ok">matched 0</span><span class="ok">sheet 0</span><span class="ok">intros 0</span><span class="ok">closed</span>',
+        '<span class="ok">browser 14.8s</span><span class="now">Voyager reading…</span><span class="wait">matched</span><span class="wait">sheet</span><span class="wait">intros</span><span class="wait">closed</span>',
+        '<span class="wait">browser</span><span class="wait">Voyager</span><span class="wait">matched</span><span class="wait">sheet</span><span class="wait">intros</span><span class="wait">closed</span>',
+      ],
+    });
+    wrap.append(b);
+  }
+);
+
+// ── C: the countdown keeps its place, a rail narrates beside it ─────────────
+section(
+  'Variant C: the countdown keeps its place, a rail narrates beside it',
+  'The countdown never moves, so the campaign never looks dead. The rail beside it is never empty: during a sweep it names the account and the step, between sweeps it carries the last result. The sentence "nothing running right now" is deleted from the app, because it was only ever true when the app had stopped looking. Least disruption to what is already approved.',
+  (wrap) => {
+    const c = baseCard({
+      tag: 'CHECKING', count: '20:56', cap: 'until next check',
+      l1: 'Checking for new acceptances…',
+      l2: 'camillec@ortus.solutions · sweeping recent connections',
+      line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
+    });
+    const mon = c.querySelector('.vj-monitor');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ckrail-wrap';
+    const sep = document.createElement('div'); sep.className = 'ckrail-sep';
+    const rail = document.createElement('div');
+    rail.className = 'ckrail';
+    rail.innerHTML = `
+      <div class="ckrail-h"><i class="ckb-dot"></i><span class="ckrail-t">Checking now</span>
+        <span class="ckb-el">💻 This Mac</span></div>
+      <div class="ckrail-now">camillec@ortus.solutions</div>
+      <div class="ckrail-sub">Voyager: reading 22 pending connection requests<br>
+        00:41 elapsed · account 2 of 3 · 1 done, 0 newly accepted</div>`;
+    mon.replaceWith(wrapper);
+    wrapper.append(mon, sep, rail);
+    wrap.append(c);
+  }
+);
+
+// ── The idle state each variant has to produce ─────────────────────────────
+section(
+  'And the idle state, which is where the lie lived',
+  'Whichever variant wins, the between-checks card has to stop claiming nothing is running when the truth is that the app stopped polling. The line carries the last sweep result instead, which is a fact the app already has and never showed.',
+  (wrap) => {
+    const d = baseCard({
+      tag: 'MONITORING', count: '20:56', cap: 'until next check', l1: null,
+      l2: '3 accounts · 💻 This Mac · last sweep 12:34 · 66 scanned · 0 newly accepted',
+      line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
+    });
+    wrap.append(d);
+  }
+);
+</script>

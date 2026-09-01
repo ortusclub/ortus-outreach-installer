@@ -386,6 +386,7 @@ export async function runAutoIntros({
   templates = {},
   senderFirstNames = {},
   log = console.log,
+  onProgress = null,
 }) {
   const result = { sent: 0, failed: 0, skipped: 0 };
   if (!Array.isArray(connectedUrls) || connectedUrls.length === 0) return result;
@@ -403,6 +404,27 @@ export async function runAutoIntros({
     });
     return result;
   }
+
+  // One progress contract for local and VM runs. Keep the local campaign state
+  // updated directly so every caller (scheduled sweep, Check now and campaign
+  // loop) gets the same live stage even when it did not provide a callback.
+  const progress = (patch = {}) => {
+    const p = { ...patch, stepAt: Date.now() };
+    try { if (typeof onProgress === 'function') onProgress(p); } catch { /* cosmetic */ }
+    campaign.currentAction = {
+      ...(campaign.currentAction || {}),
+      phase: 'introducing',
+      account: profileName || profileId || null,
+      lead: p.name || campaign._checkingLead || null,
+      label: p.name ? `Introducing ${p.name}` : (p.stepLabel || 'Preparing introductions'),
+      step: p.step || null,
+      stepLabel: p.stepLabel || null,
+      stepDetail: p.stepDetail || null,
+      done: p.index || 0,
+      total: p.total || connectedUrls.length,
+      startedAt: p.stepAt,
+    };
+  };
 
   // v2.96 — connect-to-primary gate for the bulk-check / monitoring intro path.
   //
@@ -425,6 +447,7 @@ export async function runAutoIntros({
   // we additionally require a primaryUrl + a real GoLogin profile, so this can
   // never fire on plain Introduce-Back or the local browser.
   if (primaryUrl && isLinkedInProfileUrl(primaryUrl) && profileId && profileId !== 'local-browser') {
+    progress({ step: 'verifying_primary', stepLabel: 'Verifying the primary connection', stepDetail: 'Checking that this account can create the group introduction' });
     if (!campaign._primaryConn) campaign._primaryConn = new Map();
     const _prevConn = campaign._primaryConn.get(profileId);
     if (_prevConn !== 'connected') {
@@ -575,6 +598,15 @@ export async function runAutoIntros({
   for (let i = 0; i < connectedUrls.length; i++) {
     const url = connectedUrls[i];
 
+    // Stop lands within one person, not at the end of the account. The leads
+    // left over are abandoned WITHOUT a stamp, so the next check reads them
+    // again. This is why nothing is written here, unlike the Stop branch
+    // below, which marks the rest as Skipped because the whole run is over.
+    if (campaign._abortCheck) {
+      log(`  ■ [${profileName}] Check stopped by you. ${connectedUrls.length - i} person(s) were left untouched, so the next check reads them again.`);
+      break;
+    }
+
     // v2.14.x: graceful-abort checkpoint. Without this guard, runAutoIntros
     // keeps iterating against a dead page after the operator presses Stop
     // (which force-closes browsers from server.js:/api/campaign/stop) or
@@ -613,6 +645,8 @@ export async function runAutoIntros({
       || row['FIRST NAME'] || row['firstName'] || row['FirstName'] || row['first_name'] || '';
     const leadLastName = row['Last Name'] || row['Last name'] || row['last name']
       || row['LAST NAME'] || row['lastName'] || row['LastName'] || row['last_name'] || '';
+    // Name the person the check is on, so a stop can say who it interrupted.
+    campaign._checkingLead = `${leadFirstName} ${leadLastName}`.trim() || null;
     const data = {
       ...row,
       firstName: leadFirstName,
@@ -705,6 +739,8 @@ export async function runAutoIntros({
     // missed in the field — Pinky Salaria) is gone: there's nothing to detect.
     // URL-routing survives ONLY as the fallback for rows with no name to typeahead.
     const leadFullName = `${leadFirstName} ${leadLastName}`.trim();
+    const baseProgress = { name: leadFullName, index: i + 1, total: connectedUrls.length };
+    progress({ ...baseProgress, step: 'opening_compose', stepLabel: 'Opening the introduction message', stepDetail: 'Preparing a new three-person conversation' });
 
     // Same-name disambiguation needs the intended person's real profile photo.
     // Resolved LAZILY (only on a typeahead ambiguity) so the common single-match
@@ -718,6 +754,8 @@ export async function runAutoIntros({
     while (attempt < 2) {
       attempt++;
       try {
+        progress({ ...baseProgress, step: 'selecting_recipients', stepLabel: 'Selecting both recipients', stepDetail: attempt > 1 ? `Retry ${attempt} · resolving the correct people` : 'Adding the accepted lead and primary person' });
+        progress({ ...baseProgress, step: 'sending_message', stepLabel: 'Writing and sending the introduction', stepDetail: 'Waiting for LinkedIn to confirm the message' });
         if (leadFullName) {
           await sendIntroViaCleanCompose(page, body, leadFullName, primaryName, title, {
             dedupeProbe: true,
@@ -817,6 +855,7 @@ export async function runAutoIntros({
             ? `Intro skipped: ${interruptReason} (interrupted mid-send)`
             : `Intro failed: ${errMsg || 'unknown'}`,
     };
+    progress({ ...baseProgress, step: 'stamping_sheet', stepLabel: ok || alreadyMade ? 'Introduction sent and confirmed' : 'Recording the introduction result', stepDetail: 'Stamping the verified result to the campaign sheet' });
     await updateSheetRow(sheetUrl, url, tracking, linkedinColumn).catch(() => {});
     if (ok) {
       // v2.14.x: blacklist this URL for the rest of the process so the next
@@ -824,6 +863,7 @@ export async function runAutoIntros({
       // Primary defense against Google Sheets CSV-export cache lag.
       try { campaign.introducedInRun?.add(url); } catch { /* */ }
       result.sent++;
+      progress({ ...baseProgress, step: 'intro_complete', stepLabel: 'Introduction complete', stepDetail: 'Confirmed and stamped to the sheet', outcome: 'sent' });
       log(`  🤝 [${profileName}] ${url}: Introduction Made`);
       // v2.91: queue the automated first follow-up. page is still on the group
       // thread here (compose redirected to /messaging/thread/...), so capture it.
@@ -849,6 +889,7 @@ export async function runAutoIntros({
       // about. The distinct sheet stamp + log line preserve the audit.
       try { campaign.introducedInRun?.add(url); } catch { /* */ }
       result.sent++;
+      progress({ ...baseProgress, step: 'intro_complete', stepLabel: 'Introduction already existed', stepDetail: 'Existing conversation recorded in the sheet', outcome: 'already-made' });
       log(`  ⏳ [${profileName}] ${url}: Introduction Already Made (existing thread detected)`);
     } else if (interrupted) {
       result.skipped++;
@@ -862,6 +903,7 @@ export async function runAutoIntros({
       break;
     } else {
       result.failed++;
+      progress({ ...baseProgress, step: 'intro_complete', stepLabel: 'Introduction could not be completed', stepDetail: errMsg || 'Unknown introduction error', outcome: 'failed' });
       log(`  ⚠ [${profileName}] ${url}: Failed (${errMsg || 'unknown'})`);
       // v2.57.x — surface every intro failure in the centralized Ops Log
       // sheet. Without this, the Ops Log only shows campaign-start/end and

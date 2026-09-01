@@ -42,6 +42,15 @@ test('checking overruns after 15 minutes', () => {
   assert.deepEqual(monitorHeroState(s, NOW), { state: 'checking', overrun: true });
 });
 
+test('a new manual request never looks stalled because of the previous completed sweep', () => {
+  const s = {
+    monitoringCheckInProgress: true,
+    monitorCheckStartedAt: new Date(NOW - 60 * 60_000).toISOString(),
+    monitorCheckCompletedAt: new Date(NOW - 59 * 60_000).toISOString(),
+  };
+  assert.deepEqual(monitorHeroState(s, NOW), { state: 'checking', overrun: false });
+});
+
 test('the legacy in-progress flag still means checking', () => {
   assert.equal(monitorHeroState({ monitoringCheckInProgress: true }, NOW).state, 'checking');
 });

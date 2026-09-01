@@ -23,6 +23,56 @@
   <h1>Ortus <em>Outreach</em> · Sketches</h1>
   <div class="sub">Three Directions · Pick One</div>
 
+  <div class="sub" style="margin-bottom:20px">Cloud campaigns — August 2026</div>
+
+  <a class="card" href="2026-08-26-cc-lifecycle-reliability.html" style="border-color:#D56561">
+    <div class="card-label">CC · CCIC · CCDM · COMPLETE LIFECYCLE RELIABILITY · INTERACTIVE · 2026-08-26</div><div class="card-title">The campaign always says what happens next</div><div class="card-desc">Switch between all three connection modes and preview Daily limit and genuinely Finished states. A single uncertain lead is skipped; only five matching uncertainties in a row park that sender.</div>
+  </a>
+
+  <a class="card" href="2026-08-26-campaign-stop-recovery.html" style="border-color:#F7BE68">
+    <div class="card-label">CAMPAIGN RELIABILITY · STOP + RECOVERY · INTERACTIVE · 2026-08-26</div><div class="card-title">Stopping should end in certainty</div><div class="card-desc">Switch between This Mac and Cloud VM, press Stop, and choose whether to let the current lead finish or stop immediately. Also sketches truthful terminal reasons, a zero-actionable-target diagnostic with direct fix links, and the 15-second forced-recovery state.</div>
+  </a>
+
+  <a class="card" href="check-A-live-band.html" style="border-color:#F7BE68">
+    <div class="card-label">CHECK VISIBILITY · A LIVE BAND · 2026-08-21</div><div class="card-title">A — Live band: the countdown is replaced while a check runs</div><div class="card-desc">The operator pressed Run check now, three GoLogin browsers opened, intro DMs went out, and the card read "nothing running right now" the whole time. Variant A swaps the countdown hero for a band with one row per account, each moving through its own steps, plus a log with time / where / stream columns and filter chips. Identical on the VM and this Mac; only the RUNS ON pill differs.</div>
+  </a>
+
+  <a class="card" href="check-B-step-timeline.html" style="border-color:#F7BE68">
+    <div class="card-label">CHECK VISIBILITY · B STEP TIMELINE · 2026-08-21</div><div class="card-title">B — Step timeline: six named steps per account, ticked as they happen</div><div class="card-desc">Same problem, different answer: a sweep is not one spinner, it is browser opened, Voyager read, matched, sheet write, intro DMs, browser closed. Each ticks with its own duration, so a stall is readable as the step that never ticked instead of a spinner that never stops.</div>
+  </a>
+
+  <a class="card" href="check-C-activity-rail.html" style="border-color:#F7BE68">
+    <div class="card-label">CHECK VISIBILITY · C ACTIVITY RAIL · 2026-08-21</div><div class="card-title">C — Activity rail: the countdown stays, a rail beside it narrates</div><div class="card-desc">The countdown never moves; a rail beside it always says what the campaign is doing — the live account and step during a sweep, the next check and last result between them. The phrase "nothing running right now" is deleted from the app. The log carries a WHERE column so VM and Mac lines sit in one stream.</div>
+  </a>
+
+  <a class="card" href="2026-08-21-handover-banner.html" style="border-color:#F7BE68">
+    <div class="card-label">CLOUD &middot; HANDOVER BANNER &middot; INTERACTIVE &middot; 2026-08-21</div><div class="card-title">E · the handover banner, on both strips</div><div class="card-desc">Drive it: start a handover, then wait past five seconds. Today&rsquo;s banner (real markup and CSS from index.html:1689) is 12.5px grey text that removes itself at 5s whether or not the switch has finished, and it lives above the board only, so the dashboard never shows it at all. The replacement is the same .vj-live band the CHECKING and SENDING banners promote, so one component covers all three: display caps, a shuttle travelling between 💻 and ☁︎ so it carries direction, and a right-hand readout that gives an instruction instead of an ETA we cannot honestly promise. It holds until the handover actually finishes, shows one beat of confirmation, then steps aside. Shown on both surfaces at once, because the board card is a clone of the dashboard card.</div>
+  </a>
+
+  <a class="card" href="2026-08-21-vm-logging-before-after.html" style="border-color:#F7BE68">
+    <div class="card-label">CLOUD &middot; VM LOGGING &middot; BEFORE / AFTER &middot; 2026-08-21</div><div class="card-title">The VM logs well, but only when something goes wrong</div><div class="card-desc">BEFORE pane is the real monitorLog read live off MAEN_ANZ_HOB. The VM does emit events, 27 of them via _evt() in campaign-worker.js, and they already read in plain English. The gap is the happy path: nearly every line is an exception (rate limits, parks, checkpoints, missing notes), so a clean turn is silent from &ldquo;turn started&rdquo; to &ldquo;browser closed&rdquo; and a five-minute gap looks identical to a hang. AFTER keeps the same voice and fills the holes: per-lead success, turn start, per-account sweep progress, the next-check line. Plus an 11-row table of what the feed cannot tell you and 7 rules every new line follows.</div>
+  </a>
+
+  <a class="card" href="2026-08-21-check-visibility-B.html" style="border-color:#F7BE68">
+    <div class="card-label">CLOUD &middot; CHECK VISIBILITY &middot; B CHOSEN &middot; 2026-08-21</div><div class="card-title">B — the per-account step panel, in all three states</div><div class="card-desc">The chosen direction, drawn out: one panel, one column per account, divided by the card&rsquo;s own hairline. Shown while a check runs, while connection requests are sending, and while monitoring between checks (where the panel goes still and carries the LAST sweep with its timings, instead of printing &ldquo;nothing running right now&rdquo;). Steps are the ones the code actually walks, including the identity gate and a 429 backoff. Real #active-card cloned from the shipping page; the panel is a new grid row between the hero and the controls.</div>
+  </a>
+
+  <a class="card" href="2026-08-21-check-visibility.html" style="border-color:#F7BE68">
+    <div class="card-label">CLOUD &middot; CHECK VISIBILITY &middot; 2026-08-21</div><div class="card-title">Three accounts open, intro DMs going out, card says "nothing running right now"</div><div class="card-desc">Measured: the sweep ran at 12:34:17 with two full diag lines in the server log while the card claimed nothing was running. Two causes, both real: the status poll only runs while running===true, so a monitoring campaign polls once at page load and freezes; and the sweep detail goes to stdout, never into campaign.logs. Three variants (band replaces the countdown / the account rows grow a step list / a rail narrates beside the countdown), plus the idle state and a log that gains a WHERE column so VM and Mac lines share one stream. Real #active-card cloned from the shipping page, accounts, controls and details panel untouched.</div>
+  </a>
+
+  <a class="card" href="2026-08-21-vm-local-handover.html" style="border-color:#F7BE68">
+    <div class="card-label">CLOUD · VM &harr; LOCAL HANDOVER · 2026-08-21</div><div class="card-title">Move a live campaign between the VM and this Mac, mid-anything</div><div class="card-desc">An operator stopped a VM campaign mid-check because he could not tell whether it was working, then could not run it locally either. The fix is a WHERE control on the card, live while sending, checking or monitoring: switching stops the current side and resumes the remainder on the other, keyed on what the sheet already has stamped. Three variants (instant / visible handover state / inline confirm), plus the reverse direction and the laptop-asleep case. Decisions locked: the in-flight lead is retried, the adaptive cadence resets to base on every switch, and a local campaign stays local and waits. Real #active-card cloned from the shipping page; only the WHERE control is new.</div>
+  </a>
+
+  <a class="card" href="2026-08-20-check-cadence.html" style="border-color:#F7BE68">
+    <div class="card-label">CLOUD · ADAPTIVE CHECK CADENCE · 2026-08-20</div><div class="card-title">83 LinkedIn logins in a day, 82 of them found nothing</div><div class="card-desc">Acceptance checks run hourly and open a browser on every account. Measured on 2026-08-20: CC7 - NICE MEL_a did 83 account-checks in 24h and 82 returned "0 newly-accepted", while MAEN_ANZ_HOB found acceptances in 5 of its 6. So the cadence backs off 1h → 2h → 4h on a quiet campaign and snaps straight back the moment one accepts. Three ways to say it on the card, plus the snap-back moment. Real #active-card cloned from the shipping page.</div>
+  </a>
+
+  <a class="card" href="2026-08-20-pause-deadline.html" style="border-color:#F7BE68">
+    <div class="card-label">CLOUD · THE 48H PAUSE · 2026-08-20</div><div class="card-title">A pause nobody came back to</div><div class="card-desc">LV_WARM_JAMIELYNNE sat paused at 32 of 653 for ~23h, holding an account nobody else could send from, and the card said only "resumes instantly". The engine now cancels a pause at 48h, so the card carries the deadline from the moment it is paused: 47h out, 1h 12m out, past it, and a local pause that makes no promise. Real card, real CSS, and the lines are generated by the shipping buildLiveActivity() — drag the slider to move the clock. Shipped as v3.1.26 + engine v149.</div>
+  </a>
+
   <div class="sub" style="margin-bottom:20px">Operation Magellan — August 2026</div>
 
   <a class="card" href="2026-08-18-magellan-picker-states.html" style="border-color:#F7BE68">

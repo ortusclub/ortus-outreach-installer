@@ -40,7 +40,7 @@ export async function getQueue() {
   return [...(await load())];
 }
 
-export async function addToQueue(config, owner) {
+export async function addToQueue(config, owner, { scheduledAt = null } = {}) {
   await load();
   const entry = {
     id: 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
@@ -48,6 +48,7 @@ export async function addToQueue(config, owner) {
     name: (config && config.name) || '',
     config,
     owner: owner || null,
+    ...(scheduledAt ? { scheduledAt } : {}),
   };
   cache.push(entry);
   await persist();
@@ -95,6 +96,21 @@ export async function popNext() {
   await load();
   if (cache.length === 0) return null;
   const next = cache.shift();
+  await persist();
+  return next;
+}
+
+// Return the first campaign that is eligible now. A future scheduled entry must
+// never block an ordinary queued campaign behind it until tomorrow.
+export async function popNextReady(now = Date.now()) {
+  await load();
+  const idx = cache.findIndex((entry) => {
+    if (!entry.scheduledAt) return true;
+    const due = new Date(entry.scheduledAt).getTime();
+    return !Number.isFinite(due) || due <= now;
+  });
+  if (idx === -1) return null;
+  const [next] = cache.splice(idx, 1);
   await persist();
   return next;
 }

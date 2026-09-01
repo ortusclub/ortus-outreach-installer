@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>VM CC+IC, handshake on the VM</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/dashboard-v0.3.css">
+<style>
+html,body{background:var(--bg);color:var(--ink);margin:0}
+.wrap{max-width:1120px;margin:0 auto;padding:30px 24px 80px}
+h1{font-family:var(--display);font-size:1.9rem;letter-spacing:.02em;margin:0 0 4px}
+.lede{color:var(--gray);margin:0 0 26px;font-size:.9rem;line-height:1.55;max-width:80ch}
+.step{font-family:var(--display);font-size:1.15rem;letter-spacing:.07em;color:var(--gold);margin:36px 0 3px}
+.stepnote{color:var(--gray);font-size:.85rem;margin:0 0 14px;line-height:1.5;max-width:82ch}
+.clock{font-family:var(--mono);font-size:.75rem;color:#5c5c5c;margin-left:10px;letter-spacing:0}
+.logwrap{margin:-4px 0 6px}
+.loghead{font-size:.7rem;letter-spacing:.1em;color:var(--gray);margin:14px 0 7px}
+.logbox{background:rgba(255,255,255,.02);border:1px solid var(--hairline);border-radius:11px;padding:11px 13px;
+        font-family:var(--mono);font-size:.72rem;line-height:1.8}
+.lg-row{display:flex;gap:10px}
+.lg-ts{color:#5c5c5c;flex:none;width:42px}
+.lg-k{flex:none;width:36px;font-size:.65rem;letter-spacing:.05em}
+.lg-k.LOG{color:var(--gray)}.lg-k.INFO{color:#6ea3d4}.lg-k.OK{color:#3fb950}.lg-k.WARN{color:var(--gold)}
+.lg-m{color:#d7d7d7}
+.askmodal{max-width:520px;background:var(--card-bg,#0a0a0a);border:1px solid var(--hairline);border-radius:14px;padding:24px}
+.askmodal h3{font-family:var(--display);font-size:1.45rem;margin:0 0 16px;font-weight:400}
+.askmodal .o{display:block;border:1px solid var(--hairline-soft);border-radius:11px;padding:13px 15px;margin-bottom:9px}
+.askmodal .o.on{border-color:var(--ink);background:rgba(255,255,255,.03)}
+.askmodal .r{display:inline-block;width:12px;height:12px;border-radius:9999px;border:1px solid var(--gray);margin-right:9px;vertical-align:-1px}
+.askmodal .r.on{border-color:var(--ink);box-shadow:inset 0 0 0 3px var(--bg),inset 0 0 0 8px var(--ink)}
+.askmodal b{font-size:.95rem}
+.askmodal i{display:block;font-style:normal;color:var(--gray);font-size:.83rem;margin:5px 0 0 21px;line-height:1.45}
+.askmodal .acts{display:flex;gap:16px;align-items:center;margin-top:18px}
+.askmodal .b{font-family:var(--display);letter-spacing:.06em;background:var(--ink);color:#000;padding:9px 24px;border-radius:9999px}
+.askmodal .c{color:var(--gray);font-size:.85rem}
+.vj-stage-accts span.soon{border-color:var(--gold);color:var(--gold)}
+.vj-stage-gly .dotwait{width:12px;height:12px;border-radius:9999px;background:var(--gold);display:inline-block}
+.vj-card{margin-bottom:8px}
+</style></head>
+<body data-dashboard="v3"><div class="wrap">
+<h1>A VM CC+IC, connect-to-primary on the VM</h1>
+<p class="lede">The real card markup and the real stylesheet, filled with what a launch would actually
+say once the narration lands. Four moments, in order. Nothing here is built yet.</p>
+
+<style>
+.logwrap{margin:-6px 0 6px}
+.loghead{font-size:.7rem;letter-spacing:.1em;color:var(--gray);margin:14px 0 7px}
+.logbox{background:var(--bg);border:1px solid var(--hairline);border-radius:11px;padding:11px 13px;
+        font-family:var(--mono);font-size:.72rem;line-height:1.75}
+.lg-row{display:flex;gap:10px}
+.lg-ts{color:#5c5c5c;flex:none;width:42px}
+.lg-k{flex:none;width:36px;font-size:.65rem;letter-spacing:.05em}
+.lg-k.LOG{color:var(--gray)}.lg-k.INFO{color:#6ea3d4}.lg-k.OK{color:#3fb950}.lg-k.WARN{color:var(--gold)}
+.lg-m{color:#d7d7d7}
+.askmodal{max-width:520px;background:var(--bg);border:1px solid var(--hairline);border-radius:14px;padding:24px}
+.askmodal h3{font-family:var(--display);font-size:1.45rem;letter-spacing:.01em;margin:0 0 16px;font-weight:400}
+.askmodal .o{display:block;border:1px solid var(--hairline-soft);border-radius:11px;padding:13px 15px;margin-bottom:9px}
+.askmodal .o.on{border-color:var(--ink);background:var(--bg-soft)}
+.askmodal .r{display:inline-block;width:12px;height:12px;border-radius:9999px;border:1px solid var(--gray);margin-right:9px;vertical-align:-1px}
+.askmodal .r.on{border-color:var(--ink);box-shadow:inset 0 0 0 3px var(--bg),inset 0 0 0 8px var(--ink)}
+.askmodal b{font-size:.95rem}
+.askmodal i{display:block;font-style:normal;color:var(--gray);font-size:.83rem;margin:5px 0 0 21px;line-height:1.45}
+.askmodal .acts{display:flex;gap:16px;align-items:center;margin-top:18px}
+.askmodal .b{font-family:var(--display);letter-spacing:.06em;background:var(--ink);color:#000;padding:9px 24px;border-radius:9999px}
+.askmodal .c{color:var(--gray);font-size:.85rem}
+.vj-stage-accts span.soon{border-color:var(--gold);color:var(--gold)}
+.dotwait{width:12px;height:12px;border-radius:9999px;background:var(--gold);display:inline-block}
+</style>
+<p class="step">T+0s · YOU PRESS START<span class="clock">17:45:02</span></p><p class="stepnote">The question you asked for. Nothing has opened yet, nothing is consumed.</p><div class="askmodal">
+ <h3>Connect your senders to the primary now?</h3>
+ <label class="o"><span class="r"></span><b>On this Mac</b>
+   <i>3 senders connect off-screen, then it moves to the cloud. To accept the connections to the primary it has to open it anyways.</i></label>
+ <label class="o on"><span class="r on"></span><b>On the VM</b>
+   <i>Will still open a local browser to accept the connections.</i></label>
+ <div class="acts"><span class="b">Continue</span><span class="c">Cancel launch</span></div>
+</div><p class="step">T+3s · READING THE SHEET<span class="clock">17:45:05</span></p><p class="stepnote">No handshake runs, so the card says so rather than claiming a Phase 0. The log has already spoken three times.</p>
+<section class="vj-card has-unified-stage ">
+  <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Starting the campaign</span></span></div>
+  <div class="vj-glyph-circle">C+I</div>
+  <h2 class="vj-name"><span>New campaign</span></h2>
+  <div class="vj-stage">
+    <div class="vj-stage-gly"><span class="dotwait"></span></div>
+    <div class="vj-stage-body">
+      <div class="vj-stage-summary">
+        <div class="vj-stage-summary-main">
+          <div class="vj-stage-verb">STARTUP</div>
+          <div class="vj-stage-name">Reading your lead sheet and dispatching to the VM…</div>
+          <div class="vj-stage-sub">No campaign lead is consumed during setup</div>
+        </div>
+        <div class="vj-stage-side"><span>STARTUP</span><strong>PREPARING BROWSER RUNTIME</strong><small>Normal startup can take a few minutes</small></div>
+      </div>
+      <div class="vj-stage-safety">No campaign lead is consumed during setup</div>
+      <div class="vj-stage-facts"><div><span>Handshake</span><b>on the VM</b></div><div><span>Sheet</span><b>reading now</b></div><div><span>Accounts</span><b>3 selected</b></div><div><span>Next expected event</span><b>pre-flight check</b></div></div>
+      <div class="vj-stage-miles"><div class="done"><small>01 / Request</small><b>launch accepted</b></div><div class="active"><small>02 / Sheet</small><b>reading your leads</b></div><div class="future"><small>03 / VM</small><b>handing over</b></div><div class="future"><small>04 / Campaign</small><b>starts automatically</b></div></div>
+      <div class="vj-stage-outcome">
+        <div class="vj-stage-metrics">
+          <div><strong>—</strong><span>Newly accepted</span></div>
+          <div><strong>—</strong><span>Introductions sent</span></div>
+          <div><strong>3</strong><span>Accounts remaining</span></div>
+        </div>
+        <div class="vj-stage-next"><label>NEXT EXPECTED EVENT</label><strong>Pre-flight check on 3 accounts</strong><p>0 leads remain safe and unconsumed.</p></div>
+      </div>
+      <div class="vj-stage-accts"><span class="">ton 0/23</span><span class="">khushbus 0/23</span><span class="">gwyneth.samson 0/23</span></div>
+      <div class="vj-stage-beat"><span class="l"><span class="bd"></span><span>updated 0s ago</span></span><span></span></div>
+    </div>
+  </div>
+</section>
+<div class="logwrap"><div class="loghead">LIVE LOG · LAST 3 EVENTS</div><div class="logbox"><div class="lg-row"><span class="lg-ts">17:45</span><span class="lg-k LOG">LOG</span><span class="lg-m">▶ Launch started — 3 accounts, Cloud VM</span></div><div class="lg-row"><span class="lg-ts">17:45</span><span class="lg-k INFO">INFO</span><span class="lg-m">🤝 Primary handshake: on the VM — nothing opens on this Mac now</span></div><div class="lg-row"><span class="lg-ts">17:45</span><span class="lg-k INFO">INFO</span><span class="lg-m">📄 Reading your lead sheet…</span></div></div></div>
+<p class="step">T+38s · HANDED OVER<span class="clock">17:45:40</span></p><p class="stepnote">Every await that used to be silent now has a line, with its result.</p>
+<section class="vj-card has-unified-stage ">
+  <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Starting the campaign</span></span></div>
+  <div class="vj-glyph-circle">C+I</div>
+  <h2 class="vj-name"><span>New campaign</span></h2>
+  <div class="vj-stage">
+    <div class="vj-stage-gly"><span class="dotwait"></span></div>
+    <div class="vj-stage-body">
+      <div class="vj-stage-summary">
+        <div class="vj-stage-summary-main">
+          <div class="vj-stage-verb">STARTUP</div>
+          <div class="vj-stage-name">Handing the campaign to the VM…</div>
+          <div class="vj-stage-sub">No campaign lead is consumed during setup</div>
+        </div>
+        <div class="vj-stage-side"><span>STARTUP</span><strong>HANDING OVER</strong><small>The VM takes it from here</small></div>
+      </div>
+      <div class="vj-stage-safety">No campaign lead is consumed during setup</div>
+      <div class="vj-stage-facts"><div><span>Sheet</span><b>247 rows · 23 to action</b></div><div><span>Pre-flight</span><b>3 usable · 0 blockers</b></div><div><span>Handshake</span><b>on the VM</b></div><div><span>Next expected event</span><b>engine accepts the campaign</b></div></div>
+      <div class="vj-stage-miles"><div class="done"><small>01 / Request</small><b>launch accepted</b></div><div class="done"><small>02 / Sheet</small><b>23 leads ready</b></div><div class="active"><small>03 / VM</small><b>handing over</b></div><div class="future"><small>04 / Campaign</small><b>starts automatically</b></div></div>
+      <div class="vj-stage-outcome">
+        <div class="vj-stage-metrics">
+          <div><strong>—</strong><span>Newly accepted</span></div>
+          <div><strong>—</strong><span>Introductions sent</span></div>
+          <div><strong>3</strong><span>Accounts remaining</span></div>
+        </div>
+        <div class="vj-stage-next"><label>NEXT EXPECTED EVENT</label><strong>Engine accepts the campaign</strong><p>23 leads remain safe and unconsumed.</p></div>
+      </div>
+      <div class="vj-stage-accts"><span class="">ton 0/23</span><span class="">khushbus 0/23</span><span class="">gwyneth.samson 0/23</span></div>
+      <div class="vj-stage-beat"><span class="l"><span class="bd"></span><span>updated 0s ago</span></span><span></span></div>
+    </div>
+  </div>
+</section>
+<div class="logwrap"><div class="loghead">LIVE LOG · LAST 7 EVENTS</div><div class="logbox"><div class="lg-row"><span class="lg-ts">17:45</span><span class="lg-k LOG">LOG</span><span class="lg-m">▶ Launch started — 3 accounts, Cloud VM</span></div><div class="lg-row"><span class="lg-ts">17:45</span><span class="lg-k INFO">INFO</span><span class="lg-m">🤝 Primary handshake: on the VM — nothing opens on this Mac now</span></div><div class="lg-row"><span class="lg-ts">17:45</span><span class="lg-k INFO">INFO</span><span class="lg-m">📄 Reading your lead sheet…</span></div><div class="lg-row"><span class="lg-ts">17:46</span><span class="lg-k OK">OK</span><span class="lg-m">📄 Sheet read — 247 rows, 23 still to action</span></div><div class="lg-row"><span class="lg-ts">17:46</span><span class="lg-k INFO">INFO</span><span class="lg-m">🔎 Pre-flight check on 3 accounts…</span></div><div class="lg-row"><span class="lg-ts">17:46</span><span class="lg-k OK">OK</span><span class="lg-m">🔎 Pre-flight passed — 3 accounts usable, 0 blockers</span></div><div class="lg-row"><span class="lg-ts">17:46</span><span class="lg-k INFO">INFO</span><span class="lg-m">☁︎ Handing the campaign to the VM…</span></div></div></div>
+<p class="step">T+62s · WAITING FOR AN ACCOUNT<span class="clock">17:46:04</span></p><p class="stepnote">The state you hit. It now leads with how long, names who is next, and the countdown ticks between engine events instead of one line every ten minutes.</p>
+<section class="vj-card has-unified-stage ">
+  <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Running</span></span></div>
+  <div class="vj-glyph-circle">C+I</div>
+  <h2 class="vj-name"><span>(unnamed)</span></h2>
+  <div class="vj-stage">
+    <div class="vj-stage-gly"><span class="dotwait"></span></div>
+    <div class="vj-stage-body">
+      <div class="vj-stage-summary">
+        <div class="vj-stage-summary-main">
+          <div class="vj-stage-verb">WAITING FOR AN ACCOUNT</div>
+          <div class="vj-stage-name">First account free in 4 min 10 s</div>
+          <div class="vj-stage-sub">Every account rests 6 minutes after finishing a batch, so none can start yet. ton is next.</div>
+        </div>
+        <div class="vj-stage-side"><span>UNTIL AN ACCOUNT IS FREE</span><strong>4:10</strong><small>ton · then khushbus at 5:02</small></div>
+      </div>
+      <div class="vj-stage-safety">23 pending leads remain safely queued · nothing is being resent</div>
+      <div class="vj-stage-facts"><div><span>Soonest free</span><b>ton · 4 min 10 s</b></div><div><span>Then</span><b>khushbus · 5 min 02 s</b></div><div><span>Operator action</span><b>none, it starts itself</b></div><div><span>Engine heartbeat</span><b>watching for availability</b></div></div>
+      <div class="vj-stage-miles"><div class="done"><small>01 / Campaign</small><b>running</b></div><div class="active"><small>02 / Accounts</small><b>all 3 resting</b></div><div class="future"><small>03 / Browser</small><b>opens automatically</b></div><div class="future"><small>04 / First lead</small><b>safely queued</b></div></div>
+      <div class="vj-stage-outcome">
+        <div class="vj-stage-metrics">
+          <div><strong>0</strong><span>Newly accepted</span></div>
+          <div><strong>0</strong><span>Introductions sent</span></div>
+          <div><strong>3</strong><span>Accounts remaining</span></div>
+        </div>
+        <div class="vj-stage-next"><label>NEXT EXPECTED EVENT</label><strong>ton opens on the VM in about 4 minutes</strong><p>No action is needed unless this panel says otherwise.</p></div>
+      </div>
+      <div class="vj-stage-accts"><span class="soon">ton free in 4:10</span><span class="">khushbus free in 5:02</span><span class="">gwyneth.samson free in 5:44</span></div>
+      <div class="vj-stage-beat"><span class="l"><span class="bd"></span><span>updated 0s ago</span></span><span>3 accounts · 0 accepted</span></div>
+    </div>
+  </div>
+</section>
+<div class="logwrap"><div class="loghead">LIVE LOG · LAST 3 EVENTS</div><div class="logbox"><div class="lg-row"><span class="lg-ts">17:46</span><span class="lg-k LOG">LOG</span><span class="lg-m">📦 Campaign received by the engine — 23 leads imported · 3 accounts</span></div><div class="lg-row"><span class="lg-ts">17:46</span><span class="lg-k LOG">LOG</span><span class="lg-m">⚙ VM worker picked the campaign up — preparing the sheet</span></div><div class="lg-row"><span class="lg-ts">17:46</span><span class="lg-k WARN">WARN</span><span class="lg-m">⏳ All 3 accounts are resting after their last batch · ton is free first, in about 4 minutes · nothing to do</span></div></div></div>
+<p class="step">T+5m · SENDING<span class="clock">17:50:14</span></p><p class="stepnote">Unchanged from today, this part already narrates well. Shown so the whole run reads as one story.</p>
+<section class="vj-card has-unified-stage ">
+  <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span><span>Running</span></span></div>
+  <div class="vj-glyph-circle">C+I</div>
+  <h2 class="vj-name"><span>(unnamed)</span></h2>
+  <div class="vj-stage">
+    <div class="vj-stage-gly"><span class="dotwait"></span></div>
+    <div class="vj-stage-body">
+      <div class="vj-stage-summary">
+        <div class="vj-stage-summary-main">
+          <div class="vj-stage-verb">WORKING ON THE NEXT LEAD</div>
+          <div class="vj-stage-name">Opening Caleb Wilson on LinkedIn</div>
+          <div class="vj-stage-sub">ton@ortusclub.com · Waiting for the profile page · Lead 1 of 8</div>
+        </div>
+        <div class="vj-stage-side"><span>THIS ACCOUNT BATCH</span><strong>1 OF 8</strong><small>The next lead starts only after this result is verified</small></div>
+      </div>
+      <div class="vj-stage-safety">22 leads remain safely queued</div>
+      <div class="vj-stage-facts"><div><span>Campaign</span><b>sending</b></div><div><span>Current account</span><b>ton@ortusclub.com</b></div><div><span>Current event</span><b>Opening Caleb Wilson on LinkedIn</b></div><div><span>Next expected event</span><b>verify the LinkedIn action</b></div></div>
+      <div class="vj-stage-miles"><div class="done"><small>01 / Campaign</small><b>running</b></div><div class="done"><small>02 / Browser</small><b>open</b></div><div class="active"><small>03 / Lead</small><b>in progress</b></div><div class="future"><small>04 / Result</small><b>waiting</b></div></div>
+      <div class="vj-stage-outcome">
+        <div class="vj-stage-metrics">
+          <div><strong>0</strong><span>Sent so far</span></div>
+          <div><strong>1/8</strong><span>This batch</span></div>
+          <div><strong>23</strong><span>Leads remaining</span></div>
+        </div>
+        <div class="vj-stage-next"><label>NEXT EXPECTED EVENT</label><strong>ton@ortusclub.com · Waiting for the profile page</strong><p>23 leads remain safely queued.</p></div>
+      </div>
+      <div class="vj-stage-accts"><span class="soon">ton 0/23 · Primary ✓</span><span class="">khushbus 0/23</span><span class="">gwyneth.samson 0/23 · Primary ✓</span></div>
+      <div class="vj-stage-beat"><span class="l"><span class="bd"></span><span>updated 2s ago</span></span><span>3 accounts · 0 accepted</span></div>
+    </div>
+  </div>
+</section>
+<div class="logwrap"><div class="loghead">LIVE LOG · LAST 3 EVENTS</div><div class="logbox"><div class="lg-row"><span class="lg-ts">17:50</span><span class="lg-k LOG">LOG</span><span class="lg-m">🖥 Opening ton@ortusclub.com’s browser on the VM — 0/23 sent today</span></div><div class="lg-row"><span class="lg-ts">17:50</span><span class="lg-k LOG">LOG</span><span class="lg-m">📋 ton@ortusclub.com is taking up to 8 people this turn</span></div><div class="lg-row"><span class="lg-ts">17:50</span><span class="lg-k INFO">INFO</span><span class="lg-m">▶ ton@ortusclub.com · Caleb Wilson — Opening the LinkedIn profile · 1 of 8 this sending batch</span></div></div></div>
+</div>
+</body></html>

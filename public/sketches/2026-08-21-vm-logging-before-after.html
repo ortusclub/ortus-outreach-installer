@@ -1,0 +1,230 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sketch: VM logging, before and after</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  .container { max-width: 1280px; }
+  .main { padding: 32px 40px 90px; }
+  h1 { font-family: var(--display); font-size: 2rem; margin: 0 0 4px; }
+  .lede { font-family: var(--mono); font-size: .82rem; color: var(--gray); max-width: 88ch; line-height: 1.6; margin: 0 0 18px; }
+  .lede b { color: var(--ink); }
+  .themebar { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+              color: var(--gray); margin-bottom: 24px; }
+  .themebar button { font: inherit; padding: 5px 14px; border: 1px solid var(--hairline);
+                     border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; margin-left: 6px; }
+  .themebar button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  .pane { border: 1px solid var(--hairline); padding: 18px 20px 20px; }
+  .pane-h { font-family: var(--mono); font-size: .66rem; letter-spacing: .18em; text-transform: uppercase;
+            color: var(--gray); margin-bottom: 5px; }
+  .pane-t { font-family: var(--body); font-size: 1rem; color: var(--ink); margin-bottom: 4px; }
+  .pane-s { font-family: var(--mono); font-size: .72rem; color: var(--gray); line-height: 1.6; margin-bottom: 14px; }
+  .pane.after { border-color: var(--ink); }
+
+  .box { border: 1px solid var(--hairline-soft); background: var(--bg-soft); padding: 11px 13px;
+         font-family: var(--mono); font-size: .74rem; line-height: 1.75;
+         max-height: 560px; overflow: auto; }
+  .r { display: grid; grid-template-columns: 62px 1fr; gap: 12px; color: var(--ink); padding: 1px 0; }
+  .r span:first-child { color: var(--gray); font-size: .7rem; font-family: ui-monospace, Menlo, monospace; }
+  .r.dim { color: var(--gray); }
+  .r.new span:last-child { box-shadow: inset 2px 0 0 var(--blue); padding-left: 9px; margin-left: -9px; }
+  /* A silent gap in the feed, drawn as one. */
+  .hole { display: grid; grid-template-columns: 62px 1fr; gap: 12px; color: var(--red);
+          font-size: .7rem; padding: 5px 0; border-top: 1px dashed var(--hairline);
+          border-bottom: 1px dashed var(--hairline); margin: 4px 0; }
+
+  .key { font-family: var(--mono); font-size: .68rem; color: var(--gray); margin-top: 10px; }
+  .key i { display: inline-block; width: 9px; height: 9px; background: var(--blue); margin-right: 7px; }
+
+  .gap { border-top: 1px solid var(--hairline); margin-top: 34px; padding-top: 16px; }
+  .gap h2 { font-family: var(--mono); font-size: .72rem; letter-spacing: .16em; text-transform: uppercase;
+            color: var(--gray); margin: 0 0 12px; font-weight: 500; }
+  table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: .74rem; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--hairline-soft);
+           vertical-align: top; color: var(--gray); line-height: 1.5; }
+  th { font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: var(--gray); }
+  td.k { color: var(--ink); width: 30%; }
+  td.n { width: 12%; }
+  td.n.no { color: var(--red); }
+  td.n.part { color: var(--gold); }
+  td.n.yes { color: var(--green); }
+  .rules { font-family: var(--mono); font-size: .76rem; color: var(--gray); line-height: 1.7; margin-top: 12px; }
+  .rules b { color: var(--ink); }
+</style>
+
+<body data-dashboard="v3" class="theme-light">
+<main class="main"><div class="container">
+<h1>VM logging: before and after</h1>
+<p class="lede">
+  Correction to what I said earlier: the VM <b>does</b> have an operator log, and it is written in
+  plain English already. <code>appendMonitorLog()</code> pushes lines into Redis per campaign and
+  the app reads them as <code>monitorLog</code>. Everything on the left is the real feed for
+  <b>MAEN_ANZ_HOB - CCII+CCIII+CCIV</b>, read off the running VM at 13:15 today, unedited.
+  So this is not "the VM logs nothing". It is: the sweep is well covered, <b>sending is nearly
+  silent</b>, and there are five-minute holes where the feed says nothing at all while the VM is
+  working. The right-hand pane keeps the exact same voice and fills the holes. No counters, no
+  field dumps, no jargon: if a line needs a developer to read it, it does not ship.
+</p>
+<p class="themebar">Theme
+  <button class="on" data-t="light">Light</button><button data-t="dark">Dark</button>
+</p>
+
+<div class="ba">
+  <div class="pane">
+    <div class="pane-h">Before &middot; the real feed, right now</div>
+    <div class="pane-t">Two lines per account, and nothing in between</div>
+    <div class="pane-s">
+      Unedited from the running campaign. The wording is good. The problem is what is absent:
+      five minutes pass between one account finishing and the next starting, and the feed says
+      nothing. Sending gets no lines at all. Redis keeps 50, so a 13-account sweep is 27 of them
+      and less than two sweeps of history survives.
+    </div>
+    <div class="box" id="before"></div>
+  </div>
+
+  <div class="pane after">
+    <div class="pane-h">After &middot; same voice, no holes</div>
+    <div class="pane-t">You can always tell what it is doing</div>
+    <div class="pane-s">
+      Same sentence shape, same emoji, same plain English. New lines are marked. Every one of them
+      answers a question an operator actually asks: what is it doing now, why did that account take
+      five minutes, why did nobody get a request, when does it start again.
+    </div>
+    <div class="box" id="after"></div>
+    <div class="key"><i></i>marked lines are new</div>
+  </div>
+</div>
+
+<div class="gap">
+  <h2>What the feed can and cannot tell you today</h2>
+  <table>
+    <thead><tr><th>Question an operator asks</th><th>Answered?</th><th>Why</th></tr></thead>
+    <tbody id="gaps"></tbody>
+  </table>
+
+  <h2 style="margin-top:28px">Rules for every new line</h2>
+  <div class="rules" id="rules"></div>
+</div>
+</div></main>
+
+<script type="module">
+document.querySelectorAll('.themebar button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.themebar button').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    document.body.classList.toggle('theme-light', b.dataset.t === 'light');
+    document.body.classList.toggle('theme-dark', b.dataset.t === 'dark');
+  };
+});
+
+// ── BEFORE: verbatim from GET /api/campaign/cloud/7d3c654e-…, monitorLog,
+// read 2026-08-21 13:15 Rome. Nothing added, nothing reworded.
+const BEFORE = [
+  ['11:31:52', '🖥️ Checking catherine.pagcaliwangan@ortus.solutions…'],
+  ['11:32:19', '✓ catherine.pagcaliwangan@ortus.solutions — 0 newly accepted, 61 lead row(s) updated'],
+  ['gap', 'four and a half minutes, no line'],
+  ['11:36:44', '✓ Check complete — 5 newly accepted across 13 accounts'],
+  ['gap', 'fifty-one minutes, no line — is it waiting, asleep, or dead?'],
+  ['12:27:47', '⚡ Check started — this campaign’s accounts (13 accounts)'],
+  ['12:27:47', '🖥️ Checking khushbus@apexstrategy.io…'],
+  ['12:28:17', '✓ khushbus@apexstrategy.io — 0 newly accepted, 31 lead row(s) updated'],
+  ['gap', 'five minutes, no line'],
+  ['12:33:20', '🖥️ Checking jhon.mallari@ortus.solutions…'],
+  ['12:33:53', '✓ jhon.mallari@ortus.solutions — 0 newly accepted, 41 lead row(s) updated'],
+  ['gap', 'five minutes, no line'],
+  ['12:38:56', '🖥️ Checking sentiya.semy@ortus.solutions…'],
+  ['12:39:18', '✓ sentiya.semy@ortus.solutions — 1 newly accepted, 118 lead row(s) updated'],
+  ['12:44:18', '🖥️ Checking shaniya.ratio@ortus.solutions…'],
+  ['12:44:36', '✓ shaniya.ratio@ortus.solutions — 0 newly accepted, 122 lead row(s) updated'],
+  ['12:49:00', '🖥️ Checking shania.serrano@ortus.solutions…'],
+  ['12:49:16', '✓ shania.serrano@ortus.solutions — 1 newly accepted, 109 lead row(s) updated'],
+  ['12:53:56', '🖥️ Checking jed.diego@klabber.co…'],
+  ['12:54:16', '✓ jed.diego@klabber.co — 0 newly accepted, 1 re-queued for intro, 122 lead row(s) updated'],
+  ['12:59:24', '🖥️ Checking lory.alvarez@klabber.co…'],
+  ['12:59:55', '✓ lory.alvarez@klabber.co — 0 newly accepted, 15 lead row(s) updated'],
+  ['13:04:23', '🖥️ Checking angel.osorio@klabber.co…'],
+  ['13:04:44', '✓ angel.osorio@klabber.co — 0 newly accepted, 39 lead row(s) updated'],
+  ['13:09:47', '🖥️ Checking froilan.sison@ortus.solutions…'],
+  ['13:10:04', '✓ froilan.sison@ortus.solutions — 0 newly accepted, 116 lead row(s) updated'],
+  ['13:14:29', '🖥️ Checking gabrielle.dl@ortus.solutions…'],
+  ['13:14:54', '✓ gabrielle.dl@ortus.solutions — 1 newly accepted, 110 lead row(s) updated'],
+  ['none', 'And for the 1095 connection requests this campaign sent today: not one line.'],
+];
+
+// ── AFTER: the same feed with the holes filled. `new: true` = a line that does
+// not exist today. Same voice throughout.
+const AFTER = [
+  ['12:27:47', '⚡ Check started — this campaign’s accounts (13 accounts)'],
+  ['12:27:47', '🖥️ Checking khushbus@apexstrategy.io…', 1],
+  ['12:27:59', '   browser open, logged in — reading its sent invitations', 1],
+  ['12:28:17', '✓ khushbus@apexstrategy.io — 0 newly accepted, 31 lead row(s) updated'],
+  ['12:28:19', '   nobody has accepted this account’s 31 invitations yet, checking again next sweep', 1],
+  ['12:28:22', '⏳ Account 2 of 13 starts in about 5 min — the VM waits between accounts so LinkedIn does not see a burst', 1],
+  ['12:33:20', '🖥️ Checking jhon.mallari@ortus.solutions…'],
+  ['12:33:53', '✓ jhon.mallari@ortus.solutions — 0 newly accepted, 41 lead row(s) updated'],
+  ['12:38:56', '🖥️ Checking sentiya.semy@ortus.solutions…'],
+  ['12:39:18', '✓ sentiya.semy@ortus.solutions — 1 newly accepted, 118 lead row(s) updated'],
+  ['12:39:20', '💬 Rina Chandran accepted — sending her the introduction now', 1],
+  ['12:39:41', '✓ Rina Chandran — introduction sent', 1],
+  ['12:54:16', '✓ jed.diego@klabber.co — 0 newly accepted, 1 re-queued for intro, 122 lead row(s) updated'],
+  ['12:54:18', '↩︎ Marta Oliveira accepted earlier but never got her introduction — trying again now', 1],
+  ['12:54:39', '✗ Marta Oliveira — introduction failed, LinkedIn did not accept the recipient. Will retry next check.', 1],
+  ['13:16:10', '✓ Check complete — 3 newly accepted across 13 accounts, 2 introductions sent', 1],
+  ['13:16:10', '😴 Nothing new for 2 checks in a row, so the next one is in 2h instead of 1h — it goes back to 1h the moment someone accepts', 1],
+  ['13:16:11', '🕑 Next check at 15:16', 1],
+  ['—', '', 0],
+  ['—', 'AND THE PART THAT HAS NO LINES AT ALL TODAY, SENDING:', 0],
+  ['07:03:58', '▶️ Sending started — 13 accounts, 1497 leads (402 already had a request in the sheet, skipped)', 1],
+  ['07:04:14', '🖥️ gabriella.reyes@ortus.solutions is sending — browser open, logged in', 1],
+  ['07:04:44', '✓ Hanne Nielsen — connection request sent (1 of 100 today for this account)', 1],
+  ['07:04:45', '   written to the sheet, row 641', 1],
+  ['07:04:46', '⏳ next request in about a minute', 1],
+  ['07:11:03', '⏭ Rafael Duarte — skipped, his profile has no Connect button. Nothing sent, marked in the sheet.', 1],
+  ['08:52:11', '🐢 khushbus@apexstrategy.io — LinkedIn is pushing back, waiting 90 seconds before the next one', 1],
+  ['09:04:47', '⛔ khushbus@apexstrategy.io — weekly invitation limit reached. Nothing more from this account until it resets.', 1],
+  ['09:05:00', '   12 accounts still sending — 1095 of 1497 done', 1],
+  ['13:20:00', '🌙 Every account has hit today’s limit — 402 leads left, they go out automatically after midnight UTC', 1],
+];
+
+const GAPS = [
+  ['Is it doing anything right now?', 'part', 'Only while an account is mid-check. Between accounts, five minutes of silence.'],
+  ['Which account is it on, out of how many?', 'no', 'The count only appears on the first and last line of a sweep.'],
+  ['Why is nothing happening for five minutes?', 'no', 'It is the deliberate gap between accounts. The feed never says so.'],
+  ['Did anyone accept, and did they get the intro?', 'part', '"N newly accepted" yes; whether the introduction actually went, no.'],
+  ['Did a connection request go out?', 'no', 'Sending emits no operator lines at all. 1095 sent today, zero lines.'],
+  ['Why did that person not get a request?', 'no', 'The reason is written to the sheet and never to the feed.'],
+  ['How many has this account sent today?', 'no', 'Counted internally, never said.'],
+  ['Is an account stuck, capped, or logged out?', 'part', 'Parked and needs-login are said. Rate-limit backoff and daily cap are not.'],
+  ['When does the next check happen?', 'no', 'On the card as a countdown, never in the feed.'],
+  ['Why is the check now every 2h instead of 1h?', 'no', 'The back-off is silent, so it reads as the VM slowing down.'],
+  ['What happened yesterday?', 'no', 'Redis keeps 50 lines. One sweep is 27 of them.'],
+];
+
+const RULES = [
+  '<b>Say it the way you would say it out loud.</b> "nobody has accepted this account’s 31 invitations yet" — not "freshConnected=0, pidMatched=29".',
+  '<b>Never print a counter an operator cannot act on.</b> The 16 match counters stay in Cloud Logging for me; they never reach this feed.',
+  '<b>Every wait says how long and why.</b> A silent five minutes is indistinguishable from a crash.',
+  '<b>Every skip names the person and the reason in one sentence</b>, and says whether anything was sent.',
+  '<b>Every account line carries its position</b>: account 2 of 13, 1 of 100 today.',
+  '<b>One line per thing that happened.</b> No line for things that did not.',
+  '<b>Keep more than 50.</b> A day of history, not half a sweep.',
+];
+
+document.getElementById('before').innerHTML = BEFORE.map(([t, l]) => {
+  if (t === 'gap') return `<div class="hole"><span>⌛</span><span>${l}</span></div>`;
+  if (t === 'none') return `<div class="hole"><span>∅</span><span>${l}</span></div>`;
+  return `<div class="r"><span>${t}</span><span>${l}</span></div>`;
+}).join('');
+
+document.getElementById('after').innerHTML = AFTER.map(([t, l, isNew]) => {
+  if (t === '—') return `<div class="r dim"><span></span><span>${l}</span></div>`;
+  return `<div class="r${isNew ? ' new' : ' dim'}"><span>${t}</span><span>${l}</span></div>`;
+}).join('');
+
+document.getElementById('gaps').innerHTML = GAPS.map(([k, n, w]) =>
+  `<tr><td class="k">${k}</td><td class="n ${n}">${n === 'no' ? 'No' : n === 'part' ? 'Partly' : 'Yes'}</td><td>${w}</td></tr>`).join('');
+
+document.getElementById('rules').innerHTML = RULES.map((r) => `· ${r}`).join('<br>');
+</script>

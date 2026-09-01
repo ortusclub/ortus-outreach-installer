@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Telling the operator at the press · sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  /* Sketch chrome only. */
+  .sk-wrap { max-width: 900px; margin: 0 auto; padding: 28px 20px 120px; }
+  .sk-h { font-family: 'Bebas Neue', sans-serif; font-size: 30px; letter-spacing: .04em; margin: 0 0 6px; }
+  .sk-sub { color: var(--gray, #8a8a8a); font-size: 13px; line-height: 1.55; margin: 0 0 30px; max-width: 72ch; }
+  .sk-case { margin: 0 0 30px; padding: 0 0 26px; border-bottom: 1px solid var(--hairline, #e5e5e5); }
+  .sk-case:last-child { border-bottom: 0; }
+  .sk-lbl { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .12em;
+            text-transform: uppercase; color: var(--gray, #8a8a8a); margin: 0 0 10px; }
+  .sk-note { font-size: 12.5px; color: var(--gray, #8a8a8a); margin: 12px 0 0; line-height: 1.6; max-width: 72ch; }
+  .sk-note b { color: var(--ink, #111); font-weight: 600; }
+  .sk-try { margin: 12px 0 0; }
+  /* The toast is position:fixed by design; pin it inside its own case so both
+     variants can be seen at once instead of stacking at the viewport bottom. */
+  .sk-stage { position: relative; height: 120px; border: 1px dashed var(--hairline, #ddd);
+              display: flex; align-items: center; justify-content: center; }
+  .sk-stage .campaign-toast { position: absolute; bottom: 24px; opacity: 1;
+                              transform: translateX(-50%) translateY(0); pointer-events: auto; }
+  .sk-modal-stage { position: relative; }
+  .sk-modal-stage .modal-backdrop { position: relative; inset: auto; display: flex; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sk-wrap">
+
+  <h1 class="sk-h">"Left paused 48h and it stops" — where does the operator hear it?</h1>
+  <p class="sk-sub">
+    Three ways to say the same sentence at the moment Pause is pressed. Real components:
+    the toast is <code>.campaign-toast</code> and the dialog is the app's own
+    <code>.modal-backdrop / .modal-card</code>, both from the shipping stylesheet.
+    <b>A is what is live right now (v3.1.28)</b> — B and C are the alternatives.
+  </p>
+
+  <div class="sk-case">
+    <p class="sk-lbl">A · Toast — shipped, no extra click</p>
+    <div class="sk-stage">
+      <div class="campaign-toast visible">Pausing — sending stops after the current lead. Left paused for 48h it stops for good and releases its accounts.</div>
+    </div>
+    <p class="sk-note">
+      Costs nothing and blocks nothing. The risk: it is gone in 7 seconds, and an operator
+      who pauses while looking at another window never sees it. The card keeps the countdown
+      afterwards, and the same sentence is written to the campaign's event log.
+    </p>
+  </div>
+
+  <div class="sk-case">
+    <p class="sk-lbl">B · Dialog — blocks until acknowledged</p>
+    <div class="sk-modal-stage">
+      <div class="modal-backdrop">
+        <div class="modal-card" role="dialog" aria-modal="true">
+          <h3 class="modal-title">Pause this campaign?</h3>
+          <div class="modal-body">
+            Sending stops after the lead in flight. The accounts stay reserved for this
+            campaign while it is paused.
+            <br /><br />
+            <b>If it is still paused in 48 hours it stops for good</b> — the accounts are
+            released and the unsent leads stay queued for a restart.
+          </div>
+          <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+            <button type="button" class="btn btn-primary">Pause · 468 leads stay queued</button>
+          </div>
+          <div style="text-align:center; margin-top: 12px;">
+            <button type="button" class="modal-cancel-link">Keep sending</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="sk-note">
+      Impossible to miss the first time. The risk: pause is frequent and instantly
+      reversible, so by the third press the dialog is muscle memory and nobody reads it —
+      and it costs a click every single time.
+    </p>
+  </div>
+
+  <div class="sk-case">
+    <p class="sk-lbl">C · Dialog, but only the first time per campaign</p>
+    <div class="sk-modal-stage">
+      <div class="modal-backdrop">
+        <div class="modal-card" role="dialog" aria-modal="true">
+          <span class="ptm-pill">FIRST PAUSE</span>
+          <h3 class="modal-title">Pause this campaign?</h3>
+          <div class="modal-body">
+            Sending stops after the lead in flight. <b>If it is still paused in 48 hours it
+            stops for good</b> and releases its accounts — the unsent leads stay queued.
+            <br /><br />
+            You will not be asked again for this campaign; the card shows the countdown.
+          </div>
+          <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+            <button type="button" class="btn btn-primary">Pause · got it</button>
+          </div>
+          <div style="text-align:center; margin-top: 12px;">
+            <button type="button" class="modal-cancel-link">Keep sending</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="sk-note">
+      Read once, then out of the way — later pauses fall back to A's toast. Costs one extra
+      click per campaign and one flag to remember which campaigns have been warned.
+    </p>
+  </div>
+
+</div>
+</body>
+</html>

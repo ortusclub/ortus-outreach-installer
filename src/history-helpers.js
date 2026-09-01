@@ -9,9 +9,10 @@
 // /api/history/* routes in server.js. No .tmp + rename here — matching
 // the in-place pattern those routes already use.
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { addToQueue } from './campaign-queue.js';
+import { updateJsonAtomic } from './atomic-json-store.js';
 
 const HISTORY_PATH = dataPath('history.json');
 
@@ -26,7 +27,7 @@ async function readHistory() {
 }
 
 async function writeHistory(arr) {
-  await writeFile(HISTORY_PATH, JSON.stringify(arr, null, 2), 'utf-8');
+  await updateJsonAtomic(HISTORY_PATH, [], () => arr);
 }
 
 // Result codes mirror the route's HTTP semantics so the route handler
@@ -56,13 +57,13 @@ export async function archiveHistoryEntry(idx) {
   if (!Number.isInteger(idx) || idx < 0) {
     return { ok: false, code: 'invalid_idx' };
   }
-  const history = await readHistory();
-  if (idx >= history.length) {
-    return { ok: false, code: 'out_of_range' };
-  }
-  history[idx].archived = true;
-  await writeHistory(history);
-  return { ok: true };
+  let found = false;
+  await updateJsonAtomic(HISTORY_PATH, [], (value) => {
+    const history = Array.isArray(value) ? value : [];
+    if (idx < history.length) { history[idx].archived = true; found = true; }
+    return history;
+  });
+  return found ? { ok: true } : { ok: false, code: 'out_of_range' };
 }
 
 // Read history with optional archived filter. The default (no filter)

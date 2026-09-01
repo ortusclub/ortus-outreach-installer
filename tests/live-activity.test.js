@@ -1,19 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { buildLiveActivity } from '../public/js/live-activity.mjs';
+import { buildLiveActivity, pauseAutoStop, PAUSE_MAX_MS } from '../public/js/live-activity.mjs';
 
 // buildLiveActivity turns an /api/campaign/status snapshot into the card's
 // "live line" — WHAT the campaign is doing right now. Mode-agnostic: it reads
 // the same currentAction/currentProfile/nextCheckAt the backend sends for
 // every campaign mode, so connect_only, CC+DM, message_only, etc. all work.
 
-test('monitoring, between checks → "Waiting for next check" (nothing running)', () => {
+test('monitoring, between checks → expected idle state with monitoring armed', () => {
   const r = buildLiveActivity({
     running: false, state: 'monitoring', monitoringCheckInProgress: false,
     participatingProfileIds: ['a', 'b'], checkIntervalMinutes: 15,
   });
   assert.equal(r.state, 'monitoring');
-  assert.equal(r.l1, 'Waiting for next check');
+  assert.equal(r.icon, '◷');
+  assert.equal(r.l1, 'Nothing is running right now — this is expected');
+  assert.match(r.l2, /monitoring is armed/);
   assert.match(r.l2, /2 accounts/);
   assert.match(r.l2, /15 min/);
 });
@@ -24,8 +26,20 @@ test('monitoring, a sweep is running → "Checking" state', () => {
     currentProfile: 'justine.mangera@ortus.solutions',
   });
   assert.equal(r.state, 'checking');
+  assert.equal(r.phase, 'checking');
+  assert.equal(r.who, 'justine.mangera@ortus.solutions');
   assert.match(r.l1, /Checking/);
   assert.match(r.l2, /justine\.mangera/);
+});
+
+test('manual This-Mac check has a detailed checking phase before currentAction arrives', () => {
+  const r = buildLiveActivity({
+    running: false, state: 'monitoring', monitoringCheckInProgress: true,
+    participatingProfileIds: ['a', 'b', 'c'],
+  });
+  assert.equal(r.phase, 'checking');
+  assert.equal(r.who, 'Selecting the next account');
+  assert.match(r.sub, /eligible campaign account/i);
 });
 
 test('sending → surfaces the REAL currentAction label + account · lead', () => {
@@ -123,12 +137,22 @@ test('paused outranks a stale phase tick', () => {
   assert.equal(r.phase, undefined);
 });
 
-test('an unknown phase is ignored, not rendered blank', () => {
+test('an unknown phase is explicit, never a misleading generic working state', () => {
   const r = buildLiveActivity({
     running: true, currentAction: { phase: 'teleporting', lead: 'Nobody' },
   });
   assert.equal(r.phase, undefined);
-  assert.equal(r.l1, 'Working…'); // the old fallback, unchanged
+  assert.equal(r.l1, 'Waiting for a verified engine update');
+  assert.match(r.l2, /reported phase:/);
+});
+
+test('an interrupted local runtime explains why it stopped', () => {
+  const r = buildLiveActivity({ state: 'interrupted', interruption: {
+    title: 'Stopped because the app was closed', detail: 'The remaining leads are safe.',
+  } });
+  assert.equal(r.state, 'interrupted');
+  assert.equal(r.l1, 'Stopped because the app was closed');
+  assert.match(r.l2, /remaining leads are safe/i);
 });
 
 test('every account capped/benched → says so, never "Working…"', () => {
@@ -144,4 +168,100 @@ test('every account capped/benched → says so, never "Working…"', () => {
   assert.notEqual(r.l1, 'Working…');
   assert.match(r.verb, /free account/i);
   assert.match(r.sub, /daily limit/);
+});
+
+// ── The 48h pause deadline ──────────────────────────────────────────────────
+// A pause holds the campaign's accounts and freezes its unsent leads, so the
+// engine cancels it after 48h. The card has to SAY so at the moment it is
+// paused — a rule the operator only discovers when their campaign is gone is
+// worse than no rule.
+
+test('a paused cloud campaign says when it will auto-stop', () => {
+  const now = Date.parse('2026-08-20T10:00:00Z');
+  const r = buildLiveActivity(
+    { running: true, paused: true, pausedAt: '2026-08-20T09:00:00Z' }, now,
+  );
+  assert.equal(r.state, 'paused');
+  assert.equal(r.l2, 'auto-stops in 47h · resumes instantly, browsers stay open');
+});
+
+test('a local pause makes no promise it cannot keep', () => {
+  // No pausedAt: the local pause lives in memory and dies with the app, and
+  // nothing enforces 48h for it. The old wording, unchanged.
+  const r = buildLiveActivity({ running: true, paused: true });
+  assert.equal(r.state, 'paused');
+  assert.equal(r.l2, 'resumes instantly · browsers stay open');
+});
+
+test('the deadline counts in hours far out, minutes when it is close', () => {
+  const at = '2026-08-20T00:00:00Z';
+  const T = (iso) => Date.parse(iso);
+  assert.equal(pauseAutoStop(at, T('2026-08-20T00:00:00Z')), 'auto-stops in 48h');
+  assert.equal(pauseAutoStop(at, T('2026-08-21T23:00:00Z')), 'auto-stops in 1h 0m',
+    'under two hours the minutes matter — it is about to happen');
+  assert.equal(pauseAutoStop(at, T('2026-08-21T23:30:00Z')), 'auto-stops in 30 min');
+});
+
+test('past the deadline it never counts down through zero', () => {
+  // The engine cancels on its next tick; a negative countdown would read as a
+  // campaign that is still safely paused.
+  const r = pauseAutoStop('2026-08-18T00:00:00Z', Date.parse('2026-08-20T10:00:00Z'));
+  assert.equal(r, 'auto-stopping now — paused too long');
+});
+
+test('an unparseable or missing stamp renders nothing, never NaN', () => {
+  assert.equal(pauseAutoStop(null), '');
+  assert.equal(pauseAutoStop(''), '');
+  assert.equal(pauseAutoStop('not a date'), '');
+});
+
+test('the app and the engine agree on 48 hours', () => {
+  // If these ever diverge the card counts down to a moment nothing acts on.
+  assert.equal(PAUSE_MAX_MS, 48 * 60 * 60 * 1000);
+});
+
+test('past the deadline the card drops "resumes instantly"', () => {
+  // Caught in the sketch: the card read "auto-stopping now — paused too long ·
+  // resumes instantly, browsers stay open". It is about to be cancelled, so
+  // resuming is the one thing it will not do.
+  const r = buildLiveActivity(
+    { running: true, paused: true, pausedAt: '2026-08-18T00:00:00Z' },
+    Date.parse('2026-08-20T10:00:00Z'),
+  );
+  assert.equal(r.l2, 'auto-stopping now — paused too long');
+  assert.ok(!/resumes instantly/.test(r.l2));
+});
+
+test('a monitoring campaign that is not slowed explains the expected idle window', () => {
+  const a = buildLiveActivity({
+    running: false, state: 'monitoring', profileIds: ['a', 'b', 'c', 'd', 'e'],
+    checkIntervalMinutes: 60, checkIntervalBaseMinutes: 60, emptyCheckStreak: 1,
+  });
+  assert.equal(a.l1, 'Nothing is running right now — this is expected');
+  assert.equal(a.l2, '5 accounts · monitoring is armed · next check runs automatically every 1h');
+});
+
+test('a slowed campaign explains itself and promises the way back', () => {
+  const a = buildLiveActivity({
+    running: false, state: 'monitoring', profileIds: ['a', 'b', 'c', 'd', 'e'],
+    checkIntervalMinutes: 240, checkIntervalBaseMinutes: 60, emptyCheckStreak: 9,
+  });
+  assert.equal(a.l1, 'Quiet — checking less often');
+  assert.equal(a.l2, 'nothing accepted in the last 9 checks · hourly again as soon as one lands');
+});
+
+test('a slowed 30-minute campaign promises 30 minutes, not "hourly"', () => {
+  const a = buildLiveActivity({
+    running: false, state: 'monitoring', profileIds: ['a'],
+    checkIntervalMinutes: 120, checkIntervalBaseMinutes: 30, emptyCheckStreak: 7,
+  });
+  assert.match(a.l2, /every 30 min again as soon as one lands/);
+});
+
+test('one check is singular', () => {
+  const a = buildLiveActivity({
+    running: false, state: 'monitoring', profileIds: ['a'],
+    checkIntervalMinutes: 120, checkIntervalBaseMinutes: 60, emptyCheckStreak: 3,
+  });
+  assert.match(a.l2, /nothing accepted in the last 3 checks/);
 });

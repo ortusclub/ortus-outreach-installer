@@ -2091,6 +2091,30 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   font-family: var(--body); font-size: 1rem; font-weight: 500; outline: none;
 }
 .intro-config-input:focus { border-bottom-color: var(--ink); }
+
+/* Primary-person name recall (2026-08-27). Anchored under the name field, which
+   is an underline-only input, so the panel is the only boxed thing here — it
+   reads as a list hanging off the field rather than a second control. */
+.pp-recall {
+  position: absolute; z-index: 40; left: 0; right: 0; top: 100%;
+  background: #0d0d0d; border: 1px solid var(--hairline);
+  border-radius: 0 0 9px 9px; overflow: hidden;
+  box-shadow: 0 12px 28px rgba(0,0,0,.55);
+}
+.pp-recall[hidden] { display: none; }
+.pp-recall-item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 9px 12px; cursor: pointer; border-top: 1px solid var(--hairline-soft);
+}
+.pp-recall-item:first-child { border-top: none; }
+.pp-recall-item.on, .pp-recall-item:hover { background: rgba(255,255,255,.06); }
+.pp-recall-name { font-size: .92rem; font-weight: 500; }
+.pp-recall-name mark { background: none; color: var(--gold); border-bottom: 1px solid var(--gold); }
+.pp-recall-url {
+  font-family: var(--mono); font-size: .74rem; color: var(--gray);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 58%;
+}
+.pp-recall-filled { color: var(--green); font-size: .78rem; margin-top: 6px; }
 .intro-config-input::placeholder { color: var(--gray-faint, #b8b8b6); font-weight: 400; }
 /* v2.104 — primary URL hard-lock: red underline + inline error when the pasted
    value isn't a real personal /in/ profile link. Clears the moment it's valid. */
@@ -2952,7 +2976,7 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .rt-tab .s { font-size:10.5px; color:var(--gray); }
 .rt-tab.on { background:var(--ink); }
 .rt-tab.on .t { color:var(--bg); }
-.rt-tab.on .s { color:rgba(255,255,255,.65); }
+.rt-tab.on .s { color:var(--bg); opacity:.7; }  /* hardcoded white vanished on the light-on-dark selected tile */
 .rt-tab:disabled, .rt-tab.rt-tab-disabled { opacity:.4; cursor:not-allowed; }
 .rt-facts { display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; padding:0 6px; }
 .rt-fact { font-size:11px; color:var(--gray); display:flex; gap:6px; align-items:baseline; }
@@ -3706,6 +3730,19 @@ body.theme-light .launch-actions.launch-actions--four #btn-start {
 .preview-card__warnings ul { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--ink); }
 
 /* Phase 11.1 — Slow-mode banner (shown when throttle.active) */
+/* Cloud engine unreachable — the board below is a stale snapshot. Same shape as
+   #throttle-banner, hairline rule instead of the amber bar (the design system
+   has no second accent), and `hidden` does the toggling. */
+#cloud-offline-banner {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--red);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
 #throttle-banner {
   margin: 8px 0;
   padding: 8px 12px;
@@ -3851,6 +3888,20 @@ body.theme-light .launch-actions.launch-actions--four #btn-start {
   gap: 12px;
 }
 .modal-actions .btn { min-width: 120px; }
+
+.machine-choice-card { padding: 40px 44px 36px; }
+.machine-choice-card .modal-body { max-width: 480px; margin-bottom: 24px; }
+.machine-choice-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px !important; }
+.machine-choice-option {
+  min-height: 72px; padding: 14px 18px; border: 1px solid var(--hairline);
+  border-radius: 9999px; background: transparent; color: var(--ink);
+  font-family: var(--mono); font-size: .76rem; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; cursor: pointer;
+}
+.machine-choice-option:hover, .machine-choice-option:focus-visible {
+  border-color: var(--ink); outline: none; background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.machine-choice-option.is-current { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
 /* Task 7 — Start-time preflight prompt (runPreflightPrompt). Grey for a
    capped account (nothing to fix), red for a fixable one (proxy/needslogin —
@@ -8410,6 +8461,30 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .hs-eyebrow .lk{font-size:12px;line-height:1;}
 .hs-eyebrow .cnt{margin-left:auto;color:var(--ink);font-weight:600;letter-spacing:.06em;}
 .hs-head{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:500;line-height:1.4;}
+/* Two-step handshake header. The wizard's single bar could not show that the
+   primary's own accept pass is a separate, slower step, so the settle wait and
+   the accept both read as a hang (operator, 2026-08-28). */
+.phl-accept-all{display:flex;gap:11px;align-items:flex-start;margin:16px 0 0;padding:12px 13px;border:1px solid var(--hairline);border-radius:10px;background:var(--bg-soft);cursor:pointer;}
+.phl-accept-all input{margin-top:2px;flex:none;}
+.phl-accept-all b{display:block;font-family:var(--mono);font-size:.7rem;font-weight:600;color:var(--ink);}
+.phl-accept-all em{display:block;font-style:normal;font-family:var(--mono);font-size:.62rem;color:var(--gray);line-height:1.55;margin-top:4px;text-transform:none;letter-spacing:0;}
+.phl-accept-all:hover{border-color:var(--gold);}
+.hs-steps{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0 0;}
+.hs-step{border:1px solid var(--hairline);border-radius:8px;padding:8px 10px;background:var(--card-bg);}  /* --card-bg, never #fff: a hardcoded white tile puts white text on white in dark mode. */
+.hs-step .n{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);}
+.hs-step .l{font-family:var(--mono);font-size:11px;color:var(--ink);font-weight:500;line-height:1.35;margin-top:3px;}
+.hs-step.on{border-color:var(--gold);background:rgba(197,160,66,.10);}
+.hs-step.on .n{color:#8a6d1f;}
+.hs-step.on .n::after{content:' · now';}
+.hs-step.did{border-color:rgba(47,125,71,.4);background:rgba(47,125,71,.06);}
+.hs-step.did .n{color:#2f7d47;}
+.hs-step.did .n::after{content:' · done';}
+.hs-step.failed{border-color:var(--red);background:rgba(178,59,59,.06);}
+.hs-step.failed .n{color:var(--red);}
+.hs-step.failed .n::after{content:' · not here';}
+.hs-panel.partial{border-left-color:var(--red);}
+.hs-panel.partial .hs-eyebrow{color:var(--red);}
+@media (max-width:520px){.hs-steps{grid-template-columns:1fr;}}
 .hs-bar{height:5px;border-radius:9999px;background:#e7e3d4;margin:11px 0 0;overflow:hidden;}
 .hs-bar i{display:block;height:100%;width:40%;background:var(--gold);transition:width .5s;}
 .hs-expl{font-size:11.5px;color:var(--gray);line-height:1.6;margin:11px 0 0;}
@@ -8476,3 +8551,161 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
   .mg-led { border-left: none; border-top: 1px solid var(--hairline); }
   .mg-led:first-child { border-top: none; }
 }
+
+/* ── Handover: which side a live campaign runs on ───────────────────────────
+   Ported verbatim from public/sketches/2026-08-21-vm-local-handover.html
+   (variant C, signed off). Tokens only — hairlines, mono type, radius 9999 on
+   the pill. No new colour: gold stays reserved for the Start CTA. */
+.wh { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      border-top: 1px solid var(--hairline); }
+.wh-lab { font-family: var(--mono); font-size: .64rem; letter-spacing: .14em;
+          text-transform: uppercase; color: var(--gray); }
+.wh-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; overflow: hidden; }
+.wh-seg button { font-family: var(--mono); font-size: .68rem; letter-spacing: .08em;
+                 text-transform: uppercase; padding: 5px 14px; border: 0; background: transparent;
+                 color: var(--gray); cursor: pointer; }
+.wh-seg button.on { background: var(--ink); color: var(--bg); }
+.wh-seg button.busy { color: var(--ink); }
+.wh-seg button[disabled] { cursor: default; }
+.wh-note { font-family: var(--mono); font-size: .7rem; color: var(--gray); margin-left: auto; }
+.wh-warn { font-family: var(--mono); font-size: .7rem; color: var(--ink); margin-left: auto; }
+
+/* Variant C's inline confirm strip — same hairline language. */
+.wh-confirm { border-top: 1px solid var(--hairline); padding: 12px 14px;
+              font-family: var(--mono); font-size: .74rem; line-height: 1.6; }
+.wh-confirm b { font-weight: 600; }
+.wh-confirm .row { display: flex; gap: 8px; margin-top: 10px; }
+.wh-confirm button { font-family: var(--mono); font-size: .68rem; letter-spacing: .08em;
+                     text-transform: uppercase; padding: 6px 16px; border: 1px solid var(--hairline);
+                     border-radius: 9999px; background: transparent; cursor: pointer; }
+.wh-confirm button.go { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+/* Runtime safety strip: deliberately large and persistent so a development
+   Electron build can never be mistaken for the team production app. */
+.engine-version-banner {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(220px, 1fr) 1px minmax(190px, .8fr);
+  align-items: stretch;
+  gap: 20px;
+  margin: 0 0 24px;
+  padding: 18px 22px;
+  border: 2px solid var(--hairline);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: inset 6px 0 0 var(--gray);
+}
+.engine-version-banner__flag,
+.engine-version-banner__current,
+.engine-version-banner__live {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.engine-version-banner__flag {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+}
+.engine-version-banner__signal {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.engine-version-banner__label {
+  margin-bottom: 3px;
+  color: var(--gray);
+  font-family: var(--mono);
+  font-size: .6rem;
+  letter-spacing: .16em;
+}
+.engine-version-banner strong {
+  font-family: var(--display);
+  font-size: clamp(2.25rem, 4vw, 3.75rem);
+  font-weight: 400;
+  letter-spacing: .025em;
+  line-height: .9;
+}
+.engine-version-banner__url {
+  overflow: hidden;
+  margin-top: 6px;
+  color: var(--gray);
+  font-family: var(--mono);
+  font-size: .62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.engine-version-banner__divider { background: var(--hairline); }
+.engine-version-banner__explanation {
+  grid-column: 2 / -1;
+  margin: -8px 0 0;
+  color: var(--gray);
+  font-size: .72rem;
+}
+.engine-version-banner.is-development {
+  border-color: #b98a32;
+  box-shadow: inset 6px 0 0 #b98a32;
+}
+.engine-version-banner.is-development .engine-version-banner__flag { color: #b98a32; }
+.engine-version-banner.is-production {
+  border-color: #3d8064;
+  box-shadow: inset 6px 0 0 #3d8064;
+}
+.engine-version-banner.is-production .engine-version-banner__flag { color: #3d8064; }
+.engine-version-banner.is-error {
+  border-color: #a84d4d;
+  box-shadow: inset 6px 0 0 #a84d4d;
+}
+.engine-version-banner.is-error .engine-version-banner__flag { color: #a84d4d; }
+@media (max-width: 900px) {
+  .engine-version-banner { grid-template-columns: 1fr 1fr; }
+  .engine-version-banner__flag,
+  .engine-version-banner__explanation { grid-column: 1 / -1; }
+  .engine-version-banner__divider { display: none; }
+  .engine-version-banner__explanation { margin-top: 0; }
+}
+
+/* Primary-handshake operational readout. This is intentionally terminal-like:
+   it answers "what is it doing now?" without competing with the modal actions. */
+.hs-wiz-now {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  margin: 14px 0 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.hs-wiz-now-label,
+.hs-wiz-elapsed {
+  color: var(--gray);
+  font-family: var(--mono);
+  font-size: .6rem;
+  letter-spacing: .14em;
+}
+.hs-wiz-now-text {
+  font-size: .76rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.hs-wiz-log {
+  max-height: 132px;
+  margin-top: 12px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  background: #151515;
+  color: #d7d7d2;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .62rem;
+  line-height: 1.6;
+}
+.hs-wiz-log-line + .hs-wiz-log-line { margin-top: 3px; }

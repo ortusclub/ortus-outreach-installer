@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Monitoring sweep — account result pills</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c0e0d;--card:#161918;--stage:#202422;--line:#39403c;--ink:#f2f4f1;--muted:#9ca39e;--blue:#6eb2df;--green:#52c97a;--red:#dc7272;--amber:#d9aa58}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Helvetica Neue",Arial,sans-serif}.page{width:min(1500px,calc(100% - 56px));margin:auto;padding:48px 0 90px}.intro{display:grid;grid-template-columns:1fr 390px;gap:60px;padding-bottom:30px;border-bottom:1px solid #292d2b}.tag,.label,.eyebrow,.account small{font:700 10px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.15em;text-transform:uppercase}.tag{color:var(--blue)}h1{max-width:760px;margin:12px 0 0;font-size:52px;line-height:.98;letter-spacing:-.045em}.intro p{margin:12px 0 0;color:var(--muted);font-size:14px;line-height:1.65}.note{align-self:end;padding-left:24px;border-left:1px solid var(--line)}.card{margin-top:44px;padding:28px;border:1px solid #414844;border-left:3px solid var(--blue);border-radius:14px;background:linear-gradient(118deg,rgba(71,137,178,.11),rgba(22,25,24,.98) 40%,rgba(22,25,24,.94))}.head{display:flex;justify-content:space-between;gap:24px}.status{display:flex;align-items:center;gap:9px;color:#9dc9e5;font:700 11px/1 "SFMono-Regular",Consolas,monospace;letter-spacing:.15em;text-transform:uppercase}.dot{width:7px;height:7px;border-radius:50%;background:var(--blue)}h2{margin:12px 0 0;font-size:28px;letter-spacing:-.03em;text-transform:uppercase}.count{text-align:right}.count strong{display:block;font-size:30px}.count span{color:var(--muted);font-size:12px}.stage{margin-top:26px;padding:26px 28px;border:1px solid #424944;border-radius:10px;background:linear-gradient(90deg,rgba(110,178,223,.08),rgba(32,36,34,.96) 38%)}.eyebrow{color:#81b9dc}.stage h3{margin:10px 0 6px;font-size:35px;letter-spacing:-.035em;text-transform:uppercase}.stage p{margin:0;color:#b9bfbb;font-size:14px}.accounts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:26px}.account{min-width:0;padding:15px 16px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.018)}.account header{display:flex;align-items:center;justify-content:space-between;gap:12px}.account b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.pill{flex:0 0 auto;padding:6px 9px;border:1px solid currentColor;border-radius:999px;font:700 10px/1 "SFMono-Regular",Consolas,monospace}.success{color:var(--green)}.neutral{color:#a9b0ab}.blocked{color:var(--red)}.account small{display:block;margin-top:13px;color:#737a75}.account p{margin:6px 0 0;color:#bdc2be;font-size:13px}.summary{display:flex;align-items:center;justify-content:space-between;gap:22px;margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}.summary strong{font-size:14px}.summary span{color:var(--muted);font-size:13px}.rule{margin-top:38px;display:grid;grid-template-columns:180px 1fr;gap:28px;border-top:1px solid #292d2b;padding-top:24px}.rule h3{margin:0;font-size:17px}.rule p{margin:0;color:var(--muted);line-height:1.65;font-size:14px}@media(max-width:850px){.page{width:calc(100% - 28px);padding-top:28px}.intro,.rule{grid-template-columns:1fr}.note{padding:20px 0 0;border-left:0;border-top:1px solid var(--line)}.accounts{grid-template-columns:1fr}.stage h3{font-size:27px}.head,.summary{align-items:flex-start;flex-direction:column}.count{text-align:left}}
+  </style>
+</head>
+<body>
+<main class="page">
+  <section class="intro">
+    <div><div class="tag">Monitoring card sketch · account results</div><h1>One sweep summary.<br>Every sender explained.</h1><p>The existing pills become the compact result ledger. The card answers how many accounts were checked, which sender found an acceptance, and which account needs action—without adding another dashboard section.</p></div>
+    <div class="note"><div class="label">Design rule</div><p>Use the pill for the result, and one short line below it for meaning. Never hide a failed or skipped account inside a campaign-wide “complete” total.</p></div>
+  </section>
+
+  <article class="card">
+    <header class="head"><div><div class="status"><i class="dot"></i> Monitoring</div><h2>TEST_24/08_CC+IC_A</h2></div><div class="count"><strong>2 of 3</strong><span>accounts checked</span></div></header>
+    <section class="stage"><div class="eyebrow">Check incomplete</div><h3>1 acceptance · 1 introduction · 1 account needs login</h3><p>Monitoring remains active. Log in to the affected account, then retry it.</p></section>
+
+    <section class="accounts" aria-label="Account check results">
+      <article class="account"><header><b>sean.alcosin@ortus.solutions</b><span class="pill success">1 accepted</span></header><small>Checked successfully</small><p>Juan C. Rojas accepted; introduction sent.</p></article>
+      <article class="account"><header><b>cindy.siapno@ortus.solutions</b><span class="pill neutral">0 accepted</span></header><small>Checked successfully</small><p>Recent connections loaded; no new match.</p></article>
+      <article class="account"><header><b>manoj.kumar@ortus.solutions</b><span class="pill blocked">Needs login</span></header><small>Not checked</small><p>Log in to LinkedIn, then retry this account.</p></article>
+    </section>
+
+    <footer class="summary"><strong>Sweep result: 2 checked successfully · 1 needs action</strong><span>Next automatic check today at 19:04</span></footer>
+  </article>
+
+  <section class="rule"><h3>Strict truth rule</h3><p>The sweep can say “complete” only when every available account returned valid recent-connections data. Otherwise the headline says “Check incomplete,” the checked total stays honest, and the affected account pill turns red with a concrete resolution.</p></section>
+</main>
+</body>
+</html>

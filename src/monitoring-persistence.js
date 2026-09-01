@@ -40,6 +40,11 @@ export const MONITORING_FIELDS = [
   // v2.112: operator toggle for the periodic auto-check. Absent in older
   // state files → undefined → treated as enabled (default-on).
   'autoChecksEnabled',
+  // Consecutive empty-sweep count driving the adaptive check cadence (see
+  // monitoring-cadence.js). Absent in older state files → treated as 0, the
+  // BASE cadence — the shorter one. Its absence can only ever make checks
+  // MORE frequent, never less.
+  'emptyCheckStreak',
 ];
 
 export function extractMonitoringSlice(campaign) {

@@ -134,7 +134,13 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
     // Detect malformed: raw cell has content that doesn't contain linkedin.com,
     // meaning extractLinkedInUrl used the slug-fallback on junk input, OR
     // extractLinkedInUrl returned null (truly empty / no URL found).
-    const rawTrimmed = String(rawCell || '').trim();
+    // extractLinkedInUrl auto-detects: with no column named it scans every cell
+    // for a linkedin.com value, and the campaign runner relies on that. The gate
+    // read the NAMED cell only, so a blank linkedinColumn made every row look
+    // empty — 4 clean rows became targetCount 0 and the launch was refused with
+    // "No actionable leads were found", while lint's own column check was
+    // happily reporting the column as "(auto)" found (operator, 2026-08-28).
+    const rawTrimmed = String(rawCell || '').trim() || String(url || '');
     const cellIsLinkedIn = rawTrimmed.toLowerCase().includes('linkedin.com');
     if (!rawTrimmed) {
       // Empty cell — simply not a target, no finding
@@ -271,6 +277,11 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
   return {
     blockers, warnings, passed,
     targetCount: actionableTargets.length,
+    // Why a sheet has no targets, told apart. The launch gate used to derive
+    // "already processed" as rows-minus-targets, so a sheet with clean rows but
+    // no usable URL was reported to the operator as already sent (2026-08-28).
+    stagedCount: (rows || []).length - targets.length,
+    noUrlCount: targets.length - actionableTargets.length,
   };
 }
 

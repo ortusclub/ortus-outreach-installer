@@ -1,0 +1,95 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Where does the primary handshake run?</title>
+<style>
+:root{--bg:#0b0b0c;--card:#151517;--ink:#f2f2f0;--gray:#8a8a86;--dim:#5c5c58;--hair:#2a2a2c;--gold:#caa24a;--green:#4a9d5f;--red:#c4553f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:36px}
+h1{font:600 15px/1.3 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);margin:0 0 6px}
+.lede{color:var(--gray);max-width:80ch;margin:0 0 28px;font-size:13px}
+.lede b{color:var(--ink);font-weight:600}
+h2{font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin:34px 0 12px}
+.modal{background:var(--card);border:1px solid var(--hair);border-radius:4px;padding:26px 28px;max-width:820px}
+.eyebrow{font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.title{font:700 24px/1.15 'Oswald','Arial Narrow',sans-serif;text-transform:uppercase;margin:0 0 8px}
+.sub{color:var(--gray);font-size:13px;margin:0 0 22px;max-width:66ch}
+.always{border:1px solid var(--hair);border-left:2px solid var(--gold);border-radius:2px;padding:13px 16px;margin:0 0 22px;background:#1a1710}
+.always .k{font:600 9.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:7px}
+.always .m{font-size:13px;color:var(--ink)}
+.always .m b{color:var(--gold)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.opt{border:1px solid var(--hair);border-radius:3px;padding:18px 19px;text-align:left;background:#101012;cursor:pointer;position:relative}
+.opt.pick{border-color:var(--green);background:#101512}
+.opt .rec{position:absolute;top:-1px;right:14px;font:600 8.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;background:var(--green);color:#08120b;padding:4px 7px;border-radius:0 0 2px 2px}
+.opt h3{font:700 15px/1.25 'Oswald','Arial Narrow',sans-serif;text-transform:uppercase;margin:0 0 9px;letter-spacing:.02em}
+.opt p{margin:0 0 10px;font-size:12.5px;color:var(--gray)}
+.opt ul{margin:0;padding-left:15px}
+.opt li{font-size:12.5px;color:var(--gray);margin-bottom:5px}
+.opt li b{color:var(--ink);font-weight:600}
+.opt .warn{color:var(--red)}
+.foot{margin-top:20px;display:flex;align-items:center;gap:16px;border-top:1px solid var(--hair);padding-top:15px}
+.foot .cancel{color:var(--gray);font-size:12.5px;text-decoration:underline;text-underline-offset:3px}
+.foot .note{color:var(--dim);font-size:12px}
+.fact{border:1px solid var(--hair);border-radius:3px;padding:16px 18px;margin-top:16px;max-width:820px}
+.fact .k{font:600 9.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:9px}
+.fact p{margin:0 0 9px;font-size:12.5px;color:var(--gray)}
+.fact code{color:var(--ink);font:11.5px ui-monospace,Menlo,monospace}
+</style></head><body>
+
+<h1>VM CC+IC · where does the primary handshake run?</h1>
+<p class="lede">Asked once, at Launch, when the campaign is <b>CC+IC running on the Cloud VM</b>. The point of the panel is the line at the top: choosing the VM does <b>not</b> mean you can keep the laptop shut. I have written it that way rather than as a neutral two-way choice, because the second option has a known failure mode and pretending otherwise is how people pick it.</p>
+
+<h2>The ask</h2>
+<div class="modal">
+  <div class="eyebrow">Launch · Connect + Introduce Back on the Cloud VM</div>
+  <h2 class="title" style="color:var(--ink);margin:0 0 8px">Connecting your senders to the primary</h2>
+  <p class="sub">Before any introduction can be sent, each sending account has to be a 1st-degree connection of your primary person. Two things have to happen: the senders <b>request</b> the primary, and the primary <b>accepts</b>.</p>
+
+  <div class="always">
+    <div class="k">This part is not a choice</div>
+    <div class="m">The <b>accept</b> always happens on this Mac. Your primary's browser — your local browser, or the GoLogin profile you picked as the primary — has to open here to accept those invitations. Whichever option you choose below, <b>this Mac opens a browser during launch</b>.</div>
+  </div>
+
+  <div class="row">
+    <button class="opt pick">
+      <span class="rec">Recommended</span>
+      <h3>Do it here, before launch</h3>
+      <p>The Mac drives the senders to request your primary, then accepts. Then the whole campaign moves to the VM.</p>
+      <ul>
+        <li><b>Every sender is connected</b> before the first lead is touched</li>
+        <li>Introductions can fire on the very first acceptance</li>
+        <li>Adds a few minutes to launch, once</li>
+        <li>After that, the campaign runs 100% on the VM</li>
+      </ul>
+    </button>
+    <button class="opt">
+      <h3>Let the VM do the requests</h3>
+      <p>The VM asks the primary lazily, per lead, when a lead is accepted. The Mac still opens to accept.</p>
+      <ul>
+        <li>Launch is quicker</li>
+        <li class="warn"><b>Known failure:</b> the VM's connect is gated on a lead already being accepted, so a campaign that reaches monitoring with 0 acceptances sends the primary <b>nothing</b>, and no introduction can ever fire</li>
+        <li class="warn">You still have to open this Mac to accept, just later and with no prompt telling you when</li>
+      </ul>
+    </button>
+  </div>
+
+  <div class="foot">
+    <span class="cancel">Cancel launch</span>
+    <span class="note">Remember my choice for this campaign · nothing is sent and no lead is consumed until you pick</span>
+  </div>
+</div>
+
+<h2>Why it is written this way</h2>
+<div class="fact">
+  <div class="k">From the source, not invented</div>
+  <p><code>src/cloud-preflight-handshake.js</code> opens with the reason this module exists: “a cloud CC+IC campaign with a LOCAL-ONLY primary never gets its senders connected to the primary. The engine's only sender→primary connect is lazy (fires per-lead at intro time, gated on a lead having been accepted), so a campaign that is monitoring with 0 accepted leads sends the primary <b>NOTHING</b>.”</p>
+  <p>That is the whole content of the right-hand option's warning. Path A (do it here, before launch) was built specifically to fix it, and today it is the only path that actually runs — Path B stays dormant until the engine ships <code>awaiting_primary_accept</code>.</p>
+  <p>The “accept always happens on this Mac” line is also literal: the module accepts via <code>launchLocalBrowser</code> or <code>launchProfile</code>, and both are local launchers. Picking a GoLogin profile as the primary changes <em>which</em> browser opens here, never <em>where</em>.</p>
+</div>
+
+<h2>Open question for you</h2>
+<div class="fact">
+  <div class="k">Before I build it</div>
+  <p>Given the right-hand option is a known-broken path today, do you want it offered at all? Three ways to go:</p>
+  <p><b>1.</b> Offer both, as sketched, with the warning. <b>2.</b> Offer both but disable the VM option until the engine ships <code>awaiting_primary_accept</code>, showing why it is greyed. <b>3.</b> Do not ask at all — just show the “this Mac will open to accept” explanation as a confirmation step, since there is only one working answer.</p>
+</div>
+</body></html>

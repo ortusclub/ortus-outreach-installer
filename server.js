@@ -22,8 +22,8 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
-import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
+import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin, nextCheckLogLine } from './src/campaign.js';
+import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNextReady } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
@@ -53,12 +53,13 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes, isRetiredMode } from './public/js/campaign-modes.mjs';
@@ -69,6 +70,10 @@ import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './
 import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
 import { getFailures, retryFailures } from './src/sheet-write-tracker.js';
 import { getSkips } from './src/skip-ledger.js';
+import { createStopWatchdog } from './src/stop-watchdog.js';
+import { clearRuntimeInterruption, readRuntimeInterruption } from './src/runtime-interruption.js';
+import { launchValidation } from './src/launch-validation.js';
+import { terminalPresentation } from './public/js/campaign-terminal.mjs';
 
 // Surface a repeated Operations Log write failure instead of letting it die
 // silently (the 2026-06-10 → 06-11 blackout). Routed to the fatal-error log
@@ -80,7 +85,7 @@ _setAlertImpl((msg) => {
 import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } from './src/notification-prefs.js';
 import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs, identityGateEnabled } from './src/operator-prefs.js';
 import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/operator-identity.js';
-import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-configs.js';
+import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
@@ -409,9 +414,25 @@ console.error = (...args) => { captureLog('ERR', args); origError.apply(console,
 // Health check
 // ---------------------------------------------------------------------------
 app.get('/api/health', (_req, res) => {
-  // scraperConfigured lets the dashboard gate the "Sales Nav Scrape" mode —
-  // it's enabled only when SCRAPER_ENGINE_URL points at a GKE engine.
-  res.json({ ok: true, time: new Date().toISOString(), version: APP_VERSION, scraperConfigured: isScraperConfigured(), scraperEngineUrl: getScrapeEngineUrl() });
+  // Make the runtime target visible in the app. A development Electron build
+  // can point at a frozen engine image without moving the team's live engine.
+  const scraperEngineUrl = getScrapeEngineUrl();
+  const productionEngineUrl = 'https://scraper.ortusclub.com';
+  const isProductionEngine = scraperEngineUrl.replace(/\/+$/, '') === productionEngineUrl;
+  const productionEngineVersion = process.env.PRODUCTION_ENGINE_VERSION || 'v139';
+  const scraperEngineVersion = process.env.SCRAPER_ENGINE_VERSION
+    || (isProductionEngine ? productionEngineVersion : 'unverified');
+  res.json({
+    ok: true,
+    time: new Date().toISOString(),
+    version: APP_VERSION,
+    scraperConfigured: isScraperConfigured(),
+    scraperEngineUrl,
+    scraperEngineVersion,
+    scraperEngineEnvironment: isProductionEngine ? 'production' : 'development',
+    productionEngineUrl,
+    productionEngineVersion,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -652,7 +673,17 @@ app.get('/api/profiles', async (req, res) => {
     })));
   } catch (err) {
     console.error('Error fetching profiles:', err.message);
-    res.status(500).json({ error: err.message });
+    const unauthorized = /GoLogin API 401|unauthori[sz]ed/i.test(String(err && err.message));
+    const devEngine = /^dev-/.test(String(process.env.SCRAPER_ENGINE_VERSION || ''));
+    res.status(unauthorized ? 401 : 500).json({
+      error: unauthorized
+        ? (devEngine
+          ? 'DEV GOLOGIN TOKEN REJECTED (HTTP 401). No development profiles can be loaded, so campaign browsers cannot open. Replace DEV_GOLOGIN_API_TOKEN in the engine .env and Kubernetes salesnav-secrets-dev, then restart this app. Production profiles are intentionally hidden here.'
+          : 'GoLogin rejected the configured API token (HTTP 401). Replace the token, then restart the app.')
+        : err.message,
+      code: unauthorized ? 'GOLOGIN_UNAUTHORIZED' : 'PROFILE_LOAD_FAILED',
+      environment: devEngine ? 'development' : 'production',
+    });
   }
 });
 
@@ -1188,12 +1219,26 @@ function launchCampaign(config, owner) {
   // Central operator-identity gate — both the HTTP start route AND the ungated
   // queue drain (runNextFromQueue) funnel through here. No identity → refuse.
   if (blockIfNoOperatorEmail(`campaign "${(config && config.name) || ''}"`, owner)) return;
+  // Anything that launches HERE runs here. Without this a campaign moved to the
+  // VM leaves campaign.runsOn === 'vm' behind, and the next local run would show
+  // the card's RUNNING ON control filled on the wrong side. handoverToLocal
+  // re-stamps both fields immediately after it calls this, so "moved N min ago"
+  // survives the reset.
+  campaign.runsOn = 'local';
+  campaign.handoverAt = null;
   preventSleep('campaign');
-  startCampaign({ ...config, createdBy: owner }).then(() => {
+  startCampaign({ ...config, createdBy: owner }).then(async () => {
     const status = getCampaignStatus();
+    if (status.dailyResetNeeded && status.resumeAt && !status.stoppedManually) {
+      await addToQueue({ ...config, _dailyContinuation: true, resumeContext: { totalProcessed: status.totalProcessed || 0 } }, owner, {
+        scheduledAt: status.resumeAt,
+      });
+      console.log(`[queue] Daily-limit continuation scheduled for ${status.resumeAt}`);
+    }
+    const terminal = terminalPresentation(status);
     notifyEmail(owner, {
-      title: 'Campaign finished',
-      body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+      title: `Campaign ${terminal.label.toLowerCase()}`,
+      body: `${terminal.explanation} ${status.processedToday || 0} actions, ${terminal.pending} pending, ${(status.errors || []).length} error(s).`,
       link: '/',
     }).catch(() => {});
   }).catch(err => {
@@ -1216,8 +1261,23 @@ function launchCampaign(config, owner) {
 
 async function runNextFromQueue() {
   if (campaign.running) return;
-  const next = await popNextQueued();
-  if (!next) return;
+  const queued = await getQueue();
+  const next = await popNextReady();
+  if (!next) {
+    const futureTimes = queued.map((entry) => new Date(entry.scheduledAt).getTime())
+      .filter((due) => Number.isFinite(due) && due > Date.now());
+    const due = futureTimes.length ? Math.min(...futureTimes) : null;
+    if (due) {
+      const waitMs = Math.min(due - Date.now(), 2_147_000_000);
+      clearTimeout(runNextFromQueue._scheduledTimer);
+      runNextFromQueue._scheduledTimer = setTimeout(() => {
+        runNextFromQueue().catch((err) => console.error('Scheduled queue drain failed:', err.message));
+      }, waitMs);
+      runNextFromQueue._scheduledTimer.unref?.();
+      return;
+    }
+    return;
+  }
   console.log(`[queue] Launching queued campaign "${next.name || '(unnamed)'}" (${next.id})`);
   launchCampaign(next.config, next.owner);
 }
@@ -1549,11 +1609,27 @@ function memoCloud(key, fetcher, { ttlMs = CLOUD_MEMO_TTL_MS, onFresh } = {}) {
 }
 
 
-// Any cloud mutation (start, cancel, unbench, account edits) must be visible on
-// the next poll, not up to a TTL later — so every non-GET under /api/campaign
-// drops the memo.
+// Mutations invalidate only the affected campaign lanes. Clearing the entire
+// board cache made an account retry trigger a new 89-campaign fan-out.
 app.use('/api/campaign', (req, _res, next) => {
-  if (req.method !== 'GET') _cloudMemo.clear();
+  if (req.method !== 'GET') {
+    _cloudMemo.delete('capacity');
+    for (const key of _cloudMemo.keys()) {
+      if (key.startsWith('list:')) _cloudMemo.delete(key);
+    }
+    const match = req.path.match(/^\/cloud\/([^/]+)/);
+    if (match) {
+      const id = decodeURIComponent(match[1]);
+      _cloudMemo.delete(`campaign:${id}`);
+      _cloudMemo.delete(`leads:${id}`);
+      _cloudMemo.delete(`accounts:${id}`);
+    }
+    if (req.path.includes('preflight') || req.path.includes('accounts')) {
+      for (const key of _cloudMemo.keys()) {
+        if (key.startsWith('preflight:')) _cloudMemo.delete(key);
+      }
+    }
+  }
   next();
 });
 
@@ -1585,6 +1661,33 @@ app.get('/api/campaign/cloud-capacity', async (_req, res) => {
   const r = await memoCloud('capacity', () => getCloudCapacity());
   if (r.error) return res.json({ queue: [], unavailable: true });
   res.json(r);
+});
+
+// One browser request supplies the board's list, detail snapshots and global
+// capacity. Server-side memo lanes still refresh independently and with bounded
+// concurrency, without occupying the Electron renderer's connection pool.
+app.get('/api/campaign/cloud-board-summary', async (req, res) => {
+  const list = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
+  if (list && list.error) return res.status(502).json(list);
+  const campaigns = Array.isArray(list?.campaigns) ? list.campaigns : [];
+  const details = {};
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < campaigns.length) {
+      const id = campaigns[nextIndex++]?.id;
+      if (!id) continue;
+      try {
+        const value = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
+          onFresh: (fresh) => { reconcilePrimaryHandshake(id, fresh).catch(() => {}); },
+        });
+        if (value && !value.error) details[id] = value;
+      } catch { /* preserve the usable remainder of the board */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, campaigns.length) }, worker));
+  const live = campaigns.some((c) => ['queued', 'running', 'stopping', 'monitoring', 'paused'].includes(c.status));
+  const capacity = live ? await memoCloud('capacity', () => getCloudCapacity()) : { queue: [] };
+  res.json({ campaigns, details, capacity: capacity?.error ? { queue: [], unavailable: true } : capacity });
 });
 // Per-account block truth for the Waiting card and the Start prompt.
 //
@@ -2050,6 +2153,18 @@ app.get('/api/team-status', async (req, res) => {
   res.json(payload);
 });
 
+// Primary people the operator has actually launched with, newest first, derived
+// from those same snapshots. Feeds the name type-ahead in the CC+IC Primary
+// Person card so a known name recalls its LinkedIn URL instead of being retyped.
+app.get('/api/primary-people', async (_req, res) => {
+  try {
+    res.json({ people: await getPrimaryPeople() });
+  } catch (err) {
+    // Recall is a convenience: a broken store must never block the wizard.
+    res.json({ people: [], error: err.message });
+  }
+});
+
 // The wizard config snapshotted at dispatch — used to Duplicate a cloud campaign.
 app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   const rec = await getCloudLaunchConfig(req.params.id);
@@ -2077,6 +2192,8 @@ app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
   const r = await stopCloudCampaign(req.params.id, {
     pause: !!req.query.pause,
     keepMonitoring: !!req.query.keepMonitoring, // "Stop sending, keep monitoring"
+    monitoringScope: req.query.monitoringScope === 'tab' ? 'tab' : 'campaign',
+    immediate: !!req.query.immediate,
   });
   if (r.error) return res.status(502).json(r);
   res.json(r);
@@ -2137,11 +2254,297 @@ app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// ── Handover: move a live campaign between the Cloud VM and this Mac ────────
+// Same shape as edit-redispatch above (stop one side, resume the remainder on
+// the other with the already-processed leads excluded), generalised into a
+// durable ownership change in either direction.
+//
+// THE RULE, and it is not negotiable for speed: the target side may not begin
+// while the source might still be working the same leads. Two sides sweeping at
+// once both read a blank Introduction Status and both fire an intro DM to the
+// same person. So every failure here ABORTS and leaves the campaign where it
+// was. A 409 from the engine means abort, never retry-anyway.
+//
+// Order of operations (src/handover.js handoverPlan encodes it, and its test
+// fails if it is ever reversed): confirm the target can take the campaign,
+// release the source, read what is already done, start the target, reset the
+// adaptive check cadence.
+
+// Stop whatever this Mac is doing for the current campaign and WAIT until it is
+// observably finished: not running, not monitoring, no bulk check in flight.
+// Reuses the existing stop paths rather than adding a new one. stopMonitoring
+// stamps nothing in the sheet (see its comment), so a monitoring campaign can
+// leave this Mac without its still-pending leads being closed off.
+async function stopLocalAndConfirm({ timeoutMs = 120000 } = {}) {
+  if (campaign.running) stopCampaign({ full: true, reason: 'handover-to-vm' });
+  else if (campaign.state === 'monitoring') await stopMonitoring({ reason: 'handover-to-vm' });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const s = getCampaignStatus();
+    if (!s.running && s.state !== 'monitoring' && !s.monitoringCheckInProgress) return { ok: true };
+    if (Date.now() >= deadline) return { ok: false };
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+// VM → this Mac. `id` is the cloud campaign id.
+async function handoverToLocal(id, req, res) {
+  // One campaign at a time on this Mac. Checked BEFORE the release, or the
+  // engine hands ownership to a machine that cannot actually run it and the
+  // campaign sits released and idle.
+  if (campaign.running || campaign.state === 'monitoring') {
+    return res.status(409).json({ error: 'This Mac is already running a campaign. Finish or stop that one first, then move this campaign here.' });
+  }
+  const cur = await getCloudCampaign(id);
+  if (cur && cur.error) return res.status(502).json({ error: `Could not read the campaign on the VM: ${cur.error}` });
+  const camp = (cur && cur.campaign) || cur || {};
+  const cfg = camp.config || {};
+  if (!camp.sheet_url) return res.status(400).json({ error: 'That cloud campaign has no source sheet, so it cannot be rebuilt here.' });
+
+  // Release FIRST. Fails closed: a live sweep, a lost race, or an engine too old
+  // to know the route all answer 409 and the campaign stays on the VM.
+  const rel = await releaseCloudCampaign(id);
+  if (!rel || rel.error || !rel.released) {
+    if (rel && rel.status === 409) {
+      return res.status(409).json({
+        reason: 'sweep_in_flight',
+        error: 'The VM is part-way through a check on this campaign, so it will not hand it over yet. Wait for that check to finish, then move it again.',
+      });
+    }
+    return res.status(502).json({ error: `The VM would not hand this campaign over: ${(rel && rel.error) || 'no confirmation'}. It is still running there.` });
+  }
+
+  // What the VM already did. The engine's per-lead table is its ledger; the
+  // in-flight lead reads as still-to-do and is retried here on purpose.
+  const got = await getCloudCampaignLeads(id);
+  if (got && got.error) {
+    return res.status(502).json({ error: `The VM released the campaign but its lead list could not be read (${got.error}), so nothing was started here. The campaign is now waiting on this Mac: move it back, or start it here yourself.` });
+  }
+  const allLeads = (got && got.leads) || [];
+  const excluded = processedLeadUrls(allLeads);
+  const remaining = allLeads.length - excluded.length;
+  const profileIds = Array.isArray(camp.profile_ids) ? camp.profile_ids : [];
+
+  // A campaign with nothing left to send is the case this whole feature was
+  // asked for: everything is out, the operator wants the ACCEPTANCE CHECKS on
+  // his own machine. It must be adopted straight into local monitoring —
+  // startCampaign would find 0 targets and land it on 'done', stranded.
+  // A recovery card can carry stronger phase evidence than an old engine row:
+  // next_check_at/monitoring_until, or the explicit operator action "Resume
+  // checks". In that case never let the stale status word `running` resurrect
+  // sender work on this Mac.
+  const preserveMonitoring = String(req.body && req.body.phase || '').toLowerCase() === 'monitoring'
+    || !!camp.next_check_at || !!camp.monitoring_until;
+  if (preserveMonitoring || handoverTargetForCampaign(camp.status, allLeads) === 'monitor') {
+    let profileNames = [];
+    try {
+      const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+      const byId = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
+      profileNames = profileIds.map((pid) => byId.get(pid) || pid);
+    } catch { profileNames = profileIds.slice(); }
+    const adopted = await adoptMonitoring({
+      id,
+      name: camp.name || '',
+      mode: camp.mode,
+      sheetUrl: camp.sheet_url,
+      sheetGid: cfg.sheetGid || '',
+      linkedinColumn: cfg.linkedinColumn || '',
+      profileIds,
+      profileNames,
+      participatingProfileIds: profileIds,
+      sendingEndedAt: camp.sending_ended_at || null,
+      monitoringUntil: camp.monitoring_until || null,
+      templates: cfg,
+      senderFirstNames: cfg.senderFirstNames || {},
+      checkIntervalMinutes: cfg.checkIntervalMinutes,
+      autoChecksEnabled: camp.auto_checks_enabled !== false,
+      totalTargets: allLeads.length,
+      totalProcessed: excluded.length,
+    });
+    if (!adopted.ok) {
+      return res.status(409).json({ error: `${adopted.error} The campaign is now waiting on this Mac: move it back, or free this machine and try again.` });
+    }
+    campaign.runsOn = 'local';
+    campaign.handoverAt = Date.now();
+    cloudLog(`[cloud] handover: ${id} → local (monitoring adopted, next check ${adopted.nextCheckAt})`);
+    return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length, adopted: 'monitoring', nextCheckAt: adopted.nextCheckAt });
+  }
+
+  const config = buildCampaignConfig({
+    profileIds,
+    sheetUrl: camp.sheet_url,
+    sheetGid: cfg.sheetGid,
+    templates: cfg,
+    dailyLimit: camp.daily_limit,
+    mode: camp.mode,
+    linkedinColumn: cfg.linkedinColumn || '',
+    senderColumn: cfg.senderColumn || '',
+    name: camp.name || '',
+    delayMin: cfg.delayMin,
+    delayMax: cfg.delayMax,
+    checkIntervalMinutes: cfg.checkIntervalMinutes,
+    primaryCheckTiming: cfg.primaryCheckTiming,
+    // The hard exclusion list startCampaign already honours and persists for a
+    // restore. Named for the pre-flight gate that usually fills it; here it
+    // carries what the VM finished.
+    _preflightExcludedUrls: excluded,
+    // This is a continuation, not a new run: keeps the campaign's log, its
+    // Recent Connections tab and its counters instead of wiping them.
+    resumeContext: { totalProcessed: excluded.length },
+  });
+
+  // Decision 2: an operator who moves a campaign wants to see something happen,
+  // so the adaptive backoff re-earns itself from scratch on this side too. The
+  // engine reset its own streak inside handover-release.
+  campaign.emptyCheckStreak = 0;
+  campaignLog(`⇄ Moved here from the Cloud VM: ${remaining} lead(s) still to do, ${excluded.length} already done there. Acceptance checks restart at ${config.checkIntervalMinutes} min.`);
+  cloudLog(`[cloud] handover: ${id} → local (${remaining} remaining, ${excluded.length} excluded)`);
+  // After launchCampaign, which stamps local ownership itself and would clear
+  // handoverAt: this is the move, so it keeps the timestamp.
+  launchCampaign(config, req.user);
+  campaign.runsOn = 'local';
+  campaign.handoverAt = Date.now();
+  return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length });
+}
+
+// This Mac → VM. The local campaign is the singleton, so `id` is only used for
+// the log line: what moves is whatever is running here.
+async function handoverToVm(id, req, res) {
+  const running = campaign.running;
+  const monitoring = !running && campaign.state === 'monitoring';
+  if (!running && !monitoring) {
+    // Recovery after sleep/quit: the engine row still exists and says it was
+    // handed to This Mac, but the local singleton is gone. Reclaim that durable
+    // row instead of refusing because there is no process left to stop.
+    const cur = await getCloudCampaign(id);
+    const camp = (cur && cur.campaign) || cur || {};
+    if (String(camp.runs_on || '') !== 'local') {
+      return res.status(409).json({ error: 'Nothing is running on this Mac, and this campaign is not waiting for this Mac, so nothing was moved.' });
+    }
+    const rec = await reclaimCloudCampaign(id);
+    if (!rec || rec.error || !rec.reclaimed) {
+      const rr = reclaimRefusal(rec && rec.reason);
+      return res.status(rec && rec.status === 409 ? 409 : 502).json({ reason: (rec && rec.reason) || undefined, error: rr.error });
+    }
+    if (String(req.body && req.body.phase || '') === 'sending') {
+      const resumed = await restartCloudCampaign(id, { fromStart: false });
+      if (!resumed || resumed.error) {
+        return res.status((resumed && resumed.status) || 502).json({ error: (resumed && resumed.error) || 'The VM reclaimed monitoring, but could not resume sending. Monitoring remains safe on the VM.' });
+      }
+    }
+    cloudLog(`[cloud] handover recovery: ${id} → vm (${req.body && req.body.phase === 'sending' ? 'sending resumed' : 'monitoring reclaimed'})`);
+    return res.json({ ok: true, to: 'vm', id, reclaimed: true, phase: (req.body && req.body.phase) || 'monitoring' });
+  }
+
+  // A campaign this Mac ADOPTED from the VM still has its engine row intact:
+  // handover-release never cancelled it, because it was monitoring rather than
+  // running. So hand that row back rather than dispatching a new campaign, which
+  // would be impossible anyway (nothing left to send) and would mint a second
+  // card on the board. Checked FIRST: an adopted campaign has no local launch
+  // snapshot, so the settings check below would refuse it.
+  const cloudId = monitoring ? reclaimableCloudId(campaign, SINGLETON_CAMPAIGN_ID) : '';
+  if (cloudId) {
+    const rec = await reclaimCloudCampaign(cloudId);
+    if (!rec || rec.error || !rec.reclaimed) {
+      const r = reclaimRefusal(rec && rec.reason);
+      // Only the VM-already-owns-it case touches this side, and it does so to
+      // remove an owner, never to half-move a campaign.
+      if (r.stopLocal) await stopMonitoring({ reason: 'handover-vm-already-owns' });
+      return res.status(rec && rec.status === 409 ? 409 : 502).json({ reason: (rec && rec.reason) || undefined, error: r.error });
+    }
+    // Reclaimed. The engine armed its own sweep one base interval out, so stop
+    // this side now: two armed watchers is the two-intros case.
+    await stopMonitoring({ reason: 'handover-to-vm' });
+    campaign.emptyCheckStreak = 0;
+    campaign.runsOn = 'vm';
+    campaign.handoverAt = Date.now();
+    cloudLog(`[cloud] handover: ${cloudId} → vm (monitoring reclaimed, status ${rec.status})`);
+    return res.json({ ok: true, to: 'vm', id: cloudId, reclaimed: true, status: rec.status });
+  }
+
+  const last = getLastRunSettings();
+  if (!last || !last.sheetUrl) {
+    return res.status(409).json({ error: 'This Mac has no record of how this campaign was launched, so the VM cannot be given the same settings. Stop it here and start it in the cloud instead.' });
+  }
+  if (!isCloudMode(last.mode)) return res.status(400).json({ error: `Mode "${last.mode}" cannot run in the cloud, so this campaign has to stay on this Mac.` });
+
+  // What this Mac already did. The local side keeps no per-lead table: the sheet
+  // is its ledger, stamped as it goes, so that is what the VM must skip.
+  const gid = String(last.sheetGid || '').replace(/\D/g, '');
+  const rows = await fetchSheet(withGid(last.sheetUrl, gid));
+  const urlOf = (row) => extractLinkedInUrl(row, last.linkedinColumn || '');
+  const excluded = sheetProcessedUrls(rows, urlOf);
+  const excludedSet = new Set(excluded);
+  const remaining = rows.filter((r) => { const u = urlOf(r); return u && !excludedSet.has(String(u).trim()); }).length;
+  if (!remaining) {
+    // Started here and finished sending here: there is no engine row to reclaim
+    // (the reclaim path above already handled the ones that have one), and the
+    // engine only takes campaigns that have leads.
+    return res.status(409).json({ error: 'Every lead in the sheet has already been sent, so there is nothing for the VM to run. Keep the acceptance checks on this Mac.' });
+  }
+
+  const cloudBody = {
+    profileIds: Array.isArray(last.profileIds) ? last.profileIds : [],
+    sheetUrl: last.sheetUrl,
+    sheetGid: gid,
+    linkedinColumn: last.linkedinColumn || '',
+    mode: last.mode,
+    dailyLimit: last.dailyLimit,
+    templates: last.templates || {},
+    name: last.name || '',
+    senderColumn: last.senderColumn || '',
+    senderFirstNames: last.senderFirstNames || {},
+    delayMin: last.delayMin,
+    delayMax: last.delayMax,
+    excludeLeadUrls: excluded,
+  };
+  req.body = cloudBody;
+  // Run the same gate the cloud launch will run, BEFORE stopping this Mac. If
+  // the sheet has unacknowledged blockers the gate answers the operator itself
+  // and the local campaign carries on untouched.
+  if (!await runPreflightGate(req, res)) return;
+
+  // Now, and only now, stop this side, and prove it stopped.
+  const stopped = await stopLocalAndConfirm();
+  if (!stopped.ok) {
+    return res.status(409).json({
+      reason: 'source_still_running',
+      error: 'This Mac has not finished stopping the campaign, so it was not moved. Nothing was started on the VM. Wait for the browsers to close, then try again.',
+    });
+  }
+
+  campaign.emptyCheckStreak = 0;
+  campaign.runsOn = 'vm';
+  campaign.handoverAt = Date.now();
+  campaignLog(`⇄ Moved to the Cloud VM: ${remaining} lead(s) still to do, ${excluded.length} already done here.`);
+  cloudLog(`[cloud] handover: ${id} → vm (${remaining} remaining, ${excluded.length} excluded)`);
+  return handleStartCloud(req, res);
+}
+
+app.post('/api/campaign/:id/handover', async (req, res) => {
+  const to = String((req.body && req.body.to) || '');
+  if (to !== 'local' && to !== 'vm') return res.status(400).json({ error: 'Say which side to move to: "local" or "vm".' });
+  try {
+    return to === 'local'
+      ? await handoverToLocal(req.params.id, req, res)
+      : await handoverToVm(req.params.id, req, res);
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+});
 // Monitoring controls (Task 3 Part B) — proxy ⚡ Check now / auto-checks toggle to
 // the engine. Surface the engine's error (incl. 404 until it ships these routes)
 // so the client degrades gracefully rather than throwing.
 app.post('/api/campaign/cloud/:id/check-now', async (req, res) => {
   const r = await cloudCheckNow(req.params.id, (req.body && req.body.scope) === 'all' ? 'all' : 'campaign');
+  if (r && r.error) return res.status(r.status || 502).json(r);
+  res.json(r);
+});
+// Stop the sweep running on the VM. Counterpart to check-now above; the engine
+// halts at its next account boundary and leaves the campaign alone.
+app.post('/api/campaign/cloud/:id/check/stop', async (req, res) => {
+  const r = await cloudCheckStop(req.params.id);
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });
@@ -2271,6 +2674,20 @@ async function runPreflightGate(req, res) {
       tabCount: gateTabs,
       gidExplicit: gateGidExplicit,
     });
+    const invalid = launchValidation({
+      mode: req.body?.mode,
+      profileIds: req.body?.profileIds,
+      targetCount: gateFindings.targetCount,
+      diagnostics: {
+        alreadyProcessed: Number(gateFindings.stagedCount) || 0,
+        noUrl: Number(gateFindings.noUrlCount) || 0,
+        unmatchedSenders: gateFindings.warnings.filter((f) => f.check === 'sender_mismatch').length,
+      },
+    });
+    if (invalid) {
+      res.status(400).json({ error: invalid.message, launchRejected: true, diagnostic: invalid });
+      return false;
+    }
     const expected = ackFor(gateFindings);
     const provided = String(req.body?.preflightAck || '');
     const ackKnown = _preflightAcks.has(provided) && provided === expected;
@@ -2608,6 +3025,8 @@ app.get('/api/queue', async (_req, res) => {
       mode: e.config?.mode || '',
       profileIds: e.config?.profileIds || [],
       sheetUrl: e.config?.sheetUrl || '',
+      scheduledAt: e.scheduledAt || null,
+      dailyContinuation: !!e.config?._dailyContinuation,
     }));
     res.json({ queue: summary });
   } catch (err) {
@@ -4535,15 +4954,55 @@ app.post('/api/queue/run-next', async (_req, res) => {
 
 app.post('/api/monitoring/check-now', async (req, res) => {
   try {
-    const { runMonitoringCheckAll, getCampaignState } = await import('./src/campaign.js');
+    const { runMonitoringCheckAll, getCampaignState, setBulkCheckInProgress } = await import('./src/campaign.js');
     const state = getCampaignState();
     if (state.state !== 'monitoring') {
       return res.status(400).json({ error: 'Campaign is not in monitoring state' });
     }
     // Fire and forget — the operator wants the button to feel responsive,
     // but the actual bulk-check pass takes 30-120s.
-    runMonitoringCheckAll().catch((err) => console.warn('[check-now] threw:', err.message));
+    //
+    // The flag is what MAKES the sweep visible. Without it
+    // getCampaignStatus().monitoringCheckInProgress stayed false for the whole
+    // manual sweep, so the card had nothing to render "checking" from: the
+    // operator pressed Run check now, browsers opened, and the card went on
+    // reading a countdown to the next check. It also gates Stop, which could
+    // only ever no-op on a sweep it did not know was running. The scheduled
+    // tick has always set it; this route never did.
+    setBulkCheckInProgress(true);
+    runMonitoringCheckAll()
+      .then((outcome) => {
+        const finished = getCampaignState();
+        finished.logs = finished.logs || [];
+        const stamp = () => `[${new Date().toISOString()}]`;
+        const successful = !!(outcome && outcome.ok);
+        finished.logs.push(`${stamp()} ${successful ? '✓' : '⚠'} Check complete${successful ? '' : ' — some accounts need attention'}.`);
+        // A terminal schedule event is part of the sweep contract. Without it,
+        // the final account line (often Identity Restricted) permanently owns
+        // the banner even though the check has already ended.
+        if (finished.state === 'monitoring' && finished.nextCheckAt) {
+          finished.logs.push(`${stamp()} ${nextCheckLogLine(finished.nextCheckAt)}`);
+        }
+      })
+      .catch((err) => {
+        console.warn('[check-now] threw:', err.message);
+        const failed = getCampaignState();
+        failed.logs = failed.logs || [];
+        failed.logs.push(`[${new Date().toISOString()}] ⚠ Check ended unexpectedly — retry the check. Monitoring remains active.`);
+      })
+      .finally(() => setBulkCheckInProgress(false));
     res.json({ ok: true, started: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stop the acceptance check that is running right now, WITHOUT ending the
+// campaign. Monitoring, the cadence and the next check time are untouched.
+app.post('/api/campaign/check/stop', async (req, res) => {
+  try {
+    const { stopMonitoringCheck } = await import('./src/campaign.js');
+    res.json(stopMonitoringCheck());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4611,6 +5070,27 @@ app.post('/api/monitoring/wake', async (_req, res) => {
   }
 });
 
+// Electron writes a durable reason before this Mac sleeps or the app quits.
+// On the next launch the canonical card can explain why local work stopped,
+// instead of reconstructing a misleading generic running/waiting state.
+app.post('/api/runtime/interruption', async (req, res) => {
+  try {
+    const { recordRuntimeInterruption } = await import('./src/campaign.js');
+    res.json(recordRuntimeInterruption(req.body?.reason || 'unexpected-exit'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/runtime/resumed', async (_req, res) => {
+  try {
+    const { acknowledgeRuntimeResume } = await import('./src/campaign.js');
+    res.json(acknowledgeRuntimeResume());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // v2.78: guards for the manual /api/bulk-check-now sweep. _manualSweepRunning
 // blocks overlapping sweeps; _manualSweepAbort lets Stop halt one in flight.
 let _manualSweepRunning = false;
@@ -4655,13 +5135,49 @@ app.post('/api/campaign/live/cadence', (req, res) => {
   res.json(result);
 });
 
+let _recoveryExitRequested = false;
+async function closeCurrentCampaignBrowsers() {
+  const ids = [...new Set((campaign.profileIds || []).filter((id) => id && id !== 'local-browser'))];
+  await Promise.allSettled(ids.map((id) => closeProfile(id)));
+  if ((campaign.profileIds || []).includes('local-browser')) {
+    try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
+  }
+}
+const _campaignStopWatchdog = createStopWatchdog({
+  isRunning: ({ generation }) => campaign.running && campaign._abort && campaign._generation === generation,
+  onStuck: async ({ graceMs }) => {
+    const status = getCampaignStatus();
+    const pending = Math.max(0, Number(status.totalTargets || 0) - Number(status.totalProcessed || 0));
+    try {
+      const { recordRuntimeInterruption } = await import('./src/campaign.js');
+      recordRuntimeInterruption('campaign-stop-timeout', { pending });
+    } catch (err) { console.error('[stop-watchdog] recovery journal failed:', err.message); }
+    console.error(`[stop-watchdog] Stop exceeded ${Math.round(graceMs / 1000)}s; requesting supervised restart.`);
+    _recoveryExitRequested = true;
+    await Promise.race([
+      closeCurrentCampaignBrowsers(),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
+    process.exit(75);
+  },
+});
+
 app.post('/api/campaign/stop', async (req, res) => {
   // v2.14.x: optional `{ full: true }` body opts out of the
   // connect_and_introduce post-campaign sweep + auto-intros. Default
   // behaviour is unchanged (Stop sending, keep monitoring) — relevant only
   // when the running campaign is mode=connect_and_introduce.
-  const fullHalt = !!(req.body && req.body.full);
+  const fullHalt = req.body?.full !== false;
+  const immediate = !!req.body?.immediate;
   const result = stopCampaign({ full: fullHalt });
+  const stopState = campaign.running ? _campaignStopWatchdog.arm({ generation: campaign._generation }) : _campaignStopWatchdog.status();
+  let tracking = { ok: true };
+  if (fullHalt) {
+    tracking = await Promise.race([
+      stopCampaignBackgroundTracking(),
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'Background checks did not confirm stop within 10 seconds.' }), 10000)),
+    ]);
+  }
   // v2.14.x: ALSO flip the abort flags for Check DMs and Post Amplification.
   // The bottom-bar Stop button posts to /api/campaign/stop regardless of
   // which subsystem is currently running (the cockpit overlay sets
@@ -4680,7 +5196,7 @@ app.post('/api/campaign/stop', async (req, res) => {
   // v2.14.x: respond to the UI immediately so the dashboard flips to
   // 'stopping' without waiting for the browser-close round-trip. The actual
   // browser kill runs after a short drain window — see comment block below.
-  res.json(result);
+  res.status(tracking.ok ? 200 : 502).json({ ...result, tracking, stopping: campaign.running, stopRequestedAt: stopState.requestedAt, stopDeadlineAt: stopState.deadlineAt });
 
   // v2.14.x: drain-then-kill instead of kill-then-loop-discovers-it.
   //
@@ -4694,7 +5210,7 @@ app.post('/api/campaign/stop', async (req, res) => {
   // New order:
   //   1. stopCampaign() flips campaign._abort = true
   //   2. respond to UI
-  //   3. wait 3s — gives in-flight runAutoIntros / monitoring loops time
+  //   3. wait 15s — the exact grace period promised by the stop dialog
   //      to see _abort at their next iteration boundary, stamp remaining
   //      leads as 'Skipped — Stop pressed', and exit their finally blocks
   //      (which close their own browser cleanly)
@@ -4705,9 +5221,22 @@ app.post('/api/campaign/stop', async (req, res) => {
   // graceful-abort guidance (puppeteer/puppeteer#4671). Worker-side
   // cleanup is already idempotent so the safety-net close is harmless.
   setTimeout(async () => {
-    try { await closeAllProfiles(); } catch (err) { console.warn('[stop] closeAllProfiles:', err.message); }
-    try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
-  }, 3000);
+    try { await closeCurrentCampaignBrowsers(); } catch (err) { console.warn('[stop] closeCurrentCampaignBrowsers:', err.message); }
+  }, immediate ? 0 : 15000);
+});
+
+// Permanently remove the local crash/stop recovery copy. This deliberately
+// cannot touch a running local campaign, monitoring watcher, or any Cloud VM
+// campaign; it only deletes the inactive runtime-interruption journal that
+// creates the stale "This Mac unavailable" board card.
+app.delete('/api/campaign/interrupted', (_req, res) => {
+  const interruption = readRuntimeInterruption();
+  if (!interruption) return res.json({ ok: true, deleted: false });
+  if (campaign.running || campaign.state === 'monitoring') {
+    return res.status(409).json({ error: 'The local campaign is active and cannot be deleted as a recovery copy.' });
+  }
+  clearRuntimeInterruption();
+  res.json({ ok: true, deleted: true });
 });
 
 // Phase 2.8.9: pause/resume control. Pause is non-destructive — browsers stay
@@ -5305,7 +5834,10 @@ app.get('/api/campaign/status', async (_req, res) => {
   }
   let followUp = null;
   try { followUp = await _activeFollowUpSummary(base); } catch { /* non-fatal — countdown just hides */ }
-  res.json({ ...base, followUp, skippedCount: getSkips().length });
+  const stopState = _campaignStopWatchdog.status();
+  res.json({ ...base, followUp, skippedCount: getSkips().length,
+    stopRequestedAt: campaign.running && campaign._abort ? stopState.requestedAt : null,
+    stopDeadlineAt: campaign.running && campaign._abort ? stopState.deadlineAt : null });
 });
 
 app.get('/api/campaign/skips', (_req, res) => {
@@ -5611,6 +6143,13 @@ app.post('/api/bulk-check-now', async (req, res) => {
   }
   _manualSweepRunning = true;
   _manualSweepAbort = false;
+  // Say "checking" the INSTANT the click is accepted, not 180 lines later.
+  // The flag used to be set down at the sweep loop, after account resolution and
+  // a sheet read over the network, so the operator pressed the button and the
+  // card sat on "Waiting for next check" for seconds while browsers were already
+  // being opened. The sweep genuinely starts here: this is the truthful moment.
+  // Cleared in the outer finally below, so a throw during setup cannot leak it.
+  setBulkCheckInProgress(true);
   // v2.71: pause-if-running coordination. Captured before mutating campaign
   // state so the finally block knows whether to resume.
   const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
@@ -5802,7 +6341,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
     for (const pid of profileIdsToSweep) {
       // v2.78: stop the sweep the instant the operator hits Stop, instead of
       // grinding through every remaining account.
-      if (_manualSweepAbort || campaign._abort) {
+      if (_manualSweepAbort || campaign._abort || campaign._abortCheck) {
         campaignLog('■ Stop detected — halting bulk check sweep.');
         break;
       }
@@ -5923,11 +6462,14 @@ app.post('/api/bulk-check-now', async (req, res) => {
       }
       if (r.error) {
         campaignLog(`⚠ [${pName}] Bulk check: ${r.error}`);
+      } else if (r.plain) {
+        // The sweep's own sentence. The forensic field dump it used to print
+        // here still goes to stdout from bulk-check-connections.js.
+        campaignLog(r.plain);
       } else {
         const stamped = r.stamped || 0;
         campaignLog(`📡 [${pName}] Bulk check: ${r.matched || 0} marked Connected, ${stamped} marked Still Pending (of ${r.fetched || 0} recent connections fetched)`);
       }
-      if (r.diag) campaignLog(`📡 [${pName}] diag: ${r.diag}`);
       perProfile.push({ profileId: pid, profileName: pName, ...r });
       if (!r.error) {
         totalMatched += r.matched || 0;
@@ -5936,6 +6478,19 @@ app.post('/api/bulk-check-now', async (req, res) => {
       }
     }
     campaignLog(`📡 Manual bulk check complete — ${totalMatched} Connected, ${totalStamped} Still Pending across ${profileIdsToSweep.length} account(s).`);
+    // A terminal schedule event is part of the sweep contract — the same line
+    // the Check now route writes at server.js:4986, for the same reason. This
+    // route never wrote it, so after a manual sweep the newest line in the log
+    // was "check complete", the banner kept that finished event forever, and
+    // the card sat on FINISHED CHECKING ALL AVAILABLE ACCOUNTS with the
+    // next-check countdown replaced by a check-progress panel. Measured
+    // 2026-08-28 on COLL_CHI_ANTONIO2: state monitoring, no check running,
+    // next check 17:08, and nothing on the card or in the log said so.
+    try {
+      if (campaign && campaign.state === 'monitoring' && campaign.nextCheckAt) {
+        campaignLog(nextCheckLogLine(campaign.nextCheckAt));
+      }
+    } catch (_) { /* the sweep itself already succeeded */ }
     } finally {
       setBulkCheckInProgress(false);
     }
@@ -5957,6 +6512,10 @@ app.post('/api/bulk-check-now', async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     _manualSweepRunning = false;
+    // Pairs with the early set at the top of this route. A throw during setup
+    // would otherwise leave the card claiming a check is running forever, and a
+    // stuck flag also blocks every scheduled tick.
+    setBulkCheckInProgress(false);
     // v2.71: ALWAYS resume if we were the ones who paused, even on error.
     // Operator-initiated pauses are left in place — we only undo our own.
     if (_weShouldAutoResume && campaign.running) {
@@ -5978,6 +6537,20 @@ app.post('/api/bulk-check/stop', (_req, res) => {
   const wasRunning = _manualSweepRunning;
   _manualSweepAbort = true;
   forceCloseActiveBulkChecks();
+  // v3.1.33: release the lock here too, instead of trusting the sweep's own
+  // `finally` to do it. That finally is unreachable when the loop is parked
+  // inside a hung await (a GoLogin launch that never settles), and the abort
+  // flag above cannot help either: it is only read between accounts, and
+  // forceCloseActiveBulkChecks has nothing to close because addActiveBulkCheck
+  // runs only AFTER launchProfile returns. The result was a permanently stuck
+  // flag — every later check answered "a bulk check is already running" with
+  // both Wait and Stop dead ends, until the app was restarted.
+  //
+  // Safe to clear eagerly: this is an explicit operator Stop, not the
+  // accidental double-click v2.78 added the guard for. If the old sweep is
+  // still alive it breaks at its next account boundary, and its finally
+  // setting the flag false again is a no-op.
+  _manualSweepRunning = false;
   if (wasRunning) campaignLog('■ Stop solo check requested — halting sweep.');
   res.json({ ok: true, wasRunning });
 });
@@ -6273,9 +6846,13 @@ app.post('/api/browsers/show', async (_req, res) => {
 // buttons so the operator can manually intervene mid-run (e.g. log back in
 // after a session-expired park).
 app.post('/api/profile/:id/open-browser', async (req, res) => {
-  const profileId = req.params.id;
-  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  const profileRef = req.params.id;
+  if (!profileRef) return res.status(400).json({ error: 'profileId required' });
   try {
+    const profileId = resolveProfileId(await getProfiles(), profileRef);
+    if (!profileId) {
+      return res.status(404).json({ error: `No exact GoLogin profile matches ${profileRef}` });
+    }
     const existingPid = getProfilePid(profileId);
     if (existingPid) {
       if (process.platform === 'darwin') {
@@ -7028,9 +7605,10 @@ function registerSchedule(schedule) {
       if (s) { s.lastRun = new Date().toISOString(); await saveSchedules(all); }
 
       const status = getCampaignStatus();
+      const terminal = terminalPresentation(status);
       notify({
-        title: 'Campaign finished',
-        body: `${schedule.name}: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+        title: `Campaign ${terminal.label.toLowerCase()}`,
+        body: `${schedule.name}: ${terminal.explanation} ${status.processedToday || 0} actions, ${terminal.pending} pending.`,
         link: '/',
       }).catch(() => {});
     } catch (err) {
@@ -7450,7 +8028,7 @@ app.get('/api/export/csv', async (_req, res) => {
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
-app.listen(PORT, async () => {
+app.listen(PORT, '127.0.0.1', async () => {
   console.log(`\n  ✦ Ortus Outreach v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   startAmbientSampling(getActiveBrowserPids);
@@ -7961,7 +8539,7 @@ async function gracefulShutdown(signal) {
     await Promise.race([flushOpsLog(), new Promise((r) => setTimeout(r, 4000))]);
   } catch (_) { /* fire-and-forget */ }
   console.log('[shutdown] Done.');
-  process.exit(0);
+  process.exit(_recoveryExitRequested ? 75 : 0);
 }
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));

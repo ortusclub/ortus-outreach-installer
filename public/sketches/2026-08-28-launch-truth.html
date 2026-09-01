@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Launch narration · what the card must say while it waits</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  body { padding: 26px 34px 90px; }
+  .sk-bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 14px;
+    padding: 14px 0 16px; margin-bottom: 10px; background: var(--bg); border-bottom: 1px solid var(--hairline); }
+  .sk-bar h1 { font-family: var(--display); font-size: 1.5rem; margin: 0 auto 0 0; letter-spacing: .02em; }
+  .sk-bar button { font-family: var(--mono); font-size: .64rem; letter-spacing: .2em; text-transform: uppercase;
+    padding: 8px 16px; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--gray); cursor: pointer; }
+  .sk-note { font-size: .82rem; color: var(--gray); max-width: 78ch; line-height: 1.6; margin: 0 0 8px; }
+  .sk-state > h2 { font-family: var(--mono); font-size: .66rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--gray); margin: 44px 0 12px; border-top: 1px solid var(--hairline); padding-top: 22px; }
+  .sk-state > h2 em { font-style: normal; color: var(--ink); }
+  .sk-lab { font-family: var(--mono); font-size: .6rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--gray); margin: 24px 0 9px; }
+  .sk-lab b { color: var(--gold); font-weight: 500; }
+  .sk-lab i { font-style: normal; color: var(--red); }
+  .sk-why { font-size: .78rem; color: var(--gray); line-height: 1.6; margin: 9px 0 0; max-width: 76ch; }
+  .sk-why code { font-family: var(--mono); font-size: .72rem; color: var(--ink); }
+  .sk-card { border: 1px solid var(--hairline); border-radius: 14px; padding: 22px 24px; }
+  .sk-card .vj-stage { display: flex !important; }
+  .sk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 1100px) { .sk-row { grid-template-columns: 1fr; } }
+  .sk-tick { font-family: var(--mono); font-size: .6rem; letter-spacing: .16em; text-transform: uppercase; color: var(--gray); margin-bottom: 7px; }
+
+  /* the log rail, as it really renders */
+  .sk-log { border: 1px solid var(--hairline-soft); border-radius: 10px; padding: 10px 4px; background: var(--bg-soft, transparent); }
+  .sk-loghead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+    font-family: var(--mono); font-size: .62rem; letter-spacing: .18em; text-transform: uppercase; color: var(--gray); }
+  .vj-log-line { display: grid; grid-template-columns: 52px 44px 1fr; gap: 10px; padding: 3px 12px;
+    font-family: var(--mono); font-size: .72rem; color: var(--ink); }
+  .vj-log-line .time, .vj-log-line .evt { color: var(--gray-faint, #7a7a78); font-size: .6rem; letter-spacing: .1em; text-transform: uppercase; }
+  .vj-log-line.is-ok .what { color: var(--green); }
+  .vj-log-line .what { min-width: 0; overflow-wrap: anywhere; }
+
+  /* the launch step strip, standalone */
+  .sk-miles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+  .sk-miles > div { padding: 0 14px 0 0; border-top: 2px solid var(--hairline-soft); padding-top: 9px; }
+  .sk-miles > div.done { border-top-color: var(--ink); }
+  .sk-miles > div.active { border-top-color: var(--gold); }
+  .sk-miles small { display: block; font-family: var(--mono); font-size: .56rem; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--gray); margin-bottom: 5px; }
+  .sk-miles b { font-size: .82rem; font-weight: 500; }
+  .sk-miles > div.future small, .sk-miles > div.future b { opacity: .38; }
+
+  .sk-side { display: flex; justify-content: flex-end; }
+  .sk-side .box { text-align: right; max-width: 300px; }
+  .sk-side small { display: block; font-family: var(--mono); font-size: .58rem; letter-spacing: .18em; text-transform: uppercase; color: var(--gray); }
+  .sk-side strong { display: block; font-family: var(--display); font-size: 1.5rem; letter-spacing: .01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sk-side.fixed strong { white-space: normal; font-size: 1.3rem; }
+  .sk-side span { font-size: .74rem; color: var(--gray); }
+
+  /* the handshake modal, as it really renders */
+  .sk-modal { max-width: 560px; border: 1px solid var(--hairline); border-radius: 14px; padding: 22px 24px; background: var(--card-bg); }
+  .sk-modal h3 { margin: 0 0 14px; font-size: 1.05rem; }
+  .phl-opt { display: block; border: 1px solid var(--hairline); border-radius: 11px; padding: 14px 16px; margin-bottom: 9px; }
+  .phl-opt.dead { border-color: color-mix(in srgb, var(--red) 55%, var(--hairline)); }
+  .phl-opt b { font-size: .92rem; }
+  .phl-opt .sub { display: block; margin-left: 26px; margin-top: 4px; color: var(--gray); font-size: .82rem; line-height: 1.5; }
+  .phl-opt .sub.warn { color: var(--red); }
+  .sk-modal .acts { display: flex; gap: 10px; margin-top: 14px; }
+  .sk-modal .acts button { font-family: var(--mono); font-size: .64rem; letter-spacing: .18em; text-transform: uppercase;
+    padding: 9px 18px; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--ink); cursor: pointer; }
+
+  /* section 6: the overlap, drawn as it really happens */
+  .sk-overlap { position: relative; }
+  .sk-overlap .vj-live {
+    position: absolute; left: 24px; right: 24px; top: 168px; z-index: 3;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .sk-inline { position: static !important; display: flex; justify-content: center; padding: 8px 0; background: transparent !important; }
+  .sk-inline .modal-card { animation: none; }
+  .sk-bad { border-color: color-mix(in srgb, var(--red) 45%, var(--hairline)); }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark">
+
+<div class="sk-bar">
+  <h1>Launch narration &amp; the stopped card</h1>
+  <button data-v="light">Light</button>
+</div>
+
+<p class="sk-note">Six changes, each one measured against the 11:59 recording. Every "today" panel is what the code
+actually renders right now, not a redrawing of it.</p>
+
+<!-- ══ 1 · THE LOG ═══════════════════════════════════════ -->
+<section class="sk-state">
+  <h2>01 / <em>The launch log</em> · eleven blank rows in the recording</h2>
+
+  <p class="sk-lab"><i>Today</i> — every launch line renders empty</p>
+  <div class="sk-card">
+    <div class="sk-log">
+      <div class="sk-loghead"><span>Live log · last 6 events</span><span>Copy all</span></div>
+      <div class="vj-log-line"><span class="time"></span><span class="evt">log</span><span class="what"></span></div>
+      <div class="vj-log-line"><span class="time"></span><span class="evt">log</span><span class="what"></span></div>
+      <div class="vj-log-line"><span class="time"></span><span class="evt">log</span><span class="what"></span></div>
+      <div class="vj-log-line"><span class="time"></span><span class="evt">log</span><span class="what"></span></div>
+      <div class="vj-log-line"><span class="time"></span><span class="evt">log</span><span class="what"></span></div>
+      <div class="vj-log-line"><span class="time"></span><span class="evt">log</span><span class="what"></span></div>
+    </div>
+    <p class="sk-why"><code>launchLog()</code> pushes an object; the renderer takes a string.
+      <code>String({…})</code> is <code>"[object Object]"</code>, which matches the renderer's
+      <code>[timestamp] message</code> pattern, so it reads <code>object Object</code> as the time and the
+      empty remainder as the message. Six events counted, six rows drawn, nothing said.</p>
+  </div>
+
+  <p class="sk-lab"><b>Fixed</b> — the lines that were already being written</p>
+  <div class="sk-card">
+    <div class="sk-log">
+      <div class="sk-loghead"><span>Live log · 6 events (launching)</span><span>Copy all</span></div>
+      <div class="vj-log-line"><span class="time">11:59</span><span class="evt">info</span><span class="what">▶ Launch started — 3 accounts, Cloud VM</span></div>
+      <div class="vj-log-line"><span class="time">11:59</span><span class="evt">log</span><span class="what">🤝 Primary handshake: on this Mac — sender browsers open next</span></div>
+      <div class="vj-log-line"><span class="time">11:59</span><span class="evt">ok</span><span class="what">🤝 Handshake complete — every sender is connected to the primary</span></div>
+      <div class="vj-log-line"><span class="time">11:59</span><span class="evt">log</span><span class="what">🔎 Pre-flight check on 3 accounts…</span></div>
+      <div class="vj-log-line"><span class="time">11:59</span><span class="evt">ok</span><span class="what">🔎 Pre-flight passed — 3 accounts usable</span></div>
+      <div class="vj-log-line"><span class="time">11:59</span><span class="evt">log</span><span class="what">📄 Reading your lead sheet and handing the campaign to the VM…</span></div>
+    </div>
+    <p class="sk-why">No new copy. These strings are already written on every launch and have never once been
+      displayed.</p>
+  </div>
+</section>
+
+<!-- ══ 2 · THE STEP STRIP ════════════════════════════════ -->
+<section class="sk-state">
+  <h2>02 / <em>The step strip</em> · it cannot move</h2>
+
+  <p class="sk-lab"><i>Today</i> — the same four steps at every moment of the launch</p>
+  <div class="sk-row">
+    <div class="sk-card">
+      <div class="sk-tick">11:59:35 · headline "reading your lead sheet"</div>
+      <div class="sk-miles">
+        <div class="done"><small>01 / Request</small><b>launch accepted</b></div>
+        <div class="active"><small>02 / Sheet</small><b>reading your leads</b></div>
+        <div class="future"><small>03 / VM</small><b>handing over</b></div>
+        <div class="future"><small>04 / Campaign</small><b>starts automatically</b></div>
+      </div>
+    </div>
+    <div class="sk-card sk-bad">
+      <div class="sk-tick">12:00:15 · headline "campaign accepted by the VM — 4 leads loaded"</div>
+      <div class="sk-miles">
+        <div class="done"><small>01 / Request</small><b>launch accepted</b></div>
+        <div class="active"><small>02 / Sheet</small><b>reading your leads</b></div>
+        <div class="future"><small>03 / VM</small><b>handing over</b></div>
+        <div class="future"><small>04 / Campaign</small><b>starts automatically</b></div>
+      </div>
+      <p class="sk-why">Identical. The headline says the VM has the campaign; the strip says we are still reading
+        the sheet and have not handed over. The array is a literal in the code and nothing ever writes to it.</p>
+    </div>
+  </div>
+
+  <p class="sk-lab"><b>Fixed</b> — the same four steps, driven by the events the headline already uses</p>
+  <div class="sk-row">
+    <div class="sk-card">
+      <div class="sk-tick">11:59:35 · reading the sheet on this Mac</div>
+      <div class="sk-miles">
+        <div class="done"><small>01 / Request</small><b>launch accepted</b></div>
+        <div class="active"><small>02 / Sheet</small><b>reading your leads</b></div>
+        <div class="future"><small>03 / VM</small><b>handing over</b></div>
+        <div class="future"><small>04 / Campaign</small><b>starts automatically</b></div>
+      </div>
+    </div>
+    <div class="sk-card">
+      <div class="sk-tick">12:00:15 · the engine has it</div>
+      <div class="sk-miles">
+        <div class="done"><small>01 / Request</small><b>launch accepted</b></div>
+        <div class="done"><small>02 / Sheet</small><b>4 leads read</b></div>
+        <div class="active"><small>03 / VM</small><b>waiting for a worker</b></div>
+        <div class="future"><small>04 / Campaign</small><b>starts automatically</b></div>
+      </div>
+    </div>
+    <div class="sk-card">
+      <div class="sk-tick">12:01 · a worker took it</div>
+      <div class="sk-miles">
+        <div class="done"><small>01 / Request</small><b>launch accepted</b></div>
+        <div class="done"><small>02 / Sheet</small><b>4 leads read</b></div>
+        <div class="done"><small>03 / VM</small><b>worker claimed it</b></div>
+        <div class="active"><small>04 / Campaign</small><b>opening the first browser</b></div>
+      </div>
+    </div>
+    <div class="sk-card">
+      <div class="sk-tick">12:02 · sending</div>
+      <div class="sk-miles">
+        <div class="done"><small>01 / Request</small><b>launch accepted</b></div>
+        <div class="done"><small>02 / Sheet</small><b>4 leads read</b></div>
+        <div class="done"><small>03 / VM</small><b>worker claimed it</b></div>
+        <div class="done"><small>04 / Campaign</small><b>running</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 3 · THE HEARTBEAT ═════════════════════════════════ -->
+<section class="sk-state">
+  <h2>03 / <em>The two-minute wait</em> · one line in 120 seconds</h2>
+
+  <p class="sk-lab"><i>Today</i></p>
+  <div class="sk-card">
+    <div class="sk-log">
+      <div class="sk-loghead"><span>Live log · 3 events (launching)</span><span>Copy all</span></div>
+      <div class="vj-log-line"><span class="time">11:59</span><span class="evt">log</span><span class="what">📦 Campaign received by the engine — 4 leads imported · 3 accounts · waiting for a VM worker to pick it up…</span></div>
+      <div class="vj-log-line"><span class="time">12:01</span><span class="evt">log</span><span class="what">⚙ VM worker picked the campaign up — preparing the sheet, then selecting the first account…</span></div>
+    </div>
+    <p class="sk-why">Two minutes of silence between them. Nothing on screen distinguishes a normal wait from a
+      dead engine, which is the whole complaint.</p>
+  </div>
+
+  <p class="sk-lab"><b>Fixed</b> — a tick every 30 seconds, against the number the engine actually budgets</p>
+  <div class="sk-card">
+    <div class="sk-log">
+      <div class="sk-loghead"><span>Live log · 7 events (launching)</span><span>Copy all</span></div>
+      <div class="vj-log-line"><span class="time">11:59</span><span class="evt">log</span><span class="what">📦 Campaign received by the engine — 4 leads imported · 3 accounts · waiting for a VM worker to pick it up…</span></div>
+      <div class="vj-log-line"><span class="time">12:00</span><span class="evt">log</span><span class="what">⏳ Still waiting for a VM worker · 30s · workers sleep when idle and take about 2 minutes to wake</span></div>
+      <div class="vj-log-line"><span class="time">12:00</span><span class="evt">log</span><span class="what">⏳ Still waiting for a VM worker · 1m 00s · nothing ahead of you in the queue</span></div>
+      <div class="vj-log-line"><span class="time">12:01</span><span class="evt">log</span><span class="what">⏳ Still waiting for a VM worker · 1m 30s</span></div>
+      <div class="vj-log-line"><span class="time">12:01</span><span class="evt">ok</span><span class="what">⚙ VM worker picked the campaign up — preparing the sheet, then selecting the first account…</span></div>
+    </div>
+    <p class="sk-why">And past three minutes the wording changes rather than repeating:
+      <span style="color:var(--gold)">"⏳ 3m 30s — longer than the usual 2 minutes. Nothing is lost; the campaign
+      is still queued and will start when a worker frees up."</span></p>
+  </div>
+</section>
+
+<!-- ══ 4 · THE STARTUP PANEL ═════════════════════════════ -->
+<section class="sk-state">
+  <h2>04 / <em>The right-hand panel</em> · truncated, and about the wrong phase</h2>
+  <div class="sk-row">
+    <div class="sk-card">
+      <p class="sk-lab" style="margin-top:0"><i>Today</i></p>
+      <div class="sk-side"><div class="box">
+        <small>Startup</small>
+        <strong>PREPARING BROWSER RUNTI…</strong>
+        <span>Normal startup can take a few minutes</span>
+      </div></div>
+      <p class="sk-why">Cut off mid-word for the whole first minute — and it says "startup" while the app is
+        reading your sheet on this Mac, before anything on the VM has started at all.</p>
+    </div>
+    <div class="sk-card">
+      <p class="sk-lab" style="margin-top:0"><b>Fixed</b> — the panel follows the phase, and carries the real number</p>
+      <div class="sk-side fixed"><div class="box">
+        <small>Reading your sheet</small>
+        <strong>on this Mac</strong>
+        <span>Nothing has been sent yet</span>
+      </div></div>
+      <div style="height:18px"></div>
+      <div class="sk-side fixed"><div class="box">
+        <small>Waking a VM worker</small>
+        <strong>1m 05s</strong>
+        <span>Usually about 2 minutes</span>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 5 · THE PRIMARY HANDSHAKE ═════════════════════════ -->
+<section class="sk-state">
+  <h2>05 / <em>Connections to the primary</em> · the VM option does nothing</h2>
+
+  <p class="sk-lab"><i>Today</i></p>
+  <div class="sk-modal">
+    <h3>Connect your senders to the primary now?</h3>
+    <label class="phl-opt"><span><input type="radio" checked> <b>On this Mac</b></span>
+      <span class="sub">3 senders connect off-screen, then it moves to the cloud. To accept the connections to the primary it has to open it anyways.</span></label>
+    <label class="phl-opt dead"><span><input type="radio"> <b>On the VM</b></span>
+      <span class="sub">Will still open a local browser to accept the connections.</span></label>
+    <div class="acts"><button>Continue</button><button>Cancel</button></div>
+  </div>
+  <p class="sk-why">The second option writes <code>primaryHandshakeOn: 'vm'</code> and the app then skips the
+    handshake. The engine has no code that reads that value — no handshake runs anywhere, no local browser opens,
+    and the senders are never connected to the primary. It is also why no pill can ever show
+    <span style="color:var(--green)">Primary ✓</span>: that flag is only ever written by the local handshake.</p>
+
+  <p class="sk-lab"><b>A · remove it</b> — my recommendation</p>
+  <div class="sk-modal">
+    <h3>Connecting your senders to the primary</h3>
+    <p class="sk-why" style="margin:0 0 12px">Two steps on this Mac: your 3 senders invite the primary, the
+      primary accepts. Then the campaign moves to the cloud. <em>(Shipped wording, v3.1.48.76.)</em></p>
+    <div class="acts"><button>Start</button><button>Cancel</button></div>
+  </div>
+  <p class="sk-why">No choice offered, because there is only one that works. One fewer decision at launch.</p>
+
+  <p class="sk-lab">B · keep it, honestly labelled</p>
+  <div class="sk-modal">
+    <h3>Connect your senders to the primary now?</h3>
+    <label class="phl-opt"><span><input type="radio" checked> <b>Yes, on this Mac</b></span>
+      <span class="sub">3 sender browsers open off-screen and connect to the primary, then it moves to the cloud.</span></label>
+    <label class="phl-opt"><span><input type="radio"> <b>No, skip it</b></span>
+      <span class="sub warn">The senders will NOT be connected to the primary. Introductions cannot be made until you connect them yourself.</span></label>
+    <div class="acts"><button>Continue</button><button>Cancel</button></div>
+  </div>
+
+  <p class="sk-lab">Either way · the card says where each sender stands</p>
+  <div class="sk-card">
+    <div class="vj-stage-accts">
+      <button type="button" class="stg-acct"><span class="cap-badge ok"><span class="nm">rosemarief</span><span class="n">0/50 · Primary ✓</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge ok"><span class="nm">altini</span><span class="n">0/50 · Primary ✓</span></span></button>
+      <button type="button" class="stg-acct"><span class="cap-badge warn"><span class="nm">nimra.perveen</span><span class="n">0/50 · no primary</span></span></button>
+    </div>
+    <p class="sk-why">The <span style="color:var(--green)">Primary ✓</span> suffix already exists in the pill code.
+      What is missing is its opposite: a sender that was never connected currently looks identical to one that was.</p>
+  </div>
+</section>
+
+<!-- ══ 6 · STOP, IN THE WIZARD ═══════════════════════════ -->
+<section class="sk-state">
+  <h2>06 / <em>Press Stop in the wizard</em> · the outcome banner lands on the step strip</h2>
+
+  <p class="sk-lab"><i>Today</i> — a real render, not a drawing</p>
+  <div class="sk-card sk-bad sk-overlap">
+    <div class="vj-stage">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary"><div class="vj-stage-summary-main">
+          <div class="vj-stage-verb">Campaign stopped</div>
+          <div class="vj-stage-name">Stopped before any connection was sent</div>
+          <div class="vj-stage-sub">altini@ortus.solutions · 0 of 4 sent today</div>
+        </div></div>
+        <div class="vj-stage-safety has-pending"><span class="n">4</span>pending leads remain safely queued</div>
+        <div class="vj-stage-facts">
+          <div><span>Campaign</span><b>stopped</b></div>
+          <div><span>Sent</span><b>0 of 4</b></div>
+        </div>
+        <div class="vj-stage-miles">
+          <div class="done"><small>01 / CAMPAIGN</small><b>stopped</b></div>
+          <div class="done"><small>02 / BROWSER</small><b>closed</b></div>
+          <div class="future"><small>03 / LEAD</small><b>none sent</b></div>
+          <div class="future"><small>04 / RESULT</small><b>—</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="vj-live is-outcome">
+      <span class="vj-live-ico">■</span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1">Stopped early</span>
+        <span class="vj-live-l2">You stopped this campaign. 4 leads were never contacted and stay queued.</span>
+      </span>
+    </div>
+  </div>
+  <p class="sk-why">The stage and the live line are the same grid cell. The board's renderer hides one when it
+    draws the other; the wizard's stopped branch shows the banner and then draws the stage under it, so both
+    occupy the cell and the text collides. It shows up on a CC campaign, or on any campaign stopped before it
+    sent, because those are the ones whose stage still has account pills to draw.</p>
+
+  <p class="sk-lab"><b>Fixed</b> — one slot, one voice: the stage carries the outcome</p>
+  <div class="sk-card">
+    <div class="vj-stage">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Stopped early</div>
+            <div class="vj-stage-name">Stopped before any connection was sent</div>
+            <div class="vj-stage-sub">You stopped this campaign · 0 of 4 sent · nothing was lost</div>
+          </div>
+          <div class="vj-stage-side"><span>Sent</span><strong>0</strong><small>of 4 leads</small></div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">4</span>pending leads remain safely queued</div>
+        <div class="vj-stage-facts">
+          <div><span>Campaign</span><b>stopped by you</b></div>
+          <div><span>Sent</span><b>0 of 4</b></div>
+          <div><span>Operator action</span><b>none required</b></div>
+        </div>
+        <div class="vj-stage-miles">
+          <div class="done"><small>01 / CAMPAIGN</small><b>stopped</b></div>
+          <div class="done"><small>02 / BROWSER</small><b>closed</b></div>
+          <div class="future"><small>03 / LEAD</small><b>none sent</b></div>
+          <div class="future"><small>04 / RESULT</small><b>—</b></div>
+        </div>
+        <div class="vj-stage-accts">
+          <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">rosemarief</span><span class="n">0/50</span></span></button>
+          <button type="button" class="stg-acct"><span class="cap-badge"><span class="nm">altini</span><span class="n">0/50</span></span></button>
+        </div>
+      </div>
+    </div>
+    <p class="sk-why">The banner's two sentences move into the stage's own verb and sub-line, where they were
+      always meant to go, and the CSS enforces the rule so no third renderer can bring the overlap back.</p>
+  </div>
+</section>
+
+
+<!-- ══ 7 · THE STOP MODAL ════════════════════════════════ -->
+<section class="sk-state">
+  <h2>07 / <em>"Wait 15 seconds or stop now"</em> · the buttons do not fit the card</h2>
+
+  <p class="sk-lab"><i>Today</i> — a real render of the modal's own markup</p>
+  <div class="sk-card sk-bad">
+<div class="modal-backdrop sk-inline" onclick="if(event.target===this)closeStopModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="stop-modal-title">
+      <div class="stop-choice-eyebrow">Stop campaign</div>
+      <h3 id="stop-modal-title" class="modal-title">What should happen to the current lead?</h3>
+      <p class="modal-body" id="stop-current-lead-copy">Currently processing Marta Klein. No new lead will start. Waiting is recommended.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeStopModal()">Cancel</button>
+        <button type="button" class="btn btn-secondary" onclick="confirmStopCampaignNow(false)">Wait up to 15 seconds</button>
+        <button type="button" class="btn btn-stop" onclick="confirmStopCampaignNow(true)">Stop now</button>
+      </div>
+    </div>
+  </div>
+    <p class="sk-why">Three buttons, <code>justify-content: flex-end</code>, no wrapping, each forced to
+      <code>min-width: 120px</code>, inside a 480px card. "Wait up to 15 seconds" is cut off mid-word and
+      "Stop now" is drawn over the top of it. It has been this way in every mode that uses this modal.</p>
+  </div>
+
+  <p class="sk-lab"><b>Fixed</b> — the app's own two-choice stop card, which already exists</p>
+  <div class="sk-card">
+    <div class="modal-backdrop sk-inline">
+      <div class="modal-card stop-choice-card" role="dialog">
+        <div class="stop-choice-eyebrow">Stop campaign</div>
+        <h3 class="modal-title stop-choice-headline">What about the lead in flight?</h3>
+        <p class="stop-choice-sub">Marta Klein is mid-send. No new lead will start either way.</p>
+        <div class="stop-choice-row">
+          <button type="button" class="stop-choice-pill is-monitor">
+            <div class="stop-choice-pill-headline">Wait up to<br>15 seconds</div>
+            <div class="stop-choice-pill-sub">Lets the current invitation finish and be verified. Recommended.</div>
+          </button>
+          <button type="button" class="stop-choice-pill is-stop">
+            <div class="stop-choice-pill-headline">Stop<br>now</div>
+            <div class="stop-choice-pill-sub">Closes the browser immediately. The in-flight lead is verified before any retry.</div>
+          </button>
+        </div>
+        <div class="stop-choice-cancel-row">
+          <button type="button" class="modal-cancel-link">Cancel</button>
+        </div>
+      </div>
+    </div>
+    <p class="sk-why">Not a new design: this is <code>.stop-choice-card</code>, the exact card the CC+IC stop
+      already uses ("Stop sending, keep monitoring" / "Stop everything"). Two choices side by side, each with
+      its consequence written under it, Cancel as a link below. Same shape, so a stop always looks like a stop.</p>
+  </div>
+
+  <p class="sk-lab"><b>Fixed</b> — and no modal at all when nothing is in flight</p>
+  <div class="sk-card">
+    <div class="sk-log">
+      <div class="sk-loghead"><span>What happens instead</span></div>
+      <div class="vj-log-line"><span class="time">12:04</span><span class="evt">info</span><span class="what">■ Stopped — nothing was in flight, so there was nothing to wait for. 4 leads stay queued.</span></div>
+    </div>
+    <p class="sk-why">A campaign that has not sent yet has no current lead, so the question is hypothetical:
+      today it still asks "what should happen to the current lead?" and names "the current lead" as a
+      placeholder. The cloud path already skips the question in this state
+      (<code>hasCurrentSendingLead</code>); the local path asks unconditionally. It will skip it too, stop
+      straight away, and say so in the log.</p>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll('.sk-bar button').forEach((b) => b.addEventListener('click', () => {
+    document.body.classList.toggle('theme-dark'); b.classList.toggle('on');
+  }));
+</script>
+</body>
+</html>

@@ -26,6 +26,7 @@ import { batchUpdateSheet, writeRecentConnectionsTab } from '../sheets-writer.js
 import { extractLinkedInUrl, campaign } from '../campaign.js';
 import { readSourceMemberId } from '../profile-identity.js';
 import { isIntroSlotOpen } from './intro-constants.js';
+import { plainLine } from '../log-voice.js';
 
 function publicIdFromUrl(url) {
   if (!url) return '';
@@ -653,11 +654,11 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     });
     postNavUrl = page.url() || '';
   } catch (err) {
-    return { matched: 0, fetched: 0, error: `navigation-failed: ${err.message}` };
+    return { matched: 0, freshConnected: 0, fetched: 0, error: `navigation-failed: ${err.message}` };
   }
   // Quick auth check before burning cycles on Voyager calls that will 404.
   if (/\/login|\/uas\/|\/checkpoint/.test(postNavUrl)) {
-    return { matched: 0, fetched: 0, error: `session-expired (redirected to ${postNavUrl})` };
+    return { matched: 0, freshConnected: 0, fetched: 0, error: `session-expired (redirected to ${postNavUrl})` };
   }
 
   // 2) Fetch recent connections. We pass sinceMs=0 so all pages are fetched
@@ -669,7 +670,16 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     // something specific (no-csrf, http-XXX, empty-elements, etc.). Surface
     // it so the operator can see exactly why the fetch produced nothing.
     const reason = conns.error || 'no-connections-fetched';
-    return { matched: 0, fetched: 0, error: reason };
+    return { matched: 0, freshConnected: 0, fetched: 0, error: reason };
+  }
+
+  // The operator stopped the check while this account's connections were being
+  // read. Bail out before anything is written: this account is left exactly as
+  // it was, so the next check reads it again from scratch. Deliberately placed
+  // here and not inside the sender scan below, which must see every row or the
+  // stamps it feeds would be computed against a half-built sender list.
+  if (campaign._abortCheck) {
+    return { matched: 0, freshConnected: 0, fetched: conns.length, error: 'stopped by you' };
   }
 
   // 3) Read the sheet. Done BEFORE the sidecar write so we can extract the
@@ -679,7 +689,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   try {
     rows = await fetchSheet(sheetUrl);
   } catch (err) {
-    return { matched: 0, fetched: conns.length, error: `sheet-fetch: ${err.message}` };
+    return { matched: 0, freshConnected: 0, fetched: conns.length, error: `sheet-fetch: ${err.message}` };
   }
 
   // v2.62: active senders for this campaign — distinct values in the Sender
@@ -737,7 +747,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   const pad = (n) => String(n).padStart(2, '0');
   const stillPendingLabel = `Still Pending (${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())})`;
 
-  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+  const { updates, connectedUrls, freshConnected, diag } = computeBulkCheckUpdates(
     rows,
     matchSet,
     linkedinColumn,
@@ -762,15 +772,48 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   );
 
   const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, crossSender=${diag.crossSender}, duplicateCollapsed=${diag.duplicateCollapsed}, alreadyDmd=${diag.alreadyDmd}, requestHealed=${diag.requestHealed}, alreadyUnverified=${diag.alreadyUnverified}, composeCapped=${diag.composeCapped}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
-  // Log to stdout for forensic deep-dives, AND also surface in the return
-  // so the campaign loop can pipe it into the dashboard-visible log.
+  // The field dump is FORENSIC and stays on stdout only. It used to be piped
+  // into the operator's live log too, where it read as a wall of key=value
+  // pairs nobody outside this file can parse. What the operator gets instead
+  // is plainSweep() below: one sentence saying how many invitations were
+  // looked at, how many people newly accepted, how many rows were refreshed,
+  // and whether anything looks wrong.
   console.log(`[bulk-check] diag: ${diagSummary}`);
+  // 2026-08-21: a live sweep reported withUrl=0 across 66 rows while the very
+  // same sheet, tab and column yielded 66 of 66 when read offline. Nothing in
+  // the static code explains the difference, so record the three runtime inputs
+  // that could: which sheet was actually read, what column name arrived, and
+  // what the first row's keys and lead cell really look like. Diagnostic only,
+  // and it goes when this whole diag line is rewritten in plain English.
+  if (diag.rowsScanned > 0 && diag.withUrl === 0) {
+    const r0 = rows[0] || {};
+    console.log(`[bulk-check] withUrl=0 INPUTS: sheet=${sheetUrl}`
+      + ` | column=${JSON.stringify(linkedinColumn)}`
+      + ` | columnPresentInRow=${Object.prototype.hasOwnProperty.call(r0, linkedinColumn)}`
+      + ` | firstRowKeys=${JSON.stringify(Object.keys(r0).slice(0, 20))}`
+      + ` | firstRowLeadCell=${JSON.stringify(String(r0[linkedinColumn] ?? '').slice(0, 80))}`
+      + ` | anyCellHasLinkedinCom=${Object.values(r0).some((v) => String(v || '').includes('linkedin.com'))}`);
+  }
   if (diag.duplicateCollapsed > 0) {
     console.log(`[bulk-check] ⚠ Collapsed ${diag.duplicateCollapsed} duplicate profile(s) — same person appeared on more than one row; introduced once, the extra row(s) stamped "Skipped — duplicate".`);
   }
 
+  // One sentence for the operator's live log. Same numbers as the dump above,
+  // said out loud instead of dumped, plus the one thing that genuinely looks
+  // wrong from here: rows that carry no LinkedIn address at all, which is why
+  // a sweep can read a full sheet and match nobody.
+  const plainSweep = (accepted, refreshed) => {
+    const base = accepted > 0
+      ? plainLine('sweep-found', { account: pName, accepted, outstanding: diag.rowsScanned, refreshed })
+      : plainLine('sweep-empty', { account: pName, outstanding: diag.rowsScanned, refreshed });
+    if (diag.rowsScanned > 0 && diag.withUrl === 0) {
+      return `${base} Something looks wrong: not one of those rows had a LinkedIn address on it, so nobody could be matched. Check that the right column is chosen for this sheet.`;
+    }
+    return base;
+  };
+
   if (updates.length === 0) {
-    return { matched: 0, fetched: conns.length, diag: diagSummary, connectedUrls };
+    return { matched: 0, freshConnected: 0, fetched: conns.length, diag: diagSummary, plain: plainSweep(0, 0), connectedUrls };
   }
 
   // Batch-update via the existing Apps Script bridge. cc → 'Connected
@@ -778,12 +821,20 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   try {
     await batchUpdateSheet(sheetUrl, updates);
   } catch (err) {
-    return { matched: 0, fetched: conns.length, error: `batch-update: ${err.message}`, diag: diagSummary, connectedUrls };
+    // Write failed — nothing is confirmed persisted, so freshConnected is 0
+    // too, same reasoning as matched:0 below: an unconfirmed acceptance must
+    // never reset the caller's empty-check streak.
+    return { matched: 0, freshConnected: 0, fetched: conns.length, error: `batch-update: ${err.message}`, diag: diagSummary, connectedUrls };
   }
 
   const matchedCount = updates.filter((u) => u.cc === 'Connected').length;
   const pendingCount = updates.length - matchedCount;
   // connectedUrls comes from computeBulkCheckUpdates — includes matched URLs
   // regardless of suppressAcceptedStamp, so callers can fire auto-intros.
-  return { matched: matchedCount, fetched: conns.length, stamped: pendingCount, diag: diagSummary, connectedUrls };
+  // freshConnected (not matched) is the true "accepted THIS sweep" count —
+  // matched also includes pre-existing 1st-degree connections re-queued for
+  // an intro retry, which are 'Already connected', not new (see
+  // tests/bulk-check-fresh-count.test.js). Callers driving the adaptive
+  // check cadence must use freshConnected, mirroring the engine.
+  return { matched: matchedCount, freshConnected, fetched: conns.length, stamped: pendingCount, diag: diagSummary, plain: plainSweep(freshConnected, pendingCount), connectedUrls };
 }

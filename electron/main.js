@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
+import { spawn } from 'node:child_process';
 import dotenv from 'dotenv';
 // Same in-process singleton the server uses — flush its ops buffer on quit so
 // the last buffered events aren't lost when the operator closes the app.
@@ -81,16 +82,28 @@ async function pickFreePort() {
 let mainWindow = null;
 let serverPort = null;
 let tray = null;
+let serverProcess = null;
+let shuttingDown = false;
 
 async function startServer() {
-  serverPort = await pickFreePort();
-  process.env.PORT = String(serverPort);
+  if (!serverPort) serverPort = await pickFreePort();
 
   // Resolve the bundled server.js. In dev, ../server.js. In packaged builds,
   // electron-builder includes the source under app.asar so the same relative
   // path works.
   const serverEntry = resolve(__dirname, '..', 'server.js');
-  await import(serverEntry);
+  serverProcess = spawn(process.execPath, [serverEntry], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, PORT: String(serverPort), ELECTRON_RUN_AS_NODE: '1', ORTUS_ELECTRON_MODE: '1', ORTUS_DATA_DIR: userDataDir },
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+  serverProcess.once('exit', (code, signal) => {
+    serverProcess = null;
+    if (shuttingDown) return;
+    const delay = code === 75 ? 400 : 1500;
+    console.warn(`[main] Campaign backend exited (code=${code}, signal=${signal || 'none'}); restarting in ${delay}ms.`);
+    setTimeout(() => startServer().catch((err) => console.error('[main] backend restart failed:', err.message)), delay);
+  });
 
   // Wait for the server to actually be listening (the import returns
   // immediately; app.listen is async). Poll /api/health up to ~10s.
@@ -214,10 +227,23 @@ if (!gotLock) {
       // wakes from sleep), ping the server's monitoring-wake endpoint so an
       // overdue auto-check fires immediately rather than waiting up to 60s
       // for the next setInterval tick.
+      powerMonitor.on('suspend', () => {
+        if (!serverPort) return;
+        fetch(`http://127.0.0.1:${serverPort}/api/runtime/interruption`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'system-sleep' }),
+        }).catch((err) => console.warn('[powerMonitor.suspend] journal failed:', err.message));
+      });
+
       powerMonitor.on('resume', () => {
         if (!serverPort) return;
         fetch(`http://127.0.0.1:${serverPort}/api/monitoring/wake`, { method: 'POST' })
           .catch((err) => console.warn('[powerMonitor.resume] ping failed:', err.message));
+        // If the in-process campaign survived sleep, the wake endpoint owns its
+        // normal continuation and the temporary interruption marker is stale.
+        fetch(`http://127.0.0.1:${serverPort}/api/runtime/resumed`, { method: 'POST' })
+          .catch((err) => console.warn('[powerMonitor.resume] clear failed:', err.message));
       });
 
       tray.on('click', () => {
@@ -254,6 +280,18 @@ app.on('before-quit', async (e) => {
   if (_flushedOnQuit) return;
   e.preventDefault();
   _flushedOnQuit = true;
+  shuttingDown = true;
+  try {
+    if (serverPort) await Promise.race([
+      fetch(`http://127.0.0.1:${serverPort}/api/runtime/interruption`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'app-quit' }),
+      }),
+      new Promise((r) => setTimeout(r, 1000)),
+    ]);
+  } catch (_) { /* best effort during shutdown */ }
   try { await Promise.race([flushOpsLog(), new Promise((r) => setTimeout(r, 4000))]); } catch (_) { /* */ }
+  if (serverProcess && !serverProcess.killed) serverProcess.kill('SIGTERM');
   app.quit();
 });

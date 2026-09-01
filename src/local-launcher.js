@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer-core';
+import { withTimeout } from './promise-timeout.js';
 import { existsSync, mkdirSync } from 'fs';
 import { dataPath } from './paths.js';
 import { hideByPid } from './mac-window.js';
@@ -57,7 +58,7 @@ export async function launchLocalBrowser() {
   console.log(`[local] Chrome: ${chromePath}`);
   console.log(`[local] Profile: ${LOCAL_PROFILE_DIR}`);
 
-  const browser = await puppeteer.launch({
+  const launchPromise = puppeteer.launch({
     executablePath: chromePath,
     headless: false,
     userDataDir: LOCAL_PROFILE_DIR,
@@ -73,6 +74,15 @@ export async function launchLocalBrowser() {
     ],
     ignoreHTTPSErrors: true,
     protocolTimeout: 60000,
+  });
+  const browser = await withTimeout(launchPromise, {
+    ms: 120_000,
+    label: 'Local Chrome launch',
+    onTimeout: async () => {
+      // A late-resolving launch must not leak a browser after its caller has
+      // already released the campaign slot.
+      launchPromise.then((late) => late?.close?.()).catch(() => {});
+    },
   });
 
   activeBrowser = browser;

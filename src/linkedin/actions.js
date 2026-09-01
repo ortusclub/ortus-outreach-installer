@@ -745,8 +745,11 @@ async function clickConnectFromMore(page) {
 // sendConnectionRequest
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendConnectionRequest(page, noteArg) {
+export async function sendConnectionRequest(page, noteArg, onProgress) {
   let note = noteArg;
+  const progress = (step, stepLabel, stepDetail = '') => {
+    try { if (typeof onProgress === 'function') onProgress({ step, stepLabel, stepDetail }); } catch (_) { /* cosmetic */ }
+  };
   // v2.10.0 (Approach A): register the Voyager invitation-create listener before
   // any user interaction. Captures LinkedIn's own backend response, which is the
   // definitive signal that an invitation actually landed (or was rejected).
@@ -771,6 +774,7 @@ export async function sendConnectionRequest(page, noteArg) {
   const MAX_WAIT_MS = 30000;
   const POLL_INTERVAL_MS = 3000;
   const startTime = Date.now();
+  progress('finding_connect', 'Finding the Connect button', 'Checking the profile action bar');
 
   while (!connectClicked && (Date.now() - startTime) < MAX_WAIT_MS) {
     const direct = await page.evaluate(() => {
@@ -901,6 +905,7 @@ export async function sendConnectionRequest(page, noteArg) {
     });
 
     if (direct.method) {
+      progress('connect_pressed', 'Connect pressed', 'Waiting for LinkedIn to open the invitation dialog');
       console.log(`[actions] ✓ Direct Connect button clicked (${direct.method}) — lead "${direct.name}".`);
       connectClicked = true;
       console.log('[actions] Waiting 5s for modal…');
@@ -912,6 +917,7 @@ export async function sendConnectionRequest(page, noteArg) {
     console.log(`[actions] No direct Connect for "${direct.name}" — trying More dropdown… (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
     const moreResult = await clickConnectFromMore(page);
     if (moreResult === 'connect') {
+      progress('connect_pressed', 'Connect pressed from More', 'Waiting for LinkedIn to open the invitation dialog');
       connectClicked = true;
       console.log('[actions] Waiting 5s for modal…');
       await new Promise(r => setTimeout(r, 5000));
@@ -996,6 +1002,7 @@ export async function sendConnectionRequest(page, noteArg) {
     // from recommendation Pending buttons while the modal is still open.
     const modal = await detectModal(page);
     if (modal.found) {
+      progress('invite_open', 'Invitation dialog opened', note ? 'Preparing the connection note' : 'Preparing to send without a note');
       // Modal is open — handle it below (fall through to modal handling code)
     } else {
       // No modal — safe to check Pending
@@ -1128,6 +1135,7 @@ export async function sendConnectionRequest(page, noteArg) {
         _ns.lastNoteIncluded = false;
         note = '';
       } else if (note && modal.hasAddNote) {
+        progress('opening_note', 'Opening the note editor', 'LinkedIn is preparing the personal note field');
         console.log('[actions] Clicking "Add a note"…');
         await clickByAria(page, 'Add a note');
         await new Promise(r => setTimeout(r, 5000));
@@ -1172,6 +1180,7 @@ export async function sendConnectionRequest(page, noteArg) {
         }
       }
       if (note && modal.hasAddNote) {
+        progress('writing_note', 'Writing the connection note', 'Typing only inside LinkedIn\'s invitation dialog');
         // The invite note NEVER goes in the chat composer. If the only field on
         // screen is the messaging overlay's, this returns false and the existing
         // fallback below cancels and re-sends without a note — the lead still
@@ -1297,6 +1306,7 @@ export async function sendConnectionRequest(page, noteArg) {
           throw new Error('SEND_NOT_CONFIRMED: fallback send without note did not land as Pending');
         }
         console.log('[actions] Note typed and verified.');
+        progress('note_written', 'Connection note written', 'Checking LinkedIn\'s note limit before sending');
         await new Promise(r => setTimeout(r, 5000));
 
         // v2.112.x: LinkedIn caps custom-invite notes (free 200, Premium ~300);
@@ -1395,6 +1405,7 @@ export async function sendConnectionRequest(page, noteArg) {
       // chat thread and never created an invitation).
       const NO_CHAT = { excludeWithin: MESSAGING_OVERLAY_SELECTOR };
       let sent = false;
+      progress('pressing_send', noteWasIncluded ? 'Pressing Send with the note' : 'Pressing Send without a note', 'The invitation is ready');
 
       // Degraded (no free notes left) → take "Send without a note" explicitly.
       // Without this the noted-invite branch below would look for a plain "Send"
@@ -1465,6 +1476,8 @@ export async function sendConnectionRequest(page, noteArg) {
         throw new Error('Send button not found in modal');
       }
 
+      progress('confirming_send', 'Send pressed — confirming with LinkedIn', 'Waiting for LinkedIn or Voyager to confirm the invitation');
+
       // ── Approach A: Voyager network response (gold-standard signal) ──
       // The instant LinkedIn's backend replies to the invitation POST, we know
       // definitively whether it landed. This bypasses toast races and reload
@@ -1473,6 +1486,7 @@ export async function sendConnectionRequest(page, noteArg) {
       const voyagerMain = await voyagerCapture.waitFor(10000);
       if (voyagerMain) {
         if (voyagerMain.ok) {
+          progress('confirmed', 'Sent and confirmed', 'LinkedIn accepted the connection request');
           console.log(`[actions] ✓ Voyager confirmed: HTTP ${voyagerMain.status}, urn=${voyagerMain.urn || 'n/a'}`);
           return { invitationUrn: voyagerMain.urn, noteIncluded: noteWasIncluded };
         }
@@ -1492,6 +1506,7 @@ export async function sendConnectionRequest(page, noteArg) {
         return null;
       });
       if (sentToast) {
+        progress('confirmed', 'Sent and confirmed', 'LinkedIn displayed its invitation confirmation');
         console.log(`[actions] ✓ Verified via toast: "${sentToast}"`);
         return { invitationUrn: null, noteIncluded: noteWasIncluded };
       }
@@ -1535,6 +1550,7 @@ export async function sendConnectionRequest(page, noteArg) {
       await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
       if (await isPending(page)) {
+        progress('confirmed', 'Sent and confirmed', 'The profile now shows Pending');
         console.log('[actions] ✓ Verified: Pending.');
         return { invitationUrn: null, noteIncluded: noteWasIncluded };
       }
@@ -1548,6 +1564,7 @@ export async function sendConnectionRequest(page, noteArg) {
       await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
       if (await isPending(page)) {
+        progress('confirmed', 'Sent and confirmed', 'The profile now shows Pending');
         console.log('[actions] ✓ Verified: Pending (2nd check).');
         return { invitationUrn: null, noteIncluded: noteWasIncluded };
       }

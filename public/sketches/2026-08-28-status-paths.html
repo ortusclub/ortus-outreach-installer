@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Two status paths, and the one worth keeping</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  body { padding: 26px 34px 90px; }
+  .sk-bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 14px;
+    padding: 14px 0 16px; margin-bottom: 10px; background: var(--bg); border-bottom: 1px solid var(--hairline); }
+  .sk-bar h1 { font-family: var(--display); font-size: 1.5rem; margin: 0 auto 0 0; letter-spacing: .02em; }
+  .sk-bar button { font-family: var(--mono); font-size: .64rem; letter-spacing: .2em; text-transform: uppercase;
+    padding: 8px 16px; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--gray); cursor: pointer; }
+  .sk-note { font-size: .84rem; color: var(--gray); max-width: 80ch; line-height: 1.65; margin: 0 0 10px; }
+  .sk-note b { color: var(--ink); font-weight: 600; }
+  .sk-state > h2 { font-family: var(--mono); font-size: .66rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--gray); margin: 46px 0 6px; border-top: 1px solid var(--hairline); padding-top: 22px; }
+  .sk-state > h2 em { font-style: normal; color: var(--ink); }
+  .sk-lab { font-family: var(--mono); font-size: .6rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--gray); margin: 26px 0 9px; }
+  .sk-lab b { color: var(--gold); font-weight: 500; }
+  .sk-lab i { font-style: normal; color: var(--red); }
+  .sk-why { font-size: .78rem; color: var(--gray); line-height: 1.6; margin: 10px 0 0; max-width: 82ch; }
+  .sk-why code { font-family: var(--mono); font-size: .72rem; color: var(--ink); }
+  .sk-why .bad { color: var(--red); }
+  .sk-why .good { color: var(--green); }
+  .sk-card { border: 1px solid var(--hairline); border-radius: 14px; padding: 22px 24px; }
+  .sk-card.merged { border-color: var(--gold); box-shadow: 0 0 0 4px var(--gold-tint-shadow); }
+  .sk-card .vj-stage { display: flex !important; }
+
+  table.sk-t { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: .8rem; }
+  table.sk-t th, table.sk-t td { text-align: left; padding: 11px 14px 11px 0; border-bottom: 1px solid var(--hairline-soft); vertical-align: top; }
+  table.sk-t th { font-family: var(--mono); font-size: .6rem; letter-spacing: .16em; text-transform: uppercase; color: var(--gray); font-weight: 400; }
+  table.sk-t td.y { color: var(--green); } table.sk-t td.n { color: var(--red); }
+  table.sk-t tr td:first-child { color: var(--ink); width: 30%; }
+</style>
+</head>
+<body data-dashboard="v3" class="theme-dark">
+
+<div class="sk-bar">
+  <h1>Two status paths</h1>
+  <button data-v="light">Light</button>
+</div>
+
+<p class="sk-note">The same campaign, the same instant, rendered by each of the two code paths that exist today —
+and a third that takes the state from one and the words from the other. <b>Every value below was produced by
+running the real code</b>, not written by hand: the engine's <code>buildCampaignStatusSnapshot</code>, the app's
+<code>overlayCampaignStatus</code>, and the app's own monitoring branch at <code>app.js:27561</code>.</p>
+
+<!-- ══ 1 · A HEALTHY MONITORING CARD ═════════════════════ -->
+<section class="sk-state">
+  <h2>01 / <em>Monitoring, everything fine</em> · both paths cope</h2>
+
+  <p class="sk-lab">A · the old path — every campaign except one</p>
+  <div class="sk-card">
+    <div class="vj-stage">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Monitoring is active</div>
+            <div class="vj-stage-name">Waiting for the next acceptance check</div>
+            <div class="vj-stage-sub">Next check today at 12:28 · Nothing needs to be done now</div>
+          </div>
+          <div class="vj-stage-side"><span>Until next automatic check</span><strong>1:23</strong><small>scheduled for 12:28 · no browser remains open between checks</small></div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">177</span>pending leads remain safely queued · sending is stopped</div>
+        <div class="vj-stage-facts">
+          <div><span>Last check</span><b>complete</b></div>
+          <div><span>Accounts checked</span><b>3 of 3</b></div>
+          <div><span>Next check</span><b>today at 12:28</b></div>
+          <div><span>Operator action</span><b>none required</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="sk-lab">B · the new path — only "SAS EMEA VIE - 26.08 ANTONIO"</p>
+  <div class="sk-card">
+    <div class="vj-stage">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Monitoring</div>
+            <div class="vj-stage-name">Waiting for the next acceptance check</div>
+            <div class="vj-stage-sub">Monitoring is active. No browser remains open between checks.</div>
+          </div>
+          <div class="vj-stage-side"><span>Until next automatic check</span><strong>1:23</strong><small>scheduled for 12:28 · no browser remains open between checks</small></div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">177</span>pending leads remain safe</div>
+        <div class="vj-stage-facts">
+          <div><span>Monitoring</span><b>active</b></div>
+          <div><span>Accounts checked</span><b>3 of 3</b></div>
+          <div><span>Next check</span><b>today at 12:28</b></div>
+          <div><span>Operator action</span><b>none required</b></div>
+        </div>
+      </div>
+    </div>
+    <p class="sk-why">Nearly the same card. The differences are all wording: "Monitoring · active" as a fact says
+      nothing the eyebrow above it hasn't already said, and the safety pill drops "sending is stopped" — the one
+      clause that tells an operator why 177 people are still waiting.</p>
+  </div>
+</section>
+
+<!-- ══ 2 · A SWEEP THAT FAILED ═══════════════════════════ -->
+<section class="sk-state">
+  <h2>02 / <em>A sweep that failed</em> · one account could not be checked</h2>
+  <p class="sk-note" style="margin-top:8px">Same campaign, ten minutes later. The check ran, two accounts
+    answered, <code>damiano@ortus.solutions</code> was logged out. This is where the two paths stop agreeing.</p>
+
+  <p class="sk-lab"><i>A · the old path</i> — it cannot report this at all</p>
+  <div class="sk-card">
+    <div class="vj-stage">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Monitoring is active</div>
+            <div class="vj-stage-name">Waiting for the next acceptance check</div>
+            <div class="vj-stage-sub">Next check today at 12:28 · Nothing needs to be done now</div>
+          </div>
+          <div class="vj-stage-side"><span>Until next automatic check</span><strong>1:23</strong><small>scheduled for 12:28</small></div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">177</span>pending leads remain safely queued · sending is stopped</div>
+        <div class="vj-stage-facts">
+          <div><span>Last check</span><b>complete</b></div>
+          <div><span>Accounts checked</span><b>3 of 3</b></div>
+          <div><span>Next check</span><b>today at 12:28</b></div>
+          <div><span>Operator action</span><b>none required</b></div>
+        </div>
+      </div>
+    </div>
+    <p class="sk-why"><span class="bad">Identical to the healthy card, and every word of it is wrong.</span>
+      In this branch "Last check · complete" and "Operator action · none required" are <b>literals</b>
+      (<code>app.js:27573-27576</code>) — there is no input that can make them say anything else. And
+      <code>checked = monitorCheckAccountsChecked || scope</code> falls back to the full count, so a sweep that
+      checked nothing reports "3 of 3". The card is optimistic by construction: it recovers the failure only
+      later, from a different branch, by regex-matching the words "Check finished with an error" out of the log.</p>
+  </div>
+
+  <p class="sk-lab">B · the new path — it knows, but it is blunt about it</p>
+  <div class="sk-card">
+    <div class="vj-stage">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Monitoring</div>
+            <div class="vj-stage-name">Waiting for the next acceptance check</div>
+            <div class="vj-stage-sub">Monitoring is active. No browser remains open between checks.</div>
+          </div>
+          <div class="vj-stage-side"><span>Until next automatic check</span><strong>1:23</strong><small>scheduled for 12:28</small></div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">177</span>pending leads remain safe</div>
+        <div class="vj-stage-facts">
+          <div><span>Monitoring</span><b>active</b></div>
+          <div><span>Accounts checked</span><b>2 of 3</b></div>
+          <div><span>Next check</span><b>today at 12:28</b></div>
+          <div><span>Operator action</span><b>Review damiano@ortus.solutions, then retry the check</b></div>
+        </div>
+      </div>
+    </div>
+    <p class="sk-why"><span class="good">The facts are right — 2 of 3, and it names the account.</span> But the
+      headline and sub-line above them still say monitoring is fine and no browser is open, because those come
+      from <code>fallbackCopy()</code>, which has one sentence per lifecycle and nothing to say about a failed
+      sweep. The card is truthful in its bottom half and complacent in its top half. It also does not say what
+      "review" means, and the safety pill has lost "sending is stopped".</p>
+  </div>
+
+  <p class="sk-lab"><b>C · merged</b> — the new path's state, the old codebase's words</p>
+  <div class="sk-card merged">
+    <div class="vj-stage">
+      <div class="vj-stage-gly"></div>
+      <div class="vj-stage-body">
+        <div class="vj-stage-summary">
+          <div class="vj-stage-summary-main">
+            <div class="vj-stage-verb">Monitoring · one account needs you</div>
+            <div class="vj-stage-name">Damiano’s LinkedIn session expired</div>
+            <div class="vj-stage-sub">2 of 3 accounts were checked · the next check is today at 12:28 and will skip Damiano again until you log back in</div>
+          </div>
+          <div class="vj-stage-side"><span>Until next automatic check</span><strong>1:23</strong><small>scheduled for 12:28 · no browser remains open between checks</small></div>
+        </div>
+        <div class="vj-stage-safety has-pending"><span class="n">177</span>pending leads remain safely queued · sending is stopped</div>
+        <div class="vj-stage-facts">
+          <div><span>Last check</span><b>2 of 3 accounts</b></div>
+          <div><span>Result</span><b>Damiano needs login</b></div>
+          <div><span>Next check</span><b>today at 12:28</b></div>
+          <div><span>Operator action</span><b>Log Damiano back in, then retry</b></div>
+        </div>
+        <div class="vj-stage-miles">
+          <div class="done"><small>01 / LAST CHECK</small><b>2 checked</b></div>
+          <div class="done"><small>02 / BROWSERS</small><b>closed between checks</b></div>
+          <div class="active"><small>03 / UNAVAILABLE</small><b>1 not checked</b></div>
+          <div class="future"><small>04 / NEXT</small><b>today at 12:28</b></div>
+        </div>
+        <div class="vj-stage-accts">
+          <button type="button" class="stg-acct"><span class="cap-badge ok"><span class="nm">zhelenandriushz</span><span class="n">0 accepted</span></span></button>
+          <button type="button" class="stg-acct"><span class="cap-badge bad"><span class="nm">damiano</span><span class="n">Needs login</span></span></button>
+          <button type="button" class="stg-acct"><span class="cap-badge ok"><span class="nm">emanuele.circi</span><span class="n">0 accepted</span></span></button>
+        </div>
+      </div>
+    </div>
+    <p class="sk-why">Nothing here is invented. The state — <code>2 of 3</code>, which account, that monitoring
+      continues — is the new contract's, already correct today. Every word is a function the old codebase already
+      has and the new path never calls: <code>monitoringRecovery()</code> turns
+      <code>"damiano@ortus.solutions — needs re-login"</code> into <span class="good">"Damiano's LinkedIn session
+      expired"</span>, <span class="good">"Damiano needs login"</span> and <span class="good">"Log Damiano back
+      into LinkedIn in GoLogin, then retry this check"</span>. The merge is a wiring job, not new copywriting.</p>
+  </div>
+</section>
+
+<!-- ══ 3 · WHY, NOT JUST WHAT ════════════════════════════ -->
+<section class="sk-state">
+  <h2>03 / <em>The difference underneath</em></h2>
+  <table class="sk-t">
+    <tr><th></th><th>A · old path</th><th>B · new path</th><th>C · merged</th></tr>
+    <tr><td>Where the state comes from</td>
+      <td class="n">Regex-matching the engine's English log lines — 21 patterns, 366 lines</td>
+      <td class="y">The engine sends the state as data — 133 lines</td>
+      <td class="y">The engine sends the state as data</td></tr>
+    <tr><td>A slow poll arriving late</td>
+      <td class="n">Repaints the card with older truth</td>
+      <td class="y">Refused — every snapshot carries <code>sequence</code></td>
+      <td class="y">Refused</td></tr>
+    <tr><td>A failed sweep</td>
+      <td class="n">Cannot say it: "complete" and "none required" are literals</td>
+      <td class="y">Reports it, names the account</td>
+      <td class="y">Reports it, names the account and the fix</td></tr>
+    <tr><td>Wording depth</td>
+      <td class="y">Years of specific operator copy</td>
+      <td class="n">One fallback sentence per lifecycle</td>
+      <td class="y">The old path's copy, reached from the new state</td></tr>
+    <tr><td>Branches to keep alive</td>
+      <td class="n">17 <code>logEvent.kind</code> arms in the renderer</td>
+      <td class="y">One state → one card</td>
+      <td class="y">One state → one card</td></tr>
+    <tr><td>Campaigns using it today</td>
+      <td>every campaign</td>
+      <td class="n">one, by hardcoded name</td>
+      <td>—</td></tr>
+  </table>
+  <p class="sk-why">The bugs you have reported over the last two days — "Stopping…" on a monitoring campaign,
+    the launch strip frozen while the headline moved on, "2 of 6" accounts, the duplicated sub-line — are all the
+    same failure: state rebuilt from a sentence, and the rebuild disagreeing with the campaign. That is the row
+    the new path fixes, and it is the reason to finish it rather than pick a winner.</p>
+</section>
+
+<script>
+  document.querySelectorAll('.sk-bar button').forEach((b) => b.addEventListener('click', () => {
+    document.body.classList.toggle('theme-dark'); b.classList.toggle('on');
+  }));
+</script>
+</body>
+</html>

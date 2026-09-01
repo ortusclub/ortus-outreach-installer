@@ -1,4 +1,5 @@
 import { recomputeNextCheckAt } from './monitoring-time.js';
+import { checkCadenceMin } from './monitoring-cadence.js';
 
 /**
  * Pure helper. Given a hydrated campaign and "now", decides what to do
@@ -20,7 +21,14 @@ export function decideResumeAction(campaign, now) {
   // every time monitoring rehydrated from disk (boot, laptop wake). Smoking
   // gun in live log 2026-05-15 13:15:39Z: "Monitoring resumed · next check
   // at 20:27" (6 h after sendingEndedAt) instead of the configured 15 min.
-  const cadenceMin = campaign.checkIntervalMinutes || 60;
+  // v2.14.x honored checkIntervalMinutes here; this also honors a restored
+  // emptyCheckStreak (finding 3, code review), same as the engine's
+  // nextMonitorDecision (campaign-monitor.js:383) — otherwise every boot and
+  // laptop wake snaps a quiet campaign back to hourly for a cycle.
+  const cadenceMin = checkCadenceMin({
+    baseMin: campaign.checkIntervalMinutes || 60,
+    emptyStreak: campaign.emptyCheckStreak,
+  });
   const recomputedNextCheckAt = recomputeNextCheckAt(campaign.sendingEndedAt, now, cadenceMin);
   return { action: 'resume', recomputedNextCheckAt };
 }

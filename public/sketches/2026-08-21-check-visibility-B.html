@@ -1,0 +1,640 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sketch: B — per-account step panel, in three states</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  /* Real card CSS is scoped to body[data-dashboard=v3] > main.main > .container,
+     so the sketch reproduces that chain exactly and restyles nothing. */
+  .container { max-width: 1100px; }
+  .main { padding: 32px 40px 90px; }
+  h1 { font-family: var(--display); font-size: 2rem; margin: 0 0 4px; }
+  .lede { font-family: var(--mono); font-size: .82rem; color: var(--gray); max-width: 78ch; line-height: 1.55; margin: 0 0 18px; }
+  .vtitle { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--gray); margin: 38px 0 10px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+  .vnote { font-family: var(--mono); font-size: .76rem; color: var(--gray); max-width: 82ch; line-height: 1.55; margin: 10px 0 0; }
+  .themebar { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+              color: var(--gray); margin-bottom: 24px; }
+  .themebar button { font: inherit; padding: 5px 14px; border: 1px solid var(--hairline);
+                     border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; margin-left: 6px; }
+  .themebar button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  body[data-dashboard='v3'] .vj-log-head { flex-wrap: wrap; row-gap: 6px; }
+
+  /* ══ THE ONE NEW COMPONENT: the per-account step panel ═══════════════════
+     One column per account, divided by the same hairline the card already
+     uses everywhere. Built only from existing tokens: mono caps labels, ink
+     for what has happened, gray for what has not, no colour that is not
+     already on the card, radius 0 or 9999 only. Gold stays reserved for Start. */
+  /* The card is a named-area grid (eyebrow / name / live / bar / hero /
+     stats+controls). The panel is a NEW ROW between the hero and the controls,
+     which is exactly what the change would be in the real card. Everything
+     else keeps its area. */
+  body[data-dashboard='v3'] .vj-card:has(.sp) {
+    grid-template-areas:
+      "eyebrow eyebrow" "name name" "live live" "bar bar"
+      "hero hero" "panel panel" "stats controls";
+  }
+  body[data-dashboard='v3'] .sp { grid-area: panel; border-top: 1px solid var(--hairline); }
+  body[data-dashboard='v3'] .vj-card:has(.sp) .vj-details { grid-row: 8; }
+
+  .sp-head { display: flex; align-items: baseline; gap: 12px; padding: 13px 16px 0; }
+  .sp-verb { font-family: var(--body); font-size: .95rem; color: var(--ink); }
+  /* A live light: solid core plus an expanding ring, so it reads as ON from
+     across the room. The card's monitoring blue is already in the palette
+     (--blue, the MONITORING dot), so this borrows no new colour. */
+  .sp-dot { position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 9999px;
+            background: var(--blue); margin-right: 13px; vertical-align: 1px; }
+  .sp-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 9999px;
+                   border: 1px solid var(--blue); animation: spring 1.4s ease-out infinite; }
+  .sp-dot.still { background: var(--gray); opacity: .5; }
+  .sp-dot.still::after { display: none; }
+  @keyframes spring { 0% { transform: scale(.55); opacity: .9 } 100% { transform: scale(1.9); opacity: 0 } }
+  .sp-live { font-family: var(--mono); font-size: .58rem; letter-spacing: .18em; text-transform: uppercase;
+             color: var(--blue); border: 1px solid var(--blue); border-radius: 9999px;
+             padding: 3px 9px; margin-left: 10px; animation: spblink 1.4s steps(1) infinite; }
+  @keyframes spblink { 0%,60% { opacity: 1 } 61%,100% { opacity: .35 } }
+  .sp-meta { margin-left: auto; font-family: var(--mono); font-size: .7rem; color: var(--gray); letter-spacing: .03em; }
+  .sp-sub { font-family: var(--mono); font-size: .71rem; color: var(--gray); padding: 5px 16px 0; letter-spacing: .02em; }
+
+  /* Three columns visible, the live account CENTRED, the one before it on the
+     left and the one after on the right. Scrolls horizontally for the rest —
+     a 13-account campaign is 13 columns, not 13 stacked blocks. When the live
+     account is the first, it sits leftmost instead (nothing precedes it). */
+  .sp-grid { display: flex; margin-top: 13px; overflow-x: auto; scroll-behavior: smooth;
+             scroll-snap-type: x mandatory; scrollbar-width: thin; }
+  .sp-col { flex: 0 0 33.3333%; scroll-snap-align: center;
+            border-top: 1px solid var(--hairline-soft); border-right: 1px solid var(--hairline-soft);
+            padding: 14px 16px 12px; min-width: 0; }
+  .sp-col:first-child { scroll-snap-align: start; }
+  .sp-col:last-child { border-right: 0; }
+  /* The rail's own hairline scrollbar — the design system has no other. */
+  .sp-grid::-webkit-scrollbar { height: 3px; }
+  .sp-grid::-webkit-scrollbar-thumb { background: var(--hairline); }
+  .sp-grid::-webkit-scrollbar-track { background: transparent; }
+
+  /* Position readout + arrows, only when there is more than one screenful. */
+  .sp-nav { display: flex; align-items: center; gap: 8px; margin-left: 14px; }
+  .sp-nav button { font-family: var(--mono); font-size: .7rem; line-height: 1; width: 24px; height: 24px;
+                   border: 1px solid var(--hairline); border-radius: 9999px; background: transparent;
+                   color: var(--gray); cursor: pointer; }
+  .sp-nav button:hover { color: var(--ink); border-color: var(--ink); }
+  .sp-pos { font-family: var(--mono); font-size: .62rem; letter-spacing: .12em;
+            text-transform: uppercase; color: var(--gray); }
+  .sp-col.is-live { background: var(--hairline-soft); box-shadow: inset 2px 0 0 var(--blue); }
+
+  .sp-who { font-family: var(--body); font-size: .82rem; color: var(--ink);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-state { font-family: var(--mono); font-size: .6rem; letter-spacing: .14em; text-transform: uppercase;
+              color: var(--gray); margin-top: 5px; }
+  .sp-col.is-live .sp-state { color: var(--ink); }
+
+  .sp-steps { margin-top: 12px; }
+  .sp-step { display: grid; grid-template-columns: 13px minmax(0,1fr) auto; align-items: baseline; gap: 9px;
+             font-family: var(--mono); font-size: .71rem; line-height: 1.5; color: var(--gray); padding: 3px 0; }
+  .sp-mk { font-size: .68rem; }
+  .sp-step.ok, .sp-step.now { color: var(--ink); }
+  .sp-step.ok .sp-mk::before { content: "✓"; }
+  .sp-step.now .sp-mk::before { content: "▸"; }
+  .sp-step.wait .sp-mk::before { content: "·"; }
+  /* NOT ".skip": the app already owns that class for the off-screen
+     skip-to-content link, which positioned these rows at left:-9999px. */
+  .sp-step.miss .sp-mk::before { content: "–"; }
+  .sp-t { color: var(--gray); font-size: .66rem; }
+
+  /* Result line under the steps — the fact the app has and never showed. */
+  .sp-res { font-family: var(--mono); font-size: .69rem; color: var(--gray);
+            border-top: 1px solid var(--hairline-soft); margin-top: 11px; padding-top: 9px; letter-spacing: .02em; }
+  .sp-res b { color: var(--ink); font-weight: 600; }
+
+  /* The batch counter. campaign.js already logs exactly this on every send:
+     "✓ [account] (19/100)" = getCampaignCount(profileId) / campaign.dailyLimit.
+     It went to the log and never to the card. */
+  .sp-count { display: flex; align-items: baseline; gap: 8px; margin-top: 11px; }
+  .sp-count b { font-family: var(--display); font-size: 1.5rem; letter-spacing: .02em; color: var(--ink); font-weight: 400; }
+  .sp-count span { font-family: var(--mono); font-size: .64rem; letter-spacing: .12em;
+                   text-transform: uppercase; color: var(--gray); }
+  .sp-cbar { height: 2px; background: var(--hairline); margin-top: 7px; display: flex; gap: 2px; }
+  .sp-cbar i { flex: 1 1 0; height: 100%; background: var(--hairline); }
+  .sp-cbar i.on { background: var(--ink); }
+  .sp-cbar i.now { background: var(--blue); }
+  /* The day, under the batch. Two questions, two answers: how far through this
+     turn of 8, and how much of today's allowance is spent. */
+  .sp-day { font-family: var(--mono); font-size: .72rem; color: var(--gray); margin-top: 8px; }
+  .sp-day b { color: var(--ink); font-weight: 600; }
+  .sp-day span { display: block; font-size: .66rem; margin-top: 3px; }
+
+  /* Who actually got a request. The counterpart of "Nobody reached, and why" —
+     the app knows every name and shows none of them. */
+  .sp-got { border-top: 1px solid var(--hairline-soft); margin-top: 11px; padding-top: 9px; }
+  .sp-got-h { font-family: var(--mono); font-size: .58rem; letter-spacing: .14em;
+              text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .sp-got-r { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px;
+              font-family: var(--mono); font-size: .67rem; line-height: 1.5; color: var(--gray); padding: 2px 0; }
+  .sp-got-r b { color: var(--ink); font-weight: 500; }
+  .sp-got-r.now b { color: var(--blue); }
+  .sp-got-more { font-family: var(--mono); font-size: .63rem; color: var(--gray); margin-top: 5px; }
+
+  /* Why a lead was not hit. Reasons are normalizeSkipReason()'s own strings,
+     verbatim — the app already computes them and writes them to the sheet's
+     Stage column, then throws the reason away on the card. */
+  .sp-miss { border-top: 1px solid var(--hairline-soft); margin-top: 10px; padding-top: 9px; }
+  .sp-miss-h { font-family: var(--mono); font-size: .58rem; letter-spacing: .14em;
+               text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .sp-miss-r { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px;
+               font-family: var(--mono); font-size: .67rem; line-height: 1.5; color: var(--gray); padding: 2px 0; }
+  .sp-miss-r b { color: var(--ink); font-weight: 500; }
+
+  /* Campaign-wide roll-up of the same reasons, under the columns. */
+  .sp-why { border-top: 1px solid var(--hairline-soft); padding: 11px 16px 13px;
+            display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+  .sp-why-h { font-family: var(--mono); font-size: .58rem; letter-spacing: .14em;
+              text-transform: uppercase; color: var(--gray); margin-right: 4px; }
+  .sp-why span.r { font-family: var(--mono); font-size: .65rem; color: var(--gray);
+                   border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 10px; }
+  .sp-why span.r b { color: var(--ink); font-weight: 600; }
+
+  /* ── THE CHECKING BANNER ─────────────────────────────────────────────────
+     Same .vj-live element the card already has, promoted while a sweep runs.
+     Only the monitoring blue is used; gold stays reserved for Start. */
+  body[data-dashboard='v3'] .vj-live.is-checking {
+    border: 2px solid var(--blue); padding: 20px 24px; align-items: center; gap: 20px;
+    animation: ckbreathe 2.2s ease-in-out infinite;
+  }
+  @keyframes ckbreathe {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--blue) 9%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-ico { display: none; }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l1 {
+    font-family: var(--display); font-size: 2.1rem; line-height: 1.05; letter-spacing: .02em;
+    font-weight: 400; color: var(--ink); text-transform: uppercase;
+  }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-l2 {
+    font-family: var(--mono); font-size: .86rem; color: var(--gray); margin-top: 5px;
+  }
+  /* The light. Core, ring, and a second slower ring so it never reads as static. */
+  .ck-beacon { position: relative; flex: 0 0 auto; width: 16px; height: 16px; border-radius: 9999px;
+               background: var(--blue); margin-right: 4px; }
+  .ck-beacon::before, .ck-beacon::after {
+    content: ""; position: absolute; inset: -8px; border-radius: 9999px; border: 2px solid var(--blue);
+    animation: ckring 1.6s cubic-bezier(.2,.6,.3,1) infinite;
+  }
+  .ck-beacon::after { animation-delay: .8s; }
+  @keyframes ckring { 0% { transform: scale(.5); opacity: .95 } 100% { transform: scale(2.1); opacity: 0 } }
+  /* Right-hand readout inside the banner: where, elapsed, position. */
+  .ck-right { margin-left: auto; text-align: right; font-family: var(--mono); }
+  .ck-right b { display: block; font-family: var(--display); font-size: 1.5rem; font-weight: 400;
+                letter-spacing: .02em; color: var(--ink); }
+  .ck-right span { display: block; font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+                   color: var(--gray); margin-top: 3px; }
+
+  /* Sending wears the same banner in the card's existing green. */
+  body[data-dashboard='v3'] .vj-live.is-sending { border-color: var(--green); animation-name: sndbreathe; }
+  @keyframes sndbreathe {
+    0%, 100% { background: transparent; }
+    50% { background: color-mix(in srgb, var(--green) 9%, transparent); }
+  }
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon { background: var(--green); }
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon::before,
+  body[data-dashboard='v3'] .vj-live.is-sending .ck-beacon::after { border-color: var(--green); }
+
+  /* Log: the real .vj-log-line plus one new WHERE column. */
+  body[data-dashboard='v3'] .vj-log-line { grid-template-columns: 62px 36px 66px 1fr; }
+  body[data-dashboard='v3'] .vj-log-line .where { font-family: var(--mono); font-size: .62rem;
+            color: var(--gray); letter-spacing: .06em; }
+  .lgf { display: flex; gap: 5px; }
+  .lgf span { font-family: var(--mono); font-size: .6rem; letter-spacing: .1em; text-transform: uppercase;
+              padding: 4px 9px; border: 1px solid var(--hairline); border-radius: 9999px;
+              color: var(--gray); cursor: pointer; }
+  .lgf span.on { border-color: var(--ink); color: var(--ink); }
+</style>
+
+<body data-dashboard="v3" class="theme-light">
+<main class="main"><div class="container">
+<h1>B — the per-account step panel, in every state</h1>
+<p class="lede">
+  One panel, one column per account, divided by the hairline the card already uses.
+  The steps are the ones the code actually walks, so a stall reads as the step that
+  never ticked rather than a spinner that never stops. Every line reads out loud:
+  no field dumps, no counters an operator cannot act on. Those stay in Cloud Logging. Same panel on the VM and on
+  this Mac; only the RUNS ON line differs. Every card below is the real
+  <code>#active-card</code> cloned out of the shipping index.html, with its accounts,
+  its controls and its details panel left exactly as they are.
+</p>
+<p class="themebar">Theme
+  <button class="on" data-t="light">Light</button><button data-t="dark">Dark</button>
+</p>
+
+<div id="out"></div>
+</div></main>
+
+<script type="module">
+const OUT = document.getElementById('out');
+const doc = new DOMParser().parseFromString(await (await fetch('/index.html')).text(), 'text/html');
+const TEMPLATE = doc.getElementById('active-card');
+
+document.querySelectorAll('.themebar button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.themebar button').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    document.body.classList.toggle('theme-light', b.dataset.t === 'light');
+    document.body.classList.toggle('theme-dark', b.dataset.t === 'dark');
+  };
+});
+
+const NAMES = ['mefanier@ortus.solutions', 'camillec@ortus.solutions', 'selassie.a@ortus.solutions'];
+
+function logLine({ t, where, evt, what, cls = '' }) {
+  return `<div class="vj-log-line ${cls}"><span class="time">${t}</span>`
+    + `<span class="where">${where}</span><span class="evt">${evt}</span>`
+    + `<span class="what">${what}</span></div>`;
+}
+
+// The step panel.
+function panel({ verb, meta, sub, still, cols, why }) {
+  const el = document.createElement('div');
+  el.className = 'sp';
+  el.innerHTML = `
+    <div class="sp-head">
+      <span class="sp-verb"><i class="sp-dot${still ? ' still' : ''}"></i>${verb}</span>
+      <span class="sp-meta">${meta}</span>
+      ${cols.length > 3 ? `<span class="sp-nav"><button data-d="-1">&lsaquo;</button>`
+        + `<span class="sp-pos">${(cols.findIndex((c) => c.live) + 1) || 1} of ${cols.length}</span>`
+        + `<button data-d="1">&rsaquo;</button></span>` : ''}
+    </div>
+    <div class="sp-sub">${sub}</div>
+    <div class="sp-grid">${cols.map((c) => `
+      <div class="sp-col${c.live ? ' is-live' : ''}">
+        <div class="sp-who" title="${c.who}">${c.live ? '<i class="sp-dot"></i>' : ''}${c.who}</div>
+        <div class="sp-state">${c.state}${c.live ? '<span class="sp-live">Live</span>' : ''}</div>
+        ${c.count ? `<div class="sp-count"><b>${c.count.done} of ${c.count.of}</b><span>this batch</span></div>
+          <div class="sp-cbar">${Array.from({ length: c.count.of }, (_, k) =>
+            `<i class="${k < c.count.done ? 'on' : (c.live && k === c.count.done ? 'now' : '')}"></i>`).join('')}</div>
+          <div class="sp-day"><b>${c.count.today}</b> of <b>${c.count.limit}</b> sent today<span>${c.count.sub}</span></div>` : ''}
+        ${c.live ? `<div class="sp-steps">${c.steps.map((s) => `
+          <div class="sp-step ${s[0]}"><i class="sp-mk"></i><span>${s[1]}</span><span class="sp-t">${s[2] || ''}</span></div>`).join('')}
+        </div>` : ''}
+        ${c.res ? `<div class="sp-res">${c.res}</div>` : ''}
+        ${c.got ? `<div class="sp-got"><div class="sp-got-h">${c.got.head}</div>${c.got.rows.map((g) =>
+          `<div class="sp-got-r${g[2] === 'now' ? ' now' : ''}"><span><b>${g[0]}</b></span><span>${g[1]}</span></div>`).join('')}
+          ${c.got.more ? `<div class="sp-got-more">${c.got.more}</div>` : ''}</div>` : ''}
+        ${c.miss ? `<div class="sp-miss"><div class="sp-miss-h">${c.miss.head}</div>${c.miss.rows.map((m) =>
+          `<div class="sp-miss-r"><span><b>${m[0]}</b> &middot; ${m[1]}</span><span>${m[2]}</span></div>`).join('')}</div>` : ''}
+      </div>`).join('')}
+    </div>
+    ${why ? `<div class="sp-why"><span class="sp-why-h">${why.head}</span>${why.rows.map((r) =>
+      `<span class="r">${r[0]} <b>${r[1]}</b></span>`).join('')}</div>` : ''}`;
+
+  // Centre the rail on the live account. Index 0 stays flush left: there is no
+  // previous account to show beside it, and half a blank column reads as broken.
+  const rail = el.querySelector('.sp-grid');
+  const liveIdx = cols.findIndex((c) => c.live);
+  const centreOn = (i) => {
+    const w = rail.scrollWidth / cols.length;
+    rail.scrollLeft = i <= 0 ? 0 : Math.max(0, (i - 1) * w);
+  };
+  requestAnimationFrame(() => centreOn(liveIdx));
+  el.querySelectorAll('.sp-nav button').forEach((b) => {
+    b.onclick = () => { rail.scrollLeft += Number(b.dataset.d) * (rail.scrollWidth / cols.length); };
+  });
+  return el;
+}
+
+function baseCard({ tag, count, cap, l1, l2, line, log, hero, checking }) {
+  const el = TEMPLATE.cloneNode(true);
+  el.removeAttribute('id');
+  el.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+  el.querySelector('.vj-name').textContent = 'TEST_FOR_CCLAUDE';
+  const tagEl = el.querySelector('.vj-tag .dot')?.parentElement.querySelector('span:last-child');
+  if (tagEl) tagEl.textContent = tag;
+  el.classList.add('is-detailed');
+
+  if (hero === 'monitor') {
+    el.classList.add('is-monitor');
+    const mon = el.querySelector('.vj-monitor');
+    mon.removeAttribute('aria-hidden');
+    el.querySelector('.vj-hero')?.remove();
+    el.querySelector('.vj-hbar')?.remove();
+    el.querySelector('.fu-dual')?.remove();
+    mon.querySelector('.vj-mon-count').textContent = count;
+    mon.querySelector('.vj-mon-cap').textContent = cap;
+    mon.querySelector('.vj-mon-line').textContent = line;
+  } else {
+    el.querySelector('.vj-monitor')?.remove();
+    el.querySelector('.vj-hero .num span:first-child').textContent = count;
+    const meta = el.querySelector('.vj-hero .vj-meta');
+    meta.innerHTML = line;
+    el.querySelector('.vj-stats').innerHTML =
+      '<span><b>3</b> accounts</span><span><b>0</b> accepted</span>'
+      + '<span>· <b>Sending</b> · <a style="text-decoration:underline;text-decoration-color:var(--hairline);'
+      + 'text-underline-offset:3px;cursor:pointer">batch settings</a></span>';
+    el.querySelector('.vj-hbar i').style.width = cap;
+  }
+
+  const live = el.querySelector('.vj-live');
+  live.hidden = false;
+  live.querySelector('.vj-live-ico').textContent = l1.ico;
+  live.querySelector('.vj-live-l1').textContent = l1.t;
+  live.querySelector('.vj-live-l2').textContent = l2;
+  if (checking) {
+    live.classList.add('is-checking');
+    if (checking.tone === 'send') live.classList.add('is-sending');
+    const beacon = document.createElement('i');
+    beacon.className = 'ck-beacon';
+    live.prepend(beacon);
+    const right = document.createElement('div');
+    right.className = 'ck-right';
+    right.innerHTML = `<b>${checking.big}</b><span>${checking.cap}</span>`;
+    live.append(right);
+  }
+
+  // The account rows the card already has stay put; the step panel is what is new.
+  el.querySelector('.vj-profiles')?.remove();
+
+  const logEl = el.querySelector('.vj-log');
+  logEl.innerHTML = log.map(logLine).join('');
+  const acts = el.querySelector('.vj-log-acts');
+  const chips = document.createElement('span');
+  chips.className = 'lgf';
+  chips.innerHTML = ['All', 'Check', 'Send', 'Sheet', 'Errors', 'Verbose']
+    .map((f, i) => `<span class="${i === 0 ? 'on' : ''}">${f}</span>`).join('');
+  acts.prepend(chips);
+  return el;
+}
+
+function section(title, note, build) {
+  const h = document.createElement('div');
+  h.className = 'vtitle'; h.textContent = title; OUT.append(h);
+  const wrap = document.createElement('div');
+  build(wrap);
+  OUT.append(wrap);
+  const n = document.createElement('p'); n.className = 'vnote'; n.textContent = note; OUT.append(n);
+}
+
+// ══ 1. CHECKING — a sweep in flight ═══════════════════════════════════════
+section(
+  'State 1 — a check is running',
+  'Six steps, the ones the sweep actually walks. Account 1 is done and carries its result; account 2 is live and its column is tinted; account 3 has not started. The step that never ticks is the diagnosis, on the VM as much as here.',
+  (wrap) => {
+    const c = baseCard({
+      tag: 'CHECKING', hero: 'monitor', count: '20:56', cap: 'until next check',
+      checking: { big: '2 of 3', cap: 'accounts · 00:41 elapsed' },
+      l1: { ico: '↻', t: 'Checking right now' },
+      l2: 'camillec@ortus.solutions · reading its sent invitations · on this Mac',
+      line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
+      log: [
+        { t: '12:34:17', where: 'MAC', evt: 'info', what: '▶️ Check started · this campaign\u2019s 3 accounts · 66 invitations to look at' },
+        { t: '12:34:29', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · browser open, logged in' },
+        { t: '12:34:31', where: 'MAC', evt: 'log', what: 'read its 22 sent invitations' },
+        { t: '12:34:32', where: 'MAC', evt: 'log', what: 'none of its 22 invitations matched a lead in the sheet' },
+        { t: '12:34:32', where: 'MAC', evt: 'log', what: 'nobody new accepted, nothing to write' },
+        { t: '12:34:33', where: 'MAC', evt: 'log', what: 'nothing to write to the sheet' },
+        { t: '12:34:35', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · finished · 0 newly accepted · browser closed', cls: 'is-ok' },
+        { t: '12:34:36', where: 'MAC', evt: 'log', what: 'camillec@ortus.solutions · opening its browser' },
+      ],
+    });
+    c.append(panel({
+      verb: 'Checking for new acceptances',
+      meta: '💻 This Mac · 00:41 elapsed · account 2 of 3',
+      sub: 'Looking at 66 invitations across this campaign’s 3 accounts',
+      cols: [
+        { who: NAMES[0], state: 'Done · 18.2s', count: { done: 22, of: 22, today: 22, limit: 22, sub: 'every invitation this account has out' }, res: '<b>Nobody new</b> accepted · nothing to write', steps: [
+          ['ok', 'Browser open', '12.4s'], ['ok', 'Read its 22 sent invitations', '1.9s'],
+          ['ok', 'Found in the sheet · 0', '0.4s'], ['ok', 'Written to the sheet · nothing', '—'],
+          ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.1s'],
+        ] },
+        { who: NAMES[1], state: 'Checking', live: true, count: { done: 14, of: 22, today: 14, limit: 22, sub: 'reading its invitations now' }, res: 'result appears when this account finishes', steps: [
+          ['ok', 'Browser open', '14.8s'], ['now', 'Read its 22 sent invitations', '…'],
+          ['wait', 'Found in the sheet', ''], ['wait', 'Written to the sheet', ''],
+          ['wait', 'Introductions', ''], ['wait', 'Browser closed', ''],
+        ] },
+        { who: NAMES[2], state: 'Waiting its turn', res: 'has not started yet', steps: [
+          ['wait', 'Browser open', ''], ['wait', 'Read its sent invitations', ''],
+          ['wait', 'Found in the sheet', ''], ['wait', 'Written to the sheet', ''],
+          ['wait', 'Introductions', ''], ['wait', 'Browser closed', ''],
+        ] },
+      ],
+      why: { head: 'Nothing to stamp, and here is why', rows: [
+        ['invitations looked at', 22], ['found in the sheet', 0],
+        ['accepted since last time', 0], ['already introduced', 0], ['written to the sheet', 0],
+      ] },
+    }));
+    wrap.append(c);
+  }
+);
+
+// ══ 2. SENDING — connection requests going out ════════════════════════════
+section(
+  'State 2 — sending connection requests',
+  'Every count on this card is one the code already computes and then throws away. The 19/100 is campaign.js\'s own line, "✓ [account] (19/100)" = getCampaignCount(profileId) over campaign.dailyLimit, which today only reaches the log. The reasons under "Not hit, and why" are normalizeSkipReason() strings verbatim, the same 22 it writes into the sheet\'s Stage column. The roll-up at the bottom counts them for the run, so "why did only 47 go out of 300" is answered on the card instead of by reading a sheet.',
+  (wrap) => {
+    const s = baseCard({
+      tag: 'SENDING', hero: 'send', count: '16', cap: '16%',
+      checking: { tone: 'send', big: '6 of 8', cap: 'this batch · 00:12 elapsed' },
+      l1: { ico: '→', t: 'Sending right now' },
+      l2: 'Rina Chandran · Reuters · from camillec@ortus.solutions · on this Mac',
+      line: '<span><b>47</b> of 300 sent</span><span>Next batch in <b>39m 15s</b></span>',
+      log: [
+        { t: '12:31:02', where: 'MAC', evt: 'info', what: '▶️ Sending started · 3 accounts · 253 leads to go' },
+        { t: '12:31:44', where: 'MAC', evt: 'log', what: 'mefanier@ortus.solutions · Josephine Okonkwo · profile open' },
+        { t: '12:31:52', where: 'MAC', evt: 'log', what: 'confirmed it is the right Josephine Okonkwo, not already connected' },
+        { t: '12:32:04', where: 'MAC', evt: 'ok', what: 'request sent to Josephine Okonkwo (19 of 100 today)', cls: 'is-ok' },
+        { t: '12:32:05', where: 'MAC', evt: 'log', what: 'written to the sheet, row 118' },
+        { t: '12:32:06', where: 'MAC', evt: 'log', what: 'next request in about a minute' },
+        { t: '12:33:10', where: 'VM', evt: 'warn', what: 'selassie.a@ortus.solutions · LinkedIn is pushing back, waiting 90 seconds', cls: 'is-warn' },
+      ],
+    });
+    s.append(panel({
+      verb: 'Sending connection requests',
+      meta: '💻 This Mac · 57 of 150 sent today · 253 leads still to go',
+      sub: 'Each account sends 8 in a turn, about a minute apart, then waits its next turn. '
+        + '47 of the 300 were left out before the run started: already contacted, already done, or no LinkedIn link.',
+      cols: [
+        { who: NAMES[0], state: 'Waiting · next request in 48s',
+          count: { done: 8, of: 8, today: 24, limit: 50, sub: 'batch done · next batch of 8 in 39m 15s' },
+          got: { head: 'Reached today', rows: [
+            ['Josephine Okonkwo', '12:32', ''], ['Hanne Nielsen', '12:29', ''],
+            ['Thomas Krauss', '12:25', ''], ['Marta Oliveira', '12:21', ''],
+          ], more: '+ 3 more · Yuki Matsuda, Aisha Bello, Sven Larsson' },
+          res: '<b>2</b> not reached today · no errors', steps: [
+          ['ok', 'Browser open', '11.2s'], ['ok', 'Profile open', '9.4s'],
+          ['ok', 'Confirmed the right person', '2.1s'], ['ok', 'Request sent with note', '3.7s'],
+          ['ok', 'Written to the sheet, row 118', '0.6s'], ['now', 'Pausing before the next one', '48s'],
+        ], miss: { head: 'Nobody reached, and why', rows: [
+          ['Marcus Ilori', 'his profile no longer exists', '12:19'],
+          ['Aiko Tanaka', 'no Connect button on her profile', '12:07'],
+        ] } },
+        { who: NAMES[1], state: 'Sending to Rina Chandran', live: true,
+          count: { done: 5, of: 8, today: 21, limit: 50, sub: 'request 6 of this batch going out now · 29 left today' },
+          got: { head: 'Reached today', rows: [
+            ['Rina Chandran', 'sending now', 'now'], ['Diego Fernández', '12:30', ''],
+            ['Amara Nwosu', '12:26', ''], ['Kenji Sato', '12:22', ''],
+          ], more: '+ 2 more · Elif Demir, Paulo Santos' },
+          res: '<b>1</b> not reached today · no errors', steps: [
+          ['ok', 'Browser open', '13.9s'], ['ok', 'Profile open', '8.8s'],
+          ['now', 'Confirming the right person', '…'], ['wait', 'Request sent', ''],
+          ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
+        ], miss: { head: 'Nobody reached, and why', rows: [
+          ['Priya Raman', 'her profile never finished loading', '12:11'],
+        ] } },
+        { who: NAMES[2], state: 'Waiting for LinkedIn · back in 1m 22s',
+          count: { done: 4, of: 8, today: 12, limit: 50, sub: 'batch paused · the other 4 go out once LinkedIn eases off' },
+          got: { head: 'Reached today', rows: [
+            ['Ana Lucía Vega', '12:12', ''], ['Omar Haddad', '12:08', ''],
+            ['Freya Lindqvist', '12:03', ''], ['Ibrahim Toure', '11:58', ''],
+          ] },
+          res: '<b>4</b> not reached today · one more push-back and this account stops for the week', steps: [
+          ['ok', 'Browser open', '15.1s'], ['ok', 'Profile open', '10.2s'],
+          ['ok', 'Confirmed the right person', '1.8s'], ['miss', 'Request not sent · LinkedIn pushed back', '—'],
+          ['miss', 'Not written to the sheet', '—'], ['now', 'Waiting for LinkedIn to ease off', '1m 22s'],
+        ], miss: { head: 'Nobody reached, and why', rows: [
+          ['Tomás Rivera', 'LinkedIn pushed back, will retry', '12:33'],
+          ['Nadia Haddad', 'LinkedIn pushed back, will retry', '12:30'],
+          ['Sven Larsson', 'note too long for a non-Premium account', '12:24'],
+          ['Grace Mwangi', 'LinkedIn never confirmed the send', '12:16'],
+        ] } },
+      ],
+      why: { head: 'Nobody reached, and why · 7 of the 54 tried', rows: [
+        ['LinkedIn pushed back', 2],
+        ['Profile no longer exists', 1],
+        ['No Connect button on their profile', 1],
+        ['Profile never finished loading', 1],
+        ['Note too long for a non-Premium account', 1],
+        ['LinkedIn never confirmed the send', 1],
+      ] },
+    }));
+    wrap.append(s);
+  }
+);
+
+// ══ 2b. THIRTEEN ACCOUNTS — the rail ══════════════════════════════════════
+const MAEN = [
+  'adri@ortusclub.com', 'rein@ortusclub.com', 'mefanier@ortus.solutions',
+  'camillec@ortus.solutions', 'selassie.a@ortus.solutions', 'joyce.n@ortus.solutions',
+  'karen.d@ortus.solutions', 'tricia@ortus.solutions', 'mark.b@ortus.solutions',
+  'lian@ortus.solutions', 'grace.o@ortus.solutions', 'devon.k@ortus.solutions',
+  'ruth.a@ortus.solutions',
+];
+const DONE_STEPS = (b, pl, id, cs, sh) => [
+  ['ok', 'Browser open', b], ['ok', 'Profile open', pl],
+  ['ok', 'Confirmed the right person', id], ['ok', 'Request sent with note', cs],
+  ['ok', 'Written to the sheet', sh], ['ok', 'Paused before the next one', '—'],
+];
+const WAIT_STEPS = [
+  ['wait', 'Browser open', ''], ['wait', 'Profile open', ''],
+  ['wait', 'Confirming the right person', ''], ['wait', 'Request sent', ''],
+  ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
+];
+
+section(
+  'State 2b — thirteen accounts, and the rail',
+  'MAEN_ANZ_HOB runs 13 accounts. The rail shows three at a time with the LIVE one centred, the previous on its left and the next on its right, and scrolls for the rest. The exception is account 1: nothing precedes it, so it sits flush left rather than leaving half a blank column. Position reads "7 of 13" beside the arrows.',
+  (wrap) => {
+    const LIVE_AT = 6; // account 7 of 13
+    const cols = MAEN.map((who, i) => {
+      if (i < LIVE_AT) {
+        return { who, state: 'Done for today · 50 of 50 sent',
+          count: { done: 8, of: 8, today: 50, limit: 50, sub: 'done for today · resumes after midnight UTC' },
+          steps: DONE_STEPS('11.2s', '9.4s', '2.1s', '3.7s', '0.6s'),
+          got: { head: 'Reached today', rows: [
+            ['Josephine Okonkwo', '12:32', ''], ['Hanne Nielsen', '12:29', ''],
+            ['Thomas Krauss', '12:25', ''],
+          ], more: '+ 5 more' },
+          res: `<b>${i % 3}</b> not reached today`,
+          miss: i % 3 ? { head: 'Nobody reached, and why', rows: [
+            ['Marcus Ilori', 'his profile no longer exists', '12:19'],
+          ] } : null };
+      }
+      if (i === LIVE_AT) {
+        return { who, state: 'Sending to Rina Chandran', live: true,
+          count: { done: 5, of: 8, today: 21, limit: 50, sub: 'request 6 of this batch going out now · 29 left today' },
+          got: { head: 'Reached today', rows: [
+            ['Rina Chandran', 'sending now', 'now'], ['Diego Fernández', '12:30', ''],
+            ['Amara Nwosu', '12:26', ''],
+          ], more: '+ 2 more' },
+          steps: [
+            ['ok', 'Browser open', '13.9s'], ['ok', 'Profile open', '8.8s'],
+            ['now', 'Confirming the right person', '…'], ['wait', 'Request sent', ''],
+            ['wait', 'Written to the sheet', ''], ['wait', 'Pausing before the next one', ''],
+          ],
+          res: '<b>1</b> not reached today · no errors',
+          miss: { head: 'Nobody reached, and why', rows: [
+            ['Priya Raman', 'her profile never finished loading', '12:11'],
+          ] } };
+      }
+      return { who, state: 'Waiting its turn',
+        count: { done: 0, of: 8, today: 16, limit: 50, sub: 'waiting for its turn in the rotation' },
+        steps: WAIT_STEPS, res: 'has not started yet' };
+    });
+    const c = baseCard({
+      tag: 'SENDING', hero: 'send', count: '73', cap: '73%',
+      checking: { tone: 'send', big: '6 of 8', cap: 'this batch · account 7 of 13' },
+      l1: { ico: '→', t: 'Sending right now' },
+      l2: 'Rina Chandran · Reuters · from karen.d@ortus.solutions · on the Cloud VM',
+      line: '<span><b>1095</b> of 1497 sent</span><span>Next batch in <b>12m 04s</b></span>',
+      log: [
+        { t: '12:41:02', where: 'VM', evt: 'info', what: '▶️ Sending started · 13 accounts · 402 leads to go' },
+        { t: '12:41:44', where: 'VM', evt: 'ok', what: 'joyce.n@ortus.solutions · request sent to Rina Chandran (18 of 100 today)', cls: 'is-ok' },
+        { t: '12:41:45', where: 'VM', evt: 'log', what: 'written to the sheet, row 892' },
+        { t: '12:41:52', where: 'VM', evt: 'log', what: 'karen.d@ortus.solutions · checking it is the right person' },
+      ],
+    });
+    c.append(panel({
+      verb: 'Sending connection requests',
+      meta: '☁︎ Cloud VM · 402 of 650 sent today · 402 leads still to go',
+      sub: '13 accounts · 8 requests per turn, about a minute apart · nobody was left out before the run',
+      cols,
+      why: { head: 'Nobody reached, and why · 11 of the 1106 tried', rows: [
+        ['LinkedIn pushed back', 4], ['Profile no longer exists', 3],
+        ['Profile never finished loading', 2], ['LinkedIn never confirmed the send', 1], ['Weekly invitation limit reached', 1],
+      ] },
+    }));
+    wrap.append(c);
+  }
+);
+
+// ══ 3. MONITORING — between checks ════════════════════════════════════════
+section(
+  'State 3 — monitoring, between checks',
+  'The panel does not disappear when nothing is running, it goes still: the dot stops pulsing, the steps carry the LAST sweep with its timings, and each column keeps its result. That is the fix for the sentence the card used to print, "nothing running right now", while three browsers were open. The countdown keeps its place above.',
+  (wrap) => {
+    const m = baseCard({
+      tag: 'MONITORING', hero: 'monitor', count: '20:56', cap: 'until next check',
+      l1: { ico: '◷', t: 'Waiting for next check' },
+      l2: '3 accounts · 💻 This Mac · last sweep 12:34 · 66 scanned · 0 newly accepted',
+      line: '0 sent · — accepted · checks every 1h · ends Fri, 28 Aug',
+      log: [
+        { t: '12:34:35', where: 'MAC', evt: 'ok', what: 'mefanier@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
+        { t: '12:34:58', where: 'MAC', evt: 'ok', what: 'camillec@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
+        { t: '12:35:21', where: 'MAC', evt: 'ok', what: 'selassie.a@ortus.solutions · finished · 0 newly accepted', cls: 'is-ok' },
+        { t: '12:35:22', where: 'MAC', evt: 'sum', what: '— Check finished · nobody new accepted · took 65 seconds' },
+        { t: '12:35:22', where: 'MAC', evt: 'info', what: '🕑 Next check at 13:35' },
+      ],
+    });
+    m.append(panel({
+      verb: 'Last check · 12:34',
+      still: true,
+      meta: '💻 This Mac · took 65s · next at 13:35',
+      sub: 'Looked at 66 invitations across 3 accounts · nobody new accepted',
+      cols: [
+        { who: NAMES[0], state: 'Clean · 18.2s', count: { done: 22, of: 22, today: 22, limit: 22, sub: 'every invitation this account has out' }, res: '<b>Nobody new</b> accepted', steps: [
+          ['ok', 'Browser open', '12.4s'], ['ok', 'Read its 22 sent invitations', '1.9s'],
+          ['ok', 'Found in the sheet · 0', '0.4s'], ['ok', 'Written to the sheet · nothing', '—'],
+          ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.1s'],
+        ] },
+        { who: NAMES[1], state: 'Clean · 22.6s', count: { done: 22, of: 22, today: 22, limit: 22, sub: 'every invitation this account has out' }, res: '<b>Nobody new</b> accepted', steps: [
+          ['ok', 'Browser open', '14.8s'], ['ok', 'Read its 22 sent invitations', '2.2s'],
+          ['ok', 'Found in the sheet · 0', '0.5s'], ['ok', 'Written to the sheet · nothing', '—'],
+          ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.3s'],
+        ] },
+        { who: NAMES[2], state: 'Clean · 24.1s', count: { done: 22, of: 22, today: 22, limit: 22, sub: 'every invitation this account has out' }, res: '<b>Nobody new</b> accepted', steps: [
+          ['ok', 'Browser open', '15.9s'], ['ok', 'Read its 22 sent invitations', '2.4s'],
+          ['ok', 'Found in the sheet · 0', '0.6s'], ['ok', 'Written to the sheet · nothing', '—'],
+          ['ok', 'Introductions · none to send', '—'], ['ok', 'Browser closed', '1.2s'],
+        ] },
+      ],
+    }));
+    wrap.append(m);
+  }
+);
+</script>

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Paused — the 48h deadline · sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- The REAL stylesheets, not a copy. If the design system moves, this moves. -->
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  /* Sketch chrome only — nothing here styles the card itself. */
+  .sk-wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 80px; }
+  .sk-h { font-family: 'Bebas Neue', sans-serif; font-size: 30px; letter-spacing: .04em; margin: 0 0 6px; }
+  .sk-sub { color: var(--gray, #8a8a8a); font-size: 13px; line-height: 1.55; margin: 0 0 26px; max-width: 70ch; }
+  .sk-case { margin: 0 0 34px; }
+  .sk-lbl { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .12em;
+            text-transform: uppercase; color: var(--gray, #8a8a8a); margin: 0 0 8px; }
+  .sk-note { font-size: 12px; color: var(--gray, #8a8a8a); margin: 8px 0 0; }
+  .sk-clock { display: flex; align-items: center; gap: 10px; margin: 0 0 22px;
+              font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .sk-clock input { flex: 1; max-width: 420px; }
+  .sk-live { font-weight: 600; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sk-wrap">
+
+  <h1 class="sk-h">Paused — the 48h deadline</h1>
+  <p class="sk-sub">
+    The real card, the real CSS, and the real <code>buildLiveActivity()</code> from
+    <code>/js/live-activity.mjs</code> — the markup is cloned out of the shipping
+    <code>index.html</code> at load, so nothing here can drift from the app. Numbers are
+    LV_WARM_JAMIELYNNE's actual ones: 32 of 653 sent, one account, paused 19 Aug 10:08 UTC.
+  </p>
+
+  <div class="sk-clock">
+    <label for="sk-h-slider">Hours since the pause</label>
+    <input id="sk-h-slider" type="range" min="0" max="49" step="1" value="1" />
+    <span class="sk-live" id="sk-h-val">1h</span>
+  </div>
+
+  <div class="sk-case">
+    <p class="sk-lbl">Live — drag the slider</p>
+    <div id="sk-live-host"></div>
+    <p class="sk-note" id="sk-live-note"></p>
+  </div>
+
+  <div class="sk-case">
+    <p class="sk-lbl">1 · Just paused — 47h left</p>
+    <div id="sk-a"></div>
+  </div>
+
+  <div class="sk-case">
+    <p class="sk-lbl">2 · Nearly out of time — under 2h, so it counts in minutes</p>
+    <div id="sk-b"></div>
+  </div>
+
+  <div class="sk-case">
+    <p class="sk-lbl">3 · Past the deadline — the engine cancels on its next tick</p>
+    <div id="sk-c"></div>
+  </div>
+
+  <div class="sk-case">
+    <p class="sk-lbl">4 · A LOCAL pause — no deadline, because nothing enforces one</p>
+    <div id="sk-d"></div>
+    <p class="sk-note">
+      A local pause lives in memory and dies with the app, so the card keeps its old wording
+      rather than promising a 48h rule no code will apply to it.
+    </p>
+  </div>
+
+</div>
+
+<script type="module">
+import { buildLiveActivity } from '/js/live-activity.mjs';
+
+const PAUSED_AT = '2026-08-19T10:08:12.611Z';   // the real pause, to the second
+const H = 3600 * 1000;
+
+// The card's markup, taken from the shipping page rather than copied here — the
+// same cloneNode(true) of #active-card that vjCardSkeleton() uses for every
+// expanded strip on the board.
+const doc = new DOMParser().parseFromString(await (await fetch('/index.html')).text(), 'text/html');
+const TEMPLATE = doc.getElementById('active-card');
+
+function card(status) {
+  const el = TEMPLATE.cloneNode(true);
+  el.removeAttribute('id');
+  el.classList.add('sn-vjcard', 'is-detailed');
+  el.classList.remove('in-wizard', 'is-empty', 'is-preflight', 'is-monitor', 'is-waiting', 'is-local', 'is-mini');
+  el.style.removeProperty('display');
+  el.querySelectorAll('[id]').forEach((n) => { n.setAttribute('data-f', n.id); n.removeAttribute('id'); });
+  // Trim to the parts this sketch is about. The log, the action dock, the mode
+  // glyph and the batch countdown are all real, they just have nothing to say
+  // about a pause, and an empty one of each is noise around the line under test.
+  ['.vj-controls', '.vj-bulk', '.vj-log', '.vj-log-head', '.vj-glyph-circle',
+   '[data-f="active-log"]', '[data-f="active-stage"]', '.vj-foot-sep']
+    .forEach((sel) => { const n = el.querySelector(sel); if (n) n.remove(); });
+  // "Next batch in —" is about sending; a paused campaign has no next batch.
+  const batch = el.querySelector('[data-f="batchEta"]');
+  if (batch && batch.parentElement) batch.parentElement.remove();
+
+  const set = (f, v) => { const n = el.querySelector(`[data-f="${f}"]`); if (n) n.textContent = v; };
+  set('activeEyebrow', 'Paused');
+  set('activeName', 'LV_WARM_JAMIELYNNE');
+  set('activePct', '5');
+  set('activeSent', '32');
+  set('activeTotal', '653');
+  set('activeAccounts', '1');
+  set('activeAccepted', '—');
+  set('sendingLbl', 'Paused');
+  const bar = el.querySelector('[data-f="activeBar"]'); if (bar) bar.style.width = '5%';
+
+  // THE POINT OF THE SKETCH: the two lines below are produced by the shipping
+  // module, not written here. What you read is what the app will say.
+  const la = buildLiveActivity(status, status._now);
+  const live = el.querySelector('[data-f="active-live"]');
+  if (live) {
+    live.hidden = false;
+    live.classList.toggle('is-paused', la.state === 'paused');
+    set('activeLiveIco', la.icon);
+    set('activeLiveL1', la.l1);
+    set('activeLiveL2', la.l2);
+  }
+  return el;
+}
+
+const cloudPause = (hoursIn) => ({
+  running: true, paused: true, pausedAt: PAUSED_AT,
+  _now: Date.parse(PAUSED_AT) + hoursIn * H,
+});
+
+const mount = (id, status) => {
+  const host = document.getElementById(id);
+  host.replaceChildren(card(status));
+};
+
+mount('sk-a', cloudPause(1));
+mount('sk-b', cloudPause(46.8));
+mount('sk-c', cloudPause(49));
+mount('sk-d', { running: true, paused: true });   // local: no pausedAt at all
+
+const slider = document.getElementById('sk-h-slider');
+const val = document.getElementById('sk-h-val');
+const note = document.getElementById('sk-live-note');
+const draw = () => {
+  const h = Number(slider.value);
+  val.textContent = `${h}h`;
+  mount('sk-live-host', cloudPause(h));
+  note.textContent = h >= 48
+    ? 'Past 48h — the frontend cancels it within the minute and releases the account.'
+    : `${48 - h}h of pause left. The unsent leads stay pending either way.`;
+};
+slider.addEventListener('input', draw);
+draw();
+</script>
+</body>
+</html>

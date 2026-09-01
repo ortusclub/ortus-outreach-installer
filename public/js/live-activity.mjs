@@ -30,15 +30,59 @@ const CHECKING_OVERRUN_MS = 15 * 60 * 1000;
  * Absent task fields (older engine, failed detail fetch) → 'counting'. Never
  * invent a wake.
  */
+/** "1h" / "30 min" — the form the monitoring card has always used. */
+export function cadenceLabel(min) {
+  const n = Number(min) || 60;
+  return n >= 60 && n % 60 === 0 ? `${n / 60}h` : `${n} min`;
+}
+
+/**
+ * Is this campaign checking less often than its operator asked for?
+ *
+ * The app deliberately does NOT carry the cadence table — the engine sends the
+ * effective interval and the base one, and slowed is simply the difference. Two
+ * copies of that table would eventually disagree, and the card would confidently
+ * describe a slowdown that was not happening.
+ */
+export function checkSlowdown(status) {
+  const eff = Number(status && status.checkIntervalMinutes) || 0;
+  const base = Number(status && status.checkIntervalBaseMinutes) || 0;
+  if (!eff || !base || eff <= base) return null;
+  return { eff, base, streak: Math.max(0, Number(status.emptyCheckStreak) || 0) };
+}
+
+/**
+ * The cadence phrase for the COLLAPSED board strip's one-line monitoring
+ * summary — `{label} {value}`, so the caller can bold the value as it always has.
+ *
+ * Not slowed → byte-identical to what that line has always printed
+ * (`every 60m`). Slowed → the hero caption's own words (`slowed to 4h`), because
+ * the strip used to print the slowed interval as `every 4h` and there is nothing
+ * in that sentence to tell the operator it wasn't the setting they chose.
+ * Same checkSlowdown / cadenceLabel as the hero — no second copy of anything.
+ */
+export function stripCadence(status) {
+  const slow = checkSlowdown(status);
+  return slow
+    ? { label: 'slowed to', value: cadenceLabel(slow.eff) }
+    : { label: 'every', value: `${Number(status && status.checkIntervalMinutes) || 60}m` };
+}
+
 export function monitorHeroState(status, now = Date.now()) {
   if (!status) return { state: 'counting', overrun: false };
 
   const claimed = status.monitorTaskStatus === 'claimed' || !!status.monitoringCheckInProgress;
   if (claimed) {
     const started = Date.parse(status.monitorCheckStartedAt || '');
+    const completed = Date.parse(status.monitorCheckCompletedAt || '');
+    // A manual "check now" request can be active before the engine writes a new
+    // started timestamp. Do not measure that request against the PREVIOUS
+    // sweep's timestamp or a perfectly normal VM wake-up is labelled stalled.
+    const currentStart = Number.isFinite(started)
+      && (!Number.isFinite(completed) || started > completed);
     return {
       state: 'checking',
-      overrun: Number.isFinite(started) && (now - started) > CHECKING_OVERRUN_MS,
+      overrun: currentStart && (now - started) > CHECKING_OVERRUN_MS,
     };
   }
 
@@ -82,11 +126,15 @@ export function monitorHeroView(status, fmtCountdown, now = Date.now()) {
       state: 'waking',
     };
   }
+  // A sweep in flight or a worker waking outranks the slowdown — both branches
+  // above return first. Here the number IS a countdown, so the caption may name
+  // what it is counting toward.
+  const slow = checkSlowdown(status);
   return {
     count: status && status.nextCheckAt
       ? fmtCountdown(new Date(status.nextCheckAt).getTime() - now)
       : '—',
-    cap: 'until next check',
+    cap: slow ? `next check · slowed to ${cadenceLabel(slow.eff)}` : 'until next check',
     state: 'counting',
   };
 }
@@ -111,6 +159,34 @@ export function monitorHeroView(status, fmtCountdown, now = Date.now()) {
  * @param {number} [o.now]
  * @returns {string|null} text to write, or null to leave the DOM untouched
  */
+/**
+ * Has this Mac lost its link to the VM, to the point where the card must stop
+ * speaking in the present tense?
+ *
+ * Measured 2026-08-28: the dev tunnel died at 01:27 (expired gcloud session) and
+ * at 09:11 the card still read "MONITORING IS ACTIVE · until next automatic
+ * check: NOW". Every word was seven hours old. The VM itself was fine — it swept
+ * at 03:10, 05:10 and 07:10 — so the card invented a frozen campaign out of its
+ * own silence. Nothing about this is dev-only: a closed lid, a dropped Wi-Fi or a
+ * preempted API pod produces the same silence for any operator.
+ *
+ * A campaign handed to THIS Mac is excluded: its checks run here and pollStatus
+ * owns the card, so the cloud poll deliberately stands down and its age climbs
+ * for a healthy reason.
+ *
+ * 90s = eighteen missed 5s polls — past any slow answer or pod rollout, well
+ * short of a real outage.
+ *
+ * @param {number} ageSeconds   seconds since the last successful cloud poll
+ * @param {boolean} runsLocally campaign is running on this Mac, not the VM
+ * @returns {boolean}
+ */
+export const LOST_LINK_AFTER_S = 90;
+export function linkIsLost(ageSeconds, runsLocally = false) {
+  if (runsLocally) return false;
+  return Number(ageSeconds) > LOST_LINK_AFTER_S;
+}
+
 export function monitorTickText({ nextCheckAt, busy, fmtCountdown, now = Date.now() }) {
   if (busy) return null;
   if (!nextCheckAt) return '—';
@@ -130,10 +206,43 @@ export function monitorTickText({ nextCheckAt, busy, fmtCountdown, now = Date.no
  * would be claiming knowledge nothing has; elapsed seconds is the only honest
  * number and the stage shows that instead.
  */
+
+/** How long a pause may last before the engine stops the campaign for good.
+ * Mirrors PAUSE_MAX_MS in the engine's campaign-store.js. A pause holds the
+ * campaign's accounts — nobody else can send from them — and freezes its unsent
+ * leads, which is fine for a coffee break and wrong for a week. */
+export const PAUSE_MAX_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * The paused card's second line: when this pause stops being a pause.
+ *
+ * Returns '' when `pausedAt` is missing or unparseable — a local campaign has no
+ * stamp at all, and a cloud campaign paused by an older engine build may not
+ * either. Inventing a deadline for those would be a countdown to a moment
+ * nothing acts on.
+ */
+export function pauseAutoStop(pausedAt, now = Date.now()) {
+  const started = Date.parse(pausedAt || '');
+  if (!Number.isFinite(started)) return '';
+  const left = started + PAUSE_MAX_MS - now;
+  // Past the deadline the engine's next tick cancels it. Say that, rather than
+  // counting down through zero into negative hours.
+  if (left <= 0) return 'auto-stopping now — paused too long';
+  const mins = Math.floor(left / 60000);
+  if (mins < 60) return `auto-stops in ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  // Under two hours the minutes matter — it is about to happen. Above that they
+  // are noise on a 48-hour clock.
+  return hrs < 2 ? `auto-stops in ${hrs}h ${rem}m` : `auto-stops in ${hrs}h`;
+}
+
 export const LIVE_PHASES = {
+  starting:    { verb: 'Starting campaign worker', icon: '◌', state: 'starting', glyph: 'boot' },
   sending:     { verb: 'Sending connection',   icon: '➤', state: 'sending',  glyph: 'fly' },
   introducing: { verb: 'Writing introduction', icon: '✎', state: 'sending',  glyph: 'typ' },
   checking:    { verb: 'Checking acceptances', icon: '↻', state: 'checking', glyph: 'swp' },
+  monitoring:  { verb: 'Monitoring is active', icon: '◷', state: 'monitoring', glyph: 'wait' },
   // Not a thing the VM is DOING — a thing it can't do. A campaign whose every
   // account is capped or benched stays status:'running' forever, so the card
   // showed a green RUNNING dot over "Working…" while nothing had been sent for
@@ -142,8 +251,27 @@ export const LIVE_PHASES = {
   waiting:     { verb: 'Waiting for a free account', icon: '◷', state: 'waiting', glyph: 'wait' },
 };
 
-export function buildLiveActivity(status) {
+export function buildLiveActivity(status, now = Date.now()) {
   if (!status) return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
+
+  if (status.state === 'interrupted' || status.interrupted) {
+    const i = status.interruption || {};
+    const monitoring = i.phase === 'monitoring' || status.monitoringPhase;
+    return {
+      state: 'interrupted',
+      icon: '■',
+      phase: 'interrupted',
+      l1: i.title || (monitoring
+        ? 'Monitoring stopped because this Mac became unavailable'
+        : 'Campaign stopped because this Mac became unavailable'),
+      l2: i.detail || (monitoring
+        ? 'Sending remains stopped. Resume acceptance checks here or move monitoring to the Cloud VM.'
+        : 'The remaining leads are safe. Choose where to continue.'),
+      verb: monitoring ? 'Monitoring stopped safely' : 'Campaign stopped safely',
+      who: '',
+      sub: i.recordedAt ? `recorded ${i.recordedAt}` : '',
+    };
+  }
 
   if (status.phase === 'preflight') {
     const conn = status.primaryConn || {};
@@ -159,6 +287,7 @@ export function buildLiveActivity(status) {
 
   const monitoring = !status.running && status.state === 'monitoring';
   const paused = !!(status.paused || status._paused);
+  const monitoringPaused = !!status.monitoringPhase && paused && status.state !== 'monitoring';
   const ca = status.currentAction || null;
   const account = (ca && ca.account) || status.currentProfile || '';
   const lead = (ca && ca.lead) || '';
@@ -169,12 +298,22 @@ export function buildLiveActivity(status) {
   // sweep, so without this an intro run reports as "Checking for new
   // acceptances…". Paused still wins (the phase is stale the moment we pause).
   const P = ca && LIVE_PHASES[ca.phase];
-  if (P && !paused) {
+  if (P && (!paused || monitoring)) {
     return {
       state: P.state, icon: P.icon, phase: ca.phase,
       l1: ca.label || P.verb,
       l2: [account, lead].filter(Boolean).join(' · '),
       verb: P.verb, who: lead || account || '', sub: ca.sub || '',
+    };
+  }
+
+  if (monitoringPaused) {
+    const n = (status.participatingProfileIds || status.profileIds || []).length;
+    const cadMin = Number(status.checkIntervalMinutes) || 60;
+    const cad = cadMin >= 60 ? `${cadMin / 60}h` : `${cadMin} min`;
+    return {
+      state: 'paused', icon: '‖', l1: 'Paused between checks',
+      l2: `${n ? `${n} account${n === 1 ? '' : 's'} · ` : ''}monitoring remains active · next check runs automatically every ${cad}`,
     };
   }
 
@@ -184,10 +323,17 @@ export function buildLiveActivity(status) {
       return {
         state: 'checking',
         icon: '↻',
+        // The detailed card keys off `phase`. Manual This-Mac checks are
+        // marked in-progress before their first browser event/currentAction,
+        // so omitting this sent them back to the legacy blue banner.
+        phase: 'checking',
         l1: 'Checking for new acceptances…',
         l2: hero.overrun
           ? 'sweep looks stalled — auto-recovers'
           : (account ? `${account} · sweeping recent connections` : 'sweeping recent connections'),
+        verb: 'Checking acceptances',
+        who: account || 'Selecting the next account',
+        sub: account ? 'Reading sent invitations' : 'Choosing the first eligible campaign account',
       };
     }
     const n = (status.participatingProfileIds || status.profileIds || []).length;
@@ -205,30 +351,126 @@ export function buildLiveActivity(status) {
         l2: hero.overrun ? 'still waking — worker hasn’t picked it up' : 'sweeping in ~2 min',
       };
     }
+    const slow = checkSlowdown(status);
+    if (slow) {
+      // Says three things, in the order an operator asks them: it is deliberate,
+      // here is the evidence, here is what undoes it. Without the third the
+      // slowdown reads as permanent and the operator goes looking for a setting
+      // to change.
+      return {
+        state: 'monitoring',
+        icon: '◷',
+        l1: 'Quiet — checking less often',
+        l2: `nothing accepted in the last ${slow.streak} check${slow.streak === 1 ? '' : 's'} · `
+          + (slow.base === 60 ? 'hourly' : `every ${cadenceLabel(slow.base)}`)
+          + ' again as soon as one lands',
+      };
+    }
     return {
-      state: 'monitoring',
+      // Between scheduled sweeps the browser work is intentionally paused.
+      // Calling that merely "waiting" made an operator-paused campaign look as
+      // if its pause had been lost during a VM ↔ Mac handover. Keep both truths
+      // visible: sending/browser work is paused, monitoring remains armed.
+      state: 'monitoring', phase: 'monitoring',
       icon: '◷',
-      l1: 'Waiting for next check',
-      l2: `${acctStr}checks every ${cad} · nothing running right now`,
+      l1: 'Nothing is running right now — this is expected',
+      l2: `${acctStr}monitoring is armed · next check runs automatically every ${cad}`,
+      verb: 'Monitoring is active', who: 'Waiting between checks', sub: 'No browser stays open between sweeps',
     };
   }
 
   if (status.running) {
     if (paused) {
+      const stop = pauseAutoStop(status.pausedAt, now);
+      const started = Date.parse(status.pausedAt || '');
+      // Past the deadline the reassurance becomes a contradiction: this campaign
+      // is about to be cancelled, so "resumes instantly" is the one thing it
+      // will not do. The deadline line stands alone.
+      const expired = Number.isFinite(started) && now >= started + PAUSE_MAX_MS;
       return {
         state: 'paused',
         icon: '‖',
         l1: 'Paused — finishes the current lead, then waits',
-        l2: 'resumes instantly · browsers stay open',
+        // The deadline only appears when we know WHEN the pause started. A local
+        // campaign has no pausedAt — its pause lives in memory and dies with the
+        // app — so it keeps the old wording rather than being told about a 48h
+        // rule that nothing enforces for it.
+        l2: !stop ? 'resumes instantly · browsers stay open'
+          : expired ? stop
+            : `${stop} · resumes instantly, browsers stay open`,
       };
     }
     return {
       state: 'sending',
       icon: '→',
-      l1: (ca && ca.label) || 'Working…',
-      l2: [account, lead].filter(Boolean).join(' · '),
+      l1: (ca && ca.label) || 'Waiting for a verified engine update',
+      l2: [account, lead, ca && ca.phase && !LIVE_PHASES[ca.phase] ? `reported phase: ${ca.phase}` : ''].filter(Boolean).join(' · '),
     };
   }
 
   return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
+}
+
+// The safety pill's copy always leads with the count ("92 pending leads remain
+// safely queued · sending is stopped"). Split it so the card can set that
+// number at a size an operator actually sees, and so "still work waiting" is a
+// decision made once, here, rather than by eye.
+export function splitSafetyCount(safety) {
+  const text = String(safety == null ? '' : safety);
+  const m = /^(\d+)\s/.exec(text);
+  if (!m) return { count: null, rest: text, pending: false };
+  return { count: m[1], rest: text.slice(m[0].length), pending: Number(m[1]) > 0 };
+}
+
+// The four steps of a cloud launch, as they actually advance.
+//
+// They used to be a literal array in the render path: "01 launch accepted ·
+// 02 reading your leads (active) · 03 handing over · 04 starts automatically",
+// identical at every moment of the launch. Measured 2026-08-28 11:59: the
+// headline read "Campaign accepted by the VM — 4 lead(s) loaded" while the
+// strip below it still said we were reading the sheet and had not handed over.
+// A card that contradicts itself reads as a stalled campaign.
+export function launchMilestones({ phase = '', hasHandshake = false, leadsRead = null,
+  sendersDone = 0, sendersTotal = 0 } = {}) {
+  const accepted = phase === 'accepted';
+  const shaking = phase === 'handshake';
+  const leads = Number.isFinite(Number(leadsRead)) ? Number(leadsRead) : null;
+  const readValue = leads == null ? 'your leads read' : `${leads} lead${leads === 1 ? '' : 's'} read`;
+  const sheet = accepted
+    ? ['Sheet', readValue, 'done']
+    : shaking
+      ? ['Sheet', 'reading your leads', 'future']
+      : ['Sheet', 'reading your leads', 'active'];
+  const vm = accepted
+    ? ['VM', 'waiting for a worker', 'active']
+    : ['VM', 'handing over', 'future'];
+  if (!hasHandshake) {
+    return [
+      ['Request', 'launch accepted', 'done'],
+      sheet, vm,
+      ['Campaign', 'starts automatically', 'future'],
+    ];
+  }
+  return [
+    ['Request', 'handshake started', 'done'],
+    shaking
+      ? ['Accounts', `${sendersDone} of ${sendersTotal} connected`, 'active']
+      : ['Accounts', `${sendersTotal} connected`, 'done'],
+    sheet, vm,
+  ];
+}
+
+// One log line every 30 seconds while a cloud campaign waits for a worker.
+//
+// Workers scale to zero, so a launch normally spends up to two minutes queued —
+// and the log said nothing at all for the whole of it (measured 2026-08-28: one
+// line between 11:59 and 12:01). Silence and a dead engine looked identical.
+export function queueWaitLine(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  const m = Math.floor(s / 60);
+  const rest = s % 60;
+  const elapsed = m ? `${m}m ${String(rest).padStart(2, '0')}s` : `${rest}s`;
+  return s >= 180
+    ? `⏳ Still waiting for a VM worker · ${elapsed} · longer than the usual 2 minutes. Nothing is lost: the campaign is still queued and starts when a worker frees up.`
+    : `⏳ Still waiting for a VM worker · ${elapsed} · workers sleep when idle and take about 2 minutes to wake`;
 }
