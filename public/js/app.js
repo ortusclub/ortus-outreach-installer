@@ -5584,6 +5584,14 @@ function openRunningSheet() {
   if (!_isValidHttpUrl(url)) { alert("That doesn't look like a valid URL."); return; }
   window.open(url, '_blank', 'noopener,noreferrer');
 }
+// Scrape setup: open the DESTINATION sheet (where the scraped leads land) in
+// the browser, so the operator can eyeball it before/after launching a scrape.
+function openScrapeSheetInBrowser() {
+  const url = (document.getElementById('scrape-sheet')?.value || '').trim();
+  if (!url) { alert('Enter the destination Google Sheet URL first.'); return; }
+  if (!_isValidHttpUrl(url)) { alert("That doesn't look like a valid URL."); return; }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
 function _refreshOpenSheetButtons() {
   const btn = document.getElementById('btn-open-sheet-cockpit');
   if (!btn) return;
@@ -6541,9 +6549,14 @@ async function renderWizardBlocklist() {
   const chips = document.getElementById('wiz-bl-chips');
   if (!chips) return;
   const r = await fetch('/api/blocklist').then((x) => x.json()).catch(() => ({ entries: [] }));
-  chips.innerHTML = (r.entries || []).map((e) =>
-    `<span class="wiz-bl-chip" title="${escapeHtml(e.reason || '')}">${escapeHtml(e.value)}<button type="button" class="wiz-bl-x" data-v="${escapeHtml(e.value)}" aria-label="Remove ${escapeHtml(e.value)} from blocklist">×</button></span>`
-  ).join('') || '<span class="wiz-bl-empty">No blocklisted companies yet</span>';
+  chips.innerHTML = (r.entries || []).map((e) => {
+    // People are shown as "person · <slug-or-id>" so they read distinctly from
+    // company/domain chips (whose value is the raw name).
+    const label = e.kind === 'person'
+      ? `person · ${escapeHtml(String(e.value).replace(/^linkedin\.com\/in\//, ''))}`
+      : escapeHtml(e.value);
+    return `<span class="wiz-bl-chip" data-kind="${escapeHtml(e.kind || 'company')}" title="${escapeHtml(e.reason || e.value || '')}">${label}<button type="button" class="wiz-bl-x" data-v="${escapeHtml(e.value)}" aria-label="Remove ${escapeHtml(e.value)} from blocklist">×</button></span>`;
+  }).join('') || '<span class="wiz-bl-empty">Nothing blocked yet — add a company, domain, or profile URL</span>';
   chips.querySelectorAll('.wiz-bl-x').forEach((btn) => btn.onclick = async () => {
     await fetch('/api/blocklist', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: btn.dataset.v }) });
     renderWizardBlocklist();
@@ -6573,9 +6586,11 @@ document.addEventListener('DOMContentLoaded', () => {
 async function openBlocklistPanel() {
   const r = await fetch('/api/blocklist').then((x) => x.json()).catch(() => ({ entries: [] }));
   const list = document.getElementById('bl-list');
-  list.innerHTML = (r.entries || []).map((e) =>
-    `<div class="bl-row"><span class="bl-entry">${escapeHtml(e.value)}</span><span class="bl-reason-cell">${escapeHtml(e.reason || '')}</span><span class="bl-meta">${escapeHtml(e.addedBy || '')} · ${escapeHtml((e.addedAt || '').slice(0, 10))}</span><button class="bl-remove" data-v="${escapeHtml(e.value)}">Remove</button></div>`
-  ).join('') || '<div style="font-family:var(--mono);font-size:0.72rem;color:var(--gray);padding:12px 4px">No entries yet</div>';
+  list.innerHTML = (r.entries || []).map((e) => {
+    const kind = e.kind || 'company';
+    const kindTag = `<span class="bl-kind" data-kind="${escapeHtml(kind)}">${escapeHtml(kind)}</span>`;
+    return `<div class="bl-row"><span class="bl-entry">${kindTag}${escapeHtml(e.value)}</span><span class="bl-reason-cell">${escapeHtml(e.reason || '')}</span><span class="bl-meta">${escapeHtml(e.addedBy || '')} · ${escapeHtml((e.addedAt || '').slice(0, 10))}</span><button class="bl-remove" data-v="${escapeHtml(e.value)}">Remove</button></div>`;
+  }).join('') || '<div style="font-family:var(--mono);font-size:0.72rem;color:var(--gray);padding:12px 4px">Nothing blocked yet</div>';
   list.querySelectorAll('.bl-remove').forEach((btn) => btn.onclick = async () => {
     await fetch('/api/blocklist', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: btn.dataset.v }) });
     await openBlocklistPanel();
@@ -18278,6 +18293,7 @@ window.onModeChange = onModeChange;
 window.setModeByIndex = setModeByIndex;
 window.previewSheet = previewSheet;
 window.openSheetInBrowser = openSheetInBrowser;
+window.openScrapeSheetInBrowser = openScrapeSheetInBrowser;
 window.openRunningSheet = openRunningSheet;
 window._refreshOpenSheetButtons = _refreshOpenSheetButtons;
 window.closeIcPreflightModal = closeIcPreflightModal;

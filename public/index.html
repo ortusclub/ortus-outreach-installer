@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.48.97" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.48.97" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.48.98" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.48.98" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1608,10 +1608,10 @@
             <div class="wiz-blocklist-label">Blocklist</div>
             <div class="wiz-blocklist-chips" id="wiz-bl-chips"></div>
             <div class="wiz-blocklist-add">
-              <input type="text" id="wiz-bl-value" placeholder="Add company or domain…" />
+              <input type="text" id="wiz-bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />
               <button type="button" class="btn btn-secondary btn-sm" id="wiz-bl-add">Add</button>
             </div>
-            <div class="wiz-blocklist-hint">These companies/domains are never contacted by any campaign (applies to cold modes).</div>
+            <div class="wiz-blocklist-hint">Companies, domains, or individual people (paste a LinkedIn profile URL) — never contacted by any campaign, and excluded from scrapes.</div>
           </div>
         </div>
 
@@ -2160,7 +2160,10 @@
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
             <div>
               <label for="scrape-sheet" class="scrape-label">Sheet</label>
-              <input type="text" id="scrape-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%" />
+              <div style="display:flex; gap:8px; align-items:stretch;">
+                <input type="text" id="scrape-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1" />
+                <button type="button" class="btn btn-secondary btn-sm" onclick="openScrapeSheetInBrowser()" title="Open this Google Sheet in your browser">Open</button>
+              </div>
             </div>
             <div>
               <label for="scrape-tab" class="scrape-label">New tab <span class="scrape-sublabel">· we create it</span></label>
@@ -4273,7 +4276,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.48.97"></script>
+<script type="module" src="/js/app.js?v=3.1.48.98"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4483,14 +4486,14 @@
   <div class="bl-panel">
     <div class="bl-eyebrow">Settings · local to this app</div>
     <h2 class="bl-title" id="bl-title">Blocklist</h2>
-    <p class="bl-sub">Companies and email/URL domains that must <b>never</b> be contacted by any campaign. Matched against the sheet's Company column at pre-flight.</p>
+    <p class="bl-sub">Companies, email/URL domains, and individual people that must <b>never</b> be contacted by any campaign — and are excluded from scrapes. Matched at pre-flight (and during scraping, for people).</p>
     <div id="bl-list"></div>
     <div class="bl-add">
-      <input type="text" id="bl-value" placeholder="Company or domain…" />
+      <input type="text" id="bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />
       <input type="text" id="bl-reason" placeholder="Reason (shown in the linter)…" />
       <button class="btn btn-secondary" id="bl-add">Add</button>
     </div>
-    <div class="bl-note">Matching is <b>case-insensitive</b>. Company entries match whole company names; domain entries match any lead URL/email on that domain.</div>
+    <div class="bl-note">Matching is <b>case-insensitive</b> for companies/domains. A <b>person</b> is matched by their LinkedIn member ID — to also block them from being scraped, paste the URL in the <code>linkedin.com/in/ACw…</code> form your sheet uses (a plain vanity URL only blocks send-outs to that exact URL).</div>
     <div style="margin-top:20px;border-top:1px solid var(--hairline);padding-top:16px;display:flex;justify-content:flex-end">
       <button class="btn btn-secondary btn-sm" id="bl-close">Close</button>
     </div>

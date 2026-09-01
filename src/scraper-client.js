@@ -194,7 +194,7 @@ function requestWithRetry(method, path, body) {
  * @param {string}   [opts.tabName]          destination tab (single scrape only)
  * @param {boolean}  [opts.slowMode]         larger inter-page delays
  */
-export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '' } = {}) {
+export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [] } = {}) {
   const urls = (Array.isArray(searchUrls) ? searchUrls : [searchUrls])
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
@@ -206,6 +206,13 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
   // Tag every job with this install's operator id so the engine can scope the
   // jobs/logs views to just this operator (the engine is shared across the team).
   const userId = getOperatorId();
+
+  // Blocklisted people (member URNs) the engine must skip mid-scrape — never
+  // written to the sheet. Best-effort: an older engine ignores the field and
+  // the exclusion still applies at send-out (pre-flight) on this side.
+  const excludeUrnList = (Array.isArray(excludeUrns) ? excludeUrns : [])
+    .map((u) => (typeof u === 'string' ? u.trim() : ''))
+    .filter(Boolean);
 
   // ownerEmail + campaignName ride along so the SHARED board can label each
   // job's owner/campaign on every operator's screen. Best-effort — if the
@@ -220,6 +227,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
       userId,
       ownerEmail,
       campaignName,
+      excludeUrns: excludeUrnList,
     });
   }
   return requestOnce('POST', '/api/scrape/batch', {
@@ -230,6 +238,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
     userId,
     ownerEmail,
     campaignName,
+    excludeUrns: excludeUrnList,
   });
 }
 
