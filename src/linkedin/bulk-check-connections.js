@@ -628,6 +628,32 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
 }
 
 /**
+ * Say where a tab ended up, in words an operator can read.
+ *
+ * Never paste the raw URL or path into an error string. LinkedIn's connections
+ * URL contains the substring "network", and magellan-diagnose.js rule 73
+ * matches /network/i, so appending the path silently reclassified "no-csrf" and
+ * "http-429" as a GoLogin connection fault. Caught 2026-08-31 before release by
+ * running both classifiers over the new message shapes; the same trap is why
+ * helpers.js names the location instead of interpolating location.pathname.
+ *
+ * The words are chosen to stay classifier-safe: "a security checkpoint" and
+ * "the sign-in page" are the two that SHOULD reroute an error to needs-login,
+ * and they do, via the existing checkpoint/login rules.
+ */
+export function describeTabLocation(url) {
+  let path = String(url || '');
+  try { path = new URL(path).pathname; } catch { /* not an absolute URL */ }
+  if (!path || path === 'blank') return 'a blank page';
+  if (/\/checkpoint/.test(path)) return 'a security checkpoint';
+  if (/\/login|\/uas\//.test(path)) return 'the sign-in page';
+  if (/invite-connect\/connections/.test(path)) return 'the connections page';
+  if (/mynetwork/.test(path)) return 'the connections area';
+  if (/\/feed/.test(path)) return 'the feed';
+  return path;
+}
+
+/**
  * Run one bulk-check pass for a profile.
  *
  * @param {puppeteer.Page} page - Active page on a LinkedIn URL
@@ -646,15 +672,61 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   // own UI hits. Then check whether we ended up logged in — a stale-session
   // profile gets redirected to /login or /uas/login, where Voyager doesn't
   // exist (returns 404 from a login-page context).
+  //
+  // Three attempts, because net::ERR_ABORTED does not mean the network failed:
+  // it means a SECOND navigation started and cancelled ours. GoLogin appends
+  // --restore-last-session to every launch (gologin-launcher.js:426), so the
+  // tab we are handed can still be loading the profile's previous page when we
+  // navigate. By the time the abort surfaces, whatever interrupted us has
+  // finished, and going again usually just works. Measured 2026-08-29 on
+  // cindy.siapno: one abort at 21:24 skipped the account, stamped the whole
+  // sweep incomplete and stopped sending, and the same profile then loaded
+  // normally on the next check with nothing done in between.
+  //
+  // about:blank between attempts for the reason already documented in the send
+  // path at campaign.js:835 — a same-URL goto on an SPA can be a no-op, so a
+  // wedged page never actually reloads.
+  //
+  // Only an abort is retried. A timeout means the page genuinely did not load
+  // and a second 30s wait mostly costs the accounts queued behind this one.
   let postNavUrl = '';
-  try {
-    await page.goto('https://www.linkedin.com/mynetwork/invite-connect/connections/', {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
-    });
-    postNavUrl = page.url() || '';
-  } catch (err) {
-    return { matched: 0, freshConnected: 0, fetched: 0, error: `navigation-failed: ${err.message}` };
+  let navErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (attempt > 1) await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
+      await page.goto('https://www.linkedin.com/mynetwork/invite-connect/connections/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
+      });
+      postNavUrl = page.url() || '';
+      navErr = null;
+      break;
+    } catch (err) {
+      navErr = err;
+      // Aborting the navigation does not close the tab: the browser is still
+      // showing something, and that something is the whole diagnosis. Read it
+      // before deciding whether another attempt is even worth making.
+      let landed = '';
+      try { landed = page.url() || ''; } catch { /* page may be gone */ }
+      // A sign-in wall or a security checkpoint also cancels our navigation and
+      // also reports ERR_ABORTED. Retrying it can never work, and "open the
+      // account and retry" is the wrong instruction: this account needs somebody
+      // to log it back in. Say so, and stop.
+      if (/\/login|\/uas\/|\/checkpoint/.test(landed)) {
+        return { matched: 0, freshConnected: 0, fetched: 0, error: `session-expired (redirected to ${landed})` };
+      }
+      if (attempt === 3 || !/ERR_ABORTED/i.test(String(err && err.message))) {
+        postNavUrl = landed;
+        break;
+      }
+      pName && console.warn(`[bulk-check] ${pName}: navigation was interrupted (${err.message}); attempt ${attempt + 1} of 3`);
+      await new Promise((r) => setTimeout(r, attempt === 1 ? 2000 : 4000));
+    }
+  }
+  if (navErr) {
+    // Keep the "navigation-failed:" prefix: campaign.js sweepHealth() and
+    // magellan-diagnose.js both classify on it, and only context is appended.
+    return { matched: 0, freshConnected: 0, fetched: 0, error: `navigation-failed: ${navErr.message} (tab was on ${describeTabLocation(postNavUrl)})` };
   }
   // Quick auth check before burning cycles on Voyager calls that will 404.
   if (/\/login|\/uas\/|\/checkpoint/.test(postNavUrl)) {

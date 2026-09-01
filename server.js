@@ -5407,19 +5407,30 @@ function boardIdForLaunch({ sheetUrl, tabName, campaignName }) {
 }
 
 app.post('/api/scrape/start', async (req, res) => {
-  const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName } = req.body || {};
+  const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName, accountName } = req.body || {};
   // Blocklisted people the engine must skip mid-scrape. Only URN-form entries
   // can be matched against a search result (which carries a memberUrn, not a
   // vanity slug); vanity-only entries still block at send-out via pre-flight.
-  const excludeUrns = readBlocklist()
+  const _bl = readBlocklist();
+  const excludeUrns = _bl
     .filter((e) => e.kind === 'person' && e.urn)
     .map((e) => e.urn);
+  // Blocklisted COMPANIES the engine must skip mid-scrape. A search result
+  // carries a company name, so this is matchable the same way pre-flight
+  // already matches the sheet's Company column. Operator, 2026-09-01: "PNC" was
+  // on the blocklist and its people were still being collected, because only
+  // person entries were ever sent. Domains stay behind: a scrape result has no
+  // email address to match one against.
+  const excludeCompanies = _bl
+    .filter((e) => (e.kind || 'company') === 'company' && String(e.value || '').trim())
+    .map((e) => String(e.value).trim());
   // Stamp the owner server-side (the authoritative "Operating as" email) so the
   // shared board can show WHO launched each scrape across machines.
   const result = await startScrape({
     searchUrls, sheetUrl, tabName, profileId, slowMode,
     ownerEmail: getOperatorEmail() || '', campaignName: campaignName || '',
-    excludeUrns,
+    excludeUrns, excludeCompanies,
+    accountName: accountName || '',
   });
   // Dispatch was the single biggest blind spot: WHAT was asked for (search URL,
   // GoLogin profile, destination sheet + tab) was never written down anywhere,

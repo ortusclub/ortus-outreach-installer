@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.48.96" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.48.96" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.48.106" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.48.106" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1606,12 +1606,12 @@
                /api/blocklist); chips render via renderWizardBlocklist() in app.js. -->
           <div class="wiz-blocklist" id="wiz-blocklist">
             <div class="wiz-blocklist-label">Blocklist</div>
-            <div class="wiz-blocklist-chips" id="wiz-bl-chips"></div>
+            <div class="wiz-blocklist-chips wiz-bl-chips" id="wiz-bl-chips"></div>
             <div class="wiz-blocklist-add">
-              <input type="text" id="wiz-bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />
-              <button type="button" class="btn btn-secondary btn-sm" id="wiz-bl-add">Add</button>
+              <input type="text" class="wiz-bl-value" id="wiz-bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />
+              <button type="button" class="btn btn-secondary btn-sm wiz-bl-add" id="wiz-bl-add">Add</button>
             </div>
-            <div class="wiz-blocklist-hint">Companies, domains, or individual people (paste a LinkedIn profile URL) — never contacted by any campaign, and excluded from scrapes.</div>
+            <div class="wiz-blocklist-hint">Never contacted by any campaign. Scrapes also skip blocklisted companies, and people added by the <code>linkedin.com/in/ACw…</code> form of their URL. Email domains apply to campaigns only, since a scrape has no email address to match against.</div>
           </div>
         </div>
 
@@ -2169,6 +2169,24 @@
               <label for="scrape-tab" class="scrape-label">New tab <span class="scrape-sublabel">· we create it</span></label>
               <input type="text" id="scrape-tab" value="Results" style="width:100%" />
             </div>
+          </div>
+        </div>
+
+        <!-- BLOCKLIST panel — the same data/blocklist.json the campaign wizard
+             edits. It lives here too because this is the screen the exclusion
+             actually acts on: /api/scrape/start turns every person entry with a
+             member URN into excludeUrns, and the engine drops them mid-scrape.
+             Operator, 2026-09-01: having it only in the campaign wizard meant
+             leaving the scrape screen to use a scrape feature. -->
+        <div class="scrape-panel">
+          <div class="scrape-panel-head">Blocklist</div>
+          <div class="wiz-blocklist" id="sn-blocklist">
+            <div class="wiz-blocklist-chips wiz-bl-chips" id="sn-bl-chips"></div>
+            <div class="wiz-blocklist-add">
+              <input type="text" class="wiz-bl-value" id="sn-bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />
+              <button type="button" class="btn btn-secondary btn-sm wiz-bl-add" id="sn-bl-add">Add</button>
+            </div>
+            <div class="wiz-blocklist-hint">Companies are skipped mid-scrape and never written to your tab. People are too, but only if you add them using the <code>linkedin.com/in/ACw…</code> form of their URL, the kind you copy out of a scraped sheet. A plain profile link can only be matched later, at send-out.</div>
           </div>
         </div>
 
@@ -4276,7 +4294,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.48.96"></script>
+<script type="module" src="/js/app.js?v=3.1.48.106"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4486,7 +4504,7 @@
   <div class="bl-panel">
     <div class="bl-eyebrow">Settings · local to this app</div>
     <h2 class="bl-title" id="bl-title">Blocklist</h2>
-    <p class="bl-sub">Companies, email/URL domains, and individual people that must <b>never</b> be contacted by any campaign — and are excluded from scrapes. Matched at pre-flight (and during scraping, for people).</p>
+    <p class="bl-sub">Companies, email/URL domains, and individual people that must <b>never</b> be contacted by any campaign. Scrapes additionally skip blocklisted <b>companies</b> and <b>people</b>; email domains are campaign-only, because a scrape has no email address to match against.</p>
     <div id="bl-list"></div>
     <div class="bl-add">
       <input type="text" id="bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />

@@ -96,8 +96,14 @@ test('the signature is hashed from the rendered markup, not a hand-listed set', 
   assert.match(APP, /return _html\.replace\('__SIG__', _snHash\(_html\)\);/);
 });
 
-test('a one-search scrape shows an indeterminate bar, not a permanent 0%', () => {
-  assert.match(APP, /const indeterminate = c\.status === 'running' && total <= 1 && done === 0;/);
+test('a one-search scrape never shows a permanent 0%', () => {
+  // It used to sit on "0% · 0 of 1 searches done" through 1,270 leads because
+  // the percentage counted only FINISHED searches, and the honest answer then
+  // was an indeterminate bar. The engine now reports each job's page ceiling,
+  // so the bar moves per page and indeterminate is reserved for a scrape with
+  // genuinely nothing to measure (no ceiling, LinkedIn gave no total).
+  assert.match(APP, /const units = scrapeProgressUnits\(jobs\);/);
+  assert.match(APP, /const indeterminate = c\.status === 'running' && units === 0 && total <= 1 && done === 0;/);
   assert.match(APP, /setF\('activePct', indeterminate \? '—' : pct\);/);
 });
 

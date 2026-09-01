@@ -6037,9 +6037,19 @@ export function stopCampaign({ full = false, reason = 'operator-stopped' } = {})
     // Background schedules are removed by stopCampaignBackgroundTracking(),
     // which the HTTP route awaits with a deadline before claiming full stop.
   }
-  log(full
-    ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
-    : '■ Stop requested.');
+  // Say what actually happened, in the campaign's OWN log, including when the
+  // answer is "nothing". Pressing Stop on a card showing a CLOUD campaign lands
+  // here, flips _abort on an in-memory singleton that holds no campaign, and
+  // used to log '■ Stop requested (full halt…)' — a line that reads like a stop
+  // and is written to a file the operator never sees. COLL_CHI_ANTONIO2 was
+  // pressed twice on 2026-09-01 (10:19:16 and 10:19:40 UTC) and kept monitoring
+  // on the VM for the rest of the day, with nothing anywhere to say why.
+  const nothingRunningHere = !campaign.running && campaign.state !== 'monitoring';
+  log(nothingRunningHere
+    ? '■ Stop pressed, but nothing is running or monitoring on this Mac — nothing here was stopped. If the campaign you meant runs on the Cloud VM, stop it from that campaign\'s own card.'
+    : (full
+      ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
+      : '■ Stop requested.'));
   // An operator stop ANSWERS any outstanding interruption journal. Without this
   // a journal written hours earlier (app quit, Mac asleep) outlived the campaign
   // it described and re-labelled every later stop as "Stopped because this Mac
@@ -6427,6 +6437,16 @@ export function getCampaignStatus() {
     // (operator, 2026-08-28 15:09).
     ? `[${interruption.recordedAt}] ${interruptedCopy.title}. ${interruptedCopy.detail}`
     : null;
+  // Evidence that this singleton describes a real campaign on THIS Mac, rather
+  // than the empty placeholder the endpoint returns when nothing has ever run.
+  // A name is enough on its own: a finished or stopped local campaign still ran
+  // here, and its card must keep saying so.
+  const _holdsACampaign = !!(campaign.running
+    || campaign.state === 'monitoring'
+    || campaign.state === 'interrupted'
+    || campaign.state === 'waiting_daily_reset'
+    || String(campaign.name || '').trim());
+
   return {
     // The per-account panel, and the three live fields the sending banner reads.
     // Until now only the cloud engine produced them, so a run on this Mac could
@@ -6489,9 +6509,21 @@ export function getCampaignStatus() {
     emptyCheckStreak: Math.max(0, Number(campaign.emptyCheckStreak) || 0),
     // Which side owns this campaign, and when it last changed hands. Stamped by
     // the handover routes in server.js (and by launchCampaign for any run that
-    // starts here). The card's RUNNING ON control reads exactly these two: an
-    // absent runsOn means nobody has ever moved this campaign, which is 'local'.
-    runsOn: interrupted ? 'local' : (campaign.runsOn || 'local'),
+    // starts here), so its PRESENCE is the evidence.
+    //
+    // The old rule was "an absent runsOn means nobody has ever moved this
+    // campaign, which is 'local'". That reads absence of evidence as evidence.
+    // This endpoint answers with id 'legacy-singleton', state 'idle' and no
+    // name when there is no campaign on this Mac at all, and still claimed
+    // 'local' — and the live card polls it every 2s, so a card showing a VM
+    // campaign lit up "This Mac" over it. COLL_CHI_ANTONIO2 (e4f26bc2) sat in
+    // monitoring on the VM from 28 Aug to 1 Sep 2026 while the card said it was
+    // here, and Stop, reading the same claim, went to the local singleton and
+    // did nothing. Twice.
+    //
+    // Only answer when this singleton actually holds a campaign. Otherwise say
+    // nothing, and the card renders "where this runs is not known".
+    runsOn: interrupted ? 'local' : (campaign.runsOn || (_holdsACampaign ? 'local' : null)),
     handoverAt: campaign.handoverAt || null,
     stopReason: campaign.stopReason || null,
     // v2.14.x: surface the tick re-entrancy guard so the cockpit + run-bar
