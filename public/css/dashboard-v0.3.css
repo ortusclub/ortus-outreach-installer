@@ -14,6 +14,10 @@
     --hairline-soft: rgba(0, 0, 0, 0.06);
     --green: #3fb950;
     --red: #f85149;
+    /* A stop the operator asked for is a state, not a fault. Slate keeps it
+       clearly distinct from --red (error / interrupted), --gold (the pending
+       pill sitting right below it) and --blue (the monitoring sweep). */
+    --stop: #5B6577;
     --gold: #F7BE68;
     --blue: #4a7bb8;   /* monitoring sweep bar */
 
@@ -39,6 +43,7 @@
     --hairline-soft: rgba(255, 255, 255, 0.06);
 
     --blue: #6ea3d4;
+    --stop: #9AA4B8;
     --band-active:     rgba(255, 255, 255, 0.05);
     --band-monitoring: rgba(255, 255, 255, 0.04);
     --band-divider:    rgba(255, 255, 255, 0.14);
@@ -361,6 +366,20 @@
      state until the operator successfully resumes checks or sending. */
 body[data-dashboard='v3'] .vj-card.is-interrupted::before { background: var(--red); }
 body[data-dashboard='v3'] .vj-card.is-stopped::before { background: var(--red); }
+/* Stop in flight — the operator clicked, the VM has not confirmed yet. Every
+   surface that reads green while sending turns slate the instant it is asked,
+   so a registered click can never look like an ignored one. */
+body[data-dashboard='v3'] .vj-card.is-stopping::before { background: var(--stop); }
+body[data-dashboard='v3'] .vj-card.is-stopping { --vj-tone: var(--stop); }
+body[data-dashboard='v3'] .vj-card.is-stopping .vj-eyebrow .vj-tag .dot { background: var(--stop); box-shadow: none; }
+body[data-dashboard='v3'] .vj-card.is-stopping .vj-hbar > i { background: var(--stop); }
+body[data-dashboard='v3'] .vj-card.is-stopping .vj-live { border-color: color-mix(in srgb, var(--stop) 55%, var(--hairline)); }
+body[data-dashboard='v3'] .vj-card.is-stopping .vj-live-ico,
+body[data-dashboard='v3'] .vj-card.is-stopping .vj-live-l1,
+body[data-dashboard='v3'] .vj-card.is-stopping .vj-stage-gly,
+body[data-dashboard='v3'] .vj-card.is-stopping .vj-stage-verb { color: var(--stop); }
+body[data-dashboard='v3'] .vj-card.is-stopping .vj-stage-miles > div.done b { color: var(--stop); }
+
 body[data-dashboard='v3'] .vj-card.is-stopped { --vj-tone: var(--red); }
 body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { background: var(--red); box-shadow: none; }
   body[data-dashboard='v3'] .vj-card.is-interrupted .vj-eyebrow .vj-tag .dot { background: var(--red); box-shadow: none; }

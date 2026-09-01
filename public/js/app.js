@@ -10205,6 +10205,12 @@ function applyVjCardAppearance(root, status, fields) {
   const starting = phase === 'starting' || phase === 'preflight' || state === 'launching';
   const waiting = !!(f.isWaiting || state === 'waiting');
   const paused = !!(status && (status.paused || status._paused || state === 'paused'));
+  // The stop is in flight: the operator clicked, the VM has not confirmed yet.
+  // Until v3.1.48.112 the card stayed green through the whole wait, with step
+  // 01 still reading "running", so a click that had registered looked identical
+  // to one that had not.
+  const stopping = !!(status && (status.stopping || state === 'stopping' || state === 'pausing'
+    || phase === 'stopping' || String(status.engineStatus || '').toLowerCase() === 'stopping'));
   // Older/local payloads may only retain logs after completion rather than an
   // explicit finished state. Keep those legacy shapes on the same visual path.
   const inferredDone = !!(status && !status.running && !monitoring && !interrupted
@@ -10215,7 +10221,7 @@ function applyVjCardAppearance(root, status, fields) {
 
   root.classList.remove('is-monitor', 'is-monitoring', 'is-waiting',
     'is-interrupted', 'is-error', 'is-queued', 'is-starting', 'is-paused',
-    'is-done', 'is-stopped', 'is-local');
+    'is-done', 'is-stopped', 'is-stopping', 'is-local');
   root.classList.toggle('is-monitor', monitoring);
   root.classList.toggle('is-monitoring', monitoring);
   root.classList.toggle('is-waiting', waiting);
@@ -10226,6 +10232,8 @@ function applyVjCardAppearance(root, status, fields) {
   root.classList.toggle('is-paused', paused);
   root.classList.toggle('is-done', done);
   root.classList.toggle('is-stopped', !!(done && terminal && !terminal.complete));
+  // Not while done: a finished stop owns 'is-stopped', this is only the wait.
+  root.classList.toggle('is-stopping', stopping && !done);
   root.classList.toggle('is-local', local);
 }
 
@@ -12328,8 +12336,25 @@ async function _cloudMutationRequest(url, verb) {
 
 // Fire the actual engine stop (shared by the plain confirm + both choice pills).
 async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', immediate = false } = {}) {
+  // Say it the moment the operator clicks, NOT after the VM answers. The engine
+  // call below retries a timeout up to three times, which left the card reading
+  // "STOPPING…" for a full minute with nothing whatsoever in the log — the
+  // operator had no way to tell a slow VM from a click that never registered.
+  _pushCloudEvent(id, keepMonitoring
+    ? (immediate
+      ? '⏹️ Stop requested — sending stops now, the VM keeps monitoring for acceptances. Waiting for the VM to confirm…'
+      : '⏹️ Stop requested — the account finishes the person it is on, then sending stops and the VM keeps monitoring for acceptances. Waiting for the VM to confirm…')
+    : (immediate
+      ? '⏹️ Stop requested — stopping now, without finishing the person in progress. Waiting for the VM to confirm…'
+      : '⏹️ Stop requested — the account finishes the person it is on, then the campaign stops. Waiting for the VM to confirm…'));
   try {
-    const qs = keepMonitoring ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}` : (immediate ? '?immediate=1' : '?finishCurrent=1');
+    // `immediate` used to be dropped the moment keepMonitoring was set, so
+    // "Stop sending, keep monitoring" could never stop now — it always finished
+    // the person in flight first. The two are independent: keepMonitoring says
+    // what happens AFTER the stop, immediate says how fast the stop is.
+    const qs = keepMonitoring
+      ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}${immediate ? '&immediate=1' : '&finishCurrent=1'}`
+      : (immediate ? '?immediate=1' : '?finishCurrent=1');
     await _cloudMutationRequest(`/api/campaign/cloud/${encodeURIComponent(id)}/stop${qs}`, 'stop');
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(keepMonitoring
@@ -12339,8 +12364,12 @@ async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', im
     _pushCloudEvent(id, keepMonitoring ? '⏹️ Sending stopped — VM keeps monitoring for acceptances' : '⏹️ Campaign stopped');
   } catch (e) {
     const message = `Stop was not confirmed by the VM: ${e.message}. The last displayed campaign state has been kept; retry after the connection recovers.`;
+    // The toast disappears. A stop that did not take must survive in the log,
+    // or the campaign looks stopped while the VM is still sending.
+    _pushCloudEvent(id, `⚠️ The VM did not confirm the stop (${e.message}). Sending may still be running — press Stop again once the connection recovers.`);
     if (typeof showCampaignToast === 'function') showCampaignToast(message, 9000);
     else alert(message);
+    if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
     return false;
   }
   if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
@@ -14730,7 +14759,7 @@ async function stopAndKeepMonitoring() {
 async function _finishStopAndKeepMonitoring(target, scope) {
   if (target.cloud && target.id) {
     const chooseMachine = async (where) => {
-      const stopped = await _doStopCloud(target.id, { keepMonitoring: true, scope });
+      const stopped = await _doStopCloud(target.id, { keepMonitoring: true, scope, immediate: true });
       if (!stopped) return;
       if (where === 'local') {
         await window.campaignHandover(target.id, 'local', null, 'monitoring');

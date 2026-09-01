@@ -2203,13 +2203,26 @@ app.post('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   }
 });
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
+  // NOTE: monitoringScope is computed and passed for the day the engine honours
+  // it; stopCloudCampaign does not forward it, and the engine's stop route has
+  // no scope parameter at all. The scope pill only affects "Check now" today.
+  const how = req.query.keepMonitoring ? 'stop sending, keep monitoring'
+    : req.query.pause ? 'pause'
+    : req.query.immediate ? 'stop now' : 'stop after the current person';
+  // The stop left no trace anywhere: not here, not in the campaign's live log.
+  // A control the operator presses must say it was heard, and say what came back.
+  cloudLog(`[cloud] stop requested for ${req.params.id} — ${how}`);
   const r = await stopCloudCampaign(req.params.id, {
     pause: !!req.query.pause,
     keepMonitoring: !!req.query.keepMonitoring, // "Stop sending, keep monitoring"
     monitoringScope: req.query.monitoringScope === 'tab' ? 'tab' : 'campaign',
     immediate: !!req.query.immediate,
   });
-  if (r.error) return res.status(502).json(r);
+  if (r.error) {
+    cloudLog(`[cloud] stop for ${req.params.id} was NOT accepted by the VM: ${r.error} — sending may still be running.`);
+    return res.status(502).json(r);
+  }
+  cloudLog(`[cloud] stop for ${req.params.id} accepted by the VM — now ${r.status || (r.campaign && r.campaign.status) || 'unknown'}`);
   res.json(r);
 });
 // Resume a paused cloud campaign (mirror of local Resume).
