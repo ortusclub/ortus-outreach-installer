@@ -24,6 +24,12 @@ function urlKey(u) {
 // Accept button by a language-stem match on its aria-label / text — and we
 // EXCLUDE ignore/decline stems so a stray match can never click "Ignore".
 // Stems are lowercase substrings covering the common operator locales.
+// Accept controls are NOT always <button>. LinkedIn renders some invitation
+// cards' Accept as <a aria-label="Accept <Name>'s invitation">, while the same
+// card's Ignore stays a <button> — so a button-only query skipped exactly
+// those people, every single time, and nothing in the log said so.
+export const ACTION_SELECTOR = 'button, a, [role="button"]';
+
 export const ACCEPT_STEMS = [
   'accept',   // EN accept · FR accepter · NL accepteren · RO acceptă · DA acceptér
   'annehm',   // DE annehmen
@@ -190,7 +196,7 @@ export async function acceptInvitationFrom(page, target, { log = () => {} } = {}
         if (ign.some((v) => s.includes(v))) return false;
         return acc.some((v) => s.includes(v));
       };
-      return Array.from(document.querySelectorAll('button'))
+      return Array.from(document.querySelectorAll('button, a, [role="button"]'))
         .some((b) => isAcc(b.getAttribute('aria-label') || b.textContent || ''));
     },
     { timeout: 12000 },
@@ -209,7 +215,7 @@ export async function acceptInvitationFrom(page, target, { log = () => {} } = {}
       return acc.some((v) => s.includes(v));
     };
     const out = [];
-    for (const btn of Array.from(document.querySelectorAll('button'))) {
+    for (const btn of Array.from(document.querySelectorAll('button, a, [role="button"]'))) {
       if (!isAcc(btn.getAttribute('aria-label') || btn.textContent || '')) continue;
       let el = btn, link = null;
       for (let k = 0; k < 10 && el; k++) {
@@ -254,7 +260,7 @@ export async function acceptInvitationFrom(page, target, { log = () => {} } = {}
     const slug = (u) => { const m = String(u || '').match(/\/in\/([^/?#]+)/i); return m ? m[1].toLowerCase() : ''; };
     const wantSlug = slug(want.profileUrl);
     const wantName = (want.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    for (const btn of Array.from(document.querySelectorAll('button'))) {
+    for (const btn of Array.from(document.querySelectorAll('button, a, [role="button"]'))) {
       if (!isAcc(btn.getAttribute('aria-label') || btn.textContent || '')) continue;
       let el = btn, link = null;
       for (let k = 0; k < 10 && el; k++) {
@@ -364,17 +370,35 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
     waitUntil: 'domcontentloaded', timeout: 45000,
   });
   let painted = true;
-  // Wait for at least one Accept button to render (or time out if the list is empty).
+
+  // Every step below finds Accept controls the same way, and it anchors on
+  // aria-label ONLY. Two things forced that:
+  //
+  //  1. An Accept is not always a <button>. LinkedIn renders some cards as
+  //     <a aria-label="Accept <Name>'s invitation"> while the same card's
+  //     Ignore stays a <button> — so a button-only query skipped exactly those
+  //     people every time, silently.
+  //  2. The cookie-consent banner's Accept IS a <button>, with bare text
+  //     "Accept" and no aria-label. The sweep matched it, clicked it, watched
+  //     the banner vanish, and reported it as an accepted invitation while the
+  //     real invitation sat untouched.
+  //
+  // A real invitation Accept always names its person; the banner never does.
+  // The matcher is repeated inline in each step rather than shared: page.evaluate
+  // can only take serialisable args, and eval'ing a shared source string would
+  // be blocked by LinkedIn's CSP.
+
+
+  // Wait for at least one Accept control to render (or time out if empty).
   await page.waitForFunction(
     (acc, ign) => {
-      const isAcc = (s) => {
-        s = (s || '').toLowerCase();
-        if (!s) return false;
-        if (ign.some((v) => s.includes(v))) return false;
-        return acc.some((v) => s.includes(v));
+      const hit = (el) => {
+        const al = ((el.getAttribute && el.getAttribute('aria-label')) || '').toLowerCase();
+        if (!al) return false;
+        if (ign.some((v) => al.includes(v))) return false;
+        return acc.some((v) => al.includes(v));
       };
-      return Array.from(document.querySelectorAll('button'))
-        .some((b) => isAcc(b.getAttribute('aria-label') || b.textContent || ''));
+      return Array.from(document.querySelectorAll('button, a, [role="button"]')).some(hit);
     },
     { timeout: 25000 },
     ACCEPT_STEMS, IGNORE_STEMS,
@@ -382,14 +406,13 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
   await new Promise((r) => setTimeout(r, 1500));
 
   const countAccepts = () => page.evaluate((acc, ign) => {
-    const isAcc = (s) => {
-      s = (s || '').toLowerCase();
-      if (!s) return false;
-      if (ign.some((v) => s.includes(v))) return false;
-      return acc.some((v) => s.includes(v));
+    const hit = (el) => {
+      const al = ((el.getAttribute && el.getAttribute('aria-label')) || '').toLowerCase();
+      if (!al) return false;
+      if (ign.some((v) => al.includes(v))) return false;
+      return acc.some((v) => al.includes(v));
     };
-    return Array.from(document.querySelectorAll('button'))
-      .filter((b) => isAcc(b.getAttribute('aria-label') || b.textContent || '')).length;
+    return Array.from(document.querySelectorAll('button, a, [role="button"]')).filter(hit).length;
   }, ACCEPT_STEMS, IGNORE_STEMS);
 
   let cleared = 0, stall = 0;
@@ -397,26 +420,34 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
   while (cleared < maxAccepts && (Date.now() - startedAt) < maxMs) {
     const before = await countAccepts();
     if (before === 0) break;
-    const clicked = await page.evaluate((acc, ign) => {
-      const isAcc = (s) => {
-        s = (s || '').toLowerCase();
-        if (!s) return false;
-        if (ign.some((v) => s.includes(v))) return false;
-        return acc.some((v) => s.includes(v));
+    const who = await page.evaluate((acc, ign) => {
+      const hit = (el) => {
+        const al = ((el.getAttribute && el.getAttribute('aria-label')) || '').toLowerCase();
+        if (!al) return false;
+        if (ign.some((v) => al.includes(v))) return false;
+        return acc.some((v) => al.includes(v));
       };
-      const btn = Array.from(document.querySelectorAll('button'))
-        .find((b) => isAcc(b.getAttribute('aria-label') || b.textContent || ''));
-      if (!btn) return false;
-      btn.click();
-      return true;
+      const el = Array.from(document.querySelectorAll('button, a, [role="button"]')).find(hit);
+      if (!el) return '';
+      const label = el.getAttribute('aria-label') || '';
+      el.click();
+      return label;
     }, ACCEPT_STEMS, IGNORE_STEMS);
-    if (!clicked) break;
+    if (!who) break;
     await new Promise((r) => setTimeout(r, 1200));
     await _confirmAcceptDialog(page);
     await new Promise((r) => setTimeout(r, 800));
     const after = await countAccepts();
-    if (after < before) { cleared += (before - after); stall = 0; }
-    else if (++stall >= 3) { log('  ⓘ Accept-all: a pending card would not clear — stopping the sweep.'); break; }
+    if (after < before) {
+      cleared += (before - after);
+      stall = 0;
+      // Name who was accepted. A bare count told us nothing while one specific
+      // person was being skipped every run.
+      log(`  ✓ Accept-all: ${who}`);
+    } else if (++stall >= 3) {
+      log(`  ⚠️ Accept-all: "${who}" would not clear after three tries — stopping the sweep. That invitation is still waiting.`);
+      break;
+    }
   }
   if (cleared) {
     log(`  ✓ Accept-all: accepted ${cleared} pending invitation(s) on the primary.`);
@@ -424,16 +455,29 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
     log('  ⓘ Accept-all: the invitations page opened and there was nothing waiting to accept.');
   } else {
     // A silent zero is the failure we could not diagnose: it reads identically
-    // whether the list was empty or the page simply never finished loading.
-    // Say which page we ended up on and what was on it.
+    // whether the list was empty, the page never painted, or the controls are
+    // there but unlabelled. Say which one it actually was.
     let where = '';
     try { where = String((page.url && page.url()) || ''); } catch { /* page may be gone */ }
-    const buttons = await page.evaluate(() => document.querySelectorAll('button').length).catch(() => -1);
+    const seen = await page.evaluate((acc, ign) => {
+      const txt = (el) => ((el.textContent || '') + ' ' + ((el.getAttribute && el.getAttribute('aria-label')) || '')).toLowerCase();
+      const all = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+      const looksAccept = all.filter((el) => {
+        const t = txt(el);
+        return t && !ign.some((v) => t.includes(v)) && acc.some((v) => t.includes(v));
+      }).length;
+      return { total: all.length, looksAccept };
+    }, ACCEPT_STEMS, IGNORE_STEMS).catch(() => ({ total: -1, looksAccept: -1 }));
     const onInvites = /invitation-manager/.test(where);
-    log(onInvites
-      ? `  ⚠️ Accept-all: the invitations page never finished loading (nothing to click after 25s, ${buttons} buttons on the page) — any invitation waiting there was NOT accepted. Run the check again.`
-      : `  ⚠️ Accept-all: the primary's browser did not land on the invitations page (it ended up on ${where || 'an unknown page'}) — nothing was accepted. The primary is probably signed out.`);
+    if (!onInvites) {
+      log(`  ⚠️ Accept-all: the primary's browser did not land on the invitations page (it ended up on ${where || 'an unknown page'}) — nothing was accepted. The primary is probably signed out.`);
+    } else if (seen.looksAccept > 0) {
+      log(`  ⚠️ Accept-all: ${seen.looksAccept} control(s) on the page read as "Accept" but none of them names the person it belongs to, so the sweep would not risk clicking them. Nothing was accepted — LinkedIn has changed this page.`);
+    } else {
+      log(`  ⚠️ Accept-all: the invitations page never finished loading (nothing to click after 25s, ${seen.total} controls on the page) — any invitation waiting there was NOT accepted. Run the check again.`);
+    }
   }
+
   // `remaining` is what the caller needs to shortcut the per-sender matcher: an
   // empty received list means nothing we sent is still outstanding.
   const remaining = await countAccepts().catch(() => 1);
