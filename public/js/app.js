@@ -966,10 +966,12 @@ async function rerunScrape(cid, btn) {
     for (let i = 0; i < urls.length; i++) {
       const profileId = accts[i % accts.length];              // round-robin URL→account, like startScrapeJob
       const tabName = urls.length > 1 ? `${baseTab} ${i + 1}` : baseTab;
+      const _nm = profileLabel(profileId);                    // name for account-level engine errors
+      const accountName = (_nm && _nm !== profileId) ? _nm : '';
       try {
         const rr = await fetch('/api/scrape/start', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode: false, campaignName }),
+          body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode: false, campaignName, accountName }),
         });
         const res = await rr.json();
         if (res && res.error) errors.push(res.error); else started++;
@@ -4131,11 +4133,15 @@ async function startScrapeJob() {
   for (let i = 0; i < urls.length; i++) {
     const profileId = accts[i % accts.length];
     const tabName = urls.length > 1 ? `${baseTab} ${i + 1}` : baseTab;
+    // Name for account-level engine errors (logged out / no Sales Nav seat) so
+    // the board says WHICH account. Empty when we only know the opaque id.
+    const _nm = profileLabel(profileId);
+    const accountName = (_nm && _nm !== profileId) ? _nm : '';
     try {
       const r = await fetch('/api/scrape/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode, campaignName }),
+        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode, campaignName, accountName }),
       });
       const res = await r.json();
       if (res && res.error) errors.push(`URL ${i + 1}: ${res.error}`);

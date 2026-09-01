@@ -194,7 +194,7 @@ function requestWithRetry(method, path, body) {
  * @param {string}   [opts.tabName]          destination tab (single scrape only)
  * @param {boolean}  [opts.slowMode]         larger inter-page delays
  */
-export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [], excludeCompanies = [] } = {}) {
+export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [], excludeCompanies = [], accountName = '' } = {}) {
   const urls = (Array.isArray(searchUrls) ? searchUrls : [searchUrls])
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
@@ -222,6 +222,8 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
   // ownerEmail + campaignName ride along so the SHARED board can label each
   // job's owner/campaign on every operator's screen. Best-effort — if the
   // engine drops unknown fields, the board falls back to userId + tab name.
+  // accountName = the GoLogin profile's human name, so an account-level engine
+  // error (logged out / no Sales Nav seat) can say WHICH account, not a hash.
   if (urls.length === 1) {
     return requestOnce('POST', '/api/scrape/single', {
       searchUrl: urls[0],
@@ -234,6 +236,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
       campaignName,
       excludeUrns: excludeUrnList,
       excludeCompanies: excludeCompanyList,
+      accountName,
     });
   }
   return requestOnce('POST', '/api/scrape/batch', {
@@ -246,6 +249,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
     campaignName,
     excludeUrns: excludeUrnList,
     excludeCompanies: excludeCompanyList,
+    accountName,
   });
 }
 
