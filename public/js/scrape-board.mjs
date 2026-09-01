@@ -28,7 +28,9 @@ export function mergeCampaignsWithJobs(campaigns, jobs) {
   return (campaigns || []).map((c) => {
     const cjobs = jobsByCampaign.get(c.id) || [];
     const positions = cjobs.filter((j) => j.state === 'queued' && j.position).map((j) => j.position);
-    const etas = cjobs.filter((j) => j.etaMs).map((j) => j.etaMs);
+    // Keep 0 — it means "next up", not "no estimate". Dropping it made the
+    // strip show the SECOND job's ETA as the campaign's soonest start.
+    const etas = cjobs.filter((j) => Number.isFinite(j.etaMs)).map((j) => j.etaMs);
     return {
       ...c, jobs: cjobs, status: campaignStatus(cjobs),
       running: cjobs.filter((j) => j.state === 'running').length,
@@ -98,7 +100,9 @@ export function groupJobsIntoCampaigns(jobs, { currentEmail = '', currentOperato
   return [...groups.values()].map((g) => {
     const cjobs = g.jobs;
     const positions = cjobs.filter((j) => j.state === 'queued' && j.position).map((j) => j.position);
-    const etas = cjobs.filter((j) => j.etaMs).map((j) => j.etaMs);
+    // Keep 0 — it means "next up", not "no estimate". Dropping it made the
+    // strip show the SECOND job's ETA as the campaign's soonest start.
+    const etas = cjobs.filter((j) => Number.isFinite(j.etaMs)).map((j) => j.etaMs);
     // Owner label: real email if the engine echoed it, else a short, stable
     // install tag so strangers' strips still read as "someone else's".
     const owner = g.ownerEmail || (g.userId ? `operator ${g.userId.replace(/^op_/, '').slice(0, 6)}` : 'unknown');

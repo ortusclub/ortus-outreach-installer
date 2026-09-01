@@ -4578,7 +4578,23 @@ async function pollScrapeJobs() {
       status: campaignStatus(jobs),
       name: _scrapeVjName(),
       errorText: (jobs.find((j) => j.error) || {}).error || '',
-      queueEta: (() => { const q = jobs.find((j) => j.state === 'queued' && j.etaMs); return q ? fmtEta(q.etaMs) : ''; })(),
+      // The engine sets etaMs 0 for the job at the front of the line — its own
+      // test pins it: assert(J.jA.etaMs === 0, "job #1 ETA is 0 (next up)").
+      // 0 is falsy, so the old `find(j => j.etaMs)` SKIPPED the next-up job and
+      // reported the SECOND job's estimate as the whole campaign's. A two-job
+      // scrape on one account therefore announced "starts in ~3m" while its
+      // first job was about to start immediately, and 3 min is not even a real
+      // wait: it is DEFAULT_AVG_JOB_MS, the engine's placeholder for how long
+      // one scrape takes before it has timing samples (operator, 2026-09-01,
+      // reasonably read as a parking delay). Report the FRONT job's wait, and
+      // nothing at all when it is next up.
+      queueEta: (() => {
+        const q = jobs.filter((j) => j.state === 'queued');
+        if (!q.length) return '';
+        const soonest = q.reduce((a, b) => ((a.position || 1e9) <= (b.position || 1e9) ? a : b));
+        if ((soonest.position || 1) <= 1) return '';
+        return Number.isFinite(soonest.etaMs) && soonest.etaMs > 0 ? fmtEta(soonest.etaMs) : '';
+      })(),
       tabs: jobs.map((j) => j.tabName).filter(Boolean),   // scope the live log to THESE scrapes only
     });
     renderScrapeQueueTab(jobs);
@@ -4723,7 +4739,7 @@ function _setScrapeVjCard(s) {
     live.hidden = false;
     let l1 = V.l1, l2 = '';
     if (state === 'running') l2 = `${leads} lead${leads === 1 ? '' : 's'} so far · ${pages} page${pages === 1 ? '' : 's'} · ${accounts} account${accounts === 1 ? '' : 's'}`;
-    else if (state === 'queued') l2 = s.queueEta ? `starts in ~${s.queueEta}` : '';
+    else if (state === 'queued') l2 = s.queueEta ? `starts in ${s.queueEta}` : 'next up — starts when an account frees';
     else if (state === 'done') l2 = `${leads} lead${leads === 1 ? '' : 's'} collected across ${total} search${total === 1 ? '' : 'es'}`;
     else if (state === 'error') { l1 = s.errorText || V.l1; }
     setF('activeLiveIco', '›'); setF('activeLiveL1', l1); setF('activeLiveL2', l2);
@@ -6546,10 +6562,15 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Inline wizard blocklist (Section 2, under the sheet URL) — same data as
 // the #bl-scrim panel. Chips + inline add; refreshed after add/remove.
 async function renderWizardBlocklist() {
-  const chips = document.getElementById('wiz-bl-chips');
-  if (!chips) return;
+  // Every copy of the block renders from the SAME list — there is one
+  // data/blocklist.json per machine. Operator, 2026-09-01: the box lived only
+  // in the campaign wizard while the thing it excludes people from (the Sales
+  // Nav scrape) is a different page, so using it meant leaving the screen you
+  // were working on. Query by class so a new copy is markup, not more code.
+  const hosts = Array.from(document.querySelectorAll('.wiz-bl-chips'));
+  if (!hosts.length) return;
   const r = await fetch('/api/blocklist').then((x) => x.json()).catch(() => ({ entries: [] }));
-  chips.innerHTML = (r.entries || []).map((e) => {
+  const html = (r.entries || []).map((e) => {
     // People are shown as "person · <slug-or-id>" so they read distinctly from
     // company/domain chips (whose value is the raw name).
     const label = e.kind === 'person'
@@ -6557,30 +6578,37 @@ async function renderWizardBlocklist() {
       : escapeHtml(e.value);
     return `<span class="wiz-bl-chip" data-kind="${escapeHtml(e.kind || 'company')}" title="${escapeHtml(e.reason || e.value || '')}">${label}<button type="button" class="wiz-bl-x" data-v="${escapeHtml(e.value)}" aria-label="Remove ${escapeHtml(e.value)} from blocklist">×</button></span>`;
   }).join('') || '<span class="wiz-bl-empty">Nothing blocked yet — add a company, domain, or profile URL</span>';
-  chips.querySelectorAll('.wiz-bl-x').forEach((btn) => btn.onclick = async () => {
-    await fetch('/api/blocklist', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: btn.dataset.v }) });
-    renderWizardBlocklist();
-    _recheckPreflightIfOpen();
+  hosts.forEach((chips) => {
+    chips.innerHTML = html;
+    chips.querySelectorAll('.wiz-bl-x').forEach((btn) => btn.onclick = async () => {
+      await fetch('/api/blocklist', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: btn.dataset.v }) });
+      renderWizardBlocklist();
+      _recheckPreflightIfOpen();
+    });
   });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const wizAdd = document.getElementById('wiz-bl-add');
-  const wizInput = document.getElementById('wiz-bl-value');
-  const doAdd = async () => {
-    const value = (wizInput?.value || '').trim();
-    if (!value) return;
-    await fetch('/api/blocklist', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value, reason: '', addedBy: (window.operatorEmail || '') }),
-    });
-    wizInput.value = '';
-    renderWizardBlocklist();
-    _recheckPreflightIfOpen();
-  };
-  if (wizAdd) wizAdd.onclick = doAdd;
-  if (wizInput) wizInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
-  renderWizardBlocklist(); // populate chips on wizard render
+  // One handler per copy of the block. Each copy owns its own input; adding
+  // from any of them repaints all of them, because they are one list.
+  document.querySelectorAll('.wiz-blocklist').forEach((box) => {
+    const wizInput = box.querySelector('.wiz-bl-value');
+    const wizAdd = box.querySelector('.wiz-bl-add');
+    const doAdd = async () => {
+      const value = (wizInput?.value || '').trim();
+      if (!value) return;
+      await fetch('/api/blocklist', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value, reason: '', addedBy: (window.operatorEmail || '') }),
+      });
+      wizInput.value = '';
+      renderWizardBlocklist();
+      _recheckPreflightIfOpen();
+    };
+    if (wizAdd) wizAdd.onclick = doAdd;
+    if (wizInput) wizInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+  });
+  renderWizardBlocklist(); // populate every copy's chips on first render
 });
 
 async function openBlocklistPanel() {
@@ -28337,7 +28365,14 @@ let _whHold = null;  // last truthful source status, held until the target answe
 function _whSide(status) {
   const r = String((status && status.runsOn) || '').toLowerCase();
   if (r === 'vm' || r === 'local') return r;
-  return (status && status._cloud) ? 'vm' : 'local';
+  if (status && status._cloud) return 'vm';
+  // No runsOn and no _cloud is the ABSENCE of evidence, not evidence of a local
+  // run. Defaulting it to 'local' made the card light up "This Mac" for a
+  // campaign that was monitoring on the VM the whole time — the engine row for
+  // COLL_CHI_ANTONIO2 (e4f26bc2, read live 2026-09-01) carries neither field,
+  // and the operator read the highlighted button as a completed switch. It had
+  // never moved; nothing had ever asked it to. Say so instead of guessing.
+  return 'unknown';
 }
 
 // Leads still to send. Real, never a placeholder: pendingCount is the cloud
@@ -28430,6 +28465,7 @@ function whereBlockHtml(status) {
   else if (waiting) tail = '<span class="wh-warn">waiting on this Mac, nothing running here</span>';
   else if (status.handoverAt) tail = `<span class="wh-note">${_whAgo(status.handoverAt)}</span>`;
   else if (side === 'vm') tail = '<span class="wh-note">tap to move it here · the destination checks automatically</span>';
+  else if (side === 'unknown') tail = '<span class="wh-warn">where this runs is not known · pick a machine to pin it</span>';
   else tail = '<span class="wh-note">keep the app open · switching starts a check automatically</span>';
 
   const btn = (to, label) => {
@@ -28938,7 +28974,7 @@ window.renderActiveCard = function(status) {
   // work. The card says WAITING, and the RUNNING ON control below it says which
   // side has to move for it to carry on.
   const isWaitingHere = isFinished && status.stopReason !== 'operator-stopped'
-    && _whSide(status) === 'local' && (status._cloud || !!status.handoverAt);
+    && _whSide(status) !== 'vm' && (status._cloud || !!status.handoverAt);
   if (isFinished) {
     card.classList.remove('is-empty', 'is-monitor');
     card.classList.toggle('is-waiting', isWaitingHere);
@@ -29929,11 +29965,27 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   }
 };
 
+// Which campaign is this card actually showing? _viewingCloudId is a NAVIGATION
+// flag — it is set when the operator opens a cloud campaign and it is empty on
+// every fresh app start, because it is module state. Stop used it as if it were
+// a fact about the card, so after a restart a card showing a VM campaign routed
+// its Stop to the local singleton and silently did nothing (COLL_CHI_ANTONIO2,
+// 2026-09-01). The status object the card renders already carries the truth:
+// _buildCloudActiveStatus stamps { _cloud: true, id }. Ask the data first.
+function _activeCardCloudId() {
+  if (_viewingCloudId) return String(_viewingCloudId);
+  const st = window.__cloudActiveStatus;
+  if (st && st._cloud && st.id) return String(st.id);
+  return '';
+}
+window._activeCardCloudId = _activeCardCloudId;
+
 window.dashStopActive = async function() {
   if (cancelCloudLaunch()) return;
   // Viewing a cloud campaign's card → Stop must hit the ENGINE, not the local
   // campaign (there isn't one). See feedback_two_live_status_cards.
-  if (_viewingCloudId) { stopCloudCampaignUI(_viewingCloudId); return; }
+  const _cloudId = _activeCardCloudId();
+  if (_cloudId) { stopCloudCampaignUI(_cloudId); return; }
   // If the campaign is already in the MONITORING phase, the dashboard Stop
   // button must END MONITORING (→ /api/monitoring/stop → stopMonitoring,
   // state → 'done'), not run the campaign-stop flow. The active card is what

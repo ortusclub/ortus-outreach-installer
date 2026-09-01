@@ -194,7 +194,7 @@ function requestWithRetry(method, path, body) {
  * @param {string}   [opts.tabName]          destination tab (single scrape only)
  * @param {boolean}  [opts.slowMode]         larger inter-page delays
  */
-export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [] } = {}) {
+export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [], excludeCompanies = [] } = {}) {
   const urls = (Array.isArray(searchUrls) ? searchUrls : [searchUrls])
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
@@ -213,6 +213,11 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
   const excludeUrnList = (Array.isArray(excludeUrns) ? excludeUrns : [])
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
+  // Blocklisted company NAMES, matched against each result's company field by
+  // the engine using the same whole-word rule pre-flight uses on the sheet.
+  const excludeCompanyList = (Array.isArray(excludeCompanies) ? excludeCompanies : [])
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter(Boolean);
 
   // ownerEmail + campaignName ride along so the SHARED board can label each
   // job's owner/campaign on every operator's screen. Best-effort — if the
@@ -228,6 +233,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
       ownerEmail,
       campaignName,
       excludeUrns: excludeUrnList,
+      excludeCompanies: excludeCompanyList,
     });
   }
   return requestOnce('POST', '/api/scrape/batch', {
@@ -239,6 +245,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
     ownerEmail,
     campaignName,
     excludeUrns: excludeUrnList,
+    excludeCompanies: excludeCompanyList,
   });
 }
 
