@@ -25,6 +25,11 @@ export const CONNECTIONS_PROP = process.env.HUBSPOT_CONNECTIONS_PROP
 
 export const MEMBER_ID_PROP = 'linkedin_membership_id';
 
+// Custom "Location" text property (label "Location"), holding the connection's
+// LinkedIn location string, e.g. "New York, New York, United States". Read off
+// the live portal 2026-08-28. Overridable because a sandbox portal may differ.
+export const LOCATION_PROP = process.env.HUBSPOT_LOCATION_PROP || 'lemlistlocationname';
+
 // The portal these contacts live in. Read off the live account on 2026-08-18
 // (/account-info/v3/details -> portalId 2748825, uiDomain app.hubspot.com), not
 // copied from memory. Overridable because a sandbox portal is a different
@@ -88,6 +93,7 @@ export function createProperties(c, account) {
     lastname: trimmed(c.lastName),
     company: trimmed(c.company),
     jobtitle: trimmed(c.jobTitle),
+    [LOCATION_PROP]: trimmed(c.location),
     linkedinbio: c.slug ? `https://www.linkedin.com/in/${c.slug}` : undefined,
     [CONNECTIONS_PROP]: `;${String(account).trim().toLowerCase()}`,
   };
@@ -110,7 +116,7 @@ export function updateProperties(c, account, existingProps = {}) {
   // Fill blanks only. A human may have corrected these in HubSpot; LinkedIn's
   // copy is not authoritative enough to overwrite them.
   for (const [key, val] of [['firstname', c.firstName], ['lastname', c.lastName],
-    ['company', c.company], ['jobtitle', c.jobTitle]]) {
+    ['company', c.company], ['jobtitle', c.jobTitle], [LOCATION_PROP, c.location]]) {
     if (trimmed(val) && !trimmed(existingProps[key])) props[key] = trimmed(val);
   }
   return props;

@@ -99,7 +99,7 @@ test('readForPlan returns rows the planner can consume', () => {
   const [row] = readForPlan('antonio@ortusclub.com', { dir });
   assert.deepEqual(row, {
     slug: 'alebrambi', memberId: '29418762', firstName: 'Alessandra',
-    lastName: 'Brambilla', company: 'NTT DATA', jobTitle: 'MD',
+    lastName: 'Brambilla', company: 'NTT DATA', jobTitle: 'MD', location: '',
   });
 });
 
@@ -232,4 +232,40 @@ test('a destination that already holds CSVs is never overwritten', () => {
 test('nothing to copy is not an error', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'mag-mig-'));
   assert.deepEqual(migrateLegacyConnections({ from: path.join(base, 'nope'), to: path.join(base, 'to') }), { moved: 0 });
+});
+
+test('location survives the mergeRows → toCsv → readExistingBySlug round-trip', () => {
+  // A live pull carries location on the enriched connection.
+  const live = [{ publicId: 'jane-d', firstName: 'Jane', lastName: 'Doe', memberNumber: '111', location: 'New York, New York, United States' }];
+  const rows = mergeRows(live, new Map());
+  assert.equal(rows[0].location, 'New York, New York, United States');
+  assert.ok(CSV_HEADER.includes('Location'));
+
+  const dir = tmpdir();
+  const file = writeAccountCsv('a@o.com', rows, { dir });
+  const back = readExistingBySlug(file);
+  assert.equal(back.get('jane-d').location, 'New York, New York, United States');
+
+  const plan = readForPlan('a@o.com', { dir });
+  assert.equal(plan.find((p) => p.slug === 'jane-d').location, 'New York, New York, United States');
+});
+
+test('an older CSV with no Location column reads back as blank, not undefined', () => {
+  const dir = tmpdir();
+  const file = path.join(dir, 'old@o.com.csv');
+  // Pre-Location schema — header stops at Member ID.
+  fs.writeFileSync(file,
+    'First Name,Last Name,URL,Email Address,Company,Position,Connected On,Member ID\n'
+    + 'Ada,Ho,https://www.linkedin.com/in/adaho,,Acme,CEO,2024,555\n');
+  const back = readExistingBySlug(file);
+  assert.equal(back.get('adaho').location, '');
+});
+
+test('live location wins over the disk copy, disk is the fallback', () => {
+  const prev = new Map([['jane-d', { company: 'X', position: 'Y', location: 'Old City' }]]);
+  const rows = mergeRows([{ publicId: 'jane-d', firstName: 'Jane', memberNumber: '111', location: 'New City' }], prev);
+  assert.equal(rows[0].location, 'New City');
+  // No live location → fall back to disk.
+  const rows2 = mergeRows([{ publicId: 'jane-d', firstName: 'Jane', memberNumber: '111' }], prev);
+  assert.equal(rows2[0].location, 'Old City');
 });

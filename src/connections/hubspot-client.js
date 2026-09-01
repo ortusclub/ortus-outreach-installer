@@ -76,7 +76,7 @@ export async function lookupBySlugs(slugs, { fetchImpl = fetch, token = process.
 // collected connections INTO HubSpot. Kept separate so the warm-reach cache
 // keeps requesting its own narrow PROPS set (it stores 152MB as it is).
 
-import { CONNECTIONS_PROP, MEMBER_ID_PROP, syntheticEmail } from './magellan.js';
+import { CONNECTIONS_PROP, MEMBER_ID_PROP, LOCATION_PROP, syntheticEmail } from './magellan.js';
 import { mergeOptions, verifyReadBack } from './hubspot-options.js';
 
 // What we need back to decide create-vs-update and whether a real email exists.
@@ -84,7 +84,7 @@ import { mergeOptions, verifyReadBack } from './hubspot-options.js';
 // since 2021" is how a human tells the real one from the import's leftovers.
 export const MAGELLAN_PROPS = ['firstname', 'lastname', 'company', 'jobtitle',
   'linkedinbio', 'email', 'hs_additional_emails', 'createdate',
-  MEMBER_ID_PROP, CONNECTIONS_PROP];
+  MEMBER_ID_PROP, CONNECTIONS_PROP, LOCATION_PROP];
 
 // HubSpot caps batch endpoints at 100 objects per call.
 const BATCH_LIMIT = 100;
