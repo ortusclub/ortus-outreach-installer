@@ -733,7 +733,12 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   body[data-dashboard='v3'] .vj-stage-facts b {
     color: var(--ink); font-family: var(--body); font-size: 1.3rem; font-weight: 600;
     letter-spacing: 0; text-align: right;
+    /* A fact value can be an unbreakable string — a LinkedIn /in/ACwAA… URL is
+       the common one. Without this the flex row refuses to shrink and the value
+       runs straight through the right edge of the card (operator, 2026-09-01). */
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  body[data-dashboard='v3'] .vj-stage-facts span { flex: 0 0 auto; }
   body[data-dashboard='v3'] .vj-stage-miles {
     display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 15px;
     border-top: 1px solid var(--hairline);

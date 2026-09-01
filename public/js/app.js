@@ -12977,6 +12977,17 @@ window.restartLocalFromItem = restartLocalFromItem;
 // engine parks the campaign in 'scheduled' behind a durable task and restarts it
 // itself at that instant — this app can be closed.
 async function restartCloudCampaignUI(id, fromStart, startAt) {
+  // Say it before the VM is asked, exactly like the stop does. The card is
+  // log-driven, and this line classifies as 'sending-resumed' (live-log-banner),
+  // so it also switches the card off the monitoring view immediately — the
+  // countdown to the next acceptance check used to keep ticking for ten seconds
+  // after the click, which reads as "nothing happened" (operator recording,
+  // 2026-09-01 18:12). A failure below puts the card back.
+  if (!startAt) {
+    _pushCloudEvent(id, fromStart
+      ? '▶️ Started (from the beginning) — waiting for the VM to confirm…'
+      : '▶️ Started (continuing where it left off) — waiting for the VM to confirm…');
+  }
   try {
     // Carry the wizard's (possibly edited) daily limit so a change made while the
     // campaign was stopped actually takes effect on the engine when it restarts.
@@ -12989,6 +13000,8 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
       if (typeof showCampaignToast === 'function') showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Restart isn’t live yet — engine update pending.', 6000);
+      _pushCloudEvent(id, `⚠️ The VM did not accept the restart (${d.error || `HTTP ${res.status}`}). Nothing was resumed — try again once the connection recovers.`);
+      if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
       return false;
     }
     if (d.alreadyRunning) {
@@ -13009,9 +13022,12 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
       showCampaignToast(fromStart ? 'Restarting the cloud campaign from the beginning…'
         : `Resuming — the VM will send the ${left ? `${left} remaining` : 'remaining'} lead(s).`, 4500);
     }
+    // The optimistic line above already said this; confirm it as fact.
     _pushCloudEvent(id, fromStart ? '▶️ Started (from the beginning)' : '▶️ Started (continuing where it left off)');
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
+    _pushCloudEvent(id, `⚠️ Could not reach the VM to resume (${e.message}). Nothing was resumed — try again once the connection recovers.`);
+    if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
     return false;
   }
   // Paint the accepted restart and its new log event immediately. The normal
