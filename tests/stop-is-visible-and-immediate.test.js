@@ -29,7 +29,7 @@ test('the server records the stop and its outcome', () => {
 // ── 2. The card goes slate while stopping ──────────────────────────────────
 test('the card carries is-stopping while the stop is in flight', () => {
   assert.match(APP, /root\.classList\.toggle\('is-stopping', stopping && !done\)/);
-  assert.match(APP, /'is-done', 'is-stopped', 'is-stopping', 'is-local'/);
+  assert.match(APP, /'is-done', 'is-stopped', 'is-stopping', 'is-resuming', 'is-local'/);
 });
 
 test('stopping is read from every shape the row can carry it in', () => {

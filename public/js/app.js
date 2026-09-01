@@ -7750,6 +7750,19 @@ window._pushCloudEvent = _pushCloudEvent;
 // (operator, 2026-09-01 19:04). Splice the line into the status the card is
 // already holding and repaint on the spot; the next poll replaces all of it
 // with engine truth either way.
+// Optimistic "the resume is in flight" flag. Same contract as the stop's
+// slate state: set on the click, cleared by the next poll rebuild (which
+// replaces the whole status object) or by a failure below.
+const _cloudResumeClickedAt = new Map();
+function _markCloudResuming(id, on) {
+  if (on) _cloudResumeClickedAt.set(String(id), Date.now()); else _cloudResumeClickedAt.delete(String(id));
+  try {
+    const s = window.__cloudActiveStatus;
+    if (s && String(s.id) === String(id)) { s.resuming = !!on; renderActiveCard(s); }
+  } catch (_) { /* the poll still repaints a moment later */ }
+}
+window._markCloudResuming = _markCloudResuming;
+
 function _pushCloudEventNow(id, line) {
   _pushCloudEvent(id, line);
   try {
@@ -8716,7 +8729,21 @@ async function _refreshCloudActiveStatus(id) {
     } catch (_) { /* engine may not expose it yet — panel just won't show */ }
     try { if (_viewingCloudId === id) renderCloudAccountsPanel(id); } catch (_) { /* */ }
     _recordCloudProgress(id, d);
+    // Carry the optimistic "resuming" flag across the rebuild. Dropping it here
+    // is what made the card flip green on the click and straight back to blue on
+    // the next 2s poll, before the engine had reported 'running' — worse than not
+    // reacting at all. It survives until the engine's own status leaves monitoring
+    // (or 90s, so a refused resume cannot pin the card green forever).
+    const _wasResuming = window.__cloudActiveStatus
+      && String(window.__cloudActiveStatus.id) === String(id)
+      && window.__cloudActiveStatus.resuming;
+    const _engineStatus = String((d && d.campaign && d.campaign.status) || '').toLowerCase();
     window.__cloudActiveStatus = _buildCloudActiveStatus((d && d.campaign) || {}, leads, (d && d.leadCounts) || {});
+    if (_wasResuming && window.__cloudActiveStatus
+        && _engineStatus === 'monitoring'
+        && Date.now() - (_cloudResumeClickedAt.get(String(id)) || 0) < 90000) {
+      window.__cloudActiveStatus.resuming = true;
+    }
     // Live-browser flag from the engine (top-level of the /:id detail) — drives
     // the LIVE dot on card #2's Show button (component 5 → component 7).
     if (window.__cloudActiveStatus) {
@@ -10222,7 +10249,8 @@ function applyVjCardAppearance(root, status, fields) {
   const phase = String((status && status.phase) || '').toLowerCase();
   const state = String((status && status.state) || '').toLowerCase();
   const interrupted = !!(f.isInterrupted || state === 'interrupted' || (status && status.interrupted));
-  const monitoring = !!(f.isMonitor || state === 'monitoring' || phase === 'monitoring' || phase === 'checking');
+  const monitoring = !(status && status.resuming)
+    && !!(f.isMonitor || state === 'monitoring' || phase === 'monitoring' || phase === 'checking');
   const queued = !!(status && (status.queued || state === 'queued'));
   const starting = phase === 'starting' || phase === 'preflight' || state === 'launching';
   const waiting = !!(f.isWaiting || state === 'waiting');
@@ -10233,6 +10261,13 @@ function applyVjCardAppearance(root, status, fields) {
   // to one that had not.
   const stopping = !!(status && (status.stopping || state === 'stopping' || state === 'pausing'
     || phase === 'stopping' || String(status.engineStatus || '').toLowerCase() === 'stopping'));
+  // The resume is in flight: the operator clicked, the VM has not confirmed yet.
+  // Set optimistically on the click and cleared by the next poll rebuild. Without
+  // it the card kept the blue monitoring tint for the whole round-trip, so a
+  // click that HAD registered looked identical to one that had not (operator,
+  // 2026-09-01). Green is the default tone, so dropping `monitoring` is the whole
+  // colour change — no new palette.
+  const resuming = !!(status && status.resuming);
   // Older/local payloads may only retain logs after completion rather than an
   // explicit finished state. Keep those legacy shapes on the same visual path.
   const inferredDone = !!(status && !status.running && !monitoring && !interrupted
@@ -10243,7 +10278,7 @@ function applyVjCardAppearance(root, status, fields) {
 
   root.classList.remove('is-monitor', 'is-monitoring', 'is-waiting',
     'is-interrupted', 'is-error', 'is-queued', 'is-starting', 'is-paused',
-    'is-done', 'is-stopped', 'is-stopping', 'is-local');
+    'is-done', 'is-stopped', 'is-stopping', 'is-resuming', 'is-local');
   root.classList.toggle('is-monitor', monitoring);
   root.classList.toggle('is-monitoring', monitoring);
   root.classList.toggle('is-waiting', waiting);
@@ -10256,6 +10291,7 @@ function applyVjCardAppearance(root, status, fields) {
   root.classList.toggle('is-stopped', !!(done && terminal && !terminal.complete));
   // Not while done: a finished stop owns 'is-stopped', this is only the wait.
   root.classList.toggle('is-stopping', stopping && !done);
+  root.classList.toggle('is-resuming', resuming && !done);
   root.classList.toggle('is-local', local);
 }
 
@@ -13006,6 +13042,7 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
   // after the click, which reads as "nothing happened" (operator recording,
   // 2026-09-01 18:12). A failure below puts the card back.
   if (!startAt) {
+    _markCloudResuming(id, true);
     _pushCloudEventNow(id, fromStart
       ? '▶️ Started (from the beginning) — waiting for the VM to confirm…'
       : '▶️ Started (continuing where it left off) — waiting for the VM to confirm…');
@@ -13022,6 +13059,7 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
       if (typeof showCampaignToast === 'function') showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Restart isn’t live yet — engine update pending.', 6000);
+      _markCloudResuming(id, false);
       _pushCloudEventNow(id, `⚠️ The VM did not accept the restart (${d.error || `HTTP ${res.status}`}). Nothing was resumed — try again once the connection recovers.`);
       if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
       return false;
@@ -13048,6 +13086,7 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     _pushCloudEvent(id, fromStart ? '▶️ Started (from the beginning)' : '▶️ Started (continuing where it left off)');
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
+    _markCloudResuming(id, false);
     _pushCloudEventNow(id, `⚠️ Could not reach the VM to resume (${e.message}). Nothing was resumed — try again once the connection recovers.`);
     if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
     return false;
