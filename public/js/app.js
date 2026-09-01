@@ -7742,6 +7742,28 @@ function _pushCloudEvent(id, line, at) {
 }
 window._pushCloudEvent = _pushCloudEvent;
 
+// Logging an operator action is only half of telling them it registered. The
+// card repaints from window.__cloudActiveStatus, which is only rebuilt by the
+// next poll — so Stop and Resume wrote their line instantly and the card still
+// sat there for six or seven seconds, countdown ticking, looking untouched.
+// That is exactly how an operator ends up clicking Resume three times
+// (operator, 2026-09-01 19:04). Splice the line into the status the card is
+// already holding and repaint on the spot; the next poll replaces all of it
+// with engine truth either way.
+function _pushCloudEventNow(id, line) {
+  _pushCloudEvent(id, line);
+  try {
+    const s = window.__cloudActiveStatus;
+    if (s && String(s.id) === String(id)) {
+      // Append, never rebuild: rebuilding from the event log alone would drop
+      // every per-lead line until the next poll.
+      s.logs = (Array.isArray(s.logs) ? s.logs : []).concat([{ t: Date.now(), line }]);
+      renderActiveCard(s);
+    }
+  } catch (_) { /* the poll still repaints a moment later */ }
+}
+window._pushCloudEventNow = _pushCloudEventNow;
+
 // One truthful sending-turn counter for every card surface. The VM briefly
 // publishes done=0 while it moves from LinkedIn confirmation to the sheet
 // stamp, even though the preceding verified event already says (for example)
@@ -12340,7 +12362,7 @@ async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', im
   // call below retries a timeout up to three times, which left the card reading
   // "STOPPING…" for a full minute with nothing whatsoever in the log — the
   // operator had no way to tell a slow VM from a click that never registered.
-  _pushCloudEvent(id, keepMonitoring
+  _pushCloudEventNow(id, keepMonitoring
     ? (immediate
       ? '⏹️ Stop requested — sending stops now, the VM keeps monitoring for acceptances. Waiting for the VM to confirm…'
       : '⏹️ Stop requested — the account finishes the person it is on, then sending stops and the VM keeps monitoring for acceptances. Waiting for the VM to confirm…')
@@ -12366,7 +12388,7 @@ async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', im
     const message = `Stop was not confirmed by the VM: ${e.message}. The last displayed campaign state has been kept; retry after the connection recovers.`;
     // The toast disappears. A stop that did not take must survive in the log,
     // or the campaign looks stopped while the VM is still sending.
-    _pushCloudEvent(id, `⚠️ The VM did not confirm the stop (${e.message}). Sending may still be running — press Stop again once the connection recovers.`);
+    _pushCloudEventNow(id, `⚠️ The VM did not confirm the stop (${e.message}). Sending may still be running — press Stop again once the connection recovers.`);
     if (typeof showCampaignToast === 'function') showCampaignToast(message, 9000);
     else alert(message);
     if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
@@ -12984,7 +13006,7 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
   // after the click, which reads as "nothing happened" (operator recording,
   // 2026-09-01 18:12). A failure below puts the card back.
   if (!startAt) {
-    _pushCloudEvent(id, fromStart
+    _pushCloudEventNow(id, fromStart
       ? '▶️ Started (from the beginning) — waiting for the VM to confirm…'
       : '▶️ Started (continuing where it left off) — waiting for the VM to confirm…');
   }
@@ -13000,7 +13022,7 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
       if (typeof showCampaignToast === 'function') showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Restart isn’t live yet — engine update pending.', 6000);
-      _pushCloudEvent(id, `⚠️ The VM did not accept the restart (${d.error || `HTTP ${res.status}`}). Nothing was resumed — try again once the connection recovers.`);
+      _pushCloudEventNow(id, `⚠️ The VM did not accept the restart (${d.error || `HTTP ${res.status}`}). Nothing was resumed — try again once the connection recovers.`);
       if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
       return false;
     }
@@ -13026,7 +13048,7 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     _pushCloudEvent(id, fromStart ? '▶️ Started (from the beginning)' : '▶️ Started (continuing where it left off)');
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not reach the engine: ' + e.message, 6000);
-    _pushCloudEvent(id, `⚠️ Could not reach the VM to resume (${e.message}). Nothing was resumed — try again once the connection recovers.`);
+    _pushCloudEventNow(id, `⚠️ Could not reach the VM to resume (${e.message}). Nothing was resumed — try again once the connection recovers.`);
     if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
     return false;
   }
