@@ -28210,8 +28210,31 @@ function renderLiveStage(root, status) {
     ? 'Paused — queued leads are safe'
     : pausing ? 'Pausing — finishing the current lead' : la.verb;
 
+  // The cloud engine reports the account as the GoLogin PROFILE ID, not a
+  // label. The sub-line below has resolved that since 2026-08-06; the HEADLINE
+  // never did, so the card's biggest text printed a raw hex id
+  // ("6A5F1605F264C576FD2FCABF", operator screenshot 2026-09-01) while the pills
+  // underneath showed the friendly names. Same data, resolved in one place and
+  // not the other. Hoisted here so the headline, the sub-line and the facts all
+  // use the one resolver and no surface can print an id again.
+  const _acctList = (cid && _cloudAccountsById.get(cid)) || [];
+  const _label = (id) => {
+    const hit = _acctList.find((a) => a.profileId === id || a.email === id);
+    // Not-yet-loaded account list → fall back to the local roster rather than
+    // to the raw id (profileLabel returns the id itself only as a last resort).
+    return (hit && (hit.email || hit.name)) || profileLabel(id);
+  };
+  // A GoLogin profile id is 24 hex characters and nothing an operator should
+  // ever read. Anything matching that shape is resolved, or replaced.
+  const _isProfileId = (v) => /^[0-9a-f]{24}$/i.test(String(v == null ? '' : v).trim());
+  const _named = (v, fallback) => {
+    if (!_isProfileId(v)) return v;
+    const resolved = _label(String(v).trim());
+    return (resolved && !_isProfileId(resolved)) ? resolved : fallback;
+  };
+
   // Name: only when the person changes, or the slide-in replays every poll.
-  const who = la.who || '';
+  const who = _named(la.who || '', 'This account');
   const nameEl = _stgFld(root, 'stageName');
   if (nameEl && stage.dataset.who !== who) {
     nameEl.textContent = who.toUpperCase();
@@ -28227,13 +28250,6 @@ function renderLiveStage(root, status) {
     // one place and not the other. Resolve it here from the same map the pills
     // use; fall back to the raw value so a not-yet-loaded account list still
     // shows something rather than going blank.
-    const _acctList = (cid && _cloudAccountsById.get(cid)) || [];
-    const _label = (id) => {
-      const hit = _acctList.find((a) => a.profileId === id || a.email === id);
-      // Not-yet-loaded account list → fall back to the local roster rather than
-      // to the raw id (profileLabel returns the id itself only as a last resort).
-      return (hit && (hit.email || hit.name)) || profileLabel(id);
-    };
     const acct = ca && ca.account && ca.account !== who ? _label(ca.account) : '';
     const detail = String((ca && ca.sub) || '');
     const alreadyNamed = acct && detail.toLowerCase().includes(String(acct).toLowerCase());
@@ -28262,7 +28278,7 @@ function renderLiveStage(root, status) {
   const factsEl = _stgFld(root, 'stageFacts');
   if (factsEl) {
     const facts = Array.isArray(ca && ca.facts) ? ca.facts : [];
-    const html = facts.map(([label, value]) => `<div><span>${escHtml(label)}</span><b>${escHtml(value)}</b></div>`).join('');
+    const html = facts.map(([label, value]) => `<div><span>${escHtml(label)}</span><b>${escHtml(_named(value, 'this account'))}</b></div>`).join('');
     if (factsEl.dataset.html !== html) { factsEl.innerHTML = html; factsEl.dataset.html = html; }
     factsEl.hidden = !html;
   }
