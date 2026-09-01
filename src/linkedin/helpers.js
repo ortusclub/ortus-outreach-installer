@@ -190,7 +190,27 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2, on
       try {
         const csrf = document.cookie.split(';').map((c) => c.trim())
           .find((c) => c.startsWith('JSESSIONID='));
-        if (!csrf) return { error: 'no-csrf' };
+        // Name the location instead of pasting the path. Two reasons: the log
+        // has to read out loud to an operator, and the raw path is actively
+        // dangerous here — LinkedIn's connections URL contains the substring
+        // "network", which magellan-diagnose.js rule 73 matches, so pasting it
+        // reclassified "no-csrf" and "http-429" as a GoLogin connection fault.
+        // Caught 2026-08-31 before release by running both classifiers over the
+        // new message shapes.
+        const whereTab = () => {
+          const path = (location.pathname || '');
+          if (!path || path === 'blank') return 'a blank page';
+          if (/\/checkpoint/.test(path)) return 'a security checkpoint';
+          if (/\/login|\/uas\//.test(path)) return 'the sign-in page';
+          if (/invite-connect\/connections/.test(path)) return 'the connections page';
+          if (/mynetwork/.test(path)) return 'the connections area';
+          if (/\/feed/.test(path)) return 'the feed';
+          return path;
+        };
+        // "no-csrf" reads like a glitch, but a logged-out tab and a security
+        // checkpoint have no JSESSIONID either, so this is the most common way
+        // an expired session shows up. The location says which it was.
+        if (!csrf) return { error: `no-csrf (tab was on ${whereTab()})` };
         const token = csrf.split('=')[1]?.replace(/"/g, '');
 
         const headers = {
@@ -269,27 +289,40 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2, on
           // rather than throwing away everything collected so far, and the
           // error we do report says where it happened and where the tab was —
           // "Failed to fetch" on its own is unactionable.
+          // A non-OK status used to end the account on the spot. LinkedIn hands
+          // back 429 and 999 here routinely under load, and those are momentary
+          // throttles, not a verdict: one of them cost a whole sweep and stopped
+          // the campaign's sending. Retried like the network errors below, but
+          // with a longer pause, because a throttle wants seconds. 401/403 are
+          // deliberately NOT retryable — they mean logged out, and repeating
+          // them only delays telling the operator to sign the account back in.
+          const RETRYABLE_STATUS = [429, 500, 502, 503, 504, 999];
           let resp = null;
           let fetchErr = null;
-          for (let attempt = 0; attempt < 2; attempt++) {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            let throttled = false;
             try {
               fetchErr = null;
               resp = await fetch(chosenFactory(start), { headers, credentials: 'include' });
-              break;
+              if (resp.ok || !RETRYABLE_STATUS.includes(resp.status)) break;
+              throttled = true;
             } catch (e) {
               fetchErr = e;
-              if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
             }
+            if (attempt < 2) await new Promise((r) => setTimeout(r, throttled ? 3000 * (attempt + 1) : 1500));
           }
           if (fetchErr) {
-            const where = `${fetchErr.message} (page ${p + 1}, ${out.length} collected, tab at ${location.pathname})`;
+            const where = `${fetchErr.message} (page ${p + 1}, ${out.length} collected, tab was on ${whereTab()})`;
             if (p === 0) return { error: where };
             // Past the first page: keep what we have and say so upstream.
             partial = where;
             break;
           }
           if (!resp.ok) {
-            if (p === 0) return { error: `http-${resp.status}` };
+            // Same shape as the fetch-error line above. The "http-NNN" prefix is
+            // load-bearing: sweepHealth() and magellan-diagnose.js both classify
+            // 429/999 off it, so it stays first and only context is appended.
+            if (p === 0) return { error: `http-${resp.status} (page ${p + 1}, ${out.length} collected, tab was on ${whereTab()})` };
             break;
           }
 
@@ -528,7 +561,27 @@ async function _enrichProfilesByUrn(page, urns, onProgress = null) {
       try {
         const csrf = document.cookie.split(';').map((c) => c.trim())
           .find((c) => c.startsWith('JSESSIONID='));
-        if (!csrf) return { error: 'no-csrf' };
+        // Name the location instead of pasting the path. Two reasons: the log
+        // has to read out loud to an operator, and the raw path is actively
+        // dangerous here — LinkedIn's connections URL contains the substring
+        // "network", which magellan-diagnose.js rule 73 matches, so pasting it
+        // reclassified "no-csrf" and "http-429" as a GoLogin connection fault.
+        // Caught 2026-08-31 before release by running both classifiers over the
+        // new message shapes.
+        const whereTab = () => {
+          const path = (location.pathname || '');
+          if (!path || path === 'blank') return 'a blank page';
+          if (/\/checkpoint/.test(path)) return 'a security checkpoint';
+          if (/\/login|\/uas\//.test(path)) return 'the sign-in page';
+          if (/invite-connect\/connections/.test(path)) return 'the connections page';
+          if (/mynetwork/.test(path)) return 'the connections area';
+          if (/\/feed/.test(path)) return 'the feed';
+          return path;
+        };
+        // "no-csrf" reads like a glitch, but a logged-out tab and a security
+        // checkpoint have no JSESSIONID either, so this is the most common way
+        // an expired session shows up. The location says which it was.
+        if (!csrf) return { error: `no-csrf (tab was on ${whereTab()})` };
         const token = csrf.split('=')[1]?.replace(/"/g, '');
 
         // Voyager's List(...) format with each URN URL-encoded individually.
