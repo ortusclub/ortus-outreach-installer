@@ -113,6 +113,27 @@ export async function runCloudPreflightHandshake(opts = {}) {
   };
 
   /**
+   * Put a freshly-launched sender window off-screen.
+   *
+   * The wizard promises "an off-screen GoLogin browser" and an operator watched
+   * one open on their screen (2026-09-01). --window-position=-2400,-2400 is
+   * passed at launch, but GoLogin's SDK passes its own --window-position=0,0 and
+   * appends --restore-last-session, which restores the previous run's window
+   * bounds. campaign.js has always followed the flag with this CDP call for
+   * exactly that reason; the handshake never did.
+   *
+   * Best-effort: a window that refuses to move is a cosmetic problem, and it
+   * must not fail a handshake.
+   */
+  const tuckAway = async (page) => {
+    try {
+      const client = await page.target().createCDPSession();
+      const { windowId } = await client.send('Browser.getWindowForTarget');
+      await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
+    } catch { /* cosmetic only */ }
+  };
+
+  /**
    * Why a sender's page could not be read.
    *
    * checkAndConnectPrimary returns connected:null for several different reasons
@@ -185,6 +206,7 @@ export async function runCloudPreflightHandshake(opts = {}) {
       continue;
     }
     const page = launched && launched.page;
+    if (page) await tuckAway(page);
     try {
       const res = await deps.checkAndConnectPrimary(page, pUrl, { log, pName: profileId, attemptConnect: true });
       const live = primaryConnState(res.connected);

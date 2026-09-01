@@ -111,3 +111,25 @@ test('the wizard never falls back to a raw profile id for a name', () => {
 test('the outcome copy is given the name resolver', () => {
   assert.match(APP, /handshakeOutcome\(\{ senders: snap\.senders, summary: snap\.summary, error: snap\.error, nameFor: nameOf \}\)/);
 });
+
+test('the sender browser really is put off-screen, as the wizard promises', () => {
+  // The wizard says "an off-screen GoLogin browser" and an operator watched one
+  // open on their screen. The launch flag alone is not enough: GoLogin's SDK
+  // passes its own --window-position=0,0 and appends --restore-last-session,
+  // which restores the previous run's window bounds. campaign.js has always
+  // followed the flag with a CDP setWindowBounds for that reason.
+  assert.match(HS, /const tuckAway = async \(page\) => \{/);
+  assert.match(HS, /Browser\.setWindowBounds/);
+  assert.match(HS, /left: -2400, top: -2400/);
+  assert.match(HS, /if \(page\) await tuckAway\(page\);/);
+});
+
+test('the PRIMARY browser is left visible', () => {
+  // The wizard tells the operator "Your primary Chrome is open, accepting …
+  // Leave it alone, it closes itself." Hiding it would contradict that and make
+  // an accept that needs watching invisible.
+  const i = HS.indexOf('primaryPage = launched && launched.page;');
+  assert.ok(i > 0);
+  assert.doesNotMatch(HS.slice(i, i + 200), /tuckAway/,
+    'the primary must stay on screen');
+});
