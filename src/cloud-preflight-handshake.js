@@ -28,7 +28,7 @@ import { buildAcceptTask, enqueuePrimaryTask } from './primary-tasks.js';
 import { _shouldQueueAutoAccept } from './linkedin/auto-intro.js';
 import {
   primaryKeyFromUrl, storeKey, getEntry, mergeLiveRead, resolveDisplayState,
-  seedConnectedIds, loadPrimaryStatus, savePrimaryStatus,
+  seedConnectedIds, staleConnectedIds, loadPrimaryStatus, savePrimaryStatus,
 } from './primary-status-store.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
@@ -174,6 +174,12 @@ export async function runCloudPreflightHandshake(opts = {}) {
     const runSet = new Set(senderProfileIds);
     for (const pid of seedConnectedIds(store, primaryKey)) {
       if (runSet.has(pid)) primaryConn.set(pid, 'connected');
+    }
+    // Say out loud when a remembered 'connected' has expired, otherwise the
+    // re-check looks like an unexplained extra browser launch in the log.
+    const stale = staleConnectedIds(store, primaryKey).filter((pid) => runSet.has(pid));
+    if (stale.length) {
+      log(`  ⓘ ${stale.length} account(s) were last confirmed connected to the primary over a week ago — checking them against LinkedIn again rather than taking it on trust.`);
     }
   }
   // Surface already-connected senders to the wizard immediately (they never enter

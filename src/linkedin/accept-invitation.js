@@ -363,7 +363,8 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
   await page.goto('https://www.linkedin.com/mynetwork/invitation-manager/received/', {
     waitUntil: 'domcontentloaded', timeout: 45000,
   });
-  // Wait for at least one Accept button to render (or 12s if the list is empty).
+  let painted = true;
+  // Wait for at least one Accept button to render (or time out if the list is empty).
   await page.waitForFunction(
     (acc, ign) => {
       const isAcc = (s) => {
@@ -375,9 +376,9 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
       return Array.from(document.querySelectorAll('button'))
         .some((b) => isAcc(b.getAttribute('aria-label') || b.textContent || ''));
     },
-    { timeout: 12000 },
+    { timeout: 25000 },
     ACCEPT_STEMS, IGNORE_STEMS,
-  ).catch(() => { /* empty list / slow — counts as 0 below */ });
+  ).catch(() => { painted = false; });
   await new Promise((r) => setTimeout(r, 1500));
 
   const countAccepts = () => page.evaluate((acc, ign) => {
@@ -417,8 +418,22 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
     if (after < before) { cleared += (before - after); stall = 0; }
     else if (++stall >= 3) { log('  ⓘ Accept-all: a pending card would not clear — stopping the sweep.'); break; }
   }
-  if (cleared) log(`  ✓ Accept-all: accepted ${cleared} pending invitation(s) on the primary.`);
-  else log('  ⓘ Accept-all: no additional pending invitations to accept.');
+  if (cleared) {
+    log(`  ✓ Accept-all: accepted ${cleared} pending invitation(s) on the primary.`);
+  } else if (painted) {
+    log('  ⓘ Accept-all: the invitations page opened and there was nothing waiting to accept.');
+  } else {
+    // A silent zero is the failure we could not diagnose: it reads identically
+    // whether the list was empty or the page simply never finished loading.
+    // Say which page we ended up on and what was on it.
+    let where = '';
+    try { where = String((page.url && page.url()) || ''); } catch { /* page may be gone */ }
+    const buttons = await page.evaluate(() => document.querySelectorAll('button').length).catch(() => -1);
+    const onInvites = /invitation-manager/.test(where);
+    log(onInvites
+      ? `  ⚠️ Accept-all: the invitations page never finished loading (nothing to click after 25s, ${buttons} buttons on the page) — any invitation waiting there was NOT accepted. Run the check again.`
+      : `  ⚠️ Accept-all: the primary's browser did not land on the invitations page (it ended up on ${where || 'an unknown page'}) — nothing was accepted. The primary is probably signed out.`);
+  }
   // `remaining` is what the caller needs to shortcut the per-sender matcher: an
   // empty received list means nothing we sent is still outstanding.
   const remaining = await countAccepts().catch(() => 1);

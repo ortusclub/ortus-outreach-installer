@@ -52,9 +52,11 @@ test('self-eliminates when every sender is already connected (launches nothing)'
   // Build a store that seedConnectedIds will read as connected for our key.
   const { primaryKeyFromUrl, storeKey } = await import('../src/primary-status-store.js');
   const key = primaryKeyFromUrl(primaryUrl);
+  // Freshly verified: a connected stamp older than a week is re-checked, not trusted.
+  const verifiedAt = new Date().toISOString();
   const store = {
-    [storeKey('a', key)]: { state: 'connected', primaryUrl },
-    [storeKey('b', key)]: { state: 'connected', primaryUrl },
+    [storeKey('a', key)]: { state: 'connected', primaryUrl, verifiedAt },
+    [storeKey('b', key)]: { state: 'connected', primaryUrl, verifiedAt },
   };
   const { deps, calls } = makeDeps({ store });
   const r = await runCloudPreflightHandshake({

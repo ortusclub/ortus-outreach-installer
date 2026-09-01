@@ -51,12 +51,36 @@ export function resolveDisplayState(entry, liveState) {
   return { state: liveState, source: 'live' };
 }
 
-export function seedConnectedIds(store, primaryKey) {
-  if (!store || !primaryKey) return [];
+// A remembered 'connected' goes stale: the operator can withdraw the invitation,
+// remove the connection, or the entry can have been written optimistically. Past
+// this age we re-check against LinkedIn instead of trusting the file, which is
+// what let a July stamp skip the whole handshake for weeks.
+export const CONNECTED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function _seedSplit(store, primaryKey, { maxAgeMs = CONNECTED_TTL_MS, now = Date.now() } = {}) {
+  const fresh = [], stale = [];
+  if (!store || !primaryKey) return { fresh, stale };
   const suffix = '|' + primaryKey;
-  return Object.keys(store)
-    .filter((k) => k.endsWith(suffix) && store[k] && store[k].state === 'connected')
-    .map((k) => k.slice(0, -suffix.length));
+  for (const k of Object.keys(store)) {
+    if (!k.endsWith(suffix)) continue;
+    const entry = store[k];
+    if (!entry || entry.state !== 'connected') continue;
+    const id = k.slice(0, -suffix.length);
+    const at = Date.parse(entry.verifiedAt || '');
+    // No timestamp at all is treated as stale — we cannot claim it is current.
+    (Number.isFinite(at) && (now - at) < maxAgeMs ? fresh : stale).push(id);
+  }
+  return { fresh, stale };
+}
+
+export function seedConnectedIds(store, primaryKey, opts) {
+  return _seedSplit(store, primaryKey, opts).fresh;
+}
+
+// The other half: remembered-connected but too old to trust. Callers log these
+// so a re-check never looks like an unexplained extra browser launch.
+export function staleConnectedIds(store, primaryKey, opts) {
+  return _seedSplit(store, primaryKey, opts).stale;
 }
 
 import { readFile as _readFile, writeFile as _writeFile, rename as _rename } from 'node:fs/promises';

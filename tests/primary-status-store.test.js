@@ -75,11 +75,14 @@ test('resolveDisplayState: live wins unless unverified-with-stored-connected (fa
 });
 
 test('seedConnectedIds returns the profileIds stored connected for a primaryKey', () => {
+  // verifiedAt matters now: a connected stamp expires after a week, so these
+  // have to be freshly verified to be seeded at all.
+  const fresh = new Date().toISOString();
   const store = {
-    'p1|s:john': { state: 'connected' },
-    'p2|s:john': { state: 'pending' },
-    'p3|s:other': { state: 'connected' },
-    'p4|s:john': { state: 'connected' },
+    'p1|s:john': { state: 'connected', verifiedAt: fresh },
+    'p2|s:john': { state: 'pending', verifiedAt: fresh },
+    'p3|s:other': { state: 'connected', verifiedAt: fresh },
+    'p4|s:john': { state: 'connected', verifiedAt: fresh },
   };
   assert.deepEqual(seedConnectedIds(store, 's:john').sort(), ['p1', 'p4']);
   assert.deepEqual(seedConnectedIds(store, 's:none'), []);
