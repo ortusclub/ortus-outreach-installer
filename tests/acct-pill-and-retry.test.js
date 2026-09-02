@@ -142,7 +142,7 @@ test('sending, but unable to introduce, is amber and says which case it is', () 
   const never = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryState: null }, CCIC);
   assert.equal(never.dot, 'warn');
   assert.deepEqual(never.pills, [['warn', 'Primary not checked']]);
-  const no = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryState: 'unverified' }, CCIC);
+  const no = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryState: 'not_connected' }, CCIC);
   assert.equal(no.dot, 'warn');
   assert.deepEqual(no.pills, [['warn', 'Primary not connected']]);
 });
@@ -206,12 +206,15 @@ test('an invitation waiting to be accepted is pending, not a failure', () => {
   assert.equal(st.dot, 'warn');
 });
 
-test('the three primary outcomes stay three', () => {
+test('every primary outcome gets its own words', () => {
+  // Five facts, five sentences. Collapsing any pair of them is what produced
+  // both complaints: six unchecked accounts reading as six failures, and an
+  // invitation that was never sent reading as one waiting to be accepted.
   const of = (primaryState) => acctRowState({ primaryState }, CCIC);
   assert.deepEqual(of('connected').pills, []);
   assert.deepEqual(of('pending').pills, [['warn', 'Primary invite pending']]);
-  assert.deepEqual(of('unverified').pills, [['warn', 'Primary not connected']]);
-  // No row at all is a fourth thing: nobody has looked.
+  assert.deepEqual(of('not_connected').pills, [['warn', 'Primary not connected']]);
+  assert.deepEqual(of('unverified').pills, [['warn', 'Primary unconfirmed']]);
   assert.deepEqual(acctRowState({}, CCIC).pills, [['warn', 'Primary not checked']]);
 });
 

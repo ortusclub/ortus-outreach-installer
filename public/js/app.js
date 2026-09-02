@@ -8984,7 +8984,8 @@ function _capDetailHtml(id, a, st, opts = {}) {
   if (st.primary) {
     facts.push(['Primary', st.primary === 'connected' ? 'Connected'
       : st.primary === 'pending' ? 'Invitation sent, waiting to be accepted'
-      : st.primary === 'unverified' ? 'Checked, and not connected'
+      : st.primary === 'not_connected' ? 'Not connected, and no invitation is out'
+      : st.primary === 'unverified' ? 'Could not be read'
       : 'Never checked']);
   }
   if (a.lastMonitorSuccessAt) {
@@ -9378,9 +9379,13 @@ async function recheckCloudPrimary(campaignId, profileId, btn) {
   // An account with an invitation already out gets a different sentence: there
   // is nothing to send, and telling it it will send one is not what happens.
   const pending = String(acct.primaryState || '') === 'pending';
+  // This runs on THIS Mac, not the VM: it opens the account's GoLogin browser
+  // off-screen here, sends the connect, and accepts it in the primary's browser
+  // — the same handshake the campaign runs before launch. Say so, because it
+  // takes a minute and the operator is about to watch nothing happen.
   const ask = pending
-    ? `Check ${who} against the primary person?\n\nAn invitation is already waiting to be accepted. This opens the account on the VM and re-reads whether it has been.`
-    : `Check ${who} against the primary person?\n\nIt opens the account on the VM. If it is not connected to the primary yet, it sends the connection request, which the primary then has to accept.`;
+    ? `Check ${who} against the primary person?\n\nAn invitation is already waiting to be accepted. This opens the account here, on this Mac, and re-reads whether it has been.`
+    : `Check ${who} against the primary person?\n\nThis runs on this Mac, not the VM: it opens the account's browser off-screen, and if it is not connected yet it sends the connection request and accepts it in the primary's browser. It takes about a minute.`;
   if (!confirm(ask)) return;
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   const restore = () => { if (btn) { btn.disabled = false; btn.textContent = 'Check primary'; } };
@@ -9388,13 +9393,17 @@ async function recheckCloudPrimary(campaignId, profileId, btn) {
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(campaignId)}/accounts/${encodeURIComponent(profileId)}/primary-check`, { method: 'POST' });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
-      showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Checking the primary isn’t live yet — engine update pending.', 6000);
+      showCampaignToast(d.error || 'Could not check the primary.', 6000);
       restore();
       return;
     }
-    showCampaignToast(d.queued === false
-      ? `${who} is already being checked — the answer appears here when it finishes.`
-      : `Checking ${who} against the primary. It opens on the VM after the account's current work, and the answer appears here.`, 7000);
+    const SAID = {
+      connected: `${who} is connected to the primary.`,
+      pending: `Invitation sent to the primary from ${who}. It shows as connected once the invitation is accepted.`,
+      not_connected: `${who} is not connected to the primary, and the invitation could not be sent. Open the account in GoLogin and try again.`,
+      unverified: `Could not tell whether ${who} is connected to the primary. Nothing was sent.`,
+    };
+    showCampaignToast(SAID[d.state] || `Checked ${who} against the primary.`, 8000);
     if (_viewingCloudId) { try { await _refreshCloudActiveStatus(_viewingCloudId); } catch (_) { /* */ } }
   } catch (e) {
     showCampaignToast('Could not reach the engine: ' + e.message, 6000);

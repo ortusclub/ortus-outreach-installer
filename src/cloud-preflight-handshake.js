@@ -215,7 +215,16 @@ export async function runCloudPreflightHandshake(opts = {}) {
     if (page) await tuckAway(page);
     try {
       const res = await deps.checkAndConnectPrimary(page, pUrl, { log, pName: profileId, attemptConnect: true });
-      const live = primaryConnState(res.connected);
+      // Whether an invitation actually EXISTS, not whether one was attempted.
+      // checkAndConnectPrimary sets connectAttempted before it tries to send, so
+      // a send that throws (LinkedIn renders no Connect button, and it fails
+      // after 60s) left this recording 'pending' and telling the operator an
+      // invitation was waiting. Theirs was empty: "somnath is not in my
+      // invitations inbox" (2026-09-02).
+      const sentOk = res.connectResult === 'sent' || res.connectResult === 'already_pending';
+      const live = res.connected === true ? 'connected'
+        : (res.connected === false && sentOk) ? 'pending'
+        : 'unverified';
       if (primaryKey && live !== 'unverified') {
         const entry = getEntry(store, profileId, primaryKey);
         store[storeKey(profileId, primaryKey)] = mergeLiveRead(entry, live, new Date(deps.now()).toISOString(), pUrl);
@@ -224,7 +233,9 @@ export async function runCloudPreflightHandshake(opts = {}) {
         primaryConn.set(profileId, live);
       }
 
-      if (_shouldQueueAutoAccept({ autoAcceptPrimary: true, connectAttempted: res.connectAttempted, connectResult: res.connectResult })) {
+      // ...and only accept an invitation that exists. _shouldQueueAutoAccept
+      // reads connectAttempted alone, which is true even when the send failed.
+      if (sentOk && _shouldQueueAutoAccept({ autoAcceptPrimary: true, connectAttempted: res.connectAttempted, connectResult: res.connectResult })) {
         const self = await deps.readSelfIdentity(page, { log }).catch(() => ({}));
         const name = (self && self.name) || '';
         if (self && (self.name || self.profileUrl)) {
@@ -254,6 +265,11 @@ export async function runCloudPreflightHandshake(opts = {}) {
           ? `  🔒 [${profileId}] ${why} — no invitation was sent. Reconnect this account in GoLogin, then try the primary again.`
           : `  ❓ [${profileId}] couldn't read this account against the primary — no invitation was sent.`);
         emit(profileId, 'not-sent', '', why || 'this account could not be read');
+      } else if (res.connectAttempted && !sentOk) {
+        // It tried and could not. Saying 'sent' here is the same lie as above,
+        // one branch further down.
+        log(`  ⚠ [${profileId}] not connected to the primary, and the invitation could not be sent${res.error ? `: ${res.error}` : ''}.`);
+        emit(profileId, 'not-sent', '', res.error || 'the invitation could not be sent');
       } else {
         emit(profileId, 'sent');
       }

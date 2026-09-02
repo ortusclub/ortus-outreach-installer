@@ -492,7 +492,8 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
       : String(a.primaryState || '');
     if (raw === 'connected') primary = 'connected';
     else if (raw === 'pending') { primary = 'pending'; pills.push(['warn', 'Primary invite pending']); }
-    else if (raw) { primary = 'unverified'; pills.push(['warn', 'Primary not connected']); }
+    else if (raw === 'not_connected') { primary = 'not_connected'; pills.push(['warn', 'Primary not connected']); }
+    else if (raw) { primary = 'unverified'; pills.push(['warn', 'Primary unconfirmed']); }
     else { primary = 'never'; pills.push(['warn', 'Primary not checked']); }
   }
   // Sending bare: LinkedIn's free personalised-invite allowance is spent. Not a

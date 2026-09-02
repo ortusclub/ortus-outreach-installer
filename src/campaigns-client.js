@@ -418,12 +418,13 @@ export function reclaimCloudCampaign(id) {
 export function unbenchCloudAccount(id, profileId) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/unbench`, {});
 }
-// Operator "Recheck" on one account's connection to the primary. The engine
-// connects a sender to the primary lazily, inside the intro sweep, so an account
-// with no acceptances yet has never been checked at all. Returns { queued } —
-// false when that account's check is already running.
-export function recheckCloudPrimary(id, profileId) {
-  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/primary-check`, {});
+// Record what THIS MACHINE found about one account's connection to the primary.
+// Every connect and every acceptance happens here, on the operator's Mac; the VM
+// only reads. Without this the engine would keep showing whatever it last
+// managed to read for itself, and the panel would contradict the handshake that
+// had just run. state: connected | pending | not_connected | unverified.
+export function recordCloudPrimaryConn(id, profileId, { state, primaryUrl = '', line = '' } = {}) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/primary-conn`, { state, primaryUrl, line });
 }
 // Local-check write-back: mirror the sheet's per-lead statuses into the engine
 // after the operator runs this cloud campaign's acceptance check on their OWN
