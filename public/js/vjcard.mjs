@@ -477,10 +477,22 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
   // The primary. null is NEVER CHECKED, which is not the same as not connected:
   // the engine connects a sender to the primary lazily, inside the intro sweep,
   // the first time one of that account's leads is accepted.
+  //
+  // Three outcomes, not two. An invitation that has been SENT and is waiting to
+  // be accepted is not a failure, and calling it "not connected" gave the
+  // operator nothing to do about a state whose next move is somebody accepting
+  // (operator, 2026-09-02: "it's not true they are indeed connected"). The
+  // engine has always stored it as `pending`; the accounts payload used to
+  // flatten it away. primaryConnected is the older boolean and is only read
+  // when an engine too old to send primaryState is answering.
   let primary = '';
   if (isCCIC) {
-    if (a.primaryConnected === true) primary = 'connected';
-    else if (a.primaryConnected === false) { primary = 'no'; pills.push(['warn', 'Primary not connected']); }
+    const raw = a.primaryState == null
+      ? (a.primaryConnected === true ? 'connected' : a.primaryConnected === false ? 'pending' : '')
+      : String(a.primaryState || '');
+    if (raw === 'connected') primary = 'connected';
+    else if (raw === 'pending') { primary = 'pending'; pills.push(['warn', 'Primary invite pending']); }
+    else if (raw) { primary = 'unverified'; pills.push(['warn', 'Primary not connected']); }
     else { primary = 'never'; pills.push(['warn', 'Primary not checked']); }
   }
   // Sending bare: LinkedIn's free personalised-invite allowance is spent. Not a

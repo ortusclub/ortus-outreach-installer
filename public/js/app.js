@@ -8983,7 +8983,8 @@ function _capDetailHtml(id, a, st, opts = {}) {
   if (batch) facts.push(['Last batch', batch.replace(/ in (its last|this) batch$/, '')]);
   if (st.primary) {
     facts.push(['Primary', st.primary === 'connected' ? 'Connected'
-      : st.primary === 'no' ? 'Checked, and not connected'
+      : st.primary === 'pending' ? 'Invitation sent, waiting to be accepted'
+      : st.primary === 'unverified' ? 'Checked, and not connected'
       : 'Never checked']);
   }
   if (a.lastMonitorSuccessAt) {
@@ -9374,7 +9375,13 @@ async function recheckCloudPrimary(campaignId, profileId, btn) {
   const accounts = _cloudAccountsById.get(campaignId) || [];
   const acct = accounts.find((x) => x.profileId === profileId) || {};
   const who = acct.email || _acctLabel(acct) || 'this account';
-  if (!confirm(`Check ${who} against the primary person?\n\nIt opens the account on the VM. If it is not connected to the primary yet, it sends the connection request, which the primary then has to accept.`)) return;
+  // An account with an invitation already out gets a different sentence: there
+  // is nothing to send, and telling it it will send one is not what happens.
+  const pending = String(acct.primaryState || '') === 'pending';
+  const ask = pending
+    ? `Check ${who} against the primary person?\n\nAn invitation is already waiting to be accepted. This opens the account on the VM and re-reads whether it has been.`
+    : `Check ${who} against the primary person?\n\nIt opens the account on the VM. If it is not connected to the primary yet, it sends the connection request, which the primary then has to accept.`;
+  if (!confirm(ask)) return;
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   const restore = () => { if (btn) { btn.disabled = false; btn.textContent = 'Check primary'; } };
   try {

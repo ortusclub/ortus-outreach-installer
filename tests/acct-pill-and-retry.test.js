@@ -136,13 +136,13 @@ test('an account that is sending and connected says nothing at all', () => {
   assert.deepEqual(st.pills, []);
 });
 
-test('sending, but unable to introduce, is amber and says which of the two it is', () => {
+test('sending, but unable to introduce, is amber and says which case it is', () => {
   // Never checked and checked-and-not-connected are different facts. Collapsing
   // them is what made six unchecked accounts read as six failures.
-  const never = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryConnected: null }, CCIC);
+  const never = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryState: null }, CCIC);
   assert.equal(never.dot, 'warn');
   assert.deepEqual(never.pills, [['warn', 'Primary not checked']]);
-  const no = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryConnected: false }, CCIC);
+  const no = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryState: 'unverified' }, CCIC);
   assert.equal(no.dot, 'warn');
   assert.deepEqual(no.pills, [['warn', 'Primary not connected']]);
 });
@@ -192,4 +192,33 @@ test('the bench pill carries the date, the drawer carries the countdown', () => 
   const st = acctRowState({ weeklyCap: true }, { isCCIC: true, nextMonday: 'Monday 7 Sept (in 5 days)' });
   assert.deepEqual(st.pills[0], ['bad', 'Stopped until Monday 7 Sept']);
   assert.match(st.status, /resets Monday 7 Sept \(in 5 days\)/);
+});
+
+// Operator, 2026-09-02, of two accounts the panel called "Primary not
+// connected": "it's not true they are indeed connected tho". Both had an
+// invitation OUT and unaccepted — the engine stores that as `pending`, and the
+// accounts payload used to flatten it to a boolean, so a sent invitation waiting
+// on somebody's click read as a failure.
+test('an invitation waiting to be accepted is pending, not a failure', () => {
+  const st = acctRowState({ dailyCount: 0, dailyLimit: 50, primaryState: 'pending' }, CCIC);
+  assert.equal(st.primary, 'pending');
+  assert.deepEqual(st.pills, [['warn', 'Primary invite pending']]);
+  assert.equal(st.dot, 'warn');
+});
+
+test('the three primary outcomes stay three', () => {
+  const of = (primaryState) => acctRowState({ primaryState }, CCIC);
+  assert.deepEqual(of('connected').pills, []);
+  assert.deepEqual(of('pending').pills, [['warn', 'Primary invite pending']]);
+  assert.deepEqual(of('unverified').pills, [['warn', 'Primary not connected']]);
+  // No row at all is a fourth thing: nobody has looked.
+  assert.deepEqual(acctRowState({}, CCIC).pills, [['warn', 'Primary not checked']]);
+});
+
+test('an engine too old to send primaryState still gets a truthful row', () => {
+  // The boolean cannot tell pending from unverified, so it takes the reading
+  // that does not accuse: false meant pending in every case we have seen.
+  assert.deepEqual(acctRowState({ primaryConnected: true }, CCIC).pills, []);
+  assert.deepEqual(acctRowState({ primaryConnected: false }, CCIC).pills, [['warn', 'Primary invite pending']]);
+  assert.deepEqual(acctRowState({ primaryConnected: null }, CCIC).pills, [['warn', 'Primary not checked']]);
 });
