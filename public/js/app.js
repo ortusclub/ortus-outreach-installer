@@ -13084,10 +13084,20 @@ window.clearCloudEditMode = clearCloudEditMode;
 // v2.160.51: also KEEP that campaign's log on display — force the Live Status
 // section open (liveStatusForcedOpen) and expand it, so the opened campaign's log
 // is always visible at the bottom of the wizard, under section 6 (Launch).
-function _bindLiveStatusToCampaign(id) {
+function _bindLiveStatusToCampaign(id, seed = null) {
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound yet */ }
   _viewingCloudId = id;
   liveStatusForcedOpen = true;
+  // Pin the requested campaign synchronously, before the route changes. The
+  // shared #active-card still contains whatever the background local poll last
+  // painted (often "N campaigns running in the cloud"). Waiting for the detail
+  // request before replacing that markup caused the generic summary to flash
+  // for several seconds and made the selected campaign look as if it vanished.
+  if (seed) {
+    const seededStatus = seed._cloud ? seed : statusFromItem(seed);
+    window.__cloudActiveStatus = seededStatus;
+    try { renderActiveCard(seededStatus); } catch (_) { /* detail fetch replaces it */ }
+  }
   Promise.resolve(_refreshCloudActiveStatus(id)).catch(() => {}).then(() => {
     setTimeout(() => {
       if (_viewingCloudId !== id) return; // superseded by another open
@@ -13127,12 +13137,15 @@ async function openRunningCampaignReadOnly(id) {
     const select = document.getElementById('campaign-mode');
     if (select && mode) { select.value = mode; if (typeof onModeChange === 'function') onModeChange(); }
   }
+  // Bind and paint THIS campaign before exposing the shared Live Status card.
+  // The detail poll enriches it afterwards; navigation can no longer reveal
+  // the stale aggregate card in between.
+  _bindLiveStatusToCampaign(id, _it ? statusFromItem(_it) : null);
   goCreateCampaign();
   // v2.160.47: this is a VM campaign — reflect Cloud VM, not This machine.
   try { if (typeof setRunTarget === 'function') setRunTarget('cloud'); } catch (_) { /* */ }
   _renderCloudEditBanner();
   _setCloudEditLock(true);
-  _bindLiveStatusToCampaign(id);
   // The invariants above (Cloud VM run-target, Live Status section bound + open,
   // fields locked) get clobbered by async events that fire AFTER this synchronous
   // setup: goCreateCampaign() set location.hash='#/new', whose deferred hashchange

@@ -40,3 +40,26 @@ test('nothing is blocked when either side is unidentified', () => {
   assert.equal(accepts('cmp_toast', ''), true, 'clearing the card still works');
   assert.equal(accepts(null, null), true);
 });
+
+test('Open pins the selected campaign before revealing the shared card', () => {
+  const start = src.indexOf('async function openRunningCampaignReadOnly');
+  const end = src.indexOf('window.openRunningCampaignReadOnly', start);
+  const open = src.slice(start, end);
+  const bindAt = open.indexOf('_bindLiveStatusToCampaign(id, _it ? statusFromItem(_it) : null)');
+  const navigateAt = open.indexOf('goCreateCampaign()');
+  assert.ok(bindAt >= 0, 'the selected Dashboard item seeds Live Status');
+  assert.ok(navigateAt >= 0, 'the Campaign page is opened');
+  assert.ok(bindAt < navigateAt, 'the exact campaign must paint before the shared card becomes visible');
+});
+
+test('binding synchronously replaces the stale aggregate before fetching detail', () => {
+  const start = src.indexOf('function _bindLiveStatusToCampaign');
+  const end = src.indexOf('// v2.160.46: OPEN', start);
+  const bind = src.slice(start, end);
+  const seedAt = bind.indexOf('window.__cloudActiveStatus = seededStatus');
+  const renderAt = bind.indexOf('renderActiveCard(seededStatus)');
+  const fetchAt = bind.indexOf('Promise.resolve(_refreshCloudActiveStatus(id))');
+  assert.ok(seedAt >= 0 && renderAt >= 0 && fetchAt >= 0);
+  assert.ok(seedAt < fetchAt && renderAt < fetchAt,
+    'the selected campaign must replace the generic summary without waiting for the network');
+});
