@@ -111,8 +111,10 @@ export function readExistingBySlug(filePath) {
 }
 
 /**
- * Merge a live pull with what's already on disk. Live wins on identity
- * (name, member id); disk wins on company/position, which only it has.
+ * Merge a live pull with what's already on disk. Live wins on everything it
+ * now carries (name, member id, location, current company + title — all from
+ * the enrichment pass); disk is the fallback for a connection that skipped
+ * enrichment this run, and still the only source of a prior archive's email.
  */
 export function mergeRows(live, existingBySlug) {
   return (live || []).map((c) => {
@@ -123,8 +125,9 @@ export function mergeRows(live, existingBySlug) {
       lastName: c.lastName || '',
       url: slug ? `https://www.linkedin.com/in/${slug}` : '',
       email: prev.email || '',
-      company: prev.company || '',
-      position: prev.position || '',
+      // Current company + job title from the enriched profile; disk fallback.
+      company: c.company || prev.company || '',
+      position: c.title || prev.position || '',
       connectedOn: formatConnectedOn(c.connectedAt) || prev.connectedOn || '',
       memberId: c.memberNumber || prev.memberId || '',
       // Live wins: the enriched profile carries the current location; disk is the

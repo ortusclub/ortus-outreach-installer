@@ -100,7 +100,7 @@ function chunk(arr, size = BATCH_LIMIT) {
  * Returns a Map memberId → { id, properties }.
  */
 export async function lookupByMemberIds(memberIds,
-  { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN, onProgress = null } = {}) {
+  { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN, onProgress = null, slugByMemberId = null } = {}) {
   if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
   const out = new Map();
   // Two contacts can carry the same LinkedIn id — the old manual process made
@@ -173,6 +173,46 @@ export async function lookupByMemberIds(memberIds,
     }
     asked += batch.length;
     onProgress?.({ done: Math.min(asked, ids.length), total: ids.length });
+  }
+
+  // Third pass: the person is in HubSpot under their LinkedIn URL but with NO
+  // member id — Apollo / Sales-Nav / manual imports that carry `linkedinbio`
+  // and never a linkedin_membership_id. Neither pass above can see them, so the
+  // import used to create a DUPLICATE (measured on Kyle Andersen @ Pfizer,
+  // 2026-09-02: in HubSpot as kyle.andersen@pfizer.com, bio /in/kyle-andersen-…,
+  // member id blank → planned as new). Matching by the profile URL recovers the
+  // record; updateProperties then writes the missing member id onto it, so —
+  // like the synthetic pass — every run permanently repairs what it touches and
+  // this pass shrinks over time. Only runs when the caller supplies slugs.
+  const stillMissing = slugByMemberId ? ids.filter((id) => !all.has(id)) : [];
+  if (stillMissing.length) {
+    const getSlug = (id) => {
+      const s = slugByMemberId.get ? slugByMemberId.get(id) : slugByMemberId[id];
+      return String(s || '').trim().toLowerCase();
+    };
+    const slugToId = new Map();
+    for (const id of stillMissing) { const s = getSlug(id); if (s) slugToId.set(s, id); }
+    const slugs = [...slugToId.keys()];
+    // 2 URL variants per slug, so halve the batch to stay under the value cap.
+    for (const batch of chunk(slugs, Math.floor(BATCH_LIMIT / 2))) {
+      const values = batch.flatMap((s) => slugVariants(s));
+      const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/search`, token, {
+        filterGroups: [{ filters: [{ propertyName: 'linkedinbio', operator: 'IN', values }] }],
+        properties: MAGELLAN_PROPS,
+        limit: BATCH_LIMIT,
+      });
+      const json = await res.json();
+      for (const r of json.results || []) {
+        const m = String(r.properties?.linkedinbio || '').match(/\/in\/([^/?#,]+)/i);
+        const slug = m ? m[1].trim().toLowerCase() : '';
+        const mid = slug && slugToId.get(slug);
+        // Never displace a member-id or synthetic hit — those are more certain.
+        if (!mid || all.has(mid)) continue;
+        all.set(mid, [{ id: r.id, properties: r.properties || {} }]);
+      }
+      asked += batch.length;
+      onProgress?.({ done: Math.min(asked, ids.length), total: ids.length });
+    }
   }
 
   // Prefer the human-maintained record — the one with a real email — over the
