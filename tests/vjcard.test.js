@@ -224,9 +224,9 @@ test('controls: running cloud → Campaign Builder parity for pause/check/stop/c
   assert.ok(c.pause);
   assert.match(c.pause.onclick, /pauseCloudCampaignUI\('c1', false\)/);
   assert.equal(c.bulk.label, 'Run check now');
-  assert.match(c.bulk.onclick, /cloudCheckNow\('c1',this\)/);
+  assert.match(c.bulk.onclick, /promptCloudCheckScope\('c1',this\)/);
   assert.match(c.stop.onclick, /stopCloudCampaignUI\('c1'\)/);
-  assert.match(c.restart.onclick, /cloudCheckNow\('c1',this\)/);
+  assert.equal(c.restart, null, 'a check is not presented as an ambiguous Restart icon');
   assert.match(c.copy.onclick, /duplicateCampaign\('c1'\)/);
   assert.ok(c.extra.find((e) => e.kind === 'show'));
 });
@@ -235,7 +235,15 @@ test('controls: paused cloud uses Resume', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'c2', bucket: 'running', paused: true }));
   assert.match(c.pause.onclick, /openCampaignResumeDecision\('c2','sending','vm',this\)/);
   assert.equal(c.bulk.label, 'Run check now');
-  assert.match(c.bulk.onclick, /cloudCheckNow\('c2',this\)/);
+  assert.match(c.bulk.onclick, /promptCloudCheckScope\('c2',this\)/);
+});
+
+test('direct Campaign-card terminal status gets stopped controls, not live Pause', () => {
+  const c = vjCardControlsFor({ _cloud: true, id: 'c-stop', running: false,
+    engineStatus: 'cancelled', pendingCount: 12, totalTargets: 30, totalProcessed: 18 });
+  assert.equal(c.pause, null);
+  assert.equal(c.stop, null);
+  assert.ok(c.extra.find((e) => e.kind === 'play'), 'continue remains available for pending work');
 });
 
 test('interrupted local work uses the canonical stopped card and a resume decision', () => {
@@ -262,10 +270,8 @@ test('controls: monitoring cloud → check-now bulk + auto toggle + stop monitor
   // Same OPEN handler as a sending cloud campaign — monitoring is still live, so
   // it must bind card #2, not drop into the cockpit view.
   assert.match(c.open.onclick, /openRunningCampaignReadOnly\('c9'\)/);
-  // `this` is passed so the button disables while the check runs. cloudCheckNow
-  // itself routes to the local check when the campaign has been handed to this
-  // Mac — the ownership gate lives in that function, not in this onclick.
-  assert.match(c.bulk.onclick, /cloudCheckNow\('c9',this\)/);
+  // Both card surfaces open the same explicit campaign/all-accounts scope choice.
+  assert.match(c.bulk.onclick, /promptCloudCheckScope\('c9',this\)/);
   assert.ok(c.monAuto && c.monAuto.checked === true);
   assert.match(c.monAuto.onclick, /setCloudAutoChecks\('c9'/);
   assert.match(c.stop.tip, /monitoring/i);

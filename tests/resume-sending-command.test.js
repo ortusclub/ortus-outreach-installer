@@ -21,9 +21,9 @@ test('monitoring Resume asks whether to start sending or acceptance checking', (
 
 test('the large campaign card uses the same monitoring choice as the dashboard', () => {
   const start = APP.indexOf('function _adaptActiveCardControls');
-  const controls = APP.slice(start, APP.indexOf('function dismissCloudDone', start));
-  assert.match(controls, /openCampaignResumeDecision\(String\(_viewingCloudId \|\| status\.id\), 'sending-from-monitoring', 'vm', ctBtn\)/);
-  assert.doesNotMatch(controls, /restartCloudCampaignUI\(_viewingCloudId, false\)/);
+  const controls = APP.slice(start, APP.indexOf('// Cloud "Open"', start));
+  assert.match(controls, /_renderVjCardControls\(card, status, \{ active: true \}\)/);
+  assert.doesNotMatch(controls, /_viewingCloudId/);
 });
 
 test('the UI sends resumeSending=true to the local API', () => {
