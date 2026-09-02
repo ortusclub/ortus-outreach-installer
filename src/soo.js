@@ -24,6 +24,14 @@ export const SOO_TIMEOUT_MS = 25_000;
 // in 5, and separately 4 in a row.
 export const SOO_ATTEMPTS = 3;
 const SOO_RETRY_BACKOFF_MS = [800, 2_000];
+export const SOO_STATUS_CACHE_MS = 5 * 60 * 1000;
+
+// All server consumers share one live request. Without this, opening the
+// account picker while another SoO-backed panel was loading started another
+// 1 MB Apps Script read. A rejected read is cleared in `finally`, so recovery
+// is never wedged behind a failed promise.
+let _inflight = null;
+let _statusCache = null;
 
 function makeError(message, code) {
   const err = new Error(message);
@@ -43,7 +51,14 @@ const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  *
  * The typed `.code` survives the loop — callers branch on it.
  */
-export async function fetchSoOData({ attempts = SOO_ATTEMPTS, sleep = _sleep } = {}) {
+export async function fetchSoOData({ attempts = SOO_ATTEMPTS, sleep = _sleep, random = Math.random } = {}) {
+  if (_inflight) return _inflight;
+  _inflight = fetchSoODataWithRetry({ attempts, sleep, random })
+    .finally(() => { _inflight = null; });
+  return _inflight;
+}
+
+async function fetchSoODataWithRetry({ attempts, sleep, random }) {
   let lastErr;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
@@ -51,10 +66,44 @@ export async function fetchSoOData({ attempts = SOO_ATTEMPTS, sleep = _sleep } =
     } catch (err) {
       lastErr = err;
       if (attempt >= attempts) break;
-      await sleep(SOO_RETRY_BACKOFF_MS[Math.min(attempt - 1, SOO_RETRY_BACKOFF_MS.length - 1)]);
+      const base = SOO_RETRY_BACKOFF_MS[Math.min(attempt - 1, SOO_RETRY_BACKOFF_MS.length - 1)];
+      // Operators tend to open/refresh together. Jitter prevents every app from
+      // retrying the shared Google account at the same instant.
+      await sleep(Math.round(base * (0.75 + (random() * 0.5))));
     }
   }
   throw lastErr;
+}
+
+/**
+ * Cached status-reader used by /api/soo-status.
+ *
+ * A stale successful snapshot is more truthful and safer than replacing the
+ * entire roster with "NOT IN SoO" during a Google outage. `force` skips only
+ * the fresh-cache check; it still joins an already-running request.
+ */
+export async function fetchSoOStatusData({ force = false, now = Date.now, ...fetchOpts } = {}) {
+  const at = Number(now());
+  if (!force && _statusCache && at - _statusCache.fetchedAt < SOO_STATUS_CACHE_MS) {
+    return { data: _statusCache.data, state: 'fresh', fetchedAt: _statusCache.fetchedAt };
+  }
+  try {
+    const data = await fetchSoOData(fetchOpts);
+    _statusCache = { data, fetchedAt: Number(now()) };
+    return { data, state: 'fresh', fetchedAt: _statusCache.fetchedAt };
+  } catch (error) {
+    if (_statusCache) {
+      return { data: _statusCache.data, state: 'stale', fetchedAt: _statusCache.fetchedAt, error };
+    }
+    throw error;
+  }
+}
+
+// Test-only reset: exported rather than relying on module-cache tricks, which
+// can hide a stuck in-flight promise or a stale snapshot between test cases.
+export function resetSoOStatusCacheForTests() {
+  _inflight = null;
+  _statusCache = null;
 }
 
 async function fetchSoOOnce() {

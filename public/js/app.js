@@ -1983,24 +1983,30 @@ let sheetColumns = ['firstName', 'lastName', 'company', 'title'];
 
 // SoO (State of Operations) data — email → status mapping
 let sooData = {}; // { 'email@ortus.com': { linkedinCredits: 'In Use', linkedinUser: '...', ... } }
-let sooLoadState = 'idle'; // 'idle' | 'loading' | 'ok' | 'error'
+let sooLoadState = 'idle'; // 'idle' | 'loading' | 'ok' | 'stale' | 'error'
 
-function setSoOErrorState(isError) {
+function setSoOErrorState(isError, message = 'SoO unavailable — click refresh to try again') {
   const pill = document.getElementById('rp-soo-error');
-  if (pill) pill.hidden = !isError;
+  if (pill) {
+    pill.hidden = !isError;
+    if (isError) pill.textContent = message;
+  }
 }
 
-async function loadSoOStatus() {
+async function loadSoOStatus({ force = false } = {}) {
   sooLoadState = 'loading';
   try {
-    const res = await fetch('/api/soo-status');
+    const res = await fetch(force ? '/api/soo-status?refresh=1' : '/api/soo-status');
     // Server returns 503 + { error, errorCode } on any failure now.
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
       try { const d = await res.json(); if (d && d.error) detail = `${d.errorCode || 'ERR'}: ${d.error}`; } catch {}
       console.warn('[SoO] Endpoint error:', detail);
-      sooLoadState = 'error';
-      setSoOErrorState(true);
+      const hasLastGood = Object.keys(sooData).length > 0;
+      sooLoadState = hasLastGood ? 'stale' : 'error';
+      setSoOErrorState(true, hasLastGood
+        ? 'Showing the last saved SoO — Google is temporarily unavailable'
+        : 'SoO unavailable — account status is unknown');
       return;
     }
     const data = await res.json();
@@ -2008,13 +2014,17 @@ async function loadSoOStatus() {
     for (const acct of (data.accounts || [])) {
       if (acct.email) sooData[acct.email.toLowerCase()] = acct;
     }
-    sooLoadState = 'ok';
-    setSoOErrorState(false);
+    const stale = data._sooMeta && data._sooMeta.state === 'stale';
+    sooLoadState = stale ? 'stale' : 'ok';
+    setSoOErrorState(stale, 'Showing the last saved SoO — Google is temporarily unavailable');
     console.log(`[SoO] Loaded ${Object.keys(sooData).length} account statuses`);
   } catch (err) {
     console.warn('[SoO] Failed to load:', err.message);
-    sooLoadState = 'error';
-    setSoOErrorState(true);
+    const hasLastGood = Object.keys(sooData).length > 0;
+    sooLoadState = hasLastGood ? 'stale' : 'error';
+    setSoOErrorState(true, hasLastGood
+      ? 'Showing the last saved SoO — Google is temporarily unavailable'
+      : 'SoO unavailable — account status is unknown');
   }
 }
 
@@ -2151,7 +2161,7 @@ async function refreshSoO() {
     bar.style.width = '100%';
   }
   try {
-    await loadSoOStatus();
+    await loadSoOStatus({ force: true });
     if (allProfilesData.length > 0) renderProfiles(allProfilesData);
     updateChipCounts();
     updateGreeting();
@@ -2340,7 +2350,9 @@ async function loadProfiles() {
 
     // SoO loads in background — re-render profiles + refresh counts when it arrives
     loadSoOStatus().then(() => {
-      if (Object.keys(sooData).length > 0) renderProfiles(allProfilesData);
+      // Repaint on success AND failure: on an initial outage the cards must
+      // change from CHECKING SoO to SoO UNAVAILABLE, never NOT IN SoO.
+      renderProfiles(allProfilesData);
       // v2.94.x: also refresh the primary-source picker + read-only labels so a
       // restored GoLogin primary shows its badges/name once SoO arrives.
       if (typeof renderPrimarySourcePicker === 'function') renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
@@ -2453,7 +2465,7 @@ function renderProfiles(profiles) {
       // above wrong-workspace because switching campaign type brings it back.
       const foreignBump = p.available === false ? 10
         : (Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode)) ? 5 : 0;
-      if (_breakdown) {
+      if (_breakdown && soo) {
         const br = classifyAccountChannels(soo);
         // free-first: usable (0) → has-status-but-none-free (1) → blocked (2).
         return { p, i, soo, br, rank: (br.blocked ? 2 : (br.anyFree ? 0 : 1)) + foreignBump };
@@ -2489,9 +2501,15 @@ function renderProfiles(profiles) {
     // precisely to keep Ortus operators off them, which must not be enforced
     // against the team they were handed to.
     const _nonOrtusRoster = !_foreign && ((!!p.account && p.account !== 'ortus') || p.guest === true);
+    const _showBreakdown = _breakdown && !!_soo;
+    // Before the first successful snapshot, absence is UNKNOWN rather than
+    // proof that this account is missing from SoO. Keep Ortus accounts locked
+    // until their credits/restrictions can actually be checked. A stale snapshot
+    // remains usable and is visibly labelled at the panel level.
+    const _sooUnknown = !_soo && (sooLoadState === 'idle' || sooLoadState === 'loading' || sooLoadState === 'error');
     const _sooLock = _nonOrtusRoster
       ? false
-      : (_breakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked'));
+      : (_sooUnknown || (_showBreakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked')));
     const _locked = _foreign || _wrongMode || _sooLock;
     // Defensive: a restored preset/schedule must not keep a now-unusable account
     // selected — drop it (before building the tile so `checked` reflects reality).
@@ -2512,7 +2530,7 @@ function renderProfiles(profiles) {
       : '';
 
     let _classes, _inner;
-    if (_breakdown) {
+    if (_showBreakdown) {
       // Variant C — clean per-channel breakdown: thin accent (green if any channel
       // free) + email + a 3-cell row showing each channel's RAW SoO status verbatim.
       const _cells = (_br.channels || []).map((c) => {
@@ -2566,7 +2584,11 @@ function renderProfiles(profiles) {
       // sheet. Without a row there is no first name, no credits and no assignee, so
       // the tile CANNOT be trusted — say so instead of defaulting to a green FREE.
       const _noSoo = !_soo;
-      const _sm = _noSoo ? { cls: 'nosoo', word: 'NOT IN SoO' } : (_SMAP[_state.state] || _SMAP.free);
+      const _sooUnavailable = _noSoo && sooLoadState === 'error';
+      const _sooPending = _noSoo && (sooLoadState === 'idle' || sooLoadState === 'loading');
+      const _sm = _noSoo
+        ? { cls: 'nosoo', word: _sooUnavailable ? 'SoO UNAVAILABLE' : (_sooPending ? 'CHECKING SoO' : 'NOT IN SoO') }
+        : (_SMAP[_state.state] || _SMAP.free);
       // 'blocked' worded from what the SoO actually says (no invented copy):
       //   restricted → LinkedIn block · na → CC/credit = NA · unavailable → Used/-/Partial.
       const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
@@ -2584,7 +2606,9 @@ function renderProfiles(profiles) {
             : (_noSoo ? _sm.word : ((_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word));
       const _statCls = (_foreign || _wrongMode) ? 'stop' : _otherRosterVerdict ? 'nosoo' : _sm.cls;
       let _sub;
-      if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
+      if (_sooUnavailable) _sub = 'Could not check the SoO — status unknown and selection disabled.';
+      else if (_sooPending) _sub = 'Checking the SoO now — selection stays disabled until confirmed.';
+      else if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
       else
       // v2.112.27: operator asked to drop "who uses who" from the picker for now —
       // show bare states (the who is still in classifyAccountState/the log if needed).
@@ -20119,7 +20143,7 @@ async function reloadPrimarySourceSoO() {
   if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
   if (status) { status.textContent = ''; status.classList.remove('err'); }
   try {
-    await loadSoOStatus();
+    await loadSoOStatus({ force: true });
     if (allProfilesData && allProfilesData.length) renderProfiles(allProfilesData);
     renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
     refreshPrimarySourceLabels();
