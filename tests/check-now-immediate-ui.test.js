@@ -14,9 +14,9 @@ function body(name, nextName) {
 test('VM check paints the requested state before awaiting the engine', () => {
   const fn = body('cloudCheckNow', 'cloudCheckLocal');
   const mark = fn.indexOf('_cloudCheckAsked.set(id, askedAt)');
-  const render = fn.indexOf('renderCampaignsBoard()', mark);
-  const request = fn.indexOf('await fetch(', render);
-  assert.ok(mark >= 0 && render > mark && request > render,
+  const paint = fn.indexOf("_paintAcceptanceCheckStartingNow(id, 'vm')", mark);
+  const request = fn.indexOf('await fetch(', paint);
+  assert.ok(mark >= 0 && paint > mark && request > paint,
     'the banner changes immediately, before the slow check-now request resolves');
 });
 
@@ -37,8 +37,18 @@ test('manual check lock covers the full worker recovery window', () => {
 test('local check paints immediately and clears its optimistic marker when done', () => {
   const fn = body('cloudCheckLocal', null);
   const mark = fn.indexOf('_cloudCheckAsked.set(id, askedAt)');
-  const render = fn.indexOf('renderCampaignsBoard()', mark);
-  const request = fn.indexOf("fetch('/api/bulk-check-now'", render);
-  assert.ok(mark >= 0 && render > mark && request > render);
+  const paint = fn.indexOf("_paintAcceptanceCheckStartingNow(id, 'local')", mark);
+  const request = fn.indexOf("fetch('/api/bulk-check-now'", paint);
+  assert.ok(mark >= 0 && paint > mark && request > paint);
   assert.match(fn, /finally\s*\{[\s\S]*?_cloudCheckAsked\.get\(id\) === askedAt[\s\S]*?_cloudCheckAsked\.delete\(id\)[\s\S]*?renderCampaignsBoard\(\)/);
+});
+
+test('the immediate check painter updates both full card and dashboard copy', () => {
+  const start = src.indexOf('function _paintAcceptanceCheckStartingNow');
+  const end = src.indexOf('// Task 3 Part B', start);
+  const fn = src.slice(start, end);
+  assert.match(fn, /monitoringCheckInProgress: true/);
+  assert.match(fn, /renderActiveCard\(window\.__cloudActiveStatus\)/);
+  assert.match(fn, /renderCampaignsBoard\(\)/);
+  assert.match(fn, /Sending stays stopped/);
 });

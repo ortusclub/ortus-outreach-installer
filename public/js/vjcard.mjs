@@ -277,7 +277,12 @@ export function vjCardControlsFor(status = {}) {
   const id = _esc(String(s.id || ''));
   const rawId = _esc(String(s.rawId || String(s.id || '')));
   const monitor = s.state === 'monitoring';
-  const done = s.state === 'done';
+  // The Dashboard adapter supplies state:'done'. The Campaign card receives
+  // the engine's direct status shape instead, where a stopped run is expressed
+  // as running:false + engineStatus. Normalize that distinction here so sharing
+  // the renderer does not accidentally give a cancelled campaign live controls.
+  const terminalEngine = ['completed', 'cancelled', 'error', 'failed', 'stopped'].includes(String(s.engineStatus || '').toLowerCase());
+  const done = s.state === 'done' || (!s.running && terminalEngine);
   const queued = s.state === 'queued';
   const interrupted = s.state === 'interrupted' || !!s.interrupted;
   const dailyWait = s.state === 'waiting_daily_reset';
@@ -348,11 +353,10 @@ export function vjCardControlsFor(status = {}) {
       ? `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending','vm',this)`
       : `pauseCloudCampaignUI('${id}', false)` };
     c.stop = { tip: 'Stop', onclick: `stopCloudCampaignUI('${id}')` };
-    // Keep the compact circular-arrow shortcut, but also expose the same
-    // explicit action shown in Campaign Builder. An operator should not have
-    // to guess that an unlabelled icon means "check pending connections".
-    c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}',this)` };
-    c.restart = { onclick: `cloudCheckNow('${id}',this)` };
+    // A connection check needs an explicit scope choice. Both the Dashboard
+    // card and Campaign card render this same command, so one surface cannot
+    // silently start a different kind of check from the other.
+    c.bulk = { label: 'Run check now', onclick: `window.promptCloudCheckScope && window.promptCloudCheckScope('${id}',this)` };
     c.copy = { onclick: `duplicateCampaign('${id}')` };
     c.extra.push({ tip: 'Show', kind: 'show', onclick: `openCloudCampaignView('${id}','${id}')` });
   } else if (monitor && !cloud) {
@@ -362,14 +366,14 @@ export function vjCardControlsFor(status = {}) {
     const remaining = Number(s.pending) > 0
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
-      c.extra.push({ tip: s.resumeAt ? 'Resume now' : 'Resume sending', kind: 'play', once: true,
+      c.extra.push({ tip: 'Choose what resumes', kind: 'play', once: true,
         onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending-from-monitoring','local',this)` });
     }
   } else if (monitor && cloud) {
     c.stop = s.monitoringCheckInProgress
       ? { tip: 'Stop check', onclick: `stopCloudCheckUI('${id}',this)` }
       : { tip: 'Stop monitoring', onclick: `stopCloudCampaignUI('${id}')` };
-    c.bulk = { label: 'Run check now', onclick: `cloudCheckNow('${id}',this)` };
+    c.bulk = { label: 'Run check now', onclick: `window.promptCloudCheckScope && window.promptCloudCheckScope('${id}',this)` };
     c.monAuto = { checked: s.autoChecksEnabled !== false, onclick: `setCloudAutoChecks('${id}',this.checked,this)` };
     // A campaign that switched to monitoring because nothing could send still has
     // leads waiting. The engine already accepts a restart in this state (it only
@@ -379,7 +383,7 @@ export function vjCardControlsFor(status = {}) {
     const remaining = Number(s.pending) > 0
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
-      c.extra.push({ tip: s.resumeAt ? 'Resume now' : 'Resume sending', kind: 'play', once: true,
+      c.extra.push({ tip: 'Choose what resumes', kind: 'play', once: true,
         onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending-from-monitoring','vm',this)` });
     }
   } else if (done) {

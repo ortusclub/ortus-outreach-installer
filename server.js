@@ -2307,6 +2307,9 @@ app.post('/api/campaign/cloud/:id/restart', async (req, res) => {
     fromStart: !!(req.body && req.body.fromStart),
     dailyLimit: req.body && req.body.dailyLimit,
     startAt: startAt || undefined,
+    // This is a phase command, not a generic restart. The VM must retire or
+    // abort acceptance checking before it returns the campaign to sending.
+    resumeSending: !!(req.body && req.body.resumeSending),
   });
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);

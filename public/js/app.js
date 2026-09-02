@@ -9434,143 +9434,14 @@ function _startCloudCardPoll() {
 function stopViewingCloudCampaign() { _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); const _ap = document.getElementById('cloud-accounts-panel'); if (_ap) { _ap.hidden = true; _ap.innerHTML = ''; } }
 window.stopViewingCloudCampaign = stopViewingCloudCampaign;
 
-// Adapt #active-card's controls when it's showing a cloud campaign: hide the
-// local-only Pause/Restart (cloud has no pause/restart), and give a monitoring
-// VM campaign a Check-now in the dock (wired to the engine endpoint; degrades to
-// "engine update pending" until PR #1 deploys). Stop is handled in
-// dashStopActive (it routes to the engine when _viewingCloudId is set). Only
-// forces state when cloud; releases the override otherwise so the local card is
-// untouched.
+// The large Campaign-tab card delegates every action to the same renderer as
+// the expanded Dashboard card. It only adds the details chevron required by
+// this layout; campaign behavior and routing remain shared.
 function _adaptActiveCardControls(card, status) {
-  const cloud = !!_viewingCloudId;
-  card.classList.toggle('cloud-view', cloud);
-  // Pause/Resume now works for cloud too (engine resume route) — show it for
-  // both. Its onclick is dashPauseActive(), which routes to the VM pause/resume
-  // when viewing a cloud campaign. (Restart stays local-only — see below.)
-  const pauseBtn = document.getElementById('dock-active-pause');
-  if (pauseBtn) pauseBtn.style.removeProperty('display');
-  const dock = document.getElementById('dock-active');
-  const restartBtn = dock ? dock.querySelector('[data-tip="Restart"]') : null;
-  if (restartBtn) { if (cloud) restartBtn.style.display = 'none'; else restartBtn.style.removeProperty('display'); }
-
-  // ▶ Continue / ⟲ Restart for a STOPPED (cancelled/errored) cloud campaign —
-  // the board strip had these but the live-status card didn't (operator feedback
-  // 2026-07-24: "campaign stopped but no play icon in the live status view").
-  // In that state Pause/Stop are meaningless → swap the cluster.
-  const _stoppedCloud = cloud && status && !status.running && !status.queued
-    && status.state !== 'monitoring' && ['cancelled', 'error'].includes(String(status.engineStatus || ''));
-  // ▶ Resume sending — a connect campaign that was stopped with "keep checking"
-  // sits in 'monitoring' with its unsent leads still pending (37 sent · 116
-  // pending). Pause/Stop don't apply and _stoppedCloud excludes monitoring, so
-  // there was no way back: the remaining connects could never be sent. This adds
-  // the Continue button (and only that — no "restart from the beginning", which
-  // here would mean re-sending everything) whenever there is genuinely work left.
-  const _pendingLeft = Number((status && status.pendingCount) || 0);
-  const _resumeOnly = cloud && !!status && !status.running && !status.queued && !_stoppedCloud
-    && /^connect/.test(String(status.mode || ''))
-    && _pendingLeft > 0
-    && ['monitoring', 'done'].includes(String(status.engineStatus || ''));
-  // Same for a campaign monitoring on THIS Mac: its unsent leads are just as
-  // stranded as a VM campaign's, but the local card offered no way back at all
-  // (operator, 2026-08-28: "for a lm campaign there is no Resume sending
-  // button"). The decision sheet is the local one.
-  const _localMonitoring = !cloud && !!status && !status.running && !status.queued
-    && (status.state === 'monitoring' || !!status.monitoring || !!status.monitoringPhase)
-    && _pendingLeft > 0;
-  const _resumeAny = _resumeOnly || _localMonitoring;
-  let ctBtn = document.getElementById('dock-cloud-continue');
-  let rsBtn = document.getElementById('dock-cloud-restart');
-  const controlsRow = card ? card.querySelector('.vj-controls') : null;
-  if ((_stoppedCloud || _resumeAny) && dock) {
-    if (!ctBtn) {
-      // A labelled pill, not a bare ▶: beside the red square it was unreadable.
-      ctBtn = document.createElement('button');
-      ctBtn.id = 'dock-cloud-continue';
-      ctBtn.className = 'btn-pill go';
-      ctBtn.textContent = 'Resume sending';
-      const stopPill = document.getElementById('btn-active-stop');
-      if (controlsRow) controlsRow.insertBefore(ctBtn, stopPill || null);
-      else dock.insertBefore(ctBtn, dock.firstChild);
-    }
-    if (!rsBtn) {
-      rsBtn = document.createElement('button');
-      rsBtn.id = 'dock-cloud-restart';
-      rsBtn.className = 'dock-btn';
-      rsBtn.setAttribute('data-tip', 'Restart from the beginning'); rsBtn.setAttribute('aria-label', 'Restart from the beginning');
-      rsBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36L3 16"/><path d="M3 21v-5h5"/></svg>';
-      dock.insertBefore(rsBtn, ctBtn.nextSibling);
-    }
-    ctBtn.onclick = _localMonitoring
-      ? () => { try { window.openCampaignResumeDecision(String(status.id || 'local-active'), 'sending-from-monitoring', 'local', ctBtn); } catch (_) { /* */ } }
-      : () => { try { window.restartCloudCampaignUI(_viewingCloudId, false); } catch (_) { /* */ } };
-    rsBtn.onclick = () => { try { window.restartCloudCampaignUI(_viewingCloudId, true); } catch (_) { /* */ } };
-    const _resumeTip = `Resume sending — ${_pendingLeft} still to go`;
-    ctBtn.textContent = _resumeAny ? 'Resume sending' : 'Continue where it left off';
-    ctBtn.setAttribute('title', _resumeAny ? _resumeTip : 'Continue where it left off');
-    ctBtn.setAttribute('aria-label', _resumeAny ? _resumeTip : 'Continue where it left off');
-    ctBtn.style.display = '';
-    // Restart-from-the-beginning only makes sense for a genuinely stopped run.
-    // On a monitoring campaign it would re-send every lead — never offer it.
-    rsBtn.style.display = _resumeAny ? 'none' : '';
-    // Monitoring keeps its own Pause/Stop (the checks are still running); a
-    // stopped campaign has nothing to pause or stop.
-    if (!_resumeAny) {
-      if (pauseBtn) pauseBtn.style.display = 'none';
-      const stopBtn = document.getElementById('btn-active-stop');
-      if (stopBtn) stopBtn.style.display = 'none';
-    } else {
-      const stopBtn = document.getElementById('btn-active-stop');
-      if (stopBtn) stopBtn.style.removeProperty('display');
-    }
-  } else {
-    if (ctBtn) ctBtn.style.display = 'none';
-    if (rsBtn) rsBtn.style.display = 'none';
-    if (!cloud || (status && (status.running || status.queued || status.state === 'monitoring'))) {
-      const stopBtn = document.getElementById('btn-active-stop');
-      if (stopBtn) stopBtn.style.removeProperty('display');
-    }
-  }
-  let cn = document.getElementById('dock-cloud-checknow');
-  // Check now is available in EVERY state of a cloud connect_and_* campaign —
-  // including one stopped overall (cancelled/error/done). The engine treats a
-  // sweep outside 'monitoring' as a one-shot: it checks acceptances + fires the
-  // intro/DM backlog without resurrecting recurring monitoring or resuming sends.
-  const _cnMode = String((status && status.mode) || '');
-  const wantCheck = cloud && !!status && !!dock
-    && (_cnMode === 'connect_and_introduce' || _cnMode === 'connect_and_message');
-  if (wantCheck) {
-    if (!cn) {
-      cn = document.createElement('button');
-      cn.id = 'dock-cloud-checknow';
-      cn.className = 'dock-btn';
-      cn.setAttribute('data-tip', 'Check now'); cn.setAttribute('aria-label', 'Check now');
-      cn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>';
-      dock.insertBefore(cn, dock.firstChild);
-    }
-    cn.onclick = () => { try { window.promptCloudCheckScope(_viewingCloudId, cn); } catch (_) { /* */ } };
-    cn.style.display = '';
-  } else if (cn) { cn.style.display = 'none'; }
-
-  // 👁 Show live — watch THIS cloud campaign's browser (parity with card #1's
-  // strip button). Shown whenever card #2 is a cloud campaign (any state); the
-  // viewer itself handles the idle case. A green LIVE dot lights when the engine
-  // reports an active browser this poll (status.live, folded in via component 5).
-  let sh = document.getElementById('dock-cloud-show');
-  const wantShow = cloud && !!dock;
-  if (wantShow) {
-    if (!sh) {
-      sh = document.createElement('button');
-      sh.id = 'dock-cloud-show';
-      sh.className = 'dock-btn';
-      sh.setAttribute('data-tip', 'Show live'); sh.setAttribute('aria-label', 'Show live');
-      sh.innerHTML = '<span class="live-dot"></span>👁';
-      dock.insertBefore(sh, dock.firstChild);
-    }
-    const _lbl = String((status && (status.name || status.id)) || '').replace(/['"\\<>]/g, '');
-    sh.onclick = () => { try { openCloudCampaignView(String(_viewingCloudId), _lbl); } catch (_) { /* */ } };
-    sh.classList.toggle('live-on', !!(status && status.live));
-    sh.style.display = '';
-  } else if (sh) { sh.style.display = 'none'; }
+  // Campaign identity comes from the rendered status, never from the temporary
+  // navigation flag. This is the same renderer fillVjCard uses on Dashboard.
+  card.classList.toggle('cloud-view', !!(status && status._cloud));
+  _renderVjCardControls(card, status, { active: true });
 }
 
 // Cloud "Open" — go to the campaign tab and show THIS campaign's live status
@@ -10218,11 +10089,12 @@ function _fillVjMonitorHero(root, status) {
   }
 }
 
-function _vjControlsHtml(c, status) {
-  const dib = (svg, tip, onclick, cls = '') => `<button type="button" class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
+function _vjControlsHtml(c, status, options = {}) {
+  const active = !!options.active;
+  const dib = (svg, tip, onclick, cls = '', id = '') => `<button type="button"${id ? ` id="${id}"` : ''} class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
   let dock = '';
   const interrupted = status && (status.state === 'interrupted' || status.interrupted || status.waitingForLocal);
-  if (c.pause && !interrupted) dock += dib(status.paused ? V3_SVG_PLAY : V3_SVG_PAUSE, status.paused ? 'Resume' : 'Pause', c.pause.onclick, c.pause.once ? 'one-shot' : '');
+  if (c.pause && !interrupted) dock += dib(status.paused ? V3_SVG_PLAY : V3_SVG_PAUSE, status.paused ? 'Resume' : 'Pause', c.pause.onclick, c.pause.once ? 'one-shot' : '', active ? 'dock-active-pause' : '');
   let actions = '';
   if (c.restart) actions += dib(V3_SVG_RESTART, 'Restart', c.restart.onclick);
   if (c.copy) actions += dib(V3_SVG_COPY, 'Copy to queue', c.copy.onclick);
@@ -10248,10 +10120,16 @@ function _vjControlsHtml(c, status) {
   // End campaign); a bare "Stop" becomes "Stop campaign".
   const stopTip = (c.stop && c.stop.tip) || 'Stop';
   const stopHtml = c.stop
-    ? `<button class="btn-pill stop" onclick="${c.stop.onclick}">${escHtml(stopTip === 'Stop' ? 'Stop campaign' : stopTip)}</button>`
+    ? `<button class="btn-pill stop"${active ? ' id="btn-active-stop"' : ''} onclick="${c.stop.onclick}">${escHtml(stopTip === 'Stop' ? 'Stop campaign' : stopTip)}</button>`
     : '';
   const openHtml = c.open ? `<button class="btn-pill" onclick="${c.open.onclick}">Open campaign tab</button>` : '';
   const sheetHtml = c.sheet ? `<button class="btn-pill" onclick="${c.sheet.onclick}">Open sheet</button>` : '';
+  const detailsHtml = active
+    ? `<button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleActiveDetails(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>`
+    : '';
+  const autoHtml = c.monAuto
+    ? `<label class="sn-mon-auto" title="When off, automatic acceptance checks stay off; Run check now still works."><input type="checkbox" ${c.monAuto.checked ? 'checked' : ''} onclick="event.stopPropagation()" onchange="${c.monAuto.onclick}"> Auto checks</label>`
+    : '';
   const resumeHtml = interrupted && c.pause
     ? `<button class="btn-pill go one-shot" onclick="${c.pause.onclick}">Resume ${status.interruption?.phase === 'monitoring' || status.monitoringPhase ? 'checks' : 'campaign'}</button>`
     : '';
@@ -10262,9 +10140,52 @@ function _vjControlsHtml(c, status) {
     ? `<button class="btn-pill delete-forever" onclick="${c.deleteForever.onclick}">Delete for good</button>`
     : '';
   const dockHtml = (dock || actions)
-    ? `<div class="dock" role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`
+    ? `<div class="dock"${active ? ' id="dock-active"' : ''} role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`
     : '';
-  return `${resumeHtml}${resumeSendingHtml}${deleteForeverHtml}${openHtml}${sheetHtml}${goHtml}${stopHtml}${dockHtml}`;
+  return `${resumeHtml}${resumeSendingHtml}${deleteForeverHtml}${openHtml}${detailsHtml}${sheetHtml}${goHtml}${autoHtml}${stopHtml}${dockHtml}`;
+}
+
+// One renderer owns the controls on BOTH campaign surfaces. The Dashboard's
+// expanded card and the Campaign tab's large card may have different layouts,
+// but Pause, Resume, Stop, Check, Copy, Open and monitoring controls must always
+// come from the same state matrix and carry the same campaign id.
+function _renderVjCardControls(root, status, options = {}) {
+  if (!root || !status) return null;
+  const c = vjCardControlsFor(status);
+  const controls = root.querySelector('.vj-controls');
+  if (controls) controls.innerHTML = _vjControlsHtml(c, status, options);
+
+  const logActs = root.querySelector('.vj-log-acts');
+  if (logActs) {
+    logActs.querySelectorAll('.vj-log-act').forEach((b) => {
+      const txt = (b.textContent || '').toLowerCase();
+      if (b.getAttribute('data-f') === 'wiz-log-more' || b.id === 'wiz-log-more') {
+        b.style.display = options.active ? '' : 'none';
+        return;
+      }
+      if (txt.includes('copy')) b.setAttribute('onclick', options.active ? 'window.dashCopyLog(this)' : 'copyVjCardLog(this)');
+      // Open sheet has one canonical, campaign-bound home in the main row.
+      if (txt.includes('open sheet')) b.style.display = 'none';
+    });
+  }
+
+  const bulkWrap = root.querySelector('.vj-bulk');
+  if (bulkWrap) {
+    bulkWrap.style.display = c.bulk ? '' : 'none';
+    const bb = root.querySelector('[data-f="vj-bulk-btn"], #vj-bulk-btn');
+    if (bb && c.bulk) {
+      bb.setAttribute('onclick', c.bulk.onclick);
+      bb.disabled = !!status.monitoringCheckInProgress;
+      bb.setAttribute('aria-disabled', bb.disabled ? 'true' : 'false');
+    }
+    const lbl = root.querySelector('[data-f="vj-bulk-btn-label"], #vj-bulk-btn-label');
+    if (lbl && c.bulk) lbl.textContent = status.monitoringCheckInProgress ? 'Check in progress' : (c.bulk.label || 'Run check now');
+  }
+
+  if (options.active && typeof _setActiveDetails === 'function') {
+    _setActiveDetails(root.classList.contains('is-detailed'));
+  }
+  return c;
 }
 
 // The banner is the SAME .vj-live band, promoted. One component, four tones, so
@@ -10661,26 +10582,9 @@ function fillVjCard(root, status) {
     });
   }
 
-  // Controls (rewired per-campaign; the cloned onclicks would hit the singleton).
-  const c = vjCardControlsFor(status);
-  const controls = root.querySelector('.vj-controls');
-  if (controls) controls.innerHTML = _vjControlsHtml(c, status);
-  const bulkWrap = root.querySelector('.vj-bulk');
-  if (bulkWrap) {
-    if (c.bulk) {
-      bulkWrap.style.display = '';
-      const bb = root.querySelector('[data-f="vj-bulk-btn"]');
-      if (bb) {
-        bb.setAttribute('onclick', c.bulk.onclick);
-        bb.disabled = !!status.monitoringCheckInProgress;
-        bb.setAttribute('aria-disabled', bb.disabled ? 'true' : 'false');
-      }
-      const lbl = root.querySelector('[data-f="vj-bulk-btn-label"]');
-      if (lbl) lbl.textContent = status.monitoringCheckInProgress ? 'Check in progress' : (c.bulk.label || 'Run check now');
-    } else {
-      bulkWrap.style.display = 'none';
-    }
-  }
+  // The Campaign tab calls this same renderer. State and campaign identity now
+  // decide every action once; the surface displaying the card does not.
+  _renderVjCardControls(root, status);
 }
 
 // Copy an expanded strip card's OWN log (not the singleton's __activeFullLogs).
@@ -13464,7 +13368,7 @@ window.restartLocalFromItem = restartLocalFromItem;
 // startAt (ISO, optional): schedule the restart instead of running it now. The
 // engine parks the campaign in 'scheduled' behind a durable task and restarts it
 // itself at that instant — this app can be closed.
-async function restartCloudCampaignUI(id, fromStart, startAt) {
+async function restartCloudCampaignUI(id, fromStart, startAt, resumeSending = false) {
   // Say it before the VM is asked, exactly like the stop does. The card is
   // log-driven, and this line classifies as 'sending-resumed' (live-log-banner),
   // so it also switches the card off the monitoring view immediately — the
@@ -13484,7 +13388,12 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     const dailyLimit = Number.isFinite(dlRaw) && dlRaw > 0 ? dlRaw : undefined;
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/restart`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromStart: !!fromStart, ...(dailyLimit ? { dailyLimit } : {}), ...(startAt ? { startAt } : {}) }),
+      body: JSON.stringify({
+        fromStart: !!fromStart,
+        resumeSending: !!resumeSending,
+        ...(dailyLimit ? { dailyLimit } : {}),
+        ...(startAt ? { startAt } : {}),
+      }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
@@ -13530,6 +13439,34 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
 }
 window.restartCloudCampaignUI = restartCloudCampaignUI;
 
+// Manual acceptance checks are intentionally optimistic in the UI: the click
+// must replace the old "waiting" card before a cold VM or GoLogin browser has
+// had time to answer. The next server poll replaces this temporary description
+// with measured progress.
+function _paintAcceptanceCheckStartingNow(id, current = 'vm') {
+  const action = {
+    phase: 'checking',
+    label: 'Starting acceptance check now',
+    sub: current === 'vm'
+      ? 'The Cloud VM is opening the campaign accounts.'
+      : 'This Mac is opening the campaign accounts.',
+    safety: 'Sending stays stopped. Only accepted connections are being checked.',
+    facts: [['Requested', 'now'], ['Sending', 'stays stopped'], ['Checking', 'starting']],
+    milestones: [['Choice', 'acceptance checking', 'done'], ['Browser', 'opening now', 'active'], ['Results', 'reported here', 'future']],
+  };
+  const active = window.__cloudActiveStatus;
+  if (active && String(active.id || '') === String(id || '')) {
+    window.__cloudActiveStatus = {
+      ...active,
+      monitoringCheckInProgress: true,
+      monitorCheckStatus: 'starting',
+      currentAction: action,
+    };
+    try { if (typeof renderActiveCard === 'function') renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* board copy still repaints */ }
+  }
+  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+}
+
 // Task 3 Part B — cloud monitoring controls (parity with local ⚡ Check now /
 // Automatic checks). Degrade gracefully until the engine ships the routes: a
 // 404/HTTP error → a clear "engine update pending" toast, no throw.
@@ -13553,7 +13490,7 @@ async function cloudCheckNow(id, btn, scope) {
   // switch to the same "Starting acceptance check" card in this tick.
   const askedAt = Date.now();
   _cloudCheckAsked.set(id, askedAt);
-  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+  _paintAcceptanceCheckStartingNow(id, 'vm');
   let queued = false;
   try {
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, {
@@ -13650,7 +13587,7 @@ async function cloudCheckLocal(id, btn, scope) {
   // screen after the operator has explicitly started a check.
   const askedAt = Date.now();
   _cloudCheckAsked.set(id, askedAt);
-  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+  _paintAcceptanceCheckStartingNow(id, 'local');
   showCampaignToast('🖥 Local check starting — opening GoLogin browsers on this machine. Keep the app open…', 7000);
   _pushCloudEvent(id, scope === 'all'
     ? '🖥 Local check — every account in the Account Used column (on this machine)'
@@ -15132,7 +15069,8 @@ function confirmStopCampaign() {
   // Without this the VM campaign fell through to the local confirm modal
   // (__cockpit.mode is undefined for a cloud run) and never asked
   // "stop everything vs. keep monitoring". Same routing as dashStopActive.
-  if (_viewingCloudId) { stopCloudCampaignUI(_viewingCloudId); return; }
+  const cloudId = _activeCardCloudId();
+  if (cloudId) { stopCloudCampaignUI(cloudId); return; }
   // v2.14.x: when the campaign is in monitoring state (sending finished,
   // watcher active), route to the dedicated stop-monitoring modal instead
   // of the running-campaign flow. Without this, the button was either
@@ -30637,11 +30575,12 @@ async function renderPauseAccountAdd() {
 window.renderPauseAccountAdd = renderPauseAccountAdd;
 
 window.dashPauseActive = async function() {
-  // Viewing a cloud campaign → pause/resume the VM engine (parity with local).
-  // isPaused from the folded status flag decides which way this toggles.
-  if (_viewingCloudId) {
+  // Route from the card's data, not the navigation flag. A fresh app process can
+  // restore a DEV/VM campaign card without ever setting _viewingCloudId.
+  const cloudId = _activeCardCloudId();
+  if (cloudId) {
     const paused = !!(window.__cloudActiveStatus && window.__cloudActiveStatus.paused);
-    if (typeof pauseCloudCampaignUI === 'function') await pauseCloudCampaignUI(_viewingCloudId, paused);
+    if (typeof pauseCloudCampaignUI === 'function') await pauseCloudCampaignUI(cloudId, paused);
     return;
   }
   try {
@@ -30670,6 +30609,30 @@ window.dashPauseActive = async function() {
 // execution phase or machine. The existing Ortus confirm surface keeps this
 // consistent in the builder and the cloned expanded dashboard card.
 const _resumeDecisionInFlight = new Set();
+async function _resumeAcceptanceCheckNow(id, current, btn) {
+  // Durable campaign rows use the same command from the dashboard strip and
+  // the full campaign card. cloudCheckNow owns the runs-on guard, so a campaign
+  // handed to This Mac cannot accidentally start a second sweep on the VM.
+  if (id && id !== 'local-active') return cloudCheckNow(id, btn, 'campaign');
+
+  // A native local campaign has no cloud id. Paint first, then dispatch the
+  // existing local bulk-check route without waiting for the full sweep to end.
+  __cockpit.monitoringCheckInProgress = true;
+  __cockpit.action = {
+    phase: 'checking', label: 'Starting acceptance check now',
+    sub: 'This Mac is opening the campaign accounts.',
+  };
+  try { if (typeof renderActiveCard === 'function') renderActiveCard(__cockpit); } catch (_) { /* board copy still repaints */ }
+  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+  if (typeof showCampaignToast === 'function') showCampaignToast('Acceptance checking is starting now. Sending stays stopped.', 5000);
+  Promise.resolve(_runActiveBulkCheck('campaign')).catch((e) => {
+    __cockpit.monitoringCheckInProgress = false;
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Acceptance check failed: ${e.message}`, 7000);
+    try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* */ }
+  });
+  return true;
+}
+
 window.openCampaignResumeDecision = async function(id, phase = 'sending', current = 'local', btn = null) {
   const sendingFromMonitoring = phase === 'sending-from-monitoring';
   const requestedPhase = sendingFromMonitoring ? 'sending' : phase;
@@ -30683,6 +30646,62 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   let committed = false;
   let accepted = false;
   try {
+  // A monitoring campaign has two independent jobs. Never interpret a generic
+  // Play/Resume click as one of them: ask which phase the operator means, then
+  // start that phase on the machine already shown on the card.
+  if (sendingFromMonitoring) {
+    const resumeSending = await appConfirm(
+      'Choose exactly one. Sending works through the queued leads. Acceptance checking checks recent connections while sending stays stopped.',
+      {
+        title: 'What should resume now?',
+        okLabel: 'Resume sending now',
+        cancelLabel: 'Resume acceptance checking now',
+        machineChoice: true,
+      },
+    );
+    if (resumeSending == null) return;
+    committed = true;
+    if (!resumeSending) {
+      accepted = await _resumeAcceptanceCheckNow(id, current, btn);
+      return accepted;
+    }
+    if (current === 'vm') {
+      accepted = await restartCloudCampaignUI(id, false, undefined, true);
+      return accepted;
+    }
+    // A durable campaign that runs on This Mac is re-adopted in the explicit
+    // sending phase. It must not fall through to the old pause-resume endpoint,
+    // because monitoring is not a paused sender.
+    if (id && id !== 'local-active') {
+      accepted = true;
+      return campaignHandover(id, 'local', null, 'sending');
+    }
+    // Native local campaigns have no durable cloud row to re-adopt. Restore is
+    // the local runner's explicit "same campaign, remaining leads" command;
+    // stamped rows remain skipped. Paint the sending phase before either local
+    // endpoint answers so the card acknowledges the click immediately.
+    __cockpit.state = 'running';
+    __cockpit.running = true;
+    __cockpit.monitoringCheckInProgress = false;
+    __cockpit.action = {
+      phase: 'sending', label: 'Resuming sending now',
+      sub: 'This Mac is restoring the queued leads. Acceptance checking is not being started.',
+    };
+    try { if (typeof renderActiveCard === 'function') renderActiveCard(__cockpit); } catch (_) { /* board copy still repaints */ }
+    try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+    if (typeof showCampaignToast === 'function') showCampaignToast('Resuming sending now. Acceptance checking is not being started.', 5000);
+    await fetch('/api/runtime/resumed', { method: 'POST' }).catch(() => {});
+    const restored = await fetch('/api/campaign/restore', { method: 'POST' });
+    if (!restored.ok) {
+      accepted = false;
+      if (typeof showCampaignToast === 'function') showCampaignToast('This Mac could not resume sending. Nothing new was sent; retry or use the Cloud VM.', 8000);
+      try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* */ }
+      return false;
+    }
+    accepted = true;
+    try { if (typeof startPolling === 'function') startPolling(); } catch (_) { /* */ }
+    return pollStatus();
+  }
   const monitoring = requestedPhase === 'monitoring';
   const currentLabel = current === 'vm' ? 'Cloud VM' : 'This Mac';
   const otherLabel = current === 'vm' ? 'This Mac' : 'Cloud VM';
@@ -30718,10 +30737,6 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   // log line, and a permanently disabled button. Keep the origin explicit in
   // the control contract so current and future monitoring cards cannot regress.
   if (current === 'vm') {
-    if (sendingFromMonitoring) {
-      accepted = await restartCloudCampaignUI(id, false);
-      return accepted;
-    }
     return pauseCloudCampaignUI(id, true);
   }
   const status = await fetch('/api/campaign/status').then((r) => r.json()).catch(() => ({}));
@@ -30801,7 +30816,7 @@ window.dashStopActive = async function() {
 };
 
 window.dashRestartActive = async function() {
-  if (_viewingCloudId) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return; }
+  if (_activeCardCloudId()) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return; }
   if (!confirm('Restart this campaign from the beginning? Progress will reset.')) return;
   try {
     const sr = await fetch('/api/campaign/status');

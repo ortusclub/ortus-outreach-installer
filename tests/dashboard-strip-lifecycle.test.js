@@ -45,7 +45,8 @@ test('monitoring with unsent leads shows the approved restart action band', () =
 
 test('cloud Start now from monitoring restarts pending sending instead of resuming a pause', () => {
   assert.match(app, /sendingFromMonitoring = phase === 'sending-from-monitoring'/);
-  assert.match(app, /if \(sendingFromMonitoring\) \{\s*accepted = await restartCloudCampaignUI\(id, false\);\s*return accepted;/);
+  assert.match(app, /if \(sendingFromMonitoring\) \{[\s\S]*?What should resume now\?[\s\S]*?restartCloudCampaignUI\(id, false, undefined, true\)/);
+  assert.match(app, /_resumeAcceptanceCheckNow\(id, current, btn\)/);
   assert.match(app, /await _forceCloudItemsAfterAction\(id\)/);
   assert.match(app, /if \(btn && btn\.isConnected && !accepted\)/);
 });
