@@ -49,21 +49,55 @@ export function isoWeekKey(d) {
 }
 
 let cache = null;
+// The load is memoised as a PROMISE, not just as its result. Four campaigns
+// reconcile at once off the board poll, and with only the `cache !== null`
+// guard all four read the file concurrently, all four missed, and each one
+// assigned a brand new `{ campaigns: {} }` — so the last to finish threw away
+// the entries the first three had already recorded. On a cold start that loses
+// the ledger for every campaign but one, and a lost ledger entry means the next
+// run re-counts that campaign's week into the SoO.
+let loading = null;
 async function load() {
   if (cache !== null) return cache;
-  try {
-    const parsed = JSON.parse(await fs.readFile(FILE, 'utf8'));
-    cache = parsed && typeof parsed === 'object' && parsed.campaigns ? parsed : { campaigns: {} };
-  } catch {
-    cache = { campaigns: {} };
+  if (!loading) {
+    loading = (async () => {
+      try {
+        const parsed = JSON.parse(await fs.readFile(FILE, 'utf8'));
+        cache = parsed && typeof parsed === 'object' && parsed.campaigns ? parsed : { campaigns: {} };
+      } catch {
+        cache = { campaigns: {} };
+      }
+      loading = null;
+      return cache;
+    })();
   }
-  return cache;
+  return loading;
 }
+// The dedup ledger is what stops a SoO tally being bumped twice for the same
+// send. reconcileCloud() is fired unawaited, once per campaign, from the leads
+// route (server.js), so a board watching four campaigns runs four of these at
+// once — and a single shared "<file>.tmp" meant the first rename moved the temp
+// file away and every other writer died on ENOENT (Sam, 1 Sep: six failures in
+// seven minutes across four campaign ids). The bump has ALREADY happened by
+// then, so a lost save is not a no-op: the next restart reads a stale ledger
+// and re-counts the whole current week into the SoO.
+//
+// Two changes, both about not losing the ledger: a per-write temp name so
+// concurrent writers cannot delete each other's file, and never throwing —
+// a failed save must not abort the reconcile that has already written.
+let _persistSeq = 0;
 async function persist() {
   if (cache === null) await load();
-  const tmp = FILE + '.tmp';
-  await fs.writeFile(tmp, JSON.stringify(cache, null, 2));
-  await fs.rename(tmp, FILE);
+  const tmp = `${FILE}.${process.pid}.${_persistSeq++}.tmp`;
+  try {
+    await fs.writeFile(tmp, JSON.stringify(cache, null, 2));
+    await fs.rename(tmp, FILE);
+  } catch (err) {
+    // Leave nothing behind for the next run to trip over.
+    await fs.unlink(tmp).catch(() => {});
+    console.warn(`[cloud] the SoO connection ledger could not be saved (${err.message}). `
+      + 'Counts are correct until this app is restarted; a restart may re-count this week.');
+  }
 }
 
 /**

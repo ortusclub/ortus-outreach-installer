@@ -78,6 +78,17 @@ test('stopCampaign tells the truth in the campaign log when nothing is running h
   // The full-halt wording must sit behind the condition, not be logged
   // unconditionally as it was. (Searching for the phrase alone is not enough:
   // it also appears in the comment recording the incident.)
-  assert.match(fn, /log\(nothingRunningHere\s*\?/,
-    'the log call must branch on whether anything was actually running');
+  assert.match(fn, /nothingRunningHere[\s\S]*?full\s*\?\s*'■ Stop requested \(full halt/,
+    'the full-halt line must sit behind the "is anything running" branch');
+});
+
+test('quitting the app is logged as a quit, not as a Stop the operator pressed', () => {
+  const fn = lift(camp, 'stopCampaign');
+  // gracefulShutdown calls stopCampaign() too, and the operator wording used to
+  // apply to it: every quit ended the log with "Stop pressed, but nothing is
+  // running" (Sam, 1 Sep). Behaviour is covered in
+  // tests/quitting-is-not-a-stop-press.test.js; this pins that the branch is the
+  // OUTERMOST one, so no quit can ever reach the operator wording.
+  assert.match(fn, /log\(quitting\s*\?/,
+    'the log call must branch on quitting before it branches on anything else');
 });
