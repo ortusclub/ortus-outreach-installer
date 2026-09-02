@@ -1,8 +1,8 @@
 /**
- * A profile owned by another GoLogin workspace is tracked by that workspace.
- * The Ortus SoO's credit columns describe somebody else's usage of it, so they
- * must not grey the tile for the operator entitled to use it. A restricted or
- * inaccessible Status still does: that is the LinkedIn account itself.
+ * A profile owned by another GoLogin workspace is tracked by that workspace, so
+ * the Ortus SoO does not gate it at all — not the credit columns, not the
+ * Status. Operator decision 2026-09-02: the workspace that owns an account is
+ * the one that knows its health. The SoO verdict is still shown, as information.
  */
 import test from 'node:test';
 import assert from 'node:assert';
@@ -13,19 +13,21 @@ const app = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf-8
 const picker = app.slice(app.indexOf('const _foreign = p.available === false;'), app.indexOf('const _foreign = p.available === false;') + 14000);
 
 test('the lock consults who owns the profile', () => {
-  assert.match(picker, /_guestWorkspace\s*=\s*!_foreign\s*&&\s*!!p\.account\s*&&\s*p\.account\s*!==\s*'ortus'/);
+  assert.match(picker, /_nonOrtusRoster\s*=\s*!_foreign\s*&&\s*!!p\.account\s*&&\s*p\.account\s*!==\s*'ortus'/);
 });
 
-test('a guest tile keeps the Status lock and drops the credit lock', () => {
+test('no SoO verdict locks another workspace tile', () => {
   const rule = picker.slice(picker.indexOf('const _sooLock'), picker.indexOf('const _locked'));
-  assert.match(rule, /_guestWorkspace/);
-  assert.match(rule, /_state\.reason === 'restricted'/);      // Status still locks
-  assert.doesNotMatch(rule.split('?')[1] || '', /anyActive/); // credits do not
+  assert.match(rule, /_nonOrtusRoster\s*\n?\s*\?\s*false/);
+  // The Ortus branch is untouched: its own roster still obeys the sheet.
+  assert.match(rule, /_br\.blocked \|\| !_br\.anyActive/);
+  assert.match(rule, /_state\.state === 'blocked'/);
 });
 
-test('a selectable guest tile never still reads "no credits"', () => {
-  assert.match(picker, /_guestLedger[\s\S]{0,200}_reason !== 'restricted'/);
-  assert.match(picker, /if \(_guestLedger\) _sub =/);
+test('the verdict is shown, attributed, instead of disappearing', () => {
+  assert.match(picker, /_otherRosterVerdict = _nonOrtusRoster && !_noSoo/);
+  assert.match(picker, /if \(_otherRosterVerdict\) \{/);
+  assert.match(picker, /Ortus's SoO says/);
 });
 
 // The rows this exists for, in the shape the SoO actually returns them.

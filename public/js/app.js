@@ -2476,16 +2476,17 @@ function renderProfiles(profiles) {
     // fixable — switching campaign type unlocks the tile — and the copy has to
     // say so rather than implying the operator lacks access.
     const _wrongMode = !_foreign && Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode);
-    // The SoO is the ORTUS ledger. For a profile owned by another workspace its
-    // credit columns describe somebody else's usage of that account, not this
-    // operator's: measured 2026-09-02, 11 of the 58 Linked Velocity profiles read
-    // "Rented / NA" in the SoO precisely BECAUSE Linked Velocity has them, and
-    // greying those tiles told the one person entitled to use them that they
-    // could not. A restricted or inaccessible Status is a different fact — it
-    // describes the LinkedIn account itself — so that still locks the tile.
-    const _guestWorkspace = !_foreign && !!p.account && p.account !== 'ortus';
-    const _sooLock = _guestWorkspace
-      ? (_breakdown ? _br.blocked : _state.reason === 'restricted')
+    // The SoO governs the ORTUS roster. It does not govern another workspace's
+    // accounts, so it does not gate them at all: not the credit columns, not the
+    // Status. Measured 2026-09-02: of 58 Linked Velocity profiles, 11 read
+    // "Rented / NA" precisely BECAUSE Linked Velocity has them and 8 more carried
+    // a stale Ortus Status — every one of them greyed for the only people
+    // entitled to use them. Operator decision the same day: the workspace that
+    // owns an account is the one that knows its health, so its operators pick
+    // freely and the SoO line is shown as information, never as a lock.
+    const _nonOrtusRoster = !_foreign && !!p.account && p.account !== 'ortus';
+    const _sooLock = _nonOrtusRoster
+      ? false
       : (_breakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked'));
     const _locked = _foreign || _wrongMode || _sooLock;
     // Defensive: a restored preset/schedule must not keep a now-unusable account
@@ -2566,18 +2567,18 @@ function renderProfiles(profiles) {
       //   restricted → LinkedIn block · na → CC/credit = NA · unavailable → Used/-/Partial.
       const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
       const _label = escHtml(_state.label || '');
-      // The credit half of an Ortus-ledger verdict no longer locks another
-      // workspace's tile, so it must not still read "N/A · no credits" on a tile
-      // the operator can select. Name whose ledger it is instead.
-      const _guestLedger = _guestWorkspace && !_noSoo
-        && _state.state === 'blocked' && _reason !== 'restricted';
+      // An Ortus-ledger verdict no longer locks another workspace's tile, so it
+      // must not still read "N/A · no credits" on a tile the operator can pick.
+      // The verdict is still worth saying — it is why the account looks odd — so
+      // it moves into the sub line, attributed, instead of disappearing.
+      const _otherRosterVerdict = _nonOrtusRoster && !_noSoo && _state.state === 'blocked';
       // A foreign-workspace account reads OTHER TEAM, never FREE — its SoO row
       // may well say Available, but not to this operator.
       const _word = _foreign ? 'OTHER TEAM'
         : _wrongMode ? 'WRONG MODE'
-          : _guestLedger ? 'OTHER ROSTER'
+          : _otherRosterVerdict ? 'OTHER ROSTER'
             : (_noSoo ? _sm.word : ((_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word));
-      const _statCls = (_foreign || _wrongMode) ? 'stop' : _guestLedger ? 'nosoo' : _sm.cls;
+      const _statCls = (_foreign || _wrongMode) ? 'stop' : _otherRosterVerdict ? 'nosoo' : _sm.cls;
       let _sub;
       if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
       else
@@ -2592,7 +2593,16 @@ function renderProfiles(profiles) {
       } else _sub = 'Anyone can use.';
       // Workspace beats every SoO verdict: an account you cannot drive at all is
       // not "free", whatever its credits say.
-      if (_guestLedger) _sub = `${escHtml(p.accountLabel || 'This')} workspace tracks this account — the SoO line is Ortus's.`;
+      if (_otherRosterVerdict) {
+        // Say what Ortus's sheet claims and whose account it actually is, so the
+        // operator can act on it. Hiding the verdict would be as wrong as
+        // enforcing it.
+        const _raw = String((_soo && (_soo.Status || _soo.status)) || '').trim();
+        const _said = _reason === 'restricted'
+          ? (_raw || 'Restricted')
+          : _reason === 'na' ? 'no credits' : (String(_state.label || '').trim() || 'not available');
+        _sub = `${escHtml(p.accountLabel || 'This')} workspace runs this account. Ortus's SoO says <b>${escHtml(_said)}</b>.`;
+      }
       if (_foreign) _sub = `${escHtml(p.accountLabel || 'Another')} workspace — sign in with a ${escHtml(p.accountLabel || 'matching')} email to use it.`;
       else if (_wrongMode) _sub = `${escHtml(p.accountLabel || 'These')} accounts run ${escHtml(modeNames(p.allowedModes))} only.`;
       const _statZone = `
