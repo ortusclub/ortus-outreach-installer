@@ -77,6 +77,11 @@ export async function pollOnce(deps = {}) {
     if (drained.has(fu.taskId)) { acked.push(fu.taskId); continue; }
     try {
       const task = build({
+        // The engine already knows which campaign this came from (campaign-api
+        // sends campaignId with every offered follow-up). Carrying it here is
+        // what lets a card count only its OWN follow-ups instead of the app's
+        // lifetime total — see src/followup-groups.js.
+        campaignId: fu.campaignId || '',
         campaignProfileId: fu.profileId, sheetId: sheetIdFromUrl(fu.sheetUrl), sheetUrl: fu.sheetUrl,
         sender: 'local-browser', threadUrl: fu.threadUrl, introTitle: fu.introTitle, leadName: fu.leadName,
         leadUrl: fu.leadUrl, primaryName: fu.primaryName, primaryUrl: fu.primaryUrl,

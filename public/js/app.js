@@ -8827,11 +8827,16 @@ async function _refreshCloudActiveStatus(id) {
       if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(id, ar.accounts);
     } catch (_) { /* engine may not expose it yet — panel just won't show */ }
     try { if (_viewingCloudId === id) renderCloudAccountsPanel(id); } catch (_) { /* */ }
-    // Follow-up health for THIS app (the queue is local, not per-campaign): how
-    // many went out, how many are parked on a signed-out browser. Cheap, and it
-    // is the only place the operator can learn a follow-up did not land.
+    // Follow-up health for THIS CAMPAIGN. The queue itself is one flat local
+    // list, and asking it unscoped is what put the app's lifetime totals under
+    // every campaign's heading — a run minutes old reading "56 sent · 48 could
+    // not send" from campaigns that ended weeks earlier (Sam, 2026-09-02). The
+    // profile ids come along for follow-ups queued before campaignId was
+    // stamped: those can only be placed by the account that sent them.
     try {
-      const fh = await (await fetch('/api/followups/health')).json();
+      const _pids = ((d && d.campaign && (d.campaign.profile_ids || d.campaign.profileIds)) || []).join(',');
+      const _q = `campaignId=${encodeURIComponent(id)}${_pids ? `&profileIds=${encodeURIComponent(_pids)}` : ''}`;
+      const fh = await (await fetch(`/api/followups/health?${_q}`)).json();
       if (fh && fh.ok) _followupHealth = fh;
     } catch (_) { /* the line just does not render */ }
     _recordCloudProgress(id, d);
@@ -12234,7 +12239,171 @@ async function _renderCampaignsBoardInner() {
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
+  // Stuck follow-ups from campaigns that are NOT on this board. Fired with the
+  // board's own items so the two can never claim the same follow-up.
+  try { renderStaleFollowups(items); } catch (_) { /* never let it break the board */ }
 }
+
+// ── Follow-ups nobody can see ────────────────────────────────────────────────
+// A follow-up whose campaign is still on the board belongs to that campaign's
+// card. One whose campaign has left the board had nowhere to appear at all: it
+// sat in the local queue, counted into every card's totals, and was never
+// listed anywhere an operator could act on it. This strip is that missing place.
+//
+// It is grouped by campaign and it shows the MESSAGE, on request, because the
+// message is the only thing that answers the real question. "Our dinner on 4
+// September" is worth sending on the 2nd and worthless on the 5th, and no count
+// or timestamp tells you which case you are in.
+let _staleFuOpen = false;
+let _staleFuLastHtml = '';
+let _staleFuUndo = null;
+
+function _fuWhen(ms) {
+  if (!Number.isFinite(ms)) return '';
+  return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+async function renderStaleFollowups(items) {
+  const mount = document.getElementById('stale-followups');
+  if (!mount) return;
+  const live = (items || []).filter((it) => it && ['running', 'queued', 'idle'].includes(it.bucket));
+  const ids = [...new Set(live.map((it) => it.id).filter(Boolean))];
+  const pids = [...new Set(live.flatMap((it) => it.profileIds || []))];
+  let groups = [];
+  try {
+    const q = `liveCampaignIds=${encodeURIComponent(ids.join(','))}&liveProfileIds=${encodeURIComponent(pids.join(','))}`;
+    const r = await (await fetch(`/api/followups/stale?${q}`)).json();
+    if (!r || !r.ok) return;
+    groups = r.groups || [];
+  } catch (_) { return; } // the strip simply does not appear
+
+  if (!groups.length) { mount.replaceChildren(); _staleFuLastHtml = ''; return; }
+
+  const total = groups.reduce((a, g) => a + g.count, 0);
+  const oldest = Math.min(...groups.map((g) => g.firstQueuedAt || Infinity));
+  const n = (c, w) => `${c} ${w}${c === 1 ? '' : 's'}`;
+
+  const body = groups.map((g) => {
+    const name = g.campaignName
+      ? `<span class="fu-nm">${escHtml(g.campaignName)}</span>`
+      : '<span class="fu-nm unnamed">Campaign name not recorded</span>';
+    const why = g.reason === 'signed-out'
+      ? 'the follow-up browser is signed out of LinkedIn'
+      : (g.lastError || 'LinkedIn did not open the message box');
+    const who = g.leadNames.length
+      ? `<div class="fu-who">${escHtml(g.leadNames.slice(0, 6).join(' · '))}${g.leadNames.length > 6 ? ` and ${g.leadNames.length - 6} more` : ''}</div>`
+      : '';
+    const login = g.reason === 'signed-out'
+      ? '<button class="mini" onclick="openFollowupLogin(this)">Open the follow-up browser</button>' : '';
+    return `<div class="fu-grp" data-key="${escHtml(g.key)}">
+      <div class="fu-top">${name}
+        <span class="fu-dt">queued ${escHtml(_fuWhen(g.firstQueuedAt))}</span>
+        <span class="fu-cnt">${n(g.count, 'waiting')}</span>
+        <button class="mini fu-x" onclick="toggleStaleFollowupMessage(this)">Show message</button>
+      </div>
+      <div class="fu-meta">${escHtml(g.accounts.join(', '))}${g.accounts.length ? ' · ' : ''}${escHtml(why)}</div>
+      <div class="fu-open" hidden>
+        <div class="fu-msg">${escHtml(g.message)}</div>
+        ${who}
+        <div class="sn-foot"><div class="right">
+          ${login}
+          <button class="mini danger" onclick="discardStaleFollowups('${escHtml(g.key)}', ${g.count}, this)">Discard ${n(g.count, 'follow-up')}</button>
+          <button class="mini solid" onclick="retryFollowups(this)">Send ${g.count === 1 ? 'it' : 'these ' + g.count} now</button>
+        </div></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const markup = `<div class="fu-strip-outer">
+    <div class="fu-bar" onclick="toggleStaleFollowups(this)">
+      <b>${n(total, 'follow-up')} did not send</b>
+      <span class="fu-sub">${n(groups.length, 'campaign')} no longer on your board · oldest ${escHtml(_fuWhen(oldest))}</span>
+      <span class="chev">${_staleFuOpen ? 'Hide ▴' : 'Show ▾'}</span>
+    </div>
+    <div class="fu-body" ${_staleFuOpen ? '' : 'hidden'}>${body}</div>
+  </div>`;
+  // The board repaints every few seconds. Identical markup is left alone, and
+  // when it HAS changed (a count moved, a group cleared) the messages the
+  // operator had open are reopened afterwards — otherwise reading a long
+  // message while a campaign ticks would slam it shut under them.
+  if (markup === _staleFuLastHtml) return;
+  const wasOpen = new Set([...mount.querySelectorAll('.fu-grp')]
+    .filter((el) => { const o = el.querySelector('.fu-open'); return o && !o.hidden; })
+    .map((el) => el.dataset.key));
+  _staleFuLastHtml = markup;
+  mount.innerHTML = markup;
+  for (const el of mount.querySelectorAll('.fu-grp')) {
+    if (!wasOpen.has(el.dataset.key)) continue;
+    const open = el.querySelector('.fu-open');
+    const btn = el.querySelector('.fu-x');
+    if (open) open.hidden = false;
+    if (btn) btn.textContent = 'Hide message';
+  }
+}
+
+window.toggleStaleFollowups = function (bar) {
+  const body = bar.parentElement.querySelector('.fu-body');
+  _staleFuOpen = body.hidden;
+  body.hidden = !_staleFuOpen;
+  bar.querySelector('.chev').textContent = _staleFuOpen ? 'Hide ▴' : 'Show ▾';
+  _staleFuLastHtml = ''; // the next repaint must re-render with the new state
+};
+
+window.toggleStaleFollowupMessage = function (btn) {
+  const open = btn.closest('.fu-grp').querySelector('.fu-open');
+  open.hidden = !open.hidden;
+  btn.textContent = open.hidden ? 'Show message' : 'Hide message';
+  _staleFuLastHtml = '';
+};
+
+// Discard, with Undo. Nothing is deleted: the tasks are marked discarded, and
+// selectDue() only ever takes 'pending', so they can never be sent — while Undo
+// can still put them back exactly as they were.
+window.discardStaleFollowups = async function (key, count, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Discarding…'; }
+  try {
+    const r = await fetch('/api/followups/discard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys: [key] }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    _staleFuUndo = d.undo || [];
+    _staleFuLastHtml = '';
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(
+        `${d.discarded} follow-up${d.discarded === 1 ? '' : 's'} discarded. They will never be sent.`,
+        10000,
+        { label: 'Undo', onClick: () => undoDiscardFollowups() },
+      );
+    }
+    try { await renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = `Discard ${count} follow-up${count === 1 ? '' : 's'}`; }
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Could not discard: ${e.message}`, 6000);
+  }
+};
+
+window.undoDiscardFollowups = async function () {
+  const undo = _staleFuUndo;
+  if (!undo || !undo.length) return;
+  _staleFuUndo = null;
+  try {
+    const r = await fetch('/api/followups/restore', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ undo }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    _staleFuLastHtml = '';
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`${d.restored} follow-up${d.restored === 1 ? '' : 's'} back in the queue.`, 5000);
+    }
+    try { await renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Could not undo: ${e.message}`, 6000);
+  }
+};
 
 // Lazy-fill done-strip log boxes from the persisted campaign log. Cached per
 // history index so the 5s board re-render doesn't refetch; in-flight guard so
@@ -15129,10 +15298,22 @@ async function pauseOrResumeCampaign() {
   }
 }
 
-function showCampaignToast(msg, duration = 6000) {
+// `action` adds one inline button, for the case where the toast is the ONLY
+// place to take back what just happened (discarding follow-ups). Without it the
+// toast stays exactly as it was: plain text, set with textContent, so a message
+// carrying an operator's own campaign name can never inject markup.
+function showCampaignToast(msg, duration = 6000, action = null) {
   const toast = document.getElementById('campaign-toast');
   if (!toast) return;
-  toast.textContent = msg;
+  toast.innerHTML = '';
+  toast.appendChild(document.createTextNode(msg));
+  if (action && action.label && typeof action.onClick === 'function') {
+    const b = document.createElement('button');
+    b.className = 'toast-action';
+    b.textContent = action.label;
+    b.onclick = () => { toast.classList.remove('visible'); action.onClick(); };
+    toast.appendChild(b);
+  }
   toast.classList.add('visible');
   clearTimeout(toast._timer);
   toast._timer = setTimeout(() => toast.classList.remove('visible'), duration);

@@ -200,7 +200,7 @@ async function _captureProfileAvatarToken(page, profileUrl, fullName) {
  * runner opens that browser. The body is already personalized above, so the
  * posting identity does not affect {sender first name} / {primary name}.
  */
-export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, sheetUrl, leadName, url, threadUrl, now }) {
+export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, sheetUrl, leadName, url, threadUrl, now, campaignId = '', campaignName = '' }) {
   if (!tpl || !tpl.followUpEnabled) return null;
   const rawBody = (tpl.followUpBody || '').trim();
   if (!rawBody) return null;
@@ -210,6 +210,9 @@ export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, she
   // resolution ({sender first name} = campaign account) is unaffected.
   const sender = tpl.primarySource || 'local-browser';
   return buildFollowUpTask({
+    // Stamped so the dashboard can attribute this follow-up to its campaign
+    // rather than pooling it with every other campaign's — see followup-groups.js.
+    campaignId, campaignName,
     campaignProfileId: profileId,
     campaignProfileName: profileName,
     sheetId: extractSheetId(sheetUrl) || '',

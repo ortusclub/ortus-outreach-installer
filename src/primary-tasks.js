@@ -24,6 +24,12 @@ export function buildFollowUpTask({
   campaignProfileId, campaignProfileName = '', sheetId = '', sheetUrl = '',
   sender = 'local-browser', threadUrl = '', introTitle = '',
   leadName = '', leadUrl = '', primaryName = '', primaryUrl = '', body = '',
+  // Which campaign this follow-up came from. A task never recorded it, so the
+  // dashboard could only ever show the whole app's totals on every card, and a
+  // campaign minutes old reported another campaign's failures as its own (Sam,
+  // 2026-09-02). Tasks queued before this exist without it — src/followup-groups.js
+  // places those by their message instead, which is the same campaign's template.
+  campaignId = '', campaignName = '',
   delayMinutes = 10, now,
 }) {
   const created = Number.isFinite(now) ? now : Date.now();
@@ -35,6 +41,7 @@ export function buildFollowUpTask({
     id: `follow-up:${campaignProfileId}:${slug(leadUrl) || 'lead'}:${created}`,
     type: 'follow-up', status: 'pending', attempts: 0, lastError: null,
     createdAt: created, dueAt: created + delay * 60_000,
+    campaignId, campaignName,
     campaignProfileId, campaignProfileName, sheetId, sheetUrl,
     sender, threadUrl, introTitle, leadName, leadUrl, primaryName, primaryUrl, body,
   };
