@@ -56,7 +56,9 @@ test('a zero-account sweep is actionable and retries in ten minutes without chan
     participatingProfileIds: [],
     logs: [],
   });
+  const t0 = Date.now();
   await tickMonitoringNow(); // no _testStub — real runMonitoringCheckAll()
+  const t1 = Date.now();
   const s = getCampaignState();
   // Finding 1: zero accounts swept = nothing looked = streak untouched.
   assert.equal(s.emptyCheckStreak, 6, 'a sweep that looked at nobody must not advance the streak');
@@ -66,9 +68,12 @@ test('a zero-account sweep is actionable and retries in ten minutes without chan
   assert.equal(s.checkIntervalMinutes, 60, 'the base cadence must never be overwritten with the stretched value');
   assert.match(s.monitorCheckError, /no monitoring accounts are configured/i);
   // An incomplete sweep retries soon instead of disappearing for the stretched cadence.
+  // Measured against the window the tick actually ran in, never against the
+  // clock at assert time: this test took 81s on a loaded CI runner (2026-09-02),
+  // which ate a fixed one-minute margin and failed a correct 10-minute retry.
   const nextMs = new Date(s.nextCheckAt).getTime();
-  assert.ok(nextMs > Date.now() + 9 * 60_000, 'nextCheckAt should be ~10 min out');
-  assert.ok(nextMs <= Date.now() + 11 * 60_000, 'nextCheckAt should not exceed 10 min + slack');
+  assert.ok(nextMs >= t0 + 10 * 60_000 - 1000, 'nextCheckAt should be ~10 min out');
+  assert.ok(nextMs <= t1 + 10 * 60_000 + 1000, 'nextCheckAt should not exceed 10 min + slack');
 });
 
 test('tickMonitoringNow does not reschedule when state changes during fire', async () => {
