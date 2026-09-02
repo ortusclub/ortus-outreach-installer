@@ -9,7 +9,7 @@
 //    unlabelled dock glyphs, the first tipped "continue where it left off".
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { acctPillCount, failedStartRetry, vjCardControlsFor } from '../public/js/vjcard.mjs';
+import { acctPillCount, acctBatchTip, acctRowState, failedStartRetry, vjCardControlsFor } from '../public/js/vjcard.mjs';
 
 test('the pill reads sent today out of the daily limit, never the batch share', () => {
   assert.equal(acctPillCount({ dailyCount: 12, dailyLimit: 50 }, { sent: 12, total: 13 }), '12/50');
@@ -106,4 +106,122 @@ test('failedStartRetry: a stopped campaign part-way through carries on', () => {
 test('failedStartRetry: a finished campaign is offered nothing', () => {
   assert.equal(failedStartRetry({ bad: true, badLabel: 'Stopped', totalProcessed: 20, totalTargets: 20 }), null);
   assert.equal(failedStartRetry({ bad: false, totalProcessed: 0, totalTargets: 4 }), null);
+});
+
+// Same operator, 2026-09-02: "why is it sometimes out of 4 and sometimes out of
+// 8?" — because the row was printing the account's share of the campaign's
+// leads. The denominator he wanted is the turn.
+test('the batch tooltip counts the turn, and says which turn it is', () => {
+  assert.equal(acctBatchTip({ done: 4, planned: 8 }, null), '4 of 8 in its last batch');
+  assert.equal(acctBatchTip({ done: 4, planned: 8 }, { done: 3, total: 8 }), '3 of 8 in this batch');
+});
+
+test('an account with no turn to report gets no tooltip rather than an empty one', () => {
+  assert.equal(acctBatchTip(null, null), '');
+  assert.equal(acctBatchTip({ done: 0, planned: 0 }, null), '');
+  // A live account between leads has a phase but no counted turn yet.
+  assert.equal(acctBatchTip(null, { done: 0, total: 0 }), '');
+});
+
+// The row redesign, 2026-09-02. The panel used to hang six badges of equal
+// weight on every account, including green ones announcing that nothing was
+// wrong ("this is very very very ugly"). Now: a dot, a pill only when there IS
+// something to say, and the count. These tests pin what earns a pill and what
+// colour the dot goes, because that is the whole readability of the panel.
+const CCIC = { isCCIC: true, nextMonday: 'Monday 7 Sept' };
+
+test('an account that is sending and connected says nothing at all', () => {
+  const st = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryConnected: true }, CCIC);
+  assert.equal(st.dot, 'ok');
+  assert.deepEqual(st.pills, []);
+});
+
+test('sending, but unable to introduce, is amber and says which case it is', () => {
+  // Never checked and checked-and-not-connected are different facts. Collapsing
+  // them is what made six unchecked accounts read as six failures.
+  const never = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryState: null }, CCIC);
+  assert.equal(never.dot, 'warn');
+  assert.deepEqual(never.pills, [['warn', 'Primary not checked']]);
+  const no = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryState: 'not_connected' }, CCIC);
+  assert.equal(no.dot, 'warn');
+  assert.deepEqual(no.pills, [['warn', 'Primary not connected']]);
+});
+
+test('a campaign with no primary person is never asked about one', () => {
+  const st = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryConnected: null }, { isCCIC: false });
+  assert.equal(st.dot, 'ok');
+  assert.deepEqual(st.pills, []);
+});
+
+test('an account that is not sending is red, and the pill says why', () => {
+  assert.deepEqual(acctRowState({ needsLogin: true }, CCIC).pills[0], ['bad', 'Logged out']);
+  assert.deepEqual(acctRowState({ parked: true, parkReason: 'proxy' }, CCIC).pills[0], ['bad', 'Proxy refused']);
+  assert.deepEqual(acctRowState({ weeklyCap: true }, CCIC).pills[0], ['bad', 'Stopped until Monday 7 Sept']);
+  assert.deepEqual(acctRowState({ parked: true, parkReason: 'throttle' }, CCIC).pills[0], ['bad', 'Throttled']);
+  assert.deepEqual(acctRowState({ dailyCount: 50, dailyLimit: 50 }, CCIC).pills[0], ['bad', 'Daily limit reached']);
+  for (const a of [{ needsLogin: true }, { weeklyCap: true }, { dailyCount: 50, dailyLimit: 50 }]) {
+    assert.equal(acctRowState(a, CCIC).dot, 'bad');
+  }
+});
+
+test('blocked AND unable to introduce shows both, with the worse dot', () => {
+  // Hiding the primary problem behind a temporary one is how it stays hidden.
+  const st = acctRowState({ parked: true, parkReason: 'throttle', primaryConnected: null }, CCIC);
+  assert.equal(st.dot, 'bad');
+  assert.deepEqual(st.pills, [['bad', 'Throttled'], ['warn', 'Primary not checked']]);
+});
+
+test('a weekly cap offers no way to try again — it is a window, not a cooldown', () => {
+  assert.equal(acctRowState({ weeklyCap: true }, CCIC).weekly, true);
+  assert.equal(acctRowState({ parked: true, parkReason: 'throttle' }, CCIC).weekly, false);
+});
+
+test('spent invitation notes are worth a word but never turn the dot red', () => {
+  const st = acctRowState({ dailyCount: 3, dailyLimit: 50, primaryConnected: true, noteExhausted: true }, CCIC);
+  assert.equal(st.dot, 'ok');
+  assert.deepEqual(st.pills, [['warn', 'No note left']]);
+});
+
+test('an SoO restriction is a block wherever it appears', () => {
+  const st = acctRowState({ dailyCount: 3, dailyLimit: 50, primaryConnected: true, identityRestricted: true, restrictionLabel: 'Identity Restricted' }, CCIC);
+  assert.equal(st.dot, 'bad');
+  assert.deepEqual(st.pills, [['bad', 'Identity Restricted']]);
+});
+
+test('the bench pill carries the date, the drawer carries the countdown', () => {
+  const st = acctRowState({ weeklyCap: true }, { isCCIC: true, nextMonday: 'Monday 7 Sept (in 5 days)' });
+  assert.deepEqual(st.pills[0], ['bad', 'Stopped until Monday 7 Sept']);
+  assert.match(st.status, /resets Monday 7 Sept \(in 5 days\)/);
+});
+
+// Operator, 2026-09-02, of two accounts the panel called "Primary not
+// connected": "it's not true they are indeed connected tho". Both had an
+// invitation OUT and unaccepted — the engine stores that as `pending`, and the
+// accounts payload used to flatten it to a boolean, so a sent invitation waiting
+// on somebody's click read as a failure.
+test('an invitation waiting to be accepted is pending, not a failure', () => {
+  const st = acctRowState({ dailyCount: 0, dailyLimit: 50, primaryState: 'pending' }, CCIC);
+  assert.equal(st.primary, 'pending');
+  assert.deepEqual(st.pills, [['warn', 'Primary invite pending']]);
+  assert.equal(st.dot, 'warn');
+});
+
+test('every primary outcome gets its own words', () => {
+  // Five facts, five sentences. Collapsing any pair of them is what produced
+  // both complaints: six unchecked accounts reading as six failures, and an
+  // invitation that was never sent reading as one waiting to be accepted.
+  const of = (primaryState) => acctRowState({ primaryState }, CCIC);
+  assert.deepEqual(of('connected').pills, []);
+  assert.deepEqual(of('pending').pills, [['warn', 'Primary invite pending']]);
+  assert.deepEqual(of('not_connected').pills, [['warn', 'Primary not connected']]);
+  assert.deepEqual(of('unverified').pills, [['warn', 'Primary unconfirmed']]);
+  assert.deepEqual(acctRowState({}, CCIC).pills, [['warn', 'Primary not checked']]);
+});
+
+test('an engine too old to send primaryState still gets a truthful row', () => {
+  // The boolean cannot tell pending from unverified, so it takes the reading
+  // that does not accuse: false meant pending in every case we have seen.
+  assert.deepEqual(acctRowState({ primaryConnected: true }, CCIC).pills, []);
+  assert.deepEqual(acctRowState({ primaryConnected: false }, CCIC).pills, [['warn', 'Primary invite pending']]);
+  assert.deepEqual(acctRowState({ primaryConnected: null }, CCIC).pills, [['warn', 'Primary not checked']]);
 });

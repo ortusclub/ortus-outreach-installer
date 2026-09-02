@@ -56,8 +56,9 @@ import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSal
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
+import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
@@ -2009,6 +2010,58 @@ app.post('/api/campaign/cloud/:id/accounts/:pid/unbench', async (req, res) => {
   const r = await unbenchCloudAccount(req.params.id, req.params.pid);
   if (r && r.error) return res.status(502).json(r);
   res.json(r || { ok: true });
+});
+// Operator "Check primary" on ONE account of a running cloud campaign.
+//
+// This runs HERE, on the operator's Mac, not on the VM — the same handshake the
+// campaign runs before launch, through the same function. Two reasons, both
+// found the hard way on 2026-09-02: the VM cannot accept an invitation to a
+// local-browser primary (that browser is on this Mac, so anything it sent sat
+// pending forever), and its browser frequently renders no Connect button at
+// all, so the send failed after 60s and was reported as an invitation that had
+// been sent. The operator's invitations inbox was empty.
+//
+// The result is then recorded on the engine, so the accounts panel shows it.
+app.post('/api/campaign/cloud/:id/accounts/:pid/primary-check', async (req, res) => {
+  const { id, pid } = req.params;
+  try {
+    const detail = await getCloudCampaign(id);
+    const c = (detail && detail.campaign) || {};
+    const cfg = c.config || {};
+    const primaryUrl = String(cfg.primaryUrl || '');
+    if (!primaryUrl) return res.status(400).json({ error: 'This campaign has no primary person.' });
+    const who = (cfg.accountEmails || {})[pid] || pid;
+
+    const out = await runCloudPreflightHandshake({
+      senderProfileIds: [pid],
+      primaryUrl,
+      primarySource: cfg.primarySource || 'local-browser',
+      autoAcceptAllPending: !!cfg.autoAcceptAllPending,
+      log: (line) => console.log(`[primary-check ${pid}]`, line),
+    });
+    const sender = ((out && out.senders) || []).find((x) => x && x.profileId === pid) || {};
+    // The handshake's own vocabulary, mapped to what the engine stores. 'sent'
+    // and 'sent-no-identity' both mean an invitation exists; 'not-sent' means
+    // one does not, and is never called pending.
+    const STATE = {
+      connected: 'connected',
+      sent: 'pending',
+      'sent-no-identity': 'pending',
+      'not-sent': 'not_connected',
+    };
+    const state = STATE[sender.state] || 'unverified';
+    const LINE = {
+      connected: `🔗 ${who} — connected to the primary`,
+      pending: `🔗 ${who} — invitation sent from this Mac, waiting for the primary to accept it`,
+      not_connected: `🔗 ${who} — not connected to the primary, and the invitation could not be sent`,
+      unverified: `🔗 ${who} — could not tell whether it is connected to the primary · nothing was sent`,
+    };
+    const rec = await recordCloudPrimaryConn(id, pid, { state, primaryUrl, line: LINE[state] });
+    if (rec && rec.error) return res.status(502).json(rec);
+    res.json({ ok: true, state, who, senderState: sender.state || '' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 // Local check of a CLOUD campaign — write-back step. After the operator runs
 // the local GoLogin sweep (POST /api/bulk-check-now) against a cloud campaign's

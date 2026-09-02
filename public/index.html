@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.60.9" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.9" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.60.14" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1787,6 +1787,36 @@
   .cloud-accounts-panel .cap-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 16px;border-bottom:1px solid var(--hairline-soft);font-size:13px;}
   .cloud-accounts-panel .cap-row:last-child{border-bottom:0;}
   .cloud-accounts-panel .cap-acct{font-weight:600;color:var(--ink);word-break:break-all;}
+  /* v3.1.60.14 — the row says the least it can. A dot for the state, a pill only
+     when something is wrong, the count as a fraction, and a chevron because the
+     row holds more than it shows. Everything else moved into the drawer
+     (operator, 2026-09-02: six badges of equal weight per row, unreadable). */
+  .cloud-accounts-panel .cap-row{display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:background .12s;}
+  .cloud-accounts-panel .cap-row:hover{background:rgba(127,127,127,.06);}
+  .cloud-accounts-panel .cap-row.open{background:rgba(127,127,127,.08);border-bottom-color:transparent;}
+  .cloud-accounts-panel .cap-row:focus-visible{outline:2px solid var(--gold,#F7BE68);outline-offset:-2px;}
+  .cloud-accounts-panel .cap-dot{width:7px;height:7px;border-radius:9999px;flex:0 0 auto;background:var(--gray);}
+  .cloud-accounts-panel .cap-dot.ok{background:var(--green);}
+  .cloud-accounts-panel .cap-dot.warn{background:var(--gold,#d4a24a);}
+  .cloud-accounts-panel .cap-dot.bad{background:var(--red);}
+  .cloud-accounts-panel .cap-acct{flex:0 0 auto;min-width:150px;}
+  .cloud-accounts-panel .cap-pills{display:flex;gap:6px;flex-wrap:wrap;flex:1 1 auto;}
+  .cloud-accounts-panel .cap-pill{font-size:11px;padding:2px 10px;border-radius:9999px;border:1px solid;white-space:nowrap;}
+  .cloud-accounts-panel .cap-pill.bad{color:var(--red);border-color:var(--red);}
+  .cloud-accounts-panel .cap-pill.warn{color:var(--gold,#d4a24a);border-color:var(--gold,#d4a24a);}
+  .cloud-accounts-panel .cap-n{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--gray);font-size:13px;}
+  .cloud-accounts-panel .cap-chev{flex:0 0 auto;width:12px;text-align:center;font-style:normal;font-size:16px;
+    line-height:1;color:var(--gray);transition:transform .16s,color .16s;}
+  .cloud-accounts-panel .cap-row:hover .cap-chev{color:var(--ink);}
+  .cloud-accounts-panel .cap-row.open .cap-chev{transform:rotate(90deg);color:var(--ink);}
+  .cloud-accounts-panel .cap-det{padding:2px 16px 14px 35px;border-bottom:1px solid var(--hairline-soft);background:rgba(127,127,127,.08);}
+  .cloud-accounts-panel .cap-kv{display:flex;gap:22px;flex-wrap:wrap;color:var(--gray);font-size:12px;margin-bottom:11px;}
+  .cloud-accounts-panel .cap-kv b{color:var(--ink);font-weight:500;}
+  .cloud-accounts-panel .cap-acts{display:flex;gap:8px;flex-wrap:wrap;}
+  .cloud-accounts-panel .cap-acts button{font-family:inherit;font-size:12px;padding:4px 13px;border-radius:9999px;
+    background:transparent;color:var(--ink);border:1px solid var(--hairline);cursor:pointer;transition:background .12s,color .12s;}
+  .cloud-accounts-panel .cap-acts button:hover{background:var(--ink);color:var(--paper,#fff);}
+  .cloud-accounts-panel .cap-acts button:disabled{opacity:.5;cursor:default;background:transparent;color:var(--ink);}
   .cloud-accounts-panel .cap-status{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;text-align:right;color:var(--gray);}
   .cloud-accounts-panel .cap-badge{display:inline-block;padding:2px 9px;border-radius:9999px;font-size:11px;letter-spacing:.02em;border:1px solid var(--hairline);white-space:nowrap;}
   .cloud-accounts-panel .cap-badge.ok{color:var(--green);border-color:var(--green);}
@@ -4329,7 +4359,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.60.9"></script>
+<script type="module" src="/js/app.js?v=3.1.60.14"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
