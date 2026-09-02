@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const APP = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
+const SERVER = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
+const CLIENT = readFileSync(new URL('../src/campaigns-client.js', import.meta.url), 'utf8');
+
+test('dashboard and campaign-card Resume Sending share the explicit sending command', () => {
+  const decision = APP.slice(APP.indexOf('window.openCampaignResumeDecision'), APP.indexOf('function _activeCardCloudId'));
+  assert.match(decision, /restartCloudCampaignUI\(id, false, undefined, true\)/);
+});
+
+test('the UI sends resumeSending=true to the local API', () => {
+  const restart = APP.slice(APP.indexOf('async function restartCloudCampaignUI'), APP.indexOf('// Task 3 Part B'));
+  assert.match(restart, /resumeSending: !!resumeSending/);
+});
+
+test('the desktop server and cloud client preserve the Resume Sending flag', () => {
+  const route = SERVER.slice(SERVER.indexOf("app.post('/api/campaign/cloud/:id/restart'"), SERVER.indexOf('// Edit a dispatched cloud campaign'));
+  assert.match(route, /resumeSending: !!\(req\.body && req\.body\.resumeSending\)/);
+  assert.match(CLIENT, /resumeSending: !!resumeSending/);
+});

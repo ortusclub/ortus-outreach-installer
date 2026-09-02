@@ -13464,7 +13464,7 @@ window.restartLocalFromItem = restartLocalFromItem;
 // startAt (ISO, optional): schedule the restart instead of running it now. The
 // engine parks the campaign in 'scheduled' behind a durable task and restarts it
 // itself at that instant — this app can be closed.
-async function restartCloudCampaignUI(id, fromStart, startAt) {
+async function restartCloudCampaignUI(id, fromStart, startAt, resumeSending = false) {
   // Say it before the VM is asked, exactly like the stop does. The card is
   // log-driven, and this line classifies as 'sending-resumed' (live-log-banner),
   // so it also switches the card off the monitoring view immediately — the
@@ -13484,7 +13484,12 @@ async function restartCloudCampaignUI(id, fromStart, startAt) {
     const dailyLimit = Number.isFinite(dlRaw) && dlRaw > 0 ? dlRaw : undefined;
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/restart`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromStart: !!fromStart, ...(dailyLimit ? { dailyLimit } : {}), ...(startAt ? { startAt } : {}) }),
+      body: JSON.stringify({
+        fromStart: !!fromStart,
+        resumeSending: !!resumeSending,
+        ...(dailyLimit ? { dailyLimit } : {}),
+        ...(startAt ? { startAt } : {}),
+      }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
@@ -30719,7 +30724,7 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   // the control contract so current and future monitoring cards cannot regress.
   if (current === 'vm') {
     if (sendingFromMonitoring) {
-      accepted = await restartCloudCampaignUI(id, false);
+      accepted = await restartCloudCampaignUI(id, false, undefined, true);
       return accepted;
     }
     return pauseCloudCampaignUI(id, true);
