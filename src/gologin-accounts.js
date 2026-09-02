@@ -123,6 +123,27 @@ export function accountForEmail(email) {
 }
 
 /**
+ * Operators who belong to a SECOND workspace as well as their own.
+ *
+ * The domain rule answers for a roster; this answers for a person. Sam runs
+ * Linked Velocity campaigns from his Ortus login (2026-09-02), and neither
+ * GoLogin's own sharing nor a per-profile grant expresses "all of that
+ * workspace" — the grant list would have to name every profile and be re-typed
+ * whenever Linked Velocity adds one.
+ *
+ * Committed on purpose, unlike GOLOGIN_PROFILE_GRANTS: an env entry lives in
+ * one machine's .env and dies on the next app update (2026-08-24, Milee).
+ * Membership of a workspace should not need re-pasting after every release.
+ *
+ * Emails are lowercase and matched exactly. Widening WHO may drive an account
+ * never changes who OWNS it: the launcher still uses the owning workspace's
+ * token and the owner's mode rules still apply.
+ */
+export const EXTRA_ACCOUNT_MEMBERS = Object.freeze({
+  linkedvelocity: Object.freeze(['sam@ortusclub.com', 'info@linkedinvelocity.com']),
+});
+
+/**
  * Per-profile grants — the escape hatch the domain rule deliberately lacks.
  *
  * The domain gate is right for the roster as a whole and wrong for the handful
@@ -171,6 +192,8 @@ export function canOperatorUseProfile(email, profileAccountId, profileId) {
   if (acc && acc.openToAll) return true;
   const mine = accountForEmail(email);
   if (mine === id) return true;
+  const who = String(email || '').trim().toLowerCase();
+  if ((EXTRA_ACCOUNT_MEMBERS[id] || []).includes(who)) return true;
   return grantsForProfile(profileId).includes(mine);
 }
 
