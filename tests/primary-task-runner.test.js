@@ -169,3 +169,65 @@ test('runDueTasks does nothing when no tasks are due', async () => {
   });
   assert.equal(res.ran, 0);
 });
+
+test('a lead who has already replied gets the follow-up HELD, not sent and not failed', async () => {
+  const marks = [];
+  const patches = {};
+  const tasks = [{ id: 'f1', type: 'follow-up', status: 'pending', dueAt: 1, attempts: 0, leadName: 'James Auld', body: 'hi', threadUrl: 'https://x/t' }];
+  const sem = fakeSemaphore();
+  const res = await runDueTasks(10, {
+    loadTasks: async () => tasks,
+    markTask: async (id, status, patch) => { marks.push([id, status]); patches[status] = patch; },
+    launchLocal: async () => ({ browser: {}, page: {} }),
+    closeLocal: async () => {},
+    launchAccount: async () => ({ page: {} }),
+    closeAccount: async () => {},
+    acceptInvitationFrom: async () => ({ accepted: true }),
+    // What thread-message returns when the lead has spoken.
+    sendInThread: async () => ({ sent: false, held: { reason: 'declined', phrase: "can't make", quote: "sorry I can't make that event" } }),
+    semaphore: sem,
+    log: () => {},
+  });
+  assert.equal(res.ran, 1);
+  assert.deepEqual(terminal(marks), [['f1', 'held']], 'held, never done and never failed');
+  assert.equal(patches.held.heldReason, 'declined');
+  assert.match(patches.held.heldQuote, /can't make that event/);
+});
+
+test('a normal send still marks done', async () => {
+  const marks = [];
+  const tasks = [{ id: 'f2', type: 'follow-up', status: 'pending', dueAt: 1, attempts: 0, leadName: 'Nancy', body: 'hi', threadUrl: 'https://x/t' }];
+  await runDueTasks(10, {
+    loadTasks: async () => tasks,
+    markTask: async (id, status) => { marks.push([id, status]); },
+    launchLocal: async () => ({ browser: {}, page: {} }),
+    closeLocal: async () => {},
+    launchAccount: async () => ({ page: {} }),
+    closeAccount: async () => {},
+    acceptInvitationFrom: async () => ({ accepted: true }),
+    sendInThread: async () => ({ sent: true }),
+    semaphore: fakeSemaphore(),
+    log: () => {},
+  });
+  assert.deepEqual(terminal(marks), [['f2', 'done']]);
+});
+
+test('a sender that returns nothing at all is still treated as sent', async () => {
+  // Older stubs (and any caller not yet updated) return undefined. That must
+  // keep meaning "sent", not silently become a hold.
+  const marks = [];
+  const tasks = [{ id: 'f3', type: 'follow-up', status: 'pending', dueAt: 1, attempts: 0, leadName: 'Pat', body: 'hi', threadUrl: 'https://x/t' }];
+  await runDueTasks(10, {
+    loadTasks: async () => tasks,
+    markTask: async (id, status) => { marks.push([id, status]); },
+    launchLocal: async () => ({ browser: {}, page: {} }),
+    closeLocal: async () => {},
+    launchAccount: async () => ({ page: {} }),
+    closeAccount: async () => {},
+    acceptInvitationFrom: async () => ({ accepted: true }),
+    sendInThread: async () => undefined,
+    semaphore: fakeSemaphore(),
+    log: () => {},
+  });
+  assert.deepEqual(terminal(marks), [['f3', 'done']]);
+});

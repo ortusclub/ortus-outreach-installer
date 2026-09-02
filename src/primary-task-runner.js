@@ -97,9 +97,25 @@ async function _processOne(t, page, deps) {
         ? `✓ Connection accepted — ${t.campaignProfileName || 'account'} (${_via})`
         : `⚠ Auto-accept: no matching invitation for ${t.campaignProfileName || 'account'} — skipped`);
     } else {
-      await sendFn(page, t.threadUrl, t.body, { introTitle: t.introTitle, leadName: t.leadName, log });
-      await _safeMark(markTask, t.id, 'done', {}, log);
-      emit(t, `✓ Follow-up sent — ${t.leadName || 'lead'} (group chat)`);
+      // holdIfLeadReplied: a lead who has already written back should not get a
+      // scheduled follow-up posted underneath their own message. The runner
+      // parks it as 'held' — selectDue() only ever takes 'pending', so it can
+      // never go out on its own — and the card asks the operator to read it.
+      const r = await sendFn(page, t.threadUrl, t.body, {
+        introTitle: t.introTitle, leadName: t.leadName, log, holdIfLeadReplied: true,
+      });
+      if (r && r.held) {
+        await _safeMark(markTask, t.id, 'held', {
+          heldReason: r.held.reason, heldPhrase: r.held.phrase,
+          heldQuote: r.held.quote, heldAt: Date.now(), lastError: null,
+        }, log);
+        emit(t, r.held.reason === 'declined'
+          ? `✋ Follow-up held — ${t.leadName || 'the lead'} replied and it reads like a no. Read it and decide.`
+          : `✋ Follow-up held — ${t.leadName || 'the lead'} has replied. Read it and decide.`);
+      } else {
+        await _safeMark(markTask, t.id, 'done', {}, log);
+        emit(t, `✓ Follow-up sent — ${t.leadName || 'lead'} (group chat)`);
+      }
     }
     return true;
   } catch (e) {

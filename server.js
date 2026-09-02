@@ -42,7 +42,9 @@ import { startScheduler as startPostCampaignScheduler, listSchedule as listPostC
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
 import { startCloudFollowupPoller, lastLateCount } from './src/cloud-followup-poller.js';
-import { loadTasks as loadPrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
+import { loadTasks as loadPrimaryTasks, saveTasks as savePrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
+import { belongsToCampaign, healthForCampaign, countFollowUpHealth, groupStaleFollowUps, discardGroups, restoreDiscarded } from './src/followup-groups.js';
+import { heldSummary } from './src/followup-dnc.js';
 import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
@@ -2571,23 +2573,119 @@ app.post('/api/campaign/:id/handover', async (req, res) => {
 // Counts straight off the local primary-task queue. `blocked` is the number
 // parked because the follow-up browser is signed out — the one state the
 // operator can clear in a click, and the one that used to be invisible.
-app.get('/api/followups/health', async (_req, res) => {
+// Follow-up counts. Pass campaignId (and profileIds, for follow-ups queued
+// before campaignId was stamped) to get ONE campaign's numbers; pass neither
+// and you get the app's lifetime totals, which is what the card used to show on
+// every campaign — a run minutes old reporting another campaign's 48 failures
+// as its own (Sam, 2026-09-02). Scoping is opt-in so nothing else breaks.
+app.get('/api/followups/health', async (req, res) => {
   try {
     const tasks = await loadPrimaryTasks();
     const fu = (Array.isArray(tasks) ? tasks : []).filter((t) => t && t.type === 'follow-up');
-    const blocked = fu.filter((t) => t.blockedBySession && t.status === 'pending');
-    const failed = fu.filter((t) => t.status === 'failed');
-    res.json({
-      ok: true,
-      sent: fu.filter((t) => t.status === 'done').length,
-      pending: fu.filter((t) => t.status === 'pending' && !t.blockedBySession).length,
-      blocked: blocked.length,
-      failed: failed.length,
-      // The single reason to show. Signed-out outranks everything: it is the
-      // only one with a one-click fix.
-      reason: blocked.length ? 'signed-out' : (failed.length ? 'error' : ''),
-      lastError: (failed[failed.length - 1] || {}).lastError || '',
+    const campaignId = String(req.query.campaignId || '').trim();
+    const profileIds = String(req.query.profileIds || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const scoped = !!(campaignId || profileIds.length);
+    // Unscoped keeps the old whole-app answer for any caller that has not been
+    // updated. Scoped counts one campaign, which is what the card now asks for.
+    const startedAt = Number(req.query.startedAt || 0) || 0;
+    // Unscoped keeps the old whole-app answer for any caller that has not been
+    // updated. Scoped counts one campaign, which is what the card now asks for.
+    const mine = scoped ? fu.filter((t) => belongsToCampaign(t, { campaignId, profileIds, startedAt })) : fu;
+    res.json({ ok: true, scoped, ...countFollowUpHealth(mine, { heldSummaryOf: heldSummary }) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Everything the board needs about follow-ups, in ONE request per render:
+//   health — per campaign, for EVERY campaign on the board. Both live status
+//     cards render per campaign (the dashboard strip's card #2 from its own
+//     strip's status, and the campaign tab's #active-card), so each needs its
+//     own numbers. Fetching only the campaign being viewed would leave every
+//     other strip's follow-up row blank.
+//   groups — stuck follow-ups whose campaign is NOT on the board. Those have no
+//     card to live on; the strip above the rails is their only home. Excluding
+//     the board's own campaigns is what keeps a follow-up in exactly one place.
+// One reading of "which campaigns are live on the board", shared by the board
+// route and by Discard. Discard has to apply the SAME ownership test that kept a
+// follow-up out of the strip, or it would reach into a campaign still running:
+// legacy groups are keyed by their message, and sibling campaigns reuse one
+// template. startedAt is what stops a live campaign adopting an older orphan
+// that merely shares its LinkedIn account.
+function liveCampaignScope(campaigns) {
+  return (Array.isArray(campaigns) ? campaigns : [])
+    .map((c) => ({
+      id: String((c && c.id) || ''),
+      profileIds: Array.isArray(c && c.profileIds) ? c.profileIds : [],
+      startedAt: Number((c && c.startedAt) || 0) || 0,
+    }))
+    .filter((c) => c.id || c.profileIds.length);
+}
+
+app.post('/api/followups/board', async (req, res) => {
+  try {
+    const tasks = await loadPrimaryTasks();
+    const campaigns = Array.isArray(req.body && req.body.campaigns) ? req.body.campaigns : [];
+    const live = liveCampaignScope(campaigns);
+    const health = {};
+    for (const c of live) {
+      if (!c.id) continue;
+      health[c.id] = { ok: true, scoped: true, ...healthForCampaign(tasks, c, { heldSummaryOf: heldSummary }) };
+    }
+    const groups = groupStaleFollowUps(tasks, { liveCampaigns: live });
+    res.json({ ok: true, health, groups, total: groups.reduce((a, g) => a + g.count, 0) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Drop a group of follow-ups. selectDue() only ever takes 'pending', so a
+// discarded task can never be sent — it is not deleted, so Undo can put it back
+// exactly as it was (the response carries what to hand to /restore).
+app.post('/api/followups/discard', async (req, res) => {
+  try {
+    const keys = Array.isArray(req.body && req.body.keys) ? req.body.keys : [];
+    if (!keys.length) return res.status(400).json({ error: 'keys required' });
+    const live = liveCampaignScope(Array.isArray(req.body && req.body.campaigns) ? req.body.campaigns : []);
+    const { tasks, discarded } = discardGroups(await loadPrimaryTasks(), keys, { liveCampaigns: live });
+    if (discarded.length) await savePrimaryTasks(tasks);
+    console.log(`[followups] discarded ${discarded.length} follow-up(s) the operator decided not to send`);
+    res.json({ ok: true, discarded: discarded.length, undo: discarded });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// The operator has read the reply and wants it sent anyway. Held → pending is
+// all it takes: the runner's next drain picks it up like any other due task.
+app.post('/api/followups/send-held', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+    if (!ids.length) return res.status(400).json({ error: 'ids required' });
+    const want = new Set(ids);
+    let released = 0;
+    const tasks = (await loadPrimaryTasks()).map((t) => {
+      if (!t || t.status !== 'held' || !want.has(t.id)) return t;
+      released += 1;
+      const { heldReason, heldPhrase, heldQuote, heldAt, ...rest } = t;
+      // dueAt in the past so it goes on the very next drain, not in ten minutes.
+      return { ...rest, status: 'pending', dueAt: Date.now() - 1000, attempts: 0, lastError: null };
     });
+    if (released) await savePrimaryTasks(tasks);
+    console.log(`[followups] the operator read the reply and released ${released} held follow-up(s) to send`);
+    res.json({ ok: true, released });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/followups/restore', async (req, res) => {
+  try {
+    const undo = Array.isArray(req.body && req.body.undo) ? req.body.undo : [];
+    if (!undo.length) return res.status(400).json({ error: 'undo required' });
+    await savePrimaryTasks(restoreDiscarded(await loadPrimaryTasks(), undo));
+    console.log(`[followups] put ${undo.length} discarded follow-up(s) back in the queue`);
+    res.json({ ok: true, restored: undo.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

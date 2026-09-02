@@ -7716,8 +7716,15 @@ const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine
 // When this Mac last started failing to reach the VM, per campaign. Drives one
 // log line per quiet spell instead of one per failed poll.
 const _cloudQuietSince = new Map();
-let _followupHealth = null;
-window._followupHealth = () => _followupHealth;
+// Follow-up health, PER CAMPAIGN. This used to be one global, set by whichever
+// campaign refreshed last — so with the dashboard strip showing one campaign and
+// the campaign tab another, both cards read the same numbers, and after the
+// per-campaign fetch landed it would have been the LAST campaign polled rather
+// than the app total. Two live status cards exist and they must never be
+// conflated; keying by campaign id is what keeps them independent.
+const _followupHealthById = new Map();
+function _fuHealth(cid) { return _followupHealthById.get(String(cid || '')) || null; }
+window._followupHealth = (cid) => (cid ? _fuHealth(cid) : Object.fromEntries(_followupHealthById));
 const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
 const _cloudProgressSeen = new Map();     // campaignId -> last verified browser milestone
 // Cloud load + the global queue order, refreshed once per board poll and only
@@ -8827,12 +8834,22 @@ async function _refreshCloudActiveStatus(id) {
       if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(id, ar.accounts);
     } catch (_) { /* engine may not expose it yet — panel just won't show */ }
     try { if (_viewingCloudId === id) renderCloudAccountsPanel(id); } catch (_) { /* */ }
-    // Follow-up health for THIS app (the queue is local, not per-campaign): how
-    // many went out, how many are parked on a signed-out browser. Cheap, and it
-    // is the only place the operator can learn a follow-up did not land.
+    // Follow-up health for THIS CAMPAIGN. The queue itself is one flat local
+    // list, and asking it unscoped is what put the app's lifetime totals under
+    // every campaign's heading — a run minutes old reading "56 sent · 48 could
+    // not send" from campaigns that ended weeks earlier (Sam, 2026-09-02). The
+    // profile ids come along for follow-ups queued before campaignId was
+    // stamped: those can only be placed by the account that sent them.
     try {
-      const fh = await (await fetch('/api/followups/health')).json();
-      if (fh && fh.ok) _followupHealth = fh;
+      const _pids = ((d && d.campaign && (d.campaign.profile_ids || d.campaign.profileIds)) || []).join(',');
+      // The start date guards the account fallback: an account is reused, so
+      // without it this campaign would adopt an orphaned follow-up from an
+      // earlier one that happened to run the same LinkedIn login.
+      const _st = Date.parse((d && d.campaign && (d.campaign.started_at || d.campaign.created_at)) || '') || 0;
+      const _q = `campaignId=${encodeURIComponent(id)}${_pids ? `&profileIds=${encodeURIComponent(_pids)}` : ''}`
+        + (_st ? `&startedAt=${_st}` : '');
+      const fh = await (await fetch(`/api/followups/health?${_q}`)).json();
+      if (fh && fh.ok) _followupHealthById.set(String(id), fh);
     } catch (_) { /* the line just does not render */ }
     _recordCloudProgress(id, d);
     // Carry the optimistic "resuming" flag across the rebuild. Dropping it here
@@ -11484,6 +11501,10 @@ let _lastBoardHtml = '';  // anti-jank: skip the 4s re-render when nothing chang
 const _cloudDetailCache = new Map();  // id → detail; terminal campaigns cached (never change)
 let _boardRenderInFlight = false;     // don't stack renders (each does N cloud fetches)
 let _cloudRaw = [];                   // background snapshot of cloud details; render builds from this
+// True once that snapshot has been attempted at least once. Before it, the
+// board renders history only, so "nothing is live" is ignorance, not a fact —
+// and anything that reasons about which campaigns are running must wait.
+let _cloudSnapshotTried = false;
 let _cloudRefreshInFlight = false;
 let _cloudRefreshController = null;   // cancelled when Electron wakes from sleep
 // Successful handovers update ownership immediately. The board snapshot can be
@@ -11591,6 +11612,7 @@ async function _refreshCloudItems() {
         _bulk = { ..._bulk, ...((br && br.details) || {}) };
       } catch { /* summary was complete, or per-id fallback runs below */ }
     }
+    _cloudSnapshotTried = true;
     _cloudRaw = await _mapLimit(cloudCamps, CLOUD_FANOUT_LIMIT, async (c) => {
       let d;
       if (_isFresh(c)) return _cloudDetailCache.get(c.id);
@@ -11773,6 +11795,7 @@ async function _renderCampaignsBoardInner() {
       items.push({
         where: 'local', id: 'local-active', name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
         bucket: 'running', sent: s.totalProcessed || 0, total: s.totalTargets || 0,
+        startedAt: Date.parse(s.startedAt || s.started_at || '') || Number(s.startedAt) || 0,
         pending: Math.max(0, (Number(s.totalTargets) || 0) - (Number(s.totalProcessed) || 0)),
         interrupted: s.state === 'interrupted' || !!s.interrupted,
         dailyWait: s.state === 'waiting_daily_reset',
@@ -11872,6 +11895,11 @@ async function _renderCampaignsBoardInner() {
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
+        // When this campaign began. A LinkedIn account outlives the campaign
+        // that used it, so a follow-up queued BEFORE this one started was never
+        // its own — without this date the strip and the card both fall back to
+        // the account alone and an old orphan gets adopted by today's campaign.
+        startedAt: Date.parse(c.started_at || c.created_at || '') || 0,
         identityKey: `${c.mode || ''}|${c.name || ''}|${c.sheet_url || ''}|${(c.profile_ids || []).slice().sort().join(',')}`,
         paused: c.status === 'paused',
         dailyWait: c.status === 'waiting_daily_reset',
@@ -12218,6 +12246,11 @@ async function _renderCampaignsBoardInner() {
   // done/cancelled strips is static). Live strips whose countdowns tick still
   // differ each render, so they keep updating.
   const final = html || _campaignsEmptyState();
+  // The strip is computed from these items but lives OUTSIDE the board, and it
+  // keeps its own byte-identical check. Running it before the board's anti-jank
+  // early-return is what lets it appear at all: a static board of done strips
+  // renders identical markup forever, and the strip would wait behind it.
+  try { renderStaleFollowups(items); } catch (_) { /* never let it break the board */ }
   if (board.dataset.rendered === '1' && final === _lastBoardHtml) return;
   _lastBoardHtml = final;
   board.dataset.rendered = '1';
@@ -12235,6 +12268,190 @@ async function _renderCampaignsBoardInner() {
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
 }
+
+// ── Follow-ups nobody can see ────────────────────────────────────────────────
+// A follow-up whose campaign is still on the board belongs to that campaign's
+// card. One whose campaign has left the board had nowhere to appear at all: it
+// sat in the local queue, counted into every card's totals, and was never
+// listed anywhere an operator could act on it. This strip is that missing place.
+//
+// It is grouped by campaign and it shows the MESSAGE, on request, because the
+// message is the only thing that answers the real question. "Our dinner on 4
+// September" is worth sending on the 2nd and worthless on the 5th, and no count
+// or timestamp tells you which case you are in.
+let _staleFuOpen = false;
+let _staleFuLastHtml = '';
+let _staleFuUndo = null;
+
+function _fuWhen(ms) {
+  if (!Number.isFinite(ms)) return '';
+  return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+// The board scope the visible strip was computed from, so Discard applies the
+// identical ownership test rather than a second guess at it.
+let _staleFuLiveScope = [];
+async function renderStaleFollowups(items) {
+  const mount = document.getElementById('stale-followups');
+  if (!mount) return;
+  // EVERY campaign on the board, not only the one being viewed. Both live status
+  // cards render per campaign, so each strip's card #2 needs its own follow-up
+  // numbers — asking only for the viewed campaign would leave every other
+  // strip's follow-up row blank, which is a different way of showing the wrong
+  // thing. One request covers the whole board plus the stale groups.
+  const live = (items || []).filter((it) => it && ['running', 'queued', 'idle'].includes(it.bucket));
+  const campaigns = _staleFuLiveScope = [...new Map(live
+    .filter((it) => it.id)
+    .map((it) => [String(it.id), {
+      id: String(it.id), profileIds: it.profileIds || [], startedAt: it.startedAt || 0,
+    }])).values()];
+  // The board paints history before the cloud snapshot lands. On that first
+  // pass NO campaign looks live, so every stuck follow-up would look orphaned:
+  // measured, the strip flashed "8 follow-ups did not send" and then emptied
+  // itself a second later. Zero live campaigns is only a fact once the snapshot
+  // has been tried.
+  if (!_cloudSnapshotTried) return;
+  let groups = [];
+  try {
+    const r = await (await fetch('/api/followups/board', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaigns }),
+    })).json();
+    if (!r || !r.ok) return;
+    groups = r.groups || [];
+    for (const [cid, h] of Object.entries(r.health || {})) _followupHealthById.set(String(cid), h);
+  } catch (_) { return; } // the strip simply does not appear
+
+  if (!groups.length) { mount.replaceChildren(); _staleFuLastHtml = ''; return; }
+
+  const total = groups.reduce((a, g) => a + g.count, 0);
+  const oldest = Math.min(...groups.map((g) => g.firstQueuedAt || Infinity));
+  const n = (c, w) => `${c} ${w}${c === 1 ? '' : 's'}`;
+
+  const body = groups.map((g) => {
+    const name = g.campaignName
+      ? `<span class="fu-nm">${escHtml(g.campaignName)}</span>`
+      : '<span class="fu-nm unnamed">Campaign name not recorded</span>';
+    const why = g.reason === 'signed-out'
+      ? 'the follow-up browser is signed out of LinkedIn'
+      : (g.lastError || 'LinkedIn did not open the message box');
+    const who = g.leadNames.length
+      ? `<div class="fu-who">${escHtml(g.leadNames.slice(0, 6).join(' · '))}${g.leadNames.length > 6 ? ` and ${g.leadNames.length - 6} more` : ''}</div>`
+      : '';
+    const login = g.reason === 'signed-out'
+      ? '<button class="mini" onclick="openFollowupLogin(this)">Open the follow-up browser</button>' : '';
+    return `<div class="fu-grp" data-key="${escHtml(g.key)}">
+      <div class="fu-top">${name}
+        <span class="fu-dt">queued ${escHtml(_fuWhen(g.firstQueuedAt))}</span>
+        <span class="fu-cnt">${g.count} waiting</span>
+        <button class="mini fu-x" onclick="toggleStaleFollowupMessage(this)">Show message</button>
+      </div>
+      <div class="fu-meta">${escHtml(g.accounts.join(', '))}${g.accounts.length ? ' · ' : ''}${escHtml(why)}</div>
+      <div class="fu-open" hidden>
+        <div class="fu-msg">${escHtml(g.message)}</div>
+        ${who}
+        <div class="sn-foot"><div class="right">
+          ${login}
+          <button class="mini danger" onclick="discardStaleFollowups('${escHtml(g.key)}', ${g.count}, this)">Discard ${n(g.count, 'follow-up')}</button>
+          <button class="mini solid" onclick="retryFollowups(this)">Send ${g.count === 1 ? 'it' : 'these ' + g.count} now</button>
+        </div></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const markup = `<div class="fu-strip-outer">
+    <div class="fu-bar" onclick="toggleStaleFollowups(this)">
+      <b>${n(total, 'follow-up')} did not send</b>
+      <span class="fu-sub">${n(groups.length, 'campaign')} no longer on your board · oldest ${escHtml(_fuWhen(oldest))}</span>
+      <span class="chev">${_staleFuOpen ? 'Hide ▴' : 'Show ▾'}</span>
+    </div>
+    <div class="fu-body" ${_staleFuOpen ? '' : 'hidden'}>${body}</div>
+  </div>`;
+  // The board repaints every few seconds. Identical markup is left alone, and
+  // when it HAS changed (a count moved, a group cleared) the messages the
+  // operator had open are reopened afterwards — otherwise reading a long
+  // message while a campaign ticks would slam it shut under them.
+  if (markup === _staleFuLastHtml) return;
+  const wasOpen = new Set([...mount.querySelectorAll('.fu-grp')]
+    .filter((el) => { const o = el.querySelector('.fu-open'); return o && !o.hidden; })
+    .map((el) => el.dataset.key));
+  _staleFuLastHtml = markup;
+  mount.innerHTML = markup;
+  for (const el of mount.querySelectorAll('.fu-grp')) {
+    if (!wasOpen.has(el.dataset.key)) continue;
+    const open = el.querySelector('.fu-open');
+    const btn = el.querySelector('.fu-x');
+    if (open) open.hidden = false;
+    if (btn) btn.textContent = 'Hide message';
+  }
+}
+
+window.toggleStaleFollowups = function (bar) {
+  const body = bar.parentElement.querySelector('.fu-body');
+  _staleFuOpen = body.hidden;
+  body.hidden = !_staleFuOpen;
+  bar.querySelector('.chev').textContent = _staleFuOpen ? 'Hide ▴' : 'Show ▾';
+  _staleFuLastHtml = ''; // the next repaint must re-render with the new state
+};
+
+window.toggleStaleFollowupMessage = function (btn) {
+  const open = btn.closest('.fu-grp').querySelector('.fu-open');
+  open.hidden = !open.hidden;
+  btn.textContent = open.hidden ? 'Show message' : 'Hide message';
+  _staleFuLastHtml = '';
+};
+
+// Discard, with Undo. Nothing is deleted: the tasks are marked discarded, and
+// selectDue() only ever takes 'pending', so they can never be sent — while Undo
+// can still put them back exactly as they were.
+window.discardStaleFollowups = async function (key, count, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Discarding…'; }
+  try {
+    const r = await fetch('/api/followups/discard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      // The same board scope the strip was built from. A legacy group is keyed
+      // by its message and sibling campaigns reuse one template, so without it
+      // Discard could reach into a campaign still running.
+      body: JSON.stringify({ keys: [key], campaigns: _staleFuLiveScope }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    _staleFuUndo = d.undo || [];
+    _staleFuLastHtml = '';
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(
+        `${d.discarded} follow-up${d.discarded === 1 ? '' : 's'} discarded. ${d.discarded === 1 ? 'It will' : 'They will'} never be sent.`,
+        10000,
+        { label: 'Undo', onClick: () => undoDiscardFollowups() },
+      );
+    }
+    try { await renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = `Discard ${count} follow-up${count === 1 ? '' : 's'}`; }
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Could not discard: ${e.message}`, 6000);
+  }
+};
+
+window.undoDiscardFollowups = async function () {
+  const undo = _staleFuUndo;
+  if (!undo || !undo.length) return;
+  _staleFuUndo = null;
+  try {
+    const r = await fetch('/api/followups/restore', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ undo }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    _staleFuLastHtml = '';
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`${d.restored} follow-up${d.restored === 1 ? '' : 's'} back in the queue.`, 5000);
+    }
+    try { await renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Could not undo: ${e.message}`, 6000);
+  }
+};
 
 // Lazy-fill done-strip log boxes from the persisted campaign log. Cached per
 // history index so the 5s board re-render doesn't refetch; in-flight guard so
@@ -15129,10 +15346,22 @@ async function pauseOrResumeCampaign() {
   }
 }
 
-function showCampaignToast(msg, duration = 6000) {
+// `action` adds one inline button, for the case where the toast is the ONLY
+// place to take back what just happened (discarding follow-ups). Without it the
+// toast stays exactly as it was: plain text, set with textContent, so a message
+// carrying an operator's own campaign name can never inject markup.
+function showCampaignToast(msg, duration = 6000, action = null) {
   const toast = document.getElementById('campaign-toast');
   if (!toast) return;
-  toast.textContent = msg;
+  toast.innerHTML = '';
+  toast.appendChild(document.createTextNode(msg));
+  if (action && action.label && typeof action.onClick === 'function') {
+    const b = document.createElement('button');
+    b.className = 'toast-action';
+    b.textContent = action.label;
+    b.onclick = () => { toast.classList.remove('visible'); action.onClick(); };
+    toast.appendChild(b);
+  }
   toast.classList.add('visible');
   clearTimeout(toast._timer);
   toast._timer = setTimeout(() => toast.classList.remove('visible'), duration);
@@ -27841,11 +28070,14 @@ function _nextMondayText() {
 // The follow-up state, in the card's existing "What you can do" language.
 // Silent while follow-ups are working: a count with nothing wrong belongs in the
 // facts row, not in a block headed "what you can do".
-function _followupFixHtml() {
-  const h = _followupHealth;
+function _followupFixHtml(cid) {
+  const h = _fuHealth(cid);
   if (!h || !h.ok) return '';
+  // Held first: it is the only one that needs a human to READ something rather
+  // than fix a browser, and a probable no is the most expensive thing to miss.
+  const heldHtml = _heldFollowupsHtml(h);
   const stuck = (h.blocked || 0) + (h.failed || 0);
-  if (!stuck) return '';
+  if (!stuck) return heldHtml;
   const n = stuck === 1 ? 'follow-up' : 'follow-ups';
   const row = h.reason === 'signed-out' || h.blocked
     ? `<b>${stuck} ${n} are waiting.</b> The follow-up browser is signed out of LinkedIn. It is its own Chrome window, separate from your everyday one — which is why you never saw it open. Sign in once and they go out on their own; nothing is lost and no lead was messaged twice.`
@@ -27854,9 +28086,53 @@ function _followupFixHtml() {
     '<button type="button" onclick="openFollowupLogin(this)">Open the follow-up browser to log in</button>',
     `<button type="button" onclick="retryFollowups(this)">Retry the ${stuck} now</button>`,
   ];
-  return `<div class="fixhd">What you can do</div><ul><li>${row}</li></ul>`
+  return heldHtml
+    + `<div class="fixhd">What you can do</div><ul><li>${row}</li></ul>`
     + `<div class="fixacts">${acts.join('')}</div>`;
 }
+
+// Follow-ups this campaign did NOT send because the lead had already written
+// back. Not an error and not a send: a decision waiting on the operator, which
+// is why it quotes them rather than just counting them.
+function _heldFollowupsHtml(h) {
+  const items = (h && h.heldItems) || [];
+  if (!items.length) return '';
+  const rows = items.map((it) => {
+    const who = escHtml(it.leadName || 'The lead');
+    const link = it.leadUrl ? `<a href="${escHtml(it.leadUrl)}" target="_blank" rel="noreferrer">${who}</a>` : who;
+    const tag = it.reason === 'declined'
+      ? '<b class="fu-dnc">probable DNC</b>'
+      : '<b>replied</b>';
+    return `<li>${link} ${tag} — “${escHtml(it.quote || '')}”</li>`;
+  }).join('');
+  const ids = items.map((it) => it.id);
+  const n = items.length;
+  return `<div class="fixhd">Held for you to read</div>`
+    + `<ul>${rows}</ul>`
+    + `<div class="fixacts">`
+    + `<button type="button" onclick='sendHeldFollowups(${JSON.stringify(ids)}, this)'>Send ${n === 1 ? 'it' : `all ${n}`} anyway</button>`
+    + `</div>`;
+}
+
+// The operator has read the reply and wants it to go. Held → pending, due now.
+window.sendHeldFollowups = async function (ids, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Releasing…'; }
+  try {
+    const r = await fetch('/api/followups/send-held', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    if (btn) btn.textContent = `${d.released} queued to send`;
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`${d.released} follow-up${d.released === 1 ? '' : 's'} released — ${d.released === 1 ? 'it goes' : 'they go'} out on the next run.`, 6000);
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send anyway'; }
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Could not release: ${e.message}`, 6000);
+  }
+};
 
 // Opens the SAME Chrome profile the follow-up runner uses, on screen this time,
 // at the LinkedIn login page. Left open deliberately — closing it is the
@@ -28534,12 +28810,16 @@ function renderLiveStage(root, status) {
     // Follow-ups get a fact of their own once any have run. Without it the only
     // evidence a follow-up ever happened was the lead's LinkedIn thread, so five
     // that never sent looked exactly like five that did (operator, 2026-09-01).
-    const _fh = _followupHealth;
-    if (_fh && _fh.ok && ((_fh.sent || 0) + (_fh.blocked || 0) + (_fh.failed || 0)) > 0) {
+    const _fh = _fuHealth(cid);
+    if (_fh && _fh.ok && ((_fh.sent || 0) + (_fh.blocked || 0) + (_fh.failed || 0) + (_fh.held || 0)) > 0) {
       const stuck = (_fh.blocked || 0) + (_fh.failed || 0);
-      facts.push(['Follow-ups', stuck
-        ? `${_fh.sent || 0} sent · ${stuck} could not send`
-        : `${_fh.sent || 0} sent`]);
+      // Held is neither sent nor failed — the lead wrote back and the follow-up
+      // is waiting on the operator. heldSummary already words it ("2 probable
+      // DNC · 1 replied") so a declined reply reads differently from a warm one.
+      const bits = [`${_fh.sent || 0} sent`];
+      if (stuck) bits.push(`${stuck} could not send`);
+      if (_fh.heldSummary) bits.push(`${_fh.heldSummary}, held for you`);
+      facts.push(['Follow-ups', bits.join(' · ')]);
     }
     const html = facts.map(([label, value]) => `<div><span>${escHtml(label)}</span><b>${escHtml(_named(value, 'this account'))}</b></div>`).join('');
     if (factsEl.dataset.html !== html) { factsEl.innerHTML = html; factsEl.dataset.html = html; }
@@ -28625,7 +28905,7 @@ function renderLiveStage(root, status) {
         // Follow-up trouble is worth saying in EVERY phase, not only 'waiting':
         // a signed-out follow-up browser is just as broken while the campaign is
         // mid-send, and that is exactly when nobody is looking at the card.
-        const _fuFix = _followupFixHtml();
+        const _fuFix = _followupFixHtml(cid);
         fix.innerHTML = (phase === 'waiting' ? _stageFixHtml(cid, accts) : '') || _fuFix;
       }
     }

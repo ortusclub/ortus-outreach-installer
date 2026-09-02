@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.60.5" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.5" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.60.9" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.9" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -258,6 +258,13 @@
            is queued/running. Click to expand the B1 ladder. Rendered by
            renderDashScrapeStrip() from the /api/scrape/jobs poll. ───────── -->
       <div id="dash-scrape-strip" hidden></div>
+
+      <!-- ── Follow-ups that never sent, from campaigns no longer on the board.
+           A follow-up whose campaign is still listed belongs to that campaign's
+           card; one whose campaign has gone had nowhere to appear at all. Filled
+           by renderStaleFollowups() at the end of the board render, so the two
+           can never claim the same follow-up. ────────────────────────────── -->
+      <div id="stale-followups"></div>
 
       <!-- ── UNIFIED CAMPAIGNS BOARD (v2.129) ────────────────────────
            Every campaign as an sn-strip, color-coded: GREEN rail = running on
@@ -1984,6 +1991,34 @@
   .sn-foot .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
   .sn-foot .lock{font-size:11px;color:var(--gray-faint,#b8b8b6);}
   .sn-foot .right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  /* ── Stale follow-ups strip (#stale-followups). Sits above the board rails.
+        Reuses .sn-foot's pill for its buttons; only .fu-top needs the rule
+        extended, since these pills live outside a footer. ──────────────── */
+  .fu-strip-outer{margin-bottom:26px;}
+  .fu-bar{display:flex;align-items:center;gap:12px;padding:15px 22px;cursor:pointer;border:1px solid rgba(212,162,74,.45);border-radius:14px;background:rgba(151,103,27,.09);}
+  .fu-bar:hover{border-color:rgba(212,162,74,.85);}
+  .fu-bar b{font-family:var(--display);font-size:20px;letter-spacing:.02em;color:var(--gold,#d4a24a);font-weight:400;}
+  .fu-bar .fu-sub{font-size:12px;color:var(--gray);}
+  .fu-bar .chev{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .fu-body{border:1px solid var(--hairline);border-top:0;border-radius:0 0 14px 14px;background:var(--card-bg);margin:-14px 10px 0;padding:22px 22px 10px;}
+  .fu-grp{border-top:1px solid var(--hairline);padding:18px 0;}
+  .fu-grp:first-child{border-top:0;padding-top:4px;}
+  .fu-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .fu-nm{font-family:var(--display);font-size:22px;line-height:1;letter-spacing:.02em;color:var(--ink);}
+  .fu-nm.unnamed{font-size:14px;font-style:italic;color:var(--gray);font-family:inherit;}
+  .fu-dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .fu-cnt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold,#d4a24a);}
+  .fu-meta{font-size:12px;color:var(--gray);margin-top:7px;}
+  .fu-msg{margin-top:14px;padding:15px 18px;border-left:2px solid rgba(212,162,74,.55);background:rgba(128,128,128,.055);font-size:13.5px;line-height:1.62;color:var(--ink);white-space:pre-wrap;}
+  .fu-who{font-size:12px;color:var(--gray);margin-top:10px;}
+  .fu-open .sn-foot{margin-top:14px;}
+  .fu-top .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .fu-x{margin-left:auto;color:var(--gray);}
+  .fu-top .mini:hover{border-color:var(--ink);color:var(--ink);}
+  .fu-open .sn-foot .mini.danger{color:var(--gray);}
+  .fu-open .sn-foot .mini.danger:hover{color:var(--red);border-color:var(--red);}
+  .vj-stage-fix .fu-dnc{color:var(--red,#b4553f);font-weight:600;}
+  #campaign-toast .toast-action{margin-left:14px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:5px 11px;border-radius:9999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;}
   .sn-foot .mini,.skipped-actions .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
   .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
   .sn-foot .mini.sn-delete-forever{background:#d92d2d;color:#fff;border-color:#ff5a5a;font-weight:700;}
@@ -4294,7 +4329,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.60.5"></script>
+<script type="module" src="/js/app.js?v=3.1.60.9"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
