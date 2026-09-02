@@ -9,7 +9,7 @@
 //    unlabelled dock glyphs, the first tipped "continue where it left off".
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { acctPillCount, failedStartRetry, vjCardControlsFor } from '../public/js/vjcard.mjs';
+import { acctPillCount, acctBatchTip, failedStartRetry, vjCardControlsFor } from '../public/js/vjcard.mjs';
 
 test('the pill reads sent today out of the daily limit, never the batch share', () => {
   assert.equal(acctPillCount({ dailyCount: 12, dailyLimit: 50 }, { sent: 12, total: 13 }), '12/50');
@@ -106,4 +106,19 @@ test('failedStartRetry: a stopped campaign part-way through carries on', () => {
 test('failedStartRetry: a finished campaign is offered nothing', () => {
   assert.equal(failedStartRetry({ bad: true, badLabel: 'Stopped', totalProcessed: 20, totalTargets: 20 }), null);
   assert.equal(failedStartRetry({ bad: false, totalProcessed: 0, totalTargets: 4 }), null);
+});
+
+// Same operator, 2026-09-02: "why is it sometimes out of 4 and sometimes out of
+// 8?" — because the row was printing the account's share of the campaign's
+// leads. The denominator he wanted is the turn.
+test('the batch tooltip counts the turn, and says which turn it is', () => {
+  assert.equal(acctBatchTip({ done: 4, planned: 8 }, null), '4 of 8 in its last batch');
+  assert.equal(acctBatchTip({ done: 4, planned: 8 }, { done: 3, total: 8 }), '3 of 8 in this batch');
+});
+
+test('an account with no turn to report gets no tooltip rather than an empty one', () => {
+  assert.equal(acctBatchTip(null, null), '');
+  assert.equal(acctBatchTip({ done: 0, planned: 0 }, null), '');
+  // A live account between leads has a phase but no counted turn yet.
+  assert.equal(acctBatchTip(null, { done: 0, total: 0 }), '');
 });

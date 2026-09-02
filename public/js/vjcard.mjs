@@ -414,6 +414,26 @@ export function vjCardControlsFor(status = {}) {
  *  With no daily limit known we say what was sent rather than invent a
  *  denominator — "12/0" is worse than no denominator at all.
  */
+/** "4 of 8 in its last batch" — the turn, which is what an operator means by a
+ *  batch: what one account was handed the last time its browser opened, and how
+ *  many of them it sent. Deliberately not the day (the row already says that)
+ *  and not the account's share of the campaign's leads, which is a split that
+ *  grows when another account is removed (operator, 2026-09-02: "why is it
+ *  sometimes out of 4 and sometimes out of 8").
+ *
+ *  liveTurn wins when the account's browser is open right now: it has no
+ *  finished turn worth reporting, and the one in progress is the news.
+ *  Empty string when nothing is known, so the caller renders no tooltip at all
+ *  rather than one that says nothing.
+ */
+export function acctBatchTip(lastTurn = null, liveTurn = null) {
+  const lv = liveTurn || null;
+  if (lv && Number(lv.total) > 0) return `${Number(lv.done) || 0} of ${Number(lv.total)} in this batch`;
+  const lt = lastTurn || null;
+  if (!lt || !(Number(lt.planned) > 0)) return '';
+  return `${Number(lt.done) || 0} of ${Number(lt.planned)} in its last batch`;
+}
+
 export function acctPillCount(account = {}, tally = null) {
   const limit = Number(account.dailyLimit) || 0;
   const sent = Number.isFinite(Number(account.dailyCount)) ? Number(account.dailyCount)

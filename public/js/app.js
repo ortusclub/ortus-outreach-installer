@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, launchMilestones, linkIsLost, monitorHeroState, monitorHeroView, monitorTickText, queueWaitLine, splitSafetyCount, stripCadence } from '/js/live-activity.mjs?v=3.1.48.95';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView, handshakeStepView, handshakeOutcome } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition, heroFollowsLog, acctPillCount, failedStartRetry } from '/js/vjcard.mjs?v=3.1.48.95';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition, heroFollowsLog, acctPillCount, acctBatchTip, failedStartRetry } from '/js/vjcard.mjs?v=3.1.48.95';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -8957,6 +8957,16 @@ async function _refreshCloudActiveStatus(id) {
   }
 }
 
+// "4 of 8 in its last batch" — the turn, not the day and not the lead split.
+// The engine records every finished turn (campaign-worker, at browser close);
+// the account sending right now has no finished turn to report, so it reports
+// the one in progress.
+function _acctBatchTip(id, a) {
+  const d = (id && _cloudDetailCache.get(id)) || {};
+  const live = String(d.liveAccount || '') === String(a.profileId || '') ? _cloudSendingTurn(id, d) : null;
+  return acctBatchTip(a && a.lastTurn, live);
+}
+
 // Render the per-account status panel below the Live Status card (Account | Status)
 // for a cloud CC+IC campaign. Hidden when there's no account data or not viewing a
 // cloud campaign. Data comes from _cloudAccountsById (engine /accounts endpoint).
@@ -8995,12 +9005,18 @@ function renderCloudAccountsPanel(id) {
     }
     else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
     else badges.push(badge('ok', '✓ Active'));
-    // This run's invites when we have them (the daily quota is meaningless on a
-    // follower campaign — it counts connection requests), else the daily usage.
+    // One count everywhere: the same pair the pills and the drawer print, from
+    // the same function. This row used to print this run's share of the
+    // campaign's leads instead ("4 of 4 invited") whenever it could match the
+    // account, and the daily usage when it could not — so one list mixed two
+    // denominators. The share is also not a batch: it is the account's slice of
+    // the lead split, and it grows when another account is removed and its
+    // unsent leads are handed over (operator, 2026-09-02).
     const tally = counts && counts.get(String(a.profileId || ''));
-    badges.push(tally
-      ? badge('muted', `${tally.sent} of ${tally.total} invited`)
-      : badge('muted', `${a.dailyCount || 0}/${a.dailyLimit || 0} today`));
+    // The batch the operator actually asked about lives on the turn: what this
+    // account was handed the last time its browser opened, and what it sent.
+    const tip = _acctBatchTip(id, a);
+    badges.push(`<span class="cap-badge muted"${tip ? ` title="${escHtml(tip)}"` : ''}>${escHtml(acctPillCount(a, tally))} today</span>`);
     // Still sending, but bare: LinkedIn's free personalised-invite allowance is
     // spent. Not a blocker, so it sits after the tally rather than replacing the
     // status badge — the campaign is running, the note just isn't attached.
