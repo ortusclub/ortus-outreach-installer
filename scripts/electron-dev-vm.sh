@@ -82,11 +82,16 @@ LIVE_VERSION="$(image_tag "$LIVE_NAMESPACE")" || {
   exit 1
 }
 
-# Electron must list profiles from the SAME GoLogin workspace as the dev engine.
-# Loading the app's normal .env here would expose production profiles that the
-# isolated engine correctly cannot open. Read only DEV_GOLOGIN_API_TOKEN and
-# explicitly blank every secondary workspace token.
+# Electron must list profiles from the SAME GoLogin workspaces as the dev engine
+# — all of them, not just the primary one. Loading the app's normal .env here
+# would expose production profiles the isolated engine cannot open, so nothing
+# is read from it beyond DEV_GOLOGIN_API_TOKEN; the secondary workspaces come
+# from the engine itself, which is configured with exactly the ones it can open.
+# A tester whose campaigns run on Linked Velocity accounts cannot test anything
+# against an Ortus-only roster (Sam, 2026-09-02).
 DEV_GOLOGIN_API_TOKEN="${DEV_GOLOGIN_API_TOKEN:-}"
+DEV_GOLOGIN_TOKEN_LV=""
+DEV_GOLOGIN_TOKEN_MKT=""
 if [ -z "$DEV_GOLOGIN_API_TOKEN" ] && [ -f "$PROJECT_ROOT/.env" ]; then
   DEV_GOLOGIN_API_TOKEN="$(sed -n 's/^DEV_GOLOGIN_API_TOKEN=//p' "$PROJECT_ROOT/.env" | tail -1)"
 fi
@@ -110,13 +115,26 @@ fi
 
 # A teammate cloning only the app repository does not need the GoLogin secret
 # in a local file. Once their authenticated kubectl tunnel reaches dev-2+, ask
-# that isolated engine for its matching development credential. Production
+# that isolated engine for its matching development credentials. Production
 # deliberately returns 404 for this endpoint.
-if [ -z "$DEV_GOLOGIN_API_TOKEN" ]; then
-  DEV_GOLOGIN_API_TOKEN="$(curl -fsS --max-time 8 \
-    -H "Authorization: Bearer $ENGINE_TOKEN" \
-    "http://127.0.0.1:$LOCAL_ENGINE_PORT/api/dev/bootstrap" 2>/dev/null \
-    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).goLoginToken||"")}catch{}})')"
+#
+# Asked for unconditionally, because the secondary workspaces are only ever
+# known here: a local .env supplies the primary token alone. An engine older
+# than dev-31 answers with just that one, and the rest stay blank.
+BOOTSTRAP="$(curl -fsS --max-time 8 \
+  -H "Authorization: Bearer $ENGINE_TOKEN" \
+  "http://127.0.0.1:$LOCAL_ENGINE_PORT/api/dev/bootstrap" 2>/dev/null)"
+read_bootstrap() {
+  printf '%s' "$BOOTSTRAP" | node -e '
+    let s = "";
+    process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      try { process.stdout.write(String(JSON.parse(s)[process.argv[1]] || "")); } catch {}
+    });' "$1"
+}
+if [ -n "$BOOTSTRAP" ]; then
+  [ -z "$DEV_GOLOGIN_API_TOKEN" ] && DEV_GOLOGIN_API_TOKEN="$(read_bootstrap goLoginToken)"
+  DEV_GOLOGIN_TOKEN_LV="$(read_bootstrap goLoginTokenLinkedVelocity)"
+  DEV_GOLOGIN_TOKEN_MKT="$(read_bootstrap goLoginTokenMarketing)"
 fi
 if [ -z "$DEV_GOLOGIN_API_TOKEN" ]; then
   echo "The development engine did not provide its GoLogin workspace credential."
@@ -124,14 +142,22 @@ if [ -z "$DEV_GOLOGIN_API_TOKEN" ]; then
   exit 1
 fi
 
+# Say which rosters this launch can actually show. Without it, an account
+# somebody expects to test with is simply missing from the picker and the only
+# clue is an engine secret nobody can read from here.
+WORKSPACES="Ortus"
+[ -n "$DEV_GOLOGIN_TOKEN_LV" ] && WORKSPACES="$WORKSPACES + Linked Velocity"
+[ -n "$DEV_GOLOGIN_TOKEN_MKT" ] && WORKSPACES="$WORKSPACES + Marketing"
+echo "  workspaces:   $WORKSPACES"
+
 env \
   SCRAPER_ENGINE_URL="http://127.0.0.1:$LOCAL_ENGINE_PORT" \
   SCRAPER_ENGINE_TOKEN="$ENGINE_TOKEN" \
   SCRAPER_ENGINE_VERSION="$DEV_VERSION" \
   PRODUCTION_ENGINE_VERSION="$LIVE_VERSION" \
   GOLOGIN_API_TOKEN="$DEV_GOLOGIN_API_TOKEN" \
-  GOLOGIN_API_TOKEN_LINKEDVELOCITY="" \
-  GOLOGIN_API_TOKEN_MARKETING="" \
+  GOLOGIN_API_TOKEN_LINKEDVELOCITY="$DEV_GOLOGIN_TOKEN_LV" \
+  GOLOGIN_API_TOKEN_MARKETING="$DEV_GOLOGIN_TOKEN_MKT" \
   node_modules/.bin/electron ${ORTUS_ELECTRON_ARGS:-} . &
 ELECTRON_PID=$!
 

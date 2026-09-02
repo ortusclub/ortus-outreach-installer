@@ -2476,7 +2476,18 @@ function renderProfiles(profiles) {
     // fixable — switching campaign type unlocks the tile — and the copy has to
     // say so rather than implying the operator lacks access.
     const _wrongMode = !_foreign && Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode);
-    const _locked = _foreign || _wrongMode || (_breakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked'));
+    // The SoO is the ORTUS ledger. For a profile owned by another workspace its
+    // credit columns describe somebody else's usage of that account, not this
+    // operator's: measured 2026-09-02, 11 of the 58 Linked Velocity profiles read
+    // "Rented / NA" in the SoO precisely BECAUSE Linked Velocity has them, and
+    // greying those tiles told the one person entitled to use them that they
+    // could not. A restricted or inaccessible Status is a different fact — it
+    // describes the LinkedIn account itself — so that still locks the tile.
+    const _guestWorkspace = !_foreign && !!p.account && p.account !== 'ortus';
+    const _sooLock = _guestWorkspace
+      ? (_breakdown ? _br.blocked : _state.reason === 'restricted')
+      : (_breakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked'));
+    const _locked = _foreign || _wrongMode || _sooLock;
     // Defensive: a restored preset/schedule must not keep a now-unusable account
     // selected — drop it (before building the tile so `checked` reflects reality).
     if (_locked && selectedProfileIds.includes(p.id)) {
@@ -2555,12 +2566,18 @@ function renderProfiles(profiles) {
       //   restricted → LinkedIn block · na → CC/credit = NA · unavailable → Used/-/Partial.
       const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
       const _label = escHtml(_state.label || '');
+      // The credit half of an Ortus-ledger verdict no longer locks another
+      // workspace's tile, so it must not still read "N/A · no credits" on a tile
+      // the operator can select. Name whose ledger it is instead.
+      const _guestLedger = _guestWorkspace && !_noSoo
+        && _state.state === 'blocked' && _reason !== 'restricted';
       // A foreign-workspace account reads OTHER TEAM, never FREE — its SoO row
       // may well say Available, but not to this operator.
       const _word = _foreign ? 'OTHER TEAM'
         : _wrongMode ? 'WRONG MODE'
-          : (_noSoo ? _sm.word : ((_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word));
-      const _statCls = (_foreign || _wrongMode) ? 'stop' : _sm.cls;
+          : _guestLedger ? 'OTHER ROSTER'
+            : (_noSoo ? _sm.word : ((_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word));
+      const _statCls = (_foreign || _wrongMode) ? 'stop' : _guestLedger ? 'nosoo' : _sm.cls;
       let _sub;
       if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
       else
@@ -2575,6 +2592,7 @@ function renderProfiles(profiles) {
       } else _sub = 'Anyone can use.';
       // Workspace beats every SoO verdict: an account you cannot drive at all is
       // not "free", whatever its credits say.
+      if (_guestLedger) _sub = `${escHtml(p.accountLabel || 'This')} workspace tracks this account — the SoO line is Ortus's.`;
       if (_foreign) _sub = `${escHtml(p.accountLabel || 'Another')} workspace — sign in with a ${escHtml(p.accountLabel || 'matching')} email to use it.`;
       else if (_wrongMode) _sub = `${escHtml(p.accountLabel || 'These')} accounts run ${escHtml(modeNames(p.allowedModes))} only.`;
       const _statZone = `
