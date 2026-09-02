@@ -14632,6 +14632,12 @@ async function saveOperatorEmail() {
     _operatorEmailMandatory = false;
     const modal = document.getElementById('operator-email-modal');
     if (modal) modal.classList.add('hidden');
+    // Who you are decides which GoLogin workspaces you may drive, and the server
+    // stamps that onto every tile as `available` at fetch time. Without this the
+    // roster keeps the verdict computed for the PREVIOUS operator: change the
+    // email to someone who owns Linked Velocity accounts and every one of them
+    // still reads OTHER TEAM until the app is reloaded (2026-09-02).
+    try { await loadProfiles(); } catch { /* the next refresh repaints it anyway */ }
   } catch {
     showErr('Network error — try again.');
   }
