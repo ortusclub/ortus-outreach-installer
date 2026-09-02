@@ -8130,6 +8130,9 @@ function _buildCloudActiveStatus(c, leads, counts) {
     // ▶ Resume sending control on a stopped / monitoring connect campaign.
     pendingCount: (Number(counts.pending) || 0) + (Number(counts.claimed) || 0),
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
+    // When this campaign began. Follow-ups queued before it started were never
+    // its own, even when they ran on the same LinkedIn account.
+    startedAt: Date.parse(c.started_at || c.created_at || '') || 0,
     acceptedCount: accepted, logs: _mergeCloudLog(_cloudLeadsToLog(leads, c.mode === 'follower_growth', c), _combineCloudEvents(c.id)),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
     // When blocked senders become eligible again. Monitoring continues while
@@ -8842,7 +8845,12 @@ async function _refreshCloudActiveStatus(id) {
     // stamped: those can only be placed by the account that sent them.
     try {
       const _pids = ((d && d.campaign && (d.campaign.profile_ids || d.campaign.profileIds)) || []).join(',');
-      const _q = `campaignId=${encodeURIComponent(id)}${_pids ? `&profileIds=${encodeURIComponent(_pids)}` : ''}`;
+      // The start date guards the account fallback: an account is reused, so
+      // without it this campaign would adopt an orphaned follow-up from an
+      // earlier one that happened to run the same LinkedIn login.
+      const _st = Date.parse((d && d.campaign && (d.campaign.started_at || d.campaign.created_at)) || '') || 0;
+      const _q = `campaignId=${encodeURIComponent(id)}${_pids ? `&profileIds=${encodeURIComponent(_pids)}` : ''}`
+        + (_st ? `&startedAt=${_st}` : '');
       const fh = await (await fetch(`/api/followups/health?${_q}`)).json();
       if (fh && fh.ok) _followupHealthById.set(String(id), fh);
     } catch (_) { /* the line just does not render */ }
@@ -12270,6 +12278,9 @@ function _fuWhen(ms) {
   return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
+// The board scope the visible strip was computed from, so Discard applies the
+// identical ownership test rather than a second guess at it.
+let _staleFuLiveScope = [];
 async function renderStaleFollowups(items) {
   const mount = document.getElementById('stale-followups');
   if (!mount) return;
@@ -12279,9 +12290,11 @@ async function renderStaleFollowups(items) {
   // strip's follow-up row blank, which is a different way of showing the wrong
   // thing. One request covers the whole board plus the stale groups.
   const live = (items || []).filter((it) => it && ['running', 'queued', 'idle'].includes(it.bucket));
-  const campaigns = [...new Map(live
+  const campaigns = _staleFuLiveScope = [...new Map(live
     .filter((it) => it.id)
-    .map((it) => [String(it.id), { id: String(it.id), profileIds: it.profileIds || [] }])).values()];
+    .map((it) => [String(it.id), {
+      id: String(it.id), profileIds: it.profileIds || [], startedAt: it.startedAt || 0,
+    }])).values()];
   let groups = [];
   try {
     const r = await (await fetch('/api/followups/board', {
@@ -12380,7 +12393,10 @@ window.discardStaleFollowups = async function (key, count, btn) {
   try {
     const r = await fetch('/api/followups/discard', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keys: [key] }),
+      // The same board scope the strip was built from. A legacy group is keyed
+      // by its message and sibling campaigns reuse one template, so without it
+      // Discard could reach into a campaign still running.
+      body: JSON.stringify({ keys: [key], campaigns: _staleFuLiveScope }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);

@@ -43,7 +43,7 @@ import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCh
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
 import { startCloudFollowupPoller, lastLateCount } from './src/cloud-followup-poller.js';
 import { loadTasks as loadPrimaryTasks, saveTasks as savePrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
-import { belongsToCampaign, groupStaleFollowUps, discardGroups, restoreDiscarded } from './src/followup-groups.js';
+import { belongsToCampaign, healthForCampaign, countFollowUpHealth, groupStaleFollowUps, discardGroups, restoreDiscarded } from './src/followup-groups.js';
 import { heldSummary } from './src/followup-dnc.js';
 import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
@@ -2587,20 +2587,11 @@ app.get('/api/followups/health', async (req, res) => {
     const scoped = !!(campaignId || profileIds.length);
     // Unscoped keeps the old whole-app answer for any caller that has not been
     // updated. Scoped counts one campaign, which is what the card now asks for.
-    const mine = scoped ? fu.filter((t) => belongsToCampaign(t, { campaignId, profileIds })) : fu;
-    const blocked = mine.filter((t) => t.status === 'pending' && t.blockedBySession);
-    const failed = mine.filter((t) => t.status === 'failed');
-    res.json({
-      ok: true,
-      scoped,
-      sent: mine.filter((t) => t.status === 'done').length,
-      pending: mine.filter((t) => t.status === 'pending' && !t.blockedBySession).length,
-      blocked: blocked.length,
-      failed: failed.length,
-      // Signed-out outranks everything: it is the only one with a one-click fix.
-      reason: blocked.length ? 'signed-out' : (failed.length ? 'error' : ''),
-      lastError: (failed[failed.length - 1] || {}).lastError || '',
-    });
+    const startedAt = Number(req.query.startedAt || 0) || 0;
+    // Unscoped keeps the old whole-app answer for any caller that has not been
+    // updated. Scoped counts one campaign, which is what the card now asks for.
+    const mine = scoped ? fu.filter((t) => belongsToCampaign(t, { campaignId, profileIds, startedAt })) : fu;
+    res.json({ ok: true, scoped, ...countFollowUpHealth(mine, { heldSummaryOf: heldSummary }) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2615,43 +2606,33 @@ app.get('/api/followups/health', async (req, res) => {
 //   groups — stuck follow-ups whose campaign is NOT on the board. Those have no
 //     card to live on; the strip above the rails is their only home. Excluding
 //     the board's own campaigns is what keeps a follow-up in exactly one place.
+// One reading of "which campaigns are live on the board", shared by the board
+// route and by Discard. Discard has to apply the SAME ownership test that kept a
+// follow-up out of the strip, or it would reach into a campaign still running:
+// legacy groups are keyed by their message, and sibling campaigns reuse one
+// template. startedAt is what stops a live campaign adopting an older orphan
+// that merely shares its LinkedIn account.
+function liveCampaignScope(campaigns) {
+  return (Array.isArray(campaigns) ? campaigns : [])
+    .map((c) => ({
+      id: String((c && c.id) || ''),
+      profileIds: Array.isArray(c && c.profileIds) ? c.profileIds : [],
+      startedAt: Number((c && c.startedAt) || 0) || 0,
+    }))
+    .filter((c) => c.id || c.profileIds.length);
+}
+
 app.post('/api/followups/board', async (req, res) => {
   try {
     const tasks = await loadPrimaryTasks();
     const campaigns = Array.isArray(req.body && req.body.campaigns) ? req.body.campaigns : [];
+    const live = liveCampaignScope(campaigns);
     const health = {};
-    for (const c of campaigns) {
-      const id = String((c && c.id) || '');
-      if (!id) continue;
-      const profileIds = Array.isArray(c.profileIds) ? c.profileIds : [];
-      const mine = tasks.filter((t) => belongsToCampaign(t, { campaignId: id, profileIds }));
-      const blocked = mine.filter((t) => t.status === 'pending' && t.blockedBySession);
-      const failed = mine.filter((t) => t.status === 'failed');
-      // A lead who has already written back is not a failure and not a send —
-      // it is the operator's decision, waiting. Carried per campaign with enough
-      // detail for the card to name the person and quote them.
-      const held = mine.filter((t) => t.status === 'held');
-      health[id] = {
-        ok: true,
-        scoped: true,
-        sent: mine.filter((t) => t.status === 'done').length,
-        pending: mine.filter((t) => t.status === 'pending' && !t.blockedBySession).length,
-        blocked: blocked.length,
-        failed: failed.length,
-        held: held.length,
-        heldSummary: heldSummary(mine),
-        heldItems: held.slice(0, 8).map((t) => ({
-          id: t.id, leadName: t.leadName || '', leadUrl: t.leadUrl || '',
-          reason: t.heldReason || 'replied', phrase: t.heldPhrase || '', quote: t.heldQuote || '',
-        })),
-        reason: blocked.length ? 'signed-out' : (failed.length ? 'error' : ''),
-        lastError: (failed[failed.length - 1] || {}).lastError || '',
-      };
+    for (const c of live) {
+      if (!c.id) continue;
+      health[c.id] = { ok: true, scoped: true, ...healthForCampaign(tasks, c, { heldSummaryOf: heldSummary }) };
     }
-    const groups = groupStaleFollowUps(tasks, {
-      liveCampaignIds: campaigns.map((c) => String((c && c.id) || '')).filter(Boolean),
-      liveProfileIds: campaigns.flatMap((c) => (Array.isArray(c && c.profileIds) ? c.profileIds : [])),
-    });
+    const groups = groupStaleFollowUps(tasks, { liveCampaigns: live });
     res.json({ ok: true, health, groups, total: groups.reduce((a, g) => a + g.count, 0) });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2665,7 +2646,8 @@ app.post('/api/followups/discard', async (req, res) => {
   try {
     const keys = Array.isArray(req.body && req.body.keys) ? req.body.keys : [];
     if (!keys.length) return res.status(400).json({ error: 'keys required' });
-    const { tasks, discarded } = discardGroups(await loadPrimaryTasks(), keys);
+    const live = liveCampaignScope(Array.isArray(req.body && req.body.campaigns) ? req.body.campaigns : []);
+    const { tasks, discarded } = discardGroups(await loadPrimaryTasks(), keys, { liveCampaigns: live });
     if (discarded.length) await savePrimaryTasks(tasks);
     console.log(`[followups] discarded ${discarded.length} follow-up(s) the operator decided not to send`);
     res.json({ ok: true, discarded: discarded.length, undo: discarded });
