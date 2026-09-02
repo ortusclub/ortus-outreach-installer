@@ -7,6 +7,7 @@
  */
 
 import { getConversationsPage } from './helpers.js';
+import { holdVerdict } from '../followup-dnc.js';
 
 /** A captured page.url() is a usable thread target only if it's a real
  *  /messaging/thread/<id> URL — not a /compose, /feed, or empty fallback. */
@@ -50,7 +51,41 @@ export async function isSignedOut(page) {
  * Falls back to searching messaging by lead name when the URL is unusable.
  * Throws on failure so the runner can mark the task failed/retry.
  */
-export async function sendInThread(page, threadUrl, body, { introTitle = '', leadName = '', log = () => {} } = {}) {
+/**
+ * Every message currently rendered in the open thread, as [{ sender, text }] in
+ * order. Best-effort by design: if the markup moves and this returns nothing,
+ * the follow-up sends exactly as it does today rather than every follow-up in
+ * the app silently stopping.
+ */
+export async function readThreadMessages(page) {
+  try {
+    return await page.evaluate(() => {
+      const items = Array.from(document.querySelectorAll('.msg-s-event-listitem'));
+      let sender = '';
+      const out = [];
+      for (const li of items) {
+        // LinkedIn prints the name once per run of consecutive messages, so a
+        // bubble without one belongs to whoever spoke last.
+        const nameEl = li.querySelector('.msg-s-message-group__name, .msg-s-message-group__profile-link');
+        const n = nameEl && (nameEl.textContent || '').trim();
+        if (n) sender = n;
+        const bodyEl = li.querySelector('.msg-s-event-listitem__body, .msg-s-event__content');
+        const text = bodyEl && (bodyEl.textContent || '').trim();
+        if (text) out.push({ sender, text });
+      }
+      return out;
+    });
+  } catch { return []; }
+}
+
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.holdIfLeadReplied] stop before sending when the lead
+ *   has written in the thread, and report it instead. The follow-up is then the
+ *   operator's call — see src/followup-dnc.js for why any reply holds.
+ * @returns {Promise<{sent:boolean, held?:object}>}
+ */
+export async function sendInThread(page, threadUrl, body, { introTitle = '', leadName = '', log = () => {}, holdIfLeadReplied = false } = {}) {
   if (!body || !body.trim()) throw new Error('FOLLOWUP_EMPTY_BODY');
 
   let target = threadUrl;
@@ -75,6 +110,17 @@ export async function sendInThread(page, threadUrl, body, { introTitle = '', lea
     // one click; a missing composer on a signed-in page is ours.
     if (await isSignedOut(page)) throw new Error('FOLLOWUP_SIGNED_OUT');
     throw new Error('FOLLOWUP_COMPOSER_NOT_FOUND');
+  }
+
+  // Read the thread BEFORE typing anything into it. A lead who has already
+  // written back should not receive a scheduled follow-up underneath their own
+  // message; the operator decides that one.
+  if (holdIfLeadReplied) {
+    const verdict = holdVerdict(await readThreadMessages(page), leadName);
+    if (verdict) {
+      log(`  ✋ ${leadName || 'The lead'} has replied — holding this follow-up for you${verdict.reason === 'declined' ? ' (it reads like a no)' : ''}.`);
+      return { sent: false, held: verdict };
+    }
   }
 
   await box.click();
@@ -115,6 +161,7 @@ export async function sendInThread(page, threadUrl, body, { introTitle = '', lea
   }, body);
   if (!confirmed) throw new Error('FOLLOWUP_SEND_UNCONFIRMED');
   log(`  ✓ Follow-up sent in the group thread${leadName ? ` (${leadName})` : ''}.`);
+  return { sent: true };
 }
 
 async function _findThreadByLead(page, leadName, introTitle) {

@@ -28041,8 +28041,11 @@ function _nextMondayText() {
 function _followupFixHtml(cid) {
   const h = _fuHealth(cid);
   if (!h || !h.ok) return '';
+  // Held first: it is the only one that needs a human to READ something rather
+  // than fix a browser, and a probable no is the most expensive thing to miss.
+  const heldHtml = _heldFollowupsHtml(h);
   const stuck = (h.blocked || 0) + (h.failed || 0);
-  if (!stuck) return '';
+  if (!stuck) return heldHtml;
   const n = stuck === 1 ? 'follow-up' : 'follow-ups';
   const row = h.reason === 'signed-out' || h.blocked
     ? `<b>${stuck} ${n} are waiting.</b> The follow-up browser is signed out of LinkedIn. It is its own Chrome window, separate from your everyday one — which is why you never saw it open. Sign in once and they go out on their own; nothing is lost and no lead was messaged twice.`
@@ -28051,9 +28054,53 @@ function _followupFixHtml(cid) {
     '<button type="button" onclick="openFollowupLogin(this)">Open the follow-up browser to log in</button>',
     `<button type="button" onclick="retryFollowups(this)">Retry the ${stuck} now</button>`,
   ];
-  return `<div class="fixhd">What you can do</div><ul><li>${row}</li></ul>`
+  return heldHtml
+    + `<div class="fixhd">What you can do</div><ul><li>${row}</li></ul>`
     + `<div class="fixacts">${acts.join('')}</div>`;
 }
+
+// Follow-ups this campaign did NOT send because the lead had already written
+// back. Not an error and not a send: a decision waiting on the operator, which
+// is why it quotes them rather than just counting them.
+function _heldFollowupsHtml(h) {
+  const items = (h && h.heldItems) || [];
+  if (!items.length) return '';
+  const rows = items.map((it) => {
+    const who = escHtml(it.leadName || 'The lead');
+    const link = it.leadUrl ? `<a href="${escHtml(it.leadUrl)}" target="_blank" rel="noreferrer">${who}</a>` : who;
+    const tag = it.reason === 'declined'
+      ? '<b class="fu-dnc">probable DNC</b>'
+      : '<b>replied</b>';
+    return `<li>${link} ${tag} — “${escHtml(it.quote || '')}”</li>`;
+  }).join('');
+  const ids = items.map((it) => it.id);
+  const n = items.length;
+  return `<div class="fixhd">Held for you to read</div>`
+    + `<ul>${rows}</ul>`
+    + `<div class="fixacts">`
+    + `<button type="button" onclick='sendHeldFollowups(${JSON.stringify(ids)}, this)'>Send ${n === 1 ? 'it' : `all ${n}`} anyway</button>`
+    + `</div>`;
+}
+
+// The operator has read the reply and wants it to go. Held → pending, due now.
+window.sendHeldFollowups = async function (ids, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Releasing…'; }
+  try {
+    const r = await fetch('/api/followups/send-held', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    if (btn) btn.textContent = `${d.released} queued to send`;
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`${d.released} follow-up${d.released === 1 ? '' : 's'} released — ${d.released === 1 ? 'it goes' : 'they go'} out on the next run.`, 6000);
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send anyway'; }
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Could not release: ${e.message}`, 6000);
+  }
+};
 
 // Opens the SAME Chrome profile the follow-up runner uses, on screen this time,
 // at the LinkedIn login page. Left open deliberately — closing it is the
@@ -28732,11 +28779,15 @@ function renderLiveStage(root, status) {
     // evidence a follow-up ever happened was the lead's LinkedIn thread, so five
     // that never sent looked exactly like five that did (operator, 2026-09-01).
     const _fh = _fuHealth(cid);
-    if (_fh && _fh.ok && ((_fh.sent || 0) + (_fh.blocked || 0) + (_fh.failed || 0)) > 0) {
+    if (_fh && _fh.ok && ((_fh.sent || 0) + (_fh.blocked || 0) + (_fh.failed || 0) + (_fh.held || 0)) > 0) {
       const stuck = (_fh.blocked || 0) + (_fh.failed || 0);
-      facts.push(['Follow-ups', stuck
-        ? `${_fh.sent || 0} sent · ${stuck} could not send`
-        : `${_fh.sent || 0} sent`]);
+      // Held is neither sent nor failed — the lead wrote back and the follow-up
+      // is waiting on the operator. heldSummary already words it ("2 probable
+      // DNC · 1 replied") so a declined reply reads differently from a warm one.
+      const bits = [`${_fh.sent || 0} sent`];
+      if (stuck) bits.push(`${stuck} could not send`);
+      if (_fh.heldSummary) bits.push(`${_fh.heldSummary}, held for you`);
+      facts.push(['Follow-ups', bits.join(' · ')]);
     }
     const html = facts.map(([label, value]) => `<div><span>${escHtml(label)}</span><b>${escHtml(_named(value, 'this account'))}</b></div>`).join('');
     if (factsEl.dataset.html !== html) { factsEl.innerHTML = html; factsEl.dataset.html = html; }

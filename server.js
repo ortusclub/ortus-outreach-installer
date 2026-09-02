@@ -44,6 +44,7 @@ import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
 import { startCloudFollowupPoller, lastLateCount } from './src/cloud-followup-poller.js';
 import { loadTasks as loadPrimaryTasks, saveTasks as savePrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
 import { belongsToCampaign, groupStaleFollowUps, discardGroups, restoreDiscarded } from './src/followup-groups.js';
+import { heldSummary } from './src/followup-dnc.js';
 import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
@@ -2626,6 +2627,10 @@ app.post('/api/followups/board', async (req, res) => {
       const mine = tasks.filter((t) => belongsToCampaign(t, { campaignId: id, profileIds }));
       const blocked = mine.filter((t) => t.status === 'pending' && t.blockedBySession);
       const failed = mine.filter((t) => t.status === 'failed');
+      // A lead who has already written back is not a failure and not a send —
+      // it is the operator's decision, waiting. Carried per campaign with enough
+      // detail for the card to name the person and quote them.
+      const held = mine.filter((t) => t.status === 'held');
       health[id] = {
         ok: true,
         scoped: true,
@@ -2633,6 +2638,12 @@ app.post('/api/followups/board', async (req, res) => {
         pending: mine.filter((t) => t.status === 'pending' && !t.blockedBySession).length,
         blocked: blocked.length,
         failed: failed.length,
+        held: held.length,
+        heldSummary: heldSummary(mine),
+        heldItems: held.slice(0, 8).map((t) => ({
+          id: t.id, leadName: t.leadName || '', leadUrl: t.leadUrl || '',
+          reason: t.heldReason || 'replied', phrase: t.heldPhrase || '', quote: t.heldQuote || '',
+        })),
         reason: blocked.length ? 'signed-out' : (failed.length ? 'error' : ''),
         lastError: (failed[failed.length - 1] || {}).lastError || '',
       };
@@ -2658,6 +2669,29 @@ app.post('/api/followups/discard', async (req, res) => {
     if (discarded.length) await savePrimaryTasks(tasks);
     console.log(`[followups] discarded ${discarded.length} follow-up(s) the operator decided not to send`);
     res.json({ ok: true, discarded: discarded.length, undo: discarded });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// The operator has read the reply and wants it sent anyway. Held → pending is
+// all it takes: the runner's next drain picks it up like any other due task.
+app.post('/api/followups/send-held', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+    if (!ids.length) return res.status(400).json({ error: 'ids required' });
+    const want = new Set(ids);
+    let released = 0;
+    const tasks = (await loadPrimaryTasks()).map((t) => {
+      if (!t || t.status !== 'held' || !want.has(t.id)) return t;
+      released += 1;
+      const { heldReason, heldPhrase, heldQuote, heldAt, ...rest } = t;
+      // dueAt in the past so it goes on the very next drain, not in ten minutes.
+      return { ...rest, status: 'pending', dueAt: Date.now() - 1000, attempts: 0, lastError: null };
+    });
+    if (released) await savePrimaryTasks(tasks);
+    console.log(`[followups] the operator read the reply and released ${released} held follow-up(s) to send`);
+    res.json({ ok: true, released });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
