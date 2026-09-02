@@ -89,7 +89,7 @@ import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } fr
 import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs, identityGateEnabled } from './src/operator-prefs.js';
 import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/operator-identity.js';
 import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
-import { fetchSoOData } from './src/soo.js';
+import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
@@ -718,11 +718,19 @@ async function emailAdminsOnSoOFailure(err) {
   }).catch(() => {})));
 }
 
-app.get('/api/soo-status', async (_req, res) => {
+app.get('/api/soo-status', async (req, res) => {
   try {
-    const data = await fetchSoOData();
-    sooFailureNotified = false; // reset on success
-    res.json(data);
+    const result = await fetchSoOStatusData({ force: req.query.refresh === '1' });
+    if (result.state === 'fresh') {
+      sooFailureNotified = false; // reset on success
+    } else if (result.error) {
+      console.error(`SoO refresh failed [${result.error.code}]; serving last successful snapshot:`, result.error.message);
+      emailAdminsOnSoOFailure(result.error).catch(() => {});
+    }
+    res.json({
+      ...result.data,
+      _sooMeta: { state: result.state, fetchedAt: result.fetchedAt },
+    });
   } catch (err) {
     console.error(`SoO fetch error [${err.code}]:`, err.message);
     emailAdminsOnSoOFailure(err).catch(() => {});
