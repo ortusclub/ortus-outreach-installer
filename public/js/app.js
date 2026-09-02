@@ -7833,6 +7833,38 @@ const _cloudResumeClickedAt = new Map();
 // answer: whichever renderer paints, it asks here.
 const _resumingIds = new Set();
 window._resumingIds = _resumingIds;
+// A Stop command owns the card from the instant of the click until the VM's
+// terminal state is fetched. This prevents a stale board poll from repainting
+// it green or exposing another Stop button during the round-trip.
+const _stoppingCloudIds = new Set();
+
+function _markCloudStopping(id, on) {
+  const key = String(id || '');
+  if (!key) return;
+  if (on) _stoppingCloudIds.add(key); else _stoppingCloudIds.delete(key);
+  try {
+    const s = window.__cloudActiveStatus;
+    if (s && String(s.id) === key) {
+      Object.assign(s, { stopping: !!on, state: on ? 'stopping' : s.state,
+        phase: on ? 'stopping' : s.phase, live: on ? false : s.live,
+        currentAction: on ? null : s.currentAction });
+      renderActiveCard(s);
+    }
+    for (const strip of document.querySelectorAll(`[data-cid="${CSS.escape(key)}"]`)) {
+      const card = strip.classList.contains('vj-card') ? strip : strip.querySelector('.vj-card');
+      if (!card) continue;
+      card.classList.toggle('is-stopping', !!on);
+      if (on) {
+        const eyebrow = card.querySelector('[data-f="activeEyebrow"]');
+        if (eyebrow) eyebrow.textContent = 'STOPPING NOW';
+        card.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+      } else {
+        card.querySelectorAll('button').forEach((button) => { button.disabled = false; });
+      }
+    }
+  } catch (_) { /* the durable overlay below still wins on every render */ }
+}
+window._markCloudStopping = _markCloudStopping;
 
 // The optimistic flag, with its two ways out: the engine has moved off
 // monitoring (the resume landed), or 90s have passed (it did not, and a stuck
@@ -8826,8 +8858,12 @@ function _fgFinishedNote(status) {
 async function _refreshCloudActiveStatus(id) {
   try {
     const detailRes = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`);
-    const d = await detailRes.json();
+    let d = await detailRes.json();
     if (!detailRes.ok || (d && d.error)) throw new Error((d && d.error) || `HTTP ${detailRes.status}`);
+    if (_stoppingCloudIds.has(String(id))) {
+      d = { ...d, live: false, liveProgress: null,
+        campaign: { ...(d.campaign || {}), status: 'stopping' } };
+    }
     let leads = [];
     try { const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json(); if (lr && Array.isArray(lr.leads)) leads = lr.leads; } catch (_) { /* */ }
     // Live Status is a SECOND render path — the board's _refreshCloudItems does
@@ -11882,7 +11918,12 @@ async function _renderCampaignsBoardInner() {
       const k = _dupeKey(d.campaign || {});
       _dupeSeen.set(k, (_dupeSeen.get(k) || 0) + 1);
     }
-    for (const d of _cloudRaw) {
+    for (const rawDetail of _cloudRaw) {
+      const stoppingNow = _stoppingCloudIds.has(String((rawDetail.campaign || {}).id || ''));
+      const d = stoppingNow
+        ? { ...rawDetail, live: false, liveProgress: null,
+          campaign: { ...(rawDetail.campaign || {}), status: 'stopping' } }
+        : rawDetail;
       const c = d.campaign || {}; const lc = d.leadCounts || {};
       const _dupes = (_dupeSeen.get(_dupeKey(c)) || 1) - 1;
       if (['done', 'cancelled', 'error'].includes(c.status) && _cloudDismissed.has(c.id)) continue;
@@ -12696,9 +12737,6 @@ async function stopCloudCampaignUI(id) {
     liveProgress = d && d.liveProgress;
     sentCount = Number(d && d.leadCounts && d.leadCounts.sent) || 0;
   } catch { /* fall through to plain confirm */ }
-  const hasCurrentSendingLead = status === 'running' && liveProgress
-    && liveProgress.phase === 'sending' && !!String(liveProgress.selecting || liveProgress.lead || '').trim();
-
   // A campaign with invitations already out can still be watched for
   // acceptances, so what happens to them is the operator's call. That question
   // is about the SENT invites and has nothing to do with whichever lead happens
@@ -12713,7 +12751,7 @@ async function stopCloudCampaignUI(id) {
   // because campaign-monitor-tick bails on any status that isn't 'monitoring'.
   const stillSending = status === 'running' || status === 'queued';
   if (usesMonitoringCadence(mode) && stillSending && sentCount > 0) {
-    _stopChoiceTarget = { cloud: true, id, immediatePrompt: hasCurrentSendingLead };
+    _stopChoiceTarget = { cloud: true, id };
     const sub = document.getElementById('stop-choice-sub');
     if (sub) {
       sub.textContent = `${sentCount} invitation${sentCount === 1 ? '' : 's'} `
@@ -12722,17 +12760,10 @@ async function stopCloudCampaignUI(id) {
     document.getElementById('stop-choice-modal')?.classList.remove('hidden');
     return;
   }
-  if (hasCurrentSendingLead) {
-    _stopChoiceTarget = { cloud: true, id };
-    const modal = document.getElementById('confirm-stop-modal');
-    const copy = document.getElementById('stop-current-lead-copy');
-    if (copy) copy.textContent = 'A lead is mid-send on the VM. No new lead will start either way.';
-    modal?.classList.remove('hidden');
-    return;
-  }
-  // Monitoring, queued work, and idle/paused campaigns have no verified current
-  // lead. Never ask a hypothetical lead question in those states.
-  await _doStopCloud(id, { keepMonitoring: false });
+  // Stop means stop. A current lead no longer opens a second wait-or-cut modal.
+  // The monitoring choice above is still necessary because it decides what
+  // survives after sending stops; either answer cuts sending immediately.
+  await _doStopCloud(id, { keepMonitoring: false, immediate: true });
 }
 window.stopCloudCampaignUI = stopCloudCampaignUI;
 
@@ -12751,26 +12782,25 @@ async function _cloudMutationRequest(url, verb) {
 }
 
 // Fire the actual engine stop (shared by the plain confirm + both choice pills).
-async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', immediate = false } = {}) {
+async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', immediate = true } = {}) {
+  if (_stoppingCloudIds.has(String(id))) return false;
+  immediate = true;
+  _markCloudStopping(id, true);
   // Say it the moment the operator clicks, NOT after the VM answers. The engine
   // call below retries a timeout up to three times, which left the card reading
   // "STOPPING…" for a full minute with nothing whatsoever in the log — the
   // operator had no way to tell a slow VM from a click that never registered.
   _pushCloudEventNow(id, keepMonitoring
-    ? (immediate
-      ? '⏹️ Stop requested — sending stops now, the VM keeps monitoring for acceptances. Waiting for the VM to confirm…'
-      : '⏹️ Stop requested — the account finishes the person it is on, then sending stops and the VM keeps monitoring for acceptances. Waiting for the VM to confirm…')
-    : (immediate
-      ? '⏹️ Stop requested — stopping now, without finishing the person in progress. Waiting for the VM to confirm…'
-      : '⏹️ Stop requested — the account finishes the person it is on, then the campaign stops. Waiting for the VM to confirm…'));
+      ? '⏹️ Stop requested — sending stops now; acceptance monitoring remains.'
+      : '⏹️ Stop requested — stopping now; no next person can start.');
   try {
     // `immediate` used to be dropped the moment keepMonitoring was set, so
     // "Stop sending, keep monitoring" could never stop now — it always finished
     // the person in flight first. The two are independent: keepMonitoring says
     // what happens AFTER the stop, immediate says how fast the stop is.
     const qs = keepMonitoring
-      ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}${immediate ? '&immediate=1' : '&finishCurrent=1'}`
-      : (immediate ? '?immediate=1' : '?finishCurrent=1');
+      ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}&immediate=1`
+      : '?immediate=1';
     await _cloudMutationRequest(`/api/campaign/cloud/${encodeURIComponent(id)}/stop${qs}`, 'stop');
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(keepMonitoring
@@ -12778,7 +12808,16 @@ async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', im
         : 'Cloud campaign stopped.', 5000);
     }
     _pushCloudEvent(id, keepMonitoring ? '⏹️ Sending stopped — VM keeps monitoring for acceptances' : '⏹️ Campaign stopped');
+    _forceCloudItemsAfterAction(id).finally(() => {
+      _markCloudStopping(id, false);
+      // The forced refresh fetched the real terminal/monitoring row while the
+      // optimistic Stop overlay was active. Paint that saved row once more now
+      // that the overlay is gone, then update the campaign-tab card as well.
+      try { renderCampaignsBoard(); } catch (_) { /* */ }
+      _refreshCloudActiveStatus(id).catch(() => {});
+    });
   } catch (e) {
+    _markCloudStopping(id, false);
     const message = `Stop was not confirmed by the VM: ${e.message}. The last displayed campaign state has been kept; retry after the connection recovers.`;
     // The toast disappears. A stop that did not take must survive in the log,
     // or the campaign looks stopped while the VM is still sending.
@@ -15125,19 +15164,9 @@ function confirmStopCampaign() {
     return;
   }
   _stopChoiceTarget = { cloud: false, id: null };
-  // No lead in flight, no question. A campaign that has not started sending has
-  // nothing to wait for, and asking "what about the lead in flight?" about a
-  // lead that does not exist is what made the operator read this modal as
-  // broken (2026-08-28). The cloud path already skips it in this state
-  // (hasCurrentSendingLead); this one asked unconditionally and named "the
-  // current lead" as a placeholder.
-  const lead = String(__cockpit?.currentAction?.lead || '').trim();
-  const sendingNow = !!lead && !!__cockpit?.running && __cockpit?.state !== 'monitoring';
-  if (!sendingNow) { confirmStopCampaignNow(true); return; }
-  const copy = document.getElementById('stop-current-lead-copy');
-  if (copy) copy.textContent = `${lead} is mid-send. No new lead will start either way.`;
-  const modal = document.getElementById('confirm-stop-modal');
-  if (modal) modal.classList.remove('hidden');
+  // A Stop click always cuts the current work. There is no second modal that
+  // offers to keep working on the current person.
+  confirmStopCampaignNow(true);
 }
 
 function closeStopModal() {
@@ -15214,8 +15243,9 @@ window.confirmStopMonitoringNow = confirmStopMonitoringNow;
 
 async function confirmStopCampaignNow(immediate = false) {
   closeStopModal();
+  immediate = true;
   const target = _stopChoiceTarget;
-  showCampaignToast(immediate ? 'Stopping now — if the result is uncertain, the strip will tell you exactly what to check.' : 'Waiting up to 15 seconds for the current lead…', 15000);
+  showCampaignToast('Stopping now — if the result is uncertain, the strip will tell you exactly what to check.', 15000);
   if (target.cloud && target.id) await _doStopCloud(target.id, { immediate });
   else {
     try { await fetch('/api/campaign/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full: true, immediate }) }); } catch { /* status polling surfaces recovery */ }
@@ -15290,7 +15320,7 @@ async function _finishStopAndKeepMonitoring(target, scope) {
     await fetch('/api/campaign/stop', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ monitoringScope: scope === 'sheet' ? 'tab' : 'campaign' }),
+      body: JSON.stringify({ full: false, monitoringScope: scope === 'sheet' ? 'tab' : 'campaign', immediate: true }),
     });
   } catch { /* */ }
   try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
@@ -15314,17 +15344,7 @@ async function stopEverything() {
   const target = _stopChoiceTarget; // capture before close resets it
   closeStopChoiceModal();
   if (target.cloud && target.id) {
-    // A lead is mid-flight, so the wait-or-cut question is still owed. Re-arm
-    // the target: closeStopChoiceModal() above cleared it, and
-    // confirmStopCampaignNow reads it back off the module.
-    if (target.immediatePrompt) {
-      _stopChoiceTarget = { cloud: true, id: target.id };
-      const copy = document.getElementById('stop-current-lead-copy');
-      if (copy) copy.textContent = 'A lead is mid-send on the VM. No new lead will start either way.';
-      document.getElementById('confirm-stop-modal')?.classList.remove('hidden');
-      return;
-    }
-    await _doStopCloud(target.id, { keepMonitoring: false });
+    await _doStopCloud(target.id, { keepMonitoring: false, immediate: true });
     return;
   }
   showCampaignToast('Stopping campaign completely — no further checks or DMs.', 5000);
@@ -15332,7 +15352,7 @@ async function stopEverything() {
     await fetch('/api/campaign/stop', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ full: true }),
+      body: JSON.stringify({ full: true, immediate: true }),
     });
   } catch { /* */ }
   try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }

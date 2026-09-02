@@ -331,12 +331,12 @@ export function ackLocalFollowups(taskIds, owner) {
  *   keepMonitoring wins.
  */
 export function stopCloudCampaign(id, { pause = false, keepMonitoring = false, immediate = false } = {}) {
-  // keepMonitoring and immediate are independent: the first says what happens
-  // after the stop, the second how fast it lands. Dropping immediate here is
-  // what made "Stop sending, keep monitoring" always finish the current person.
+  // Every operator Stop is immediate. keepMonitoring only decides what remains
+  // after sending is cut; it never changes how quickly sending stops.
+  immediate = true;
   const qs = keepMonitoring
-    ? `?keepMonitoring=1${immediate ? '&immediate=1' : '&finishCurrent=1'}`
-    : (pause ? '?pause=1' : (immediate ? '?immediate=1' : '?finishCurrent=1'));
+    ? '?keepMonitoring=1&immediate=1'
+    : (pause ? '?pause=1&immediate=1' : '?immediate=1');
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${qs}`);
 }
 

@@ -5427,10 +5427,17 @@ app.post('/api/campaign/stop', async (req, res) => {
   const stopState = campaign.running ? _campaignStopWatchdog.arm({ generation: campaign._generation }) : _campaignStopWatchdog.status();
   let tracking = { ok: true };
   if (fullHalt) {
-    tracking = await Promise.race([
-      stopCampaignBackgroundTracking(),
-      new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'Background checks did not confirm stop within 10 seconds.' }), 10000)),
-    ]);
+    if (immediate) {
+      // The state/timer flags above are already off. Removing persisted future
+      // schedules is cleanup and must never hold the Stop response hostage.
+      tracking = { ok: true, cleanupPending: true };
+      stopCampaignBackgroundTracking().catch((err) => console.warn('[stop] background tracking cleanup:', err.message));
+    } else {
+      tracking = await Promise.race([
+        stopCampaignBackgroundTracking(),
+        new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'Background checks did not confirm stop within 10 seconds.' }), 10000)),
+      ]);
+    }
   }
   // v2.14.x: ALSO flip the abort flags for Check DMs and Post Amplification.
   // The bottom-bar Stop button posts to /api/campaign/stop regardless of
