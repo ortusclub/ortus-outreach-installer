@@ -32,6 +32,22 @@ test('a longer name is stripped before the shorter one it contains', () => {
   assert.equal(messageTemplate(a), messageTemplate(b));
 });
 
+test('a two-word name and a one-word name still group together', () => {
+  // Found on the live queue, 2026-09-02: "Mohammad Mohtashim Khan" left "Hi {} {},"
+  // where "Matthew Wootton" left "Hi {}," — same campaign, same week, split into
+  // two groups. Adjacent placeholders are one name.
+  const a = fu({ leadName: 'Mohammad Mohtashim Khan', body: "Hi Mohammad Mohtashim, following up on my colleague's note." });
+  const b = fu({ leadName: 'Matthew Wootton', body: "Hi Matthew, following up on my colleague's note." });
+  assert.equal(messageTemplate(a), messageTemplate(b));
+  assert.equal(groupStaleFollowUps([{ ...a, status: 'failed' }, { ...b, status: 'failed' }]).length, 1);
+});
+
+test('collapsing placeholders does not merge genuinely different campaigns', () => {
+  const a = fu({ leadName: 'Ann Marie Lee', body: 'Hi Ann Marie, dinner on 4 September.' });
+  const b = fu({ leadName: 'Bob', body: 'Hi Bob, roundtable on 26 August.' });
+  assert.notEqual(messageTemplate(a), messageTemplate(b));
+});
+
 test('a stamped campaignId wins over the message', () => {
   const a = fu({ campaignId: 'c1', body: 'Hi X, one thing.' });
   const b = fu({ campaignId: 'c2', body: 'Hi X, one thing.' });

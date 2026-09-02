@@ -43,7 +43,11 @@ export function messageTemplate(task) {
     .filter((p) => p.length > 2)
     .sort((a, b) => b.length - a.length);
   for (const p of parts) body = body.split(p).join('{}');
-  return body;
+  // A two-token name leaves two placeholders where a one-token name leaves one
+  // ("Hi {} {}," vs "Hi {},"), which split ONE campaign into several groups on
+  // real data: Mohammad Mohtashim Khan and Matthew Wootton, same message, same
+  // week, two groups. Adjacent placeholders are one name.
+  return body.replace(/\{\}(\s*\{\})+/g, '{}');
 }
 
 /** Stable identity for "these follow-ups are from the same campaign". */
