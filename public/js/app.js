@@ -8130,9 +8130,6 @@ function _buildCloudActiveStatus(c, leads, counts) {
     // ▶ Resume sending control on a stopped / monitoring connect campaign.
     pendingCount: (Number(counts.pending) || 0) + (Number(counts.claimed) || 0),
     profileIds: c.profile_ids || [], participatingProfileIds: c.profile_ids || [],
-    // When this campaign began. Follow-ups queued before it started were never
-    // its own, even when they ran on the same LinkedIn account.
-    startedAt: Date.parse(c.started_at || c.created_at || '') || 0,
     acceptedCount: accepted, logs: _mergeCloudLog(_cloudLeadsToLog(leads, c.mode === 'follower_growth', c), _combineCloudEvents(c.id)),
     nextCheckAt: c.next_check_at, monitoringUntil: c.monitoring_until,
     // When blocked senders become eligible again. Monitoring continues while
@@ -11504,6 +11501,10 @@ let _lastBoardHtml = '';  // anti-jank: skip the 4s re-render when nothing chang
 const _cloudDetailCache = new Map();  // id → detail; terminal campaigns cached (never change)
 let _boardRenderInFlight = false;     // don't stack renders (each does N cloud fetches)
 let _cloudRaw = [];                   // background snapshot of cloud details; render builds from this
+// True once that snapshot has been attempted at least once. Before it, the
+// board renders history only, so "nothing is live" is ignorance, not a fact —
+// and anything that reasons about which campaigns are running must wait.
+let _cloudSnapshotTried = false;
 let _cloudRefreshInFlight = false;
 let _cloudRefreshController = null;   // cancelled when Electron wakes from sleep
 // Successful handovers update ownership immediately. The board snapshot can be
@@ -11611,6 +11612,7 @@ async function _refreshCloudItems() {
         _bulk = { ..._bulk, ...((br && br.details) || {}) };
       } catch { /* summary was complete, or per-id fallback runs below */ }
     }
+    _cloudSnapshotTried = true;
     _cloudRaw = await _mapLimit(cloudCamps, CLOUD_FANOUT_LIMIT, async (c) => {
       let d;
       if (_isFresh(c)) return _cloudDetailCache.get(c.id);
@@ -11793,6 +11795,7 @@ async function _renderCampaignsBoardInner() {
       items.push({
         where: 'local', id: 'local-active', name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
         bucket: 'running', sent: s.totalProcessed || 0, total: s.totalTargets || 0,
+        startedAt: Date.parse(s.startedAt || s.started_at || '') || Number(s.startedAt) || 0,
         pending: Math.max(0, (Number(s.totalTargets) || 0) - (Number(s.totalProcessed) || 0)),
         interrupted: s.state === 'interrupted' || !!s.interrupted,
         dailyWait: s.state === 'waiting_daily_reset',
@@ -11892,6 +11895,11 @@ async function _renderCampaignsBoardInner() {
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
+        // When this campaign began. A LinkedIn account outlives the campaign
+        // that used it, so a follow-up queued BEFORE this one started was never
+        // its own — without this date the strip and the card both fall back to
+        // the account alone and an old orphan gets adopted by today's campaign.
+        startedAt: Date.parse(c.started_at || c.created_at || '') || 0,
         identityKey: `${c.mode || ''}|${c.name || ''}|${c.sheet_url || ''}|${(c.profile_ids || []).slice().sort().join(',')}`,
         paused: c.status === 'paused',
         dailyWait: c.status === 'waiting_daily_reset',
@@ -12238,6 +12246,11 @@ async function _renderCampaignsBoardInner() {
   // done/cancelled strips is static). Live strips whose countdowns tick still
   // differ each render, so they keep updating.
   const final = html || _campaignsEmptyState();
+  // The strip is computed from these items but lives OUTSIDE the board, and it
+  // keeps its own byte-identical check. Running it before the board's anti-jank
+  // early-return is what lets it appear at all: a static board of done strips
+  // renders identical markup forever, and the strip would wait behind it.
+  try { renderStaleFollowups(items); } catch (_) { /* never let it break the board */ }
   if (board.dataset.rendered === '1' && final === _lastBoardHtml) return;
   _lastBoardHtml = final;
   board.dataset.rendered = '1';
@@ -12254,9 +12267,6 @@ async function _renderCampaignsBoardInner() {
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
-  // Stuck follow-ups from campaigns that are NOT on this board. Fired with the
-  // board's own items so the two can never claim the same follow-up.
-  try { renderStaleFollowups(items); } catch (_) { /* never let it break the board */ }
 }
 
 // ── Follow-ups nobody can see ────────────────────────────────────────────────
@@ -12295,6 +12305,12 @@ async function renderStaleFollowups(items) {
     .map((it) => [String(it.id), {
       id: String(it.id), profileIds: it.profileIds || [], startedAt: it.startedAt || 0,
     }])).values()];
+  // The board paints history before the cloud snapshot lands. On that first
+  // pass NO campaign looks live, so every stuck follow-up would look orphaned:
+  // measured, the strip flashed "8 follow-ups did not send" and then emptied
+  // itself a second later. Zero live campaigns is only a fact once the snapshot
+  // has been tried.
+  if (!_cloudSnapshotTried) return;
   let groups = [];
   try {
     const r = await (await fetch('/api/followups/board', {
@@ -12327,7 +12343,7 @@ async function renderStaleFollowups(items) {
     return `<div class="fu-grp" data-key="${escHtml(g.key)}">
       <div class="fu-top">${name}
         <span class="fu-dt">queued ${escHtml(_fuWhen(g.firstQueuedAt))}</span>
-        <span class="fu-cnt">${n(g.count, 'waiting')}</span>
+        <span class="fu-cnt">${g.count} waiting</span>
         <button class="mini fu-x" onclick="toggleStaleFollowupMessage(this)">Show message</button>
       </div>
       <div class="fu-meta">${escHtml(g.accounts.join(', '))}${g.accounts.length ? ' · ' : ''}${escHtml(why)}</div>
@@ -12404,7 +12420,7 @@ window.discardStaleFollowups = async function (key, count, btn) {
     _staleFuLastHtml = '';
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(
-        `${d.discarded} follow-up${d.discarded === 1 ? '' : 's'} discarded. They will never be sent.`,
+        `${d.discarded} follow-up${d.discarded === 1 ? '' : 's'} discarded. ${d.discarded === 1 ? 'It will' : 'They will'} never be sent.`,
         10000,
         { label: 'Undo', onClick: () => undoDiscardFollowups() },
       );
