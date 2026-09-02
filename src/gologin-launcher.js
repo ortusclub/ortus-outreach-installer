@@ -105,6 +105,13 @@ export function selectOrphanPids({ spawned, activePids, isAlive }) {
 // than one GoLogin workspace and a single shared cache would let whichever
 // account refreshed last stand in for both.
 const profileCaches = new Map(); // accountId → { list, time }
+// accountId → the in-flight fetch, so callers that arrive while one workspace is
+// still listing WAIT for it instead of starting a second one. profileCaches only
+// ever held a finished result, so two boot-time callers both missed and both
+// paged the whole workspace: 34 GoLogin calls for 489 profiles instead of 17
+// (Sam's log, 1 Sep, two interleaved 17-page sweeps). Rejections are never
+// cached — the entry is dropped in a finally, so the next caller retries.
+const profileFetches = new Map(); // accountId → Promise<list>
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // profileId → accountId, the answer to "whose token launches this profile".
@@ -236,8 +243,19 @@ export async function getProfiles(_ignoredLegacyToken) {
       list = cached.list;
     } else {
       try {
-        list = await fetchAccountProfiles(acc.id, tokenForAccount(acc.id));
-        profileCaches.set(acc.id, { list, time: Date.now() });
+        let pending = profileFetches.get(acc.id);
+        if (!pending) {
+          pending = fetchAccountProfiles(acc.id, tokenForAccount(acc.id))
+            .then((fresh) => {
+              // Stamped when the list ARRIVES, not when it was asked for, so a
+              // slow page-through cannot spend most of its own TTL loading.
+              profileCaches.set(acc.id, { list: fresh, time: Date.now() });
+              return fresh;
+            })
+            .finally(() => profileFetches.delete(acc.id));
+          profileFetches.set(acc.id, pending);
+        }
+        list = await pending;
       } catch (err) {
         // A secondary account being down must never blank the primary roster —
         // that would empty the picker for operators who have nothing to do with

@@ -8624,7 +8624,9 @@ function appendFatalErrorSync(entry) {
 // ---------------------------------------------------------------------------
 async function gracefulShutdown(signal) {
   console.log(`\n[shutdown] ${signal} received. Shutting down... waiting for current lead`);
-  stopCampaign();
+  // Say it is a quit, not a Stop press. stopReason stays 'operator-stopped' on
+  // purpose — the dashboard keys off that value.
+  stopCampaign({ quitting: true });
 
   // Wait for current lead to finish (campaign loop checks _abort between leads)
   const deadline = Date.now() + 30000;

@@ -6002,7 +6002,12 @@ function _persistRunSettings() {
   try { writeLastRun(LAST_RUN_FILE, _lastRunSettings); } catch { /* non-fatal */ }
 }
 
-export function stopCampaign({ full = false, reason = 'operator-stopped' } = {}) {
+// `quitting` says the app is closing rather than an operator pressing Stop. It
+// deliberately does NOT ride on `reason`: campaign.stopReason is read by the
+// dashboard (app.js compares it to 'operator-stopped' to decide "deliberately
+// stopped" and "waiting here"), so changing it to say 'shutdown' would move UI
+// state to fix a log line.
+export function stopCampaign({ full = false, reason = 'operator-stopped', quitting = false } = {}) {
   campaign._abort = true;
   if (campaign._abortController && !campaign._abortController.signal.aborted) {
     campaign._abortController.abort(new DOMException('Campaign stopped', 'AbortError'));
@@ -6045,11 +6050,19 @@ export function stopCampaign({ full = false, reason = 'operator-stopped' } = {})
   // pressed twice on 2026-09-01 (10:19:16 and 10:19:40 UTC) and kept monitoring
   // on the VM for the rest of the day, with nothing anywhere to say why.
   const nothingRunningHere = !campaign.running && campaign.state !== 'monitoring';
-  log(nothingRunningHere
-    ? '■ Stop pressed, but nothing is running or monitoring on this Mac — nothing here was stopped. If the campaign you meant runs on the Cloud VM, stop it from that campaign\'s own card.'
-    : (full
-      ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
-      : '■ Stop requested.'));
+  // Quitting the app calls this too (server.js gracefulShutdown), and it used to
+  // borrow the operator wording: every quit ended the log with "Stop pressed,
+  // but nothing is running", which nobody had pressed (Sam, 1 Sep). Closing the
+  // app is not a stop the operator made, so it gets its own sentence.
+  log(quitting
+    ? (nothingRunningHere
+      ? '■ The app is closing. Nothing was running here, so nothing was interrupted.'
+      : '■ The app is closing, so this campaign is stopping on this Mac. A campaign running on the Cloud VM keeps going.')
+    : (nothingRunningHere
+      ? '■ Stop pressed, but nothing is running or monitoring on this Mac — nothing here was stopped. If the campaign you meant runs on the Cloud VM, stop it from that campaign\'s own card.'
+      : (full
+        ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
+        : '■ Stop requested.')));
   // An operator stop ANSWERS any outstanding interruption journal. Without this
   // a journal written hours earlier (app quit, Mac asleep) outlived the campaign
   // it described and re-labelled every later stop as "Stopped because this Mac

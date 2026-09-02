@@ -103,12 +103,22 @@ async function requestOnce(method, path, body) {
   }
 }
 
+// withWriteRetry's own wording says "transient write error", borrowed from the
+// sheet writer and wrong here: these calls only read (list / status / stop).
+// An operator reading "write error" in the log goes looking for data that was
+// never being written (Sam, 1 Sep). Say what actually happened instead — the
+// engine did not answer, and we are asking again — while keeping the attempt
+// count and the real reason the helper already put in the message.
+export function engineRetryLine(message) {
+  return `[cloud] the engine did not answer ${String(message).replace(/^transient write error /, '')}`;
+}
+
 // Retry wrapper for IDEMPOTENT calls (list / status / stop).
 function requestWithRetry(method, path, body) {
   return withWriteRetry(() => requestOnce(method, path, body), {
     maxAttempts: 3,
     baseDelayMs: 1000,
-    log: (m) => console.warn(`[campaigns-client] ${m}`),
+    log: (m) => console.warn(engineRetryLine(m)),
   });
 }
 
