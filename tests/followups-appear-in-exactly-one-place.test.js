@@ -15,9 +15,23 @@ test('the card asks for ONE campaign, never the whole app', () => {
 
 test('the strip is told which campaigns are on the board', () => {
   // Without this the strip and the cards would both claim the same follow-ups.
-  assert.match(APP, /liveCampaignIds=/);
-  assert.match(APP, /liveProfileIds=/);
+  assert.match(APP, /followups\/board/);
   assert.match(APP, /\['running', 'queued', 'idle'\]\.includes\(it\.bucket\)/);
+});
+
+test('EVERY campaign on the board gets its own numbers, not just the viewed one', () => {
+  // Both live status cards render per campaign (the dashboard strip's card #2
+  // and the campaign tab's #active-card). Populating only the viewed campaign
+  // would blank the follow-up row on every other strip.
+  assert.match(APP, /for \(const \[cid, h\] of Object\.entries\(r\.health \|\| \{\}\)\) _followupHealthById\.set/);
+});
+
+test('follow-up health is keyed by campaign, never a single global', () => {
+  assert.match(APP, /const _followupHealthById = new Map\(\)/);
+  assert.equal(/let _followupHealth = null;/.test(APP), false, 'the shared global must not come back');
+  // Both consumers must look it up by the campaign they are rendering.
+  assert.match(APP, /const h = _fuHealth\(cid\);/);
+  assert.match(APP, /const _fh = _fuHealth\(cid\);/);
 });
 
 test('the strip has a mount point above the board rails', () => {

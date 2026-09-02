@@ -51,6 +51,27 @@ test('the card scope matches by campaignId first and by account only as a fallba
   assert.equal(belongsToCampaign(legacy, { campaignId: 'B', profileIds: ['p9'] }), true);
 });
 
+test('the board answer covers every campaign asked about, including empty ones', () => {
+  // What the /api/followups/board route does, in the same order. A campaign
+  // with no follow-ups of its own must come back as zeros — NOT be omitted,
+  // which is what would blank its card's row instead of hiding it honestly.
+  const tasks = [
+    fu({ id: 'a', campaignId: 'A', status: 'done' }),
+    fu({ id: 'b', campaignId: 'A', status: 'failed' }),
+    fu({ id: 'c', campaignId: 'B', status: 'done' }),
+  ];
+  const campaigns = [{ id: 'A', profileIds: [] }, { id: 'B', profileIds: [] }, { id: 'NEW', profileIds: [] }];
+  const health = {};
+  for (const c of campaigns) {
+    const mine = tasks.filter((t) => belongsToCampaign(t, { campaignId: c.id, profileIds: c.profileIds }));
+    health[c.id] = { sent: mine.filter((t) => t.status === 'done').length, failed: mine.filter((t) => t.status === 'failed').length };
+  }
+  assert.deepEqual(health, { A: { sent: 1, failed: 1 }, B: { sent: 1, failed: 0 }, NEW: { sent: 0, failed: 0 } });
+  // …and every campaign on the board is excluded from the strip, so nothing
+  // appears in two places at once.
+  assert.equal(groupStaleFollowUps(tasks, { liveCampaignIds: ['A', 'B', 'NEW'] }).length, 0);
+});
+
 test('an accept task is never counted as a follow-up', () => {
   const accept = { type: 'accept', status: 'failed', campaignProfileId: 'p1', id: 'z' };
   assert.equal(belongsToCampaign(accept, { profileIds: ['p1'] }), false);

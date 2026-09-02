@@ -75,7 +75,9 @@ test('the card can finally say a follow-up did not land', () => {
 });
 
 test('the follow-up block is not limited to the waiting phase', () => {
-  const i = APP.indexOf("const _fuFix = _followupFixHtml();");
-  assert.ok(i > 0);
+  // Takes the campaign id since v3.1.60.6: the block must speak for the campaign
+  // whose card it is on, not for whichever campaign refreshed last.
+  const i = APP.indexOf("const _fuFix = _followupFixHtml(cid);");
+  assert.ok(i > 0, 'the fix block must be built for a named campaign');
   assert.match(APP.slice(i, i + 200), /\|\| _fuFix/);
 });

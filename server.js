@@ -2605,19 +2605,43 @@ app.get('/api/followups/health', async (req, res) => {
   }
 });
 
-// Stuck follow-ups from campaigns that have LEFT the board, grouped by campaign.
-// The caller says which campaigns are still on its board; those belong to their
-// own card, and excluding them here is what keeps a follow-up in exactly one
-// place on screen.
-app.get('/api/followups/stale', async (req, res) => {
+// Everything the board needs about follow-ups, in ONE request per render:
+//   health — per campaign, for EVERY campaign on the board. Both live status
+//     cards render per campaign (the dashboard strip's card #2 from its own
+//     strip's status, and the campaign tab's #active-card), so each needs its
+//     own numbers. Fetching only the campaign being viewed would leave every
+//     other strip's follow-up row blank.
+//   groups — stuck follow-ups whose campaign is NOT on the board. Those have no
+//     card to live on; the strip above the rails is their only home. Excluding
+//     the board's own campaigns is what keeps a follow-up in exactly one place.
+app.post('/api/followups/board', async (req, res) => {
   try {
     const tasks = await loadPrimaryTasks();
-    const split = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const campaigns = Array.isArray(req.body && req.body.campaigns) ? req.body.campaigns : [];
+    const health = {};
+    for (const c of campaigns) {
+      const id = String((c && c.id) || '');
+      if (!id) continue;
+      const profileIds = Array.isArray(c.profileIds) ? c.profileIds : [];
+      const mine = tasks.filter((t) => belongsToCampaign(t, { campaignId: id, profileIds }));
+      const blocked = mine.filter((t) => t.status === 'pending' && t.blockedBySession);
+      const failed = mine.filter((t) => t.status === 'failed');
+      health[id] = {
+        ok: true,
+        scoped: true,
+        sent: mine.filter((t) => t.status === 'done').length,
+        pending: mine.filter((t) => t.status === 'pending' && !t.blockedBySession).length,
+        blocked: blocked.length,
+        failed: failed.length,
+        reason: blocked.length ? 'signed-out' : (failed.length ? 'error' : ''),
+        lastError: (failed[failed.length - 1] || {}).lastError || '',
+      };
+    }
     const groups = groupStaleFollowUps(tasks, {
-      liveCampaignIds: split(req.query.liveCampaignIds),
-      liveProfileIds: split(req.query.liveProfileIds),
+      liveCampaignIds: campaigns.map((c) => String((c && c.id) || '')).filter(Boolean),
+      liveProfileIds: campaigns.flatMap((c) => (Array.isArray(c && c.profileIds) ? c.profileIds : [])),
     });
-    res.json({ ok: true, groups, total: groups.reduce((a, g) => a + g.count, 0) });
+    res.json({ ok: true, health, groups, total: groups.reduce((a, g) => a + g.count, 0) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

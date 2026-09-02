@@ -7716,8 +7716,15 @@ const _cloudMonitorLog = new Map();      // campaignId -> [{ t, line }]  (engine
 // When this Mac last started failing to reach the VM, per campaign. Drives one
 // log line per quiet spell instead of one per failed poll.
 const _cloudQuietSince = new Map();
-let _followupHealth = null;
-window._followupHealth = () => _followupHealth;
+// Follow-up health, PER CAMPAIGN. This used to be one global, set by whichever
+// campaign refreshed last — so with the dashboard strip showing one campaign and
+// the campaign tab another, both cards read the same numbers, and after the
+// per-campaign fetch landed it would have been the LAST campaign polled rather
+// than the app total. Two live status cards exist and they must never be
+// conflated; keying by campaign id is what keeps them independent.
+const _followupHealthById = new Map();
+function _fuHealth(cid) { return _followupHealthById.get(String(cid || '')) || null; }
+window._followupHealth = (cid) => (cid ? _fuHealth(cid) : Object.fromEntries(_followupHealthById));
 const _cloudAccountsById = new Map();    // campaignId -> [{ email, dailyCount, dailyLimit, parked, parkReason, needsLogin }]
 const _cloudProgressSeen = new Map();     // campaignId -> last verified browser milestone
 // Cloud load + the global queue order, refreshed once per board poll and only
@@ -8837,7 +8844,7 @@ async function _refreshCloudActiveStatus(id) {
       const _pids = ((d && d.campaign && (d.campaign.profile_ids || d.campaign.profileIds)) || []).join(',');
       const _q = `campaignId=${encodeURIComponent(id)}${_pids ? `&profileIds=${encodeURIComponent(_pids)}` : ''}`;
       const fh = await (await fetch(`/api/followups/health?${_q}`)).json();
-      if (fh && fh.ok) _followupHealth = fh;
+      if (fh && fh.ok) _followupHealthById.set(String(id), fh);
     } catch (_) { /* the line just does not render */ }
     _recordCloudProgress(id, d);
     // Carry the optimistic "resuming" flag across the rebuild. Dropping it here
@@ -12266,15 +12273,24 @@ function _fuWhen(ms) {
 async function renderStaleFollowups(items) {
   const mount = document.getElementById('stale-followups');
   if (!mount) return;
+  // EVERY campaign on the board, not only the one being viewed. Both live status
+  // cards render per campaign, so each strip's card #2 needs its own follow-up
+  // numbers — asking only for the viewed campaign would leave every other
+  // strip's follow-up row blank, which is a different way of showing the wrong
+  // thing. One request covers the whole board plus the stale groups.
   const live = (items || []).filter((it) => it && ['running', 'queued', 'idle'].includes(it.bucket));
-  const ids = [...new Set(live.map((it) => it.id).filter(Boolean))];
-  const pids = [...new Set(live.flatMap((it) => it.profileIds || []))];
+  const campaigns = [...new Map(live
+    .filter((it) => it.id)
+    .map((it) => [String(it.id), { id: String(it.id), profileIds: it.profileIds || [] }])).values()];
   let groups = [];
   try {
-    const q = `liveCampaignIds=${encodeURIComponent(ids.join(','))}&liveProfileIds=${encodeURIComponent(pids.join(','))}`;
-    const r = await (await fetch(`/api/followups/stale?${q}`)).json();
+    const r = await (await fetch('/api/followups/board', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaigns }),
+    })).json();
     if (!r || !r.ok) return;
     groups = r.groups || [];
+    for (const [cid, h] of Object.entries(r.health || {})) _followupHealthById.set(String(cid), h);
   } catch (_) { return; } // the strip simply does not appear
 
   if (!groups.length) { mount.replaceChildren(); _staleFuLastHtml = ''; return; }
@@ -28022,8 +28038,8 @@ function _nextMondayText() {
 // The follow-up state, in the card's existing "What you can do" language.
 // Silent while follow-ups are working: a count with nothing wrong belongs in the
 // facts row, not in a block headed "what you can do".
-function _followupFixHtml() {
-  const h = _followupHealth;
+function _followupFixHtml(cid) {
+  const h = _fuHealth(cid);
   if (!h || !h.ok) return '';
   const stuck = (h.blocked || 0) + (h.failed || 0);
   if (!stuck) return '';
@@ -28715,7 +28731,7 @@ function renderLiveStage(root, status) {
     // Follow-ups get a fact of their own once any have run. Without it the only
     // evidence a follow-up ever happened was the lead's LinkedIn thread, so five
     // that never sent looked exactly like five that did (operator, 2026-09-01).
-    const _fh = _followupHealth;
+    const _fh = _fuHealth(cid);
     if (_fh && _fh.ok && ((_fh.sent || 0) + (_fh.blocked || 0) + (_fh.failed || 0)) > 0) {
       const stuck = (_fh.blocked || 0) + (_fh.failed || 0);
       facts.push(['Follow-ups', stuck
@@ -28806,7 +28822,7 @@ function renderLiveStage(root, status) {
         // Follow-up trouble is worth saying in EVERY phase, not only 'waiting':
         // a signed-out follow-up browser is just as broken while the campaign is
         // mid-send, and that is exactly when nobody is looking at the card.
-        const _fuFix = _followupFixHtml();
+        const _fuFix = _followupFixHtml(cid);
         fix.innerHTML = (phase === 'waiting' ? _stageFixHtml(cid, accts) : '') || _fuFix;
       }
     }
