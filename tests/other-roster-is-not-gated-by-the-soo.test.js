@@ -13,7 +13,7 @@ const app = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf-8
 const picker = app.slice(app.indexOf('const _foreign = p.available === false;'), app.indexOf('const _foreign = p.available === false;') + 14000);
 
 test('the lock consults who owns the profile', () => {
-  assert.match(picker, /_nonOrtusRoster\s*=\s*!_foreign\s*&&\s*!!p\.account\s*&&\s*p\.account\s*!==\s*'ortus'/);
+  assert.match(picker, /_nonOrtusRoster = !_foreign && \(\(!!p\.account && p\.account !== 'ortus'\)/);
 });
 
 test('no SoO verdict locks another workspace tile', () => {
@@ -36,4 +36,10 @@ test('these are the two verdicts being told apart', () => {
   const restricted = { Status: 'Identity Restricted', ccCredits: 'NA', section: 'Pool Accounts Unassigned' };
   assert.equal(classifyAccountState(rented, 'sam@ortusclub.com', 'connect_and_message').reason, 'na');
   assert.equal(classifyAccountState(restricted, 'sam@ortusclub.com', 'connect_and_message').reason, 'restricted');
+});
+
+test('a granted Ortus-owned account is ungated too', () => {
+  // The other half of the shared inventory: owned by Ortus, driven by Linked
+  // Velocity. `guest` is how the server says so.
+  assert.match(picker, /p\.guest === true/);
 });

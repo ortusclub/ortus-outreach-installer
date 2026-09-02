@@ -144,6 +144,35 @@ export const EXTRA_ACCOUNT_MEMBERS = Object.freeze({
 });
 
 /**
+ * The Ortus-owned half of the shared inventory, granted to Linked Velocity.
+ *
+ * The SoO parks these under "INVENTORY: DO NOT USE" with NA credits so ORTUS
+ * operators leave them alone — Linked Velocity is the team meant to drive them.
+ * 17 of those 32 rows already sit in the Linked Velocity workspace and need
+ * nothing; these are the 12 that are still owned by Ortus (measured 2026-09-02,
+ * ids read from GoLogin, names kept for the next person to read this).
+ *
+ * Committed for the same reason as EXTRA_ACCOUNT_MEMBERS: the env form of this
+ * list lived in Milee's own .env and died on every app update.
+ *
+ * A grant widens WHO may drive a profile, never who owns it.
+ */
+export const SHARED_INVENTORY_GRANTS = Object.freeze({
+  '688a56148d10cb8490453658': 'linkedvelocity', // pinky.s@klabber.co
+  '69b291389a256046e2ac5262': 'linkedvelocity', // muhammad.muneeb@ortus.solutions
+  '6a180011947d2dc358c4b2f8': 'linkedvelocity', // mary.simon@ortus.solutions
+  '686696205c3c6094e10f461c': 'linkedvelocity', // milee.mel@ortus.solutions
+  '69a9640ef15ec789228ae321': 'linkedvelocity', // wali.hassan@ortus.solutions
+  '6a2244ea31342edd731f0fb4': 'linkedvelocity', // janelle.cunanan@klabber.co
+  '6a4deecaf0caa719dae4bf51': 'linkedvelocity', // ceres.jasareno@klabber.co
+  '6a3a3e8949df96595bfef9ca': 'linkedvelocity', // farhan.ramadhan@klabber.co
+  '6a339aea1a2d4901c9301fcb': 'linkedvelocity', // gevan.nohara@klabber.co
+  '6a61c0a85c6f82743b340367': 'linkedvelocity', // haruki.saito@klabber.co
+  '6a6071bf547e277c7a00353b': 'linkedvelocity', // jerodyn.reyes@klabber.co
+  '6a310293fb8520c17988a10f': 'linkedvelocity', // ugi.ripaldi@klabber.co
+});
+
+/**
  * Per-profile grants — the escape hatch the domain rule deliberately lacks.
  *
  * The domain gate is right for the roster as a whole and wrong for the handful
@@ -168,12 +197,17 @@ export function grantsForProfile(profileId) {
   const id = String(profileId || '').trim();
   if (!id) return [];
   const out = [];
+  // The committed shared-inventory list first, then anything an operator has
+  // added locally. Both are grants; neither cancels the other.
+  if (SHARED_INVENTORY_GRANTS[id]) out.push(SHARED_INVENTORY_GRANTS[id]);
   for (const entry of String(process.env.GOLOGIN_PROFILE_GRANTS || '').split(/[,\s]+/)) {
     const [accId, profId] = entry.split(':');
     if (!accId || !profId) continue;
     if (profId.trim() === id) out.push(accId.trim().toLowerCase());
   }
-  return out;
+  // An operator whose .env still carries a grant now committed here would
+  // otherwise see the same account listed twice.
+  return [...new Set(out)];
 }
 
 /**
@@ -195,6 +229,21 @@ export function canOperatorUseProfile(email, profileAccountId, profileId) {
   const who = String(email || '').trim().toLowerCase();
   if ((EXTRA_ACCOUNT_MEMBERS[id] || []).includes(who)) return true;
   return grantsForProfile(profileId).includes(mine);
+}
+
+/**
+ * True when the operator reaches this profile through a grant or a named
+ * membership rather than by owning the workspace it lives in.
+ *
+ * The picker needs the distinction: the Ortus SoO parks a shared-inventory
+ * account under "DO NOT USE" with NA credits to keep ORTUS operators off it,
+ * and enforcing that against the very team the account was handed to is the
+ * second gate people keep hitting (2026-08-24, Milee).
+ */
+export function usesProfileAsGuest(email, profileAccountId, profileId) {
+  const id = profileAccountId || DEFAULT_ACCOUNT_ID;
+  if (accountForEmail(email) === id) return false;
+  return canOperatorUseProfile(email, id, profileId);
 }
 
 /**

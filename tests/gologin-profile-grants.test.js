@@ -23,9 +23,11 @@ function withGrants(value, fn) {
 }
 
 test('without a grant the domain gate is unchanged', () => {
+  // OTHER, not MILEE: milee.mel is now in the committed SHARED_INVENTORY_GRANTS
+  // (2026-09-02), so it is never ungranted any more.
   withGrants(undefined, () => {
-    assert.equal(canOperatorUseProfile('milee@linkedvelocity.com', 'ortus', MILEE), false);
-    assert.equal(canOperatorUseProfile('ortus@ortusclub.com', 'ortus', MILEE), true);
+    assert.equal(canOperatorUseProfile('milee@linkedvelocity.com', 'ortus', OTHER), false);
+    assert.equal(canOperatorUseProfile('ortus@ortusclub.com', 'ortus', OTHER), true);
   });
 });
 
