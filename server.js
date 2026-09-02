@@ -60,7 +60,7 @@ import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from '
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
-import { accountForEmail, canOperatorUseProfile, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
+import { accountForEmail, canOperatorUseProfile, usesProfileAsGuest, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes, isRetiredMode } from './public/js/campaign-modes.mjs';
 import { validatePrimaryUrl } from './public/js/primary-url-validation.mjs';
@@ -665,6 +665,10 @@ app.get('/api/profiles', async (req, res) => {
     res.json(profiles.map((p) => ({
       ...p,
       available: canOperatorUseProfile(email, p.account, p.id),
+      // Reached through a grant or a named membership rather than by owning the
+      // workspace. The picker uses it to stop applying the Ortus SoO to an
+      // account another team runs — see usesProfileAsGuest.
+      guest: usesProfileAsGuest(email, p.account, p.id),
       accountLabel: accountLabel(p.account),
       // null = runs anything. An array means the picker must re-check on every
       // campaign-type change, which is why this ships with the list rather than

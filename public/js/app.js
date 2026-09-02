@@ -2484,7 +2484,11 @@ function renderProfiles(profiles) {
     // entitled to use them. Operator decision the same day: the workspace that
     // owns an account is the one that knows its health, so its operators pick
     // freely and the SoO line is shown as information, never as a lock.
-    const _nonOrtusRoster = !_foreign && !!p.account && p.account !== 'ortus';
+    // `guest` covers the other half: an Ortus-owned account handed to another
+    // team by a grant. The SoO parks those under "DO NOT USE" with NA credits
+    // precisely to keep Ortus operators off them, which must not be enforced
+    // against the team they were handed to.
+    const _nonOrtusRoster = !_foreign && ((!!p.account && p.account !== 'ortus') || p.guest === true);
     const _sooLock = _nonOrtusRoster
       ? false
       : (_breakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked'));
