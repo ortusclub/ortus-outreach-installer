@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const APP = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
+const HTML = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const CSS = readFileSync(new URL('../public/css/dashboard-v0.3.css', import.meta.url), 'utf8');
 const CLIENT = readFileSync(new URL('../src/campaigns-client.js', import.meta.url), 'utf8');
 const SERVER = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
@@ -66,17 +67,39 @@ test('the keep-monitoring caller asks for an immediate stop', () => {
   assert.match(APP, /_doStopCloud\(target\.id, \{ keepMonitoring: true, scope, immediate: true \}\)/);
 });
 
-test('the app query string keeps immediate when keepMonitoring is set', () => {
-  // Reproduce the builder rather than trusting its source text.
-  const qs = (keepMonitoring, immediate, scope) => keepMonitoring
-    ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}${immediate ? '&immediate=1' : '&finishCurrent=1'}`
-    : (immediate ? '?immediate=1' : '?finishCurrent=1');
-  assert.match(qs(true, true, 'campaign'), /immediate=1/);
-  assert.match(qs(true, false, 'campaign'), /finishCurrent=1/);
-  assert.match(qs(false, true), /^\?immediate=1$/);
-  assert.ok(APP.includes("${immediate ? '&immediate=1' : '&finishCurrent=1'}"), 'the app builder does the same');
+test('every app stop query is immediate; finishCurrent is gone', () => {
+  const fn = APP.slice(APP.indexOf('async function _doStopCloud('), APP.indexOf('// Pause / Resume a cloud campaign'));
+  assert.match(fn, /&immediate=1/);
+  assert.match(fn, /'\?immediate=1'/);
+  assert.doesNotMatch(fn, /finishCurrent/);
 });
 
-test('the node client keeps immediate when keepMonitoring is set', () => {
-  assert.ok(CLIENT.includes("`?keepMonitoring=1${immediate ? '&immediate=1' : '&finishCurrent=1'}`"));
+test('the node client forces immediate for every stop shape', () => {
+  const fn = CLIENT.slice(CLIENT.indexOf('export function stopCloudCampaign'), CLIENT.indexOf('export function resumeCloudCampaign'));
+  assert.match(fn, /immediate = true/);
+  assert.doesNotMatch(fn, /finishCurrent/);
+});
+
+test('the click owns and repaints both cards before the network call', () => {
+  const fn = APP.slice(APP.indexOf('async function _doStopCloud('), APP.indexOf('// Pause / Resume a cloud campaign'));
+  assert.ok(fn.indexOf('_markCloudStopping(id, true)') < fn.indexOf('_cloudMutationRequest'));
+  assert.match(APP, /const _stoppingCloudIds = new Set\(\)/);
+  assert.match(APP, /button\.disabled = true/);
+});
+
+test('a duplicate click cannot send or log a second stop', () => {
+  const fn = APP.slice(APP.indexOf('async function _doStopCloud('), APP.indexOf('// Pause / Resume a cloud campaign'));
+  assert.ok(fn.indexOf('_stoppingCloudIds.has') < fn.indexOf('_pushCloudEventNow'));
+  assert.ok(fn.indexOf('_stoppingCloudIds.has') < fn.indexOf('_cloudMutationRequest'));
+});
+
+test('the legacy stop dialog cannot offer to finish the current lead', () => {
+  assert.doesNotMatch(HTML, /confirmStopCampaignNow\(false\)|Wait up to<br>15 seconds/);
+});
+
+test('local immediate stop never awaits background schedule cleanup', () => {
+  const route = SERVER.slice(SERVER.indexOf("app.post('/api/campaign/stop'"), SERVER.indexOf("app.post('/api/campaign/restore'"));
+  assert.match(route, /if \(immediate\)/);
+  const immediateBranch = route.slice(route.indexOf('if (immediate)'), route.indexOf('} else {', route.indexOf('if (immediate)')));
+  assert.doesNotMatch(immediateBranch, /await stopCampaignBackgroundTracking/);
 });

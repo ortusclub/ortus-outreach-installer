@@ -4047,27 +4047,18 @@
     </div>
   </div>
 
-  <!-- Phase 2.8.9: Stop confirmation modal (non-CC+IC modes).
-       v3.1.48.75: was three .btn buttons in a flex-end row inside a 480px card,
-       each forced to min-width:120px with no wrapping — "Wait up to 15 seconds"
-       was clipped mid-word and "Stop now" was painted over the top of it
-       (operator, 2026-08-28: "when i press stop ... the wizard is all wrongly
-       formatted"). It is now the app's own two-choice stop card, the same one
-       the CC+IC stop already uses, so a stop always looks like a stop. -->
+  <!-- Legacy confirmation shell retained for stale renderer callbacks. There
+       is deliberately no "finish current lead" option: Stop always cuts now. -->
   <div id="confirm-stop-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeStopModal()">
     <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="stop-modal-title">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeStopModal()">&times;</button>
       <div class="stop-choice-eyebrow">Stop campaign</div>
-      <h3 id="stop-modal-title" class="modal-title stop-choice-headline">What about the lead in flight?</h3>
-      <p class="stop-choice-sub" id="stop-current-lead-copy">No new lead will start either way.</p>
+      <h3 id="stop-modal-title" class="modal-title stop-choice-headline">Stop this campaign now?</h3>
+      <p class="stop-choice-sub" id="stop-current-lead-copy">Sending is cut immediately. No next lead can start.</p>
       <div class="stop-choice-row">
-        <button type="button" class="stop-choice-pill is-monitor" onclick="confirmStopCampaignNow(false)">
-          <div class="stop-choice-pill-headline">Wait up to<br>15 seconds</div>
-          <div class="stop-choice-pill-sub">Lets the current invitation finish and be verified. Recommended.</div>
-        </button>
         <button type="button" class="stop-choice-pill is-stop" onclick="confirmStopCampaignNow(true)">
           <div class="stop-choice-pill-headline">Stop<br>now</div>
-          <div class="stop-choice-pill-sub">Closes the browser immediately. The in-flight lead is verified before any retry.</div>
+          <div class="stop-choice-pill-sub">Closes the browser immediately and blocks the next lead.</div>
         </button>
       </div>
       <div class="stop-choice-cancel-row">
