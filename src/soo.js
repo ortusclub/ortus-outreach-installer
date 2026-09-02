@@ -9,6 +9,7 @@
  */
 
 import { SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './sheets-webapp-url.js';
+import { SCRAPER_ENGINE_TOKEN } from './scraper-engine-url.js';
 import { onWebappLane } from './webapp-lane.js';
 
 // Measured against the live sheet 2026-07-31 (1011 rows, ~1.0 MB): the happy
@@ -115,6 +116,26 @@ async function fetchSoOOnce() {
   const sooSheetId = SOO_SHEET_ID;
   const sooGid = SOO_SHEET_GID;
   const webappUrl = SHEETS_WEBAPP_URL;
+
+  // Development engines expose the same roster through the Google Sheets API.
+  // This avoids Apps Script's small simultaneous-execution pool. Only use an
+  // explicitly configured engine here: released apps keep the existing Apps
+  // Script fallback until the endpoint is promoted to the live engine.
+  const engineBase = String(process.env.SCRAPER_ENGINE_URL || '').replace(/\/+$/, '');
+  if (engineBase) {
+    try {
+      const token = process.env.SCRAPER_ENGINE_TOKEN || SCRAPER_ENGINE_TOKEN;
+      const response = await fetch(`${engineBase}/api/soo-status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(20_000),
+      });
+      const engineData = await response.json();
+      if (response.ok && Array.isArray(engineData && engineData.accounts)) return engineData;
+      throw new Error((engineData && engineData.error) || `HTTP ${response.status}`);
+    } catch (error) {
+      console.warn(`[SoO] Direct engine read unavailable; using Apps Script fallback: ${error.message}`);
+    }
+  }
 
   const payload = JSON.stringify({
     sheetId: sooSheetId,
