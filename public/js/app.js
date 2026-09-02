@@ -9487,7 +9487,7 @@ function _adaptActiveCardControls(card, status) {
       ctBtn = document.createElement('button');
       ctBtn.id = 'dock-cloud-continue';
       ctBtn.className = 'btn-pill go';
-      ctBtn.textContent = 'Resume sending';
+      ctBtn.textContent = 'Choose what resumes';
       const stopPill = document.getElementById('btn-active-stop');
       if (controlsRow) controlsRow.insertBefore(ctBtn, stopPill || null);
       else dock.insertBefore(ctBtn, dock.firstChild);
@@ -9502,10 +9502,10 @@ function _adaptActiveCardControls(card, status) {
     }
     ctBtn.onclick = _localMonitoring
       ? () => { try { window.openCampaignResumeDecision(String(status.id || 'local-active'), 'sending-from-monitoring', 'local', ctBtn); } catch (_) { /* */ } }
-      : () => { try { window.restartCloudCampaignUI(_viewingCloudId, false); } catch (_) { /* */ } };
+      : () => { try { window.openCampaignResumeDecision(String(_viewingCloudId || status.id), 'sending-from-monitoring', 'vm', ctBtn); } catch (_) { /* */ } };
     rsBtn.onclick = () => { try { window.restartCloudCampaignUI(_viewingCloudId, true); } catch (_) { /* */ } };
-    const _resumeTip = `Resume sending — ${_pendingLeft} still to go`;
-    ctBtn.textContent = _resumeAny ? 'Resume sending' : 'Continue where it left off';
+    const _resumeTip = `Choose whether to resume sending or acceptance checking — ${_pendingLeft} still queued`;
+    ctBtn.textContent = _resumeAny ? 'Choose what resumes' : 'Continue where it left off';
     ctBtn.setAttribute('title', _resumeAny ? _resumeTip : 'Continue where it left off');
     ctBtn.setAttribute('aria-label', _resumeAny ? _resumeTip : 'Continue where it left off');
     ctBtn.style.display = '';
@@ -13535,6 +13535,34 @@ async function restartCloudCampaignUI(id, fromStart, startAt, resumeSending = fa
 }
 window.restartCloudCampaignUI = restartCloudCampaignUI;
 
+// Manual acceptance checks are intentionally optimistic in the UI: the click
+// must replace the old "waiting" card before a cold VM or GoLogin browser has
+// had time to answer. The next server poll replaces this temporary description
+// with measured progress.
+function _paintAcceptanceCheckStartingNow(id, current = 'vm') {
+  const action = {
+    phase: 'checking',
+    label: 'Starting acceptance check now',
+    sub: current === 'vm'
+      ? 'The Cloud VM is opening the campaign accounts.'
+      : 'This Mac is opening the campaign accounts.',
+    safety: 'Sending stays stopped. Only accepted connections are being checked.',
+    facts: [['Requested', 'now'], ['Sending', 'stays stopped'], ['Checking', 'starting']],
+    milestones: [['Choice', 'acceptance checking', 'done'], ['Browser', 'opening now', 'active'], ['Results', 'reported here', 'future']],
+  };
+  const active = window.__cloudActiveStatus;
+  if (active && String(active.id || '') === String(id || '')) {
+    window.__cloudActiveStatus = {
+      ...active,
+      monitoringCheckInProgress: true,
+      monitorCheckStatus: 'starting',
+      currentAction: action,
+    };
+    try { if (typeof renderActiveCard === 'function') renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* board copy still repaints */ }
+  }
+  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+}
+
 // Task 3 Part B — cloud monitoring controls (parity with local ⚡ Check now /
 // Automatic checks). Degrade gracefully until the engine ships the routes: a
 // 404/HTTP error → a clear "engine update pending" toast, no throw.
@@ -13558,7 +13586,7 @@ async function cloudCheckNow(id, btn, scope) {
   // switch to the same "Starting acceptance check" card in this tick.
   const askedAt = Date.now();
   _cloudCheckAsked.set(id, askedAt);
-  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+  _paintAcceptanceCheckStartingNow(id, 'vm');
   let queued = false;
   try {
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, {
@@ -13655,7 +13683,7 @@ async function cloudCheckLocal(id, btn, scope) {
   // screen after the operator has explicitly started a check.
   const askedAt = Date.now();
   _cloudCheckAsked.set(id, askedAt);
-  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+  _paintAcceptanceCheckStartingNow(id, 'local');
   showCampaignToast('🖥 Local check starting — opening GoLogin browsers on this machine. Keep the app open…', 7000);
   _pushCloudEvent(id, scope === 'all'
     ? '🖥 Local check — every account in the Account Used column (on this machine)'
@@ -30675,6 +30703,30 @@ window.dashPauseActive = async function() {
 // execution phase or machine. The existing Ortus confirm surface keeps this
 // consistent in the builder and the cloned expanded dashboard card.
 const _resumeDecisionInFlight = new Set();
+async function _resumeAcceptanceCheckNow(id, current, btn) {
+  // Durable campaign rows use the same command from the dashboard strip and
+  // the full campaign card. cloudCheckNow owns the runs-on guard, so a campaign
+  // handed to This Mac cannot accidentally start a second sweep on the VM.
+  if (id && id !== 'local-active') return cloudCheckNow(id, btn, 'campaign');
+
+  // A native local campaign has no cloud id. Paint first, then dispatch the
+  // existing local bulk-check route without waiting for the full sweep to end.
+  __cockpit.monitoringCheckInProgress = true;
+  __cockpit.action = {
+    phase: 'checking', label: 'Starting acceptance check now',
+    sub: 'This Mac is opening the campaign accounts.',
+  };
+  try { if (typeof renderActiveCard === 'function') renderActiveCard(__cockpit); } catch (_) { /* board copy still repaints */ }
+  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+  if (typeof showCampaignToast === 'function') showCampaignToast('Acceptance checking is starting now. Sending stays stopped.', 5000);
+  Promise.resolve(_runActiveBulkCheck('campaign')).catch((e) => {
+    __cockpit.monitoringCheckInProgress = false;
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Acceptance check failed: ${e.message}`, 7000);
+    try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* */ }
+  });
+  return true;
+}
+
 window.openCampaignResumeDecision = async function(id, phase = 'sending', current = 'local', btn = null) {
   const sendingFromMonitoring = phase === 'sending-from-monitoring';
   const requestedPhase = sendingFromMonitoring ? 'sending' : phase;
@@ -30688,6 +30740,62 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   let committed = false;
   let accepted = false;
   try {
+  // A monitoring campaign has two independent jobs. Never interpret a generic
+  // Play/Resume click as one of them: ask which phase the operator means, then
+  // start that phase on the machine already shown on the card.
+  if (sendingFromMonitoring) {
+    const resumeSending = await appConfirm(
+      'Choose exactly one. Sending works through the queued leads. Acceptance checking checks recent connections while sending stays stopped.',
+      {
+        title: 'What should resume now?',
+        okLabel: 'Resume sending now',
+        cancelLabel: 'Resume acceptance checking now',
+        machineChoice: true,
+      },
+    );
+    if (resumeSending == null) return;
+    committed = true;
+    if (!resumeSending) {
+      accepted = await _resumeAcceptanceCheckNow(id, current, btn);
+      return accepted;
+    }
+    if (current === 'vm') {
+      accepted = await restartCloudCampaignUI(id, false, undefined, true);
+      return accepted;
+    }
+    // A durable campaign that runs on This Mac is re-adopted in the explicit
+    // sending phase. It must not fall through to the old pause-resume endpoint,
+    // because monitoring is not a paused sender.
+    if (id && id !== 'local-active') {
+      accepted = true;
+      return campaignHandover(id, 'local', null, 'sending');
+    }
+    // Native local campaigns have no durable cloud row to re-adopt. Restore is
+    // the local runner's explicit "same campaign, remaining leads" command;
+    // stamped rows remain skipped. Paint the sending phase before either local
+    // endpoint answers so the card acknowledges the click immediately.
+    __cockpit.state = 'running';
+    __cockpit.running = true;
+    __cockpit.monitoringCheckInProgress = false;
+    __cockpit.action = {
+      phase: 'sending', label: 'Resuming sending now',
+      sub: 'This Mac is restoring the queued leads. Acceptance checking is not being started.',
+    };
+    try { if (typeof renderActiveCard === 'function') renderActiveCard(__cockpit); } catch (_) { /* board copy still repaints */ }
+    try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
+    if (typeof showCampaignToast === 'function') showCampaignToast('Resuming sending now. Acceptance checking is not being started.', 5000);
+    await fetch('/api/runtime/resumed', { method: 'POST' }).catch(() => {});
+    const restored = await fetch('/api/campaign/restore', { method: 'POST' });
+    if (!restored.ok) {
+      accepted = false;
+      if (typeof showCampaignToast === 'function') showCampaignToast('This Mac could not resume sending. Nothing new was sent; retry or use the Cloud VM.', 8000);
+      try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* */ }
+      return false;
+    }
+    accepted = true;
+    try { if (typeof startPolling === 'function') startPolling(); } catch (_) { /* */ }
+    return pollStatus();
+  }
   const monitoring = requestedPhase === 'monitoring';
   const currentLabel = current === 'vm' ? 'Cloud VM' : 'This Mac';
   const otherLabel = current === 'vm' ? 'This Mac' : 'Cloud VM';
@@ -30723,10 +30831,6 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   // log line, and a permanently disabled button. Keep the origin explicit in
   // the control contract so current and future monitoring cards cannot regress.
   if (current === 'vm') {
-    if (sendingFromMonitoring) {
-      accepted = await restartCloudCampaignUI(id, false, undefined, true);
-      return accepted;
-    }
     return pauseCloudCampaignUI(id, true);
   }
   const status = await fetch('/api/campaign/status').then((r) => r.json()).catch(() => ({}));

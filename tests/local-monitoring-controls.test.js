@@ -21,17 +21,17 @@ test('a locally-monitoring campaign is monitoring, not running', () => {
   assert.equal(s.running, false);
 });
 
-test('monitoring with leads left offers a way to send them', () => {
+test('monitoring with leads left offers a choice of what resumes', () => {
   const c = vjCardControlsFor(statusFromItem(monitoringItem()));
   const go = (c.extra || []).find((e) => e.kind === 'play');
-  assert.ok(go, 'expected a resume-sending action');
-  assert.equal(go.tip, 'Resume sending');
+  assert.ok(go, 'expected a resume decision action');
+  assert.equal(go.tip, 'Choose what resumes');
 });
 
-test('a scheduled self-resume says so — the button only brings it forward', () => {
+test('a scheduled self-resume still asks which independent phase to start', () => {
   const c = vjCardControlsFor(statusFromItem(monitoringItem({ resumeAt: '2026-08-28T12:28:00Z' })));
   const go = (c.extra || []).find((e) => e.kind === 'play');
-  assert.equal(go.tip, 'Resume now');
+  assert.equal(go.tip, 'Choose what resumes');
 });
 
 test('nothing left to send offers no resume', () => {

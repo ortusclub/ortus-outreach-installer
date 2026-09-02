@@ -11,6 +11,21 @@ test('dashboard and campaign-card Resume Sending share the explicit sending comm
   assert.match(decision, /restartCloudCampaignUI\(id, false, undefined, true\)/);
 });
 
+test('monitoring Resume asks whether to start sending or acceptance checking', () => {
+  const decision = APP.slice(APP.indexOf('window.openCampaignResumeDecision'), APP.indexOf('function _activeCardCloudId'));
+  assert.match(decision, /What should resume now\?/);
+  assert.match(decision, /okLabel: 'Resume sending now'/);
+  assert.match(decision, /cancelLabel: 'Resume acceptance checking now'/);
+  assert.match(decision, /_resumeAcceptanceCheckNow\(id, current, btn\)/);
+});
+
+test('the large campaign card uses the same monitoring choice as the dashboard', () => {
+  const start = APP.indexOf('function _adaptActiveCardControls');
+  const controls = APP.slice(start, APP.indexOf('function dismissCloudDone', start));
+  assert.match(controls, /openCampaignResumeDecision\(String\(_viewingCloudId \|\| status\.id\), 'sending-from-monitoring', 'vm', ctBtn\)/);
+  assert.doesNotMatch(controls, /restartCloudCampaignUI\(_viewingCloudId, false\)/);
+});
+
 test('the UI sends resumeSending=true to the local API', () => {
   const restart = APP.slice(APP.indexOf('async function restartCloudCampaignUI'), APP.indexOf('// Task 3 Part B'));
   assert.match(restart, /resumeSending: !!resumeSending/);
