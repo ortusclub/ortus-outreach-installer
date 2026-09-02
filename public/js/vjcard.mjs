@@ -434,6 +434,63 @@ export function acctBatchTip(lastTurn = null, liveTurn = null) {
   return `${Number(lt.done) || 0} of ${Number(lt.planned)} in its last batch`;
 }
 
+/** One account's state, reduced to the three things the row shows.
+ *
+ *  dot: red = it is not sending and it wants you (bench, logged out, proxy,
+ *  throttle, daily cap); amber = it IS sending but is not connected to the
+ *  primary, so it can send invitations and never introduce anyone; green =
+ *  sending, and able to introduce.
+ *
+ *  pills: only what is wrong. A healthy account earns no pill at all — the
+ *  panel used to hang six badges of equal weight on every row, including green
+ *  ones saying nothing was wrong, and the result was unreadable (operator,
+ *  2026-09-02: "this is very very very ugly").
+ */
+export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } = {}) {
+  const weekly = !!(a.weeklyCap || a.parkReason === 'weekly');
+  const capped = (a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit;
+  const pills = [];
+  let blocked = true;
+  let status;
+  if (a.needsLogin) { pills.push(['bad', 'Logged out']); status = 'Logged out — open the account and sign in to LinkedIn'; }
+  // Parked by 3 consecutive proxy 407s: the VM cannot open this profile's
+  // browser at all. Distinct from a throttle, because waiting will not fix it.
+  else if (a.parkReason === 'proxy') { pills.push(['bad', 'Proxy refused']); status = 'The VM cannot open this profile — fix its proxy in GoLogin, then try again'; }
+  else if (weekly) {
+    // The pill gets the date, the drawer gets the countdown. "Stopped until
+    // Monday 7 Sept (in 5 days)" is a sentence, and a sentence in a pill is
+    // the wall of text this redesign exists to remove.
+    pills.push(['bad', `Stopped until ${String(nextMonday).replace(/\s*\(.*\)\s*$/, '')}`]);
+    status = `Stopped — LinkedIn's weekly invitation limit, resets ${nextMonday}`;
+  }
+  else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') { pills.push(['bad', 'Throttled']); status = 'Throttled — pausing between sends, it comes back on its own'; }
+  else if (a.parkReason === 'unconfirmed_streak') { pills.push(['bad', '5 unconfirmed']); status = 'Five leads in a row could not be confirmed — open the account, then try again'; }
+  else if (a.parked) {
+    const reason = String(a.parkReason || 'stopped').replace(/[_-]+/g, ' ');
+    pills.push(['bad', 'Stopped']); status = `Stopped — ${reason}`;
+  } else if (capped) { pills.push(['bad', 'Daily limit reached']); status = 'It has sent everything it is allowed today'; }
+  else { blocked = false; status = 'Sending'; }
+
+  // Restricted in the SoO — out of rotation regardless of anything above.
+  if (a.identityRestricted) { pills.push(['bad', a.restrictionLabel || 'Identity restricted']); blocked = true; }
+
+  // The primary. null is NEVER CHECKED, which is not the same as not connected:
+  // the engine connects a sender to the primary lazily, inside the intro sweep,
+  // the first time one of that account's leads is accepted.
+  let primary = '';
+  if (isCCIC) {
+    if (a.primaryConnected === true) primary = 'connected';
+    else if (a.primaryConnected === false) { primary = 'no'; pills.push(['warn', 'Primary not connected']); }
+    else { primary = 'never'; pills.push(['warn', 'Primary not checked']); }
+  }
+  // Sending bare: LinkedIn's free personalised-invite allowance is spent. Not a
+  // blocker, so it never turns the dot red, but it is worth a word.
+  if (a.noteExhausted) pills.push(['warn', 'No note left']);
+
+  const dot = blocked ? 'bad' : (isCCIC && primary !== 'connected' ? 'warn' : 'ok');
+  return { dot, pills, status, primary, weekly, blocked };
+}
+
 export function acctPillCount(account = {}, tally = null) {
   const limit = Number(account.dailyLimit) || 0;
   const sent = Number.isFinite(Number(account.dailyCount)) ? Number(account.dailyCount)

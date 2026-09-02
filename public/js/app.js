@@ -31,7 +31,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity, launchMilestones, linkIsLost, monitorHeroState, monitorHeroView, monitorTickText, queueWaitLine, splitSafetyCount, stripCadence } from '/js/live-activity.mjs?v=3.1.48.95';
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView, handshakeStepView, handshakeOutcome } from '/js/handshake-gate.mjs';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition, heroFollowsLog, acctPillCount, acctBatchTip, failedStartRetry } from '/js/vjcard.mjs?v=3.1.48.95';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition, heroFollowsLog, acctPillCount, acctBatchTip, acctRowState, failedStartRetry } from '/js/vjcard.mjs?v=3.1.48.95';
 import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { shouldPoll } from '/js/pollgate.mjs';
 import { bannerFor, handoverBanner, accountColumns, railIndex, batchPips } from '/js/runpanel.mjs';
@@ -8970,87 +8970,99 @@ function _acctBatchTip(id, a) {
 // Render the per-account status panel below the Live Status card (Account | Status)
 // for a cloud CC+IC campaign. Hidden when there's no account data or not viewing a
 // cloud campaign. Data comes from _cloudAccountsById (engine /accounts endpoint).
+// Which account's row is expanded, per campaign. The panel repaints on a 5s
+// poll, so without this the drawer an operator just opened closes under them.
+const _capOpen = new Map();
+
+function _capDetailHtml(id, a, st, opts = {}) {
+  const facts = [];
+  const limit = Number(a.dailyLimit) || 0;
+  facts.push(['Sent today', limit > 0 ? `${Number(a.dailyCount) || 0} of ${limit}` : `${Number(a.dailyCount) || 0}`]);
+  facts.push(['Status', st.status]);
+  const batch = _acctBatchTip(id, a);
+  if (batch) facts.push(['Last batch', batch.replace(/ in (its last|this) batch$/, '')]);
+  if (st.primary) {
+    facts.push(['Primary', st.primary === 'connected' ? 'Connected'
+      : st.primary === 'no' ? 'Checked, and not connected'
+      : 'Never checked']);
+  }
+  if (a.lastMonitorSuccessAt) {
+    const c = new Date(a.lastMonitorSuccessAt);
+    if (!Number.isNaN(c.getTime())) facts.push(['Acceptances last checked', c.toLocaleString([], { hour: '2-digit', minute: '2-digit' })]);
+  }
+  const pid = escHtml(a.profileId || '');
+  const acts = [];
+  // A weekly cap gets no "try again": it is a window, not a cooldown. Offering
+  // one while the live stage says "not before Monday" is the app arguing with
+  // itself, and taking it spends rate-limit strikes for nothing.
+  if (st.blocked && !a.needsLogin && !st.weekly && a.parked) {
+    acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(id)}','${pid}',this)">Try sending now</button>`);
+  }
+  if (st.primary && st.primary !== 'connected') {
+    acts.push(`<button type="button" onclick="recheckCloudPrimary('${escHtml(id)}','${pid}',this)">Check primary</button>`);
+  }
+  if (opts.removable) {
+    acts.push(`<button type="button" onclick="removeCloudCampaignAccount('${escHtml(id)}','${pid}',this)">Remove from campaign</button>`);
+  }
+  return `<div class="cap-det">
+      <div class="cap-kv">${facts.map(([k, v]) => `<span>${escHtml(k)} <b>${escHtml(v)}</b></span>`).join('')}</div>
+      ${acts.length ? `<div class="cap-acts">${acts.join('')}</div>` : ''}
+    </div>`;
+}
+
 function renderCloudAccountsPanel(id) {
   const panel = document.getElementById('cloud-accounts-panel');
   if (!panel) return;
   const accounts = (id && _cloudAccountsById.get(id)) || [];
   if (!accounts.length) { panel.hidden = true; panel.innerHTML = ''; return; }
-  // A follower campaign runs 66 accounts. Listing them as 66 full-width rows —
-  // most of them "0/50 today" because they have not had their turn — buries the
-  // card. The card's pills carry the same per-account state in one line.
-  const _fgCamp = ((_cloudDetailCache.get(id) || {}).campaign || {}).mode === 'follower_growth';
-  if (_fgCamp) { panel.hidden = true; panel.innerHTML = ''; return; }
-  const badge = (cls, text) => `<span class="cap-badge ${cls}">${escHtml(text)}</span>`;
+  // A follower campaign runs 66 accounts. Listing them as 66 full-width rows
+  // buries the card. The card's pills carry the same per-account state already.
+  const _mode = ((_cloudDetailCache.get(id) || {}).campaign || {}).mode;
+  if (_mode === 'follower_growth') { panel.hidden = true; panel.innerHTML = ''; return; }
+  // Only CC+IC has a primary person, so only CC+IC says anything about one.
+  const isCCIC = _mode === 'connect_and_introduce';
   const counts = _cloudAcctCounts.get(id);
+  const removable = _cloudAccountsEditable() && accounts.length > 1;
+  const open = _capOpen.get(id) || '';
+
   const rows = accounts.map((a) => {
     // Resolve the GoLogin id to a name — the engine omits `email` on follower
     // campaigns, which left this panel listing raw profile ids.
     const who = escHtml(a.email || _acctLabel(a) || 'account');
-    const badges = [];
-    // Blocking status first (most important), then daily usage, then primary link.
-    const weekly = !!(a.weeklyCap || a.parkReason === 'weekly');
-    const benched = !!(weekly || a.parked);
-    if (a.needsLogin) badges.push(badge('bad', '⚠ Not logged in'));
-    // Parked by 3 consecutive proxy 407s — the VM literally cannot open this
-    // profile's browser. Distinct from a throttle: waiting won't fix it.
-    else if (a.parkReason === 'proxy') badges.push(badge('bad', '⛔ Proxy refused — fix the GoLogin profile, then Retry'));
-    else if (weekly) badges.push(badge('bad', `🚫 Benched — weekly invitation limit · resets ${_nextMondayText()}`));
-    else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') badges.push(badge('warn', '⏸ Throttled'));
-    else if (a.parkReason === 'unconfirmed_streak') {
-      badges.push(badge('bad', '5 unconfirmed in a row — open the account, then Retry'));
-    }
-    else if (a.parked) {
-      const reason = String(a.parkReason || 'stopped').replace(/[_-]+/g, ' ');
-      badges.push(badge('bad', `Stopped — ${reason}`));
-    }
-    else if ((a.dailyLimit || 0) > 0 && (a.dailyCount || 0) >= a.dailyLimit) badges.push(badge('warn', 'Daily limit reached'));
-    else badges.push(badge('ok', '✓ Active'));
-    // One count everywhere: the same pair the pills and the drawer print, from
-    // the same function. This row used to print this run's share of the
-    // campaign's leads instead ("4 of 4 invited") whenever it could match the
-    // account, and the daily usage when it could not — so one list mixed two
-    // denominators. The share is also not a batch: it is the account's slice of
-    // the lead split, and it grows when another account is removed and its
-    // unsent leads are handed over (operator, 2026-09-02).
+    const st = acctRowState(a, { isCCIC, nextMonday: _nextMondayText() });
+    const pid = escHtml(a.profileId || '');
+    const isOpen = pid && pid === open;
     const tally = counts && counts.get(String(a.profileId || ''));
-    // The batch the operator actually asked about lives on the turn: what this
-    // account was handed the last time its browser opened, and what it sent.
-    const tip = _acctBatchTip(id, a);
-    badges.push(`<span class="cap-badge muted"${tip ? ` title="${escHtml(tip)}"` : ''}>${escHtml(acctPillCount(a, tally))} today</span>`);
-    // Still sending, but bare: LinkedIn's free personalised-invite allowance is
-    // spent. Not a blocker, so it sits after the tally rather than replacing the
-    // status badge — the campaign is running, the note just isn't attached.
-    if (a.noteExhausted) badges.push(badge('warn', '✉ No note — free personalised invites used up'));
-    if (a.lastMonitorSuccessAt) {
-      const checked = new Date(a.lastMonitorSuccessAt);
-      if (!Number.isNaN(checked.getTime())) badges.push(badge('muted', `Last checked ${checked.toLocaleString([], { hour: '2-digit', minute: '2-digit' })}`));
-    }
-    // Primary-connection (CC+IC only; null when N/A).
-    if (a.primaryConnected === true) badges.push(badge('ok', '🔗 Connected to primary'));
-    else if (a.primaryConnected === false) badges.push(badge('muted', 'Primary not yet connected'));
-    // Benched → operator override: Retry clears the bench engine-side, and the
-    // account is eligible again from the next turn (three fresh 429 strikes
-    // re-bench it automatically if LinkedIn is still capping).
-    // A weekly cap gets no Retry — it's a window, not a cooldown. Offering one
-    // here while the live stage says "don't retry before Monday" is the app
-    // arguing with itself, and taking it spends strikes for nothing.
-    if (benched && !a.needsLogin && !weekly) {
-      badges.push(`<button type="button" class="cap-retry" onclick="unbenchCloudAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)" title="Clear the bench and let this account try again">Retry</button>`);
-    }
-    // Editable (paused/stopped) → a toggle that REMOVES the account from the
-    // campaign, mirroring the local pause-edit panel. Never offered on the last
-    // account (a campaign needs at least one) — the engine rejects that too.
-    const tog = _cloudAccountsEditable() && accounts.length > 1
-      ? `<button type="button" class="cap-toggle on" role="switch" aria-checked="true"`
-        + ` title="Remove this account from the campaign" aria-label="Remove ${who} from the campaign"`
-        + ` onclick="removeCloudCampaignAccount('${escHtml(id)}','${escHtml(a.profileId || '')}',this)"></button>`
-      : '';
-    return `<div class="cap-row"><span class="cap-acct">${who}</span><span class="cap-status">${badges.join('')}${tog}</span></div>`;
+    // One count everywhere, from the same function as the card's pills and the
+    // drawer. This row used to print the account's share of the campaign's
+    // leads ("4 of 4 invited") whenever it could match it and the daily usage
+    // when it could not, so one list mixed two denominators. The share is not a
+    // batch either: it grows when another account is removed and its unsent
+    // leads are handed over (operator, 2026-09-02).
+    const pills = st.pills.map(([c, t]) => `<span class="cap-pill ${c}">${escHtml(t)}</span>`).join('');
+    return `<div class="cap-row${isOpen ? ' open' : ''}" role="button" tabindex="0" aria-expanded="${isOpen ? 'true' : 'false'}"
+        onclick="toggleCloudAccountRow('${escHtml(id)}','${pid}')"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleCloudAccountRow('${escHtml(id)}','${pid}');}">
+        <i class="cap-dot ${st.dot}"></i><span class="cap-acct">${who}</span>
+        <span class="cap-pills">${pills}</span>
+        <span class="cap-n">${escHtml(acctPillCount(a, tally))}</span>
+        <i class="cap-chev" aria-hidden="true">\u203a</i>
+      </div>${isOpen ? _capDetailHtml(id, a, st, { removable }) : ''}`;
   }).join('');
+
   panel.innerHTML = `<div class="cap-head"><span>Accounts</span><span>${accounts.length} account${accounts.length === 1 ? '' : 's'}</span></div>${rows}`
     + _cloudAccountsAddHtml(id);
   panel.hidden = false;
 }
+
+/** Open one account's drawer, closing any other. Kept in _capOpen rather than
+ *  in the DOM so the 5s repaint does not shut it under the operator. */
+function toggleCloudAccountRow(id, profileId) {
+  if (!id || !profileId) return;
+  _capOpen.set(id, _capOpen.get(id) === profileId ? '' : profileId);
+  renderCloudAccountsPanel(id);
+}
+window.toggleCloudAccountRow = toggleCloudAccountRow;
 
 // REMOVING races a worker that may be mid-send from that very account, so it
 // needs a pause — the engine enforces the same rule and 409s otherwise.
@@ -9347,6 +9359,42 @@ async function unbenchCloudAccount(campaignId, profileId, btn, quiet) {
   }
 }
 window.unbenchCloudAccount = unbenchCloudAccount;
+
+// "Check primary" on one account. The engine opens that account on the VM,
+// looks at whether it is connected to the campaign's primary person, and sends
+// the connection request if it is not — because a sender that never connects to
+// the primary can never send an introduction, and today that is only discovered
+// after a lead has been accepted, which is too late to matter.
+//
+// It is a browser job, not a lookup: it queues, and the answer arrives on the
+// next refresh of the panel. The confirm says what it will send, because
+// "recheck" that quietly invites someone is a surprise.
+async function recheckCloudPrimary(campaignId, profileId, btn) {
+  if (!campaignId || !profileId) return;
+  const accounts = _cloudAccountsById.get(campaignId) || [];
+  const acct = accounts.find((x) => x.profileId === profileId) || {};
+  const who = acct.email || _acctLabel(acct) || 'this account';
+  if (!confirm(`Check ${who} against the primary person?\n\nIt opens the account on the VM. If it is not connected to the primary yet, it sends the connection request, which the primary then has to accept.`)) return;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const restore = () => { if (btn) { btn.disabled = false; btn.textContent = 'Check primary'; } };
+  try {
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(campaignId)}/accounts/${encodeURIComponent(profileId)}/primary-check`, { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) {
+      showCampaignToast(d.error && !/HTTP 404/.test(d.error) ? d.error : 'Checking the primary isn’t live yet — engine update pending.', 6000);
+      restore();
+      return;
+    }
+    showCampaignToast(d.queued === false
+      ? `${who} is already being checked — the answer appears here when it finishes.`
+      : `Checking ${who} against the primary. It opens on the VM after the account's current work, and the answer appears here.`, 7000);
+    if (_viewingCloudId) { try { await _refreshCloudActiveStatus(_viewingCloudId); } catch (_) { /* */ } }
+  } catch (e) {
+    showCampaignToast('Could not reach the engine: ' + e.message, 6000);
+    restore();
+  }
+}
+window.recheckCloudPrimary = recheckCloudPrimary;
 
 function _stopCloudCardPoll() { if (_cloudCardTimer) { clearInterval(_cloudCardTimer); _cloudCardTimer = null; } }
 function _startCloudCardPoll() {

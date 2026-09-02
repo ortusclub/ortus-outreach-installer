@@ -56,7 +56,7 @@ import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSal
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recheckCloudPrimary, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
@@ -2007,6 +2007,13 @@ app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
 // token stays server-side.
 app.post('/api/campaign/cloud/:id/accounts/:pid/unbench', async (req, res) => {
   const r = await unbenchCloudAccount(req.params.id, req.params.pid);
+  if (r && r.error) return res.status(502).json(r);
+  res.json(r || { ok: true });
+});
+// Operator Recheck on one account's connection to the campaign's primary person
+// — proxied for the same reason: the engine token stays server-side.
+app.post('/api/campaign/cloud/:id/accounts/:pid/primary-check', async (req, res) => {
+  const r = await recheckCloudPrimary(req.params.id, req.params.pid);
   if (r && r.error) return res.status(502).json(r);
   res.json(r || { ok: true });
 });
