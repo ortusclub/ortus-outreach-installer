@@ -416,8 +416,14 @@ export async function buildPreview(accounts, deps = {}) {
     for (const account of usable) {
       const rows = read(account);
       const memberIds = rows.map((r) => r.memberId).filter(Boolean);
+      // Lets lookupByMemberIds run its third pass — matching people already in
+      // HubSpot under their LinkedIn URL (no member id) instead of duplicating.
+      const slugByMemberId = new Map(
+        rows.filter((r) => r.memberId && r.slug).map((r) => [String(r.memberId), r.slug]),
+      );
       _state.account = account;
       const existing = await lookup(memberIds, {
+        slugByMemberId,
         onProgress: ({ done, total }) => {
           _state.current = { account, count: done, total, stage: 'check' };
           _state.checked = checkedSoFar + done;
