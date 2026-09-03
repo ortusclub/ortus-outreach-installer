@@ -425,6 +425,9 @@ app.get('/api/health', (_req, res) => {
   const productionEngineVersion = process.env.PRODUCTION_ENGINE_VERSION || 'v139';
   const scraperEngineVersion = process.env.SCRAPER_ENGINE_VERSION
     || (isProductionEngine ? productionEngineVersion : 'unverified');
+  const configuredEnvironment = process.env.ORTUS_ENGINE_ENVIRONMENT;
+  const scraperEngineEnvironment = configuredEnvironment
+    || (isProductionEngine ? 'production' : 'development');
   res.json({
     ok: true,
     time: new Date().toISOString(),
@@ -432,7 +435,10 @@ app.get('/api/health', (_req, res) => {
     scraperConfigured: isScraperConfigured(),
     scraperEngineUrl,
     scraperEngineVersion,
-    scraperEngineEnvironment: isProductionEngine ? 'production' : 'development',
+    scraperEngineEnvironment,
+    previewPr: process.env.ORTUS_PREVIEW_PR || null,
+    scraperEngineSourceSha: process.env.ORTUS_ENGINE_SOURCE_SHA || null,
+    previewProfileAccess: scraperEngineEnvironment === 'preview' ? 'full-workspace' : null,
     productionEngineUrl,
     productionEngineVersion,
   });
@@ -681,7 +687,7 @@ app.get('/api/profiles', async (req, res) => {
   } catch (err) {
     console.error('Error fetching profiles:', err.message);
     const unauthorized = /GoLogin API 401|unauthori[sz]ed/i.test(String(err && err.message));
-    const devEngine = /^dev-/.test(String(process.env.SCRAPER_ENGINE_VERSION || ''));
+    const devEngine = /^(?:dev-|preview-pr-)/.test(String(process.env.SCRAPER_ENGINE_VERSION || ''));
     res.status(unauthorized ? 401 : 500).json({
       error: unauthorized
         ? (devEngine
