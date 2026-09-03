@@ -29036,10 +29036,23 @@ window.startMonitoringSendingNow = function (btn) {
 function _applyLostLinkOverride(stage, cid, age) {
   const lost = linkIsLost(age, _checkRunsLocally(cid));
   if (!lost) {
+    const wasLost = stage.dataset.lostLink === '1';
     delete stage.dataset.lostLink;
     // Take the retry block back down with the hero, or it outlives the problem.
     const back = stage.querySelector('[data-f="stageFix"], #stageFix');
     if (back && back.dataset.lostLinkActs) { delete back.dataset.lostLinkActs; back.innerHTML = ''; }
+    // The lost-link override writes directly into the already-rendered hero.
+    // Clearing its marker alone therefore leaves those words behind even after
+    // a fresh poll — the heartbeat can say "updated 2s ago" while the headline
+    // still says "This Mac cannot see the campaign". On the first recovered
+    // tick, redraw this card from the last verified status kept for this exact
+    // stage. Dashboard and Campaign Builder both use renderLiveStage, so the
+    // recovery is immediate and identical on both surfaces.
+    if (wasLost) {
+      const root = stage.closest('.vj-card');
+      const status = _stageStatus.get(stage);
+      if (root && status) renderLiveStage(root, status);
+    }
     return;
   }
   // Reasserted every tick, not cached: the 5s cloud repaint keeps writing the

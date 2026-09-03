@@ -37,7 +37,15 @@ test('the hero offers a way to check without waiting for the poll', () => {
 
 test('the retry block comes down when the link returns', () => {
   const i = APP.indexOf('function _applyLostLinkOverride');
-  const body = APP.slice(i, i + 700);
+  const body = APP.slice(i, i + 1800);
   assert.match(body, /if \(!lost\) \{/);
   assert.match(body, /back\.dataset\.lostLinkActs/, 'or it outlives the problem');
+});
+
+test('the first fresh poll restores the real card instead of leaving a stale lost-link headline', () => {
+  const i = APP.indexOf('function _applyLostLinkOverride');
+  const body = APP.slice(i, i + 1800);
+  assert.match(body, /const wasLost = stage\.dataset\.lostLink === '1'/);
+  assert.match(body, /const status = _stageStatus\.get\(stage\)/);
+  assert.match(body, /if \(root && status\) renderLiveStage\(root, status\)/);
 });
