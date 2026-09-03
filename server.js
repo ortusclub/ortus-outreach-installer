@@ -425,6 +425,9 @@ app.get('/api/health', (_req, res) => {
   const productionEngineVersion = process.env.PRODUCTION_ENGINE_VERSION || 'v139';
   const scraperEngineVersion = process.env.SCRAPER_ENGINE_VERSION
     || (isProductionEngine ? productionEngineVersion : 'unverified');
+  const configuredEnvironment = process.env.ORTUS_ENGINE_ENVIRONMENT;
+  const scraperEngineEnvironment = configuredEnvironment
+    || (isProductionEngine ? 'production' : 'development');
   res.json({
     ok: true,
     time: new Date().toISOString(),
@@ -432,7 +435,12 @@ app.get('/api/health', (_req, res) => {
     scraperConfigured: isScraperConfigured(),
     scraperEngineUrl,
     scraperEngineVersion,
-    scraperEngineEnvironment: isProductionEngine ? 'production' : 'development',
+    scraperEngineEnvironment,
+    previewPr: process.env.ORTUS_PREVIEW_PR || null,
+    scraperEngineSourceSha: process.env.ORTUS_ENGINE_SOURCE_SHA || null,
+    previewAllowedTestAccounts: scraperEngineEnvironment === 'preview'
+      ? String(process.env.PREVIEW_ALLOWED_PROFILE_IDS || '').split(',').filter(Boolean).length
+      : null,
     productionEngineUrl,
     productionEngineVersion,
   });
@@ -665,7 +673,11 @@ app.get('/api/profiles', async (req, res) => {
   try {
     const profiles = await getProfiles();
     const email = viewerEmail(req);
-    res.json(profiles.map((p) => ({
+    const previewAllowed = new Set(String(process.env.PREVIEW_ALLOWED_PROFILE_IDS || '').split(',').map((v) => v.trim()).filter(Boolean));
+    const visibleProfiles = process.env.ORTUS_ENGINE_ENVIRONMENT === 'preview'
+      ? profiles.filter((p) => previewAllowed.has(String(p.id)))
+      : profiles;
+    res.json(visibleProfiles.map((p) => ({
       ...p,
       available: canOperatorUseProfile(email, p.account, p.id),
       // Reached through a grant or a named membership rather than by owning the
@@ -681,7 +693,7 @@ app.get('/api/profiles', async (req, res) => {
   } catch (err) {
     console.error('Error fetching profiles:', err.message);
     const unauthorized = /GoLogin API 401|unauthori[sz]ed/i.test(String(err && err.message));
-    const devEngine = /^dev-/.test(String(process.env.SCRAPER_ENGINE_VERSION || ''));
+    const devEngine = /^(?:dev-|preview-pr-)/.test(String(process.env.SCRAPER_ENGINE_VERSION || ''));
     res.status(unauthorized ? 401 : 500).json({
       error: unauthorized
         ? (devEngine
