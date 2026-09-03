@@ -4377,7 +4377,7 @@
         document.getElementById('engine-version-live').textContent = d.productionEngineVersion || 'unverified';
         document.getElementById('engine-version-url').textContent = d.scraperEngineUrl || 'Not configured';
         document.getElementById('engine-version-explanation').textContent = isPreview
-          ? `Temporary isolated engine for PR ${d.previewPr || '?'}, source ${(d.scraperEngineSourceSha || 'unverified').slice(0, 12)}, with ${d.previewAllowedTestAccounts || 0} approved test account(s). Other accounts are blocked.`
+          ? `Temporary isolated engine for PR ${d.previewPr || '?'}, source ${(d.scraperEngineSourceSha || 'unverified').slice(0, 12)}. Full GoLogin pool available — confirm the chosen account is idle elsewhere before testing.`
           : isDev
           ? 'Shared development environment. Your colleagues may be testing here too; use a PR preview for simultaneous work.'
           : 'This app and your colleagues are using the same live production engine.';

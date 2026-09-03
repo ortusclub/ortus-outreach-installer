@@ -92,7 +92,6 @@ LIVE_VERSION="$(image_tag "$LIVE_NAMESPACE")" || {
 DEV_GOLOGIN_API_TOKEN="${DEV_GOLOGIN_API_TOKEN:-}"
 DEV_GOLOGIN_TOKEN_LV=""
 DEV_GOLOGIN_TOKEN_MKT=""
-PREVIEW_ALLOWED_PROFILE_IDS=""
 if [ -z "$DEV_GOLOGIN_API_TOKEN" ] && [ -f "$PROJECT_ROOT/.env" ]; then
   DEV_GOLOGIN_API_TOKEN="$(sed -n 's/^DEV_GOLOGIN_API_TOKEN=//p' "$PROJECT_ROOT/.env" | tail -1)"
 fi
@@ -136,17 +135,10 @@ if [ -n "$BOOTSTRAP" ]; then
   [ -z "$DEV_GOLOGIN_API_TOKEN" ] && DEV_GOLOGIN_API_TOKEN="$(read_bootstrap goLoginToken)"
   DEV_GOLOGIN_TOKEN_LV="$(read_bootstrap goLoginTokenLinkedVelocity)"
   DEV_GOLOGIN_TOKEN_MKT="$(read_bootstrap goLoginTokenMarketing)"
-  PREVIEW_ALLOWED_PROFILE_IDS="$(read_bootstrap allowedProfileIds | tr -d '[]" ' | tr ';' ',')"
 fi
 if [ -z "$DEV_GOLOGIN_API_TOKEN" ]; then
   echo "The development engine did not provide its GoLogin workspace credential."
   echo "Confirm you can access salesnav-dev and that the engine is dev-2 or newer."
-  exit 1
-fi
-
-if [ "${ORTUS_ENGINE_ENVIRONMENT:-development}" = "preview" ] && [ -z "$PREVIEW_ALLOWED_PROFILE_IDS" ]; then
-  echo "The PR preview did not provide an approved test-account list."
-  echo "It is unsafe to test; ask Antonio to assign an account and rebuild the preview."
   exit 1
 fi
 
@@ -158,7 +150,7 @@ WORKSPACES="Ortus"
 [ -n "$DEV_GOLOGIN_TOKEN_MKT" ] && WORKSPACES="$WORKSPACES + Marketing"
 echo "  workspaces:   $WORKSPACES"
 [ -n "${ORTUS_PREVIEW_PR:-}" ] && echo "  preview PR:   ${ORTUS_PREVIEW_PR}"
-[ -n "$PREVIEW_ALLOWED_PROFILE_IDS" ] && echo "  test accounts: $(printf '%s' "$PREVIEW_ALLOWED_PROFILE_IDS" | awk -F, '{print NF}') assigned"
+[ "${ORTUS_ENGINE_ENVIRONMENT:-development}" = "preview" ] && echo "  account pool: full GoLogin workspaces"
 
 env \
   SCRAPER_ENGINE_URL="http://127.0.0.1:$LOCAL_ENGINE_PORT" \
@@ -168,7 +160,6 @@ env \
   ORTUS_ENGINE_ENVIRONMENT="${ORTUS_ENGINE_ENVIRONMENT:-development}" \
   ORTUS_PREVIEW_PR="${ORTUS_PREVIEW_PR:-}" \
   ORTUS_ENGINE_SOURCE_SHA="$(read_bootstrap sourceSha)" \
-  PREVIEW_ALLOWED_PROFILE_IDS="$PREVIEW_ALLOWED_PROFILE_IDS" \
   GOLOGIN_API_TOKEN="$DEV_GOLOGIN_API_TOKEN" \
   GOLOGIN_API_TOKEN_LINKEDVELOCITY="$DEV_GOLOGIN_TOKEN_LV" \
   GOLOGIN_API_TOKEN_MARKETING="$DEV_GOLOGIN_TOKEN_MKT" \

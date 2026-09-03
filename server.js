@@ -438,9 +438,7 @@ app.get('/api/health', (_req, res) => {
     scraperEngineEnvironment,
     previewPr: process.env.ORTUS_PREVIEW_PR || null,
     scraperEngineSourceSha: process.env.ORTUS_ENGINE_SOURCE_SHA || null,
-    previewAllowedTestAccounts: scraperEngineEnvironment === 'preview'
-      ? String(process.env.PREVIEW_ALLOWED_PROFILE_IDS || '').split(',').filter(Boolean).length
-      : null,
+    previewProfileAccess: scraperEngineEnvironment === 'preview' ? 'full-workspace' : null,
     productionEngineUrl,
     productionEngineVersion,
   });
@@ -673,11 +671,7 @@ app.get('/api/profiles', async (req, res) => {
   try {
     const profiles = await getProfiles();
     const email = viewerEmail(req);
-    const previewAllowed = new Set(String(process.env.PREVIEW_ALLOWED_PROFILE_IDS || '').split(',').map((v) => v.trim()).filter(Boolean));
-    const visibleProfiles = process.env.ORTUS_ENGINE_ENVIRONMENT === 'preview'
-      ? profiles.filter((p) => previewAllowed.has(String(p.id)))
-      : profiles;
-    res.json(visibleProfiles.map((p) => ({
+    res.json(profiles.map((p) => ({
       ...p,
       available: canOperatorUseProfile(email, p.account, p.id),
       // Reached through a grant or a named membership rather than by owning the

@@ -16,3 +16,11 @@ test('ordinary development command remains the default shared engine', () => {
   assert.match(source, /ORTUS_ENGINE_NAMESPACE:-salesnav-dev/);
   assert.match(source, /ORTUS_ENGINE_DEPLOYMENT:-salesnav-scraper/);
 });
+
+test('preview launcher exposes the full GoLogin workspace instead of a fixed allowlist', () => {
+  const launcher = fs.readFileSync(new URL('../scripts/electron-dev-vm.sh', import.meta.url), 'utf8');
+  const server = fs.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(launcher, /PREVIEW_ALLOWED_PROFILE_IDS/);
+  assert.doesNotMatch(server, /PREVIEW_ALLOWED_PROFILE_IDS/);
+  assert.match(launcher, /account pool: full GoLogin workspaces/);
+});
