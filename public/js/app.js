@@ -1772,12 +1772,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }).catch(() => {});
 
   // Phase 2.8.14: relocate the Throughput section (#nav-pace) to sit right
-  // under the Accounts section (#nav-accounts) so the live total recalculation
-  // is contextual to the account selection above it.
+  // after the Templates section (#nav-templates) so the operator sees
+  // Message Templates → Rate & Limits → Launch in order.
   const pace = document.getElementById('nav-pace');
-  const accounts = document.getElementById('nav-accounts');
-  if (pace && accounts && pace.parentElement && pace.parentElement === accounts.parentElement) {
-    accounts.parentElement.insertBefore(pace, accounts.nextSibling);
+  const templates = document.getElementById('nav-templates');
+  if (pace && templates && pace.parentElement && pace.parentElement === templates.parentElement) {
+    templates.parentElement.insertBefore(pace, templates.nextSibling);
   }
   // Sync visible→hidden once and run an initial recalc.
   if (typeof alphaSyncRate === 'function') alphaSyncRate();
@@ -1959,6 +1959,51 @@ function clearCampaignLog() {
   el.innerHTML = '<div class="entry info">Log cleared.</div>';
   const feed = document.getElementById('rp-feed-list');
   if (feed) feed.innerHTML = '<div class="rp-feed-item"><span class="rp-feed-time">—</span><span class="rp-feed-text">Waiting for campaign…</span></div>';
+}
+
+// ── Log elapsed timer ──
+// Shows a pulsing dot + "Xs ago" below the log panel so operators know the app
+// isn't frozen during long actions.  Ticks every second via its own interval,
+// independent of the 2s poll cycle.
+let _logElapsedLastTs = 0;   // epoch ms of last log line
+let _logElapsedActive = false; // campaign is running
+let _logElapsedTimer = null;
+
+function updateLogElapsed(s) {
+  const bar = document.getElementById('log-elapsed-bar');
+  if (!bar) return;
+  const isActive = !!(s && (s.phase === 'sending' || s.phase === 'monitoring' || s.phase === 'waiting'
+    || s.state === 'running' || s.state === 'paused'));
+  _logElapsedActive = isActive;
+  if (!isActive && !s?.logs?.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  // Extract timestamp from last log line
+  if (s.logs && s.logs.length) {
+    const last = s.logs[s.logs.length - 1];
+    const m = last.match(/^\[(.*?)\]/);
+    if (m) {
+      const t = new Date(m[1]).getTime();
+      if (!isNaN(t)) _logElapsedLastTs = t;
+    }
+  }
+  // Dot state
+  const dot = document.getElementById('log-pulse-dot');
+  if (dot) { dot.className = 'pulse-dot' + (isActive ? '' : ' idle'); }
+  // Start ticker if not running
+  if (!_logElapsedTimer) {
+    _logElapsedTimer = setInterval(_tickLogElapsed, 1000);
+  }
+  _tickLogElapsed();
+}
+
+function _tickLogElapsed() {
+  const el = document.getElementById('log-elapsed-text');
+  if (!el) return;
+  if (!_logElapsedLastTs) { el.textContent = _logElapsedActive ? 'Starting…' : '—'; return; }
+  const ago = Math.max(0, Math.round((Date.now() - _logElapsedLastTs) / 1000));
+  if (ago < 2) { el.textContent = _logElapsedActive ? 'Just now' : 'Last activity just now'; }
+  else if (ago < 60) { el.textContent = (_logElapsedActive ? '' : 'Last activity ') + ago + 's ago'; }
+  else { const m = Math.floor(ago / 60); el.textContent = (_logElapsedActive ? '' : 'Last activity ') + m + 'm ' + (ago % 60) + 's ago'; }
 }
 
 function copyCampaignLog() {
@@ -2699,6 +2744,7 @@ function renderProfiles(profiles) {
       }
       renderSelectedPanel();
       updateCampaignSummary();
+      wizardDirtyOnInput();
     });
     grid.appendChild(item);
   });
@@ -3375,6 +3421,7 @@ function pickRunTarget(t) {
 }
 if (typeof window !== 'undefined') window.pickRunTarget = pickRunTarget;
 
+
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
@@ -3760,6 +3807,7 @@ function onModeChange() {
   };
   _reRenderPicker();
   loadPrimaryStatusForPicker().then(_reRenderPicker).catch(() => {});
+
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -6726,6 +6774,128 @@ async function openBlocklistPanel() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pre-launch confirmation modal
+// ─────────────────────────────────────────────────────────────────────────────
+function _buildPrelaunchSummary() {
+  const mode = document.getElementById('campaign-mode')?.value || '';
+  const modeEntry = MODE_LIST.find(m => m.value === mode);
+  const modeName = modeEntry ? modeEntry.name : mode;
+  const runTarget = typeof getRunTarget === 'function' ? getRunTarget() : 'local';
+  const runLabel = runTarget === 'cloud' ? 'Cloud VM' : 'This machine';
+  const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
+  const sheetName = sheetUrl ? 'Google Sheet linked' : '—';
+  const rows = typeof window.sheetTotalRows === 'number' && window.sheetTotalRows > 0
+    ? window.sheetTotalRows : null;
+  const dailyLimit = parseInt(document.getElementById('daily-limit')?.value, 10) || 50;
+  const numAccounts = Array.isArray(selectedProfileIds) ? selectedProfileIds.length : 0;
+  const campaignName = (document.getElementById('campaign-name-input')?.value || '').trim();
+
+  const _autoRouted = new Set(['check_status', 'message_only', 'introduce_back', 'check_dms']);
+  const isAutoRouted = _autoRouted.has(mode);
+  const isConnectMode = ['connect_only', 'connect_and_introduce', 'connect_and_message'].includes(mode);
+
+  const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  let html = '<div class="prelaunch-grid">';
+  // Campaign name (if set)
+  if (campaignName) {
+    html += `<span class="prelaunch-label">Name</span><span class="prelaunch-value">${esc(campaignName)}</span>`;
+  }
+  // Mode
+  html += `<span class="prelaunch-label">Mode</span><span class="prelaunch-value">${esc(modeName)}</span>`;
+  // Run target
+  html += `<span class="prelaunch-label">Running on</span><span class="prelaunch-value">${esc(runLabel)}</span>`;
+  // Sheet
+  if (sheetUrl) {
+    html += `<span class="prelaunch-label">Sheet</span><span class="prelaunch-value"><span class="truncate">${esc(sheetName)}</span></span>`;
+    if (rows) {
+      html += `<span class="prelaunch-label">Leads</span><span class="prelaunch-value">${rows} row${rows === 1 ? '' : 's'}</span>`;
+    }
+  }
+  html += '<div class="prelaunch-sep"></div>';
+  // Accounts
+  if (!isAutoRouted && numAccounts > 0) {
+    const chips = selectedProfileIds.map(id => `<span class="prelaunch-chip">${esc(profileLabel(id))}</span>`).join('');
+    html += `<span class="prelaunch-label">Accounts</span><span class="prelaunch-value"><div class="prelaunch-accounts">${chips}</div></span>`;
+  } else if (isAutoRouted) {
+    html += `<span class="prelaunch-label">Accounts</span><span class="prelaunch-value">Auto-routed from sheet</span>`;
+  }
+  // Rate & limits
+  if (isConnectMode) {
+    html += `<span class="prelaunch-label">Daily limit</span><span class="prelaunch-value">${dailyLimit} / account</span>`;
+  }
+  // Concurrency
+  const concToggle = document.getElementById('concurrency-toggle');
+  const concCount = document.getElementById('concurrency-count');
+  if (concToggle?.checked && numAccounts >= 5) {
+    const c = Math.max(1, Math.min(5, parseInt(concCount?.value, 10) || 2));
+    html += `<span class="prelaunch-label">Parallel</span><span class="prelaunch-value">${c} accounts at once</span>`;
+  }
+  // Templates summary
+  const note = (document.getElementById('tpl-note')?.value || '').trim();
+  if (note && (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message')) {
+    html += '<div class="prelaunch-sep"></div>';
+    html += `<span class="prelaunch-label">Conn. note</span><span class="prelaunch-value"><span class="truncate">${esc(note)}</span></span>`;
+  }
+  // Primary person (intro flows)
+  const primaryName = (document.getElementById('primary-person-name')?.value || '').trim();
+  if (primaryName && (mode === 'connect_and_introduce' || mode === 'introduce_back')) {
+    html += `<span class="prelaunch-label">Primary</span><span class="prelaunch-value">${esc(primaryName)}</span>`;
+  }
+  // ETA — read from the hero stats rendered by updateCampaignSummary
+  const durationEl = document.getElementById('hero-duration');
+  const durationText = durationEl?.textContent?.trim();
+  const finishEl = document.getElementById('hero-finish');
+  const finishText = finishEl?.textContent?.trim();
+  if ((durationText && durationText !== '—') || (finishText && finishText !== '—')) {
+    html += '<div class="prelaunch-sep"></div>';
+    if (durationText && durationText !== '—') {
+      html += `<span class="prelaunch-label">Duration</span><span class="prelaunch-value">${esc(durationText)}</span>`;
+    }
+    if (finishText && finishText !== '—') {
+      html += `<span class="prelaunch-label">Finishes</span><span class="prelaunch-value">${esc(finishText)}</span>`;
+    }
+  }
+  html += '</div>';
+  return html;
+}
+
+function showPrelaunchConfirm() {
+  return new Promise((resolve) => {
+    let scrim = document.getElementById('prelaunch-scrim');
+    if (!scrim) {
+      scrim = document.createElement('div');
+      scrim.id = 'prelaunch-scrim';
+      scrim.className = 'modal-scrim';
+      scrim.innerHTML =
+        '<div class="modal-card solid">'
+        + '<div class="modal-eyebrow">Review before launch</div>'
+        + '<div class="modal-title">Campaign Summary</div>'
+        + '<div id="prelaunch-body"></div>'
+        + '<div class="prelaunch-acts">'
+        +   '<button class="btn" id="prelaunch-cancel">Go Back</button>'
+        +   '<button class="btn btn-confirm" id="prelaunch-confirm">Confirm &amp; Start</button>'
+        + '</div>'
+        + '</div>';
+      document.body.appendChild(scrim);
+    }
+    document.getElementById('prelaunch-body').innerHTML = _buildPrelaunchSummary();
+    scrim.classList.add('open');
+
+    const cleanup = (result) => {
+      scrim.classList.remove('open');
+      document.getElementById('prelaunch-cancel').removeEventListener('click', onCancel);
+      document.getElementById('prelaunch-confirm').removeEventListener('click', onConfirm);
+      resolve(result);
+    };
+    const onCancel = () => cleanup(false);
+    const onConfirm = () => cleanup(true);
+    document.getElementById('prelaunch-cancel').addEventListener('click', onCancel);
+    document.getElementById('prelaunch-confirm').addEventListener('click', onConfirm);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
 async function addToQueueCampaign() { return startCampaign({ queueOnly: true }); }
@@ -7034,19 +7204,19 @@ async function startCampaign(opts = {}) {
     }
   }
 
-  // Unique campaign name within YOUR campaigns (non-FG). On a collision, auto
-  // append/increment a letter suffix (_a, _b … _d→_e) and update the input so
-  // the launched campaign — and its dashboard row — carry the unique name.
-  // Skipped in cloud-edit redispatch mode (that keeps the campaign's own name).
+  // Name-collision check: block launch if the name is already taken by another
+  // campaign (the input field shows a live warning as you type, but guard here
+  // too in case it was bypassed). Skipped for cloud-edit redispatch + FG.
   try {
     if (mode !== 'follower_growth' && !(_cloudEdit && _cloudEdit.paused)) {
       const ni = document.getElementById('campaign-name-input');
       const desired = (ni?.value || '').trim();
       if (desired) {
-        const unique = _uniqueCampaignName(desired, _existingMineCampaignNames());
-        if (ni && unique !== desired) {
-          ni.value = unique;
-          if (typeof showCampaignToast === 'function') showCampaignToast(`That name is taken — saved as "${unique}".`, 4500);
+        const taken = new Set(_existingMineCampaignNames().map(n => n.toLowerCase()));
+        if (taken.has(desired.toLowerCase())) {
+          alert('A campaign with this name already exists. Choose a different name.');
+          if (ni) { ni.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => ni.focus(), 400); }
+          return;
         }
       }
     }
@@ -7178,6 +7348,13 @@ async function startCampaign(opts = {}) {
   }
   // Rerun context consumed — clear so a subsequent fresh launch isn't treated as a rerun.
   window._savedSheetGid = '';
+
+  // Pre-launch confirmation modal — show summary and wait for operator to confirm.
+  // Skipped for queue-only, skip-preflight retries (already confirmed), and cloud edits.
+  if (!opts.queueOnly && !opts._skipPreflight && !opts._skipPrelaunch) {
+    const confirmed = await showPrelaunchConfirm();
+    if (!confirmed) return;
+  }
 
   // ⑤+①: instant launch feedback. Only for an immediate Start (not Queue), and
   // only now that every validation early-return above is behind us. Shown BEFORE
@@ -13329,6 +13506,24 @@ async function openCampaignForEdit(id) {
 }
 window.openCampaignForEdit = openCampaignForEdit;
 
+// ── Live campaign-name collision warning ─────────────────────────────────────
+function _checkCampaignNameCollision() {
+  const input = document.getElementById('campaign-name-input');
+  const warn = document.getElementById('campaign-name-warn');
+  if (!input || !warn) return;
+  const name = (input.value || '').trim();
+  if (!name) { warn.style.display = 'none'; input.classList.remove('has-warning'); return; }
+  const taken = new Set(_existingMineCampaignNames().map(n => n.toLowerCase()));
+  if (taken.has(name.toLowerCase())) {
+    warn.textContent = 'A campaign with this name already exists';
+    warn.style.display = '';
+    input.classList.add('has-warning');
+  } else {
+    warn.style.display = 'none';
+    input.classList.remove('has-warning');
+  }
+}
+
 // ── Unique campaign names within "Your campaigns" ───────────────────────────
 // Names of the viewer's OWN non-FG campaigns from the last board render — the
 // set a new/edited campaign must be unique against.
@@ -14833,6 +15028,7 @@ async function submitStartCampaign(body, opts = {}) {
       if (banner) banner.style.display = 'none';
     } catch {}
     wizardDirty = false;
+    _syncSaveDraftButton();
     _runningEditWarningShown = false;
 
     // Server queued the campaign — either explicit queue-only, or because
@@ -16855,6 +17051,9 @@ async function pollStatus() {
       }
     }
 
+    // Elapsed timer: extract timestamp of last log line and start ticking
+    try { updateLogElapsed(s); } catch (_) {}
+
     // v2.14.x: feed the in-flight bulk-check panel from the campaign
     // logs we just polled. Catches the campaign's own in-batch bulk-
     // checks (📡 'In-batch ... (5-min cooldown elapsed)…' lines) so the
@@ -16945,7 +17144,8 @@ function syncLiveStatusVisibility() {
   // regardless of the local __cockpit state (which is idle for a VM campaign) and
   // even if liveStatusForcedOpen was reset by an unrelated re-render.
   const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
-  const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || cloudView || ((running || monitoring) && !editingDraft) || finished);
+  const paused = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.paused);
+  const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || cloudView || ((running || monitoring || paused) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   // A live ownership transition is operational status, not optional wizard
   // content. Accordion defaults and renderer reloads used to collapse section 7
@@ -16954,7 +17154,7 @@ function syncLiveStatusVisibility() {
   // the operator may collapse it normally.
   const cloudStatus = window.__cloudActiveStatus || null;
   const cloudOperational = !!(cloudStatus && (cloudStatus.running || cloudStatus.queued || cloudStatus.state === 'monitoring'));
-  if (show && (liveStatusForcedOpen || running || monitoring || cloudOperational || _whBusy)) {
+  if (show && (liveStatusForcedOpen || running || monitoring || paused || cloudOperational || _whBusy)) {
     sec.classList.remove('collapsed');
   }
   const navBtn = document.querySelector('[data-nav="nav-status"]');
@@ -17683,10 +17883,16 @@ function setTheme(mode) {
   // in sync so v0.3 follows the same theme button as the rest of the app.
   document.body.classList.toggle('theme-dark', !isLight);
   try { localStorage.setItem('ortus-theme', mode); } catch (_) {}
+  // Legacy button state (kept for any external references)
   const d = document.getElementById('theme-btn-dark');
   const l = document.getElementById('theme-btn-light');
   if (d) d.classList.toggle('active', !isLight);
   if (l) l.classList.toggle('active', isLight);
+  // New compact slider — highlight active icon
+  const moon = document.getElementById('theme-icon-moon');
+  const sun = document.getElementById('theme-icon-sun');
+  if (moon) moon.classList.toggle('active', !isLight);
+  if (sun) sun.classList.toggle('active', isLight);
 }
 
 function initTheme() {
@@ -17698,6 +17904,11 @@ function initTheme() {
     saved = prefersLight ? 'light' : 'dark';
   }
   setTheme(saved);
+  // Wire compact theme switch click
+  const sw = document.getElementById('theme-switch');
+  if (sw) sw.addEventListener('click', () => {
+    setTheme(document.body.classList.contains('theme-light') ? 'dark' : 'light');
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21030,6 +21241,7 @@ async function editDraft(id) {
   setActiveDraftId(id);
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
   wizardDirty = false;
+  _syncSaveDraftButton();
   _runningEditWarningShown = false;
   // Pre-fill the wizard's name input from the draft so the user sees it
   // immediately (syncCampaignNameInput will pick up the active draft id on
@@ -22870,6 +23082,7 @@ async function startNewCampaign() {
   try { localStorage.removeItem('editResumeSourceIdx'); } catch {}
   { const _rb = document.getElementById('wizard-resume-banner'); if (_rb) _rb.style.display = 'none'; }
   wizardDirty = false;
+  _syncSaveDraftButton();
   _runningEditWarningShown = false;
   const input = document.getElementById('campaign-name-input');
   if (input) input.value = '';
@@ -26635,7 +26848,18 @@ function wizardDirtyOnInput() {
   // pick up EVERY keystroke, not just the first.
   if (!wizardDirty && isViewingRunningCampaign()) showRunningEditWarning();
   wizardDirty = true;
+  _syncSaveDraftButton();
   debouncedAutosave();
+}
+
+// Enable/disable the Save Draft button based on whether unsaved changes exist.
+function _syncSaveDraftButton() {
+  const btn = document.getElementById('btn-save-draft');
+  if (!btn) return;
+  // Don't touch the button when editing an existing campaign (it becomes
+  // "Save changes" which has its own enable/disable logic).
+  if (typeof _editingExistingCampaign !== 'undefined' && _editingExistingCampaign) return;
+  btn.disabled = !wizardDirty;
 }
 
 // Wire input/change listeners on every watched wizard field. Idempotent.
@@ -26643,12 +26867,24 @@ function initWizardDirtyTracking() {
   if (document.body.__wizardDirtyWired) return;
   document.body.__wizardDirtyWired = true;
   const watchIds = [
+    // Text inputs
     'campaign-name-input', 'sheet-url', 'daily-limit-input',
     'tpl-note', 'tpl-followup',
     'tpl-inmail-subject', 'tpl-inmail-body',
     'tpl-op-subject', 'tpl-op-body',
     'primary-intro-body', 'intro-title',
     'primary-person-url', 'primary-person-name',
+    'within-batch-min', 'within-batch-max',
+    'tpl-cc-dm-body', 'follow-up-body', 'follow-up-delay',
+    'concurrency-count', 'message-gap',
+    // Toggles & checkboxes
+    'concurrency-toggle', 'pause-on-throttle',
+    'auto-accept-toggle', 'auto-accept-all-toggle',
+    'follow-up-toggle', 'open-profile-msg',
+    'auto-checks-toggle', 'ic-all-connected-toggle',
+    // Selects
+    'check-cadence-select', 'ic-sender-col-select',
+    'linkedin-col-select', 'primary-timing-select',
   ];
   for (const id of watchIds) {
     const el = document.getElementById(id);
@@ -26666,6 +26902,8 @@ function initWizardDirtyTracking() {
       if (typeof window.updateEditingBanner === 'function') {
         try { window.updateEditingBanner(); } catch (_) {}
       }
+      // Live name-collision check
+      try { _checkCampaignNameCollision(); } catch (_) {}
     });
     nameInput.__pillMirrorWired = true;
   }
@@ -26723,6 +26961,8 @@ async function _flushAutosave() {
   }).then(async (r) => {
     if (r.ok) {
       _lastAutosavedAt = Date.now();
+      wizardDirty = false;
+      _syncSaveDraftButton();
       updateSavePip();
       if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
     } else if (r.status === 404) {
@@ -27173,9 +27413,13 @@ window.launchScheduleIt = async function () {
 // Save as draft — autosave already persisted everything; this just closes
 // the wizard and returns to the dashboard. The draft stays in the drafts
 // list and the resume pill will surface it from the dashboard header.
-window.launchSaveAsDraft = function() {
+window.launchSaveAsDraft = async function() {
   _closeLaunchMenu();
-  // No backend call — autosave has the data. Just navigate back.
+  // Flush any pending autosave so the latest form state is persisted before
+  // navigating away. Without this, the 500ms debounce could lose the last edit.
+  try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before save-as-draft:', err); }
+  wizardDirty = false;
+  _syncSaveDraftButton();
   window.location.hash = '#/';
   if (typeof showCampaignToast === 'function') showCampaignToast('Saved as draft');
 };
@@ -27310,6 +27554,7 @@ async function saveCampaignEdits() {
     }
     await saveDraftName();
     wizardDirty = false;
+    _syncSaveDraftButton();
     _runningEditWarningShown = false;
     showCampaignToast('Edits saved');
   } catch (err) {
