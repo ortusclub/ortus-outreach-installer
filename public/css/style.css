@@ -290,19 +290,27 @@ body {
 }
 .nav-item.active .nav-num { color: var(--gold); }
 
-/* Theme toggle — two mono pills */
-.theme-toggle-group { padding: 0 28px 20px; }
-.theme-toggle-label {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--gray);
-  margin-bottom: 10px;
+/* Theme toggle — compact inline row with sun/moon slider */
+.theme-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px 18px; }
+.theme-row-label {
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--gray);
 }
-.theme-toggle {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+.theme-switch { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.theme-icon { font-size: 0.82rem; color: var(--gray); transition: color 0.2s; line-height: 1; }
+.theme-icon.active { color: var(--ink); }
+.theme-track {
+  position: relative; width: 34px; height: 18px; border-radius: 9999px;
+  border: 1px solid var(--hairline); background: transparent; transition: border-color 0.2s;
 }
+.theme-thumb {
+  position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+  border-radius: 9999px; background: var(--ink); transition: left 0.2s;
+}
+body.theme-light .theme-thumb { left: 18px; }
+
+/* Keep old classes for anything that references .theme-toggle button externally */
+.theme-toggle-group { display: none; }
 .theme-toggle button {
   background: transparent;
   border: 1px solid var(--hairline);
@@ -1810,6 +1818,11 @@ select {
   text-transform: uppercase;
 }
 .campaign-name-row > input:focus { border-bottom-color: var(--ink); }
+.campaign-name-row > input.has-warning { border-bottom-color: var(--red); }
+.campaign-name-warn {
+  font-family: var(--mono); font-size: 0.62rem; color: var(--red);
+  letter-spacing: 0.06em; margin-top: 4px;
+}
 .campaign-name-row > .btn { margin-bottom: 4px; white-space: nowrap; }
 
 /* Start CTA — transparent pill with 1px white border + GOLD label (the only gold in the UI) */
@@ -1973,6 +1986,25 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 .log-panel .entry.error { color: var(--red); }
 .log-panel .entry.warn { color: var(--ink); opacity: 0.8; }
 .log-panel .entry.info { color: var(--ink); }
+
+/* Log elapsed timer + activity pulse */
+.log-elapsed-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 20px; font-family: var(--mono); font-size: 0.68rem;
+  color: var(--gray); border-top: 1px solid var(--hairline);
+  background: transparent;
+}
+.log-elapsed-bar .pulse-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); flex-shrink: 0;
+  animation: logPulse 2s ease-in-out infinite;
+}
+.log-elapsed-bar .pulse-dot.idle { background: var(--gray); animation: none; }
+.log-elapsed-bar .elapsed-text { opacity: 0.7; }
+@keyframes logPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.7); }
+}
 
 /* Progress bar — 1px white line */
 .progress-bar {
@@ -2441,6 +2473,24 @@ table.mini td { padding: 5px 8px; color: var(--ink); border-bottom: 1px solid va
   animation: launch-spin 0.8s linear infinite; }
 @keyframes launch-spin { to { transform: rotate(360deg); } }
 .launch-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.55; margin-top: 2px; }
+
+/* ── Pre-launch confirmation modal ── */
+#prelaunch-scrim { z-index: 110; }
+#prelaunch-scrim .modal-card { width: 520px; }
+.prelaunch-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0 16px; }
+.prelaunch-label { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--gray); padding-top: 2px; white-space: nowrap; }
+.prelaunch-value { font-family: var(--mono); font-size: 0.72rem; color: var(--ink); line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; }
+.prelaunch-value .truncate { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
+.prelaunch-sep { grid-column: 1 / -1; border-top: 1px solid var(--hairline-soft); margin: 4px 0; }
+.prelaunch-accounts { display: flex; flex-wrap: wrap; gap: 4px; }
+.prelaunch-chip { font-family: var(--mono); font-size: 0.6rem; padding: 2px 8px;
+  border: 1px solid var(--hairline); border-radius: 9999px; color: var(--ink); white-space: nowrap; }
+.prelaunch-acts { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+.prelaunch-acts .btn { min-width: 120px; }
+.prelaunch-acts .btn-confirm { background: var(--gold); color: #0a0a0a; border-color: var(--gold); font-weight: 600; }
+.prelaunch-acts .btn-confirm:hover { opacity: 0.85; }
 
 .hidden { display: none; }
 

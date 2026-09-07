@@ -29,6 +29,7 @@ import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
+import { readJson } from './atomic-json-store.js';
 import { getPrefs as getOperatorPrefs, identityGateEnabled } from './operator-prefs.js';
 import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
@@ -4146,6 +4147,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                           step: e.step || '', stepLabel: e.stepLabel || '',
                           stepDetail: e.stepDetail || '',
                         });
+                        // Emit step-level log so operators see activity during long actions
+                        if (e.stepLabel) log(`  … ${pName}: ${e.stepLabel}${e.stepDetail ? ' — ' + e.stepDetail : ''}`);
                       },
                     }, hint),
                     LEAD_TIMEOUT_MS,
