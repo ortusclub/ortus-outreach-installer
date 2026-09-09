@@ -32947,6 +32947,68 @@ async function refreshMagellanAccounts(btn) {
 }
 window.refreshMagellanAccounts = refreshMagellanAccounts;
 
+// Import from CSV — stage a LinkedHelper export as an off-GoLogin account's
+// connections, then tick it in the grid so the existing Check → Import runs
+// against it unchanged. The one GoLogin-free path into Magellan.
+async function magellanImportCsv(btn) {
+  const owner = (document.getElementById('mg-csv-owner').value || '').trim();
+  const fileEl = document.getElementById('mg-csv-file');
+  const statusEl = document.getElementById('mg-csv-status');
+  const show = (msg, ok) => {
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.classList.toggle('is-err', !ok);
+  };
+  if (!owner || !owner.includes('@')) return show('Enter the owner email first (e.g. kenji@ortusclub.com).', false);
+  const file = fileEl.files && fileEl.files[0];
+  if (!file) return show('Choose a LinkedHelper export file first.', false);
+
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Staging…';
+  try {
+    const csvText = await file.text();
+    // Raw text + owner in the query string (not JSON): a 5k-row export is several
+    // MB, past the app-wide express.json() limit — text/plain skips that parser.
+    const j = await mgFetch(`/api/magellan/import-csv?owner=${encodeURIComponent(owner)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: csvText,
+    });
+    const skipped = j.skippedNoMemberId ? ` (skipped ${mgNum(j.skippedNoMemberId)} with no member id)` : '';
+    show(`Staged ${mgNum(j.staged)} connection${j.staged === 1 ? '' : 's'} for ${j.account}${skipped}. It's ticked above — now scroll to Check.`, true);
+    magellanInjectCsvAccount(j.account, j.staged);
+    fileEl.value = '';
+  } catch (err) {
+    show(err.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+window.magellanImportCsv = magellanImportCsv;
+
+// Put a just-staged CSV account into the grid (it has no GoLogin profile) and
+// tick it, so Check → Import treats it like any collected account. A synthetic
+// 'csv:<email>' profileId keys selection and de-dupes repeat uploads.
+function magellanInjectCsvAccount(account, count) {
+  const pid = `csv:${account}`;
+  let a = mgAccounts.find((x) => x.profileId === pid);
+  if (!a) { a = { profileId: pid, account, profile: account, fromCsv: true }; mgAccounts.push(a); }
+  a.collected = true;
+  a.count = count;
+  a.withMemberId = count; // every staged row has a member id (that's the gate)
+  a.resolved = true;
+  a.ambiguous = false;
+  a.collectedAt = Date.now();
+  // importable stays whatever it was (likely undefined) — buildPreview auto-adds
+  // the account to HubSpot's Linkedin 1st Connections list at Check time.
+  mgSelected.add(pid);
+  setMagellanFilter('done'); // the default 'todo' filter hides collected rows
+  renderMagellanAccounts();
+  refreshMagellanState();
+}
+
 function magellanVisible() {
   const q = (document.getElementById('mg-search')?.value || '').trim().toLowerCase();
   return mgAccounts.filter((a) => {
@@ -33605,7 +33667,20 @@ async function previewMagellan() {
       '<b>Nothing has gone into HubSpot yet.</b> The numbers above are what will happen when you press Import.';
     const imp = document.getElementById('mg-import-btn');
     imp.hidden = false;
-    imp.textContent = `Import ${mgNum(t.created || 0)} people`;
+    // Count everyone Import will WRITE — creates plus existing records getting the
+    // connection stamped — not just new creates. A run that only adds connections
+    // to people already in HubSpot is real work, and used to read "Import 0 people".
+    const willWrite = t.willWrite != null ? t.willWrite : (t.created || 0);
+    const noun = willWrite === 1 ? 'person' : 'people';
+    if (willWrite === 0) {
+      imp.textContent = 'Nothing to import';
+      imp.disabled = true;
+    } else {
+      imp.disabled = false;
+      imp.textContent = (t.created || 0) === 0
+        ? `Update ${mgNum(willWrite)} ${noun}` // only stamping connections onto existing records
+        : `Import ${mgNum(willWrite)} ${noun}`;
+    }
     // Only once Check has produced a plan — a link to an empty sheet is worse
     // than no link.
     const rev = document.getElementById('mg-review');

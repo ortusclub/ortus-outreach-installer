@@ -118,6 +118,7 @@ import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected,
   migrateLegacyConnections as magellanMigrateLegacy } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
+import { stageLinkedHelperCsv } from './src/connections/magellan-csv-import.js';
 import { connectionsPropOptions, addConnectionsOptions, tokenScopes } from './src/connections/hubspot-client.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
@@ -3587,6 +3588,24 @@ app.get('/api/magellan/accounts', async (req, res) => {
         collectedAt: c ? c.at : null,
       };
     });
+
+    // Accounts staged via "Import from CSV" have no GoLogin profile, so the map
+    // above never surfaces them. Append any collected list whose account isn't
+    // already shown, so a staged account survives a refresh and stays usable.
+    const shown = new Set(accounts.map((a) => String(a.account).trim().toLowerCase()));
+    for (const [acct, c] of collected) {
+      const key = String(acct).trim().toLowerCase();
+      if (shown.has(key)) continue;
+      shown.add(key);
+      accounts.push({
+        profileId: `csv:${key}`, account: acct, profile: acct,
+        resolved: true, ambiguous: false,
+        importable: hsOptions ? hsOptions.has(key) : null,
+        collected: true, count: c.count, withMemberId: c.withMemberId, collectedAt: c.at,
+        fromCsv: true,
+      });
+    }
+
     res.json({ accounts, canEditOptions: await magellanCanEditOptions({ maxAgeMs }) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3598,6 +3617,30 @@ app.post('/api/magellan/collect', (req, res) => {
     res.json(magellan.startCollect((req.body || {}).accounts || []));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Import from CSV — stage a LinkedHelper export as an account's connections so
+// Check → Import runs against it WITHOUT a GoLogin browser. This is the Collect
+// step's stand-in for accounts that are not in GoLogin: LinkedHelper already
+// carries the numeric member id the raw LinkedIn export lacks. A 5k-row export
+// is several MB, so this route parses with its own large body limit rather than
+// the app-wide default (100kb) that would reject it.
+// The body is the raw CSV text (Content-Type text/plain) with the owner in the
+// query string, NOT JSON — the app-wide express.json() (100kb) runs first and
+// would reject a multi-MB export before this handler ever saw it. text/plain
+// slips past that parser untouched; this route's own express.text() (60mb) then
+// reads it.
+app.post('/api/magellan/import-csv', express.text({ type: '*/*', limit: '60mb' }), (req, res) => {
+  try {
+    const ownerEmail = String(req.query.owner || '');
+    const csvText = typeof req.body === 'string' ? req.body : '';
+    if (!csvText) return res.status(400).json({ error: 'No file contents received.' });
+    const out = stageLinkedHelperCsv(ownerEmail, csvText);
+    console.log(`[magellan] import-csv staged ${out.staged} connection(s) for ${out.account} (skipped ${out.skippedNoMemberId} with no member id, of ${out.total})`);
+    res.json(out);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

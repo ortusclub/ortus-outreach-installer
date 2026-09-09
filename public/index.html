@@ -876,6 +876,23 @@
               <div id="mg-grid" class="profile-grid"></div>
             </div>
           </div>
+
+          <!-- Import from CSV — for an account that is NOT in GoLogin. Upload a
+               LinkedHelper export (it carries the member id the raw LinkedIn
+               export lacks); it is staged as this owner's connections and shows
+               in the grid above, ticked, ready for Check → Import. No browser. -->
+          <details class="mg-csv">
+            <summary class="mg-csv-summary">Account not in GoLogin? Import from a LinkedHelper CSV</summary>
+            <div class="mg-csv-body">
+              <p class="mg-csv-hint">Upload a <b>LinkedHelper export</b> — <b>not</b> the raw LinkedIn “Export connections” file. The LinkedHelper one has the LinkedIn <b>member&nbsp;ID</b> we key on; the raw one doesn’t and will be refused. It’s staged under the owner’s email and appears above, ticked, ready to Check &amp; Import.</p>
+              <div class="mg-csv-row">
+                <input type="email" id="mg-csv-owner" class="mg-csv-input" placeholder="Owner email (e.g. kenji@ortusclub.com)" autocomplete="off" />
+                <input type="file" id="mg-csv-file" class="mg-csv-file" accept=".csv,.tsv,.txt" />
+                <button type="button" class="bulk-pill mg-csv-btn" id="mg-csv-btn" onclick="magellanImportCsv(this)">Stage connections</button>
+              </div>
+              <p class="mg-csv-status" id="mg-csv-status" hidden></p>
+            </div>
+          </details>
         </section>
 
         <section class="dashboard-section cx-section">

@@ -8709,3 +8709,26 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
   line-height: 1.6;
 }
 .hs-wiz-log-line + .hs-wiz-log-line { margin-top: 3px; }
+
+/* OP Magellan — "Import from CSV" panel (accounts not in GoLogin). */
+.mg-csv { margin-top: 14px; border: 1px solid var(--hairline); background: var(--bg-soft); }
+.mg-csv-summary {
+  cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 600;
+  color: var(--ink); list-style: none; user-select: none;
+}
+.mg-csv-summary::-webkit-details-marker { display: none; }
+.mg-csv-summary::before { content: '＋ '; color: var(--gold); font-weight: 700; }
+.mg-csv[open] .mg-csv-summary::before { content: '－ '; }
+.mg-csv-body { padding: 0 14px 14px; }
+.mg-csv-hint { font-size: 12px; line-height: 1.5; opacity: 0.7; margin: 0 0 10px; }
+.mg-csv-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mg-csv-input {
+  flex: 1 1 260px; min-width: 200px; padding: 8px 10px; font-size: 13px;
+  color: var(--ink); background: var(--bg); border: 1px solid var(--hairline); border-radius: 0;
+}
+.mg-csv-input:focus { outline: none; border-color: var(--gold); }
+.mg-csv-file { flex: 1 1 200px; font-size: 12px; color: var(--ink); opacity: 0.85; }
+.mg-csv-btn { flex: 0 0 auto; }
+.mg-csv-btn:disabled { opacity: 0.5; cursor: default; }
+.mg-csv-status { font-size: 12px; margin: 10px 0 0; line-height: 1.5; }
+.mg-csv-status.is-err { color: var(--red); }
