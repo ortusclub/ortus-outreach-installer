@@ -381,7 +381,7 @@ export async function buildPreview(accounts, deps = {}) {
   }
 
   const plans = [];
-  const totals = { created: 0, existing: 0, updated: 0, extraEmails: 0, hidden: 0, unresolved: 0, total: 0 };
+  const totals = { created: 0, existing: 0, updated: 0, extraEmails: 0, hidden: 0, unresolved: 0, total: 0, willWrite: 0 };
 
   // Check is three minutes of silence on a real sweep. Drive the same card the
   // collect and import halves drive, so "is it still going?" is answered by
