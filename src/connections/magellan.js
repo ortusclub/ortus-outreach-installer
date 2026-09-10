@@ -210,6 +210,13 @@ export function planAccount(connections, account, lookup) {
       hidden: hidden.length,
       unresolved: unresolved.length,
       total: (connections || []).length,
+      // People Import will ACTUALLY write to HubSpot: every create, plus each
+      // DISTINCT existing record that gets a property update or the synthetic
+      // email stamped. `created` alone undercounts (the Import button read
+      // "0 people" while 4 existing records were about to get the connection
+      // added); `existing` overcounts (most are already complete no-ops).
+      willWrite: creates.length
+        + new Set([...updates.map((u) => u.id), ...additionalEmails.map((a) => a.id)]).size,
     },
   };
 }

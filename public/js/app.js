@@ -33153,7 +33153,20 @@ async function previewMagellan() {
       '<b>Nothing has gone into HubSpot yet.</b> The numbers above are what will happen when you press Import.';
     const imp = document.getElementById('mg-import-btn');
     imp.hidden = false;
-    imp.textContent = `Import ${mgNum(t.created || 0)} people`;
+    // Count everyone Import will WRITE — creates plus existing records getting the
+    // connection stamped — not just new creates. A run that only adds connections
+    // to people already in HubSpot is real work, and used to read "Import 0 people".
+    const willWrite = t.willWrite != null ? t.willWrite : (t.created || 0);
+    const noun = willWrite === 1 ? 'person' : 'people';
+    if (willWrite === 0) {
+      imp.textContent = 'Nothing to import';
+      imp.disabled = true;
+    } else {
+      imp.disabled = false;
+      imp.textContent = (t.created || 0) === 0
+        ? `Update ${mgNum(willWrite)} ${noun}` // only stamping connections onto existing records
+        : `Import ${mgNum(willWrite)} ${noun}`;
+    }
     // Only once Check has produced a plan — a link to an empty sheet is worse
     // than no link.
     const rev = document.getElementById('mg-review');
