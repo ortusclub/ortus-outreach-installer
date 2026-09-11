@@ -8,7 +8,7 @@
 import * as launcher from '../gologin-launcher.js';
 import * as browserSemaphore from '../browser-semaphore.js';
 import { collectAccount, readForPlan } from './magellan-pull.js';
-import { planAccount } from './magellan.js';
+import { planAccount, updateProperties } from './magellan.js';
 import { diagnose, logLine, summarise } from './magellan-diagnose.js';
 import { explainProblem, problemLine, summariseProblems } from './magellan-problems.js';
 import {
@@ -18,6 +18,7 @@ import {
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
   checkMagellanProperties, connectionsPropOptions, addConnectionsOptions, mergeContacts,
+  readContactsByIds,
 } from './hubspot-client.js';
 import { buildOutcome } from './magellan-outcome.js';
 
@@ -172,6 +173,12 @@ export function startCollect(accounts, deps = {}) {
   const seen = new Set();
   const list = (accounts || []).filter((a) => {
     if (!a || !a.profileId || !a.account) return false;
+    // CSV-staged accounts have a synthetic 'csv:<email>' profileId and no
+    // GoLogin profile — launchProfile can't open them. Their connections are
+    // already on disk from the upload, so Collect must skip them (they go
+    // straight to Check). Guard here too, not just in the UI, so a stray
+    // selection can never crash a browser launch.
+    if (String(a.profileId).startsWith('csv:')) return false;
     const key = String(a.account).trim().toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
@@ -644,7 +651,7 @@ export function startImport(plans = _plans, deps = {}) {
 
 export async function runImport(plans = _plans, deps = {}) {
   const { create = batchCreate, update = batchUpdate, attach = attachSyntheticEmail,
-    sheet = publishSheet } = deps;
+    sheet = publishSheet, readByIds = readContactsByIds } = deps;
 
   if (_state.running) return { ok: false, reason: 'Magellan is already running' };
   if (!plans) return { ok: false, reason: 'Nothing to import — build a preview first' };
@@ -680,9 +687,33 @@ export async function runImport(plans = _plans, deps = {}) {
       if (c.ids) addHubspotIds(c.ids);
       row.errors.push(...c.errors.map((e) => ({ stage: 'create', ...e })));
 
+      // 409-recovery: creates that collided with a record already in HubSpot —
+      // usually a search-invisible / quarantined synthetic-email duplicate the
+      // lookup could not find. HubSpot named the existing contact, so read it BY
+      // ID (search can't return it), merge the connection onto it with
+      // updateProperties (so other operators' tags survive), and update it — the
+      // connection is recorded instead of the person being "not written".
+      if (c.conflicts && c.conflicts.length) {
+        _state.step = `Recording ${c.conflicts.length} that already existed`;
+        const existing = await readByIds(c.conflicts.map((x) => x.existingId));
+        const recoveries = [];
+        const recoveredIds = new Map();
+        for (const { input, existingId } of c.conflicts) {
+          recoveredIds.set(String(input.connection.memberId), String(existingId));
+          const props = updateProperties(input.connection, account, existing.get(String(existingId)) || {});
+          if (Object.keys(props).length) recoveries.push({ id: existingId, properties: props });
+        }
+        addHubspotIds(recoveredIds); // fills the HubSpot Link column for the recovered people
+        if (recoveries.length) {
+          const rec = await update(recoveries);
+          row.updated += rec.updated;
+          row.errors.push(...rec.errors.map((e) => ({ stage: 'update', ...e })));
+        }
+      }
+
       _state.step = `Updating ${plan.updates.length} existing people`;
       const u = await update(plan.updates);
-      row.updated = u.updated;
+      row.updated += u.updated; // += not =: the 409-recovery above may already have counted some
       row.errors.push(...u.errors.map((e) => ({ stage: 'update', ...e })));
 
       // One call each — no batch endpoint exists for secondary emails.

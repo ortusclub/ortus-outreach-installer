@@ -78,3 +78,28 @@ test('a wholly refused batch costs everyone in it', async () => {
   assert.strictEqual(r.updated, 0);
   assert.strictEqual(r.errors[0].size, 61);
 });
+
+test('batchCreate bisects a rejected batch — clean creates go through, the collision is isolated with its existing id', async () => {
+  // HubSpot's batch create is all-or-nothing: one duplicate rejects the whole
+  // batch. Bisecting lets the genuinely-new rows land and isolates the collision,
+  // whose error names the record to recover ("Existing ID: 555").
+  const POISON = 'poison@linkedinmembership.id';
+  const fetchImpl = async (_url, opts) => {
+    const inputs = JSON.parse(opts.body).inputs;
+    if (inputs.some((i) => i.properties.email === POISON)) {
+      return { ok: false, status: 409, text: async () => 'Contact already exists. Existing ID: 555', json: async () => ({}) };
+    }
+    return okRes({ results: inputs.map((i, n) => ({ id: `new${n}`, properties: { email: i.properties.email } })) });
+  };
+  const creates = ['1', 'poison', '3', '4'].map((m) => ({
+    connection: { memberId: m }, properties: { email: `${m}@linkedinmembership.id` },
+  }));
+  creates[1].properties.email = POISON;
+
+  const r = await batchCreate(creates, { fetchImpl, token: 't' });
+  assert.strictEqual(r.created, 3, 'the 3 clean creates landed despite the collision');
+  assert.strictEqual(r.conflicts.length, 1, 'the collision is isolated, not a plain failure');
+  assert.strictEqual(r.conflicts[0].existingId, '555');
+  assert.strictEqual(r.conflicts[0].input.connection.memberId, 'poison');
+  assert.strictEqual(r.errors.length, 0);
+});

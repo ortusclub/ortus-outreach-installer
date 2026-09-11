@@ -32495,6 +32495,88 @@ async function refreshMagellanAccounts(btn) {
 }
 window.refreshMagellanAccounts = refreshMagellanAccounts;
 
+// When a Connections Collector file is picked, auto-fill the owner from its name
+// (the extension saves it as "<owner-email>.csv"), so the operator rarely types
+// it. They can still override, and the server also reads the owner from inside
+// the file — this is just to show it before they press Stage.
+function magellanCsvPicked(input) {
+  const ownerEl = document.getElementById('mg-csv-owner');
+  const file = input.files && input.files[0];
+  if (!file || (ownerEl.value || '').trim()) return; // don't clobber a typed owner
+  const base = file.name
+    .replace(/\.(csv|tsv|txt)$/i, '')  // drop the extension
+    .replace(/\s*\(\d+\)\s*$/, '')     // drop a browser "(1)" duplicate-download suffix
+    .trim().toLowerCase();
+  // Only adopt it when it's a clean single email; otherwise leave the field blank
+  // and let the server recover the owner from inside the file.
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(base)) ownerEl.value = base;
+}
+window.magellanCsvPicked = magellanCsvPicked;
+
+// Import from CSV — stage a Connections Collector export as an off-GoLogin
+// account's connections, then tick it in the grid so the existing Check → Import
+// runs against it unchanged. The one GoLogin-free path into Magellan.
+async function magellanImportCsv(btn) {
+  const owner = (document.getElementById('mg-csv-owner').value || '').trim();
+  const fileEl = document.getElementById('mg-csv-file');
+  const statusEl = document.getElementById('mg-csv-status');
+  const show = (msg, ok) => {
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.classList.toggle('is-err', !ok);
+  };
+  const file = fileEl.files && fileEl.files[0];
+  if (!file) return show('Choose the Connections Collector CSV first.', false);
+  // Owner is optional — the server recovers it from the file when left blank.
+  // Only reject a value that was typed AND is obviously not an email.
+  if (owner && !owner.includes('@')) return show('That owner doesn’t look like an email (e.g. kenji@ortusclub.com).', false);
+
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Staging…';
+  try {
+    const csvText = await file.text();
+    // Raw text + owner in the query string (not JSON): a multi-thousand-row export
+    // is several MB, past the app-wide express.json() limit — text/plain skips it.
+    const j = await mgFetch(`/api/magellan/import-csv?owner=${encodeURIComponent(owner)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: csvText,
+    });
+    const skipped = j.skippedNoMemberId ? ` (skipped ${mgNum(j.skippedNoMemberId)} with no member id)` : '';
+    show(`Staged ${mgNum(j.staged)} connection${j.staged === 1 ? '' : 's'} for ${j.account}${skipped}. It's ticked above — now scroll to Check.`, true);
+    magellanInjectCsvAccount(j.account, j.staged);
+    fileEl.value = '';
+  } catch (err) {
+    show(err.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+window.magellanImportCsv = magellanImportCsv;
+
+// Put a just-staged CSV account into the grid (it has no GoLogin profile) and
+// tick it, so Check → Import treats it like any collected account. A synthetic
+// 'csv:<email>' profileId keys selection and de-dupes repeat uploads.
+function magellanInjectCsvAccount(account, count) {
+  const pid = `csv:${account}`;
+  let a = mgAccounts.find((x) => x.profileId === pid);
+  if (!a) { a = { profileId: pid, account, profile: account, fromCsv: true }; mgAccounts.push(a); }
+  a.collected = true;
+  a.count = count;
+  a.withMemberId = count; // every staged row has a member id (that's the gate)
+  a.resolved = true;
+  a.ambiguous = false;
+  a.collectedAt = Date.now();
+  // importable stays whatever it was (likely undefined) — buildPreview auto-adds
+  // the account to HubSpot's Linkedin 1st Connections list at Check time.
+  mgSelected.add(pid);
+  setMagellanFilter('done'); // the default 'todo' filter hides collected rows
+  renderMagellanAccounts();
+  refreshMagellanState();
+}
+
 function magellanVisible() {
   const q = (document.getElementById('mg-search')?.value || '').trim().toLowerCase();
   return mgAccounts.filter((a) => {
@@ -32586,6 +32668,19 @@ function updateMagellanCounts() {
     sub.textContent = mgSelected.size === 1
       ? 'account selected · about a minute'
       : 'accounts selected · one at a time, roughly a minute each';
+  }
+
+  // When the only thing selected is a CSV-imported account, hide the Collect
+  // button (it has no browser profile to launch and its connections are already
+  // on disk) and point the operator at Check instead. Hidden — not disabled — so
+  // it never fights the run-state logic that toggles `disabled` during a sweep.
+  const collectBtn = document.getElementById('mg-collect-btn');
+  const csvNote = document.getElementById('mg-collect-csv-note');
+  if (collectBtn) {
+    const collectable = mgAccounts.filter((a) => mgSelected.has(a.profileId) && !a.fromCsv).length;
+    const csvOnly = mgSelected.size > 0 && collectable === 0;
+    collectBtn.hidden = csvOnly;
+    if (csvNote) csvNote.hidden = !csvOnly;
   }
 
   // What pressing Check would actually run. The HubSpot allowlist drops accounts
@@ -32696,10 +32791,18 @@ function showMagellanError(msg) {
 
 async function startMagellanCollect() {
   showMagellanError('');
+  // CSV-staged accounts are already collected (their connections came from the
+  // upload) and have no GoLogin profile to launch — keep them ticked for Check,
+  // but never send them to the browser Collect.
   const accounts = mgAccounts
-    .filter((a) => mgSelected.has(a.profileId))
+    .filter((a) => mgSelected.has(a.profileId) && !a.fromCsv)
     .map((a) => ({ profileId: a.profileId, account: a.account }));
-  if (!accounts.length) return showMagellanError('Pick at least one account first.');
+  if (!accounts.length) {
+    const onlyCsv = mgAccounts.some((a) => mgSelected.has(a.profileId) && a.fromCsv);
+    return showMagellanError(onlyCsv
+      ? 'That account was imported from a CSV — it\'s already collected. Skip Collect and go to Check.'
+      : 'Pick at least one account first.');
+  }
 
   const btn = document.getElementById('mg-collect-btn');
   if (btn) btn.disabled = true;
@@ -33023,8 +33126,13 @@ function renderMagellanState(s) {
   // "N added" here duplicated the hero once it started counting the import.
   // The one number the hero does not carry is how much needs a human.
   if (s.imported && !s.running) {
-    const probs = (s.imported.errors || []).length;
-    set('mg-phase-lbl', probs ? `${probs} problem${probs === 1 ? '' : 's'}` : 'no problems');
+    // Same split as the summary: genuine failures vs. harmless duplicate notes.
+    const notWritten = s.imported.notWritten || 0;
+    const notes = (s.imported.problems || []).filter((p) => !p.blocking).reduce((n, p) => n + (p.count || 0), 0);
+    let lbl = 'no problems';
+    if (notWritten > 0) lbl = `${mgNum(notWritten)} not written`;
+    else if (notes > 0) lbl = `${mgNum(notes)} to merge`;
+    set('mg-phase-lbl', lbl);
   }
   if (s.error) showMagellanError(s.error);
 }
@@ -33149,23 +33257,48 @@ async function previewMagellan() {
     document.getElementById('mg-led-existing').textContent = mgNum(t.existing || 0);
     document.getElementById('mg-led-hidden').textContent = mgNum(t.hidden || 0);
     document.getElementById('mg-ledger').hidden = false;
+    // The Import button number is ONLY the NEW people — the actual additions to
+    // HubSpot. Everyone already there just gets their connection recorded, which
+    // is real work but is NOT an "import", so we state it SEPARATELY rather than
+    // summing the two into one number (a run used to read "Import 1,112" when only
+    // 40 were actually new — confusing). `stamped` = existing records that get a
+    // write (willWrite counts creates + those); the rest are already complete.
+    const created = t.created || 0;
+    const willWrite = t.willWrite != null ? t.willWrite : created;
+    const stamped = Math.max(0, willWrite - created);
+    const ppl = (n) => (n === 1 ? 'person' : 'people');
+
+    // Reconcile the two numbers explicitly: `stamped` is a SUBSET of the "Already
+    // there" total (t.existing). Saying "190" next to a card reading "1,785 already
+    // there" reads as a contradiction unless we spell out that the 190 are the ones
+    // that get a write and the other 1,595 already have the connection.
+    const existing = t.existing || 0;
+    const already = Math.max(0, existing - stamped);
+    const hl = (s) => `<span class="mg-hl">${s}</span>`;
+    let stampNote = '';
+    if (stamped > 0) {
+      const whose = ppl(stamped) === 'person' ? "person's" : "people's";
+      stampNote = ` Of the <b>${mgNum(existing)}</b> already in HubSpot, it ${hl(`adds you to <b>${mgNum(stamped)}</b> ${whose} connection list`)}`
+        + (already > 0 ? ` — the other ${mgNum(already)} already have you, so nothing changes for them.` : ' — nothing else on their record changes.');
+    } else if (existing > 0) {
+      stampNote = ` The <b>${mgNum(existing)}</b> already in HubSpot ${hl('already have you on their connection list')} — nothing changes for them.`;
+    }
     document.getElementById('mg-confirm-t').innerHTML =
-      '<b>Nothing has gone into HubSpot yet.</b> The numbers above are what will happen when you press Import.';
+      '<b>Nothing has gone into HubSpot yet.</b> '
+      + `Pressing Import adds the <b>${mgNum(created)}</b> new ${ppl(created)}.${stampNote}`;
+
     const imp = document.getElementById('mg-import-btn');
     imp.hidden = false;
-    // Count everyone Import will WRITE — creates plus existing records getting the
-    // connection stamped — not just new creates. A run that only adds connections
-    // to people already in HubSpot is real work, and used to read "Import 0 people".
-    const willWrite = t.willWrite != null ? t.willWrite : (t.created || 0);
-    const noun = willWrite === 1 ? 'person' : 'people';
-    if (willWrite === 0) {
+    if (created === 0 && stamped === 0) {
       imp.textContent = 'Nothing to import';
       imp.disabled = true;
-    } else {
+    } else if (created === 0) {
+      // No new people at all — the whole action is recording connections.
+      imp.textContent = `Add connection to ${mgNum(stamped)} ${ppl(stamped)}`;
       imp.disabled = false;
-      imp.textContent = (t.created || 0) === 0
-        ? `Update ${mgNum(willWrite)} ${noun}` // only stamping connections onto existing records
-        : `Import ${mgNum(willWrite)} ${noun}`;
+    } else {
+      imp.textContent = `Import ${mgNum(created)} ${ppl(created)}`;
+      imp.disabled = false;
     }
     // Only once Check has produced a plan — a link to an empty sheet is worse
     // than no link.
@@ -33253,17 +33386,31 @@ function renderMagellanImportOutcome(s) {
     return;
   }
   const imp = s.imported || {};
-  const probs = (imp.errors || []).length;
+  // Two different tallies, and they must NOT be lumped together: `notWritten` is
+  // people whose row genuinely failed; the non-blocking groups are DUPLICATE
+  // NOTES — the person's connection WAS recorded, only the extra email couldn't
+  // move because a second (duplicate) record already holds it. Counting the notes
+  // as "187 problems" read as "the import had 187 conflicts", which it did not.
+  const problems = imp.problems || [];
+  const notWritten = imp.notWritten || 0;
+  const notes = problems.filter((p) => !p.blocking).reduce((n, p) => n + (p.count || 0), 0);
   const el = document.getElementById('mg-confirm-t');
   if (el) {
+    let tail;
+    if (notWritten > 0) {
+      tail = ` · <b>${mgNum(notWritten)} not written</b> — press Show log to see which, and why.`;
+      if (notes) tail += ` (Also ${mgNum(notes)} already in HubSpot twice — nothing lost, for merge cleanup.)`;
+    } else if (notes > 0) {
+      tail = ` · <b>${mgNum(notes)} already in HubSpot twice</b> — nothing was lost. The connection was recorded; `
+        + 'these are duplicate records to merge in HubSpot later, not import problems.';
+    } else {
+      tail = ' · no problems.';
+    }
     el.innerHTML =
       `<b>Done.</b> ${mgNum(imp.created || 0)} people added, `
       + `${mgNum(imp.updated || 0)} existing people updated`
       + (imp.extraEmails ? `, ${mgNum(imp.extraEmails)} email addresses attached` : '')
-      + (probs
-        ? ` · <b>${probs} problem${probs === 1 ? '' : 's'}</b> — press Show log to see which, and why. `
-          + 'A problem means one detail was skipped, not that the person was missed.'
-        : ' · no problems.');
+      + tail;
   }
   if (btn) btn.hidden = true;
 }

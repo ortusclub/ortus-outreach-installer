@@ -91,6 +91,18 @@ test('an unrelated contact returned by the email search is ignored', async () =>
   assert.equal(out.has('666'), false);
 });
 
+test('a shell holding the synthetic address as a SECONDARY email is recovered (not planned as a create)', async () => {
+  // Nicolle's 40 failures (2026-09-10): the record's PRIMARY email is a real
+  // address and the synthetic key sits in hs_additional_emails. HubSpot's email
+  // search still returns it, but the old map-back read only `email` (the real
+  // one) and found nothing — so the person was planned as new and the create
+  // collided on the synthetic address. The map-back now also reads the secondary.
+  const patrick = { id: 'p1', properties: { email: 'patrick@real.com', hs_additional_emails: syntheticEmail('167892408') } };
+  const p = portal({ byEmail: { [syntheticEmail('167892408')]: [patrick] } });
+  const out = await lookupByMemberIds(['167892408'], { fetchImpl: p.fetchImpl, token: TOKEN });
+  assert.equal(out.get('167892408').id, 'p1', 'matched via the secondary email → updated, not duplicated');
+});
+
 // ── Third pass: match by LinkedIn URL (people in HubSpot with no member id) ──
 
 test('a contact found only by its LinkedIn URL is recovered (prevents a duplicate)', async () => {
