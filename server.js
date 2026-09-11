@@ -60,7 +60,7 @@ import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, 
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
-import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
+import { spreadsheetIdFromUrl, extractSheetGid, withGid, buildSuppressionSet, isRowSuppressed } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, usesProfileAsGuest, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
@@ -145,7 +145,7 @@ const UI_PREVIEW = process.env.ORTUS_UI_PREVIEW === '1';
 const pkg = JSON.parse(await readFile(resolve(__dirname, 'package.json'), 'utf8'));
 const APP_VERSION = pkg.version;
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
 // ── Public auth endpoints (no session required) ────────────────────
@@ -758,6 +758,35 @@ app.get('/api/sheet/preview', async (req, res) => {
   }
 });
 
+// Suppression-aware sheet preview — same as GET /api/sheet/preview, but
+// accepts a suppression list (emails / LinkedIn URLs / membership IDs) via
+// POST body and filters those rows out BEFORE computing totalRows/preview.
+// POST (not GET) because a real suppression list can be tens of thousands of
+// entries, too large for a query string.
+app.post('/api/sheet/preview', async (req, res) => {
+  try {
+    const { url, suppressionValues } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'url is required' });
+
+    const rows = await fetchSheet(url);
+    const suppressionSet = buildSuppressionSet(Array.isArray(suppressionValues) ? suppressionValues : []);
+    const filteredRows = suppressionSet.size
+      ? rows.filter((row) => !isRowSuppressed(row, suppressionSet))
+      : rows;
+    const suppressedCount = rows.length - filteredRows.length;
+
+    res.json({
+      totalRows: filteredRows.length,
+      columns: filteredRows.length > 0 ? Object.keys(filteredRows[0]) : (rows.length > 0 ? Object.keys(rows[0]) : []),
+      preview: filteredRows.slice(0, 5),
+      suppressedCount,
+    });
+  } catch (err) {
+    console.error('Sheet preview (suppression) error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Tab enumeration — used by the frontend tab picker (Task 4, Fix A).
 // Returns the list of sheets/tabs in the workbook so the operator can choose
@@ -1179,7 +1208,10 @@ function buildCampaignConfig(body) {
           multiTab,
           // Fix B Task 3: pause the campaign when a 429/throttle is detected.
           // Defaults to true when absent or undefined so legacy clients opt-in automatically.
-          pauseOnThrottle: pauseOnThrottleRaw } = body || {};
+          pauseOnThrottle: pauseOnThrottleRaw,
+          // Suppression Lists (optional) — raw emails/LinkedIn URLs/membership
+          // IDs gathered client-side from Global + Local uploads/paste boxes.
+          suppressionValues } = body || {};
   const pauseOnThrottle = pauseOnThrottleRaw === false ? false : true;
   // Coerce sheetGid to digits only; fall back to extracting from the URL.
   const sheetGid = sheetGidRaw != null
@@ -1192,6 +1224,7 @@ function buildCampaignConfig(body) {
   }
   return {
     profileIds,
+    suppressionValues: Array.isArray(suppressionValues) ? suppressionValues : [],
     benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.filter((x) => typeof x === 'string') : [],
     sheetUrl,
     templates: templates || {},

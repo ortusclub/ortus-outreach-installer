@@ -5943,6 +5943,96 @@ function _looksLikeUrlColumn(col, rows) {
   return false;
 }
 
+// Suppression Lists — reads Global + Local CSV uploads (any column with
+// "email", "linkedin", or "membership" in its header; or a plain one-value-
+// per-line file with no matching headers) plus the two paste boxes, and
+// returns a flat array of raw values ready for buildSuppressionSet on the
+// server. Errors (bad file, empty) are swallowed — suppression is optional,
+// so a problem here should never block the Preview Sheet flow.
+function _parseSuppressionCsvText(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+  const rows = lines.map((l) => l.split(','));
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const hasRecognizedHeader = header.some((h) => h.includes('email') || h.includes('linkedin') || h.includes('membership'));
+  if (!hasRecognizedHeader) {
+    return rows.map((r) => r[0]).filter(Boolean);
+  }
+  const colIdxs = header
+    .map((h, i) => ((h.includes('email') || h.includes('linkedin') || h.includes('membership')) ? i : -1))
+    .filter((i) => i >= 0);
+  const values = [];
+  for (let i = 1; i < rows.length; i++) {
+    for (const idx of colIdxs) {
+      if (rows[i][idx]) values.push(rows[i][idx].trim());
+    }
+  }
+  return values;
+}
+
+function _splitPastedSuppression(text) {
+  return (text || '').split(/[\s,;]+/).map((v) => v.trim()).filter(Boolean);
+}
+
+async function _readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+async function collectSuppressionValues() {
+  const values = [];
+  try {
+    const files = document.getElementById('suppress-file')?.files || [];
+    for (const f of files) {
+      try {
+        const text = await _readFileAsText(f);
+        values.push(..._parseSuppressionCsvText(text));
+      } catch (_) { /* one bad file shouldn't block the others */ }
+    }
+    const pasted = document.getElementById('suppress-paste')?.value || '';
+    values.push(..._splitPastedSuppression(pasted));
+  } catch (_) { /* suppression is optional — never throw from here */ }
+  return values;
+}
+
+function _wireSuppressionFileLabel() {
+  const input = document.getElementById('suppress-file');
+  const label = document.getElementById('suppress-file-name');
+  if (!input || !label || input.__labelWired) return;
+  input.__labelWired = true;
+  input.addEventListener('change', () => {
+    const n = input.files?.length || 0;
+    label.textContent = n === 0 ? 'No file chosen' : (n === 1 ? input.files[0].name : `${n} files chosen`);
+  });
+}
+document.addEventListener('DOMContentLoaded', _wireSuppressionFileLabel);
+if (document.readyState !== 'loading') _wireSuppressionFileLabel();
+
+function _wireSuppressionPasteIndicator() {
+  const textarea = document.getElementById('suppress-paste');
+  const indicator = document.getElementById('suppress-paste-indicator');
+  if (!textarea || !indicator || textarea.__indicatorWired) return;
+  textarea.__indicatorWired = true;
+  const update = () => {
+    const n = _splitPastedSuppression(textarea.value).length;
+    if (n === 0) {
+      indicator.style.display = 'none';
+      indicator.textContent = '';
+    } else {
+      indicator.style.display = '';
+      indicator.textContent = `✓ ${n} value${n === 1 ? '' : 's'} detected`;
+    }
+  };
+  textarea.addEventListener('input', update);
+  update();
+}
+document.addEventListener('DOMContentLoaded', _wireSuppressionPasteIndicator);
+if (document.readyState !== 'loading') _wireSuppressionPasteIndicator();
+
 async function previewSheet() {
   const url = document.getElementById('sheet-url').value.trim();
   const preview = document.getElementById('sheet-preview');
@@ -5950,9 +6040,26 @@ async function previewSheet() {
   preview.classList.remove('hidden');
   preview.innerHTML = 'Loading…';
   try {
-    const res = await fetch(`/api/sheet/preview?url=${encodeURIComponent(url)}`);
+    // Suppression Lists (optional): gathered from the Global/Local file
+    // uploads + paste boxes and sent to the POST variant, which filters
+    // matching rows out of the FULL sheet before totalRows/preview are
+    // computed — the preview count is the real, post-suppression count.
+    const _suppressionValues = await collectSuppressionValues();
+    const res = _suppressionValues.length
+      ? await fetch('/api/sheet/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, suppressionValues: _suppressionValues }),
+        })
+      : await fetch(`/api/sheet/preview?url=${encodeURIComponent(url)}`);
     const data = await res.json();
     if (data.error) { preview.innerHTML = `<p style="color:#f85149">Error: ${escHtml(data.error)}</p>`; return; }
+    const suppressSummaryEl = document.getElementById('suppress-summary');
+    if (suppressSummaryEl) {
+      suppressSummaryEl.textContent = data.suppressedCount
+        ? `${data.suppressedCount} lead${data.suppressedCount === 1 ? '' : 's'} suppressed and excluded from this campaign.`
+        : (_suppressionValues.length ? 'No matches found in this sheet.' : '');
+    }
     // v2.62: count becomes data-count so the CSS in .sheet-hero-preview can
     // render it as the big hero stat via ::before. Plain text fallback also
     // reads sensibly outside the hero context.
@@ -7061,6 +7168,10 @@ async function startCampaign(opts = {}) {
     benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     sheetUrl,
     sheetGid: window._chosenSheetGid || '',
+    // Suppression Lists (optional) — same values collected for the Preview
+    // Sheet suppression count. Sent through so the REAL campaign run also
+    // excludes these leads, not just the preview.
+    suppressionValues: await collectSuppressionValues(),
     multiTab: !!window._tabPickerMulti,
     templates,
     dailyLimit,

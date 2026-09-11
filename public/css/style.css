@@ -8211,6 +8211,17 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .pf-blockers .pf-group-head { color: var(--red); }
 .pf-warnings .pf-group-head { color: var(--gold); }
 .pf-passed .pf-group-head { color: var(--green); cursor: pointer; user-select: none; }
+.suppress-file-btn { display: inline-flex; align-items: center; font-family: var(--mono);
+  font-size: 0.78rem; color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px;
+  padding: 8px 16px; cursor: pointer; background: transparent; margin-right: 10px; }
+.suppress-file-btn:hover { border-color: var(--ink); }
+.suppress-file-btn input[type="file"] { display: none; }
+.suppress-file-name { font-family: var(--mono); font-size: 0.78rem; color: var(--gray); }
+#suppress-paste { display: block; box-sizing: border-box; width: 100%; max-width: 460px;
+  background: transparent; border: 1px solid var(--hairline); color: var(--ink); font-family: var(--mono);
+  font-size: 0.85rem; padding: 8px 12px; border-radius: 0; margin-top: 10px; resize: vertical; }
+#suppress-paste:focus { outline: none; border-color: var(--ink); }
+.suppress-paste-indicator { font-family: var(--mono); font-size: 0.72rem; color: var(--green); margin-top: 6px; }
 .pf-passed .caret { display: inline-block; transition: transform 0.15s; }
 .pf-passed.collapsed .caret { transform: rotate(-90deg); }
 .pf-passed.collapsed .pf-rows { display: none; }

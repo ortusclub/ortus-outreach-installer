@@ -1620,6 +1620,22 @@
             </div>
             <div class="wiz-blocklist-hint">Never contacted by any campaign. Scrapes also skip blocklisted companies, and people added by the <code>linkedin.com/in/ACw…</code> form of their URL. Email domains apply to campaigns only, since a scrape has no email address to match against.</div>
           </div>
+
+          <!-- Suppression List — CSV upload(s) and/or a pasted list of
+               emails/LinkedIn URLs/membership IDs. Optional, not persisted —
+               re-supplied per campaign since these lists change often.
+               Checked at Preview Sheet time and re-applied for real at launch. -->
+          <div class="wiz-blocklist" id="wiz-suppression">
+            <div class="wiz-blocklist-label">Suppression List <span style="font-weight:400;color:var(--gray);font-size:0.7rem">(optional — checked when you Preview Sheet)</span></div>
+            <label class="suppress-file-btn" for="suppress-file">
+              <span>Choose file(s)</span>
+              <input type="file" id="suppress-file" accept=".csv,text/csv" multiple />
+            </label>
+            <span class="suppress-file-name" id="suppress-file-name">No file chosen</span>
+            <textarea id="suppress-paste" rows="3" placeholder="Or paste emails / LinkedIn URLs / membership IDs — comma or newline separated"></textarea>
+            <div class="suppress-paste-indicator" id="suppress-paste-indicator" style="display:none"></div>
+            <div class="wiz-blocklist-hint" id="suppress-summary">People on this list are never contacted by this campaign — matched by email or LinkedIn URL/membership ID.</div>
+          </div>
         </div>
 
         <!-- v2.58.x — IC sheet mapping (Variant C — progressive disclosure).

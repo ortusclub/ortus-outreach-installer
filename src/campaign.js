@@ -25,7 +25,7 @@ import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
-import { withGid, extractSheetGid } from './utils.js';
+import { withGid, extractSheetGid, buildSuppressionSet, isRowSuppressed } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
@@ -2028,7 +2028,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [], suppressionValues = [] }) {
   clearRuntimeInterruption();
   if (campaign.running) throw new Error('Campaign already running');
   campaign.executionId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -2840,18 +2840,47 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     const _allExcludedUrls = [...new Set([...(excludedUrls || []), ..._centralBlocklistUrls])];
     const _pfExcluded = new Set(_allExcludedUrls.map((u) =>
       String(u).toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0]));
-    const _pfRows = _pfExcluded.size
+    // Suppression Lists (optional) — same mechanism/values used by the
+    // Preview Sheet suppression count, applied here as the real, final
+    // exclusion before any lead is contacted. Matches by email OR LinkedIn
+    // URL/membership ID (isRowSuppressed checks every column whose header
+    // mentions email/linkedin/membership).
+    const _suppressionSet = buildSuppressionSet(suppressionValues);
+    const _suppressedRows = [];
+    const _pfRows = (_pfExcluded.size || _suppressionSet.size)
       ? (() => {
           const before = rows.length;
           const filtered = rows.filter((r) => {
             const u = extractLinkedInUrl(r, linkedinColumn) || '';
             const nu = u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0];
-            return !_pfExcluded.has(nu);
+            if (_pfExcluded.has(nu)) return false;
+            if (isRowSuppressed(r, _suppressionSet)) {
+              _suppressedRows.push(r);
+              return false;
+            }
+            return true;
           });
           if (filtered.length !== before) log(`Pre-flight: ${before - filtered.length} row(s) excluded total`);
           return filtered;
         })()
       : rows;
+    // Stamp "Suppressed" into the sheet's Stage column for each excluded lead
+    // so it's visible directly in the sheet, not just in the app's summary
+    // count. Best-effort and non-blocking — a sheet write hiccup here must
+    // never delay or fail the actual campaign launch.
+    if (_suppressedRows.length) {
+      log(`Suppression: ${_suppressedRows.length} lead(s) matched the suppression list and will be marked "Suppressed" in the sheet.`);
+      (async () => {
+        for (const r of _suppressedRows) {
+          const u = extractLinkedInUrl(r, linkedinColumn) || '';
+          if (!u) continue;
+          const leadName = `${r['First Name'] || r.firstName || ''} ${r['Last Name'] || r.lastName || ''}`.trim();
+          try {
+            await trackedSheetWrite(sheetUrl, u, leadName, buildSkipSheetData(mode, 'Suppressed'), linkedinColumn);
+          } catch (_) { /* best-effort — never block or throw into the campaign loop */ }
+        }
+      })().catch(() => {});
+    }
 
     const targets = _pfRows.filter(_isTarget);
     log(`Pre-filter → ${targets.length} to process, ${_pfRows.length - targets.length} skipped (mode: ${mode})`);
