@@ -2836,9 +2836,16 @@ function filterProfiles() {
     });
   }
 
-  // Search by name/email
+  // Search by name/email — supports pasting multiple emails/names at once,
+  // separated by commas, semicolons, spaces, or newlines. A profile matches
+  // if it matches ANY of the pasted terms.
   if (query) {
-    list = list.filter((p) => p.name.toLowerCase().includes(query) || p.id.includes(query));
+    const terms = query.split(/[\s,;]+/).map(t => t.trim()).filter(Boolean);
+    list = list.filter((p) => {
+      const name = p.name.toLowerCase();
+      const id = p.id;
+      return terms.some((term) => name.includes(term) || id.includes(term));
+    });
   }
 
   renderProfiles(list);
