@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   startCollect, stopCollect, buildPreview, runImport, mergeDuplicates, getState, getPlans, reset,
 } from '../../src/connections/magellan-run.js';
+import { CONNECTIONS_PROP } from '../../src/connections/magellan.js';
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
@@ -174,6 +175,33 @@ test('import reports per-stage errors instead of throwing them away', async () =
   assert.equal(r.updated, 1);
   assert.equal(r.extraEmails, 0);
   assert.deepEqual(r.errors.map((e) => e.stage), ['update', 'email']);
+});
+
+test('a create that collided with an existing record is recovered, not left "not written"', async () => {
+  reset();
+  // Viggo's class: the create collides with a record the lookup never saw
+  // (search-invisible / quarantined). batchCreate hands back the existing id;
+  // runImport reads THAT record and records the connection on it.
+  const conn = { memberId: '881836459', firstName: 'Viggo', lastName: 'S' };
+  const plans = [{ account: 'nicolled@ortus.solutions',
+    plan: { creates: [{ connection: conn, properties: {} }], updates: [], additionalEmails: [] } }];
+  let recovered = null;
+  const r = await runImport(plans, {
+    create: async () => ({ created: 0, errors: [], ids: new Map(),
+      conflicts: [{ input: { connection: conn }, existingId: '999' }] }),
+    // The colliding record already carries ANOTHER operator's tag — it must survive.
+    readByIds: async () => new Map([['999', { firstname: '', lastname: '', [CONNECTIONS_PROP]: ';someone@else.com' }]]),
+    update: async (rows) => { if (rows.length) recovered = rows; return { updated: rows.length, errors: [] }; },
+    attach: async () => {},
+    sheet: noSheet,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.created, 0);
+  assert.equal(r.updated, 1, 'the collision was recovered as an update');
+  assert.equal(r.notWritten, 0, 'nobody is left not-written');
+  assert.equal(recovered[0].id, '999', 'the EXISTING record was updated');
+  assert.ok(recovered[0].properties[CONNECTIONS_PROP].includes('nicolled@ortus.solutions'), 'connection recorded');
+  assert.ok(recovered[0].properties[CONNECTIONS_PROP].includes('someone@else.com'), 'other operator tag survives');
 });
 
 test('the import narrates itself — progress, per account, and why a problem happened', async () => {
