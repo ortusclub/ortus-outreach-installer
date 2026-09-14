@@ -13487,7 +13487,7 @@ async function _submitCloudEditRedispatch(body) {
 // resume flow uses — no new backend.
 const _historyRestartInFlight = new Set();
 async function restartLocalFromItem(id, fromStart) {
-  const viewedHistoryAtRequest = _viewingLocalHistoryStatus;
+  const viewedHistoryAtRequest = typeof _viewingLocalHistoryStatus === 'undefined' ? undefined : _viewingLocalHistoryStatus;
   const it = _boardItemsById.get(id);
   if (!it || !it.srcSettings) {
     if (typeof showCampaignToast === 'function') showCampaignToast('No saved settings for this campaign — use Duplicate instead.', 5000);
@@ -13529,7 +13529,8 @@ async function restartLocalFromItem(id, fromStart) {
       if (typeof showCampaignToast === 'function') showCampaignToast(`Restart failed: ${err || r.statusText}`, 6000);
       return;
     }
-    if (_viewingLocalHistoryStatus === viewedHistoryAtRequest) stopViewingLocalHistoryCampaign();
+    if (typeof _viewingLocalHistoryStatus !== 'undefined'
+        && _viewingLocalHistoryStatus === viewedHistoryAtRequest) stopViewingLocalHistoryCampaign();
     if (typeof pollStatus === 'function') await pollStatus();
     if (typeof showCampaignToast === 'function') showCampaignToast(fromStart ? 'Restarted from the beginning — already-done rows are skipped.' : 'Continuing where it left off…', 4500);
     if (typeof startPolling === 'function') startPolling();
@@ -28339,7 +28340,7 @@ function _stageAcctPill(a, isCurrent, counts) {
     + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>${recoveryButton}`;
 }
 
-window.openStageAccountRecovery = function(profileId, button = null) {
+function openStageAccountRecovery(profileId, button = null) {
   const key = String(profileId || '');
   const cardStatus = button ? _stageStatus.get(button.closest('[data-f="active-stage"]')) : null;
   const candidates = [
@@ -28372,7 +28373,8 @@ window.openStageAccountRecovery = function(profileId, button = null) {
       return result;
     },
   });
-};
+}
+if (typeof window !== 'undefined') window.openStageAccountRecovery = openStageAccountRecovery;
 
 // The pill's drawer. Only actions that already exist and act on THIS account:
 // watching its browser, and clearing a bench. Add/remove live in the accounts
@@ -31209,7 +31211,7 @@ window.dashRestartActive = async function(expectedExecutionId) {
   if (_activeCardCloudId()) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return false; }
   if (_activeRestartInFlight) return false;
   _activeRestartInFlight = true;
-  const viewedHistoryAtRequest = _viewingLocalHistoryStatus;
+  const viewedHistoryAtRequest = typeof _viewingLocalHistoryStatus === 'undefined' ? undefined : _viewingLocalHistoryStatus;
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
@@ -31229,7 +31231,8 @@ window.dashRestartActive = async function(expectedExecutionId) {
     });
     const result = await response.json();
     if (!response.ok || result.ok !== true) throw new Error(result.error || result.reason || 'Continuation was not accepted.');
-    if (_viewingLocalHistoryStatus === viewedHistoryAtRequest) stopViewingLocalHistoryCampaign();
+    if (typeof _viewingLocalHistoryStatus !== 'undefined'
+        && _viewingLocalHistoryStatus === viewedHistoryAtRequest) stopViewingLocalHistoryCampaign();
     showCampaignToast('Continuation accepted — watch the startup log.', 6000);
     if (typeof startPolling === 'function') startPolling();
     if (typeof pollStatus === 'function') await pollStatus();

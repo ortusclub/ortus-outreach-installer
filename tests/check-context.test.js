@@ -9,7 +9,7 @@ const pillSource = app.slice(app.indexOf('function _stageAcctPill('), app.indexO
 function pill(account) {
   return vm.runInNewContext(pillSource + '\n_stageAcctPill(account, false);', {
     account, _acctLabel: () => 'Sender', acctPillCount: () => '12/50',
-    _fgCredits: () => null, _benchWord: () => '', escHtml: String,
+    _fgCredits: () => null, _benchWord: () => '', recoveryAction: () => null, escHtml: String,
   });
 }
 
