@@ -33,6 +33,36 @@ test('duplicates are reported as a fact, never as a job to do', () => {
   assert.doesNotMatch(o.problems[0], /merge/i);
 });
 
+test('connections LinkedIn returned with no id are reported as "hidden by LinkedIn"', () => {
+  // Angelica: 806 connections, 786 checked, 20 with no name/profile/id (deactivated
+  // or restricted accounts). The gap must be explained, not left as a silent 806→786.
+  const o = buildOutcome({
+    phase: 'done', done: 1, total: 1,
+    preview: {
+      totals: { created: 251, existing: 535, updated: 535, hidden: 20 },
+      accounts: ['angelica@ortus.solutions'], read: ['angelica@ortus.solutions'],
+      blocked: [],
+    },
+  });
+  assert.equal(o.ok, true);
+  assert.equal(o.summary, '251 new · 535 already there');
+  const line = o.problems.find((p) => /hidden by LinkedIn/.test(p));
+  assert.ok(line, 'a hidden-by-LinkedIn note is present');
+  assert.match(line, /^20 people are hidden by LinkedIn/);
+  assert.match(line, /nothing was missed/);
+});
+
+test('no hidden note when nothing was hidden', () => {
+  const o = buildOutcome({
+    phase: 'done', done: 1, total: 1,
+    preview: {
+      totals: { created: 5, existing: 5, updated: 5, hidden: 0 },
+      accounts: ['a@o.com'], read: ['a@o.com'], blocked: [],
+    },
+  });
+  assert.ok(!o.problems.some((p) => /hidden by LinkedIn/.test(p)));
+});
+
 test('a blocked account is named, not counted', () => {
   const o = buildOutcome({
     phase: 'done', done: 11, total: 11,

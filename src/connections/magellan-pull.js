@@ -311,13 +311,28 @@ export function readForPlan(account, { dir = CONNECTIONS_DIR } = {}) {
       const iU = header.indexOf('URL');
       const iF = header.indexOf('First Name');
       const iL = header.indexOf('Last Name');
+      const iM = header.indexOf('Member ID');
       const byS = new Map(out.map((o) => [o.slug, o]));
       for (let i = h + 1; i < rows.length; i++) {
-        const slug = normalizeSlug(rows[i][iU]);
+        const row = rows[i];
+        if (!row || !row.some((c) => (c || '').trim())) continue; // skip a truly empty line
+        const slug = normalizeSlug(row[iU]);
         const rec = slug && byS.get(slug);
-        if (!rec) continue;
-        rec.firstName = (rows[i][iF] || '').trim();
-        rec.lastName = (rows[i][iL] || '').trim();
+        if (rec) {
+          rec.firstName = (row[iF] || '').trim();
+          rec.lastName = (row[iL] || '').trim();
+          continue;
+        }
+        // A row LinkedIn told us nothing usable about — no URL and no member id
+        // (blank except "Connected On"; deactivated / restricted accounts).
+        // readExistingBySlug keys on slug, so these never reached `out`; keep them
+        // here as hidden placeholders so Check counts them (planAccount's isHidden)
+        // instead of silently reporting 0 hidden while Collect counted them. This
+        // is the gap between "806 connections" and "786 checked".
+        const memberId = iM >= 0 ? (row[iM] || '').trim() : '';
+        if (!slug && !memberId) {
+          out.push({ slug: '', memberId: '', firstName: '', lastName: '', company: '', jobTitle: '', location: '' });
+        }
       }
     }
   }
