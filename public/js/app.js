@@ -1131,7 +1131,10 @@ document.addEventListener('click', (e) => {
   if (strip.closest('#sn-board')) {
     try { if (_snLastCampaigns) renderSalesNavBoard(_snLastCampaigns); } catch (_) { /* keep the fold responsive */ }
   } else if (typeof renderCampaignsBoard === 'function') {
-    renderCampaignsBoard();
+    Promise.resolve(renderCampaignsBoard()).then(() => {
+      const board = document.getElementById('campaigns-board');
+      if (board) _fillHistLogBoxes(board);
+    }).catch(() => { /* next board poll retries */ });
   }
   if (_snExpanded.has(cid) && typeof _refreshCloudItems === 'function') _refreshCloudItems();
 });
@@ -12357,7 +12360,15 @@ async function _renderCampaignsBoardInner() {
   // early-return is what lets it appear at all: a static board of done strips
   // renders identical markup forever, and the strip would wait behind it.
   try { renderStaleFollowups(items); } catch (_) { /* never let it break the board */ }
-  if (board.dataset.rendered === '1' && final === _lastBoardHtml) return;
+  if (board.dataset.rendered === '1' && final === _lastBoardHtml) {
+    // The board markup can be unchanged while a historical log box is still
+    // waiting for its asynchronous /api/history/:idx/log response. Always
+    // give those boxes another fill pass before the anti-jank early return;
+    // otherwise a missed/aborted first pass leaves "Loading log…" forever.
+    _fillHistLogBoxes(board);
+    _fillVjCards(board);
+    return;
+  }
   _lastBoardHtml = final;
   board.dataset.rendered = '1';
   // Keep the user-search caret alive across the re-render: note whether it held

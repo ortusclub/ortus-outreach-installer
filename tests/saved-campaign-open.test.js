@@ -29,6 +29,22 @@ test('older history entries restore settings snapshots when config is absent', (
   assert.match(body, /_configFromSettings\(entry\.mode, entry\.settings\)/);
 });
 
+test('unchanged dashboard markup still retries historical log hydration', () => {
+  const earlyReturn = app.match(/if \(board\.dataset\.rendered === '1' && final === _lastBoardHtml\) \{([\s\S]*?)\n  \}/);
+  assert.ok(earlyReturn, 'dashboard anti-jank branch is missing');
+  assert.match(earlyReturn[1], /_fillHistLogBoxes\(board\)/);
+  assert.match(earlyReturn[1], /_fillVjCards\(board\)/);
+  assert.match(earlyReturn[1], /return;/);
+});
+
+test('expanding a Dashboard card hydrates its historical log immediately', () => {
+  const start = app.indexOf('// Fold / unfold a finished-or-running strip');
+  const end = app.indexOf('// Dismiss a done strip', start);
+  const body = app.slice(start, end);
+  assert.match(body, /Promise\.resolve\(renderCampaignsBoard\(\)\)\.then/);
+  assert.match(body, /_fillHistLogBoxes\(board\)/);
+});
+
 test('saved settings mapping keeps fields added after the original mapper', () => {
   const start = app.indexOf('function _configFromSettings(mode, s)');
   const end = app.indexOf('// A local history row has no live runtime', start);
