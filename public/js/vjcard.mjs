@@ -306,7 +306,9 @@ export function vjCardControlsFor(status = {}) {
       : (running || monitor) ? `openRunningCampaignReadOnly('${id}')`
         : s.bad ? `openCampaignForEdit('${id}')`
           : `openCloudLive('${id}')`)
-    : (queued ? `window.editQueuedCampaign && window.editQueuedCampaign('${rawId}')` : 'viewRunningCampaign()');
+    : (queued ? `window.editQueuedCampaign && window.editQueuedCampaign('${rawId}')`
+      : done && s.hist ? `openLocalHistoryCampaign('${id}')`
+        : 'viewRunningCampaign()');
 
   const c = {
     open: { onclick: openOnclick },

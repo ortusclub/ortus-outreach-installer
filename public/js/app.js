@@ -9676,7 +9676,10 @@ function _configFromSettings(mode, s) {
   s = s || {};
   const gid = s.sheetGid ? String(s.sheetGid) : ((s.sheetUrl || '').match(/[#&?]gid=(\d+)/) || [])[1] || '';
   return {
-    mode, sheetUrl: s.sheetUrl || '', sheetGid: gid,
+    // Keep the complete persisted settings snapshot. Building a narrow object
+    // here silently dropped newer settings whenever a saved campaign reopened.
+    ...s,
+    mode: mode || s.mode, sheetUrl: s.sheetUrl || '', sheetGid: gid,
     dailyLimit: s.dailyLimit ?? 50, delayMin: s.delayMin ?? 30, delayMax: s.delayMax ?? 60,
     linkedinColumn: s.linkedinColumn || '', messageOpenProfiles: !!s.messageOpenProfiles,
     addNote: !!(s.templates && s.templates.connectionNote), templates: s.templates || {},
@@ -9684,6 +9687,58 @@ function _configFromSettings(mode, s) {
     concurrency: s.concurrency ?? 1, senderFirstNames: s.senderFirstNames || {},
   };
 }
+
+// A local history row has no live runtime to poll, but Open still needs to show
+// that campaign's own finished status and persisted log in the Campaign tab.
+let _viewingLocalHistoryStatus = null;
+function stopViewingLocalHistoryCampaign() { _viewingLocalHistoryStatus = null; }
+window.stopViewingLocalHistoryCampaign = stopViewingLocalHistoryCampaign;
+
+async function openLocalHistoryCampaign(id) {
+  const it = _boardItemsById.get(id) || (_snItemsById && _snItemsById.get(id));
+  if (!it || it.histIdx == null) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Could not find that saved campaign.', 5000);
+    return;
+  }
+  const config = _configFromSettings(it.mode, it.srcSettings || (it.hist && it.hist.settings));
+  let logs = Array.isArray(it.logs) ? it.logs.slice() : [];
+  try {
+    const r = await fetch(`/api/history/${encodeURIComponent(it.histIdx)}/log`);
+    const d = await r.json();
+    if (r.ok && Array.isArray(d.lines)) logs = d.lines.slice(-200);
+  } catch (_) { /* the saved setup still opens if its log is unavailable */ }
+
+  try { stopViewingCloudCampaign(); } catch (_) { /* not viewing cloud */ }
+  try { clearActiveDraft(); } catch (_) { /* history is not a draft */ }
+  window.__viewingActiveCampaign = false;
+  liveStatusForcedOpen = true;
+  goCreateCampaign();
+
+  const status = statusFromItem({
+    ...it,
+    logs,
+    profileIds: Array.isArray(config.profileIds) ? config.profileIds : [],
+    sheetUrl: config.sheetUrl || '',
+  });
+  _viewingLocalHistoryStatus = status;
+  window._openEditNameOverride = it.name || '';
+  try { localStorage.setItem('campaignName', it.name || ''); } catch (_) { /* private mode */ }
+
+  const paint = () => {
+    if (_viewingLocalHistoryStatus !== status) return;
+    if (typeof applyPresetConfig === 'function') applyPresetConfig(config);
+    const input = document.getElementById('campaign-name-input');
+    if (input) input.value = it.name || '';
+    try { renderActiveCard(status); } catch (_) { /* status poll will retry */ }
+    try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+    try { placeLiveCard(); } catch (_) { /* */ }
+    const sec = document.getElementById('nav-status');
+    if (sec) sec.classList.remove('collapsed');
+  };
+  paint();
+  setTimeout(paint, 180);
+}
+window.openLocalHistoryCampaign = openLocalHistoryCampaign;
 
 // Resolve the source config for a strip, then open the pre-filled wizard.
 async function duplicateCampaign(id) {
@@ -10988,7 +11043,7 @@ function renderUnifiedStrip(it) {
   // Duplicate + Debrief + ✕ dismiss, all as icons.
   const _dib = (svg, tip, onclick, cls = '') =>
     `<button type="button" class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
-  const _openPill = `<button class="mini solid" onclick="viewRunningCampaign()">Open</button>`;
+  const _openActiveLocal = `<button class="mini solid" onclick="viewRunningCampaign()">Open</button>`;
   // Cloud campaigns have no local cockpit to restore, so their Open must NOT
   // call viewRunningCampaign() (which drops the operator in the blank New-
   // Campaign wizard). openCloudLive() focuses the campaign's live strip instead.
@@ -11003,12 +11058,12 @@ function renderUnifiedStrip(it) {
     foot = `<button type="button" class="mini sn-delete-forever" onclick="event.stopPropagation();deleteBoardCampaign('${escHtml(it.id)}', this)">Delete for good</button>`;
   } else if (running && it.where === 'local') {
     foot = monitoring
-      ? _dib(V3_SVG_STOP, 'Stop monitoring', 'window.dashStopActive && window.dashStopActive()', 'danger') + _openPill
+      ? _dib(V3_SVG_STOP, 'Stop monitoring', 'window.dashStopActive && window.dashStopActive()', 'danger') + _openActiveLocal
       : (it.paused
         ? _dib(V3_SVG_PLAY, 'Resume', 'window.dashPauseActive && window.dashPauseActive()')
         : _dib(V3_SVG_PAUSE, 'Pause', 'window.dashPauseActive && window.dashPauseActive()'))
       + _dib(V3_SVG_STOP, 'Stop', 'window.dashStopActive && window.dashStopActive()', 'danger')
-      + _openPill;
+      + _openActiveLocal;
   } else if (running && cloud) {
     // "Show campaign happening" — watch the VM's browser live. Shown in BOTH
     // sending AND monitoring: cloud browsers are short-lived (a few seconds per
@@ -11070,7 +11125,7 @@ function renderUnifiedStrip(it) {
       ? (it.bad
         ? `<button class="mini solid" onclick="openCampaignForEdit('${escHtml(it.id)}')">Open</button>`
         : _cloudOpen)
-      : _openPill;
+      : `<button class="mini solid" onclick="openLocalHistoryCampaign('${escHtml(it.id)}')">Open</button>`;
     // ⚡ Check now on a FINISHED/STOPPED cloud connect_and_* strip — late
     // acceptances still need a sweep + intro/DM backlog flush after the campaign
     // was stopped overall. One-shot on the engine: no re-arm, no resumed sending.
@@ -12197,6 +12252,8 @@ async function _renderCampaignsBoardInner() {
         isFG: p.mode === 'follower_growth', bucket: 'done', sent: p.totalProcessed || 0,
         total: p.totalProcessed || 0, accounts: (p.profiles || []).length, mine: true,
         bad: stopped, badLabel: 'Stopped', srcSettings: p.settings || null, histIdx,
+        profileIds: (p.settings && Array.isArray(p.settings.profileIds)) ? p.settings.profileIds : (p.profiles || []),
+        sheetUrl: (p.settings && p.settings.sheetUrl) || '',
         hist: p,
         logs: endedLogs });
     }
@@ -20856,8 +20913,8 @@ async function updateWizardQueueState() {
   _applyLaunchButtonClasses(isRunning);
 }
 window.updateWizardQueueState = updateWizardQueueState;
-function goCreateCampaign() { window.location.hash = '#/new'; }
-function goDashboard()      { window.location.hash = '#/'; }
+function goCreateCampaign() { stopViewingLocalHistoryCampaign(); window.location.hash = '#/new'; }
+function goDashboard()      { stopViewingLocalHistoryCampaign(); window.location.hash = '#/'; }
 function goConnections()    { window.location.hash = '#/connections'; }
 function goReplies()        { window.location.hash = '#/replies'; }
 window.goReplies = goReplies;
@@ -21031,18 +21088,27 @@ async function editDraft(id) {
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
   wizardDirty = false;
   _runningEditWarningShown = false;
-  // Pre-fill the wizard's name input from the draft so the user sees it
-  // immediately (syncCampaignNameInput will pick up the active draft id on
-  // wizard entry too, but setting it here avoids a flicker).
+  // Restore the complete draft snapshot, not just its name. The previous route
+  // fetched d.config but never applied it, so Open displayed an empty wizard.
+  let draft = null;
   try {
     const r = await fetch('/api/drafts/' + encodeURIComponent(id));
     if (r.ok) {
-      const d = await r.json();
-      const input = document.getElementById('campaign-name-input');
-      if (input && d) input.value = d.name || '';
+      draft = await r.json();
     }
   } catch {}
   goCreateCampaign();
+  if (draft) {
+    window._openEditNameOverride = draft.name || '';
+    const hydrate = () => {
+      if (getActiveDraftId() !== id) return;
+      if (draft.config && typeof applyPresetConfig === 'function') applyPresetConfig(draft.config);
+      const input = document.getElementById('campaign-name-input');
+      if (input) input.value = draft.name || '';
+    };
+    hydrate();
+    setTimeout(hydrate, 100);
+  }
   if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
 }
 window.editDraft = editDraft;
@@ -22610,8 +22676,8 @@ async function editPastCampaign(idx) {
     }).catch(() => {});
     // Full restore from the snapshot config when present. Older history rows
     // without `config` only restore what little was stored at the top level.
-    if (entry.config) {
-      applyPresetConfig(entry.config);
+    if (entry.config || entry.settings) {
+      applyPresetConfig(entry.config || _configFromSettings(entry.mode, entry.settings));
     } else {
       applyPresetConfig({
         mode: entry.mode,
@@ -29570,6 +29636,9 @@ window.activeCardAcceptsStatus = activeCardAcceptsStatus;
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
+  // A finished local campaign has no live process, so the ordinary two-second
+  // local poll is idle. Preserve the explicitly selected saved snapshot.
+  if (_viewingLocalHistoryStatus && !_viewingCloudId) status = _viewingLocalHistoryStatus;
   // During a handover the source is stopped before the target is created. The
   // empty singleton status in that deliberate interval is not a finished
   // campaign; preserve the source card and let the handover banner explain the
@@ -29644,7 +29713,8 @@ window.renderActiveCard = function(status) {
   // review what happened, instead of wiping straight to "No campaign running".
   // Detected by: not running, not monitoring, but logs exist from this session.
   const isFinished = !!(status && !status.running && !isMonitoring && !isInterrupted && !isLaunching && !isDailyWait && !isNeedsReview
-    && Array.isArray(status.logs) && status.logs.length > 0);
+    && (status.state === 'done' || status.bucket === 'done'
+      || (Array.isArray(status.logs) && status.logs.length > 0)));
   if (isDailyWait || isNeedsReview) {
     card.classList.remove('is-empty', 'is-monitor', 'is-queued', 'is-done');
     card.classList.toggle('is-waiting', isDailyWait);
