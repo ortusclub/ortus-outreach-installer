@@ -54,6 +54,16 @@ test('historical log recovery hydrates the shared item used by the detailed Dash
   assert.match(body, /_fillVjCards\(board\)/);
 });
 
+test('dashboard campaign timestamps use one formatter in compact and detailed cards', () => {
+  assert.match(app, /function _campaignTimestamp\(it\)/);
+  assert.match(app, /label = 'Ended'/);
+  assert.match(app, /label = 'Scheduled'/);
+  assert.match(app, /\$\{_campaignTimestampHtml\(it\)\}/);
+  const fillStart = app.indexOf('function _fillVjCards(board)');
+  const fillEnd = app.indexOf('function renderUnifiedStrip(it)', fillStart);
+  assert.match(app.slice(fillStart, fillEnd), /_campaignTimestamp\(it\)/);
+});
+
 test('saved settings mapping keeps fields added after the original mapper', () => {
   const start = app.indexOf('function _configFromSettings(mode, s)');
   const end = app.indexOf('// A local history row has no live runtime', start);

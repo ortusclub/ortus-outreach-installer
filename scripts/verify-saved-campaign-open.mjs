@@ -78,6 +78,8 @@ try {
       campaignId: target?.dataset.cid || '',
       logText: target?.querySelector('.sn-logbox')?.textContent || '',
       detailedLogText: target?.querySelector('.sn-vjcard')?.textContent || '',
+      compactTimestamp: target?.querySelector('.sn-compact .sn-campaign-stamp')?.textContent || '',
+      detailedTimestamp: target?.querySelector('.sn-vjcard .sn-campaign-stamp')?.textContent || '',
     };
   }, campaignName);
   const dashboardLogText = dashboardState.logText;
@@ -85,6 +87,10 @@ try {
     'expanded Dashboard card did not receive the recovered historical log');
   assert.doesNotMatch(dashboardState.detailedLogText, /LAST 0 EVENTS/i,
     'expanded Dashboard card still reports an empty historical log');
+  assert.match(dashboardState.compactTimestamp, /Ended\s*·\s*24 Aug 2026\s*·\s*19:52/i,
+    'compact Dashboard card is missing its campaign end timestamp');
+  assert.match(dashboardState.detailedTimestamp, /Ended\s*·\s*24 Aug 2026\s*·\s*19:52/i,
+    'expanded Dashboard card is missing its campaign end timestamp');
   const campaignId = dashboardState.campaignId;
   assert.ok(campaignId, 'saved Dashboard card has no campaign id');
   await page.evaluate(async (id) => window.openLocalHistoryCampaign(id), campaignId);

@@ -10097,6 +10097,37 @@ function _buildSkippedSection(it) {
 // docs/superpowers/specs/2026-07-11-expanded-strip-card2-parity-design.md
 let _snItemsById = new Map();
 
+function _campaignTimestamp(it) {
+  if (!it) return null;
+  let label = 'Started';
+  let raw = it.startedAt || it.createdAt || null;
+  if (it.bucket === 'done') {
+    label = 'Ended';
+    raw = it.endedAt || it.completedAt || (it.hist && it.hist.date) || it.updatedAt || raw;
+  } else if (it.bucket === 'draft') {
+    label = 'Saved';
+  } else if (it.scheduledAt) {
+    label = 'Scheduled';
+    raw = it.scheduledAt;
+  } else if (it.bucket === 'queued') {
+    label = 'Queued';
+  }
+  const date = new Date(raw || 0);
+  if (!raw || Number.isNaN(date.getTime())) return null;
+  const day = date.toLocaleDateString('en-GB', { day: '2-digit' });
+  const month = date.toLocaleDateString('en-GB', { month: 'short' });
+  const year = date.toLocaleDateString('en-GB', { year: 'numeric' });
+  const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return { label, text: `${day} ${month} ${year} · ${time}` };
+}
+
+function _campaignTimestampHtml(it) {
+  const stamp = _campaignTimestamp(it);
+  return stamp
+    ? `<div class="sn-campaign-stamp"><strong>${escHtml(stamp.label)}</strong> · ${escHtml(stamp.text)}</div>`
+    : '';
+}
+
 function vjCardSkeleton(cid) {
   const src = document.getElementById('active-card');
   if (!src) return '';
@@ -10152,6 +10183,8 @@ function vjCardSkeleton(cid) {
   const _clog = clone.querySelector('[data-f="active-log"]'); if (_clog) _clog.innerHTML = '';
   const _cctrl = clone.querySelector('.vj-controls'); if (_cctrl) _cctrl.innerHTML = '';
   const _cbulk = clone.querySelector('.vj-bulk'); if (_cbulk) _cbulk.style.display = 'none';
+  const _cname = clone.querySelector('[data-f="activeName"]')?.closest('.vj-name');
+  if (_cname) _cname.insertAdjacentHTML('beforeend', '<span class="sn-campaign-stamp" hidden></span>');
   return clone.outerHTML;
 }
 
@@ -10791,6 +10824,12 @@ function _fillVjCards(board) {
     const it = cid ? _snItemsById.get(cid) : null;
     if (!it) return;
     const status = statusFromItem(it);
+    const stamp = _campaignTimestamp(it);
+    const stampEl = card.querySelector('.sn-campaign-stamp');
+    if (stampEl) {
+      stampEl.hidden = !stamp;
+      stampEl.innerHTML = stamp ? `<strong>${escHtml(stamp.label)}</strong> · ${escHtml(stamp.text)}` : '';
+    }
     card.dataset.nextcheck = status.nextCheckAt || '';
     card.dataset.fudue = (status.followUp && status.followUp.dueAt) || '';
     try { fillVjCard(card, status); } catch (_) { /* per-card best-effort */ }
@@ -11150,6 +11189,7 @@ function renderUnifiedStrip(it) {
     <div class="sn-top"><span class="sn-type">Campaign · ${escHtml(badge)}</span>${it.mine ? '<span class="sn-you">You</span>' : (it.owner ? `<span class="sn-owner">· ${escHtml(it.owner)}</span>` : '')}${wherePill}${whenPill}
       <span class="sn-status">${dot} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
+    ${_campaignTimestampHtml(it)}
     <div class="sn-flow">${flow}</div>
     ${psBadgeHtml}
     ${acctBadgeHtml}
@@ -11169,14 +11209,15 @@ function renderUnifiedStrip(it) {
 // label). Slim collapsed-style strip: Open → wizard (editDraft), 🗑 → delete.
 function renderDraftStrip(d) {
   const name = d.name || '(unnamed draft)';
-  const created = (typeof dashboardFormatDate === 'function' && dashboardFormatDate(d.createdAt)) || '';
+  const created = _campaignTimestampHtml({ bucket: 'draft', createdAt: d.createdAt });
   return `
   <div class="sn-strip done sn-collapsed draft" data-cid="draft:${escHtml(d.id)}">
     <div class="sn-compact">
     <div class="sn-top"><span class="sn-type">Campaign · Draft</span><span class="sn-you">You</span>
       <span class="sn-status"><span class="dot q"></span> Draft</span></div>
     <div class="sn-name">${escHtml(name)}</div>
-    <div class="sn-flow">Saved as a draft${created ? ` · created <b>${escHtml(created)}</b>` : ''} · not launched yet</div>
+    ${created}
+    <div class="sn-flow">Saved as a draft · not launched yet</div>
     <div class="sn-foot"><div class="right">`
     + `<button type="button" class="dock-btn danger" data-tip="Delete draft" aria-label="Delete draft" onclick="deleteDraftStrip('${escHtml(d.id)}', this)">${V3_SVG_TRASH || V3_SVG_XMARK}</button>`
     + `<button class="mini solid" onclick="editDraft('${escHtml(d.id)}')">Open</button>`
@@ -12050,6 +12091,8 @@ async function _renderCampaignsBoardInner() {
         endNotice: c.end_notice || null,
         stopReason: c.stop_reason || '',
         createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
+        updatedAt: c.updated_at || null,
+        endedAt: c.ended_at || c.completed_at || (bucket === 'done' ? c.updated_at : null),
         logs: Array.isArray(d._logLines) && d._logLines.length
           ? d._logLines
           : _mergeCloudLog(
