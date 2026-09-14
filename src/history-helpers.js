@@ -88,13 +88,18 @@ export async function readCampaignLog(idx, { limit = 500 } = {}) {
   }
   const entry = history[idx];
   const name = entry.name || '';
-  const logFile = dataPath('campaign.log');
-  let text;
-  try {
-    text = await readFile(logFile, 'utf-8');
-  } catch {
-    return { ok: true, name, lines: [], total: 0 };
+  // campaign.js rotates the previous file to campaign.log.1 at campaign
+  // startup. Historical runs can therefore live exclusively in the rotated
+  // file. Read oldest -> newest so time-window slicing and the final limit
+  // preserve chronological order across the rotation boundary.
+  const logFiles = [dataPath('campaign.log.1'), dataPath('campaign.log')];
+  const chunks = [];
+  for (const logFile of logFiles) {
+    try { chunks.push(await readFile(logFile, 'utf-8')); }
+    catch { /* a missing current or rotated file is normal */ }
   }
+  if (!chunks.length) return { ok: true, name, lines: [], total: 0 };
+  const text = chunks.join('\n');
   const all = text.split('\n');
   // Primary: slice by the campaign's time window — entry.date is the END
   // timestamp and entry.duration the run length in seconds. Per-lead log

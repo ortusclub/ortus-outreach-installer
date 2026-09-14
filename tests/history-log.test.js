@@ -16,6 +16,7 @@ process.env.ORTUS_DATA_DIR = TEST_DATA_DIR;
 
 const HIST_PATH = path.join(TEST_DATA_DIR, 'history.json');
 const LOG_PATH = path.join(TEST_DATA_DIR, 'campaign.log');
+const ROTATED_LOG_PATH = path.join(TEST_DATA_DIR, 'campaign.log.1');
 
 // Dynamic import so the env var above is in effect when paths.js loads.
 const { readCampaignLog } = await import('../src/history-helpers.js');
@@ -24,10 +25,12 @@ function writeHistory(arr) {
   fs.writeFileSync(HIST_PATH, JSON.stringify(arr, null, 2), 'utf-8');
 }
 function writeLog(lines) {
+  try { fs.unlinkSync(ROTATED_LOG_PATH); } catch { /* fine */ }
   fs.writeFileSync(LOG_PATH, lines.join('\n'), 'utf-8');
 }
 function removeLog() {
   try { fs.unlinkSync(LOG_PATH); } catch { /* fine */ }
+  try { fs.unlinkSync(ROTATED_LOG_PATH); } catch { /* fine */ }
 }
 
 describe('readCampaignLog', { concurrency: 1 }, () => {
@@ -67,6 +70,21 @@ describe('readCampaignLog', { concurrency: 1 }, () => {
     assert.equal(res.ok, true);
     assert.deepEqual(res.lines, []);
     assert.equal(res.total, 0);
+  });
+
+  test('recovers a historical run from the rotated campaign log', async () => {
+    writeHistory([{ name: 'RotatedRun', mode: 'CC', date: '2026-07-07T10:05:00.000Z', duration: 300 }]);
+    removeLog();
+    fs.writeFileSync(ROTATED_LOG_PATH, [
+      '[2026-07-07T10:00:10.000Z] === Campaign starting ===',
+      '[2026-07-07T10:02:00.000Z] sent to Alice',
+      '[2026-07-07T10:05:00.000Z] === Campaign ended ===',
+    ].join('\n'), 'utf-8');
+    const res = await readCampaignLog(0);
+    assert.equal(res.ok, true);
+    assert.equal(res.lines.length, 3);
+    assert.match(res.lines[1], /Alice/);
+    removeLog();
   });
 
   test('out-of-range idx returns ok:false', async () => {
