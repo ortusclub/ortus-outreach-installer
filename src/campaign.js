@@ -71,7 +71,7 @@ import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import { plainLine } from './log-voice.js';
 import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy, isInterruption, interruptionMatches } from './runtime-interruption.js';
-import { writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
+import { readJson, writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
 import {
   sample as rmSample,
   decideThrottle,

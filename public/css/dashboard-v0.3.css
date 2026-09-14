@@ -5,20 +5,28 @@
      AND .theme-dark so this convention works alongside the existing app's
      .theme-light-only toggle. */
   body[data-dashboard='v3'] {
-    --bg: #fafafa;
-    --bg-soft: #faf9f7;
-    --ink: #0a0a0a;
-    --gray: #6b6b6b;
-    --gray-faint: #b8b8b6;
-    --hairline: rgba(0, 0, 0, 0.15);
-    --hairline-soft: rgba(0, 0, 0, 0.06);
-    --green: #3fb950;
-    --red: #f85149;
+    --bg: #f5f3ee;
+    --bg-soft: #efede7;
+    --ink: #1a1a17;
+    --gray: #77736b;
+    --gray-faint: #a5a198;
+    --hairline: #d5d1c8;
+    --hairline-soft: #e3e0d9;
+    --green: #587b62;
+    --green-soft: #dfe8df;
+    --green-ink: #17331f;
+    --red: #b65f58;
+    --red-soft: #f2dedb;
+    --red-ink: #6d2924;
+    --gold-soft: #eee2cd;
+    --gold-ink: #5d431a;
+    --neutral-pill: #e6e3dc;
+    --neutral-pill-ink: #4d4b46;
     /* A stop the operator asked for is a state, not a fault. Slate keeps it
        clearly distinct from --red (error / interrupted), --gold (the pending
        pill sitting right below it) and --blue (the monitoring sweep). */
     --stop: #5B6577;
-    --gold: #F7BE68;
+    --gold: #a47f35;
     --blue: #4a7bb8;   /* monitoring sweep bar */
 
     /* Section bands — only LIVE sections (Active, Monitoring). Neutral grays,
@@ -34,13 +42,24 @@
     --sidebar-w: 280px;
   }
   body[data-dashboard='v3'].theme-dark {
-    --bg: #0a0a0a;
-    --bg-soft: rgba(255, 255, 255, 0.03);
-    --ink: #fafafa;
-    --gray: #999;
-    --gray-faint: #5a5a58;
-    --hairline: rgba(255, 255, 255, 0.15);
-    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --bg: #1b1b19;
+    --bg-soft: #20201e;
+    --ink: #eeeae2;
+    --gray: #aaa69d;
+    --gray-faint: #6f6d67;
+    --hairline: #41413c;
+    --hairline-soft: #33332f;
+    --green: #76947c;
+    --green-soft: #2d3b30;
+    --green-ink: #dce9dd;
+    --red: #c76e68;
+    --red-soft: #402826;
+    --red-ink: #efc3bf;
+    --gold-soft: #3a3225;
+    --gold-ink: #ead5ad;
+    --neutral-pill: #30302d;
+    --neutral-pill-ink: #ddd9d1;
+    --gold: #c39a58;
 
     --blue: #6ea3d4;
     --stop: #9AA4B8;
@@ -1755,6 +1774,88 @@ body[data-dashboard='v3'] .sn-acctwarn {
 }
 body[data-dashboard='v3'] .sn-acctwarn-txt { font-size: 0.76rem; color: var(--ink); }
 body[data-dashboard='v3'] .sn-acctwarn-pills { display: inline-flex; gap: 7px; flex-wrap: wrap; }
+
+/* High-visibility dashboard pills. Keep card rails/gradients untouched. */
+body[data-dashboard='v3'] .btn-pill.go {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--green-ink);
+  font-weight: 700;
+}
+body[data-dashboard='v3'] .btn-pill.go:hover {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--green-ink);
+  filter: brightness(.92);
+}
+body.theme-dark[data-dashboard='v3'] .btn-pill.go { color: var(--green-ink); }
+
+/* Stopped campaign actions already carry their full names in data-tip. Render
+   only those two existing icon controls as the labelled pills used before;
+   their onclick handlers and campaign-state logic remain unchanged. */
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Continue where it left off"],
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Restart from the beginning"] {
+  width: auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 16px;
+  border: 1px solid;
+  gap: 0;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+  transform: none;
+}
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Continue where it left off"] {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--green-ink);
+}
+body.theme-dark[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Continue where it left off"] {
+  color: var(--green-ink);
+}
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Restart from the beginning"] {
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--ink);
+}
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Continue where it left off"]::after {
+  content: "Continue where it left off";
+}
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Restart from the beginning"]::after {
+  content: "Restart campaign";
+}
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Continue where it left off"] svg,
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Restart from the beginning"] svg {
+  display: none;
+}
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Continue where it left off"]:hover,
+body[data-dashboard='v3'] .sn-strip.done .sn-foot .dock-btn[data-tip="Restart from the beginning"]:hover {
+  filter: brightness(.92);
+  transform: none;
+}
+
+body[data-dashboard='v3'] .stg-acct .cap-badge {
+  border-color: transparent;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+body[data-dashboard='v3'] .stg-acct .cap-badge .nm { color: inherit; font-weight: 600; }
+body[data-dashboard='v3'] .stg-acct .cap-badge.ok { background: var(--green-soft); color: var(--green-ink); border-color: var(--green); }
+body[data-dashboard='v3'] .stg-acct .cap-badge.warn { background: var(--gold-soft); color: var(--gold-ink); border-color: var(--gold); }
+body[data-dashboard='v3'] .stg-acct .cap-badge.bad { background: var(--red-soft); color: var(--red-ink); border-color: var(--red); }
+body[data-dashboard='v3'] .stg-acct .cap-badge.muted { background: var(--neutral-pill); color: var(--neutral-pill-ink); border-color: var(--hairline); }
+body.theme-dark[data-dashboard='v3'] .stg-acct .cap-badge.ok { color: var(--green-ink); }
+body.theme-dark[data-dashboard='v3'] .stg-acct .cap-badge.warn { color: var(--gold-ink); }
+body.theme-dark[data-dashboard='v3'] .stg-acct .cap-badge.bad { color: var(--red-ink); }
+
+body[data-dashboard='v3'] .vj-prof-chip { border-color: transparent; font-weight: 600; }
+body[data-dashboard='v3'] .vj-prof-row.is-sending .vj-prof-chip { background: var(--green-soft); color: var(--green-ink); border-color: var(--green); }
+body[data-dashboard='v3'] .vj-prof-row.is-warn .vj-prof-chip { background: var(--gold-soft); color: var(--gold-ink); border-color: var(--gold); }
+body[data-dashboard='v3'] .vj-prof-row.is-done .vj-prof-chip { background: var(--neutral-pill); color: var(--neutral-pill-ink); border-color: var(--hairline); }
 
 /* ══ THE ONE NEW COMPONENT: the per-account step panel ═══════════════════
    One column per account, divided by the same hairline the card already

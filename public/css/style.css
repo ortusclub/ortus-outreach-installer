@@ -9,23 +9,31 @@
 
 :root {
   /* Canvas */
-  --bg: #0a0a0a;
-  --bg-soft: rgba(255, 255, 255, 0.03);
-  --ink: #fafafa;
-  --gray: #999999;
-  --hairline: rgba(255, 255, 255, 0.15);
-  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --bg: #1b1b19;
+  --bg-soft: #20201e;
+  --ink: #eeeae2;
+  --gray: #aaa69d;
+  --hairline: #41413c;
+  --hairline-soft: #33332f;
 
   /* Functional-only */
-  --green: #3fb950;
-  --red: #f85149;
+  --green: #76947c;
+  --green-soft: #2d3b30;
+  --green-ink: #dce9dd;
+  --red: #c76e68;
+  --red-soft: #402826;
+  --red-ink: #efc3bf;
   /* Monitoring accent — matches the dashboard monitoring card's blue.
      Brightened for legibility now that it's used for text (mode chip),
      not just the pulsing dot. Light theme darkens it for contrast. */
   --blue: #6ea3d4;
 
   /* Gold — used ONLY on the primary Start CTA label */
-  --gold: #F7BE68;
+  --gold: #c39a58;
+  --gold-soft: #3a3225;
+  --gold-ink: #ead5ad;
+  --neutral-pill: #30302d;
+  --neutral-pill-ink: #ddd9d1;
 
   /* Type */
   --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
@@ -41,9 +49,9 @@
   --runbar-h: 0px;
 
   /* v2.61: Mode-picker card surfaces (dark) */
-  --card-bg: rgba(255, 255, 255, 0.05);
-  --card-bg-hover: rgba(255, 255, 255, 0.08);
-  --card-border: rgba(255, 255, 255, 0.18);
+  --card-bg: #232320;
+  --card-bg-hover: #292925;
+  --card-border: #41413c;
   --card-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
   --card-shadow-hover: 0 10px 26px rgba(0, 0, 0, 0.55);
   --gold-tint-bg: rgba(247, 190, 104, 0.10);
@@ -51,18 +59,29 @@
 }
 
 body.theme-light {
-  --bg: #fafafa;
-  --bg-soft: #faf9f7;
-  --ink: #0a0a0a;
-  --gray: #999999;
-  --hairline: rgba(0, 0, 0, 0.15);
-  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --bg: #f5f3ee;
+  --bg-soft: #efede7;
+  --ink: #1a1a17;
+  --gray: #77736b;
+  --hairline: #d5d1c8;
+  --hairline-soft: #e3e0d9;
+  --green: #587b62;
+  --green-soft: #dfe8df;
+  --green-ink: #17331f;
+  --red: #b65f58;
+  --red-soft: #f2dedb;
+  --red-ink: #6d2924;
+  --gold: #a47f35;
+  --gold-soft: #eee2cd;
+  --gold-ink: #5d431a;
+  --neutral-pill: #e6e3dc;
+  --neutral-pill-ink: #4d4b46;
   --blue: #3a6ea5;
 
   /* v2.61: Mode-picker card surfaces (light) */
-  --card-bg: #ffffff;
-  --card-bg-hover: #fbfaf6;
-  --card-border: rgba(0, 0, 0, 0.18);
+  --card-bg: #fbfaf7;
+  --card-bg-hover: #f7f5f0;
+  --card-border: #d5d1c8;
   --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
   --card-shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.16);
   --gold-tint-bg: rgba(247, 190, 104, 0.16);
@@ -2804,14 +2823,16 @@ body.theme-light .section.tpl-section .placeholder-tags .tag {
 }
 .passover-pill.active { color: var(--green); border-color: var(--green); }
 .passover-pill.closed { color: var(--gray); border-color: var(--hairline); }
+.passover-pill.active { background: var(--green-soft); color: var(--green-ink); border-color: var(--green); font-weight: 600; }
+.passover-pill.closed { background: var(--neutral-pill); color: var(--neutral-pill-ink); border-color: var(--hairline); font-weight: 600; }
 /* v2.59.8 — light mode: the bright --green (#3fb950) and #999 gray read as faint
    on the light canvas at this small size. Use darker, higher-contrast tones and
    a hairline fill so the OP·IM·SN / CC pills are clearly visible. */
 body.theme-light .passover-pill.active {
-  color: #1c7a2e; border-color: #1c7a2e; background: rgba(63, 185, 80, 0.10);
+  color: var(--green-ink); border-color: var(--green); background: var(--green-soft);
 }
 body.theme-light .passover-pill.closed {
-  color: #6a6a68; border-color: rgba(0, 0, 0, 0.25);
+  color: var(--neutral-pill-ink); border-color: var(--hairline); background: var(--neutral-pill);
 }
 
 /* ── Right-pane SoO error pill ─────────────────────────────────────────────
