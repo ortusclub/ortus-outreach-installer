@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>PR-19 QA Tests</title>
+<style>
+@page{size:A4;margin:15mm 16mm 16mm}*{box-sizing:border-box}body{margin:0;color:#171714;font:10.2pt/1.42 Arial,sans-serif}h1{font-size:23pt;margin:0 0 7mm}h2{font-size:15pt;margin:0 0 2mm}.test{break-inside:avoid;border-top:1.4px solid #171714;padding:5mm 0 4mm}.meta{font-size:8.5pt;letter-spacing:.08em;text-transform:uppercase;color:#666;margin-bottom:3mm}.code{color:#52745d}.label{font-weight:700}.steps{margin:2mm 0 3mm;padding-left:6mm}.steps li{margin:0 0 1.5mm}.pass{border-left:3px solid #6f8c75;padding:2mm 3mm;background:#eef3ee}.dev{border-left-color:#b28b4e;background:#f5f0e7}.page-title{break-after:avoid}
+</style></head><body><h1 class="page-title">PR-19 QA Tests</h1><main id="tests"></main>
+<script>
+const tests=[
+['SU-05','Conflicting preparation / same-profile launch','Developer-assisted · UI',[
+'Prepare two small campaigns that both use the same GoLogin account.',
+'Open both campaign launch screens and press Start on both as close together as possible.',
+'Watch both cards and logs. Do not dismiss the first campaign.',
+'Confirm the second launch is blocked before it opens or uses that GoLogin profile.'
+],'The first campaign may continue. The second shows a clear same-account/in-use warning and performs no LinkedIn action.'],
+['SU-06','Reopen and shutdown','Local Mac',[
+'Start the app and, while it is still restoring old campaign data, try to start a new campaign.',
+'Confirm the app asks you to wait until restoration finishes instead of launching over incomplete state.',
+'Once restoration finishes, close the app without starting the pending campaign.',
+'Wait long enough that the pending campaign would normally have begun, then reopen the app and inspect its card and log.'
+],'The app blocks launch during restoration. Closing the app does not secretly start pending local work, and reopening shows an honest pending/stopped state.'],
+['SU-07','Equivalent Cloud VM pilot','Cloud VM',[
+'Launch a small approved Cloud VM campaign.',
+'Press Pause during preparation, wait 60 seconds, and confirm no further work begins.',
+'Resume once and confirm only unfinished work continues.',
+'Run a second small VM campaign and press Full Stop during preparation or active work.',
+'Close and reopen the Mac app, then inspect the VM campaign again.'
+],'Pause preserves the VM campaign without sending; Resume continues only unfinished work; Full Stop closes VM work and remains stopped after reconnecting.'],
+['SU-08','Readiness and scheduler drain','Developer execution',[
+'Start the local app and cloud engine with their normal readiness diagnostics enabled.',
+'Record database readiness, task scheduler readiness, active timers, queued tasks and worker availability.',
+'Request the documented scheduler/task drain while work is idle, then repeat while a disposable test task is queued.',
+'Wait for the drain result and inspect process logs for timers or tasks that continued after shutdown.',
+'Restart the services and confirm readiness returns to healthy.'
+],'Readiness reports the real database/scheduler state. Drain stops cleanly, leaves no orphan timer or claimed task, and restart returns to healthy.'],
+['SU-09','Cold loader and launch latency','Developer-assisted',[
+'Fully quit the app and ensure the selected disposable GoLogin profile is not already open.',
+'Start a screen recording with a visible clock, then launch the app and a one-lead campaign.',
+'Record the time from app launch to usable dashboard, Start to GoLogin preparation, and Start to browser visible.',
+'Repeat from a genuinely cold start at least three times.',
+'Save any startup errors and the corresponding app/engine logs.'
+],'Every cold launch either opens successfully with measured timings or shows a clear recoverable error. No blank/frozen screen or unreported crash occurs.'],
+['QA-02','One ordinary action','Local Mac · EJ',[
+'Create a simple local campaign with one consenting lead and one sender.',
+'Start it and let exactly one message finish.',
+'Press Full Stop and wait for confirmed browser closure.',
+'Check LinkedIn and the campaign sheet/log.'
+],'Exactly one message was sent, it is recorded once, and no later action occurs.'],
+['QA-03','Pause during launch','Local Mac · EJ',[
+'Create a local campaign with at least two untouched test leads.',
+'Press Start and then Pause as soon as the first browser begins to appear.',
+'Wait 60 seconds without pressing Resume.',
+'Inspect LinkedIn, the card and the log.'
+],'No message or connection is sent while paused; no next browser opens; the card remains paused.'],
+['QA-04','Pause during work','Local Mac · EJ',[
+'Use three untouched test leads.',
+'Let Lead 1 finish, then press Pause while Lead 2 is loading or being composed.',
+'Wait for browser cleanup and inspect all three leads.',
+'Record Lead 2 as confirmed, untouched or uncertain; do not repeat an uncertain action.'
+],'Lead 1 is not repeated, Lead 3 is never touched, and Lead 2 is safely recorded or held for review.'],
+['QA-05','Resume confirmed Pause','Local Mac · EJ · can send',[
+'Pause a campaign after at least one lead has completed.',
+'Open the campaign’s Resume/Continue control once.',
+'Review the displayed campaign and remaining work, then confirm Resume.',
+'Check the completed and untouched leads on LinkedIn and in the sheet.'
+],'Completed leads are skipped and only eligible unfinished leads continue.'],
+['QA-06','Settings changed while paused','Local Mac · EJ · can send',[
+'Pause a campaign before all leads are processed.',
+'Use the paused editing controls to change the message template to unique approved text.',
+'Open Resume, review the change, and confirm once.',
+'Inspect the next eligible message.'
+],'Already-completed messages remain unchanged; remaining leads receive the updated template text.'],
+['QA-07','Relevant choices across modes','Local Mac · EJ · inspect first',[
+'Open the Resume/Continue dialog for stopped or paused campaigns in Connect Only, CC+DM and CC+IC.',
+'Write down every option shown for each mode.',
+'Cancel each dialog without launching.',
+'Check that acceptance, introduction and monitoring choices appear only where that campaign supports them.'
+],'Each mode shows only relevant choices; no hidden phase can be started from an unrelated campaign type.'],
+['QA-08','Stop during launch and work','Local Mac · EJ · can send',[
+'Start a small campaign and press Full Stop while a browser is preparing.',
+'Repeat with fresh data while a message is being written.',
+'Wait for all cleanup and watch whether another account or lead opens.',
+'Inspect LinkedIn and the log for the in-progress action.'
+],'The browser closes promptly, no next action begins, and any uncertain in-progress result is held rather than repeated.'],
+['QA-09','A stopped run stays stopped','Local Mac · EJ · can send if broken',[
+'Use a campaign with a follow-up scheduled a few minutes later.',
+'Full Stop the campaign before the follow-up is due.',
+'Keep the app open past the due time, then close/reopen it and inspect again.',
+'Check LinkedIn and the campaign log.'
+],'The follow-up never sends and the campaign remains fully stopped after restart.'],
+['QA-10','Pause holds pending work','Local Mac · EJ · can send on resume',[
+'Use a campaign with a follow-up due shortly.',
+'Pause before the due time and leave it paused until after the due time.',
+'Confirm the follow-up has not sent.',
+'Press Resume once, then confirm the continuation review.',
+'Check the due follow-up on LinkedIn.'
+],'Nothing sends while paused; the eligible follow-up sends once after explicit Resume.'],
+['QA-11','Continuation after full Stop','Local Mac · EJ · inspect first',[
+'Open a fully stopped campaign from the dashboard.',
+'Wait without interacting and confirm nothing resumes automatically.',
+'Press Continue campaign and inspect the review dialog.',
+'Cancel once, then reopen it and confirm only when ready.'
+],'Opening a stopped campaign never resumes it; sending starts only after explicit review and confirmation.'],
+['QA-12','CC+IC: stop invitations, keep monitoring','Local or VM · can send',[
+'Run a CC+IC campaign with at least one pending invitation and a configured introduction.',
+'Choose Stop invitations, keep monitoring.',
+'Confirm no new invitation is sent after that choice.',
+'Have a consenting recipient accept an older pending invitation.',
+'Run or wait for the next acceptance check and inspect the introduction.'
+],'New invitations remain stopped while the newly accepted lead receives exactly one configured introduction.'],
+['QA-13','CC+DM and other monitoring modes','Local or VM · can send',[
+'Run a CC+DM campaign with at least one pending invitation and a configured DM.',
+'Choose Stop invitations, keep monitoring.',
+'Confirm no new invitations are sent.',
+'Have a consenting recipient accept an existing invitation and allow the next check to run.',
+'Inspect the DM and sheet status.'
+],'Invitation sending stays stopped; the newly accepted lead receives one correct DM.'],
+['QA-14','Full Stop while monitoring','Local and VM · can send',[
+'Put a CC+IC or CC+DM campaign into active monitoring.',
+'Press Full Stop and confirm the destructive choice once.',
+'Wait beyond the next scheduled check time.',
+'Create or use a consenting acceptance that would normally trigger an intro/DM.',
+'Inspect workers, browsers and logs.'
+],'All checks, introductions, DMs and scheduled monitoring stop; no browser opens later.'],
+['QA-15','Fresh Campaign B must not reuse A','Acceptance check',[
+'Create Campaign A and allow it to establish its own accounts and sheet.',
+'Stop or finish A, then create Campaign B with clearly different accounts and sheet.',
+'Open B and click Run check now once.',
+'Inspect the opened account, checked sheet and log identifiers.'
+],'Only Campaign B’s account, sheet and pending recipients are checked; no data from A appears.'],
+['QA-16','Cancel and block overlapping checks','Acceptance check',[
+'Start Run check now on a campaign.',
+'Press Cancel/Stop check while its browser is active.',
+'Immediately press Run check now again.',
+'Wait for cleanup, then try once more.'
+],'The immediate second check is blocked until cleanup completes; afterwards one clean new check can start.'],
+['QA-17','Newer operator decisions win','Local or VM · assisted',[
+'Begin a manual acceptance/reply check on a running or paused campaign.',
+'While the check is active, issue Pause in one run and Full Stop in a separate run.',
+'Allow the manual check cleanup to finish.',
+'Inspect the final card state and watch for renewed sending.'
+],'Check cleanup does not undo the newer Pause or Full Stop and does not resume sending by itself.'],
+['QA-18','Standalone Check DMs','Standalone tool · may write records',[
+'Start Check DMs with multiple test accounts or inboxes.',
+'Press Stop while it is scanning an inbox.',
+'Wait for the current browser to close.',
+'Confirm no next inbox/account is scanned and inspect written reply records.'
+],'Scanning stops safely, the browser closes, completed records remain valid, and no next account starts.'],
+['QA-19','Post Amplification','Standalone tool · public actions',[
+'Configure Post Amplification with multiple approved accounts and a test post.',
+'Start the run and press Stop during the first account.',
+'Wait for browser closure.',
+'Check whether the next account engaged with the post.'
+],'The in-progress result is recorded honestly and no later account likes, reacts or comments.'],
+['QA-20','Different views tell the same story','UI consistency',[
+'Observe one campaign while preparing, running, paused, monitoring and stopped.',
+'At each state compare the dashboard card, campaign tab, sidebar/run controls and activity log.',
+'Refresh during at least one active and one stopped state.',
+'Record any contradictory label or control.'
+],'All visible surfaces agree on the campaign state; none says Finished while work is active.'],
+['QA-21','Core Cloud VM repetition','Cloud VM · can send',[
+'Repeat QA-02, QA-03, QA-04, QA-05 and QA-08 on a Cloud VM campaign with fresh leads.',
+'For each run, inspect both the Mac UI and VM worker/browser state.',
+'Close and reopen the Mac app after the final confirmed command.'
+],'Cloud Start, Pause, Resume and Full Stop preserve the same safety guarantees as local execution.'],
+['QA-22','Disconnect/reconnect after confirmed control','Cloud VM',[
+'Start a Cloud VM campaign and wait until it is active.',
+'Press Pause and wait until the VM confirms paused.',
+'Quit the Mac app, wait at least 60 seconds, then reopen it.',
+'Inspect the VM card, logs and LinkedIn activity.'
+],'The VM remains paused and does not auto-restart while the Mac app is closed or reconnecting.'],
+['QA-23','Ownership/handover qualification','VM to Mac · assisted',[
+'Start a disposable campaign on Cloud VM.',
+'Choose the supported handover/move-to-Mac control.',
+'Watch the VM worker until it confirms release and browser closure.',
+'Only then observe the local campaign start.',
+'Compare account/profile ownership throughout.'
+],'The same profile is never active in both places; VM release is confirmed before Mac work begins.'],
+['QA-24','Pause then Full Stop','Local and VM · command priority',[
+'Start a small campaign.',
+'Press Pause and immediately press Full Stop while Pause is settling.',
+'Confirm Full Stop once and wait for all cleanup.',
+'Watch for any pause cleanup that tries to restore the run.'
+],'Full Stop wins; the campaign ends fully stopped and no browser or monitoring restarts.'],
+['QA-25','Resume then Full Stop','Local and VM · command priority',[
+'Begin from a confirmed paused campaign.',
+'Press Resume and immediately issue Full Stop while preparation begins.',
+'Wait for all browser and worker cleanup.',
+'Refresh/reconnect and inspect the final state.'
+],'The resume request is cancelled, Full Stop remains authoritative, and no further work starts.'],
+['QA-26','Control affects only its intended run','Local/VM parallel · assisted',[
+'Start Campaign A and Campaign B at the same time using different accounts.',
+'Confirm both are visibly active or independently queued.',
+'Pause Campaign A only.',
+'Watch Campaign B through another action or batch.',
+'Resume A and compare both logs.'
+],'A’s control changes only A. Campaign B continues normally and its accounts/logs are untouched.'],
+['QA-27','Local restart after confirmed Pause/Stop','Local recovery',[
+'Pause one campaign and Full Stop another after at least one confirmed action.',
+'Quit the app only after both commands settle.',
+'Reopen the app and inspect both cards before pressing anything.',
+'Check LinkedIn for duplicated actions.'
+],'Paused remains paused, stopped remains stopped, confirmed work is retained, and nothing duplicates automatically.'],
+['QA-28','Network drops and slow browser starts','Developer-assisted',[
+'Use the controlled developer fixture to delay GoLogin startup, then launch a disposable campaign.',
+'Record the progress message and eventual success or timeout.',
+'Repeat while the controlled fixture interrupts network access during preparation and active work.',
+'Restore connectivity and inspect recovery controls, held outcomes and logs.'
+],'The UI remains responsive, explains delay/failure, closes or recovers safely, and never silently repeats uncertain work.'],
+['QA-29','Measure launch and stop speed','Latency benchmark',[
+'Prepare a cold account and start a screen recording with a visible timer.',
+'Measure Start click to preparation message, Start click to browser visible, and browser visible to first usable page.',
+'During a fresh run, measure Stop click to stop acknowledgment and Stop click to browser closed.',
+'Repeat three times for Local and three times for VM, recording exact seconds and errors.'
+],'Every timing is recorded from evidence rather than guessed; failures include the matching log and recording.'],
+['QA-30','Campaign Check Replies cancellation','Campaign tool · may write records',[
+'Open a campaign card and click Check Replies.',
+'Press Cancel while its browser is actively scanning.',
+'Immediately try Check Replies again.',
+'Wait for cleanup, then start one new check.',
+'Inspect campaign state and reply records.'
+],'The overlapping check is blocked, cleanup does not resume/alter the campaign unexpectedly, and one later check runs cleanly.'],
+['QA-31','One acceptance check while sending stays paused','Paused campaign · can send introductions',[
+'Pause a CC+IC or CC+DM campaign with pending acceptances.',
+'Click Run one acceptance check.',
+'Allow exactly one check to complete and inspect any due intro/DM.',
+'Wait beyond the normal check interval without pressing Resume.'
+],'The one check and its due post-accept action can complete, but invitation/message sending remains paused and monitoring is not silently enabled.'],
+['QA-32','Keyboard choice in confirmation dialogs','UI inspection',[
+'Open each Pause, Full Stop, Continue and handover confirmation used by these tests.',
+'Press Tab until Cancel is visibly focused, then press Enter.',
+'Reopen the dialog and press Escape.',
+'Confirm focus returns to the control that opened the dialog.'
+],'Enter on Cancel and Escape close safely without action; focus is visible and restored correctly.'],
+['QA-33','Failed Resume review does not send','Developer-assisted',[
+'Use the controlled developer fixture to make Resume review fail before confirmation.',
+'Open Resume and trigger the failed review once.',
+'Do not retry immediately; inspect the error, card, browser state and logs.',
+'Restore the fixture and retry only after the campaign is confirmed safe.'
+],'The app shows a clear review error and sends nothing until a later successful review is explicitly confirmed.'],
+['QA-34','VM to Mac: confirmed source, honest destination','Assisted · can send',[
+'Run a small campaign on Cloud VM and request handover to Mac.',
+'Record the VM stop/release confirmation and active browser count.',
+'Watch the destination card while it waits.',
+'Confirm the Mac begins only after the VM is fully released.',
+'Inspect for duplicated or overlapping actions.'
+],'Source shutdown is confirmed before destination start; the UI never claims Mac ownership early and no action duplicates.'],
+['QA-35','Mac to VM / monitoring reclaim','Assisted · can send',[
+'Run a campaign on Mac with monitoring active.',
+'Request handover to Cloud VM.',
+'Watch local monitoring, timers and browsers until they are fully stopped.',
+'Confirm the VM claims the campaign only afterwards.',
+'Wait for one VM monitoring cycle and compare logs.'
+],'Local monitoring ends before VM ownership begins; only one side checks/sends and the campaign history remains continuous.']
+];
+const root=document.getElementById('tests');
+root.innerHTML=tests.map(([id,title,where,steps,pass])=>`<section class="test"><h2><span class="code">${id}</span> — ${title}</h2><div class="meta">${where}</div><ol class="steps">${steps.map(s=>`<li>${s}</li>`).join('')}</ol><div class="pass ${where.toLowerCase().includes('developer')?'dev':''}"><span class="label">Pass when:</span> ${pass}</div></section>`).join('');
+</script></body></html>
