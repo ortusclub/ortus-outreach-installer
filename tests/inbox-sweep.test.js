@@ -1,6 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { identityToken, conversationToken, rowLinkedinUrl } from '../src/linkedin/inbox-sweep.js';
+import { loadSalesNavConversations } from '../src/linkedin/inbox-sweep.js';
+
+test('cancelled Sales Nav scan does not navigate or start a fallback read', async () => {
+  const controller = new AbortController(); controller.abort();
+  let navigated = false;
+  const result = await loadSalesNavConversations({ goto: async () => { navigated = true; } }, { signal: controller.signal });
+  assert.equal(navigated, false);
+  assert.ok(result.error);
+});
+
+test('Stop after Sales Nav navigation prevents subsequent inbox work', async () => {
+  const controller = new AbortController();
+  const result = await loadSalesNavConversations({ goto: async () => controller.abort() }, { signal: controller.signal });
+  assert.ok(result.error);
+  assert.deepEqual(result.convs, []);
+});
 
 test('identityToken: vanity /in/ slug is lowercased', () => {
   assert.equal(identityToken('https://www.linkedin.com/in/Jane-Doe-123/'), 'jane-doe-123');

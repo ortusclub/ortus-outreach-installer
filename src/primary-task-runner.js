@@ -23,10 +23,12 @@ import { acceptInvitationFrom } from './linkedin/accept-invitation.js';
 import { sendInThread } from './linkedin/thread-message.js';
 import { appendCampaignLog } from './campaign-log-bus.js';
 import {
-  loadTasks as _loadTasks, markTask as _markTask, resetInProgress,
-  selectDue, partitionByBrowser,
+  loadTasks as _loadTasks, markTask as _markTask, claimTask as _claimTask, resetInProgress,
+  selectDue, partitionByBrowser, hasTaskOwner, taskControlBlocked,
 } from './primary-tasks.js';
 import { isSignedOut } from './linkedin/thread-message.js';
+import { registerPrimaryOperation } from './primary-task-control.js';
+import { preparePrimarySession } from './primary-session-control.js';
 
 const MAX_ATTEMPTS = 3;
 const SESSION_BACKOFF_MS = 30 * 60 * 1000;
@@ -82,11 +84,17 @@ async function _safeMark(markTask, id, status, patch, log) {
  *  one bad task can't abort the rest of the bucket. Returns true if its action
  *  ran to completion (so the caller can count it). */
 async function _processOne(t, page, deps) {
-  const { acceptFn, sendFn, markTask, emit, log } = deps;
+  const { acceptFn, sendFn, markTask, emit, log, isCurrent, claim } = deps;
+  let operation;
   try {
+    // A task may have been removed, cancelled, held or edited while its
+    // browser opened. An old batch snapshot is not permission to act.
+    if (!await isCurrent(t)) return false;
     // Claim the task before acting. If THIS throws, the action never ran, so the
     // catch path (retry) is correct.
-    await markTask(t.id, 'in_progress', {});
+    if (await claim(t) === false) return false;
+    operation = registerPrimaryOperation({ campaignId: t.campaignId, campaignRunId: t.campaignRunId, taskId: t.id, sourceTaskId: t.sourceTaskId }, deps.closeCurrent);
+    if (!await isCurrent(t, ['pending', 'in_progress']) || operation.signal.aborted) return false;
     if (t.type === 'accept') {
       const r = await acceptFn(page, t.account, { log });
       await _safeMark(markTask, t.id, r.accepted ? 'done' : 'skipped', { lastError: r.reason || null }, log);
@@ -119,9 +127,15 @@ async function _processOne(t, page, deps) {
     }
     return true;
   } catch (e) {
-    try { await _settleFailure(t, e, markTask); }
+    try {
+      if (operation?.signal.aborted) await markTask(t.id, 'interrupted', { lastError: 'Stopped during background action; verify outcome before retrying' });
+      else if (await isCurrent(t, ['pending', 'in_progress'])) await _settleFailure(t, e, markTask);
+    }
     catch (se) { log(`  ⚠ Primary runner: could not record failure for ${t.id}: ${se.message}`); }
     return false;
+  } finally {
+    if (operation?.signal.aborted) deps.cancelledBrowser = true;
+    operation?.finish();
   }
 }
 
@@ -133,35 +147,62 @@ export async function runDueTasks(now, deps) {
     guardIdle = async () => true, emit = () => {},
     checkSignedOut = isSignedOut,
   } = deps;
-  const pdeps = { acceptFn, sendFn, markTask, emit, log };
+  const requireOwner = typeof deps.claimTask === 'function';
+  const isCurrent = async (task, statuses = ['pending']) => {
+    if (requireOwner && !hasTaskOwner(task)) return false;
+    const tasks = await loadTasks();
+    if (taskControlBlocked(tasks, task)) return false;
+    if (task.campaignId && task.campaignRunId && tasks.some(item => item.type === 'owner-control'
+      && item.status === 'stopped' && item.campaignId === task.campaignId && item.campaignRunId === task.campaignRunId)) return false;
+    const current = tasks.find(item => item.id === task.id);
+    if (!current || !statuses.includes(current.status) || current.dueAt > now) return false;
+    // Reconfiguration also invalidates the snapshot: do not send an old body
+    // or use an old account after the operator edits the queued task.
+    return JSON.stringify({ ...current, status: 'pending' }) === JSON.stringify({ ...task, status: 'pending' });
+  };
+  const settlePendingFailure = async (task, error) => {
+    if (await isCurrent(task)) await _settleFailure(task, error, markTask);
+  };
+  const claim = deps.claimTask
+    ? task => deps.claimTask(task, now)
+    : task => markTask(task.id, 'in_progress', {}); // legacy injected test dependencies
+  const pdeps = { acceptFn, sendFn, markTask, emit, log, isCurrent, claim };
 
-  const due = selectDue(await loadTasks(), now);
+  const due = structuredClone(selectDue(await loadTasks(), now));
   if (due.length === 0) return { ran: 0 };
   const { local, byAccount } = partitionByBrowser(due);
   let ran = 0;
 
   if (local.length) {
     if (await guardIdle()) {
-      await semaphore.acquire();
+      let session;
       try {
         log(`  🖥 Opening your local browser — ${local.length} primary task(s) due`);
-        const { page } = await launchLocal();
+        session = await preparePrimarySession(local, { semaphore, launch: launchLocal, close: closeLocal, prepare: checkSignedOut });
+        const { page } = session;
         // Ask once, not once per lead. Without this every task opens a thread,
         // waits 15s for a composer that an authwall will never show, and settles
         // separately — five leads' worth of silence on 1 Sep. One probe parks the
         // whole batch and says it in words.
-        if (await checkSignedOut(page)) {
+        if (session.prepared) {
           log('  🔑 Your follow-up browser is signed out of LinkedIn — the follow-ups are parked, not lost. Sign in once and they go out on their own.');
-          for (const t of local) { try { await _settleFailure(t, new Error('FOLLOWUP_SIGNED_OUT'), markTask); } catch { /* */ } }
+          for (const t of local) { try { await settlePendingFailure(t, new Error('FOLLOWUP_SIGNED_OUT')); } catch { /* */ } }
         } else {
-          for (const t of local) { if (await _processOne(t, page, pdeps)) ran++; }
+          pdeps.closeCurrent = session.close;
+          for (const t of local) {
+            if (await _processOne(t, page, pdeps)) ran++;
+            if (pdeps.cancelledBrowser) break;
+          }
         }
       } catch (e) {
         log(`  ⚠ Primary runner: local browser session failed: ${e.message}`);
-        for (const t of local) { try { await _settleFailure(t, e, markTask); } catch { /* */ } }
+        if (e.primaryPreparationCancelled) pdeps.cancelledBrowser = true;
+        else for (const t of local) { try { await settlePendingFailure(t, e); } catch { /* */ } }
       } finally {
-        try { await closeLocal(); } catch { /* */ }
-        semaphore.release();
+        if (session) {
+          try { await session.close(); } catch { /* */ }
+          semaphore.release();
+        }
       }
     } else {
       log('  ⏸ Primary runner: no longer idle — deferring local-browser tasks to the next tick.');
@@ -169,17 +210,27 @@ export async function runDueTasks(now, deps) {
   }
 
   for (const [profileId, list] of Object.entries(byAccount)) {
+    if (pdeps.cancelledBrowser) break;
     if (!(await guardIdle())) { log('  ⏸ Primary runner: no longer idle — deferring account follow-ups.'); break; }
-    await semaphore.acquire();
+    let session;
     try {
-      const { page } = await launchAccount(profileId);
-      for (const t of list) { if (await _processOne(t, page, pdeps)) ran++; }
+      session = await preparePrimarySession(list, { semaphore,
+        launch: options => launchAccount(profileId, options), close: () => closeAccount(profileId) });
+      const { page } = session;
+      pdeps.closeCurrent = session.close;
+      for (const t of list) {
+        if (await _processOne(t, page, pdeps)) ran++;
+        if (pdeps.cancelledBrowser) break;
+      }
     } catch (e) {
       log(`  ⚠ Primary runner: account ${profileId} session failed: ${e.message}`);
-      for (const t of list) { try { await _settleFailure(t, e, markTask); } catch { /* */ } }
+      if (e.primaryPreparationCancelled) pdeps.cancelledBrowser = true;
+      else for (const t of list) { try { await settlePendingFailure(t, e); } catch { /* */ } }
     } finally {
-      try { await closeAccount(profileId); } catch { /* */ }
-      semaphore.release();
+      if (session) {
+        try { await session.close(); } catch { /* */ }
+        semaphore.release();
+      }
     }
   }
 
@@ -204,6 +255,7 @@ export async function tick() {
   await runDueTasks(Date.now(), {
     loadTasks: _loadTasks,
     markTask: _markTask,
+    claimTask: _claimTask,
     launchLocal: launchLocalBrowser,
     closeLocal: closeLocalBrowser,
     launchAccount: (pid) => launchProfile(pid, token),
@@ -225,8 +277,8 @@ export async function tick() {
 }
 
 export function startPrimaryTaskRunner() {
-  resetInProgress().catch(() => {});
   if (_timer) return;
+  resetInProgress().catch(e => _log(`queue recovery failed: ${e.message}`));
   _timer = setInterval(() => { tick().catch(e => _log(`tick error: ${e.message}`)); }, 60 * 1000);
   if (_timer.unref) _timer.unref();
   _log('started (60s tick).');

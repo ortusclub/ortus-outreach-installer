@@ -5,6 +5,9 @@
 // Every function referenced from an inline onclick handler in index.html is
 // re-exposed on `window` at the bottom of this file.
 import { nextReplacementName } from '/js/replacement-name.mjs';
+import { checkContext } from '/js/check-context.mjs';
+import { continuationPolicy, requestConfirmedResume } from '/js/continuation-policy.mjs';
+import { chooseContinuation } from '/js/continuation-choice.mjs';
 import { renderRepliesPanel } from '/js/replies-panel.mjs';
 import { initRepliesInbox } from '/js/replies-inbox.mjs';
 import {
@@ -49,6 +52,8 @@ import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent, bannerEventPhase } from '/js/live-log-banner.mjs?v=3.1.48.95';
 import { isCampaignStatusSnapshot, nextCheckLabel, overlayCampaignStatus, selectCampaignStatusSnapshot } from '/js/campaign-status-contract.mjs?v=3.1.48.95';
 import { summarizeLatestMonitoringSweep, monitoringRecovery } from '/js/monitor-sweep-summary.mjs?v=3.1.48.95';
+import { recoveryAction, openRecoveryReview } from '/js/account-recovery.mjs';
+import { mountAutomationLayout, syncAutomationLayout, syncFollowUpTiming } from '/js/automation-layout.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -1983,30 +1988,24 @@ let sheetColumns = ['firstName', 'lastName', 'company', 'title'];
 
 // SoO (State of Operations) data — email → status mapping
 let sooData = {}; // { 'email@ortus.com': { linkedinCredits: 'In Use', linkedinUser: '...', ... } }
-let sooLoadState = 'idle'; // 'idle' | 'loading' | 'ok' | 'stale' | 'error'
+let sooLoadState = 'idle'; // 'idle' | 'loading' | 'ok' | 'error'
 
-function setSoOErrorState(isError, message = 'SoO unavailable — click refresh to try again') {
+function setSoOErrorState(isError) {
   const pill = document.getElementById('rp-soo-error');
-  if (pill) {
-    pill.hidden = !isError;
-    if (isError) pill.textContent = message;
-  }
+  if (pill) pill.hidden = !isError;
 }
 
-async function loadSoOStatus({ force = false } = {}) {
+async function loadSoOStatus() {
   sooLoadState = 'loading';
   try {
-    const res = await fetch(force ? '/api/soo-status?refresh=1' : '/api/soo-status');
+    const res = await fetch('/api/soo-status');
     // Server returns 503 + { error, errorCode } on any failure now.
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
       try { const d = await res.json(); if (d && d.error) detail = `${d.errorCode || 'ERR'}: ${d.error}`; } catch {}
       console.warn('[SoO] Endpoint error:', detail);
-      const hasLastGood = Object.keys(sooData).length > 0;
-      sooLoadState = hasLastGood ? 'stale' : 'error';
-      setSoOErrorState(true, hasLastGood
-        ? 'Showing the last saved SoO — Google is temporarily unavailable'
-        : 'SoO unavailable — account status is unknown');
+      sooLoadState = 'error';
+      setSoOErrorState(true);
       return;
     }
     const data = await res.json();
@@ -2014,17 +2013,13 @@ async function loadSoOStatus({ force = false } = {}) {
     for (const acct of (data.accounts || [])) {
       if (acct.email) sooData[acct.email.toLowerCase()] = acct;
     }
-    const stale = data._sooMeta && data._sooMeta.state === 'stale';
-    sooLoadState = stale ? 'stale' : 'ok';
-    setSoOErrorState(stale, 'Showing the last saved SoO — Google is temporarily unavailable');
+    sooLoadState = 'ok';
+    setSoOErrorState(false);
     console.log(`[SoO] Loaded ${Object.keys(sooData).length} account statuses`);
   } catch (err) {
     console.warn('[SoO] Failed to load:', err.message);
-    const hasLastGood = Object.keys(sooData).length > 0;
-    sooLoadState = hasLastGood ? 'stale' : 'error';
-    setSoOErrorState(true, hasLastGood
-      ? 'Showing the last saved SoO — Google is temporarily unavailable'
-      : 'SoO unavailable — account status is unknown');
+    sooLoadState = 'error';
+    setSoOErrorState(true);
   }
 }
 
@@ -2161,7 +2156,7 @@ async function refreshSoO() {
     bar.style.width = '100%';
   }
   try {
-    await loadSoOStatus({ force: true });
+    await loadSoOStatus();
     if (allProfilesData.length > 0) renderProfiles(allProfilesData);
     updateChipCounts();
     updateGreeting();
@@ -2350,9 +2345,7 @@ async function loadProfiles() {
 
     // SoO loads in background — re-render profiles + refresh counts when it arrives
     loadSoOStatus().then(() => {
-      // Repaint on success AND failure: on an initial outage the cards must
-      // change from CHECKING SoO to SoO UNAVAILABLE, never NOT IN SoO.
-      renderProfiles(allProfilesData);
+      if (Object.keys(sooData).length > 0) renderProfiles(allProfilesData);
       // v2.94.x: also refresh the primary-source picker + read-only labels so a
       // restored GoLogin primary shows its badges/name once SoO arrives.
       if (typeof renderPrimarySourcePicker === 'function') renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
@@ -2465,7 +2458,7 @@ function renderProfiles(profiles) {
       // above wrong-workspace because switching campaign type brings it back.
       const foreignBump = p.available === false ? 10
         : (Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode)) ? 5 : 0;
-      if (_breakdown && soo) {
+      if (_breakdown) {
         const br = classifyAccountChannels(soo);
         // free-first: usable (0) → has-status-but-none-free (1) → blocked (2).
         return { p, i, soo, br, rank: (br.blocked ? 2 : (br.anyFree ? 0 : 1)) + foreignBump };
@@ -2476,6 +2469,8 @@ function renderProfiles(profiles) {
     .sort((a, b) => (a.rank - b.rank) || (a.i - b.i)); // stable within rank
 
   _ordered.forEach(({ p, soo: _soo, st: _state, br: _br }) => {
+    const _sooUnavailable = sooLoadState === 'error';
+    const _sooUnknown = !_soo;
     // 'blocked' / unusable is never selectable (greyed + disabled). Single-verdict
     // modes: blocked when classifyAccountState says so (restricted, or the CC/credit
     // column is NA/Used/etc.). Breakdown modes: blocked when restricted OR no channel
@@ -2501,12 +2496,7 @@ function renderProfiles(profiles) {
     // precisely to keep Ortus operators off them, which must not be enforced
     // against the team they were handed to.
     const _nonOrtusRoster = !_foreign && ((!!p.account && p.account !== 'ortus') || p.guest === true);
-    const _showBreakdown = _breakdown && !!_soo;
-    // Before the first successful snapshot, absence is UNKNOWN rather than
-    // proof that this account is missing from SoO. Keep Ortus accounts locked
-    // until their credits/restrictions can actually be checked. A stale snapshot
-    // remains usable and is visibly labelled at the panel level.
-    const _sooUnknown = !_soo && (sooLoadState === 'idle' || sooLoadState === 'loading' || sooLoadState === 'error');
+    const _showBreakdown = _breakdown;
     const _sooLock = _nonOrtusRoster
       ? false
       : (_sooUnknown || (_showBreakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked')));
@@ -2530,7 +2520,7 @@ function renderProfiles(profiles) {
       : '';
 
     let _classes, _inner;
-    if (_showBreakdown) {
+    if (_breakdown) {
       // Variant C — clean per-channel breakdown: thin accent (green if any channel
       // free) + email + a 3-cell row showing each channel's RAW SoO status verbatim.
       const _cells = (_br.channels || []).map((c) => {
@@ -2583,12 +2573,8 @@ function renderProfiles(profiles) {
       // chatgpt/claude, the Luma tabs) plus accounts genuinely missing from the
       // sheet. Without a row there is no first name, no credits and no assignee, so
       // the tile CANNOT be trusted — say so instead of defaulting to a green FREE.
-      const _noSoo = !_soo;
-      const _sooUnavailable = _noSoo && sooLoadState === 'error';
-      const _sooPending = _noSoo && (sooLoadState === 'idle' || sooLoadState === 'loading');
-      const _sm = _noSoo
-        ? { cls: 'nosoo', word: _sooUnavailable ? 'SoO UNAVAILABLE' : (_sooPending ? 'CHECKING SoO' : 'NOT IN SoO') }
-        : (_SMAP[_state.state] || _SMAP.free);
+      const _noSoo = _sooUnknown && !_sooUnavailable;
+      const _sm = _sooUnknown ? { cls: 'nosoo', word: _sooUnavailable ? 'SoO UNAVAILABLE' : 'NOT IN SoO' } : (_SMAP[_state.state] || _SMAP.free);
       // 'blocked' worded from what the SoO actually says (no invented copy):
       //   restricted → LinkedIn block · na → CC/credit = NA · unavailable → Used/-/Partial.
       const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
@@ -2607,7 +2593,6 @@ function renderProfiles(profiles) {
       const _statCls = (_foreign || _wrongMode) ? 'stop' : _otherRosterVerdict ? 'nosoo' : _sm.cls;
       let _sub;
       if (_sooUnavailable) _sub = 'Could not check the SoO — status unknown and selection disabled.';
-      else if (_sooPending) _sub = 'Checking the SoO now — selection stays disabled until confirmed.';
       else if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
       else
       // v2.112.27: operator asked to drop "who uses who" from the picker for now —
@@ -3377,6 +3362,8 @@ if (typeof window !== 'undefined') window.pickRunTarget = pickRunTarget;
 
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
+  mountAutomationLayout();
+  syncAutomationLayout(mode);
   // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
   // local FG run opens one GoLogin browser tab per account. Reset the local-pin on
   // the transition INTO follower_growth, then apply the cloud default.
@@ -7833,38 +7820,6 @@ const _cloudResumeClickedAt = new Map();
 // answer: whichever renderer paints, it asks here.
 const _resumingIds = new Set();
 window._resumingIds = _resumingIds;
-// A Stop command owns the card from the instant of the click until the VM's
-// terminal state is fetched. This prevents a stale board poll from repainting
-// it green or exposing another Stop button during the round-trip.
-const _stoppingCloudIds = new Set();
-
-function _markCloudStopping(id, on) {
-  const key = String(id || '');
-  if (!key) return;
-  if (on) _stoppingCloudIds.add(key); else _stoppingCloudIds.delete(key);
-  try {
-    const s = window.__cloudActiveStatus;
-    if (s && String(s.id) === key) {
-      Object.assign(s, { stopping: !!on, state: on ? 'stopping' : s.state,
-        phase: on ? 'stopping' : s.phase, live: on ? false : s.live,
-        currentAction: on ? null : s.currentAction });
-      renderActiveCard(s);
-    }
-    for (const strip of document.querySelectorAll(`[data-cid="${CSS.escape(key)}"]`)) {
-      const card = strip.classList.contains('vj-card') ? strip : strip.querySelector('.vj-card');
-      if (!card) continue;
-      card.classList.toggle('is-stopping', !!on);
-      if (on) {
-        const eyebrow = card.querySelector('[data-f="activeEyebrow"]');
-        if (eyebrow) eyebrow.textContent = 'STOPPING NOW';
-        card.querySelectorAll('button').forEach((button) => { button.disabled = true; });
-      } else {
-        card.querySelectorAll('button').forEach((button) => { button.disabled = false; });
-      }
-    }
-  } catch (_) { /* the durable overlay below still wins on every render */ }
-}
-window._markCloudStopping = _markCloudStopping;
 
 // The optimistic flag, with its two ways out: the engine has moved off
 // monitoring (the resume landed), or 90s have passed (it did not, and a stuck
@@ -7921,6 +7876,22 @@ function _markCloudResuming(id, on) {
   if (on) _repaintCloudStripNow(id);
 }
 window._markCloudResuming = _markCloudResuming;
+
+// One in-flight Stop owns one campaign. This blocks duplicate commands and
+// keeps the dashboard strip and expanded campaign card visually consistent.
+const _stoppingCloudIds = new Set();
+function _markCloudStopping(id, on) {
+  const key = String(id);
+  if (on) _stoppingCloudIds.add(key); else _stoppingCloudIds.delete(key);
+  try {
+    const s = window.__cloudActiveStatus;
+    if (s && String(s.id) === key) { s.stopping = !!on; renderActiveCard(s); }
+    for (const strip of document.querySelectorAll(`[data-cid="${CSS.escape(key)}"]`)) {
+      const card = strip.classList.contains('vj-card') ? strip : strip.querySelector('.vj-card');
+      card?.classList.toggle('is-stopping', !!on);
+    }
+  } catch (_) { /* normal polling remains the fallback */ }
+}
 
 function _pushCloudEventNow(id, line) {
   _pushCloudEvent(id, line);
@@ -8858,12 +8829,8 @@ function _fgFinishedNote(status) {
 async function _refreshCloudActiveStatus(id) {
   try {
     const detailRes = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`);
-    let d = await detailRes.json();
+    const d = await detailRes.json();
     if (!detailRes.ok || (d && d.error)) throw new Error((d && d.error) || `HTTP ${detailRes.status}`);
-    if (_stoppingCloudIds.has(String(id))) {
-      d = { ...d, live: false, liveProgress: null,
-        campaign: { ...(d.campaign || {}), status: 'stopping' } };
-    }
     let leads = [];
     try { const lr = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/leads`)).json(); if (lr && Array.isArray(lr.leads)) leads = lr.leads; } catch (_) { /* */ }
     // Live Status is a SECOND render path — the board's _refreshCloudItems does
@@ -9494,13 +9461,16 @@ function _startCloudCardPoll() {
 function stopViewingCloudCampaign() { _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); const _ap = document.getElementById('cloud-accounts-panel'); if (_ap) { _ap.hidden = true; _ap.innerHTML = ''; } }
 window.stopViewingCloudCampaign = stopViewingCloudCampaign;
 
-// The large Campaign-tab card delegates every action to the same renderer as
-// the expanded Dashboard card. It only adds the details chevron required by
-// this layout; campaign behavior and routing remain shared.
+// Adapt #active-card's controls when it's showing a cloud campaign: hide the
+// local-only Pause/Restart (cloud has no pause/restart), and give a monitoring
+// VM campaign a Check-now in the dock (wired to the engine endpoint; degrades to
+// "engine update pending" until PR #1 deploys). Stop is handled in
+// dashStopActive (it routes to the engine when _viewingCloudId is set). Only
+// forces state when cloud; releases the override otherwise so the local card is
+// untouched.
 function _adaptActiveCardControls(card, status) {
-  // Campaign identity comes from the rendered status, never from the temporary
-  // navigation flag. This is the same renderer fillVjCard uses on Dashboard.
-  card.classList.toggle('cloud-view', !!(status && status._cloud));
+  const cloud = !!(status && status._cloud);
+  card.classList.toggle('cloud-view', cloud);
   _renderVjCardControls(card, status, { active: true });
 }
 
@@ -9540,6 +9510,7 @@ window.dismissCloudDone = dismissCloudDone;
 // True once the user pressed "Open" on a local strip — keeps the legacy detail
 // card (#active-card) revealed instead of letting the board re-hide it.
 let _localDetailOpen = false;
+let _viewingLocalHistory = null;
 // Local done strips the user dismissed with ✕ (parity with cloud ✕).
 const _localDismissed = new Set();
 
@@ -9584,6 +9555,46 @@ function openLocalCampaignDetail() {
   }
 }
 window.openLocalCampaignDetail = openLocalCampaignDetail;
+
+// Open one finished local campaign in the Campaign tab and keep the shared
+// card bound to that exact history entry. The ordinary two-second local poll
+// reports the singleton runner (usually idle after a restart); without this
+// binding it immediately erased the selected campaign's saved log and details.
+function openFinishedLocalCampaign(id) {
+  const it = _boardItemsById.get(id) || (_snItemsById && _snItemsById.get(id));
+  if (!it) return false;
+  try { stopViewingCloudCampaign(); } catch (_) { /* no cloud binding */ }
+  try { clearCloudEditMode(); } catch (_) { /* no cloud edit lock */ }
+  try { clearActiveDraft(); } catch (_) { /* viewing history, not a draft */ }
+  _viewingLocalHistory = id;
+  liveStatusForcedOpen = true;
+  window.__viewingActiveCampaign = true;
+
+  const settings = it.srcSettings || {};
+  const name = it.name || settings.name || '';
+  window._openEditNameOverride = name;
+  const nameInput = document.getElementById('campaign-name-input');
+  if (nameInput) nameInput.value = name;
+  if (Object.keys(settings).length && typeof applyPresetConfig === 'function') {
+    try { applyPresetConfig({ ...structuredClone(settings), mode: it.mode || settings.mode }); } catch (_) { /* card still opens */ }
+  } else {
+    const modeSelect = document.getElementById('campaign-mode');
+    if (modeSelect && it.mode) {
+      modeSelect.value = it.mode;
+      try { if (typeof onModeChange === 'function') onModeChange(); } catch (_) { /* */ }
+    }
+  }
+  try { if (typeof setRunTarget === 'function') setRunTarget('local'); } catch (_) { /* */ }
+  goCreateCampaign();
+  const selectedStatus = statusFromItem(it);
+  renderActiveCard(selectedStatus);
+  syncLiveStatusVisibility();
+  placeLiveCard();
+  const section = document.getElementById('nav-status');
+  if (section) section.classList.remove('collapsed');
+  return true;
+}
+window.openFinishedLocalCampaign = openFinishedLocalCampaign;
 
 // Dismiss a local Done strip from the board (parity with dismissCloudDone).
 function dismissLocalDone(id) { _localDismissed.add(id); renderCampaignsBoard(); }
@@ -10149,14 +10160,14 @@ function _fillVjMonitorHero(root, status) {
   }
 }
 
-function _vjControlsHtml(c, status, options = {}) {
-  const active = !!options.active;
+function _vjControlsHtml(c, status) {
+  const active = arguments[2] && arguments[2].active;
   const dib = (svg, tip, onclick, cls = '', id = '') => `<button type="button"${id ? ` id="${id}"` : ''} class="dock-btn ${cls}" data-tip="${tip}" aria-label="${tip}" onclick="${onclick}">${svg}</button>`;
   let dock = '';
   const interrupted = status && (status.state === 'interrupted' || status.interrupted || status.waitingForLocal);
   if (c.pause && !interrupted) dock += dib(status.paused ? V3_SVG_PLAY : V3_SVG_PAUSE, status.paused ? 'Resume' : 'Pause', c.pause.onclick, c.pause.once ? 'one-shot' : '', active ? 'dock-active-pause' : '');
   let actions = '';
-  if (c.restart) actions += dib(V3_SVG_RESTART, 'Restart', c.restart.onclick);
+  const restartHtml = c.restart ? `<button class="btn-pill" onclick="${c.restart.onclick}">Restart campaign</button>` : '';
   if (c.copy) actions += dib(V3_SVG_COPY, 'Copy to queue', c.copy.onclick);
   // v3.1.48.71: the go-again action leaves the dock and becomes a labelled
   // pill. As an unlabelled ▶ next to an unlabelled ■ it was unreadable — an
@@ -10180,16 +10191,10 @@ function _vjControlsHtml(c, status, options = {}) {
   // End campaign); a bare "Stop" becomes "Stop campaign".
   const stopTip = (c.stop && c.stop.tip) || 'Stop';
   const stopHtml = c.stop
-    ? `<button class="btn-pill stop"${active ? ' id="btn-active-stop"' : ''} onclick="${c.stop.onclick}">${escHtml(stopTip === 'Stop' ? 'Stop campaign' : stopTip)}</button>`
+    ? `<button${active ? ' id="btn-active-stop"' : ''} class="btn-pill stop" onclick="${c.stop.onclick}">${escHtml(stopTip === 'Stop' ? 'Stop campaign' : stopTip)}</button>`
     : '';
   const openHtml = c.open ? `<button class="btn-pill" onclick="${c.open.onclick}">Open campaign tab</button>` : '';
   const sheetHtml = c.sheet ? `<button class="btn-pill" onclick="${c.sheet.onclick}">Open sheet</button>` : '';
-  const detailsHtml = active
-    ? `<button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleActiveDetails(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>`
-    : '';
-  const autoHtml = c.monAuto
-    ? `<label class="sn-mon-auto" title="When off, automatic acceptance checks stay off; Run check now still works."><input type="checkbox" ${c.monAuto.checked ? 'checked' : ''} onclick="event.stopPropagation()" onchange="${c.monAuto.onclick}"> Auto checks</label>`
-    : '';
   const resumeHtml = interrupted && c.pause
     ? `<button class="btn-pill go one-shot" onclick="${c.pause.onclick}">Resume ${status.interruption?.phase === 'monitoring' || status.monitoringPhase ? 'checks' : 'campaign'}</button>`
     : '';
@@ -10200,52 +10205,36 @@ function _vjControlsHtml(c, status, options = {}) {
     ? `<button class="btn-pill delete-forever" onclick="${c.deleteForever.onclick}">Delete for good</button>`
     : '';
   const dockHtml = (dock || actions)
-    ? `<div class="dock"${active ? ' id="dock-active"' : ''} role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`
+    ? `<div class="dock" role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`
     : '';
-  return `${resumeHtml}${resumeSendingHtml}${deleteForeverHtml}${openHtml}${detailsHtml}${sheetHtml}${goHtml}${autoHtml}${stopHtml}${dockHtml}`;
+  const autoHtml = c.monAuto
+    ? `<label class="vj-auto-checks"><input type="checkbox" ${c.monAuto.checked ? 'checked' : ''} onchange="${c.monAuto.onchange}"><span>Auto checks</span></label>`
+    : '';
+  return `${resumeHtml}${resumeSendingHtml}${deleteForeverHtml}${openHtml}${sheetHtml}${goHtml}${restartHtml}${stopHtml}${autoHtml}${dockHtml}`;
 }
 
-// One renderer owns the controls on BOTH campaign surfaces. The Dashboard's
-// expanded card and the Campaign tab's large card may have different layouts,
-// but Pause, Resume, Stop, Check, Copy, Open and monitoring controls must always
-// come from the same state matrix and carry the same campaign id.
 function _renderVjCardControls(root, status, options = {}) {
-  if (!root || !status) return null;
+  if (!root || !status) return;
   const c = vjCardControlsFor(status);
   const controls = root.querySelector('.vj-controls');
   if (controls) controls.innerHTML = _vjControlsHtml(c, status, options);
-
-  const logActs = root.querySelector('.vj-log-acts');
-  if (logActs) {
-    logActs.querySelectorAll('.vj-log-act').forEach((b) => {
-      const txt = (b.textContent || '').toLowerCase();
-      if (b.getAttribute('data-f') === 'wiz-log-more' || b.id === 'wiz-log-more') {
-        b.style.display = options.active ? '' : 'none';
-        return;
-      }
-      if (txt.includes('copy')) b.setAttribute('onclick', options.active ? 'window.dashCopyLog(this)' : 'copyVjCardLog(this)');
-      // Open sheet has one canonical, campaign-bound home in the main row.
-      if (txt.includes('open sheet')) b.style.display = 'none';
-    });
-  }
-
   const bulkWrap = root.querySelector('.vj-bulk');
   if (bulkWrap) {
-    bulkWrap.style.display = c.bulk ? '' : 'none';
-    const bb = root.querySelector('[data-f="vj-bulk-btn"], #vj-bulk-btn');
-    if (bb && c.bulk) {
-      bb.setAttribute('onclick', c.bulk.onclick);
-      bb.disabled = !!status.monitoringCheckInProgress;
-      bb.setAttribute('aria-disabled', bb.disabled ? 'true' : 'false');
-    }
-    const lbl = root.querySelector('[data-f="vj-bulk-btn-label"], #vj-bulk-btn-label');
-    if (lbl && c.bulk) lbl.textContent = status.monitoringCheckInProgress ? 'Check in progress' : (c.bulk.label || 'Run check now');
+    if (c.bulk) {
+      bulkWrap.style.display = '';
+      const bb = root.querySelector('[data-f="vj-bulk-btn"]');
+      if (bb) {
+        bb.setAttribute('onclick', c.bulk.onclick);
+        bb.disabled = !!status.monitoringCheckInProgress;
+        bb.setAttribute('aria-disabled', bb.disabled ? 'true' : 'false');
+      }
+      const lbl = root.querySelector('[data-f="vj-bulk-btn-label"]');
+      if (lbl) lbl.textContent = status.monitoringCheckInProgress ? 'Check in progress' : (c.bulk.label || 'Run check now');
+    } else bulkWrap.style.display = 'none';
   }
-
-  if (options.active && typeof _setActiveDetails === 'function') {
-    _setActiveDetails(root.classList.contains('is-detailed'));
-  }
-  return c;
+  root.querySelectorAll('.vj-log-act').forEach((button) => {
+    if (/open sheet/i.test(button.textContent || '')) button.style.display = 'none';
+  });
 }
 
 // The banner is the SAME .vj-live band, promoted. One component, four tones, so
@@ -10504,6 +10493,16 @@ function applyVjCardAppearance(root, status, fields) {
 function renderFailedStartRetry(root, status) {
   const el = root && (root.querySelector('#active-retry') || root.querySelector('[data-f="active-retry"]'));
   if (!el) return false;
+  const stage = root.querySelector('#active-stage') || root.querySelector('[data-f="active-stage"]');
+  // The unified stage already contains the stopped outcome, safety copy and
+  // guarded continuation action. Do not revive the older one-line retry panel
+  // on top of it merely because this renderer runs later in fillVjCard.
+  if (stage && !stage.hidden && root.classList.contains('has-unified-stage')) {
+    el.hidden = true;
+    el.innerHTML = '';
+    el.dataset.html = '';
+    return false;
+  }
   // The live line and this panel share one grid slot; the CSS hides the live
   // line whenever this one is showing, so neither renderer's ordering can put
   // them on top of each other.
@@ -10642,8 +10641,6 @@ function fillVjCard(root, status) {
     });
   }
 
-  // The Campaign tab calls this same renderer. State and campaign identity now
-  // decide every action once; the surface displaying the card does not.
   _renderVjCardControls(root, status);
 }
 
@@ -10815,12 +10812,14 @@ function renderUnifiedStrip(it) {
   // existing queued dot — no new colour (mono design system).
   const warming = cloud && queued && it.createdAt
     && (Date.now() - new Date(it.createdAt).getTime()) < 3 * 60 * 1000;
+  const needsOutcomeReview = !!it.needsOutcomeReview || String(it.endReason || '').toLowerCase() === 'needs_review';
   let statusTxt = scheduled ? whenTxt
     : warming ? '⏳ Warming up (~2 min)'
     : queued ? 'Queued'
     : monitoring ? 'Monitoring'
     : waiting ? 'Waiting'
     : running ? (it.paused && !locallyOwnedMonitoring ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
+    : needsOutcomeReview ? 'Needs verification'
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
   // Phase 0 primary-handshake lock (Task 3.4): the engine pauses a cloud
@@ -11056,12 +11055,12 @@ function renderUnifiedStrip(it) {
     const debriefBtn = (!cloud && it.hist)
       ? _dib(V3_SVG_DOC, 'Debrief', `window.openDebrief('${escHtml(it.id)}')`)
       : '';
-    // Restart — only for a STOPPED/CANCELLED/ERRORED campaign (it.bad), never a
-    // cleanly-completed one. ▶ Continue where it left off · ⟲ Restart from the
-    // beginning. Both skip already-done rows/leads (no double-outreach).
+    // A stopped campaign always enters the same guarded continuation decision
+    // from both the compact dashboard row and its expanded campaign card.
+    // Keeping separate legacy restart handlers here made the two views offer
+    // different choices for the same run.
     const restartBtns = it.bad
-      ? _dib(V3_SVG_PLAY, 'Continue where it left off', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', false)` : `restartLocalFromItem('${escHtml(it.id)}', false)`)
-        + _dib(V3_SVG_RESTART, 'Restart from the beginning', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', true)` : `restartLocalFromItem('${escHtml(it.id)}', true)`)
+      ? `<button class="mini go" onclick="window.openCampaignContinuation('${escHtml(it.id)}','${cloud ? 'vm' : 'local'}')">Continue campaign</button>`
       : '';
     // OPEN routing for a finished strip: STOPPED/cancelled cloud → prefilled
     // editable setup wizard (edit & re-launch); cleanly-done cloud → live view;
@@ -11918,12 +11917,7 @@ async function _renderCampaignsBoardInner() {
       const k = _dupeKey(d.campaign || {});
       _dupeSeen.set(k, (_dupeSeen.get(k) || 0) + 1);
     }
-    for (const rawDetail of _cloudRaw) {
-      const stoppingNow = _stoppingCloudIds.has(String((rawDetail.campaign || {}).id || ''));
-      const d = stoppingNow
-        ? { ...rawDetail, live: false, liveProgress: null,
-          campaign: { ...(rawDetail.campaign || {}), status: 'stopping' } }
-        : rawDetail;
+    for (const d of _cloudRaw) {
       const c = d.campaign || {}; const lc = d.leadCounts || {};
       const _dupes = (_dupeSeen.get(_dupeKey(c)) || 1) - 1;
       if (['done', 'cancelled', 'error'].includes(c.status) && _cloudDismissed.has(c.id)) continue;
@@ -12401,7 +12395,7 @@ async function renderStaleFollowups(items) {
         ${who}
         <div class="sn-foot"><div class="right">
           ${login}
-          <button class="mini danger" onclick="discardStaleFollowups('${escHtml(g.key)}', ${g.count}, this)">Discard ${n(g.count, 'follow-up')}</button>
+          <button class="mini danger" onclick="discardStaleFollowups(this.closest('.fu-grp').dataset.key, ${g.count}, this)">Discard ${n(g.count, 'follow-up')}</button>
           <button class="mini solid" onclick="retryFollowups(this)">Send ${g.count === 1 ? 'it' : 'these ' + g.count} now</button>
         </div></div>
       </div>
@@ -12555,8 +12549,11 @@ function appConfirm(message, opts = {}) {
         <button type="button" class="${opts.machineChoice ? 'machine-choice-option' : 'modal-cancel-link'} ac-cancel">${escHtml(opts.cancelLabel || 'Cancel')}</button>
         <button type="button" class="${opts.machineChoice ? 'machine-choice-option is-current' : 'btn btn-primary'} ac-ok">${escHtml(opts.okLabel || 'Delete all')}</button>
       </div></div>`;
-    const done = (v) => { document.removeEventListener('keydown', onKey); back.remove(); resolve(v); };
-    const onKey = (e) => { if (e.key === 'Escape') done(opts.machineChoice ? null : false); else if (e.key === 'Enter') done(true); };
+    let finished = false;
+    const done = (v) => { if (finished) return; finished = true; document.removeEventListener('keydown', onKey); back.remove(); resolve(v); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); done(opts.machineChoice ? null : false); }
+    };
     back.querySelector('.ac-ok').onclick = () => done(true);
     back.querySelector('.ac-cancel').onclick = () => done(false);
     back.onclick = (e) => { if (e.target === back) done(opts.machineChoice ? null : false); };
@@ -12737,6 +12734,9 @@ async function stopCloudCampaignUI(id) {
     liveProgress = d && d.liveProgress;
     sentCount = Number(d && d.leadCounts && d.leadCounts.sent) || 0;
   } catch { /* fall through to plain confirm */ }
+  const hasCurrentSendingLead = status === 'running' && liveProgress
+    && liveProgress.phase === 'sending' && !!String(liveProgress.selecting || liveProgress.lead || '').trim();
+
   // A campaign with invitations already out can still be watched for
   // acceptances, so what happens to them is the operator's call. That question
   // is about the SENT invites and has nothing to do with whichever lead happens
@@ -12751,7 +12751,7 @@ async function stopCloudCampaignUI(id) {
   // because campaign-monitor-tick bails on any status that isn't 'monitoring'.
   const stillSending = status === 'running' || status === 'queued';
   if (usesMonitoringCadence(mode) && stillSending && sentCount > 0) {
-    _stopChoiceTarget = { cloud: true, id };
+    _stopChoiceTarget = { cloud: true, id, immediatePrompt: hasCurrentSendingLead };
     const sub = document.getElementById('stop-choice-sub');
     if (sub) {
       sub.textContent = `${sentCount} invitation${sentCount === 1 ? '' : 's'} `
@@ -12760,9 +12760,16 @@ async function stopCloudCampaignUI(id) {
     document.getElementById('stop-choice-modal')?.classList.remove('hidden');
     return;
   }
-  // Stop means stop. A current lead no longer opens a second wait-or-cut modal.
-  // The monitoring choice above is still necessary because it decides what
-  // survives after sending stops; either answer cuts sending immediately.
+  if (hasCurrentSendingLead) {
+    _stopChoiceTarget = { cloud: true, id };
+    const modal = document.getElementById('confirm-stop-modal');
+    const copy = document.getElementById('stop-current-lead-copy');
+    if (copy) copy.textContent = 'A lead is mid-send on the VM. No new lead will start either way.';
+    modal?.classList.remove('hidden');
+    return;
+  }
+  // Monitoring, queued work, and idle/paused campaigns have no verified current
+  // lead. Never ask a hypothetical lead question in those states.
   await _doStopCloud(id, { keepMonitoring: false, immediate: true });
 }
 window.stopCloudCampaignUI = stopCloudCampaignUI;
@@ -12782,25 +12789,29 @@ async function _cloudMutationRequest(url, verb) {
 }
 
 // Fire the actual engine stop (shared by the plain confirm + both choice pills).
-async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', immediate = true } = {}) {
-  if (_stoppingCloudIds.has(String(id))) return false;
-  immediate = true;
+async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', immediate = false } = {}) {
+  id = String(id);
+  if (_stoppingCloudIds.has(id)) return false;
   _markCloudStopping(id, true);
   // Say it the moment the operator clicks, NOT after the VM answers. The engine
   // call below retries a timeout up to three times, which left the card reading
   // "STOPPING…" for a full minute with nothing whatsoever in the log — the
   // operator had no way to tell a slow VM from a click that never registered.
   _pushCloudEventNow(id, keepMonitoring
-      ? '⏹️ Stop requested — sending stops now; acceptance monitoring remains.'
-      : '⏹️ Stop requested — stopping now; no next person can start.');
+    ? (immediate
+      ? '⏹️ Stop requested — sending stops now, the VM keeps monitoring for acceptances. Waiting for the VM to confirm…'
+      : '⏹️ Stop requested — the account finishes the person it is on, then sending stops and the VM keeps monitoring for acceptances. Waiting for the VM to confirm…')
+    : (immediate
+      ? '⏹️ Stop requested — stopping now, without finishing the person in progress. Waiting for the VM to confirm…'
+      : '⏹️ Stop requested — the account finishes the person it is on, then the campaign stops. Waiting for the VM to confirm…'));
   try {
     // `immediate` used to be dropped the moment keepMonitoring was set, so
     // "Stop sending, keep monitoring" could never stop now — it always finished
     // the person in flight first. The two are independent: keepMonitoring says
     // what happens AFTER the stop, immediate says how fast the stop is.
     const qs = keepMonitoring
-      ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}&immediate=1`
-      : '?immediate=1';
+      ? `?keepMonitoring=1&monitoringScope=${scope === 'sheet' ? 'tab' : 'campaign'}${immediate ? '&immediate=1' : '&finishCurrent=1'}`
+      : (immediate ? '?immediate=1' : '?finishCurrent=1');
     await _cloudMutationRequest(`/api/campaign/cloud/${encodeURIComponent(id)}/stop${qs}`, 'stop');
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(keepMonitoring
@@ -12808,16 +12819,7 @@ async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', im
         : 'Cloud campaign stopped.', 5000);
     }
     _pushCloudEvent(id, keepMonitoring ? '⏹️ Sending stopped — VM keeps monitoring for acceptances' : '⏹️ Campaign stopped');
-    _forceCloudItemsAfterAction(id).finally(() => {
-      _markCloudStopping(id, false);
-      // The forced refresh fetched the real terminal/monitoring row while the
-      // optimistic Stop overlay was active. Paint that saved row once more now
-      // that the overlay is gone, then update the campaign-tab card as well.
-      try { renderCampaignsBoard(); } catch (_) { /* */ }
-      _refreshCloudActiveStatus(id).catch(() => {});
-    });
   } catch (e) {
-    _markCloudStopping(id, false);
     const message = `Stop was not confirmed by the VM: ${e.message}. The last displayed campaign state has been kept; retry after the connection recovers.`;
     // The toast disappears. A stop that did not take must survive in the log,
     // or the campaign looks stopped while the VM is still sending.
@@ -12825,10 +12827,12 @@ async function _doStopCloud(id, { keepMonitoring = false, scope = 'campaign', im
     if (typeof showCampaignToast === 'function') showCampaignToast(message, 9000);
     else alert(message);
     if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
+    _markCloudStopping(id, false);
     return false;
   }
   if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
   if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  _markCloudStopping(id, false);
   return true;
 }
 
@@ -13147,19 +13151,16 @@ window.clearCloudEditMode = clearCloudEditMode;
 // v2.160.51: also KEEP that campaign's log on display — force the Live Status
 // section open (liveStatusForcedOpen) and expand it, so the opened campaign's log
 // is always visible at the bottom of the wizard, under section 6 (Launch).
-function _bindLiveStatusToCampaign(id, seed = null) {
+function _bindLiveStatusToCampaign(id, seededStatus = null) {
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound yet */ }
   _viewingCloudId = id;
   liveStatusForcedOpen = true;
-  // Pin the requested campaign synchronously, before the route changes. The
-  // shared #active-card still contains whatever the background local poll last
-  // painted (often "N campaigns running in the cloud"). Waiting for the detail
-  // request before replacing that markup caused the generic summary to flash
-  // for several seconds and made the selected campaign look as if it vanished.
-  if (seed) {
-    const seededStatus = seed._cloud ? seed : statusFromItem(seed);
+  if (seededStatus) {
+    seededStatus = { ...seededStatus, _cloud: true, id };
     window.__cloudActiveStatus = seededStatus;
-    try { renderActiveCard(seededStatus); } catch (_) { /* detail fetch replaces it */ }
+    try { renderActiveCard(seededStatus); } catch (_) { /* detail refresh follows */ }
+    try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+    try { placeLiveCard(); } catch (_) { /* */ }
   }
   Promise.resolve(_refreshCloudActiveStatus(id)).catch(() => {}).then(() => {
     setTimeout(() => {
@@ -13200,9 +13201,6 @@ async function openRunningCampaignReadOnly(id) {
     const select = document.getElementById('campaign-mode');
     if (select && mode) { select.value = mode; if (typeof onModeChange === 'function') onModeChange(); }
   }
-  // Bind and paint THIS campaign before exposing the shared Live Status card.
-  // The detail poll enriches it afterwards; navigation can no longer reveal
-  // the stale aggregate card in between.
   _bindLiveStatusToCampaign(id, _it ? statusFromItem(_it) : null);
   goCreateCampaign();
   // v2.160.47: this is a VM campaign — reflect Cloud VM, not This machine.
@@ -13395,7 +13393,9 @@ async function _submitCloudEditRedispatch(body) {
 // from the beginning (counter resets to 0; the sheet STILL skips already-done
 // rows, so no double-outreach). Reuses the exact /api/campaign/start path the
 // resume flow uses — no new backend.
+const _historyRestartInFlight = new Set();
 async function restartLocalFromItem(id, fromStart) {
+  const viewedHistoryAtRequest = typeof _viewingLocalHistory === 'undefined' ? undefined : _viewingLocalHistory;
   const it = _boardItemsById.get(id);
   if (!it || !it.srcSettings) {
     if (typeof showCampaignToast === 'function') showCampaignToast('No saved settings for this campaign — use Duplicate instead.', 5000);
@@ -13403,6 +13403,7 @@ async function restartLocalFromItem(id, fromStart) {
   }
   const s = it.srcSettings;
   const payload = {
+    ...structuredClone(s),
     profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
     sheetUrl: s.sheetUrl || '',
     templates: s.templates || {},
@@ -13419,22 +13420,110 @@ async function restartLocalFromItem(id, fromStart) {
   };
   if (!fromStart) {
     payload.resumeContext = { totalProcessed: Number(it.hist && (it.hist.totalProcessed || it.hist.successCount)) || 0 };
+  } else {
+    delete payload.resumeContext;
   }
+  if (_historyRestartInFlight.has(id)) return false;
+  _historyRestartInFlight.add(id);
   try {
+    const confirmed = await appConfirm(
+      `Start “${it.name || 'this campaign'}” now on This Mac using its saved settings? ${fromStart ? 'This starts a new run with fresh run counters.' : 'This continues the recorded run counters.'} Confirmed actions stay recorded and uncertain outcomes remain held. Eligible work can send invitations or messages.`,
+      { title: fromStart ? 'Restart campaign' : 'Continue campaign', okLabel: fromStart ? 'Restart now' : 'Continue now', cancelLabel: 'Cancel' },
+    );
+    if (!confirmed) return false;
     const r = await fetch('/api/campaign/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!r.ok) {
       const err = await r.text().catch(() => '');
       if (typeof showCampaignToast === 'function') showCampaignToast(`Restart failed: ${err || r.statusText}`, 6000);
       return;
     }
+    if (typeof _viewingLocalHistory !== 'undefined' && _viewingLocalHistory === viewedHistoryAtRequest) _viewingLocalHistory = null;
+    if (typeof pollStatus === 'function') await pollStatus();
     if (typeof showCampaignToast === 'function') showCampaignToast(fromStart ? 'Restarted from the beginning — already-done rows are skipped.' : 'Continuing where it left off…', 4500);
     if (typeof startPolling === 'function') startPolling();
     if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast(`Restart failed: ${e.message}`, 6000);
-  }
+    return false;
+  } finally { _historyRestartInFlight.delete(id); }
 }
 window.restartLocalFromItem = restartLocalFromItem;
+
+const _continuationChoicesBusy = new Set();
+window.openCampaignContinuation = async function(id, environment = 'local') {
+  const key = `${environment}:${id}`;
+  if (_continuationChoicesBusy.has(key)) return;
+  _continuationChoicesBusy.add(key);
+  try {
+    const native = environment === 'local' && ['local-active', 'legacy-singleton'].includes(id);
+    const historical = environment === 'local' && !native;
+    const item = historical ? _boardItemsById.get(id) : null;
+    let status;
+    if (historical) {
+      if (!item?.srcSettings) throw new Error('Saved campaign settings are unavailable.');
+      status = { ...structuredClone(item.srcSettings), mode: item.mode, name: item.name, state: 'done' };
+      const currentResponse = await fetch('/api/campaign/status');
+      const current = await currentResponse.json();
+      const historyExecution = item.hist?.executionId;
+      if (currentResponse.ok && historyExecution && current.executionId === historyExecution) {
+        status = current;
+      }
+    } else {
+      const response = await fetch(native ? '/api/campaign/status' : `/api/campaign/cloud/${encodeURIComponent(id)}`);
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || 'Campaign state unavailable');
+      status = data.campaign || data;
+      if (native && !['legacy-singleton', 'local-active'].includes(status.id)) throw new Error('The local campaign changed.');
+    }
+    if (status.running || ['running', 'paused', 'pausing', 'stopping', 'needs_review'].includes(status.status || status.state)
+        || status.paused || status.pauseRequested || status.monitoringCheckInProgress) {
+      throw new Error('Use the active campaign controls or finish its recovery review first.');
+    }
+    const until = Date.parse(status.monitoringUntil || status.monitoring_until || '');
+    const sameHistoricalExecution = historical && item?.hist?.executionId && item.hist.executionId === status.executionId;
+    const monitoringAvailable = (!historical || sameHistoricalExecution) && Number.isFinite(until) && until > Date.now();
+    const checkAvailable = !historical || sameHistoricalExecution || !!(status.taskCampaignId && status.campaignRunId);
+    const choice = await chooseContinuation(status, { monitoringAvailable, checkAvailable });
+    if (!choice) return;
+    if (choice === 'monitoring' && !monitoringAvailable) throw new Error('The original monitoring window and ownership are unavailable.');
+    if (choice === 'check' && !checkAvailable) throw new Error('The saved check has no proven campaign owner.');
+    if (choice === 'sending') {
+      if (historical && !sameHistoricalExecution) return await restartLocalFromItem(id, false);
+      if (native || sameHistoricalExecution) return await window.dashRestartActive(status.executionId);
+      return await restartCloudCampaignUI(id, false, undefined, true, true);
+    }
+    if (choice === 'monitoring') {
+      await requestConfirmedResume(fetch, (native || sameHistoricalExecution)
+        ? '/api/campaign/monitoring/resume'
+        : `/api/campaign/cloud/${encodeURIComponent(id)}/monitoring/resume`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify((native || sameHistoricalExecution)
+          ? { executionId: status.executionId }
+          : { expectedUpdatedAt: status.updated_at }),
+      });
+      showCampaignToast('Automatic monitoring resumed. New invitation sending remains stopped.', 6000);
+    } else if (environment === 'vm') {
+      await cloudCheckNow(id, null, 'campaign');
+    } else {
+      const latestResponse = await fetch('/api/campaign/status');
+      const latest = await latestResponse.json();
+      if (!latestResponse.ok || latest.error) throw new Error(latest.error || 'Campaign state unavailable');
+      if ((native || sameHistoricalExecution) && latest.executionId !== status.executionId) throw new Error('The campaign changed before the check.');
+      if (latest.running || latest.monitoringCheckInProgress) throw new Error('Another operation is active on this Mac.');
+      showCampaignToast('Running one campaign check. Automatic monitoring is unchanged.', 6000);
+      await requestConfirmedResume(fetch, '/api/bulk-check-now', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...checkContext(status), continuationCheck: true }),
+      });
+    }
+    if (typeof pollStatus === 'function') await pollStatus();
+    if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
+  } catch (error) {
+    showCampaignToast(`Continuation not confirmed: ${error.message}`, 8000);
+  } finally {
+    _continuationChoicesBusy.delete(key);
+  }
+};
 
 // Restart a STOPPED/CANCELLED/ERRORED cloud campaign — re-activates the SAME
 // record on the engine (status → running; leads already sent carry sentAt and
@@ -13444,7 +13533,7 @@ window.restartLocalFromItem = restartLocalFromItem;
 // startAt (ISO, optional): schedule the restart instead of running it now. The
 // engine parks the campaign in 'scheduled' behind a durable task and restarts it
 // itself at that instant — this app can be closed.
-async function restartCloudCampaignUI(id, fromStart, startAt, resumeSending = false) {
+async function restartCloudCampaignUI(id, fromStart, startAt, resumeSending = false, preserveSavedSettings = false) {
   // Say it before the VM is asked, exactly like the stop does. The card is
   // log-driven, and this line classifies as 'sending-resumed' (live-log-banner),
   // so it also switches the card off the monitoring view immediately — the
@@ -13460,16 +13549,11 @@ async function restartCloudCampaignUI(id, fromStart, startAt, resumeSending = fa
   try {
     // Carry the wizard's (possibly edited) daily limit so a change made while the
     // campaign was stopped actually takes effect on the engine when it restarts.
-    const dlRaw = parseInt(document.getElementById('daily-limit')?.value, 10);
+    const dlRaw = preserveSavedSettings ? NaN : parseInt(document.getElementById('daily-limit')?.value, 10);
     const dailyLimit = Number.isFinite(dlRaw) && dlRaw > 0 ? dlRaw : undefined;
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/restart`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fromStart: !!fromStart,
-        resumeSending: !!resumeSending,
-        ...(dailyLimit ? { dailyLimit } : {}),
-        ...(startAt ? { startAt } : {}),
-      }),
+      body: JSON.stringify({ fromStart: !!fromStart, resumeSending: !!resumeSending, ...(dailyLimit ? { dailyLimit } : {}), ...(startAt ? { startAt } : {}) }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || d.error) {
@@ -13515,37 +13599,32 @@ async function restartCloudCampaignUI(id, fromStart, startAt, resumeSending = fa
 }
 window.restartCloudCampaignUI = restartCloudCampaignUI;
 
-// Manual acceptance checks are intentionally optimistic in the UI: the click
-// must replace the old "waiting" card before a cold VM or GoLogin browser has
-// had time to answer. The next server poll replaces this temporary description
-// with measured progress.
-function _paintAcceptanceCheckStartingNow(id, current = 'vm') {
-  const action = {
-    phase: 'checking',
-    label: 'Starting acceptance check now',
-    sub: current === 'vm'
-      ? 'The Cloud VM is opening the campaign accounts.'
-      : 'This Mac is opening the campaign accounts.',
-    safety: 'Sending stays stopped. Only accepted connections are being checked.',
-    facts: [['Requested', 'now'], ['Sending', 'stays stopped'], ['Checking', 'starting']],
-    milestones: [['Choice', 'acceptance checking', 'done'], ['Browser', 'opening now', 'active'], ['Results', 'reported here', 'future']],
-  };
-  const active = window.__cloudActiveStatus;
-  if (active && String(active.id || '') === String(id || '')) {
-    window.__cloudActiveStatus = {
-      ...active,
-      monitoringCheckInProgress: true,
-      monitorCheckStatus: 'starting',
-      currentAction: action,
-    };
-    try { if (typeof renderActiveCard === 'function') renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* board copy still repaints */ }
-  }
-  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
-}
-
 // Task 3 Part B — cloud monitoring controls (parity with local ⚡ Check now /
 // Automatic checks). Degrade gracefully until the engine ships the routes: a
 // 404/HTTP error → a clear "engine update pending" toast, no throw.
+function _paintAcceptanceCheckStartingNow(id, where) {
+  const detail = where === 'vm'
+    ? 'Sending stays stopped while the VM starts one acceptance check.'
+    : 'Sending stays stopped while this Mac starts one acceptance check.';
+  const apply = (status) => {
+    if (!status || String(status.rawId || status.id || '') !== String(id)) return status;
+    return Object.assign(status, {
+      monitoringCheckInProgress: true,
+      currentAction: 'Starting acceptance check',
+      currentActionDetail: detail,
+    });
+  };
+  if (window.__cloudActiveStatus) {
+    apply(window.__cloudActiveStatus);
+    try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* best effort */ }
+  }
+  try {
+    const item = _snItemsById && _snItemsById.get(String(id));
+    if (item) apply(item);
+  } catch (_) { /* board data may not exist yet */ }
+  try { renderCampaignsBoard(); } catch (_) { /* best effort */ }
+}
+
 async function cloudCheckNow(id, btn, scope) {
   scope = scope === 'all' ? 'all' : 'campaign';
   const existingAsk = _cloudCheckAsked.get(id);
@@ -13692,8 +13771,14 @@ async function cloudCheckLocal(id, btn, scope) {
       ccDmBody: cfg.ccDmBody || '',
       senderFirstNames: cfg.senderFirstNames || {},
     };
-    if (scope === 'all') body.allSenders = true;
-    else body.profileIds = camp.profile_ids || camp.profileIds || [];
+    Object.assign(body, checkContext({
+      sheetUrl: camp.sheet_url,
+      linkedinColumn: cfg.linkedinColumn,
+      mode: camp.mode,
+      profileIds: camp.profile_ids || camp.profileIds || [],
+      templates: cfg,
+      senderFirstNames: cfg.senderFirstNames,
+    }, scope === 'all'));
     const _sweepReq = fetch('/api/bulk-check-now', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
@@ -14256,7 +14341,7 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
               <span class="hs-wiz-elapsed">0s</span>
             </div>
             <div class="hs-list hs-wiz-list">
-              ${senderProfileIds.map((id) => `<div class="hs-row" data-hid="${escHtml(String(id))}"><span class="ic"><span class="dotwait"></span></span><span class="who">${escHtml(nameOf(id))}</span><span class="st">Waiting</span></div>`).join('')}
+              ${senderProfileIds.map((id) => `<div class="hs-row" data-hid="${escHtml(String(id))}"><span class="ic"><span class="dotwait"></span></span><span class="who">${escHtml(nameOf(id))}</span><button type="button" class="st hs-open-sender" disabled>Waiting</button></div>`).join('')}
             </div>
             <div class="hs-wiz-log" aria-label="Handshake activity log"><div class="hs-wiz-log-line">Waiting for the first browser step…</div></div>
             <div class="hs-keep">Keep this app open — this is the only local step this campaign needs.</div>
@@ -14265,7 +14350,6 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
         </div>
         <div class="modal-actions hs-wiz-actions" style="display:flex; gap:10px; flex-wrap:wrap">
           <button type="button" class="btn btn-primary hs-wiz-retry" style="display:none">Retry</button>
-          <button type="button" class="btn hs-wiz-anyway">Dispatch anyway</button>
           <button type="button" class="btn modal-cancel-link hs-wiz-cancel">Cancel</button>
         </div>
       </div>`;
@@ -14319,6 +14403,11 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
         row.classList.toggle('done', view.done);
         const ic = row.querySelector('.ic'); if (ic) ic.innerHTML = _hsRowIconHtml(view);
         const st = row.querySelector('.st'); if (st) st.textContent = view.label;
+        const canOpen = !view.done && ['error', 'sent-no-identity', 'browser-frozen'].includes(String(s.state || '')) && !!s.profileId;
+        if (st) {
+          st.disabled = !canOpen;
+          st.onclick = canOpen ? () => openProfileBrowser(String(s.profileId)) : null;
+        }
         if (s.name) { const who = row.querySelector('.who'); if (who) who.textContent = s.name; }
       }
       const cnt = $('.hs-wiz-count'); if (cnt) cnt.textContent = String(connected);
@@ -14394,20 +14483,17 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
       const now = $('.hs-wiz-now-text'); if (now) now.textContent = outcome.detail;
       const el = $('.hs-wiz-elapsed'); if (el) el.textContent = '';
       const retry = $('.hs-wiz-retry'); if (retry) { retry.style.display = ''; retry.textContent = 'Try the primary again'; retry.dataset.acceptOnly = '1'; }
-      const anyway = $('.hs-wiz-anyway'); if (anyway) { anyway.style.display = ''; anyway.textContent = 'Send anyway'; }
       const cancel = $('.hs-wiz-cancel'); if (cancel) cancel.textContent = 'Cancel launch';
     };
 
     const showError = (msg, { is409 = false } = {}) => {
       const err = $('.hs-wiz-error'); if (err) { err.hidden = false; err.textContent = msg; }
       const retry = $('.hs-wiz-retry'); if (retry) retry.style.display = '';
-      const anyway = $('.hs-wiz-anyway'); if (anyway) anyway.style.display = is409 ? 'none' : '';
     };
 
     const start = async ({ acceptOnly = false } = {}) => {
       const err = $('.hs-wiz-error'); if (err) { err.hidden = true; err.textContent = ''; }
       const retry = $('.hs-wiz-retry'); if (retry) { retry.style.display = 'none'; delete retry.dataset.acceptOnly; }
-      const anyway = $('.hs-wiz-anyway'); if (anyway) anyway.style.display = '';
       const panel = $('.hs-panel'); if (panel) panel.classList.remove('partial');
       const label = $('.hs-wiz-now-label'); if (label) label.textContent = 'NOW';
       settleStartedAt = null;
@@ -14450,12 +14536,40 @@ function runHandshakeWizard({ senderProfileIds = [], primaryUrl, primarySource =
     }, 1000);
 
     $('.hs-wiz-retry').addEventListener('click', (e) => start({ acceptOnly: e.currentTarget.dataset.acceptOnly === '1' }));
-    $('.hs-wiz-anyway').addEventListener('click', () => finish({ ok: false, proceedAnyway: true }));
-    $('.hs-wiz-cancel').addEventListener('click', () => finish({ ok: false, proceedAnyway: false }));
+    $('.hs-wiz-cancel').addEventListener('click', async () => {
+      try { await fetch('/api/campaign/cloud-preflight-handshake/cancel', { method: 'POST' }); } catch (_) { /* cleanup remains visible in status */ }
+      finish({ ok: false, proceedAnyway: false });
+    });
     start();
   });
 }
 window.runHandshakeWizard = runHandshakeWizard;
+
+let _localPrimaryRecoveryBusy = false;
+window.localPrimaryRecovery = async function localPrimaryRecovery(action, button, expectedExecutionId) {
+  if (_localPrimaryRecoveryBusy || button?.disabled) return false;
+  _localPrimaryRecoveryBusy = true;
+  const previous = button?.textContent || '';
+  if (button) { button.disabled = true; button.textContent = action === 'login' ? 'Opening…' : 'Checking…'; }
+  try {
+    const endpoint = action === 'login'
+      ? '/api/primary-browser/open-login'
+      : '/api/campaign/primary-recovery/retry';
+    const response = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ executionId: expectedExecutionId }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+    return true;
+  } catch (error) {
+    showCampaignToast(`Primary recovery failed: ${error.message}`, 7000);
+    return false;
+  } finally {
+    _localPrimaryRecoveryBusy = false;
+    if (button) { button.disabled = false; button.textContent = previous; }
+  }
+};
 
 // ── Start-time preflight gate (Task 7) ──────────────────────────────────────
 // Every account on the campaign is blocked, so say so before the operator
@@ -14601,8 +14715,8 @@ async function _submitCloudCampaign(body) {
       });
       launchLog(hs.ok
         ? '🤝 Handshake complete — every sender is connected to the primary'
-        : (hs.proceedAnyway ? '🤝 Handshake skipped — dispatching anyway, as you chose' : '🤝 Handshake cancelled'));
-      if (!hs.ok && !hs.proceedAnyway) {
+        : '🤝 Handshake cancelled');
+      if (!hs.ok) {
         // Never exit silently. This return abandons the launch AND the finally
         // below wipes the board card, so without a word on screen the campaign
         // simply disappeared — the operator's read was that the app ate it.
@@ -15145,8 +15259,7 @@ function confirmStopCampaign() {
   // Without this the VM campaign fell through to the local confirm modal
   // (__cockpit.mode is undefined for a cloud run) and never asked
   // "stop everything vs. keep monitoring". Same routing as dashStopActive.
-  const cloudId = _activeCardCloudId();
-  if (cloudId) { stopCloudCampaignUI(cloudId); return; }
+  if (_viewingCloudId) { stopCloudCampaignUI(_viewingCloudId); return; }
   // v2.14.x: when the campaign is in monitoring state (sending finished,
   // watcher active), route to the dedicated stop-monitoring modal instead
   // of the running-campaign flow. Without this, the button was either
@@ -15164,9 +15277,19 @@ function confirmStopCampaign() {
     return;
   }
   _stopChoiceTarget = { cloud: false, id: null };
-  // A Stop click always cuts the current work. There is no second modal that
-  // offers to keep working on the current person.
-  confirmStopCampaignNow(true);
+  // No lead in flight, no question. A campaign that has not started sending has
+  // nothing to wait for, and asking "what about the lead in flight?" about a
+  // lead that does not exist is what made the operator read this modal as
+  // broken (2026-08-28). The cloud path already skips it in this state
+  // (hasCurrentSendingLead); this one asked unconditionally and named "the
+  // current lead" as a placeholder.
+  const lead = String(__cockpit?.currentAction?.lead || '').trim();
+  const sendingNow = !!lead && !!__cockpit?.running && __cockpit?.state !== 'monitoring';
+  if (!sendingNow) { confirmStopCampaignNow(true); return; }
+  const copy = document.getElementById('stop-current-lead-copy');
+  if (copy) copy.textContent = `${lead} is mid-send. No new lead will start either way.`;
+  const modal = document.getElementById('confirm-stop-modal');
+  if (modal) modal.classList.remove('hidden');
 }
 
 function closeStopModal() {
@@ -15243,9 +15366,8 @@ window.confirmStopMonitoringNow = confirmStopMonitoringNow;
 
 async function confirmStopCampaignNow(immediate = false) {
   closeStopModal();
-  immediate = true;
   const target = _stopChoiceTarget;
-  showCampaignToast('Stopping now — if the result is uncertain, the strip will tell you exactly what to check.', 15000);
+  showCampaignToast(immediate ? 'Stopping now — if the result is uncertain, the strip will tell you exactly what to check.' : 'Waiting up to 15 seconds for the current lead…', 15000);
   if (target.cloud && target.id) await _doStopCloud(target.id, { immediate });
   else {
     try { await fetch('/api/campaign/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full: true, immediate }) }); } catch { /* status polling surfaces recovery */ }
@@ -15261,20 +15383,44 @@ async function confirmStopCampaignNow(immediate = false) {
 async function stopAndKeepMonitoring() {
   const target = _stopChoiceTarget; // capture before close resets it
   closeStopChoiceModal();
-  _soloCheckHandler = (scope) => _finishStopAndKeepMonitoring(target, scope);
-  const modal = document.getElementById('solo-check-modal');
-  if (modal) {
-    const eyebrow = modal.querySelector('.stop-choice-eyebrow');
-    const title = modal.querySelector('.stop-choice-headline');
-    const sub = modal.querySelector('.stop-choice-sub');
-    if (eyebrow) eyebrow.textContent = 'Stop sending · keep monitoring';
-    if (title) title.textContent = 'Who should monitoring check?';
-    if (sub) sub.textContent = 'This scope belongs to this sheet tab only. It never pulls senders from another tab.';
+  const snapshot = target.cloud ? (_cloudDetailCache.get(target.id) || {}) : (__cockpit || {});
+  const policy = continuationPolicy((snapshot.campaign || snapshot).mode);
+  if (!policy.acceptance) {
+    showCampaignToast(policy.monitoringDetail, 7000);
+    return false;
   }
-  _showSoloCheckModal();
+  const confirmed = await appConfirm(
+    `${policy.monitoringDetail} ${policy.scopeDetail} Monitoring stays on the current machine; this does not start an extra manual check.`,
+    { title: 'Stop sending · keep monitoring', okLabel: 'Keep configured monitoring', cancelLabel: 'Cancel' },
+  );
+  if (confirmed !== true) return false;
+  return _finishStopAndKeepMonitoring(target, 'campaign');
 }
 
 async function _finishStopAndKeepMonitoring(target, scope) {
+  if (scope !== 'campaign') throw new Error('Sheet-wide monitoring is not supported.');
+  if (target.cloud && target.id) {
+    return _doStopCloud(target.id, { keepMonitoring: true, scope, immediate: true });
+  }
+  try {
+    const response = await fetch('/api/campaign/stop', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full: false, monitoringScope: 'campaign', immediate: true }),
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || 'Stop was not confirmed.');
+    showCampaignToast('Stop requested. Configured monitoring can continue only after shutdown is confirmed; check the campaign status.', 7000);
+    if (typeof pollStatus === 'function') await pollStatus();
+    return true;
+  } catch (error) {
+    showCampaignToast(`Monitoring change not confirmed: ${error.message}`, 8000);
+    return false;
+  }
+}
+
+// Kept only for the separate machine-handover dialog. Stop/keep-monitoring
+// itself never moves ownership or starts an extra check.
+async function _legacyFinishStopAndKeepMonitoring(target, scope) {
   if (target.cloud && target.id) {
     const chooseMachine = async (where) => {
       const stopped = await _doStopCloud(target.id, { keepMonitoring: true, scope, immediate: true });
@@ -15320,7 +15466,7 @@ async function _finishStopAndKeepMonitoring(target, scope) {
     await fetch('/api/campaign/stop', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ full: false, monitoringScope: scope === 'sheet' ? 'tab' : 'campaign', immediate: true }),
+      body: JSON.stringify({ monitoringScope: scope === 'sheet' ? 'tab' : 'campaign' }),
     });
   } catch { /* */ }
   try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
@@ -15344,6 +15490,16 @@ async function stopEverything() {
   const target = _stopChoiceTarget; // capture before close resets it
   closeStopChoiceModal();
   if (target.cloud && target.id) {
+    // A lead is mid-flight, so the wait-or-cut question is still owed. Re-arm
+    // the target: closeStopChoiceModal() above cleared it, and
+    // confirmStopCampaignNow reads it back off the module.
+    if (target.immediatePrompt) {
+      _stopChoiceTarget = { cloud: true, id: target.id };
+      const copy = document.getElementById('stop-current-lead-copy');
+      if (copy) copy.textContent = 'A lead is mid-send on the VM. No new lead will start either way.';
+      document.getElementById('confirm-stop-modal')?.classList.remove('hidden');
+      return;
+    }
     await _doStopCloud(target.id, { keepMonitoring: false, immediate: true });
     return;
   }
@@ -16931,9 +17087,9 @@ function syncLiveStatusVisibility() {
   // so the operator can still read the log and hit "Run reply check now".
   const finished = !!(typeof __cockpit !== 'undefined' && __cockpit && !__cockpit.running
     && __cockpit.state !== 'monitoring' && (__cockpit.endNotice || __cockpit.hasLogs));
-  // Running/monitoring are hidden while editing an unrelated draft; a FINISHED
-  // campaign's log is shown regardless (the wizard resets to a fresh draft on
-  // finish, so editingDraft is true — but the operator still wants the log).
+  // Running, monitoring and finished history are hidden while editing an
+  // unrelated saved draft. A finished card is restored when the operator opens
+  // that campaign explicitly (liveStatusForcedOpen) or leaves the draft.
   // Follower Growth has its OWN self-contained log card (#fgtl-card); the generic
   // campaign Live Status (#nav-status) must never appear in FG view, else a prior
   // finished campaign's card lingers underneath the FG board (v2.119.2).
@@ -16945,7 +17101,8 @@ function syncLiveStatusVisibility() {
   // regardless of the local __cockpit state (which is idle for a VM campaign) and
   // even if liveStatusForcedOpen was reset by an unrelated re-render.
   const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
-  const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || cloudView || ((running || monitoring) && !editingDraft) || finished);
+  const show = !inFollowerGrowth && onNew
+    && (liveStatusForcedOpen || cloudView || ((running || monitoring || finished) && !editingDraft));
   sec.style.display = show ? '' : 'none';
   // A live ownership transition is operational status, not optional wizard
   // content. Accordion defaults and renderer reloads used to collapse section 7
@@ -20047,7 +20204,8 @@ document.getElementById('primary-person-url')?.addEventListener('blur', loadPrim
 function toggleFollowUpFields() {
   const on = !!document.getElementById('follow-up-toggle')?.checked;
   const box = document.getElementById('follow-up-fields');
-  if (box) box.style.display = on ? '' : 'none';
+  if (document.getElementById('nav-automation')) syncFollowUpTiming(on);
+  else if (box) box.style.display = on ? '' : 'none';
   // The message editor lives in Section 5 and unlocks only while the toggle is
   // on AND we're in CC+IC mode.
   const mode = document.getElementById('campaign-mode')?.value;
@@ -20163,7 +20321,7 @@ async function reloadPrimarySourceSoO() {
   if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
   if (status) { status.textContent = ''; status.classList.remove('err'); }
   try {
-    await loadSoOStatus({ force: true });
+    await loadSoOStatus();
     if (allProfilesData && allProfilesData.length) renderProfiles(allProfilesData);
     renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
     refreshPrimarySourceLabels();
@@ -22081,9 +22239,9 @@ async function _runActiveBulkCheck(mode) {
   let s = {};
   try { s = await (await fetch('/api/campaign/status')).json(); } catch { /* */ }
   if (!s.sheetUrl) { if (typeof showCampaignToast === 'function') showCampaignToast('No sheet URL'); return; }
-  const body = { sheetUrl: s.sheetUrl, linkedinColumn: s.linkedinColumn };
-  if (mode === 'sheet') body.allSenders = true;
-  else body.profileIds = s.profileIds;
+  let body;
+  try { body = checkContext(s, mode === 'sheet'); }
+  catch (error) { showCampaignToast(error.message); return; }
   // v2.98: offer to reconnect & retry previously-failed intros first. The server
   // falls back to the live campaign's templates when the status omits them.
   await _maybeConfirmReviveIntros(body, {
@@ -22324,7 +22482,11 @@ async function _runSoloCheckPast(idx, mode) {
     return;
   }
   const t = s.templates || {};
+  let snapshot;
+  try { snapshot = checkContext(s, mode === 'sheet'); }
+  catch (error) { showCampaignToast(error.message); return; }
   const body = {
+    ...snapshot,
     sheetUrl: s.sheetUrl,
     linkedinColumn: s.linkedinColumn || '',
     primaryName: t.primaryName || '',
@@ -22339,8 +22501,6 @@ async function _runSoloCheckPast(idx, mode) {
   };
   // 'campaign' → pass the saved accounts. 'sheet' → omit profileIds so the
   // server derives every account from the sheet's Sender column.
-  if (mode === 'campaign') body.profileIds = Array.isArray(s.profileIds) ? s.profileIds : [];
-  if (mode === 'sheet') body.allSenders = true;
   // v2.98: offer to reconnect & retry previously-failed intros first.
   await _maybeConfirmReviveIntros(body, {
     primaryName: t.primaryName || '',
@@ -22835,6 +22995,7 @@ window.resumeWithEditFirst = resumeWithEditFirst;
 // campaigns in parallel without losing any.
 async function startNewCampaign() {
   window.__viewingActiveCampaign = false;
+  _viewingLocalHistory = null;
   // v2.160.42: a fresh campaign is type-editable — clear any lock left over from
   // an OPEN-to-edit of an existing campaign.
   if (typeof unlockCampaignType === 'function') unlockCampaignType();
@@ -23141,6 +23302,9 @@ function renderBulkCheckSummary({ matched, stamped, fetched, profilesSweep, deri
 }
 
 async function bulkCheckNow() {
+  let context;
+  try { context = checkContext(collectCurrentConfig()); }
+  catch (error) { showCampaignToast(error.message); return; }
   // Two buttons exist (wizard Advanced + live status panel) and two status
   // spans share the .bulk-check-status-msg class. Update all instances.
   const btns = document.querySelectorAll('#btn-bulk-check-now, #btn-bulk-check-live');
@@ -23230,8 +23394,7 @@ async function bulkCheckNow() {
     // Send the full selected array. Server now accepts profileIds (plural).
     // Falls back to deriving from the sheet's Account Used column when the
     // operator hasn’t selected anyone.
-    const body = { sheetUrl, linkedinColumn };
-    if (profileIds.length) body.profileIds = profileIds;
+    const body = { ...context };
     // Pull the wizard's Primary Person fields if filled — server uses them
     // to fire the auto-intro DM after the bulk-check stamps Connected.
     // Empty values mean no auto-intro happens (no behaviour change for
@@ -28034,17 +28197,22 @@ function _stageAcctPill(a, isCurrent, counts) {
   // CC+IC's primary handshake is a launch prerequisite, not secondary account
   // trivia. Keep its verified result visible in the top pill row so operators
   // do not have to scroll below the large status card to find it.
-  if (a.primaryConnected === true && !['bad', 'warn'].includes(cls)) {
-    cls = 'ok';
-    text = `${text} · Primary ✓`;
-  } else if (a.primaryConnected === false && !['bad', 'warn'].includes(cls)) {
+  if (a.primaryConnected === true) {
+    if (!['bad', 'warn'].includes(cls)) cls = 'ok';
+    text = `${text} · Primary connected`;
+  } else if (a.primaryConnected === false) {
     // The badge had no opposite, so a sender that was never connected to the
     // primary looked identical to one that was (operator, 2026-08-28: "I don't
     // see any indication that the three accounts have sent connections to the
     // primary"). null still means "not checked" and stays silent; false means
     // we looked and it is not connected, which no introduction can survive.
-    cls = 'warn';
-    text = `${text} · no primary`;
+    if (!['bad', 'warn'].includes(cls)) cls = 'warn';
+    const primaryText = a.primaryState === 'pending'
+      ? 'Primary invite pending'
+      : a.primaryState === 'unverified'
+        ? 'Primary connection unverified'
+        : 'Not connected to primary';
+    text = `${text} · ${primaryText}`;
     tip = tip || 'This sender is not connected to the primary, so no introduction can be sent for its leads.';
   }
   // Out of free personalised invites — the account IS still sending, so this is
@@ -28061,10 +28229,49 @@ function _stageAcctPill(a, isCurrent, counts) {
   // can be short of both, so the tooltip carries whichever apply. Picking one
   // dropped the note explanation on every FG account that had credit data.
   const title = tip ? `${tip} — retries next run` : [cr ? _fgCreditTip(cr) : '', noteTip].filter(Boolean).join('\n');
+  const recovery = recoveryAction(a);
+  const recoveryButton = recovery && recovery.kind === 'verify'
+    ? `<button type="button" class="stg-recovery-action" onclick="openStageAccountRecovery('${escHtml(a.profileId || '')}',this)">${escHtml(recovery.label)}</button>`
+    : '';
   return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')"`
     + `${title ? ` title="${escHtml(title)}"` : ''}>`
-    + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>`;
+    + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>${recoveryButton}`;
 }
+
+window.openStageAccountRecovery = function(profileId, button = null) {
+  const key = String(profileId || '');
+  const cardStatus = button ? _stageStatus.get(button.closest('[data-f="active-stage"]')) : null;
+  const candidates = [
+    ...((cardStatus && cardStatus.recoveryAccounts) || []),
+    ...[..._cloudAccountsById.values()].flat(),
+    ...((__cockpit && (__cockpit.accountPanel || __cockpit.accounts)) || []),
+  ];
+  const account = candidates.find(a => String(a && a.profileId || '') === key);
+  if (!account) {
+    showCampaignToast('This account’s recovery record is no longer available. Refresh the campaign before trying again.', 6000);
+    return;
+  }
+  openRecoveryReview({ account,
+    verify: async (id, url) => {
+      const response = await fetch(`/api/profile/${encodeURIComponent(id)}/invitation-observation?url=${encodeURIComponent(url)}`);
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || 'Invitation state could not be read.');
+      return result;
+    },
+    checkShutdown: async id => {
+      const response = await fetch(`/api/profile/${encodeURIComponent(id)}/shutdown-observation`);
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || 'Shutdown could not be confirmed.');
+      return result;
+    },
+    openLogin: async id => {
+      const response = await fetch(`/api/profile/${encodeURIComponent(id)}/open-browser`, { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || 'Profile could not be opened.');
+      return result;
+    },
+  });
+};
 
 // The pill's drawer. Only actions that already exist and act on THIS account:
 // watching its browser, and clearing a bench. Add/remove live in the accounts
@@ -28152,18 +28359,19 @@ function _followupFixHtml(cid) {
   // than fix a browser, and a probable no is the most expensive thing to miss.
   const heldHtml = _heldFollowupsHtml(h);
   const stuck = (h.blocked || 0) + (h.failed || 0);
-  if (!stuck) return heldHtml;
+  if (!stuck) {
+    if (!(h.needsReview || h.interrupted)) return heldHtml;
+    return heldHtml + `<section class="strip-recovery-panel"><h3>Follow-ups need attention</h3><p>At least one follow-up has an unconfirmed outcome. Review the lead conversation before deciding whether anything should be sent.</p></section>`;
+  }
   const n = stuck === 1 ? 'follow-up' : 'follow-ups';
-  const row = h.reason === 'signed-out' || h.blocked
-    ? `<b>${stuck} ${n} are waiting.</b> The follow-up browser is signed out of LinkedIn. It is its own Chrome window, separate from your everyday one — which is why you never saw it open. Sign in once and they go out on their own; nothing is lost and no lead was messaged twice.`
-    : `<b>${stuck} ${n} could not be sent.</b> ${escHtml(h.lastError || 'LinkedIn did not open the message box')}. The leads themselves are fine — only the follow-up is missing.`;
-  const acts = [
-    '<button type="button" onclick="openFollowupLogin(this)">Open the follow-up browser to log in</button>',
-    `<button type="button" onclick="retryFollowups(this)">Retry the ${stuck} now</button>`,
-  ];
-  return heldHtml
-    + `<div class="fixhd">What you can do</div><ul><li>${row}</li></ul>`
-    + `<div class="fixacts">${acts.join('')}</div>`;
+  const login = h.reason === 'signed-out' || h.blocked;
+  const row = login
+    ? `<b>${stuck} ${n} need attention.</b> The dedicated follow-up browser needs a LinkedIn login. Personal-primary follow-ups use this browser even when the campaign runs on the VM. It is separate from your everyday Chrome.`
+    : `<b>${stuck} ${n} could not be sent.</b> ${escHtml(h.lastError || 'LinkedIn did not open the message box')}. Review the affected conversations before continuing.`;
+  const action = login
+    ? '<div class="strip-recovery-actions"><button type="button" onclick="openFollowupLogin(this)">Open follow-up browser &amp; log in</button></div>'
+    : '';
+  return heldHtml + `<section class="strip-recovery-panel"><h3>${login ? 'Follow-ups need login' : 'Follow-ups need attention'}</h3><p>${row}</p>${action}</section>`;
 }
 
 // Follow-ups this campaign did NOT send because the lead had already written
@@ -28384,6 +28592,19 @@ function _stageOverview(status, ca, la, phase) {
     side = ['Current lead', String(la && la.who || ca && ca.lead || 'Accepted connection'), currentAccount ? `via ${profileLabel(currentAccount)}` : 'Preparing introduction'];
     next = ['Next expected event', String(ca && ca.sub || 'Confirm the introduction'), 'The result is written to the campaign sheet after confirmation.'];
   } else if (phase === 'starting') {
+    const recovery = status && (status.primaryRecovery || status.recoveryWait);
+    if (recovery) {
+      const checkpoint = recovery.state === 'checkpoint';
+      side = ['Waiting for you', 'Waiting for you', checkpoint
+        ? 'LinkedIn verification is required before this campaign can continue'
+        : 'The campaign is waiting for a LinkedIn login'];
+      next = ['Next expected event', checkpoint
+        ? 'Complete LinkedIn verification, then retry'
+        : 'Sign in to LinkedIn, then retry',
+      'No queued lead is consumed while the campaign waits.'];
+      metricValues = [accepted == null ? '—' : accepted, introduced == null ? '—' : introduced, 'Waiting'];
+      return { side, next, metricLabels, metricValues };
+    }
     // The value is the ONE line of this panel the operator reads, and it is
     // clipped to a single line — "Preparing browser runti…" is what it actually
     // showed for the whole first minute of the 2026-08-28 launch. Keep it to two
@@ -28405,7 +28626,7 @@ function _stageOverview(status, ca, la, phase) {
     next = ['Operator action', 'Resume here or switch machines', 'The campaign continues from its saved queue position.'];
   } else if (phase === 'done') {
     const terminal = terminalPresentation(status || {});
-    side = ['Outcome', terminal.complete ? 'Completed normally' : 'Stopped before completion',
+    side = ['Outcome', terminal.label,
       terminal.complete ? 'No actionable work remains' : `${terminal.pending} lead${terminal.pending === 1 ? '' : 's'} remain safe`];
     next = terminal.complete
       ? ['Next', 'Nothing is scheduled', 'Open the sheet or debrief whenever you need the final record.']
@@ -28440,7 +28661,11 @@ function renderLiveStage(root, status) {
   // A paused local run may deliberately retain only its last browser action.
   // Keep the shared stage visible as PAUSED instead of falling through to the
   // legacy local banner (or incorrectly treating its account list as "done").
-  const terminal = !canonicalOwned && status && status.state === 'done' ? terminalPresentation(status) : null;
+  const terminalLike = status && (['done', 'needs_review'].includes(status.state)
+    || (!status.running && (status.stopReason || status.endReason || status.endNotice
+      || ['completed', 'cancelled', 'error', 'failed', 'stopped'].includes(String(status.engineStatus || '').toLowerCase()))));
+  const terminal = !canonicalOwned && status && status.state === 'done' ? terminalPresentation(status)
+    : (!canonicalOwned && terminalLike ? terminalPresentation(status) : null);
   // Monitoring between sweeps is a durable campaign state. Historical lead
   // results remain in `logs`, so buildLiveActivity can legitimately reconstruct
   // an old "introduced" event long after its sweep completed. That event must
@@ -28470,6 +28695,7 @@ function renderLiveStage(root, status) {
   // "sender browser closed" turned a monitoring card into a live sending one,
   // step strip and all. The log itself still renders in full underneath.
   if (logEvent && !heroFollowsLog(logEvent.kind, monitoringIdle)) logEvent = null;
+  if (logEvent && status && (status.primaryRecovery || status.recoveryWait)) logEvent = null;
   if (logEvent && phase !== 'done' && !paused && !interrupted) {
     phase = bannerEventPhase(logEvent, phase);
   }
@@ -28499,6 +28725,8 @@ function renderLiveStage(root, status) {
       // something went wrong halfway.
       label: terminal.complete
         ? 'All eligible leads have a final result'
+        : ['Needs verification', 'Blocked'].includes(terminal.label)
+          ? terminal.label
         : processed === 0
           ? 'Stopped before any connection was sent'
           : 'Work ended before every lead was processed',
@@ -28551,10 +28779,12 @@ function renderLiveStage(root, status) {
     };
     la = { phase: 'paused', who: '', l1: ca.label, l2: ca.sub };
   } else if (!canonicalOwned && status && status.phase === 'preflight' && !ca) {
+    const primaryWait = status.primaryRecovery;
     ca = {
       phase: 'starting',
-      label: status.preflightL1 || 'Connecting sender accounts to the primary',
-      sub: status.preflightSub || 'The campaign starts automatically when the handshake completes',
+      label: primaryWait ? 'Primary needs login' : (status.preflightL1 || 'Connecting sender accounts to the primary'),
+      sub: primaryWait ? 'Sending is waiting. Open the primary browser, sign in, then retry primary acceptance.'
+        : (status.preflightSub || 'The campaign starts automatically when the handshake completes'),
       safety: 'No campaign lead is consumed during setup',
       // Two different journeys. With Phase 0 the senders are being connected to
       // the primary here; without it nothing local happens and the only steps
@@ -28568,7 +28798,7 @@ function renderLiveStage(root, status) {
         sendersTotal: (status.profileIds || []).length,
       }),
     };
-    la = { phase: 'starting', who: '', l1: ca.label, l2: ca.sub };
+    la = { phase: 'starting', who: ca.label, l1: ca.label, l2: ca.sub };
   }
   const sweepDisposition = monitorSweepDisposition(status || {});
   if (!canonicalOwned && phase === 'monitoring' && sweepDisposition === 'idle') {
@@ -28656,6 +28886,10 @@ function renderLiveStage(root, status) {
       at: Number(logEvent && logEvent.at) || 0,
     };
   }
+  // An unresolved/blocked terminal outcome outranks the routine final log line
+  // (usually "Campaign ended"). The log remains visible below the card; it
+  // must not replace the action the operator needs to see in the headline.
+  if (logEvent && phase === 'done' && terminal && !terminal.complete) logEvent = null;
   // Once a sweep has ended, an account result remains useful in the log and
   // on its sender pill, but must not leave the whole campaign looking active.
   // Idle monitoring returns to its durable "waiting for next check" view.
@@ -28779,6 +29013,12 @@ function renderLiveStage(root, status) {
   // the card, so the old hero, per-account rail and profile roster cannot be
   // rendered around it as a second (conflicting) design.
   root.classList.add('has-unified-stage');
+  const retryPanel = root.querySelector('#active-retry') || root.querySelector('[data-f="active-retry"]');
+  if (retryPanel) {
+    retryPanel.hidden = true;
+    retryPanel.innerHTML = '';
+    retryPanel.dataset.html = '';
+  }
   stage.dataset.cid = cid;
   _stageStatus.set(stage, status);
   stage.classList.toggle('is-checking', phase === 'checking');
@@ -28801,7 +29041,8 @@ function renderLiveStage(root, status) {
   const glyphPhase = paused ? 'paused' : phase;
   if (stage.dataset.glyphphase !== glyphPhase) {
     const g = _stgFld(root, 'stageGly');
-    if (g) g.innerHTML = _stageGlyphHtml(glyphPhase) + (paused ? '' : '<span class="vj-stage-secs"></span>');
+    const waitingForOperator = !!(status && (status.primaryRecovery || status.recoveryWait));
+    if (g) g.innerHTML = _stageGlyphHtml(glyphPhase) + (paused || waitingForOperator ? '' : '<span class="vj-stage-secs"></span>');
     stage.dataset.glyphphase = glyphPhase;
   }
   stage.dataset.phase = phase;
@@ -28923,7 +29164,8 @@ function renderLiveStage(root, status) {
   // The cloud payload already has stage-account objects. Local campaigns expose
   // the same truth through accountPanel/accountColumns; normalise those rows so
   // LM and VM use the identical pill row instead of restoring the legacy rail.
-  let accts = cloudAccts.length ? cloudAccts : accountColumns(status).map((a) => ({
+  const recoveryAccts = Array.isArray(status && status.recoveryAccounts) ? status.recoveryAccounts : [];
+  let accts = cloudAccts.length ? cloudAccts : recoveryAccts.length ? recoveryAccts : accountColumns(status).map((a) => ({
     profileId: a.email,
     email: a.email,
     dailyCount: a.sentToday,
@@ -28974,7 +29216,10 @@ function renderLiveStage(root, status) {
     // Only the stalled state gets advice — during a send there is nothing to fix.
     const fix = _stgFld(root, 'stageFix');
     if (fix) {
-      if (phase === 'monitoring' && ca && ca.resumeClock && ca.resumeReason === 'daily') {
+      if (status.primaryRecovery) {
+        const executionId = escHtml(status.executionId || '');
+        fix.innerHTML = `<div class="strip-recovery-panel" data-primary-recovery><h3>Primary needs login</h3><p>Sending is waiting. Open the primary browser, sign in, then retry primary acceptance.</p><div class="strip-recovery-actions"><button type="button" onclick="localPrimaryRecovery('login',this,'${executionId}')">Open primary &amp; log in</button><button type="button" onclick="localPrimaryRecovery('retry',this,'${executionId}')">I’ve logged in — retry</button></div></div>`;
+      } else if (phase === 'monitoring' && ca && ca.resumeClock && ca.resumeReason === 'daily') {
         fix.innerHTML = `<div class="stg-resume"><div><b>Sending starts at ${escHtml(ca.resumeClock)}</b><span>Monitoring continues in the meantime.</span></div><button type="button" onclick="startMonitoringSendingNow(this)">Start now</button></div>`;
       } else {
         // Follow-up trouble is worth saying in EVERY phase, not only 'waiting':
@@ -29563,6 +29808,16 @@ window.renderActiveCard = function(status) {
   // transition until the POST returns the target's real status.
   if (_whBusy && _whHold) {
     status = { ..._whHold, running: true };
+  }
+  // A selected local history entry owns the shared card until the operator
+  // starts/opens something else. Ignore the idle singleton snapshots emitted
+  // by the background poll; they describe no campaign and must not erase the
+  // selected campaign's log, sheet, accounts or templates.
+  if (_viewingLocalHistory) {
+    const selected = _boardItemsById.get(_viewingLocalHistory)
+      || (_snItemsById && _snItemsById.get(_viewingLocalHistory));
+    const incomingId = String((status && (status.rawId || status.id)) || '');
+    if (selected && incomingId !== String(_viewingLocalHistory)) status = statusFromItem(selected);
   }
   // The operator is looking at one specific campaign — every other campaign's
   // poller has to wait its turn. See activeCardAcceptsStatus above.
@@ -30441,19 +30696,26 @@ function renderResumeReview(rc) {
 // Shared confirm path: applies any staged edits, gives the operator feedback, and refreshes
 // the card so it leaves the "paused" state immediately (not on the next poll cycle).
 async function confirmResume() {
-  await fetch('/api/campaign/resume/confirm', { method: 'POST' });
-  if (typeof showCampaignToast === 'function') showCampaignToast('Resuming…');
-  if (typeof pollStatus === 'function') pollStatus();
+  try {
+    await requestConfirmedResume(fetch, '/api/campaign/resume/confirm', { method: 'POST' });
+    if (typeof showCampaignToast === 'function') showCampaignToast('Resume confirmed.');
+    if (typeof pollStatus === 'function') await pollStatus();
+    return true;
+  } catch (error) {
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Resume not confirmed: ${error.message}`, 8000);
+    return false;
+  }
 }
 
 async function onResumeClicked() {
-  const pre = await fetch('/api/campaign/resume/preview').then(x => x.json()).catch(() => null);
-  if (!pre || !pre.ok || pre.resumeChanges.isEmpty) {
-    // Nothing staged (or preview unavailable) → resume straight away. confirm still applies
-    // any staged edits server-side, so this never silently drops changes.
-    await confirmResume();
-    return;
+  let pre;
+  try { pre = await requestConfirmedResume(fetch, '/api/campaign/resume/preview'); }
+  catch (error) {
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Resume review unavailable: ${error.message}`, 8000);
+    return false;
   }
+  if (!pre.resumeChanges) return false;
+  if (pre.resumeChanges.isEmpty) return confirmResume();
   renderResumeReview(pre.resumeChanges);
   const panel = document.getElementById('resume-review-panel');
   panel.hidden = false; panel.style.display = 'flex'; // .cockpit-panel is flex; match #pause-edit-panel
@@ -30464,7 +30726,7 @@ document.getElementById('resume-keep-editing')?.addEventListener('click', () => 
   panel.hidden = true; panel.style.display = 'none';
 });
 document.getElementById('resume-confirm')?.addEventListener('click', async () => {
-  await confirmResume();
+  if (!(await confirmResume())) return;
   const panel = document.getElementById('resume-review-panel');
   panel.hidden = true; panel.style.display = 'none';
 });
@@ -30632,8 +30894,8 @@ async function renderPauseAccountAdd() {
 window.renderPauseAccountAdd = renderPauseAccountAdd;
 
 window.dashPauseActive = async function() {
-  // Route from the card's data, not the navigation flag. A fresh app process can
-  // restore a DEV/VM campaign card without ever setting _viewingCloudId.
+  // Viewing a cloud campaign → pause/resume the VM engine (parity with local).
+  // isPaused from the folded status flag decides which way this toggles.
   const cloudId = _activeCardCloudId();
   if (cloudId) {
     const paused = !!(window.__cloudActiveStatus && window.__cloudActiveStatus.paused);
@@ -30666,30 +30928,6 @@ window.dashPauseActive = async function() {
 // execution phase or machine. The existing Ortus confirm surface keeps this
 // consistent in the builder and the cloned expanded dashboard card.
 const _resumeDecisionInFlight = new Set();
-async function _resumeAcceptanceCheckNow(id, current, btn) {
-  // Durable campaign rows use the same command from the dashboard strip and
-  // the full campaign card. cloudCheckNow owns the runs-on guard, so a campaign
-  // handed to This Mac cannot accidentally start a second sweep on the VM.
-  if (id && id !== 'local-active') return cloudCheckNow(id, btn, 'campaign');
-
-  // A native local campaign has no cloud id. Paint first, then dispatch the
-  // existing local bulk-check route without waiting for the full sweep to end.
-  __cockpit.monitoringCheckInProgress = true;
-  __cockpit.action = {
-    phase: 'checking', label: 'Starting acceptance check now',
-    sub: 'This Mac is opening the campaign accounts.',
-  };
-  try { if (typeof renderActiveCard === 'function') renderActiveCard(__cockpit); } catch (_) { /* board copy still repaints */ }
-  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
-  if (typeof showCampaignToast === 'function') showCampaignToast('Acceptance checking is starting now. Sending stays stopped.', 5000);
-  Promise.resolve(_runActiveBulkCheck('campaign')).catch((e) => {
-    __cockpit.monitoringCheckInProgress = false;
-    if (typeof showCampaignToast === 'function') showCampaignToast(`Acceptance check failed: ${e.message}`, 7000);
-    try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* */ }
-  });
-  return true;
-}
-
 window.openCampaignResumeDecision = async function(id, phase = 'sending', current = 'local', btn = null) {
   const sendingFromMonitoring = phase === 'sending-from-monitoring';
   const requestedPhase = sendingFromMonitoring ? 'sending' : phase;
@@ -30703,69 +30941,47 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   let committed = false;
   let accepted = false;
   try {
-  // A monitoring campaign has two independent jobs. Never interpret a generic
-  // Play/Resume click as one of them: ask which phase the operator means, then
-  // start that phase on the machine already shown on the card.
+  const stateResponse = await fetch(current === 'vm'
+    ? `/api/campaign/cloud/${encodeURIComponent(id)}` : '/api/campaign/status');
+  const stateBody = await stateResponse.json();
+  if (!stateResponse.ok || stateBody.error) throw new Error(stateBody.error || 'Campaign state could not be verified.');
+  const resumeState = stateBody.campaign || stateBody;
+  const policy = continuationPolicy(resumeState.mode);
+  if (!resumeState.mode) throw new Error('Campaign type is unavailable. Refresh before choosing what to resume.');
+  if (policy.retired) throw new Error('This campaign type is retired. Review its saved settings instead of restarting it here.');
+  if ((requestedPhase === 'monitoring' || sendingFromMonitoring) && !policy.acceptance) {
+    throw new Error(policy.monitoringDetail);
+  }
+  if (!sendingFromMonitoring && requestedPhase === 'sending' && policy.acceptance
+      && (resumeState.paused || resumeState.status === 'paused')) {
+    const remaining = await appConfirm(
+      `${policy.remainingDetail} Alternatively, run one acceptance check while sending stays paused. ${policy.monitoringDetail}`,
+      { title: 'What should run?', okLabel: policy.remaining, cancelLabel: policy.checkLabel, machineChoice: true },
+    );
+    if (remaining == null) return false;
+    if (!remaining) {
+      accepted = await _resumeAcceptanceCheckNow(id, current, btn);
+      return accepted;
+    }
+  }
   if (sendingFromMonitoring) {
     const resumeSending = await appConfirm(
-      'Choose exactly one. Sending works through the queued leads. Acceptance checking checks recent connections while sending stays stopped.',
-      {
-        title: 'What should resume now?',
-        okLabel: 'Resume sending now',
-        cancelLabel: 'Resume acceptance checking now',
-        machineChoice: true,
-      },
+      `${policy.remainingDetail} Alternatively, run one acceptance check while sending remains stopped.`,
+      { title: 'What should resume now?', okLabel: 'Resume sending now', cancelLabel: 'Resume acceptance checking now', machineChoice: true },
     );
-    if (resumeSending == null) return;
-    committed = true;
+    if (resumeSending == null) return false;
     if (!resumeSending) {
       accepted = await _resumeAcceptanceCheckNow(id, current, btn);
       return accepted;
     }
-    if (current === 'vm') {
-      accepted = await restartCloudCampaignUI(id, false, undefined, true);
-      return accepted;
-    }
-    // A durable campaign that runs on This Mac is re-adopted in the explicit
-    // sending phase. It must not fall through to the old pause-resume endpoint,
-    // because monitoring is not a paused sender.
-    if (id && id !== 'local-active') {
-      accepted = true;
-      return campaignHandover(id, 'local', null, 'sending');
-    }
-    // Native local campaigns have no durable cloud row to re-adopt. Restore is
-    // the local runner's explicit "same campaign, remaining leads" command;
-    // stamped rows remain skipped. Paint the sending phase before either local
-    // endpoint answers so the card acknowledges the click immediately.
-    __cockpit.state = 'running';
-    __cockpit.running = true;
-    __cockpit.monitoringCheckInProgress = false;
-    __cockpit.action = {
-      phase: 'sending', label: 'Resuming sending now',
-      sub: 'This Mac is restoring the queued leads. Acceptance checking is not being started.',
-    };
-    try { if (typeof renderActiveCard === 'function') renderActiveCard(__cockpit); } catch (_) { /* board copy still repaints */ }
-    try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* next poll repaints */ }
-    if (typeof showCampaignToast === 'function') showCampaignToast('Resuming sending now. Acceptance checking is not being started.', 5000);
-    await fetch('/api/runtime/resumed', { method: 'POST' }).catch(() => {});
-    const restored = await fetch('/api/campaign/restore', { method: 'POST' });
-    if (!restored.ok) {
-      accepted = false;
-      if (typeof showCampaignToast === 'function') showCampaignToast('This Mac could not resume sending. Nothing new was sent; retry or use the Cloud VM.', 8000);
-      try { if (typeof pollStatus === 'function') pollStatus(); } catch (_) { /* */ }
-      return false;
-    }
-    accepted = true;
-    try { if (typeof startPolling === 'function') startPolling(); } catch (_) { /* */ }
-    return pollStatus();
   }
   const monitoring = requestedPhase === 'monitoring';
   const currentLabel = current === 'vm' ? 'Cloud VM' : 'This Mac';
   const otherLabel = current === 'vm' ? 'This Mac' : 'Cloud VM';
   const keepCurrent = await appConfirm(
     monitoring
-      ? `Resume acceptance checks only on ${currentLabel}? Sending will stay stopped.`
-      : `Continue sending where it left off on ${currentLabel}? Already-actioned leads will not be sent again.`,
+      ? `Continue configured monitoring on ${currentLabel}? ${policy.monitoringDetail} ${policy.scopeDetail}`
+      : `Continue on ${currentLabel}? ${policy.remainingDetail}`,
     { title: monitoring ? 'Resume monitoring' : 'Resume campaign', okLabel: `Continue on ${currentLabel}`, cancelLabel: `Continue on ${otherLabel}`, machineChoice: true },
   );
   if (keepCurrent == null) return;
@@ -30785,7 +31001,8 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
     if (id && id !== 'local-active' && localStatus.state !== 'monitoring') {
       return campaignHandover(id, 'local', null, 'monitoring');
     }
-    if (typeof showCampaignToast === 'function') showCampaignToast('Monitoring remains active on this Mac. Sending was not restarted.', 6000);
+    if (localStatus.state !== 'monitoring') throw new Error('No active monitoring session was found on this Mac. Review the saved campaign before continuing.');
+    if (typeof showCampaignToast === 'function') showCampaignToast('Configured monitoring remains active on this Mac. New invitations were not restarted.', 6000);
     return pollStatus();
   }
   // A monitoring campaign is not paused. Its Play/Start-now control means
@@ -30794,6 +31011,10 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
   // log line, and a permanently disabled button. Keep the origin explicit in
   // the control contract so current and future monitoring cards cannot regress.
   if (current === 'vm') {
+    if (sendingFromMonitoring) {
+      accepted = await restartCloudCampaignUI(id, false, undefined, true);
+      return accepted;
+    }
     return pauseCloudCampaignUI(id, true);
   }
   const status = await fetch('/api/campaign/status').then((r) => r.json()).catch(() => ({}));
@@ -30818,8 +31039,11 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
     return result;
   }
   const result = await onResumeClicked();
-  accepted = true;
+  accepted = result === true;
   return result;
+  } catch (error) {
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Continuation not confirmed: ${error.message}`, 8000);
+    return false;
   } finally {
     _resumeDecisionInFlight.delete(resumeKey);
     // A successful action repaints this control from server state. A cancelled
@@ -30872,36 +31096,40 @@ window.dashStopActive = async function() {
   }
 };
 
-window.dashRestartActive = async function() {
-  if (_activeCardCloudId()) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return; }
-  if (!confirm('Restart this campaign from the beginning? Progress will reset.')) return;
+let _activeRestartInFlight = false;
+window.dashRestartActive = async function(expectedExecutionId) {
+  if (_activeCardCloudId()) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return false; }
+  if (_activeRestartInFlight) return false;
+  _activeRestartInFlight = true;
+  const viewedHistoryAtRequest = typeof _viewingLocalHistory === 'undefined' ? undefined : _viewingLocalHistory;
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
-    // Capture config before stop wipes the in-memory campaign state.
-    const config = {
-      name: s.name,
-      mode: s.mode,
-      profileIds: s.profileIds,
-      sheetUrl: s.sheetUrl,
-      templates: s.templates,
-      dailyLimit: s.dailyLimit,
-      linkedinColumn: s.linkedinColumn,
-    };
-    await fetch('/api/campaign/stop', {
+    if (!sr.ok || !s.executionId) throw new Error('The campaign to restart could not be verified. Refresh the app first.');
+    if (expectedExecutionId && expectedExecutionId !== s.executionId) throw new Error('The campaign changed while choosing what to continue.');
+    if (!['local-active', 'legacy-singleton'].includes(s.id)) throw new Error('Use this campaign’s own continuation controls; it is managed by a cloud record.');
+    const confirmed = await appConfirm(
+      `Continue “${s.name || 'this campaign'}” now on This Mac using its saved accounts, sheet and settings? Confirmed actions remain recorded and uncertain outcomes remain held for review.`,
+      { title: 'Continue campaign', okLabel: 'Continue now', cancelLabel: 'Cancel' },
+    );
+    if (!confirmed) return false;
+    showCampaignToast('Continuation requested — verifying shutdown before launching the saved campaign.', 7000);
+    const response = await fetch('/api/campaign/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ full: true }),
+      body: JSON.stringify({ expectedExecutionId: s.executionId }),
     });
-    await fetch('/api/campaign/queue-only', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    });
-    if (typeof showCampaignToast === 'function') showCampaignToast('Restart queued');
-    if (typeof pollStatus === 'function') pollStatus();
-    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
-  } catch (err) { console.error('[v3] dashRestartActive:', err); }
+    const result = await response.json();
+    if (!response.ok || result.ok !== true) throw new Error(result.error || result.reason || 'Continuation was not accepted.');
+    if (typeof _viewingLocalHistory !== 'undefined' && _viewingLocalHistory === viewedHistoryAtRequest) _viewingLocalHistory = null;
+    showCampaignToast('Continuation accepted — watch the startup log.', 6000);
+    if (typeof startPolling === 'function') startPolling();
+    if (typeof pollStatus === 'function') await pollStatus();
+    return true;
+  } catch (err) {
+    showCampaignToast(`Restart not confirmed: ${err.message}`, 8000);
+    return false;
+  } finally { _activeRestartInFlight = false; }
 };
 
 window.dashCopyActiveToQueue = async function() {

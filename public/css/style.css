@@ -2804,14 +2804,16 @@ body.theme-light .section.tpl-section .placeholder-tags .tag {
 }
 .passover-pill.active { color: var(--green); border-color: var(--green); }
 .passover-pill.closed { color: var(--gray); border-color: var(--hairline); }
+.passover-pill.active { background: var(--green, #3fb950); color: #111; border-color: var(--green, #3fb950); font-weight: 600; }
+.passover-pill.closed { background: var(--gray, #767676); color: #fff; border-color: var(--gray, #767676); font-weight: 600; }
 /* v2.59.8 — light mode: the bright --green (#3fb950) and #999 gray read as faint
    on the light canvas at this small size. Use darker, higher-contrast tones and
    a hairline fill so the OP·IM·SN / CC pills are clearly visible. */
 body.theme-light .passover-pill.active {
-  color: #1c7a2e; border-color: #1c7a2e; background: rgba(63, 185, 80, 0.10);
+  color: #fff; border-color: #369d57; background: #369d57;
 }
 body.theme-light .passover-pill.closed {
-  color: #6a6a68; border-color: rgba(0, 0, 0, 0.25);
+  color: #fff; border-color: #767676; background: #767676;
 }
 
 /* ── Right-pane SoO error pill ─────────────────────────────────────────────

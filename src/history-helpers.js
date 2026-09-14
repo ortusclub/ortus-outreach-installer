@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { addToQueue } from './campaign-queue.js';
 import { updateJsonAtomic } from './atomic-json-store.js';
+import { runLogSlice, historyFacts } from './history-run-evidence.js';
 
 const HISTORY_PATH = dataPath('history.json');
 
@@ -78,29 +79,43 @@ export async function listHistory({ includeArchived = true } = {}) {
 // Read the per-campaign filtered slice of data/campaign.log. Returns
 // the last `limit` lines that mention the campaign's name (case-sensitive
 // substring match — the log format embeds the name verbatim).
-export async function readCampaignLog(idx, { limit = 500 } = {}) {
+export async function readCampaignLog(idx, { limit = 500, executionId } = {}) {
   if (!Number.isInteger(idx) || idx < 0) {
     return { ok: false, code: 'invalid_idx' };
   }
   const history = await readHistory();
+  if (executionId) {
+    const matches = history.map((h, i) => ({ h, i })).filter(({ h }) => (h.executionId || h.runId) === executionId);
+    if (matches.length !== 1) return { ok: false, code: 'out_of_range' };
+    idx = matches[0].i;
+  }
   if (idx >= history.length) {
     return { ok: false, code: 'out_of_range' };
   }
   const entry = history[idx];
   const name = entry.name || '';
+  const runId = entry.executionId || entry.runId;
+  if (runId && /^[a-zA-Z0-9_-]+$/.test(runId)) {
+    try {
+      const lines = (await readFile(dataPath('campaign-runs', `${runId}.log`), 'utf8')).split('\n').filter(Boolean);
+      return { ok: true, name, executionId: runId, lines: lines.slice(-limit), total: lines.length, ...historyFacts(entry, lines) };
+    } catch { /* legacy runs use explicit boundaries below */ }
+  }
   const logFile = dataPath('campaign.log');
   let text;
   try {
     text = await readFile(logFile, 'utf-8');
   } catch {
-    return { ok: true, name, lines: [], total: 0 };
+    return { ok: true, name, lines: [], total: 0, ...historyFacts(entry) };
   }
   const all = text.split('\n');
+  const bounded = runLogSlice(all, entry);
+  if (bounded.length) return { ok: true, name, executionId: runId, lines: bounded.slice(-limit), total: bounded.length, ...historyFacts(entry, bounded) };
   // Primary: slice by the campaign's time window — entry.date is the END
   // timestamp and entry.duration the run length in seconds. Per-lead log
   // lines never contain the campaign name, so the legacy name filter
   // returned nothing for most campaigns.
-  const windowLines = sliceLogByWindow(all, entry);
+  const windowLines = all.some(line => /=== Campaign starting ===/.test(line)) ? [] : sliceLogByWindow(all, entry, { graceMs: 0 });
   if (windowLines.length) {
     return { ok: true, name, lines: windowLines.slice(-limit), total: windowLines.length };
   }

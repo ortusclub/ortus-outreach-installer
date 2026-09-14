@@ -1756,6 +1756,40 @@ body[data-dashboard='v3'] .sn-acctwarn {
 body[data-dashboard='v3'] .sn-acctwarn-txt { font-size: 0.76rem; color: var(--ink); }
 body[data-dashboard='v3'] .sn-acctwarn-pills { display: inline-flex; gap: 7px; flex-wrap: wrap; }
 
+/* High-visibility dashboard pills. Keep card rails/gradients untouched. */
+body[data-dashboard='v3'] .btn-pill.go {
+  background: var(--green, #3fb950);
+  border-color: var(--green, #3fb950);
+  color: #111;
+  font-weight: 700;
+}
+body[data-dashboard='v3'] .btn-pill.go:hover {
+  background: var(--green, #3fb950);
+  border-color: var(--green, #3fb950);
+  color: #111;
+  filter: brightness(.92);
+}
+body.theme-dark[data-dashboard='v3'] .btn-pill.go { color: #fff; }
+
+body[data-dashboard='v3'] .stg-acct .cap-badge {
+  border-color: transparent;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+body[data-dashboard='v3'] .stg-acct .cap-badge .nm { color: inherit; font-weight: 600; }
+body[data-dashboard='v3'] .stg-acct .cap-badge.ok { background: var(--green, #3fb950); color: #111; border-color: var(--green, #3fb950); }
+body[data-dashboard='v3'] .stg-acct .cap-badge.warn { background: var(--gold, #d4a24a); color: #111; border-color: var(--gold, #d4a24a); }
+body[data-dashboard='v3'] .stg-acct .cap-badge.bad { background: var(--red, #f85149); color: #111; border-color: var(--red, #f85149); }
+body[data-dashboard='v3'] .stg-acct .cap-badge.muted { background: var(--gray, #767676); color: #fff; border-color: var(--gray, #767676); }
+body.theme-dark[data-dashboard='v3'] .stg-acct .cap-badge.ok,
+body.theme-dark[data-dashboard='v3'] .stg-acct .cap-badge.warn,
+body.theme-dark[data-dashboard='v3'] .stg-acct .cap-badge.bad { color: #fff; }
+
+body[data-dashboard='v3'] .vj-prof-chip { border-color: transparent; font-weight: 600; }
+body[data-dashboard='v3'] .vj-prof-row.is-sending .vj-prof-chip { background: var(--green, #3fb950); color: #111; border-color: var(--green, #3fb950); }
+body[data-dashboard='v3'] .vj-prof-row.is-warn .vj-prof-chip { background: var(--gold, #d4a24a); color: #111; border-color: var(--gold, #d4a24a); }
+body[data-dashboard='v3'] .vj-prof-row.is-done .vj-prof-chip { background: var(--gray, #767676); color: #fff; border-color: var(--gray, #767676); }
+
 /* ══ THE ONE NEW COMPONENT: the per-account step panel ═══════════════════
    One column per account, divided by the same hairline the card already
    uses everywhere. Built only from existing tokens: mono caps labels, ink

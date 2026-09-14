@@ -13,13 +13,16 @@
  * scheduler can recover from crashes and restarts.
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
 import { flushSheetWrites } from './sheets-writer.js';
 import * as browserSemaphore from './browser-semaphore.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
+import { readScheduleSnapshot, saveScheduleSnapshot } from './schedule-snapshot-store.js';
+import { hasTaskOwner, isTaskOwnerSuspended } from './primary-tasks.js';
+import { preparePrimarySession } from './primary-session-control.js';
+import { registerPrimaryOperation } from './primary-task-control.js';
 import { runAutoDms } from './linkedin/auto-dm.js';
 import { notifyEmail, enqueueDesktopNotification } from './notifier.js';
 import { getPrefs } from './notification-prefs.js';
@@ -32,13 +35,11 @@ const SWEEP_COOLDOWN_MS = 6 * 60 * 60 * 1000; // per (sheet, profile)
 let _tickTimer = null;
 
 async function readSchedule() {
-  try { return JSON.parse(await readFile(SCHEDULE_FILE, 'utf8')); }
-  catch { return {}; }
+  return readScheduleSnapshot(SCHEDULE_FILE);
 }
 
 async function writeSchedule(s) {
-  try { await writeFile(SCHEDULE_FILE, JSON.stringify(s, null, 2)); }
-  catch (err) { console.warn(`[post-campaign] write failed: ${err.message}`); }
+  return saveScheduleSnapshot(SCHEDULE_FILE, s);
 }
 
 function key(sheetId, profileId) { return `${sheetId}|${profileId}`; }
@@ -116,7 +117,7 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
                                           followUpBody = '', followUpDelayMinutes = 10,
                                           primarySource = 'local-browser',
                                           senderFirstName = '',
-                                          sweepIntervalMs = null }) {
+                                          sweepIntervalMs = null, taskOwner = null }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
   const k = key(sheetId, profileId);
@@ -157,6 +158,7 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     // carried the name already (monitoring-persistence.js persists it); this
     // background sweep was the one path that didn't.
     senderFirstName: senderFirstName || '',
+    taskOwner,
     // v2.148: per-entry sweep interval derived from the campaign's operator
     // cadence (checkIntervalMinutes). null → scheduler's 6h SWEEP_COOLDOWN_MS.
     sweepIntervalMs: Number(sweepIntervalMs) > 0 ? Number(sweepIntervalMs) : null,
@@ -234,6 +236,7 @@ async function tick() {
   const dueKeys = [];
   for (const k of Object.keys(sched)) {
     const entry = sched[k];
+    if (!hasTaskOwner(entry.taskOwner) || await isTaskOwnerSuspended(entry.taskOwner)) continue;
     if (now >= entry.expiresAt) {
       delete sched[k];
       changed = true;
@@ -261,18 +264,25 @@ async function tick() {
     console.log(`[post-campaign] ${_sweepMsg}`);
     appendCampaignLog(entry.sheetId, entry.profileId, _sweepMsg);
     let launched;
-    await browserSemaphore.acquire();
+    let operation;
     try {
-      launched = await launchProfile(entry.profileId, token);
+      if (await isTaskOwnerSuspended(entry.taskOwner)) continue;
+      launched = await preparePrimarySession([entry.taskOwner], {
+        semaphore: browserSemaphore,
+        launch: options => launchProfile(entry.profileId, token, options),
+        close: () => closeProfile(entry.profileId),
+      });
+      operation = registerPrimaryOperation(entry.taskOwner, launched.close);
     } catch (err) {
       console.warn(`[post-campaign] Launch failed for ${entry.profileName}: ${err.message}`);
-      browserSemaphore.release();
       // Don't update lastCheckedAt — try again on next tick.
       continue;
     }
 
     try {
+      if (operation.signal.aborted || await isTaskOwnerSuspended(entry.taskOwner)) continue;
       const r = await bulkCheckConnections(launched.page, entry.sheetUrl, entry.linkedinColumn, entry.profileName);
+      if (operation.signal.aborted || await isTaskOwnerSuspended(entry.taskOwner)) continue;
       if (r.error) {
         console.warn(`[post-campaign] ${entry.profileName} sweep error: ${r.error}`);
       } else {
@@ -295,6 +305,8 @@ async function tick() {
             // here. (Same convention used by the 3 in-campaign call sites
             // in campaign.js and the manual /api/bulk-check-now button.)
             await runAutoIntros({
+              taskOwner: entry.taskOwner || null,
+              shouldAbort: () => operation.signal.aborted,
               page: launched.page,
               profileId: entry.profileId,
               profileName: entry.profileName,
@@ -331,6 +343,7 @@ async function tick() {
         else if (shouldFirePostCampaignDm(entry, r.connectedUrls)) {
           try {
             await runAutoDms({
+              shouldAbort: () => operation.signal.aborted,
               page: launched.page,
               profileId: entry.profileId,
               profileName: entry.profileName,
@@ -359,7 +372,8 @@ async function tick() {
       // buffered rows before the sweep moves on, so nothing is left sitting in
       // the buffer if the tick ends or the app is closed.
       try { await flushSheetWrites(); } catch { /* best-effort */ }
-      try { await closeProfile(entry.profileId); } catch { /* */ }
+      try { await launched.close(); } catch { /* */ }
+      operation?.finish();
       browserSemaphore.release();
     }
 
@@ -407,7 +421,7 @@ export async function listSchedule() {
  * limited to profileIds). Mirrors the reply-check scheduler so "Stop
  * everything" / the Past-view toggle can halt background browser sweeps.
  */
-export async function removeSchedulesForSheet(sheetId, profileIds = null) {
+export async function removeSchedulesForSheet(sheetId, profileIds = null, owner = null) {
   if (!sheetId) return 0;
   const sched = await readSchedule();
   const pidSet = Array.isArray(profileIds) && profileIds.length ? new Set(profileIds) : null;
@@ -415,6 +429,7 @@ export async function removeSchedulesForSheet(sheetId, profileIds = null) {
   for (const k of Object.keys(sched)) {
     const e = sched[k];
     if (e.sheetId !== sheetId) continue;
+    if (owner && (e.taskOwner?.campaignId !== owner.campaignId || e.taskOwner?.campaignRunId !== owner.campaignRunId)) continue;
     if (pidSet && !pidSet.has(e.profileId)) continue;
     delete sched[k];
     removed++;
@@ -425,5 +440,7 @@ export async function removeSchedulesForSheet(sheetId, profileIds = null) {
 
 /** v2.76: wipe ALL post-campaign bulk-check entries. */
 export async function clearAllSchedules() {
-  await writeSchedule({});
+  const sched = await readSchedule();
+  for (const key of Object.keys(sched)) delete sched[key];
+  await writeSchedule(sched);
 }

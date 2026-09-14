@@ -738,7 +738,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (status === 'message') return { action: 'skipped', error: 'Already connected' };
       if (status === 'pending') return { action: 'already_processed' };
       try {
-        const r = await sendConnectionRequest(page, note, state.onProgress);
+        const r = await sendConnectionRequest(page, note, state.onProgress, state.invitationIdentity);
         return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
       } catch (err) {
         // v2.14.x: actions.js detected the lead's invitation is already
@@ -760,7 +760,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         if (state.connectionSent) return { action: 'already_processed' };
         const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
         try {
-          const r = await sendConnectionRequest(page, note, state.onProgress);
+          const r = await sendConnectionRequest(page, note, state.onProgress, state.invitationIdentity);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (err) {
           if (String(err.message).includes('INVITATION_ALREADY_PENDING')) {
@@ -851,7 +851,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         console.log('[outreach] Follow → trying Connect via More…');
         try {
           const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
-          const r = await sendConnectionRequest(page, note, state.onProgress);
+          const r = await sendConnectionRequest(page, note, state.onProgress, state.invitationIdentity);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (e) {
           if (String(e.message).includes('INVITATION_ALREADY_PENDING')) {
@@ -880,7 +880,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         console.log(`[outreach] Unknown → trying Connect via More…`);
         try {
           const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
-          const r = await sendConnectionRequest(page, note, state.onProgress);
+          const r = await sendConnectionRequest(page, note, state.onProgress, state.invitationIdentity);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (err) {
           if (String(err.message).includes('INVITATION_ALREADY_PENDING')) {

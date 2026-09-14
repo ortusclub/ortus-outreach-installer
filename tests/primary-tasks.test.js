@@ -48,16 +48,16 @@ test('buildAcceptTask is due immediately and carries the account identity', () =
 
 test('dedupeKey distinguishes type + profile + lead', () => {
   const f = buildFollowUpTask({ campaignProfileId: 'p1', leadUrl: 'L', now: 0, delayMinutes: 1 });
-  const a = buildAcceptTask({ campaignProfileId: 'p1', now: 0 });
+  const a = buildAcceptTask({ campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', campaignProfileId: 'p1', now: 0 });
   assert.equal(dedupeKey(f), 'follow-up:p1:L');
-  assert.equal(dedupeKey(a), 'accept:p1');
+  assert.equal(dedupeKey(a), '["fixture-campaign","fixture-run"]:accept:p1');
   assert.notEqual(dedupeKey(f), dedupeKey(a));
 });
 
 test('selectDue returns only pending tasks at or before now', () => {
   const tasks = [
-    { id: '1', status: 'pending', dueAt: 100 },
-    { id: '2', status: 'pending', dueAt: 300 },
+    { id: '1', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 100 },
+    { id: '2', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 300 },
     { id: '3', status: 'done', dueAt: 50 },
   ];
   const due = selectDue(tasks, 200);
@@ -65,7 +65,7 @@ test('selectDue returns only pending tasks at or before now', () => {
 });
 
 test('selectDue includes a task whose dueAt equals now (boundary)', () => {
-  const due = selectDue([{ id: 'x', status: 'pending', dueAt: 200 }], 200);
+  const due = selectDue([{ id: 'x', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 200 }], 200);
   assert.deepEqual(due.map(t => t.id), ['x']);
 });
 
@@ -87,10 +87,10 @@ test('partitionByBrowser splits local vs per-account', () => {
 
 test('enqueue → load round-trips and dedupes pending equivalents', async () => {
   const file = tmpFile();
-  const t1 = buildAcceptTask({ campaignProfileId: 'p1', now: 1 });
+  const t1 = buildAcceptTask({ campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', campaignProfileId: 'p1', now: 1 });
   const stored = await enqueuePrimaryTask(t1, file);
   assert.ok(stored.id);
-  const dup = await enqueuePrimaryTask(buildAcceptTask({ campaignProfileId: 'p1', now: 2 }), file);
+  const dup = await enqueuePrimaryTask(buildAcceptTask({ campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', campaignProfileId: 'p1', now: 2 }), file);
   assert.equal(dup, null, 'duplicate pending accept for same profile is skipped');
   const all = await loadTasks(file);
   assert.equal(all.length, 1);
@@ -99,15 +99,15 @@ test('enqueue → load round-trips and dedupes pending equivalents', async () =>
 
 test('markTask updates status + patch; resetInProgress recovers stuck tasks', async () => {
   const file = tmpFile();
-  const t = await enqueuePrimaryTask(buildAcceptTask({ campaignProfileId: 'p2', now: 1 }), file);
-  await markTask(t.id, 'in_progress', {}, file);
+  const t = await enqueuePrimaryTask(buildAcceptTask({ campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', campaignProfileId: 'p2', now: 1 }), file);
+  await markTask(t.id, 'in_progress', { lastError: 'fixture' }, file);
   await resetInProgress(file);
   const all = await loadTasks(file);
-  assert.equal(all[0].status, 'pending');
-  await markTask(t.id, 'failed', { lastError: 'boom' }, file);
+  assert.equal(all[0].status, 'interrupted');
+  assert.equal(await markTask(t.id, 'failed', { lastError: 'boom' }, file), false);
   const after = await loadTasks(file);
-  assert.equal(after[0].status, 'failed');
-  assert.equal(after[0].lastError, 'boom');
+  assert.equal(after[0].status, 'interrupted');
+  assert.match(after[0].lastError, /Verify its outcome/);
   rmSync(file, { force: true });
 });
 

@@ -385,6 +385,9 @@ export function cloudCheckStop(id) {
 export function setCloudAutoChecks(id, enabled) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/auto-checks`, { enabled: !!enabled });
 }
+export function resumeCloudMonitoringOnly(id, expectedUpdatedAt) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/monitoring/resume`, { expectedUpdatedAt });
+}
 // Edit a cloud campaign's account set while it is paused/stopped — the cloud
 // twin of the local pause-edit panel (toggle an account off, add another
 // GoLogin profile). add: [{ profileId, email }], remove: [profileId]. The engine
@@ -398,6 +401,10 @@ export function setCloudCampaignAccounts(id, { add = [], remove = [] } = {}) {
 // CLOSED: a live sweep, a lost race, or an engine too old to know the route all
 // answer HTTP 409, which the caller must treat as ABORT, never as retry-anyway.
 // Single attempt on purpose: withWriteRetry would re-POST a refusal.
+export function observeCloudInvitation(id, profileId, url) {
+  return requestOnce('GET', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/invitation-observation?url=${encodeURIComponent(url)}`);
+}
+
 export function releaseCloudCampaign(id) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/handover-release`, {});
 }

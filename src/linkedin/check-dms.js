@@ -23,10 +23,13 @@
  */
 
 import * as helpers from './helpers.js';
+import { setTimeout as abortableDelay } from 'node:timers/promises';
 import { updateSheetRow, appendReplyRow } from '../sheets-writer.js';
 import * as sheetsWriter from '../sheets-writer.js';
 import { launchProfile, closeProfile, getProfiles } from '../gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from '../local-launcher.js';
+import { preparePrimarySession } from '../primary-session-control.js';
+import * as browserSemaphore from '../browser-semaphore.js';
 import { fetchSheet } from '../sheets.js';
 
 // ── Dependency injection ─────────────────────────────────────────────────────
@@ -47,7 +50,25 @@ const _realDeps = {
   async appendReplyRow(sheetUrl, reply) {
     return appendReplyRow(sheetUrl, reply);
   },
-  async ensureOpen(profileId) {
+  async ensureOpen(profileId, { signal, taskOwner } = {}) {
+    if (taskOwner) {
+      let pName = profileId === 'local-browser' ? 'Local Browser' : profileId;
+      if (profileId !== 'local-browser') {
+        try { pName = (await getProfiles(process.env.GOLOGIN_API_TOKEN)).find(p => p.id === profileId)?.name || profileId; }
+        catch { /* retain the existing ID fallback when the profile list is unavailable */ }
+      }
+      const session = await preparePrimarySession([taskOwner], {
+        semaphore: browserSemaphore, signal,
+        launch: options => profileId === 'local-browser' ? launchLocalBrowser(options)
+          : launchProfile(profileId, process.env.GOLOGIN_API_TOKEN, options),
+        close: () => profileId === 'local-browser' ? closeLocalBrowser() : closeProfile(profileId),
+      });
+      let released = false;
+      return { ...session, profileId, pName, closeOwned: async () => {
+        try { return await session.close(); }
+        finally { if (!released) { released = true; browserSemaphore.release(); } }
+      } };
+    }
     if (profileId === 'local-browser') {
       const launched = await launchLocalBrowser();
       return { page: launched.page, browser: launched.browser, profileId, pName: 'Local Browser' };
@@ -67,7 +88,8 @@ const _realDeps = {
     const launched = await launchProfile(profileId, token);
     return { page: launched.page, browser: launched.browser, profileId, pName };
   },
-  async closeSession(profileId) {
+  async closeSession(profileId, session) {
+    if (session?.closeOwned) return session.closeOwned();
     if (profileId === 'local-browser') return closeLocalBrowser();
     return closeProfile(profileId);
   },
@@ -209,7 +231,8 @@ export async function performWriteBack(sheetUrl, linkedinUrl, reply, linkedinCol
  *   newWatermark?: number   // undefined on failure → caller must NOT advance
  * }
  */
-export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, linkedinColumn, page = null, pName = null }) {
+export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, linkedinColumn, page = null, pName = null, signal, taskOwner }) {
+  const assertActive = () => signal?.throwIfAborted();
   const startTime = Date.now();
   const replies = [];
   const ambiguous = [];
@@ -223,12 +246,14 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
   let session = null;
   let _ownSession = false;
   try {
+    assertActive();
     if (page) {
       session = { page, profileId, pName: pName || profileId };
     } else {
-      session = await _deps.ensureOpen(profileId);
+      session = await _deps.ensureOpen(profileId, { signal, taskOwner });
       _ownSession = true;
     }
+    assertActive();
     if (!session || !session.page) {
       return { replies, ambiguous, errors: ['ensureOpen returned no session'] };
     }
@@ -254,7 +279,8 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
       // by scrolling the conversation list, then poll the performance entries
       // for up to ~20s (was 8s, which was timing out and yielding 0 results).
       if (typeof session.page.waitForFunction === 'function') {
-        await new Promise(r => setTimeout(r, 2500));
+        await abortableDelay(2500, undefined, { signal });
+        assertActive();
         try {
           await session.page.evaluate(() => {
             const list = document.querySelector(
@@ -268,6 +294,7 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
             window.scrollTo(0, document.body.scrollHeight);
           });
         } catch { /* best-effort nudge */ }
+        assertActive();
         try {
           await session.page.waitForFunction(
             () => performance.getEntriesByType('resource')
@@ -282,6 +309,7 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
     // isn't enough (oldest still newer than watermark AND total indicates more),
     // fetchNewConversations paginates from start=count using the same factory.
     let first;
+    assertActive();
     try {
       first = await _deps.getConversationsPage(session.page, { start: 0, count: 20 });
     } catch (e) {
@@ -307,7 +335,10 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
     const maybeMore = firstOldest > watermark &&
       (!paging || !paging.total || 20 < paging.total);
     if (maybeMore && (first.elements || []).length >= 20) {
-      const pageFactory = async (opts) => _deps.getConversationsPage(session.page, opts);
+      const pageFactory = async (opts) => {
+        assertActive();
+        return _deps.getConversationsPage(session.page, opts);
+      };
       // Continue from start=20; fetchNewConversations handles stop-on-old + MAX_PAGES.
       const extra = await fetchNewConversations(
         async ({ start, count }) => pageFactory({ start: start + 20, count }),
@@ -318,9 +349,11 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
 
     // P-01 fix (2.8.18): pass profile NAME (matches what campaign.js writes
     // into "Account Used"), not profileId.
+    assertActive();
     const candidateRows = await _deps.getCandidateRows(session.pName, sheetUrl);
 
     for (const conv of convs) {
+      assertActive();
       const lastMessage = conv.lastMessage || null;
       // v2.72: did the LEAD send the last message (inbound reply) or did we?
       const _leadP = (Array.isArray(conv.participants) && conv.participants[0]) || null;
@@ -390,11 +423,13 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
             sender: senderName,
             body: String(lastMessage.text || ''),
           });
+          assertActive();
 
           // Legacy back-compat writes — Reply / ReplyAt / ReplyPreview.
           // Plus bump Pipeline Stage to 'Replied' when the lead replied,
           // regardless of prior stage (per user direction).
           const current = await _deps.getSheetRowStatus(sheetUrl, linkedinUrl, linkedinColumn);
+          assertActive();
           if (shouldWriteReply(current, lastMessage)) {
             const tracking = {
               Reply: 'yes',
@@ -423,12 +458,13 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
       });
     }
 
+    assertActive();
     return { replies, ambiguous, errors, recentMessages, newWatermark: startTime };
   } catch (e) {
     return { replies, ambiguous, errors: [`checkProfileDms threw: ${e.message}`], recentMessages };
   } finally {
     if (session && _ownSession) {
-      try { await _deps.closeSession(profileId); } catch { /* best-effort */ }
+      try { await _deps.closeSession(profileId, session); } catch { /* best-effort */ }
     }
   }
 }
@@ -686,12 +722,12 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
  * Returns the same shape as checkProfileDms: { replies, ambiguous, errors,
  * newWatermark }. `replies[i].messages` holds the full scraped thread.
  */
-export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn, shouldAbort, log, page = null }) {
+export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn, shouldAbort, log, page = null, signal, taskOwner }) {
   const startTime = Date.now();
   const replies = [];
   const ambiguous = [];
   const errors = [];
-  const abortCheck = typeof shouldAbort === 'function' ? shouldAbort : () => false;
+  const abortCheck = () => !!signal?.aborted || (typeof shouldAbort === 'function' && shouldAbort());
   const logLine = (msg) => {
     console.log(msg);
     if (typeof log === 'function') { try { log(msg); } catch { /* */ } }
@@ -707,7 +743,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
     if (page) {
       session = { page, profileId };
     } else {
-      session = await _deps.ensureOpen(profileId);
+      session = await _deps.ensureOpen(profileId, { signal, taskOwner });
       _ownSession = true;
     }
     if (!session || !session.page) {
@@ -948,7 +984,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
     return { replies, ambiguous, errors: [`checkProfileDmsPerLead threw: ${e.message}`] };
   } finally {
     if (session && _ownSession) {
-      try { await _deps.closeSession(profileId); } catch { /* best-effort */ }
+      try { await _deps.closeSession(profileId, session); } catch { /* best-effort */ }
     }
   }
 }

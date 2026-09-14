@@ -352,8 +352,9 @@ export function hasSalesNavChannel(rows) {
  * conversation shape. Best-effort — returns { convs, error } and never throws.
  * OPs/InMails are sent through Sales Nav so their replies land here.
  */
-export async function loadSalesNavConversations(page, { watermark = 0, log = () => {} } = {}) {
+export async function loadSalesNavConversations(page, { watermark = 0, log = () => {}, signal } = {}) {
   try {
+    signal?.throwIfAborted();
     if (typeof page.goto === 'function') {
       try {
         await page.goto('https://www.linkedin.com/sales/inbox/', { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -361,7 +362,8 @@ export async function loadSalesNavConversations(page, { watermark = 0, log = () 
         return { convs: [], error: `couldn't open Sales Nav inbox: ${e.message}` };
       }
       if (typeof page.waitForFunction === 'function') {
-        await new Promise((r) => setTimeout(r, 2500));
+        const { setTimeout: delay } = await import('node:timers/promises');
+        await delay(2500, undefined, { signal });
         try {
           await page.waitForFunction(
             () => performance.getEntriesByType('resource').some((e) => typeof e.name === 'string' && e.name.includes('salesApiMessagingThreads')),
@@ -370,9 +372,11 @@ export async function loadSalesNavConversations(page, { watermark = 0, log = () 
         } catch { /* fall through — getSalesNavThreadsPage returns null */ }
       }
     }
+    signal?.throwIfAborted();
     let res;
     try { res = await _deps.getSalesNavThreadsPage(page); }
     catch (e) { return { convs: [], error: `couldn't read Sales Nav inbox: ${e.message}` }; }
+    signal?.throwIfAborted();
     if (res === null || res === undefined) {
       return { convs: [], error: "couldn't load Sales Nav inbox (no seat, rate-limited, or session expired)" };
     }

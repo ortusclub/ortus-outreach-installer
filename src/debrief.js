@@ -43,6 +43,7 @@ export function buildDebrief({ skips = [], parked = [], errors = [], endNotice =
       leadName: (s && s.leadName) || '',
       rowNumber: s && Number.isFinite(s.rowNumber) ? s.rowNumber : null,
       profileName: (s && s.profileName) || '',
+      ...(s?.profileId ? { profileId: s.profileId } : {}),
       reason: (s && s.reason) || 'other',
       detail: (s && s.detail) || '',
       timestamp: (s && s.timestamp) || '',

@@ -31,8 +31,8 @@ test('a campaign moved mid-send still sends here', () => {
     { leadUrl: 'https://a', status: 'sent' },
     { leadUrl: 'https://b', status: 'pending' },
   ]), 'send');
-  assert.equal(handoverTarget([{ leadUrl: 'https://c', status: 'in_progress' }]), 'send',
-    'the in-flight lead is retried here, so it is still work to do');
+  assert.equal(handoverTarget([{ leadUrl: 'https://c', status: 'in_progress' }]), 'monitor',
+    'an uncertain lead is not eligible sending work; the route requires review');
 });
 
 test('a monitoring campaign never restarts sending just because pending leads remain', () => {

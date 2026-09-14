@@ -6,12 +6,11 @@
 // same lead gets two intro DMs.
 
 // Which leads must the new side skip? Everything the old side already finished.
-// `pending` and `in_progress` are both still-to-do: the operator chose to RETRY the
-// lead that was in flight rather than drain it, accepting that a lead the old side
-// had actually sent may get a second connect request.
+// Only pending is untouched work. In-progress/uncertain outcomes must never
+// become automatic retries; the route requires review before moving them.
 export function processedLeadUrls(leads) {
   return (Array.isArray(leads) ? leads : [])
-    .filter((l) => l && l.leadUrl && l.status !== 'pending' && l.status !== 'in_progress')
+    .filter((l) => l && l.leadUrl && l.status !== 'pending')
     .map((l) => l.leadUrl);
 }
 
@@ -25,7 +24,7 @@ export function processedLeadUrls(leads) {
 // lands on 'done' while the VM has already released it.
 export function handoverTarget(leads) {
   const stillToDo = (Array.isArray(leads) ? leads : [])
-    .filter((l) => l && (l.status === 'pending' || l.status === 'in_progress'));
+    .filter((l) => l && l.status === 'pending');
   return stillToDo.length > 0 ? 'send' : 'monitor';
 }
 

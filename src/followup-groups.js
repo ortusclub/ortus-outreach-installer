@@ -119,6 +119,8 @@ export function countFollowUpHealth(mine, { heldSummaryOf = null } = {}) {
     blocked: blocked.length,
     failed: failed.length,
     held: held.length,
+    needsReview: mine.filter((t) => t.status === 'needs-review').length,
+    interrupted: mine.filter((t) => t.status === 'interrupted').length,
     heldSummary: typeof heldSummaryOf === 'function' ? heldSummaryOf(mine) : '',
     heldItems: held.slice(0, 8).map((t) => ({
       id: t.id, leadName: t.leadName || '', leadUrl: t.leadUrl || '',

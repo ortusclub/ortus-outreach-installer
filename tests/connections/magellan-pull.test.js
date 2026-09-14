@@ -269,3 +269,25 @@ test('live location wins over the disk copy, disk is the fallback', () => {
   const rows2 = mergeRows([{ publicId: 'jane-d', firstName: 'Jane', memberNumber: '111' }], prev);
   assert.equal(rows2[0].location, 'Old City');
 });
+
+test('live company + title (from enrichment) round-trip through CSV into the plan', () => {
+  const live = [{ publicId: 'jane-d', firstName: 'Jane', lastName: 'Doe', memberNumber: '111', company: 'Sophos', title: 'DevOps Engineer' }];
+  const rows = mergeRows(live, new Map());
+  assert.equal(rows[0].company, 'Sophos');
+  assert.equal(rows[0].position, 'DevOps Engineer');
+  const dir = tmpdir();
+  writeAccountCsv('a@o.com', rows, { dir });
+  const plan = readForPlan('a@o.com', { dir }).find((p) => p.slug === 'jane-d');
+  assert.equal(plan.company, 'Sophos');
+  assert.equal(plan.jobTitle, 'DevOps Engineer');
+});
+
+test('live company/title win over the disk copy; disk is the fallback when enrichment is blank', () => {
+  const prev = new Map([['jane-d', { company: 'OldCo', position: 'OldRole' }]]);
+  const won = mergeRows([{ publicId: 'jane-d', firstName: 'Jane', memberNumber: '111', company: 'NewCo', title: 'NewRole' }], prev);
+  assert.equal(won[0].company, 'NewCo');
+  assert.equal(won[0].position, 'NewRole');
+  const fell = mergeRows([{ publicId: 'jane-d', firstName: 'Jane', memberNumber: '111' }], prev);
+  assert.equal(fell[0].company, 'OldCo');
+  assert.equal(fell[0].position, 'OldRole');
+});

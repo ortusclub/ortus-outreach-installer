@@ -40,9 +40,18 @@ import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft, trashDraft, trashAllDrafts, purgeTrashedDrafts } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
-import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
-import { startCloudFollowupPoller, lastLateCount } from './src/cloud-followup-poller.js';
-import { loadTasks as loadPrimaryTasks, saveTasks as savePrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
+import { startPrimaryTaskRunner, stopPrimaryTaskRunner } from './src/primary-task-runner.js';
+import { startCloudFollowupPoller, stopCloudFollowupPoller, lastLateCount } from './src/cloud-followup-poller.js';
+import { startupAdmission } from './src/startup-admission.js';
+import { claimNextReady, releaseQueueClaim } from './src/campaign-queue.js';
+import { stopScheduler as stopPostCampaignScheduler } from './src/post-campaign-bulk-check.js';
+import { stopScheduler as stopReplyCheckScheduler } from './src/post-campaign-reply-check.js';
+import { loadTasks as loadPrimaryTasks, mutateTasks as mutatePrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
+import { taskOwnerOf, startTaskOwner } from './src/task-owner.js';
+import { interruptPrimaryOperationsForOwner } from './src/primary-task-control.js';
+import { requestStandaloneStop, standaloneStopStatus } from './src/standalone-stop-control.js';
+import { preparePrimarySession } from './src/primary-session-control.js';
+import * as browserSemaphore from './src/browser-semaphore.js';
 import { belongsToCampaign, healthForCampaign, countFollowUpHealth, groupStaleFollowUps, discardGroups, restoreDiscarded } from './src/followup-groups.js';
 import { heldSummary } from './src/followup-dnc.js';
 import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
@@ -57,15 +66,19 @@ import { runAmplification as runPostAmplification } from './src/linkedin/post-am
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
-import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
+import { startHandshakeJob, getHandshakeJob, cancelHandshakeJob } from './src/cloud-handshake-job.js';
 import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, showProfileForManualControl, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, usesProfileAsGuest, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
-import { clampCadenceMinutes, isRetiredMode } from './public/js/campaign-modes.mjs';
+import { clampCadenceMinutes, isRetiredMode, usesMonitoringCadence } from './public/js/campaign-modes.mjs';
+import { confirmRecoveryShutdown, unresolvedHandoverLeads, waitForDestinationStart } from './src/recovery-control.js';
+import { observeOpenInvitation } from './src/invitation-observation.js';
+import { observeCloudInvitation } from './src/campaigns-client.js';
+import { getProfileObservationBrowser, observeProfileShutdown } from './src/gologin-launcher.js';
 import { validatePrimaryUrl } from './public/js/primary-url-validation.mjs';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
@@ -74,6 +87,7 @@ import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
 import { getFailures, retryFailures } from './src/sheet-write-tracker.js';
 import { getSkips } from './src/skip-ledger.js';
 import { createStopWatchdog } from './src/stop-watchdog.js';
+import { stopCloudWithLocalTasks, resumeCloudWithLocalTasks, withLocalCloudControl } from './src/cloud-campaign-control.js';
 import { clearRuntimeInterruption, readRuntimeInterruption } from './src/runtime-interruption.js';
 import { launchValidation } from './src/launch-validation.js';
 import { terminalPresentation } from './public/js/campaign-terminal.mjs';
@@ -133,6 +147,7 @@ import { FG_ROSTER_URL, FG_ROSTER_TOKEN } from './src/fg-roster-url.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
+startupAdmission.setReady(false);
 const PORT = process.env.PORT || 3000;
 // UI-preview instance (ORTUS_UI_PREVIEW=1): serves the real app against a COPY
 // of a data dir so a change can be looked at in the real UI, with every actor
@@ -146,6 +161,29 @@ const pkg = JSON.parse(await readFile(resolve(__dirname, 'package.json'), 'utf8'
 const APP_VERSION = pkg.version;
 
 app.use(express.json());
+// Reserve before any route-level await, including tools with their own state.
+// Stop endpoints remain available and invalidate any pending preparation.
+function startupAdmissionMiddleware(req, res, next) {
+  if (req.method !== 'POST') return next();
+  if (/^\/api\/(?:campaign\/stop|check-dms\/stop|post-amplification\/stop)$/.test(req.path)) startupAdmission.cancel();
+  const starts = new Set(['/api/campaign/start', '/api/check-dms/start', '/api/post-amplification/start',
+    '/api/campaign/restore', '/api/campaign/monitoring/resume', '/api/campaign/cloud-preflight-handshake', '/api/bulk-check-now', '/api/reply-check-now', '/api/monitoring/check-now']);
+  if (!starts.has(req.path) && !/^\/api\/campaign\/[^/]+\/handover$/.test(req.path)) return next();
+  const handshake = getHandshakeJob();
+  if (req.path === '/api/campaign/cloud-preflight-handshake' && (campaign.running || checkDms.running || postAmp.running || _recoveryInFlight)) {
+    return res.status(409).json({ error: 'Stop the active foreground operation before starting a handshake.' });
+  }
+  if (_manualSweepRunning || (handshake.active && (!handshake.done || handshake.stopping))) {
+    return res.status(409).json({ error: 'A manual check or handshake is still active or stopping.' });
+  }
+  try {
+    startupAdmission.enter(release => {
+      res.once('finish', release);
+      res.once('close', release);
+      next();
+    });
+  } catch (error) { res.status(409).json({ error: error.message }); }
+}
 app.use(cookieParser());
 
 // ── Public auth endpoints (no session required) ────────────────────
@@ -393,6 +431,7 @@ app.get(['/', '/index.html'], (_req, res) => {
 });
 
 app.use(express.static(resolve(__dirname, 'public')));
+app.use(startupAdmissionMiddleware);
 
 // ---------------------------------------------------------------------------
 // Server log capture (ring buffer for dashboard)
@@ -432,6 +471,7 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     time: new Date().toISOString(),
     version: APP_VERSION,
+    startupState: startupAdmission.state(),
     scraperConfigured: isScraperConfigured(),
     scraperEngineUrl,
     scraperEngineVersion,
@@ -1198,6 +1238,8 @@ function buildCampaignConfig(body) {
   }
   return {
     profileIds,
+    taskCampaignId: typeof body.taskCampaignId === 'string' ? body.taskCampaignId : '',
+    campaignRunId: typeof body.campaignRunId === 'string' ? body.campaignRunId : '',
     benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.filter((x) => typeof x === 'string') : [],
     sheetUrl,
     templates: templates || {},
@@ -1250,10 +1292,11 @@ function buildCampaignConfig(body) {
 // this while another campaign is still running will throw downstream from
 // startCampaign — callers must check campaign.running first and queue
 // instead if they want fire-and-forget semantics.
-function launchCampaign(config, owner) {
+function launchCampaign(config, owner, { onError = () => {} } = {}) {
+  if (!startupAdmission.available() || campaign.running || checkDms.running || postAmp.running || _manualSweepRunning) return { accepted: false };
   // Central operator-identity gate — both the HTTP start route AND the ungated
   // queue drain (runNextFromQueue) funnel through here. No identity → refuse.
-  if (blockIfNoOperatorEmail(`campaign "${(config && config.name) || ''}"`, owner)) return;
+  if (blockIfNoOperatorEmail(`campaign "${(config && config.name) || ''}"`, owner)) return { accepted: false };
   // Anything that launches HERE runs here. Without this a campaign moved to the
   // VM leaves campaign.runsOn === 'vm' behind, and the next local run would show
   // the card's RUNNING ON control filled on the wrong side. handoverToLocal
@@ -1277,6 +1320,7 @@ function launchCampaign(config, owner) {
       link: '/',
     }).catch(() => {});
   }).catch(err => {
+    onError(err);
     console.error('Campaign error:', err.message);
     notifyEmail(owner, {
       title: 'Campaign failed',
@@ -1292,12 +1336,19 @@ function launchCampaign(config, owner) {
       console.error('Queue chain error:', err.message);
     });
   });
+  return { accepted: true };
 }
 
 async function runNextFromQueue() {
-  if (campaign.running) return;
+  const handshake = getHandshakeJob();
+  if (handshake.active && (!handshake.done || handshake.stopping)) return;
+  if (runNextFromQueue._draining || !startupAdmission.available() || campaign.running || checkDms.running || postAmp.running || _manualSweepRunning || _recoveryInFlight) return;
+  runNextFromQueue._draining = true;
+  return startupAdmission.enter(async release => {
+  try {
   const queued = await getQueue();
-  const next = await popNextReady();
+  startupAdmission.assertCurrent();
+  const next = await claimNextReady();
   if (!next) {
     const futureTimes = queued.map((entry) => new Date(entry.scheduledAt).getTime())
       .filter((due) => Number.isFinite(due) && due > Date.now());
@@ -1314,7 +1365,12 @@ async function runNextFromQueue() {
     return;
   }
   console.log(`[queue] Launching queued campaign "${next.name || '(unnamed)'}" (${next.id})`);
-  launchCampaign(next.config, next.owner);
+  if (!startupAdmission.available()) { await releaseQueueClaim(next.id); return; }
+  const result = launchCampaign(next.config, next.owner);
+  if (result.accepted) await removeFromQueue(next.id);
+  else await releaseQueueClaim(next.id);
+  } finally { release(); runNextFromQueue._draining = false; }
+  });
 }
 
 // Cloud dispatch logging — console ONLY, deliberately NOT the local campaign
@@ -1684,7 +1740,7 @@ app.post('/api/campaign/start-cloud', handleStartCloud);
 app.get('/api/campaign/cloud-list', async (req, res) => {
   const r = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
   if (r.error) return res.status(502).json(r);
-  res.json(r);
+  res.json(await withLocalCloudControl(r));
 });
 // Cloud load + the global queue order, for the "why hasn't it started" block on
 // a waiting campaign. Memoised on the same lane as the list: every queued strip
@@ -1704,7 +1760,8 @@ app.get('/api/campaign/cloud-capacity', async (_req, res) => {
 app.get('/api/campaign/cloud-board-summary', async (req, res) => {
   const list = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
   if (list && list.error) return res.status(502).json(list);
-  const campaigns = Array.isArray(list?.campaigns) ? list.campaigns : [];
+  const controlledList = await withLocalCloudControl(list);
+  const campaigns = Array.isArray(controlledList?.campaigns) ? controlledList.campaigns : [];
   const details = {};
   let nextIndex = 0;
   const worker = async () => {
@@ -1715,7 +1772,7 @@ app.get('/api/campaign/cloud-board-summary', async (req, res) => {
         const value = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
           onFresh: (fresh) => { reconcilePrimaryHandshake(id, fresh).catch(() => {}); },
         });
-        if (value && !value.error) details[id] = value;
+        if (value && !value.error) details[id] = await withLocalCloudControl(value);
       } catch { /* preserve the usable remainder of the board */ }
     }
   };
@@ -1762,7 +1819,7 @@ app.get('/api/campaign/cloud/:id', async (req, res) => {
     onFresh: (v) => { reconcilePrimaryHandshake(id, v).catch(() => {}); },
   });
   if (r.error) return res.status(502).json(r);
-  res.json(r);
+  res.json(await withLocalCloudControl(r));
 });
 // ── Cloud sheet reconcile (parity fix #1) ─────────────────────────────────
 // The engine writes SENT rows back to the source sheet, but leaves ERROR /
@@ -1997,7 +2054,7 @@ app.get('/api/campaign/cloud-details', async (req, res) => {
         const v = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
           onFresh: (fresh) => { reconcilePrimaryHandshake(id, fresh).catch(() => {}); },
         });
-        if (v && !v.error) details[id] = v;
+        if (v && !v.error) details[id] = await withLocalCloudControl(v);
       } catch { /* one bad id must not fail the board */ }
     }
   };
@@ -2020,6 +2077,10 @@ app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
 });
 // Operator Retry on a benched (weekly-cap) account — proxied so the engine
 // token stays server-side.
+app.get('/api/campaign/cloud/:id/accounts/:pid/invitation-observation', async (req, res) => {
+  const r = await observeCloudInvitation(req.params.id, req.params.pid, req.query.url || '');
+  res.set('Cache-Control', 'no-store').status(r?.error ? 502 : 200).json(r);
+});
 app.post('/api/campaign/cloud/:id/accounts/:pid/unbench', async (req, res) => {
   const r = await unbenchCloudAccount(req.params.id, req.params.pid);
   if (r && r.error) return res.status(502).json(r);
@@ -2276,31 +2337,35 @@ app.post('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   }
 });
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
-  // NOTE: monitoringScope is computed and passed for the day the engine honours
-  // it; stopCloudCampaign does not forward it, and the engine's stop route has
-  // no scope parameter at all. The scope pill only affects "Check now" today.
+  if (req.query.keepMonitoring && req.query.monitoringScope && req.query.monitoringScope !== 'campaign') {
+    return res.status(409).json({ ok: false, error: 'Only configured campaign monitoring is supported; sheet-wide scope was not applied.' });
+  }
+  // The control supports configured campaign scope only. Reject wider scopes
+  // above instead of advertising a choice the engine cannot apply.
   const how = req.query.keepMonitoring ? 'stop sending, keep monitoring'
     : req.query.pause ? 'pause'
-    : req.query.immediate ? 'stop now' : 'stop after the current person';
+    : 'stop now';
   // The stop left no trace anywhere: not here, not in the campaign's live log.
   // A control the operator presses must say it was heard, and say what came back.
   cloudLog(`[cloud] stop requested for ${req.params.id} — ${how}`);
-  const r = await stopCloudCampaign(req.params.id, {
+  const r = await stopCloudWithLocalTasks(req.params.id, {
     pause: !!req.query.pause,
     keepMonitoring: !!req.query.keepMonitoring, // "Stop sending, keep monitoring"
     monitoringScope: req.query.monitoringScope === 'tab' ? 'tab' : 'campaign',
-    immediate: !!req.query.immediate,
-  });
+    immediate: true,
+  }, { stopRemote: stopCloudCampaign });
+  if (r.conflict) return res.status(409).json(r);
   if (r.error) {
     cloudLog(`[cloud] stop for ${req.params.id} was NOT accepted by the VM: ${r.error} — sending may still be running.`);
     return res.status(502).json(r);
   }
   cloudLog(`[cloud] stop for ${req.params.id} accepted by the VM — now ${r.status || (r.campaign && r.campaign.status) || 'unknown'}`);
-  res.json(r);
+  res.status(r.stopping ? 202 : 200).json(r);
 });
 // Resume a paused cloud campaign (mirror of local Resume).
 app.post('/api/campaign/cloud/:id/resume', async (req, res) => {
-  const r = await resumeCloudCampaign(req.params.id);
+  const r = await resumeCloudWithLocalTasks(req.params.id, { resumeRemote: resumeCloudCampaign });
+  if (r.conflict) return res.status(409).json(r);
   if (r.error) return res.status(502).json(r);
   res.json(r);
 });
@@ -2379,16 +2444,23 @@ app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
 // Reuses the existing stop paths rather than adding a new one. stopMonitoring
 // stamps nothing in the sheet (see its comment), so a monitoring campaign can
 // leave this Mac without its still-pending leads being closed off.
-async function stopLocalAndConfirm({ timeoutMs = 120000 } = {}) {
-  if (campaign.running) stopCampaign({ full: true, reason: 'handover-to-vm' });
-  else if (campaign.state === 'monitoring') await stopMonitoring({ reason: 'handover-to-vm' });
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const s = getCampaignStatus();
-    if (!s.running && s.state !== 'monitoring' && !s.monitoringCheckInProgress) return { ok: true };
-    if (Date.now() >= deadline) return { ok: false };
-    await new Promise((r) => setTimeout(r, 1000));
+let _recoveryInFlight = false;
+async function stopLocalAndConfirm({ timeoutMs = 5000 } = {}) {
+  if (_manualSweepRunning || [checkDms, postAmp, _manualSweepControl].some(r => r && (r.running || standaloneStopStatus(r).stopping))) {
+    return { ok: false, reason: 'another-operation-needs-shutdown' };
   }
+  const generation = campaign._generation;
+  const owner = taskOwnerOf(campaign);
+  if (!owner) return { ok: false, reason: 'source-ownership-unproven' };
+  return confirmRecoveryShutdown({ generation, timeoutMs,
+    currentGeneration: () => campaign._generation, status: getCampaignStatus,
+    stop: async () => {
+      if (campaign.state === 'monitoring') await stopMonitoring({ reason: 'recovery-or-handover' });
+      else if (campaign.running || campaign.monitoringCheckInProgress) stopCampaign({ full: true, reason: 'recovery-or-handover' });
+    },
+    close: () => closeCurrentCampaignBrowsers({ generation, owner }),
+    tracking: stopCampaignBackgroundTracking,
+  });
 }
 
 // VM → this Mac. `id` is the cloud campaign id.
@@ -2396,7 +2468,8 @@ async function handoverToLocal(id, req, res) {
   // One campaign at a time on this Mac. Checked BEFORE the release, or the
   // engine hands ownership to a machine that cannot actually run it and the
   // campaign sits released and idle.
-  if (campaign.running || campaign.state === 'monitoring') {
+  if (campaign.running || campaign.state === 'monitoring' || _manualSweepRunning
+      || [checkDms, postAmp, _manualSweepControl].some(r => r && (r.running || standaloneStopStatus(r).stopping))) {
     return res.status(409).json({ error: 'This Mac is already running a campaign. Finish or stop that one first, then move this campaign here.' });
   }
   const cur = await getCloudCampaign(id);
@@ -2415,16 +2488,20 @@ async function handoverToLocal(id, req, res) {
         error: 'The VM is part-way through a check on this campaign, so it will not hand it over yet. Wait for that check to finish, then move it again.',
       });
     }
-    return res.status(502).json({ error: `The VM would not hand this campaign over: ${(rel && rel.error) || 'no confirmation'}. It is still running there.` });
+    return res.status(502).json({ ok: false, error: `VM release was not confirmed: ${(rel && rel.error) || 'no confirmation'}. Nothing was started here. Refresh the source status; it may be paused or already released.` });
   }
 
-  // What the VM already did. The engine's per-lead table is its ledger; the
-  // in-flight lead reads as still-to-do and is retried here on purpose.
+  // The source ledger must preserve uncertain outcomes; never infer a safe
+  // retry from an interrupted action or a missing ledger response.
   const got = await getCloudCampaignLeads(id);
   if (got && got.error) {
     return res.status(502).json({ error: `The VM released the campaign but its lead list could not be read (${got.error}), so nothing was started here. The campaign is now waiting on this Mac: move it back, or start it here yourself.` });
   }
   const allLeads = (got && got.leads) || [];
+  if (!Array.isArray(got?.leads) || unresolvedHandoverLeads(allLeads).length) {
+    return res.status(409).json({ ok: false, reason: 'outcome-review-required',
+      error: 'The source was released, but its lead outcomes are incomplete or unresolved. Nothing was started here. Review the source actions before continuing.' });
+  }
   const excluded = processedLeadUrls(allLeads);
   const remaining = allLeads.length - excluded.length;
   const profileIds = Array.isArray(camp.profile_ids) ? camp.profile_ids : [];
@@ -2501,13 +2578,20 @@ async function handoverToLocal(id, req, res) {
   // so the adaptive backoff re-earns itself from scratch on this side too. The
   // engine reset its own streak inside handover-release.
   campaign.emptyCheckStreak = 0;
-  campaignLog(`⇄ Moved here from the Cloud VM: ${remaining} lead(s) still to do, ${excluded.length} already done there. Acceptance checks restart at ${config.checkIntervalMinutes} min.`);
-  cloudLog(`[cloud] handover: ${id} → local (${remaining} remaining, ${excluded.length} excluded)`);
+  campaignLog(`⇄ VM source released; requesting local startup with ${remaining} remaining leads.`);
   // After launchCampaign, which stamps local ownership itself and would clear
   // handoverAt: this is the move, so it keeps the timestamp.
-  launchCampaign(config, req.user);
+  const previousGeneration = campaign._generation;
+  let startFailure;
+  const launch = launchCampaign(config, req.user, { onError: error => { startFailure = error; } });
+  if (!launch?.accepted) return res.status(409).json({ ok: false, sourceReleased: true,
+    error: 'Local startup was refused. Source remains released; review operator identity before retrying.' });
+  const startup = await waitForDestinationStart({ failure: () => startFailure,
+    started: () => campaign.running && campaign._generation === (previousGeneration || 0) + 1 && campaign.sheetUrl === config.sheetUrl });
+  if (!startup.ok) return res.status(startup.pending ? 202 : 409).json({ ...startup, sourceReleased: true });
   campaign.runsOn = 'local';
   campaign.handoverAt = Date.now();
+  cloudLog(`[cloud] handover: ${id} → local startup confirmed`);
   return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length });
 }
 
@@ -2516,7 +2600,13 @@ async function handoverToLocal(id, req, res) {
 async function handoverToVm(id, req, res) {
   const running = campaign.running;
   const monitoring = !running && campaign.state === 'monitoring';
+  if ((running || monitoring) && id !== 'local-active' && String(id) !== String(campaign.id)) {
+    return res.status(409).json({ ok: false, error: 'This Mac is operating a different campaign. Nothing was stopped or moved.' });
+  }
   if (!running && !monitoring) {
+    const stopped = await stopLocalAndConfirm();
+    if (!stopped.ok) return res.status(409).json({ ok: false, reason: stopped.reason,
+      error: 'This Mac cannot prove the previous session is closed. The VM was not restarted; review recovery first.' });
     // Recovery after sleep/quit: the engine row still exists and says it was
     // handed to This Mac, but the local singleton is gone. Reclaim that durable
     // row instead of refusing because there is no process left to stop.
@@ -2548,6 +2638,9 @@ async function handoverToVm(id, req, res) {
   // snapshot, so the settings check below would refuse it.
   const cloudId = monitoring ? reclaimableCloudId(campaign, SINGLETON_CAMPAIGN_ID) : '';
   if (cloudId) {
+    const stopped = await stopLocalAndConfirm();
+    if (!stopped.ok) return res.status(409).json({ ok: false, reason: stopped.reason,
+      error: 'Local shutdown is not confirmed. The VM was not asked to resume.' });
     const rec = await reclaimCloudCampaign(cloudId);
     if (!rec || rec.error || !rec.reclaimed) {
       const r = reclaimRefusal(rec && rec.reason);
@@ -2617,24 +2710,42 @@ async function handoverToVm(id, req, res) {
     });
   }
 
+  // Read the ledger AFTER shutdown: a last action may have settled while the
+  // preflight ran. Blank sheet cells do not establish that an interrupted
+  // remote action failed, so consult the local outcome journal as well.
+  const outcomeState = JSON.parse(await readFile(dataPath('state.json'), 'utf8'));
+  if (!outcomeState || typeof outcomeState.processed !== 'object' || !outcomeState.processed) {
+    return res.status(409).json({ ok: false, error: 'Local outcome journal is unavailable. Nothing was started on the VM.' });
+  }
+  const freshRows = await fetchSheet(withGid(last.sheetUrl, gid));
+  const freshExcluded = new Set(sheetProcessedUrls(freshRows, urlOf));
+  for (const row of freshRows) {
+    const url = urlOf(row);
+    const entry = outcomeState.processed[url];
+    if (entry && ['_in_progress', 'interrupted'].includes(entry.action)) {
+      return res.status(409).json({ ok: false, reason: 'outcome-review-required',
+        error: 'A local action has an unresolved outcome. Review it before moving sending to the VM.' });
+    }
+  }
+  cloudBody.excludeLeadUrls = [...new Set([...excluded, ...freshExcluded])];
+
   campaign.emptyCheckStreak = 0;
-  campaign.runsOn = 'vm';
-  campaign.handoverAt = Date.now();
-  campaignLog(`⇄ Moved to the Cloud VM: ${remaining} lead(s) still to do, ${excluded.length} already done here.`);
-  cloudLog(`[cloud] handover: ${id} → vm (${remaining} remaining, ${excluded.length} excluded)`);
+  campaignLog(`⇄ Local source stopped; submitting ${remaining} remaining lead(s) to the VM. Destination acceptance is pending.`);
   return handleStartCloud(req, res);
 }
 
 app.post('/api/campaign/:id/handover', async (req, res) => {
+  if (_recoveryInFlight) return res.status(409).json({ ok: false, error: 'Recovery or handover is already in progress.' });
   const to = String((req.body && req.body.to) || '');
   if (to !== 'local' && to !== 'vm') return res.status(400).json({ error: 'Say which side to move to: "local" or "vm".' });
+  _recoveryInFlight = true;
   try {
     return to === 'local'
       ? await handoverToLocal(req.params.id, req, res)
       : await handoverToVm(req.params.id, req, res);
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: e.message });
-  }
+  } finally { _recoveryInFlight = false; }
 });
 // Monitoring controls (Task 3 Part B) — proxy ⚡ Check now / auto-checks toggle to
 // the engine. Surface the engine's error (incl. 404 until it ships these routes)
@@ -2703,7 +2814,11 @@ app.post('/api/followups/board', async (req, res) => {
       health[c.id] = { ok: true, scoped: true, ...healthForCampaign(tasks, c, { heldSummaryOf: heldSummary }) };
     }
     const groups = groupStaleFollowUps(tasks, { liveCampaigns: live });
-    res.json({ ok: true, health, groups, total: groups.reduce((a, g) => a + g.count, 0) });
+    const review = {
+      ownership: tasks.filter(t => ['accept', 'follow-up'].includes(t.type) && t.status === 'needs-review').length,
+      outcome: tasks.filter(t => ['accept', 'follow-up'].includes(t.type) && t.status === 'interrupted').length,
+    };
+    res.json({ ok: true, health, groups, review, total: groups.reduce((a, g) => a + g.count, 0) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2717,8 +2832,11 @@ app.post('/api/followups/discard', async (req, res) => {
     const keys = Array.isArray(req.body && req.body.keys) ? req.body.keys : [];
     if (!keys.length) return res.status(400).json({ error: 'keys required' });
     const live = liveCampaignScope(Array.isArray(req.body && req.body.campaigns) ? req.body.campaigns : []);
-    const { tasks, discarded } = discardGroups(await loadPrimaryTasks(), keys, { liveCampaigns: live });
-    if (discarded.length) await savePrimaryTasks(tasks);
+    const discarded = await mutatePrimaryTasks(current => {
+      const result = discardGroups(current, keys, { liveCampaigns: live });
+      current.splice(0, current.length, ...result.tasks);
+      return result.discarded;
+    });
     console.log(`[followups] discarded ${discarded.length} follow-up(s) the operator decided not to send`);
     res.json({ ok: true, discarded: discarded.length, undo: discarded });
   } catch (e) {
@@ -2734,14 +2852,16 @@ app.post('/api/followups/send-held', async (req, res) => {
     if (!ids.length) return res.status(400).json({ error: 'ids required' });
     const want = new Set(ids);
     let released = 0;
-    const tasks = (await loadPrimaryTasks()).map((t) => {
+    await mutatePrimaryTasks(current => {
+    const tasks = current.map((t) => {
       if (!t || t.status !== 'held' || !want.has(t.id)) return t;
       released += 1;
       const { heldReason, heldPhrase, heldQuote, heldAt, ...rest } = t;
       // dueAt in the past so it goes on the very next drain, not in ten minutes.
       return { ...rest, status: 'pending', dueAt: Date.now() - 1000, attempts: 0, lastError: null };
     });
-    if (released) await savePrimaryTasks(tasks);
+    current.splice(0, current.length, ...tasks);
+    });
     console.log(`[followups] the operator read the reply and released ${released} held follow-up(s) to send`);
     res.json({ ok: true, released });
   } catch (e) {
@@ -2753,7 +2873,10 @@ app.post('/api/followups/restore', async (req, res) => {
   try {
     const undo = Array.isArray(req.body && req.body.undo) ? req.body.undo : [];
     if (!undo.length) return res.status(400).json({ error: 'undo required' });
-    await savePrimaryTasks(restoreDiscarded(await loadPrimaryTasks(), undo));
+    await mutatePrimaryTasks(current => {
+      const restored = restoreDiscarded(current, undo);
+      current.splice(0, current.length, ...restored);
+    });
     console.log(`[followups] put ${undo.length} discarded follow-up(s) back in the queue`);
     res.json({ ok: true, restored: undo.length });
   } catch (e) {
@@ -2778,6 +2901,42 @@ app.post('/api/followups/open-login', async (_req, res) => {
   }
 });
 
+// Open the exact persistent Chrome profile used when the LOCAL primary accepts
+// sender invitations. This is deliberately separate from the operator's normal
+// Chrome profile; signing in here fixes the session the handshake actually uses.
+app.post('/api/primary-browser/open-login', async (_req, res) => {
+  if (_req.body?.executionId) {
+    if (rejectIfNoOperatorEmail(res)) return;
+    const status = getCampaignStatus();
+    if (_req.body.executionId !== status.executionId || !status.running || !status.primaryRecovery) {
+      return res.status(409).json({ ok: false, error: 'This campaign is no longer waiting for primary login.' });
+    }
+  }
+  try {
+    const { page } = await launchLocalBrowser({ visible: true });
+    await page.goto('https://www.linkedin.com/mynetwork/invitation-manager/received/', {
+      waitUntil: 'domcontentloaded', timeout: 45_000,
+    }).catch(() => {});
+    console.log('[primary-handshake] opened the primary browser on screen for sign-in');
+    res.json({ ok: true });
+  } catch (e) {
+    console.warn(`[primary-handshake] could not open the primary browser: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/campaign/primary-recovery/retry', (req, res) => {
+  if (rejectIfNoOperatorEmail(res)) return;
+  const status = getCampaignStatus();
+  if (!req.body?.executionId || req.body.executionId !== status.executionId
+      || !campaign.running || campaign._abort || campaign._pauseRequested
+      || !campaign.primaryRecovery || typeof campaign._retryPrimary !== 'function') {
+    return res.status(409).json({ ok: false, error: 'This campaign is not waiting for primary login, or its execution changed.' });
+  }
+  campaign._retryPrimary();
+  res.json({ ok: true });
+});
+
 // ── put failed / parked follow-ups back in the queue ──
 // Revives BOTH: tasks parked on a signed-out browser, and tasks that already
 // burned their three attempts before parking existed (1 Sep left five of those).
@@ -2786,11 +2945,12 @@ app.post('/api/followups/retry', async (_req, res) => {
     const tasks = await loadPrimaryTasks();
     const targets = (Array.isArray(tasks) ? tasks : []).filter((t) => t && t.type === 'follow-up'
       && (t.status === 'failed' || (t.status === 'pending' && t.blockedBySession)));
+    let revived = 0;
     for (const t of targets) {
-      await markPrimaryTask(t.id, 'pending', { attempts: 0, lastError: '', blockedBySession: false, dueAt: Date.now() });
+      if (await markPrimaryTask(t.id, 'pending', { attempts: 0, lastError: '', blockedBySession: false, dueAt: Date.now() })) revived++;
     }
-    console.log(`[followups] revived ${targets.length} follow-up(s) to pending`);
-    res.json({ ok: true, revived: targets.length });
+    console.log(`[followups] revived ${revived} follow-up(s) to pending`);
+    res.json({ ok: true, revived, notRevived: targets.length - revived });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2843,6 +3003,11 @@ app.post('/api/campaign/cloud/:id/accounts', async (req, res) => {
   if (r && r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });
+app.post('/api/campaign/cloud/:id/monitoring/resume', async (req, res) => {
+  const { resumeCloudMonitoringOnly } = await import('./src/campaigns-client.js');
+  const result = await resumeCloudMonitoringOnly(req.params.id, req.body?.expectedUpdatedAt);
+  res.status(result?.error ? result.status || 502 : 200).json(result);
+});
 app.post('/api/campaign/cloud/:id/auto-checks', async (req, res) => {
   const r = await setCloudAutoChecks(req.params.id, !!(req.body && req.body.enabled));
   if (r && r.error) return res.status(r.status || 502).json(r);
@@ -2868,6 +3033,9 @@ app.post('/api/campaign/cloud-preflight-handshake', (req, res) => {
 });
 app.get('/api/campaign/cloud-preflight-handshake/status', (_req, res) => {
   res.json(getHandshakeJob());
+});
+app.post('/api/campaign/cloud-preflight-handshake/cancel', (_req, res) => {
+  res.json(cancelHandshakeJob());
 });
 // Live "Show campaign happening" — proxies the engine's MJPEG screencast of the
 // campaign's active browser session straight to the dashboard <img> (mirrors
@@ -3025,6 +3193,7 @@ app.post('/api/preflight/stamp', async (req, res) => {
 });
 
 app.post('/api/campaign/start', async (req, res) => {
+  if (_recoveryInFlight) return res.status(409).json({ ok: false, error: 'Wait for recovery or handover to finish before starting another local campaign.' });
   try {
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
@@ -3073,6 +3242,8 @@ app.post('/api/campaign/start', async (req, res) => {
 
     const config = buildCampaignConfig(body);
     const owner = req.user;
+
+    startupAdmission.assertCurrent();
 
     // Clear the wizard draft name on launch so the next "+ Start new
     // campaign" click opens an empty wizard rather than re-prompting
@@ -3282,6 +3453,7 @@ app.get('/api/queue', async (_req, res) => {
       id: e.id,
       name: e.name,
       queuedAt: e.queuedAt,
+      launchState: e.launchState || null,
       mode: e.config?.mode || '',
       profileIds: e.config?.profileIds || [],
       sheetUrl: e.config?.sheetUrl || '',
@@ -5201,6 +5373,7 @@ app.post('/api/queue/run-next', async (_req, res) => {
     if (queue.length === 0) {
       return res.json({ ok: false, reason: 'empty', message: 'Queue is empty.' });
     }
+    if (queue.every(entry => entry.launchState)) return res.status(409).json({ ok: false, reason: 'review-required', message: 'Queued launch outcome needs review. No automatic retry is allowed.' });
     runNextFromQueue().catch(err => console.error('Run-next drain failed:', err.message));
     res.json({ ok: true, message: 'Draining next queued campaign…' });
   } catch (err) {
@@ -5266,6 +5439,40 @@ app.post('/api/campaign/check/stop', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/campaign/monitoring/resume', async (req, res) => {
+  if (_recoveryInFlight) return res.status(409).json({ ok: false, error: 'Another recovery or handover is in progress.' });
+  if (rejectIfNoOperatorEmail(res)) return;
+  if (campaign.id !== SINGLETON_CAMPAIGN_ID) return res.status(409).json({ ok: false, error: 'Use the durable campaign’s own monitoring controls.' });
+  _recoveryInFlight = true;
+  try {
+    const { resumeMonitoringOnly } = await import('./src/monitoring-resume-command.js');
+    const { commitMonitoringState, extractMonitoringSlice } = await import('./src/monitoring-persistence.js');
+    const result = await resumeMonitoringOnly({ executionId: req.body?.executionId }, {
+      snapshot: () => ({ ...extractMonitoringSlice(campaign), running: campaign.running,
+        paused: campaign._paused, pauseRequested: campaign._pauseRequested,
+        monitoringCheckInProgress: getCampaignStatus().monitoringCheckInProgress,
+        _generation: campaign._generation, _controlRevision: campaign._controlRevision }),
+      confirmShutdown: async () => {
+        if (campaign.state !== 'monitoring') return stopLocalAndConfirm();
+        // Auto-checks are disabled and the planner has rejected an active
+        // sweep. Prove closure without ending this existing monitoring window.
+        const closed = await closeCurrentCampaignBrowsers();
+        return { ok: closed.browserClosed === true };
+      },
+      commit: commitMonitoringState,
+      activate: candidate => {
+        Object.assign(campaign, candidate);
+        campaignLog('Automatic monitoring resumed. Invitation sending remains stopped.');
+        campaignLog(nextCheckLogLine(candidate.nextCheckAt));
+        startMonitoringWatcher();
+      },
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(409).json({ ok: false, error: error.message });
+  } finally { _recoveryInFlight = false; }
 });
 
 app.post('/api/monitoring/auto-checks', async (req, res) => {
@@ -5355,6 +5562,8 @@ app.post('/api/runtime/resumed', async (_req, res) => {
 // blocks overlapping sweeps; _manualSweepAbort lets Stop halt one in flight.
 let _manualSweepRunning = false;
 let _manualSweepAbort = false;
+let _manualSweepController = null;
+let _manualSweepControl = null;
 
 // v2.78: bench / un-bench an account in the live sending rotation. Body:
 // { profileId, skip }. skip=false also retries an auto-parked account.
@@ -5396,16 +5605,14 @@ app.post('/api/campaign/live/cadence', (req, res) => {
 });
 
 let _recoveryExitRequested = false;
-async function closeCurrentCampaignBrowsers() {
-  const ids = [...new Set((campaign.profileIds || []).filter((id) => id && id !== 'local-browser'))];
-  await Promise.allSettled(ids.map((id) => closeProfile(id)));
-  if ((campaign.profileIds || []).includes('local-browser')) {
-    try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
-  }
+async function closeCurrentCampaignBrowsers({ generation = campaign._generation, owner = taskOwnerOf(campaign) } = {}) {
+  if (generation !== campaign._generation) return { browserClosed: false, superseded: true };
+  const result = await interruptPrimaryOperationsForOwner(owner);
+  return { ...result, browserClosed: result.stopped === true };
 }
 const _campaignStopWatchdog = createStopWatchdog({
   isRunning: ({ generation }) => campaign.running && campaign._abort && campaign._generation === generation,
-  onStuck: async ({ graceMs }) => {
+  onStuck: async ({ graceMs, generation }) => {
     const status = getCampaignStatus();
     const pending = Math.max(0, Number(status.totalTargets || 0) - Number(status.totalProcessed || 0));
     try {
@@ -5415,7 +5622,7 @@ const _campaignStopWatchdog = createStopWatchdog({
     console.error(`[stop-watchdog] Stop exceeded ${Math.round(graceMs / 1000)}s; requesting supervised restart.`);
     _recoveryExitRequested = true;
     await Promise.race([
-      closeCurrentCampaignBrowsers(),
+      closeCurrentCampaignBrowsers({ generation }),
       new Promise((resolve) => setTimeout(resolve, 3000)),
     ]);
     process.exit(75);
@@ -5423,12 +5630,44 @@ const _campaignStopWatchdog = createStopWatchdog({
 });
 
 app.post('/api/campaign/stop', async (req, res) => {
+  if (req.body?.full === false && (!usesMonitoringCadence(campaign.mode)
+      || (req.body.monitoringScope && req.body.monitoringScope !== 'campaign'))) {
+    return res.status(409).json({ ok: false, error: 'This control supports configured campaign acceptance monitoring only. No monitoring change was applied.' });
+  }
+  if (req.body?.full === false && (campaign._pauseRequested || campaign._paused)) {
+    return res.status(409).json({ ok: false, error: 'This campaign is paused or pausing. Review Resume first, or choose full Stop; monitoring was not started.' });
+  }
+  if (_manualSweepRunning) _manualSweepAbort = true;
+  // The shared Stop button targets whichever standalone runner owns the UI;
+  // do not stop an unrelated remembered campaign or infer its browser IDs.
+  const standalone = [checkDms, postAmp, _manualSweepControl].filter(r => r && (r.running || standaloneStopStatus(r).stopping));
+  if (standalone.length && !campaign.running && campaign.state !== 'monitoring') {
+    for (const runner of standalone) requestStandaloneStop(runner);
+    return res.status(202).json({ ok: false, accepted: true, stopping: true, stopConfirmed: false });
+  }
+  _manualSweepAbort = true;
+  _manualSweepController?.abort();
+  const manualControl = _manualSweepRunning ? _manualSweepControl : null;
+  if (manualControl) requestStandaloneStop(manualControl);
   // v2.14.x: optional `{ full: true }` body opts out of the
   // connect_and_introduce post-campaign sweep + auto-intros. Default
   // behaviour is unchanged (Stop sending, keep monitoring) — relevant only
   // when the running campaign is mode=connect_and_introduce.
   const fullHalt = req.body?.full !== false;
-  const immediate = !!req.body?.immediate;
+  const immediate = true;
+  const stopContext = { generation: campaign._generation, owner: taskOwnerOf(campaign) };
+  const receipt = { generation: stopContext.generation, requestedAt: Date.now(), browsersClosed: false,
+    tracking: fullHalt ? { ok: false, cleanupPending: true } : { ok: true },
+    // Separate runners have not yet joined the owned-session registry. Never
+    // use the foreground receipt as evidence that their browsers also closed.
+    dependents: manualControl ? [manualControl] : [],
+    unverifiedScopes: [checkDms.running && 'Check DMs', postAmp.running && 'Post Amplification',
+      _manualSweepRunning && !manualControl && 'manual acceptance check'].filter(Boolean) };
+  campaign._stopReceipt = receipt;
+  // Snapshot and interrupt the current owner's operations now, before cleanup
+  // can start a new monitoring phase. Receipt remains pending until confirmed.
+  closeCurrentCampaignBrowsers(stopContext).then(result => { receipt.browsersClosed = result.browserClosed === true; },
+    err => { receipt.error = err.message; });
   const result = stopCampaign({ full: fullHalt });
   const stopState = campaign.running ? _campaignStopWatchdog.arm({ generation: campaign._generation }) : _campaignStopWatchdog.status();
   let tracking = { ok: true };
@@ -5436,8 +5675,11 @@ app.post('/api/campaign/stop', async (req, res) => {
     if (immediate) {
       // The state/timer flags above are already off. Removing persisted future
       // schedules is cleanup and must never hold the Stop response hostage.
-      tracking = { ok: true, cleanupPending: true };
-      stopCampaignBackgroundTracking().catch((err) => console.warn('[stop] background tracking cleanup:', err.message));
+      tracking = { ok: false, cleanupPending: true };
+      stopCampaignBackgroundTracking().then(result => { receipt.tracking = result; }, err => {
+        receipt.tracking = { ok: false, error: err.message };
+        console.warn('[stop] background tracking cleanup:', err.message);
+      });
     } else {
       tracking = await Promise.race([
         stopCampaignBackgroundTracking(),
@@ -5456,6 +5698,8 @@ app.post('/api/campaign/stop', async (req, res) => {
   // shape. Flipping both flags here makes Stop actually mean Stop.
   checkDms._abort = true;
   postAmp._abort = true;
+  checkDms._abortController?.abort();
+  postAmp._abortController?.abort();
   // v2.78: also halt a manual /api/bulk-check-now sweep in flight — its
   // per-account loop checks this flag and breaks. stopCampaign() already
   // force-closes the in-flight check browser via activeBulkChecks.
@@ -5463,33 +5707,10 @@ app.post('/api/campaign/stop', async (req, res) => {
   // v2.14.x: respond to the UI immediately so the dashboard flips to
   // 'stopping' without waiting for the browser-close round-trip. The actual
   // browser kill runs after a short drain window — see comment block below.
-  res.status(tracking.ok ? 200 : 502).json({ ...result, tracking, stopping: campaign.running, stopRequestedAt: stopState.requestedAt, stopDeadlineAt: stopState.deadlineAt });
+  const stopping = campaign.running || !tracking.ok || !!tracking.cleanupPending || !receipt.browsersClosed;
+  res.status(stopping ? 202 : 200).json({ ...result, ok: !stopping, accepted: true, stopConfirmed: !stopping,
+    tracking, stopping, stopRequestedAt: stopState.requestedAt, stopDeadlineAt: stopState.deadlineAt });
 
-  // v2.14.x: drain-then-kill instead of kill-then-loop-discovers-it.
-  //
-  // The previous order (closeAllProfiles -> respond) force-closed every
-  // browser BEFORE any in-flight worker had a chance to see _abort=true.
-  // When that worker was inside runAutoIntros, the next iteration hit a
-  // dead page and stamped 7-10 leads as 'Failed (MESSAGE_SEND_FAILED:
-  // compose textbox did not appear)' — a cascade of phantom failures
-  // (repro: franco.espino 2026-05-17T16:26:53).
-  //
-  // New order:
-  //   1. stopCampaign() flips campaign._abort = true
-  //   2. respond to UI
-  //   3. wait 15s — the exact grace period promised by the stop dialog
-  //      to see _abort at their next iteration boundary, stamp remaining
-  //      leads as 'Skipped — Stop pressed', and exit their finally blocks
-  //      (which close their own browser cleanly)
-  //   4. closeAllProfiles() as a safety net for anything that didn't
-  //      drain (e.g. hung navigations) — by now it's usually a no-op.
-  //
-  // Pattern matches Crawlee (apify/crawlee#1102) and the broader Puppeteer
-  // graceful-abort guidance (puppeteer/puppeteer#4671). Worker-side
-  // cleanup is already idempotent so the safety-net close is harmless.
-  setTimeout(async () => {
-    try { await closeCurrentCampaignBrowsers(); } catch (err) { console.warn('[stop] closeCurrentCampaignBrowsers:', err.message); }
-  }, immediate ? 0 : 15000);
 });
 
 // Permanently remove the local crash/stop recovery copy. This deliberately
@@ -5506,19 +5727,25 @@ app.delete('/api/campaign/interrupted', (_req, res) => {
   res.json({ ok: true, deleted: true });
 });
 
-// Phase 2.8.9: pause/resume control. Pause is non-destructive — browsers stay
-// open, the loop sleeps at the next lead boundary. Resume picks up where it
-// left off.
+// Pause interrupts browsers immediately and suspends future owned work.
+// Resume requires a confirmed receipt; uncertain outcomes remain held.
 app.post('/api/campaign/pause', (_req, res) => {
   res.json(pauseCampaign());
 });
 
-app.post('/api/campaign/resume', (_req, res) => {
-  res.json(resumeCampaign());
+app.post('/api/campaign/resume', async (_req, res) => {
+  if (_manualSweepRunning || (_manualSweepControl && standaloneStopStatus(_manualSweepControl).stopping)) {
+    return res.status(409).json({ ok: false, error: 'Finish or stop the manual check and confirm shutdown before resuming.' });
+  }
+  try { const result = await resumeCampaign(); res.status(result.ok ? 200 : 409).json(result); }
+  catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
 // ── v2.112: resume-with-live-state (paused only) ────────────────────────────
 function _resumeGuard(res) {
+  if (_manualSweepRunning || (_manualSweepControl && standaloneStopStatus(_manualSweepControl).stopping)) {
+    res.status(409).json({ error: 'Finish or stop the manual check and confirm shutdown before resuming.' }); return false;
+  }
   if (!campaign.running) { res.status(409).json({ error: 'not-running' }); return false; }
   if (!campaign._paused) { res.status(409).json({ error: 'not-paused' }); return false; }
   return true;
@@ -5623,11 +5850,13 @@ app.get('/api/campaign/resume/preview', (req, res) => {
   res.json({ ok: true, resumeChanges: _buildResumeChanges() });
 });
 
-app.post('/api/campaign/resume/confirm', (req, res) => {
+app.post('/api/campaign/resume/confirm', async (req, res) => {
   if (!_resumeGuard(res)) return;
   const applied = _buildResumeChanges();
-  const result = resumeCampaign({ applyPending: true });
-  res.json({ ok: result.ok !== false, applied });
+  try {
+    const result = await resumeCampaign({ applyPending: true });
+    res.status(result.ok ? 200 : 409).json({ ...result, applied: result.ok ? applied : null });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
 // Local-browser re-login recovery (2026-06-15): operator clicked "Done" in the
@@ -6056,16 +6285,24 @@ app.get('/api/scrape/view/:jobId', async (req, res) => {
 // source priority: live snapshot (_lastRunSettings) → last history.json
 // entry → none (idle no-op with cleanup only). Always returns 200 with
 // { ok, restartedFrom, reason? } — the loop runs async after the response.
-app.post('/api/campaign/restore', async (_req, res) => {
+app.post('/api/campaign/restore', async (req, res) => {
+  if (_recoveryInFlight) return res.status(409).json({ ok: false, error: 'Recovery or handover is already in progress.' });
+  _recoveryInFlight = true;
   try {
     // Restore re-launches with the last settings — gate it like a fresh start.
     if (rejectIfNoOperatorEmail(res)) return;
-    const result = await restoreCampaign();
-    res.json(result);
+    if (req.body?.expectedExecutionId && req.body.expectedExecutionId !== campaign.executionId) {
+      return res.status(409).json({ ok: false, error: 'The active campaign changed. Nothing was stopped or restarted; refresh and review the intended campaign.' });
+    }
+    const proof = await stopLocalAndConfirm();
+    if (!proof.ok) return res.status(409).json({ ok: false, reason: proof.reason,
+      error: 'Recovery blocked: source shutdown is not confirmed. No replacement campaign was started.' });
+    const result = await restoreCampaign({ shutdownProof: proof });
+    res.status(result.ok ? 200 : 409).json(result);
   } catch (err) {
     console.error('[restore] failed:', err);
     res.status(500).json({ ok: false, error: err.message });
-  }
+  } finally { _recoveryInFlight = false; }
 });
 
 // v2.111: follow-up batch summary for the live-campaign countdown. Reads the
@@ -6082,14 +6319,25 @@ async function _activeFollowUpSummary(base) {
 
 app.get('/api/campaign/status', async (_req, res) => {
   const base = getCampaignStatus();
+  if (_manualSweepControl) {
+    const proof = standaloneStopStatus(_manualSweepControl);
+    base.manualCheck = { running: _manualSweepControl.running, ...proof };
+    if (proof.stopping) {
+      base.stopping = true;
+      base.stopConfirmed = false;
+      base.state = 'stopping';
+    }
+  }
   // v2.12.x: when Post Amplification is running, surface its state through
   // the same payload the Live Status panel already polls. Logs are already
   // mirrored into campaign.logs by pushPostAmpLog, so the log rail shows
   // them either way; this overlay just makes the headline tiles render.
-  if (postAmp.running) {
+  if (postAmp.running || standaloneStopStatus(postAmp).stopping) {
     return res.json({
       ...base,
-      running: true,
+      running: postAmp.running,
+      ...standaloneStopStatus(postAmp),
+      state: standaloneStopStatus(postAmp).stopping ? 'stopping' : 'running',
       mode: 'post_amplification',
       name: 'Post Amplification',
       currentProfile: postAmp.currentProfile || '',
@@ -6413,14 +6661,34 @@ app.post('/api/intro-failures/preview', async (req, res) => {
 // resumes the campaign. Pause already triggered by the operator is left
 // in place after the sweep (we only auto-resume what we auto-paused).
 app.post('/api/bulk-check-now', async (req, res) => {
+  if (req.body?.continuationCheck === true && (campaign.running || campaign._paused || campaign._pauseRequested
+      || campaign.executionId !== req.body.expectedExecutionId
+      || (req.body.historicalContinuation === true && campaign.state === 'monitoring'))) {
+    return res.status(409).json({ ok: false, error: 'The local campaign changed or other work is active. No check was started.' });
+  }
+  const explicitContext = req.body?.explicitCheckContext === true;
+  const checkTaskOwner = explicitContext ? taskOwnerOf(req.body?.taskOwner || {}) : taskOwnerOf(campaign);
+  if (explicitContext && (!req.body.sheetUrl || (!req.body.allSenders &&
+      (!Array.isArray(req.body.profileIds) || !req.body.profileIds.length ||
+       req.body.profileIds.some((id) => typeof id !== 'string' || !id.trim()))))) {
+    return res.status(400).json({ error: 'A check requires its own sheet and selected accounts.' });
+  }
+  // Capture once. Explicit editor/cloud checks must never inherit another run.
+  const checkFallback = explicitContext ? { templates: {}, mode: '' }
+    : structuredClone({ templates: campaign.templates || {}, mode: campaign.mode || '' });
   // v2.78: refuse overlapping sweeps. A second click used to launch a parallel
   // 53-account sweep that fought the first for GoLogin browsers (see the
   // duplicate "sweeping 53 account(s)" lines in the field log).
-  if (_manualSweepRunning) {
+  if (_manualSweepRunning || (_manualSweepControl && standaloneStopStatus(_manualSweepControl).stopping)) {
     return res.status(409).json({ error: 'A bulk check is already running. Wait for it to finish, or press Stop.' });
   }
   _manualSweepRunning = true;
   _manualSweepAbort = false;
+  const sweepController = new AbortController();
+  _manualSweepController = sweepController;
+  const manualControl = { running: true, startedAt: Date.now(), _abortController: sweepController,
+    taskOwner: checkTaskOwner || { ...startTaskOwner(), campaignId: 'manual-acceptance-check' } };
+  _manualSweepControl = manualControl;
   // Say "checking" the INSTANT the click is accepted, not 180 lines later.
   // The flag used to be set down at the sweep loop, after account resolution and
   // a sheet read over the network, so the operator pressed the button and the
@@ -6431,6 +6699,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
   // v2.71: pause-if-running coordination. Captured before mutating campaign
   // state so the finally block knows whether to resume.
   const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
+  let _autoResumePause = null;
   try {
     let { sheetUrl, linkedinColumn, profileId, profileIds,
           primaryName, primaryIntroBody, primaryUrl, introTitle,
@@ -6459,26 +6728,26 @@ app.post('/api/bulk-check-now', async (req, res) => {
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
 
-    // v2.97: take precedence over a running campaign. Instead of waiting up to
-    // 90s for a cooperative pause boundary (and failing if a slow lead — e.g. a
-    // ~50s intro attempt — blew past it), we PREEMPT the in-flight lead so the
-    // pause lands within ~1s. The preempted lead is left unstamped and is
-    // re-attempted when the campaign resumes after the sweep.
+    // Interrupt the foreground and wait for proven shutdown. Uncertain work
+    // stays held for review; this check can release only the pause it created.
     if (_weShouldAutoResume) {
       campaignLog('⏸ Manual bulk check — pausing campaign (taking precedence over the current lead)…');
       pauseCampaign();
+      _autoResumePause = campaign._pauseReceipt;
       const preempted = preemptCurrentLead();
       campaignLog(preempted
-        ? '⏭ Current lead preempted — it will be retried on resume.'
-        : 'ℹ No lead in flight — pausing at the next boundary.');
+        ? '⏸ Current lead interrupted — uncertain outcome is held for review.'
+        : 'ℹ Waiting for Pause shutdown confirmation.');
       // Short wait for the pause to acknowledge. With preempt this is ~1s; allow
       // generous margin for a lead mid-cleanup, but never the old 90s hang.
       const deadline = Date.now() + 30_000;
-      while (!campaign._paused && Date.now() < deadline) {
+      while (!campaign._paused && !sweepController.signal.aborted && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 250));
       }
       if (!campaign._paused) {
-        campaignLog('⚠ Manual bulk check — pause did not acknowledge in 30s; sweeping anyway (browsers may contend briefly).');
+        return res.status(sweepController.signal.aborted ? 409 : 503).json({
+          error: sweepController.signal.aborted ? 'Bulk check stopped.' : 'Campaign pause was not acknowledged; no check started.',
+        });
       } else {
         campaignLog('✓ Campaign paused — starting sweep.');
       }
@@ -6628,7 +6897,12 @@ app.post('/api/bulk-check-now', async (req, res) => {
       campaignLog(`📡 [${pName}] Launching browser…`);
       let launched;
       try {
-        launched = await launchProfile(pid, token);
+        if (wasAlreadyRunning) throw new Error('Account browser is already in use; its ownership must be resolved before this check');
+        launched = await preparePrimarySession([manualControl.taskOwner], {
+          semaphore: browserSemaphore, signal: sweepController.signal,
+          launch: options => launchProfile(pid, token, options),
+          close: () => _closeProfile(pid),
+        });
       } catch (err) {
         const msg = `Launch failed: ${err.message}`;
         campaignLog(`⚠ [${pName}] ${msg}`);
@@ -6641,8 +6915,11 @@ app.post('/api/bulk-check-now', async (req, res) => {
       addActiveBulkCheck(pid);
       let r;
       try {
+        // Launch can settle after Stop. Never hand that late browser to a check.
+        if (sweepController.signal.aborted) break;
         campaignLog(`📡 [${pName}] Sweeping recent connections…`);
         r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn || '', pName);
+        if (sweepController.signal.aborted) break;
         // v2.14.x: Match the cockpit's "Check now" button — after bulk-check,
         // also fire auto-intros for any newly-accepted leads. Build the
         // templates object from req.body fields first (wizard direct call),
@@ -6662,14 +6939,14 @@ app.post('/api/bulk-check-now', async (req, res) => {
           // campaign's templates when the request didn't include them).
           autoAcceptPrimary: (autoAcceptPrimary !== undefined)
             ? autoAcceptPrimary
-            : (campaign.templates && campaign.templates.autoAcceptPrimary),
+            : checkFallback.templates.autoAcceptPrimary,
           primarySource: (primarySource !== undefined)
             ? primarySource
-            : (campaign.templates && campaign.templates.primarySource),
+            : checkFallback.templates.primarySource,
         };
-        const _effectiveTemplates = (_reqTemplates.primaryName && _reqTemplates.primaryIntroBody)
+        const _effectiveTemplates = (explicitContext || (_reqTemplates.primaryName && _reqTemplates.primaryIntroBody))
           ? _reqTemplates
-          : (campaign.templates || {});
+          : checkFallback.templates;
         // v2.59.2: phase-2 routing MUST respect the campaign mode. Previously
         // this block fired runAutoIntros for ANY campaign whose templates
         // happened to carry primaryName + primaryIntroBody — so a CC+DM run
@@ -6689,20 +6966,21 @@ app.post('/api/bulk-check-now', async (req, res) => {
           const _seen = new Set(r.connectedUrls);
           for (const u of _revive) if (!_seen.has(u)) r.connectedUrls.push(u);
         }
-        const _phaseMode = reqMode || campaign.mode || '';
+        const _phaseMode = reqMode || checkFallback.mode;
         if (!r.error && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
           if (_phaseMode === 'connect_and_message') {
-            const _ccDmBody = ((reqCcDmBody !== undefined ? reqCcDmBody : (campaign.templates && campaign.templates.ccDmBody)) || '').trim();
+            const _ccDmBody = ((reqCcDmBody !== undefined ? reqCcDmBody : checkFallback.templates.ccDmBody) || '').trim();
             if (_ccDmBody) {
               try {
                 await runAutoDms({
+                  shouldAbort: () => sweepController.signal.aborted,
                   page: launched.page,
                   profileId: pid,
                   profileName: pName,
                   sheetUrl,
                   linkedinColumn: linkedinColumn || '',
                   connectedUrls: r.connectedUrls,
-                  templates: campaign.templates || {},
+                  templates: { ...checkFallback.templates, ..._effectiveTemplates, ccDmBody: _ccDmBody },
                   senderFirstNames: reqSenderFirstNames || campaign.senderFirstNames || {},
                   log: campaignLog,
                 });
@@ -6715,6 +6993,8 @@ app.post('/api/bulk-check-now', async (req, res) => {
           } else if (_effectiveTemplates.primaryName && _effectiveTemplates.primaryIntroBody) {
             try {
               await runAutoIntros({
+                taskOwner: checkTaskOwner,
+                shouldAbort: () => sweepController.signal.aborted,
                 page: launched.page,
                 profileId: pid,
                 profileName: pName,
@@ -6734,8 +7014,9 @@ app.post('/api/bulk-check-now', async (req, res) => {
         r = { error: `Sweep threw: ${err.message}` };
       } finally {
         removeActiveBulkCheck(pid);
-        if (!wasAlreadyRunning) {
-          try { await _closeProfile(pid); } catch { /* */ }
+        if (launched) {
+          try { await launched.close(); } catch { /* registry retains unconfirmed ownership */ }
+          browserSemaphore.release();
         }
       }
       if (r.error) {
@@ -6789,21 +7070,22 @@ app.post('/api/bulk-check-now', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   } finally {
-    _manualSweepRunning = false;
+    manualControl.running = false;
     // Pairs with the early set at the top of this route. A throw during setup
     // would otherwise leave the card claiming a check is running forever, and a
     // stuck flag also blocks every scheduled tick.
     setBulkCheckInProgress(false);
-    // v2.71: ALWAYS resume if we were the ones who paused, even on error.
-    // Operator-initiated pauses are left in place — we only undo our own.
-    if (_weShouldAutoResume && campaign.running) {
+    // Never resume after an explicit stop of this check.
+    if (_autoResumePause && campaign.running && !sweepController.signal.aborted) {
       try {
-        resumeCampaign();
-        campaignLog('▶ Manual bulk check done — campaign resumed.');
+        const result = await resumeCampaign({ expectedPause: _autoResumePause });
+        campaignLog(result?.ok ? '▶ Manual bulk check done — campaign resumed.' : '⏸ Manual bulk check done — campaign remains paused; review Resume.');
       } catch (resumeErr) {
         campaignLog(`⚠ Manual bulk check — resume failed: ${resumeErr.message}`);
       }
     }
+    _manualSweepRunning = false;
+    _manualSweepController = null;
   }
 });
 
@@ -6813,35 +7095,45 @@ app.post('/api/bulk-check-now', async (req, res) => {
 // /api/bulk-check-now request.
 app.post('/api/bulk-check/stop', (_req, res) => {
   const wasRunning = _manualSweepRunning;
+  // A Stop during guarded automatic Resume must supersede its pause receipt
+  // as well as aborting the check, so queued work cannot be released late.
+  if (wasRunning && campaign.running && campaign._pauseRequested) pauseCampaign();
   _manualSweepAbort = true;
-  forceCloseActiveBulkChecks();
-  // v3.1.33: release the lock here too, instead of trusting the sweep's own
-  // `finally` to do it. That finally is unreachable when the loop is parked
-  // inside a hung await (a GoLogin launch that never settles), and the abort
-  // flag above cannot help either: it is only read between accounts, and
-  // forceCloseActiveBulkChecks has nothing to close because addActiveBulkCheck
-  // runs only AFTER launchProfile returns. The result was a permanently stuck
-  // flag — every later check answered "a bulk check is already running" with
-  // both Wait and Stop dead ends, until the app was restarted.
-  //
-  // Safe to clear eagerly: this is an explicit operator Stop, not the
-  // accidental double-click v2.78 added the guard for. If the old sweep is
-  // still alive it breaks at its next account boundary, and its finally
-  // setting the flag false again is a no-op.
-  _manualSweepRunning = false;
+  _manualSweepController?.abort();
+  if (_manualSweepControl) requestStandaloneStop(_manualSweepControl);
+  // Keep ownership until the request unwinds, including browser cleanup.
+  // Releasing here lets a new check reset the old check's abort flag.
+  // Launch receives the abort signal; an unresponsive dependency remains
+  // visibly stopping instead of allowing overlapping account sessions.
   if (wasRunning) campaignLog('■ Stop solo check requested — halting sweep.');
-  res.json({ ok: true, wasRunning });
+  const proof = _manualSweepControl ? standaloneStopStatus(_manualSweepControl) : { stopping: false, stopConfirmed: true };
+  res.status(proof.stopping ? 202 : 200).json({ ok: !proof.stopping, accepted: true, wasRunning, ...proof });
 });
 
 // v2.72: Manual "Run reply check now" — the messaging-campaign counterpart of
 // /api/bulk-check-now. Instead of sweeping connection acceptances, it scrapes
 // each sent lead's thread for inbound replies (writes Reply/ReplyAt/Stage to
 // the sheet + Replies tab via checkProfileDmsPerLead, and records them to the
-// in-app replies panel). Works mid-campaign with the same pause/resume +
-// idempotent-launch pattern as bulk-check-now, so the paused campaign's own
-// browser is reused and never closed out from under it.
+// in-app replies panel). Shares the acceptance check's single-flight slot,
+// cancellation controller and owned-session shutdown evidence.
 app.post('/api/reply-check-now', async (req, res) => {
+  if (_manualSweepRunning || (_manualSweepControl && standaloneStopStatus(_manualSweepControl).stopping)) {
+    return res.status(409).json({ error: 'A manual check is running or its shutdown is unconfirmed. Stop it and wait for confirmation.' });
+  }
+  const sweepController = new AbortController();
+  const manualControl = { running: true, startedAt: Date.now(), _abortController: sweepController,
+    taskOwner: { ...startTaskOwner(), campaignId: 'manual-reply-check' } };
+  _manualSweepRunning = true;
+  _manualSweepAbort = false;
+  _manualSweepController = sweepController;
+  _manualSweepControl = manualControl;
+  setBulkCheckInProgress(true);
+  const checkSnapshot = structuredClone({ name: campaign.name || '', mode: campaign.mode || '',
+    templates: campaign.templates || {}, startedAt: campaign.startedAt });
+  const checkCancelled = () => sweepController.signal.aborted;
+  const assertCheckActive = () => sweepController.signal.throwIfAborted();
   const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
+  let _autoResumePause = null;
   try {
     let { sheetUrl, linkedinColumn, profileIds } = req.body || {};
     if (campaign.running && !(Array.isArray(profileIds) && profileIds.length > 0)) {
@@ -6856,32 +7148,33 @@ app.post('/api/reply-check-now', async (req, res) => {
     if (_weShouldAutoResume) {
       campaignLog('⏸ Manual reply check — pausing campaign so the browser can scan threads…');
       pauseCampaign();
-      const deadline = Date.now() + 90_000;
-      while (!campaign._paused && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 500));
+      _autoResumePause = campaign._pauseReceipt;
+      const deadline = Date.now() + 30_000;
+      while (!campaign._paused && !checkCancelled() && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 250));
       }
+      assertCheckActive();
       if (!campaign._paused) {
-        campaignLog('⚠ Manual reply check — pause did not acknowledge in 90s; aborted.');
-        return res.status(503).json({ error: 'Pause did not take effect within 90s. Wait for the current lead to finish, then retry.' });
+        return res.status(503).json({ error: 'Campaign shutdown is not confirmed; no reply check started. Review Pause before retrying.' });
       }
       campaignLog('✓ Campaign paused — starting reply check.');
     }
 
     const token = process.env.GOLOGIN_API_TOKEN;
-    const { checkProfileDms } = await import('./src/linkedin/check-dms.js');
     const { appendReplies } = await import('./src/replies-log.js');
     const { scanRepliesForProfile } = await import('./src/post-campaign-reply-check.js');
     const { writeRecentMessagesTab } = await import('./src/sheets-writer.js');
     const { closeProfile: _closeProfile } = await import('./src/gologin-launcher.js');
 
     // Scan window: back to the campaign's first send-out minus a 12h buffer.
-    const _startMs = campaign.startedAt ? Date.parse(campaign.startedAt) : NaN;
+    const _startMs = checkSnapshot.startedAt ? Date.parse(checkSnapshot.startedAt) : NaN;
     const _replyWatermark = (Number.isFinite(_startMs) ? _startMs : (Date.now() - 14 * 86400000)) - 12 * 60 * 60 * 1000;
 
     // Load the sheet once, resolve profile names, group sent rows by sender.
     let rows;
     try { rows = await fetchSheet(sheetUrl); }
     catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}` }); }
+    assertCheckActive();
 
     let nameByProfileId = new Map();
     let nameToId = {};
@@ -6890,6 +7183,7 @@ app.post('/api/reply-check-now', async (req, res) => {
       nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
       for (const p of allProfiles) nameToId[(p.name || '').toLowerCase()] = p.id;
     } catch { /* fall back to id-as-name */ }
+    assertCheckActive();
 
     const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
     const candidateRows = rows.filter((row) => {
@@ -6923,23 +7217,34 @@ app.post('/api/reply-check-now', async (req, res) => {
     // message-only) whose Sending Method used Sales Nav (opChannel ≠ ln_only).
     // CC+IC / ICB / CC+DM are LinkedIn-connection flows → regular inbox only.
     const _MESSAGING_MODES = new Set(['open_profile_only', 'inmail_only', 'message_only']);
-    const _opChannel = String(campaign.templates?.opChannel || 'sn_first');
-    const wantSalesNav = _MESSAGING_MODES.has(String(campaign.mode || '')) && _opChannel !== 'ln_only';
+    const _opChannel = String(checkSnapshot.templates?.opChannel || 'sn_first');
+    const wantSalesNav = _MESSAGING_MODES.has(String(checkSnapshot.mode || '')) && _opChannel !== 'ln_only';
     setBulkCheckInProgress(true);
     campaignLog(`📬 Manual reply check — scanning ${leadsByProfile.size} account(s) for replies${wantSalesNav ? ' (incl. Sales Navigator)' : ''}…`);
     try {
       for (const [pid, leads] of leadsByProfile.entries()) {
+        assertCheckActive();
         const pName = nameByProfileId.get(pid) || pid;
-        const wasAlreadyRunning = !!getProfilePid(pid);
         let launched;
         try {
-          launched = await launchProfile(pid, token);
+          if (getProfilePid(pid)) {
+            perProfile.push({ profileId: pid, profileName: pName, error: 'Account browser is already in use; resolve ownership before checking replies.' });
+            continue;
+          }
+          launched = await preparePrimarySession([manualControl.taskOwner], {
+            semaphore: browserSemaphore, signal: sweepController.signal,
+            launch: options => launchProfile(pid, token, options), close: () => _closeProfile(pid),
+          });
         } catch (err) {
+          // A failed/late launch may still own a browser. Do not continue or
+          // release the single-flight slot without shutdown evidence.
+          requestStandaloneStop(manualControl);
           campaignLog(`⚠ [${pName}] Launch failed: ${err.message}`);
           perProfile.push({ profileId: pid, profileName: pName, error: `Launch failed: ${err.message}` });
-          continue;
+          throw err;
         }
         try {
+          assertCheckActive();
           campaignLog(`📬 [${pName}] Scanning inbox for replies…`);
           // v2.72: bulk inbox fetch first (fast), reusing this (paused) profile's
           // own browser; falls back to per-lead thread scrape if the inbox API
@@ -6952,17 +7257,21 @@ app.post('/api/reply-check-now', async (req, res) => {
             linkedinColumn: linkedinColumn || 'Linkedin URL',
             watermark: _replyWatermark,
             page: launched.page, // reuse this session; do NOT let it self-close
+            signal: sweepController.signal,
           });
+          assertCheckActive();
           if (Array.isArray(result.errors) && result.errors.length) {
             campaignLog(`⚠ [${pName}] reply scan: ${result.errors.join('; ')}`);
           }
           totalReplies += result.inboundCount;
           // Replies inbox: stamp the campaign name onto each captured reply so
           // the inbox subline can show "via <account> · <campaign>".
-          await appendReplies((result.logEntries || []).map((e) => ({ ...e, campaign: campaign.name || '' })));
+          await appendReplies((result.logEntries || []).map((e) => ({ ...e, campaign: checkSnapshot.name })));
+          assertCheckActive();
           // v2.72: dump inbound 1:1 replies to the shared "Recent Messages" tab.
           try { await writeRecentMessagesTab(sheetUrl, pName, result.recentMessages || [], []); }
           catch (e) { campaignLog(`⚠ [${pName}] Recent Messages write failed: ${e.message}`); }
+          assertCheckActive();
           campaignLog(`📬 [${pName}] ${result.inboundCount} reply(ies)${result.suspectedCount ? `, ${result.suspectedCount} suspected (ambiguous name)` : ''} found [${result.method}].`);
           for (const m of (result.recentMessages || [])) {
             if (m.matched === false) continue;
@@ -6974,7 +7283,8 @@ app.post('/api/reply-check-now', async (req, res) => {
           if (wantSalesNav) {
             try {
               campaignLog(`🧭 [${pName}] Scanning Sales Navigator inbox (OP / InMail)…`);
-              const sn = await loadSalesNavConversations(launched.page, { watermark: _replyWatermark });
+              const sn = await loadSalesNavConversations(launched.page, { watermark: _replyWatermark, signal: sweepController.signal });
+              assertCheckActive();
               if (sn.error) {
                 campaignLog(`⚠ [${pName}] Sales Nav skipped — ${sn.error}`);
               } else {
@@ -6999,9 +7309,14 @@ app.post('/api/reply-check-now', async (req, res) => {
           campaignLog(`⚠ [${pName}] Reply check threw: ${err.message}`);
           perProfile.push({ profileId: pid, profileName: pName, error: err.message });
         } finally {
-          if (!wasAlreadyRunning) { try { await _closeProfile(pid); } catch { /* */ } }
+          try {
+            const proof = await launched.close();
+            if (proof?.browserClosed !== true) requestStandaloneStop(manualControl);
+          } catch { requestStandaloneStop(manualControl); }
+          finally { browserSemaphore.release(); }
         }
       }
+      assertCheckActive();
       campaignLog(`📬 Manual reply check complete — ${totalReplies} new reply(ies) across ${leadsByProfile.size} account(s).`);
     } finally {
       setBulkCheckInProgress(false);
@@ -7009,12 +7324,20 @@ app.post('/api/reply-check-now', async (req, res) => {
 
     res.json({ ok: true, profilesChecked: leadsByProfile.size, repliesFound: totalReplies, perProfile, replies: replyItems, autoPaused: _weShouldAutoResume });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(checkCancelled() ? 409 : 500).json({ ok: false, cancelled: checkCancelled(),
+      error: checkCancelled() ? 'Reply check stopped; any in-flight write may still settle.' : err.message });
   } finally {
-    if (_weShouldAutoResume && campaign.running) {
-      try { resumeCampaign(); campaignLog('▶ Manual reply check done — campaign resumed.'); }
+    manualControl.running = false;
+    setBulkCheckInProgress(false);
+    if (_autoResumePause && campaign.running && !checkCancelled()) {
+      try {
+        const result = await resumeCampaign({ expectedPause: _autoResumePause });
+        campaignLog(result.ok ? '▶ Manual reply check done — campaign resumed.' : '⏸ Manual reply check done — campaign remains paused; review Resume.');
+      }
       catch (resumeErr) { campaignLog(`⚠ Manual reply check — resume failed: ${resumeErr.message}`); }
     }
+    _manualSweepRunning = false;
+    _manualSweepController = null;
   }
 });
 
@@ -7123,6 +7446,21 @@ app.post('/api/browsers/show', async (_req, res) => {
 // If not, launch it. Used by the Account Queue's Open Browser + Try Again
 // buttons so the operator can manually intervene mid-run (e.g. log back in
 // after a session-expired park).
+app.get('/api/profile/:id/invitation-observation', async (req, res) => {
+  // Exact profile ID only. No email/name fallback, launch, navigation, or writes.
+  const profileId = req.params.id;
+  if (!/^[a-f0-9]{24}$/i.test(profileId)) return res.status(400).json({ error: 'An exact GoLogin profile ID is required.' });
+  try {
+    const observation = await observeOpenInvitation({ browser: getProfileObservationBrowser(profileId), url: req.query.url });
+    res.set('Cache-Control', 'no-store').json(observation);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
+app.get('/api/profile/:id/shutdown-observation', (req, res) => {
+  if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ error: 'An exact GoLogin profile ID is required.' });
+  res.set('Cache-Control', 'no-store').json(observeProfileShutdown(req.params.id));
+});
+
 app.post('/api/profile/:id/open-browser', async (req, res) => {
   const profileRef = req.params.id;
   if (!profileRef) return res.status(400).json({ error: 'profileId required' });
@@ -7133,20 +7471,18 @@ app.post('/api/profile/:id/open-browser', async (req, res) => {
     }
     const existingPid = getProfilePid(profileId);
     if (existingPid) {
-      if (process.platform === 'darwin') {
-        await unhideByPids([existingPid]);
-      }
+      await showProfileForManualControl(profileId);
       return res.json({ ok: true, action: 'focused-existing', pid: existingPid });
     }
     const token = process.env.GOLOGIN_API_TOKEN;
-    await launchProfile(profileId, token);
+    await launchProfile(profileId, token, { visible: true });
     const newPid = getProfilePid(profileId);
     if (process.platform === 'darwin' && newPid) {
       await unhideByPids([newPid]);
     }
     res.json({ ok: true, action: 'launched', pid: newPid });
   } catch (err) {
-    console.error(`[open-browser] ${profileId}: ${err.message}`);
+    console.error(`[open-browser] ${profileRef}: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7166,12 +7502,12 @@ app.post('/api/campaign/profile/:id/retry', async (req, res) => {
     let launchInfo;
     const existingPid = getProfilePid(profileId);
     if (existingPid) {
-      if (process.platform === 'darwin') await unhideByPids([existingPid]);
+      await showProfileForManualControl(profileId);
       launchInfo = { action: 'focused-existing', pid: existingPid };
     } else {
       const token = process.env.GOLOGIN_API_TOKEN;
       try {
-        await launchProfile(profileId, token);
+        await launchProfile(profileId, token, { visible: true });
         const newPid = getProfilePid(profileId);
         if (process.platform === 'darwin' && newPid) await unhideByPids([newPid]);
         launchInfo = { action: 'launched', pid: newPid };
@@ -7309,8 +7645,11 @@ app.post('/api/check-dms/start', async (req, res) => {
       });
     }
 
+    startupAdmission.assertCurrent();
     checkDms.running = true;
     checkDms._abort = false;
+    checkDms._abortController = new AbortController();
+    checkDms.taskOwner = { ...startTaskOwner(), campaignId: 'check-dms' };
     checkDms.startedAt = Date.now();
     checkDms.repliesFound = 0;
     checkDms.errors = [];
@@ -7329,6 +7668,7 @@ app.post('/api/check-dms/start', async (req, res) => {
           if (checkDms._abort) break;
           checkDms.currentProfile = profileId;
           const result = await checkProfileDmsPerLead(profileId, leads, {
+            signal: checkDms._abortController.signal, taskOwner: checkDms.taskOwner,
             sheetUrl,
             linkedinColumn: linkedinColumn || 'Linkedin URL',
             shouldAbort: () => checkDms._abort,
@@ -7470,13 +7810,13 @@ app.get('/api/check-dms/preview', async (req, res) => {
 });
 
 app.post('/api/check-dms/stop', (_req, res) => {
-  checkDms._abort = true;
-  res.json({ ok: true, message: 'Abort requested' });
+  res.status(202).json(requestStandaloneStop(checkDms));
 });
 
 app.get('/api/check-dms/status', (_req, res) => {
   res.json({
     running: checkDms.running,
+    ...standaloneStopStatus(checkDms),
     currentProfile: checkDms.currentProfile,
     repliesFound: checkDms.repliesFound,
     errors: checkDms.errors,
@@ -7553,8 +7893,11 @@ app.post('/api/post-amplification/start', async (req, res) => {
     if (await rejectIfForeignProfiles(req, res, actionable.map((c) => c.profileId), POST_AMPLIFICATION_MODE)) return;
 
     // Reset state for this run.
+    startupAdmission.assertCurrent();
     postAmp.running = true;
     postAmp._abort = false;
+    postAmp._abortController = new AbortController();
+    postAmp.taskOwner = { ...startTaskOwner(), campaignId: 'post-amplification' };
     postAmp.startedAt = Date.now();
     postAmp.completedAt = null;
     postAmp.postUrl = postUrl;
@@ -7583,6 +7926,8 @@ app.post('/api/post-amplification/start', async (req, res) => {
           accountConfigs: actionable,
           status: postAmp,
           shouldAbort: () => postAmp._abort,
+          signal: postAmp._abortController.signal,
+          taskOwner: postAmp.taskOwner,
           log: pushPostAmpLog,
         });
         if (postAmp._abort) endReason = 'stopped';
@@ -7653,13 +7998,13 @@ app.post('/api/post-amplification/start', async (req, res) => {
 });
 
 app.post('/api/post-amplification/stop', (_req, res) => {
-  postAmp._abort = true;
-  res.json({ ok: true, message: 'Abort requested' });
+  res.status(202).json(requestStandaloneStop(postAmp));
 });
 
 app.get('/api/post-amplification/status', (_req, res) => {
   res.json({
     running: postAmp.running,
+    ...standaloneStopStatus(postAmp),
     postUrl: postAmp.postUrl,
     total: postAmp.total,
     completed: postAmp.completed,
@@ -7849,6 +8194,9 @@ function registerSchedule(schedule) {
 
   // Main fire
   const main = cron.schedule(schedule.cron, async () => {
+    const handshake = getHandshakeJob();
+    if (handshake.active && (!handshake.done || handshake.stopping)) return;
+    if (!startupAdmission.available() || checkDms.running || postAmp.running || _manualSweepRunning || _recoveryInFlight) return;
     console.log(`[scheduler] Firing schedule "${schedule.name}" (owner: ${schedule.createdBy || 'none'})`);
     // Unattended cron fire bypasses the HTTP start gate — enforce identity here
     // too, else a scheduled acceptance-check flips accounts "In Use" anonymously.
@@ -8246,13 +8594,14 @@ app.patch('/api/history/:idx/archive', async (req, res) => {
 app.get('/api/history/:idx/log', async (req, res) => {
   try {
     const idx = Number(req.params.idx);
-    const result = await readCampaignLog(idx);
+    const result = await readCampaignLog(idx, { executionId: req.query.executionId });
     if (!result.ok) {
       if (result.code === 'invalid_idx') return res.status(400).json({ error: 'Invalid idx' });
       if (result.code === 'out_of_range') return res.status(404).json({ error: 'No such history entry' });
       return res.status(500).json({ error: 'unknown_error' });
     }
-    res.json({ lines: result.lines, name: result.name, total: result.total });
+    res.json({ lines: result.lines, name: result.name, total: result.total, executionId: result.executionId,
+      totalTargets: result.totalTargets, endReason: result.endReason, endNotice: result.endNotice, needsOutcomeReview: result.needsOutcomeReview });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -8357,17 +8706,12 @@ app.listen(PORT, '127.0.0.1', async () => {
   // cooldown + 7-day expiry; runAutoIntros only fires for entries that
   // carry primaryName/primaryIntroBody, so Check Status-only entries are
   // bulk-checked but never DM'd.
-  startPostCampaignScheduler();
   // v2.72: hourly reply tracking for message-sending campaigns (never in the
   // first hour, ≤1×/hour per account). Writes replies to the sheet + the
   // in-app replies panel; desktop/email alerts are opt-in.
-  startReplyCheckScheduler();
 
   // Load and register saved schedules (D-05)
-  loadSchedules().then(schedules => {
-    for (const s of schedules) registerSchedule(s);
-    if (schedules.length) console.log(`  ✦ Schedules: ${schedules.filter(s => s.enabled).length} active of ${schedules.length} total`);
-  }).catch(err => console.error('Failed to load schedules:', err.message));
+  const bootSchedules = await loadSchedules();
 
   // v2.14 — resume any in-flight monitoring state from disk before the watcher
   // starts, so the campaign global is populated on the first watcher tick.
@@ -8377,16 +8721,22 @@ app.listen(PORT, '127.0.0.1', async () => {
   if (UI_PREVIEW) {
     console.log('[boot] UI preview — monitoring resume, task runner, follow-up poller and queue drain are OFF');
   } else if (getOperatorEmail()) {
-    resumeMonitoringFromDisk()
+    await resumeMonitoringFromDisk()
       .then((r) => {
         if (r.action !== 'noop') console.log('[boot] monitoring:', r.action);
       })
-      .catch((err) => console.warn('[boot] monitoring resume failed:', err.message));
+      .catch((err) => { console.warn('[boot] monitoring resume failed; startup stays blocked:', err.message); throw err; });
   } else {
     console.error('[boot] monitoring resume skipped — no operator email set on this machine');
   }
 
   // v2.14 — start the T+7d monitoring auto-end watcher
+  startupAdmission.setReady(true);
+  if (!UI_PREVIEW && startupAdmission.available()) {
+    startPostCampaignScheduler();
+    startReplyCheckScheduler();
+  }
+  for (const schedule of bootSchedules) registerSchedule(schedule);
   if (!UI_PREVIEW) startMonitoringWatcher();
 
   // Cloud-FG write-back: reconcile on boot, then every 30s while the app is open.
@@ -8798,6 +9148,14 @@ function appendFatalErrorSync(entry) {
 // Graceful shutdown — close GoLogin profiles on SIGINT/SIGTERM (REL-03)
 // ---------------------------------------------------------------------------
 async function gracefulShutdown(signal) {
+  startupAdmission.close();
+  clearTimeout(runNextFromQueue._scheduledTimer);
+  for (const { main, prefire } of activeJobs.values()) { main?.stop(); prefire?.stop(); }
+  stopMonitoringWatcher();
+  stopPostCampaignScheduler();
+  stopReplyCheckScheduler();
+  stopPrimaryTaskRunner();
+  stopCloudFollowupPoller();
   console.log(`\n[shutdown] ${signal} received. Shutting down... waiting for current lead`);
   // Say it is a quit, not a Stop press. stopReason stays 'operator-stopped' on
   // purpose — the dashboard keys off that value.

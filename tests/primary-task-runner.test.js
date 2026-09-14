@@ -18,7 +18,7 @@ const terminal = (marks) => marks.filter(m => m[1] !== 'in_progress');
 
 test('runDueTasks claims in_progress, accepts the matching invite, marks it done', async () => {
   const marks = [];
-  const tasks = [{ id: 'a1', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 }];
+  const tasks = [{ id: 'a1', type: 'accept', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 }];
   const sem = fakeSemaphore();
   const res = await runDueTasks(10, {
     loadTasks: async () => tasks,
@@ -41,7 +41,7 @@ test('runDueTasks claims in_progress, accepts the matching invite, marks it done
 
 test('runDueTasks marks an unmatched accept as skipped', async () => {
   const marks = [];
-  const tasks = [{ id: 'a1', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 }];
+  const tasks = [{ id: 'a1', type: 'accept', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 }];
   const res = await runDueTasks(10, {
     loadTasks: async () => tasks,
     markTask: async (id, status) => marks.push([id, status]),
@@ -59,7 +59,7 @@ test('runDueTasks marks an unmatched accept as skipped', async () => {
 test('runDueTasks sends a campaign-account follow-up via launchAccount', async () => {
   const marks = [];
   const opened = [];
-  const tasks = [{ id: 'f1', type: 'follow-up', sender: 'p9', status: 'pending', dueAt: 1, threadUrl: 'https://www.linkedin.com/messaging/thread/x', body: 'hi', attempts: 0 }];
+  const tasks = [{ id: 'f1', type: 'follow-up', sender: 'p9', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, threadUrl: 'https://www.linkedin.com/messaging/thread/x', body: 'hi', attempts: 0 }];
   const res = await runDueTasks(10, {
     loadTasks: async () => tasks,
     markTask: async (id, status) => marks.push([id, status]),
@@ -79,7 +79,7 @@ test('runDueTasks sends a campaign-account follow-up via launchAccount', async (
 
 test('runDueTasks retries (stays pending) up to 3 attempts then fails', async () => {
   const marks = [];
-  const tasks = [{ id: 'f1', type: 'follow-up', sender: 'local-browser', status: 'pending', dueAt: 1, threadUrl: 't', body: 'hi', attempts: 2 }];
+  const tasks = [{ id: 'f1', type: 'follow-up', sender: 'local-browser', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, threadUrl: 't', body: 'hi', attempts: 2 }];
   await runDueTasks(10, {
     loadTasks: async () => tasks,
     markTask: async (id, status, patch) => marks.push([id, status, patch?.attempts]),
@@ -98,8 +98,8 @@ test('runDueTasks retries (stays pending) up to 3 attempts then fails', async ()
 test('a launch failure settles every task in the bucket (caps infinite retry)', async () => {
   const marks = [];
   const tasks = [
-    { id: 'a1', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 },
-    { id: 'a2', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Sam' }, attempts: 2 },
+    { id: 'a1', type: 'accept', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 },
+    { id: 'a2', type: 'accept', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, account: { name: 'Sam' }, attempts: 2 },
   ];
   const sem = fakeSemaphore();
   await runDueTasks(10, {
@@ -120,7 +120,7 @@ test('a launch failure settles every task in the bucket (caps infinite retry)', 
 test('a successful send whose terminal mark fails is NOT re-queued (no double-send)', async () => {
   const statuses = [];
   let sends = 0;
-  const tasks = [{ id: 'f1', type: 'follow-up', sender: 'local-browser', status: 'pending', dueAt: 1, threadUrl: 't', body: 'hi', attempts: 0 }];
+  const tasks = [{ id: 'f1', type: 'follow-up', sender: 'local-browser', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, threadUrl: 't', body: 'hi', attempts: 0 }];
   await runDueTasks(10, {
     loadTasks: async () => tasks,
     markTask: async (id, status) => {
@@ -144,7 +144,7 @@ test('guardIdle false defers work — no browser opened, nothing marked', async 
   const sem = fakeSemaphore();
   let launched = false;
   const res = await runDueTasks(10, {
-    loadTasks: async () => [{ id: 'a1', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Pat' } }],
+    loadTasks: async () => [{ id: 'a1', type: 'accept', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, account: { name: 'Pat' } }],
     markTask: async () => { throw new Error('should not mark'); },
     launchLocal: async () => { launched = true; return { page: {} }; },
     closeLocal: async () => {},
@@ -160,7 +160,7 @@ test('guardIdle false defers work — no browser opened, nothing marked', async 
 
 test('runDueTasks does nothing when no tasks are due', async () => {
   const res = await runDueTasks(10, {
-    loadTasks: async () => [{ id: 'x', type: 'accept', status: 'pending', dueAt: 999 }],
+    loadTasks: async () => [{ id: 'x', type: 'accept', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 999 }],
     markTask: async () => { throw new Error('should not mark'); },
     launchLocal: async () => { throw new Error('should not launch'); },
     closeLocal: async () => {}, launchAccount: async () => ({}), closeAccount: async () => {},
@@ -173,7 +173,7 @@ test('runDueTasks does nothing when no tasks are due', async () => {
 test('a lead who has already replied gets the follow-up HELD, not sent and not failed', async () => {
   const marks = [];
   const patches = {};
-  const tasks = [{ id: 'f1', type: 'follow-up', status: 'pending', dueAt: 1, attempts: 0, leadName: 'James Auld', body: 'hi', threadUrl: 'https://x/t' }];
+  const tasks = [{ id: 'f1', type: 'follow-up', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, attempts: 0, leadName: 'James Auld', body: 'hi', threadUrl: 'https://x/t' }];
   const sem = fakeSemaphore();
   const res = await runDueTasks(10, {
     loadTasks: async () => tasks,
@@ -196,7 +196,7 @@ test('a lead who has already replied gets the follow-up HELD, not sent and not f
 
 test('a normal send still marks done', async () => {
   const marks = [];
-  const tasks = [{ id: 'f2', type: 'follow-up', status: 'pending', dueAt: 1, attempts: 0, leadName: 'Nancy', body: 'hi', threadUrl: 'https://x/t' }];
+  const tasks = [{ id: 'f2', type: 'follow-up', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, attempts: 0, leadName: 'Nancy', body: 'hi', threadUrl: 'https://x/t' }];
   await runDueTasks(10, {
     loadTasks: async () => tasks,
     markTask: async (id, status) => { marks.push([id, status]); },
@@ -216,7 +216,7 @@ test('a sender that returns nothing at all is still treated as sent', async () =
   // Older stubs (and any caller not yet updated) return undefined. That must
   // keep meaning "sent", not silently become a hold.
   const marks = [];
-  const tasks = [{ id: 'f3', type: 'follow-up', status: 'pending', dueAt: 1, attempts: 0, leadName: 'Pat', body: 'hi', threadUrl: 'https://x/t' }];
+  const tasks = [{ id: 'f3', type: 'follow-up', campaignId: 'fixture-campaign', campaignRunId: 'fixture-run', status: 'pending', dueAt: 1, attempts: 0, leadName: 'Pat', body: 'hi', threadUrl: 'https://x/t' }];
   await runDueTasks(10, {
     loadTasks: async () => tasks,
     markTask: async (id, status) => { marks.push([id, status]); },

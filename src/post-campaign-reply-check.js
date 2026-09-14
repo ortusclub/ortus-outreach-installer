@@ -24,7 +24,7 @@
  * Persistent state: data/post-campaign-reply-check.json
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readScheduleSnapshot, saveScheduleSnapshot } from './schedule-snapshot-store.js';
 import { dataPath } from './paths.js';
 import { getProfiles } from './gologin-launcher.js';
 import * as browserSemaphore from './browser-semaphore.js';
@@ -57,13 +57,11 @@ const REPLY_STAGE_FILTER = new Set(['DM Sent', 'IC Sent', 'OP Sent', 'InM Sent',
 let _tickTimer = null;
 
 async function readSchedule() {
-  try { return JSON.parse(await readFile(SCHEDULE_FILE, 'utf8')); }
-  catch { return {}; }
+  return readScheduleSnapshot(SCHEDULE_FILE);
 }
 
 async function writeSchedule(s) {
-  try { await writeFile(SCHEDULE_FILE, JSON.stringify(s, null, 2)); }
-  catch (err) { console.warn(`[reply-check] write failed: ${err.message}`); }
+  return saveScheduleSnapshot(SCHEDULE_FILE, s);
 }
 
 function key(sheetId, profileId) { return `${sheetId}|${profileId}`; }
@@ -156,8 +154,10 @@ function perLeadToOutputs(result, profileId, profileName) {
  * connection checker). No per-lead fallback (operator requirement: per-lead is
  * too slow). Returns a unified shape for both callers.
  */
-export async function scanRepliesForProfile({ profileId, profileName, leads, sheetUrl, linkedinColumn, watermark, page = null }) {
-  const bulk = await checkProfileDms(profileId, { watermark, sheetUrl, linkedinColumn, page, pName: profileName });
+export async function scanRepliesForProfile({ profileId, profileName, leads, sheetUrl, linkedinColumn, watermark, page = null, signal }) {
+  signal?.throwIfAborted();
+  const bulk = await checkProfileDms(profileId, { watermark, sheetUrl, linkedinColumn, page, pName: profileName, signal });
+  signal?.throwIfAborted();
   return {
     method: 'bulk',
     recentMessages: bulk.recentMessages || [],
@@ -174,12 +174,13 @@ export async function scanRepliesForProfile({ profileId, profileName, leads, she
  * lastCheckedAt = now enforces the "never in the first hour" rule.
  */
 export async function registerReplySchedule({ sheetId, sheetUrl, profileId, profileName,
-                                              linkedinColumn, days, operatorEmail, scanSinceMs }) {
+                                              linkedinColumn, days, operatorEmail, scanSinceMs, taskOwner = null }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
   const k = key(sheetId, profileId);
   const now = Date.now();
   sched[k] = {
+    taskOwner,
     sheetId,
     sheetUrl,
     profileId,
@@ -350,7 +351,7 @@ export async function listSchedule() {
  * toggle to actually halt the background browser checks. Returns the count
  * removed.
  */
-export async function removeSchedulesForSheet(sheetId, profileIds = null) {
+export async function removeSchedulesForSheet(sheetId, profileIds = null, owner = null) {
   if (!sheetId) return 0;
   const sched = await readSchedule();
   const pidSet = Array.isArray(profileIds) && profileIds.length ? new Set(profileIds) : null;
@@ -358,6 +359,7 @@ export async function removeSchedulesForSheet(sheetId, profileIds = null) {
   for (const k of Object.keys(sched)) {
     const e = sched[k];
     if (e.sheetId !== sheetId) continue;
+    if (owner && (e.taskOwner?.campaignId !== owner.campaignId || e.taskOwner?.campaignRunId !== owner.campaignRunId)) continue;
     if (pidSet && !pidSet.has(e.profileId)) continue;
     delete sched[k];
     removed++;
@@ -368,5 +370,7 @@ export async function removeSchedulesForSheet(sheetId, profileIds = null) {
 
 /** v2.76: wipe ALL reply-tracking entries (operator "clear backlog"). */
 export async function clearAllSchedules() {
-  await writeSchedule({});
+  const sched = await readSchedule();
+  for (const key of Object.keys(sched)) delete sched[key];
+  await writeSchedule(sched);
 }

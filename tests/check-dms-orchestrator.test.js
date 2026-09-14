@@ -23,6 +23,36 @@ const SHEET_ROWS = JSON.parse(
 
 function mockPage() { return { mock: true }; }
 
+test('cancelled bulk read does not fetch candidate rows or advance its watermark', async () => {
+  const controller = new AbortController();
+  let candidates = 0;
+  _setDeps({
+    getConversationsPage: async () => { controller.abort(); return { elements: [] }; },
+    getCandidateRows: async () => { candidates++; return []; },
+  });
+  try {
+    const result = await checkProfileDms('fixture', { page: {}, signal: controller.signal });
+    assert.equal(result.newWatermark, undefined);
+    assert.equal(candidates, 0);
+    assert.ok(result.errors.length);
+  } finally { _setDeps(null); }
+});
+
+test('Stop during candidate read prevents reply writes', async () => {
+  const controller = new AbortController();
+  let writes = 0;
+  _setDeps({
+    getConversationsPage: async () => ({ elements: [{ lastActivityAt: Date.now() }] }),
+    getCandidateRows: async () => { controller.abort(); return []; },
+    appendReplyRow: async () => { writes++; }, updateSheetRow: async () => { writes++; },
+  });
+  try {
+    const result = await checkProfileDms('fixture', { page: {}, signal: controller.signal });
+    assert.equal(result.newWatermark, undefined);
+    assert.equal(writes, 0);
+  } finally { _setDeps(null); }
+});
+
 function mockDeps({ conversationsPages = [], rowStatuses = {}, sheetUpdates = [] } = {}) {
   const stubs = {
     getConversationsPage: async () => conversationsPages.shift() ?? null,

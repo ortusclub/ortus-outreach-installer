@@ -8,6 +8,7 @@ const RUNNER = readFileSync(new URL('../src/primary-task-runner.js', import.meta
 const LAUNCH = readFileSync(new URL('../src/local-launcher.js', import.meta.url), 'utf8');
 const SERVER = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 const APP = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
+const GOLOGIN = readFileSync(new URL('../src/gologin-launcher.js', import.meta.url), 'utf8');
 
 // 1 Sep: five follow-ups died three attempts at a time reading
 // FOLLOWUP_COMPOSER_NOT_FOUND. The browser was signed in at 17:12 (its session
@@ -44,17 +45,43 @@ test('a parked task backs off so it cannot relaunch Chrome every tick', () => {
 });
 
 test('the session is probed once per run, not once per lead', () => {
-  const i = RUNNER.indexOf('const { page } = await launchLocal();');
+  const i = RUNNER.indexOf('session = await preparePrimarySession(local');
   const body = RUNNER.slice(i, i + 900);
-  assert.match(body, /if \(await checkSignedOut\(page\)\)/);
+  assert.match(body, /prepare: checkSignedOut/);
+  assert.match(body, /if \(session.prepared\)/);
   assert.ok(body.indexOf('checkSignedOut') < body.indexOf('for (const t of local)'),
     'the probe must come before the per-lead loop');
 });
 
 test('the login flow opens the browser where a human can see it', () => {
-  assert.match(LAUNCH, /launchLocalBrowser\(\{ visible = false \} = \{\}\)/);
+  assert.match(LAUNCH, /launchLocalBrowser\(\{ visible = false, signal \} = \{\}\)/);
   assert.match(LAUNCH, /visible \? \['--window-position=60,60'\] : \['--window-position=-2400,-2400'\]/);
+  assert.match(LAUNCH, /defaultViewport: visible \? null/,
+    'manual login must use the real Chrome viewport, not automation emulation');
+  assert.match(LAUNCH, /if \(!visible\) await page\.setViewport/,
+    'only hidden automated work should install a synthetic viewport');
+  assert.match(LAUNCH, /if \(pid && !visible\)/,
+    'the operator-visible login browser must never be hidden');
+  assert.match(LAUNCH, /activeBrowser && activeBrowser\.connected/,
+    'repeated recovery/retry must reuse one profile owner');
+  assert.match(LAUNCH, /await page\.setViewport\(null\)/,
+    'reopening an existing automated window for a human must clear emulation');
   assert.match(SERVER, /launchLocalBrowser\(\{ visible: true \}\)/);
+});
+
+test('GoLogin recovery opens as a manual browser, not a visible automation window', () => {
+  assert.match(GOLOGIN, /launchProfile\(profileId, _ignoredLegacyToken, \{ visible = false, signal \} = \{\}\)/);
+  assert.match(GOLOGIN, /defaultViewport: visible \? null/);
+  assert.match(GOLOGIN, /if \(!visible\) await page\.setViewport/);
+  assert.match(GOLOGIN, /if \(!visible\) await applyFocusEmulation/);
+  assert.match(GOLOGIN, /showProfileForManualControl/);
+  assert.match(GOLOGIN, /Emulation\.setFocusEmulationEnabled', \{ enabled: false \}/);
+  assert.match(GOLOGIN, /activeProfiles\.has\(profileId\) && activeSessions\.has\(profileId\)/,
+    'retry must reuse the profile that the operator just signed into');
+  assert.match(GOLOGIN, /prepareProfileForAutomation\(profileId\)/,
+    'retry must deliberately return that browser to automated operation');
+  assert.match(SERVER, /launchProfile\(profileId, token, \{ visible: true \}\)/);
+  assert.match(SERVER, /showProfileForManualControl\(profileId\)/);
 });
 
 test('retry revives BOTH parked and already-failed follow-ups', () => {

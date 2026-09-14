@@ -152,7 +152,7 @@ test('groups come back newest first', () => {
 
 // ── discard, and the undo behind it ────────────────────────────────────────
 test('a discarded follow-up can never be sent', () => {
-  const tasks = [fu({ id: 'x', status: 'pending', blockedBySession: true, dueAt: 1, body: 'Hi A, x.' })];
+  const tasks = [fu({ id: 'x', campaignId: 'fixture', campaignRunId: 'run', status: 'pending', blockedBySession: true, dueAt: 1, body: 'Hi A, x.' })];
   assert.equal(selectDue(tasks, 2).length, 1, 'it was sendable before');
   const { tasks: after } = discardGroups(tasks, [groupKeyOf(tasks[0])]);
   assert.equal(after[0].status, 'discarded');

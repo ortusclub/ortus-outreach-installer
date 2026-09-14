@@ -201,69 +201,7 @@ async function isPending(page) {
 // On 4xx → ok=false with status + body parsed for finer-grained skip reason.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const VOYAGER_INVITATION_RE = /voyagerRelationshipsDashMemberRelationships.*InvitationCreationResult/i;
-
-function attachVoyagerInvitationCapture(page) {
-  const captured = { fired: false, ok: null, status: null, urn: null, errorMessage: null };
-  const waiters = [];
-
-  const listener = async (response) => {
-    try {
-      if (!VOYAGER_INVITATION_RE.test(response.url())) return;
-      const status = response.status();
-      let body = null;
-      try { body = await response.json(); } catch { /* may not be JSON */ }
-
-      const ok = status >= 200 && status < 300;
-      const urn = body?.data?.value?.invitationUrn || body?.data?.invitationUrn || null;
-      const errorMessage = ok
-        ? null
-        : (body?.message || body?.errorDetails?.message || body?.errorMessage || `HTTP ${status}`);
-
-      captured.fired = true;
-      captured.ok = ok;
-      captured.status = status;
-      captured.urn = urn;
-      captured.errorMessage = errorMessage;
-
-      const result = { ok, status, urn, errorMessage };
-      const ws = waiters.splice(0);
-      for (const w of ws) w(result);
-    } catch (e) {
-      console.warn(`[voyager-capture] listener error: ${e.message}`);
-    }
-  };
-
-  page.on('response', listener);
-
-  return {
-    waitFor(timeoutMs) {
-      if (captured.fired) {
-        return Promise.resolve({
-          ok: captured.ok,
-          status: captured.status,
-          urn: captured.urn,
-          errorMessage: captured.errorMessage,
-        });
-      }
-      return new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          const i = waiters.indexOf(onFire);
-          if (i >= 0) waiters.splice(i, 1);
-          resolve(null);
-        }, timeoutMs);
-        const onFire = (result) => { clearTimeout(timer); resolve(result); };
-        waiters.push(onFire);
-      });
-    },
-    fired() { return captured.fired; },
-    detach() {
-      try { page.off('response', listener); } catch { /* page may be closed */ }
-      const ws = waiters.splice(0);
-      for (const w of ws) w(null);
-    },
-  };
-}
+import { attachVoyagerInvitationCapture, inspectRejectedInvitation } from './invitation-evidence.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type into message/note field
@@ -745,7 +683,7 @@ async function clickConnectFromMore(page) {
 // sendConnectionRequest
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendConnectionRequest(page, noteArg, onProgress) {
+export async function sendConnectionRequest(page, noteArg, onProgress, invitationIdentity) {
   let note = noteArg;
   const progress = (step, stepLabel, stepDetail = '') => {
     try { if (typeof onProgress === 'function') onProgress({ step, stepLabel, stepDetail }); } catch (_) { /* cosmetic */ }
@@ -753,7 +691,7 @@ export async function sendConnectionRequest(page, noteArg, onProgress) {
   // v2.10.0 (Approach A): register the Voyager invitation-create listener before
   // any user interaction. Captures LinkedIn's own backend response, which is the
   // definitive signal that an invitation actually landed (or was rejected).
-  const voyagerCapture = attachVoyagerInvitationCapture(page);
+  const voyagerCapture = attachVoyagerInvitationCapture(page, invitationIdentity);
   try {
   // Scroll to top
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -1275,7 +1213,8 @@ export async function sendConnectionRequest(page, noteArg, onProgress) {
               return { invitationUrn: voyagerA.urn, noteIncluded: noteWasIncluded };
             }
             console.error(`[actions] ✗ Voyager rejected (fallback): HTTP ${voyagerA.status} — ${voyagerA.errorMessage || ''}`);
-            throw new Error(`VOYAGER_REJECTED: HTTP ${voyagerA.status} — ${voyagerA.errorMessage || 'unknown reason'}`);
+            const observed = await inspectRejectedInvitation(page);
+            throw new Error(`VOYAGER_REJECTED: HTTP ${voyagerA.status} — invitation outcome needs verification (${observed}); do not resend`);
           }
           console.log('[actions] Voyager did not fire — falling back to DOM-based verification.');
 
@@ -1491,7 +1430,8 @@ export async function sendConnectionRequest(page, noteArg, onProgress) {
           return { invitationUrn: voyagerMain.urn, noteIncluded: noteWasIncluded };
         }
         console.error(`[actions] ✗ Voyager rejected: HTTP ${voyagerMain.status} — ${voyagerMain.errorMessage || ''}`);
-        throw new Error(`VOYAGER_REJECTED: HTTP ${voyagerMain.status} — ${voyagerMain.errorMessage || 'unknown reason'}`);
+        const observed = await inspectRejectedInvitation(page);
+        throw new Error(`VOYAGER_REJECTED: HTTP ${voyagerMain.status} — invitation outcome needs verification (${observed}); do not resend`);
       }
       console.log('[actions] Voyager listener did not fire in 10s — falling back to toast/Pending check.');
 

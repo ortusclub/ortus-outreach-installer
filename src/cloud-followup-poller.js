@@ -82,12 +82,16 @@ export async function pollOnce(deps = {}) {
         // what lets a card count only its OWN follow-ups instead of the app's
         // lifetime total — see src/followup-groups.js.
         campaignId: fu.campaignId || '',
+        campaignRunId: fu.campaignRunId || '',
         campaignProfileId: fu.profileId, sheetId: sheetIdFromUrl(fu.sheetUrl), sheetUrl: fu.sheetUrl,
         sender: 'local-browser', threadUrl: fu.threadUrl, introTitle: fu.introTitle, leadName: fu.leadName,
         leadUrl: fu.leadUrl, primaryName: fu.primaryName, primaryUrl: fu.primaryUrl,
         body: fu.body, delayMinutes: 0, now: now(),
       });
-      await enqueue(task);                 // local dedupe on follow-up:<profileId>:<leadUrl>
+      if (fu.taskId == null || String(fu.taskId).trim() === '') throw new Error('Engine task ID missing');
+      task.sourceTaskId = String(fu.taskId);
+      task.id = `cloud-follow-up:${JSON.stringify([fu.campaignId || '', task.sourceTaskId])}`;
+      await enqueue(task);                 // durable receipt, including review-held tasks
       drained.add(fu.taskId);              // mark before persist/ack — the durable guard
       acked.push(fu.taskId);
       enqueued++;
@@ -97,11 +101,28 @@ export async function pollOnce(deps = {}) {
     }
   }
 
-  if (enqueued) { try { await saveD([...drained]); } catch (e) { log(`persist drained failed: ${e.message}`); } }
-  if (acked.length) { try { await ackFn(acked, owner); } catch (e) { log(`ack failed: ${e.message}`); } }
+  if (enqueued) {
+    try { await saveD([...drained]); }
+    catch (e) {
+      log(`persist drained failed: ${e.message} — no acknowledgement; stable local task IDs protect re-offers`);
+      return { enqueued, acked: 0, late };
+    }
+  }
+  let acknowledged = 0;
+  if (acked.length) {
+    try {
+      const receipt = await ackFn(acked, owner);
+      if (receipt?.error || !Number.isInteger(receipt?.delegated)
+        || receipt.delegated < 0 || receipt.delegated > acked.length) {
+        throw new Error(receipt?.error || 'Engine did not confirm delegation');
+      }
+      acknowledged = receipt.delegated;
+    }
+    catch (e) { log(`ack failed: ${e.message}`); }
+  }
   _lastLate = late;
   if (enqueued) log(`drained ${enqueued} personal follow-up(s)${late ? `, ${late} late` : ''}`);
-  return { enqueued, acked: acked.length, late };
+  return { enqueued, acked: acknowledged, late };
 }
 
 export function startCloudFollowupPoller() {

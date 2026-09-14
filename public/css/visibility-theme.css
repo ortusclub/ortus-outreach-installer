@@ -1,0 +1,89 @@
+/* Shared dashboard + campaign-tab palette. No lifecycle or layout changes.
+   Keep dashboard-v0.3.css's state gradients; only their surface tokens change. */
+body[data-dashboard='v3'] {
+  --bg: #f8f8f6;
+  --bg-soft: #f0f0ed;
+  --ink: #171717;
+  --gray: #60605c;
+  --gray-faint: #6b6b66;
+  --hairline: #b9b9b3;
+  --hairline-soft: #d8d8d2;
+  --card-bg: #fdfdfb;
+  --card-bg-hover: #f3f3ef;
+  --card-border: #b9b9b3;
+  --green: #23713b;
+  --red: #ab3030;
+  --gold: #875b13;
+  --blue: #35689a;
+  --pill-neutral: #efefeb;
+  --pill-ok: #e8f3eb;
+  --pill-warn: #fbf0d9;
+  --pill-bad: #fbeaea;
+}
+body[data-dashboard='v3'].theme-dark {
+  --bg: #101010;
+  --bg-soft: #20201e;
+  --ink: #f4f4ef;
+  --gray: #bcbcb5;
+  --gray-faint: #aaa9a2;
+  --hairline: #676760;
+  --hairline-soft: #3f3f3a;
+  --card-bg: #181817;
+  --card-bg-hover: #242422;
+  --card-border: #676760;
+  --green: #91d09f;
+  --red: #ffaaaa;
+  --gold: #e8bb70;
+  --blue: #98bee8;
+  --pill-neutral: #292927;
+  --pill-ok: #203527;
+  --pill-warn: #3b301d;
+  --pill-bad: #3d2424;
+}
+body[data-dashboard='v3'] .stg-acct .cap-badge {
+  background: var(--pill-neutral);
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+body[data-dashboard='v3'] .stg-acct .cap-badge .nm,
+body[data-dashboard='v3'] .stg-acct .cap-badge .n {
+  color: inherit;
+  opacity: 1;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+body[data-dashboard='v3'] .stg-acct .cap-badge.ok { background: var(--pill-ok); }
+body[data-dashboard='v3'] .stg-acct .cap-badge.warn { background: var(--pill-warn); }
+body[data-dashboard='v3'] .stg-acct .cap-badge.bad { background: var(--pill-bad); }
+body[data-dashboard='v3'] .stg-acct.sel .cap-badge {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+body[data-dashboard='v3'] .stg-drawer {
+  background: var(--card-bg);
+  border-color: var(--hairline);
+}
+body[data-dashboard='v3'] .stg-drawer .acts button,
+body[data-dashboard='v3'] .stg-recovery-action {
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  background: var(--bg-soft);
+  font-weight: 600;
+  min-height: 36px;
+}
+body[data-dashboard='v3'] .stg-drawer .acts .stg-login-btn {
+  background: var(--ink);
+  color: var(--card-bg);
+  min-height: 44px;
+  padding: 10px 18px;
+  font-weight: 700;
+}
+body[data-dashboard='v3'] .vj-card button:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}

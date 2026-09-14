@@ -138,6 +138,7 @@ export async function runAutoDms({
   templates = {},
   senderFirstNames = {},
   log = console.log,
+  shouldAbort = () => false,
 }) {
   const result = { sent: 0, failed: 0, skipped: 0 };
   if (!Array.isArray(connectedUrls) || connectedUrls.length === 0) return result;
@@ -192,7 +193,7 @@ export async function runAutoDms({
     // left over are abandoned WITHOUT a stamp, so the next check reads them
     // again. Nothing is written here, unlike the Stop branch below, which
     // marks the rest as Skipped because the whole run is over.
-    if (campaign._abortCheck) {
+    if (shouldAbort() || campaign._abortCheck) {
       log(`  ■ [${profileName}] Check stopped by you. ${connectedUrls.length - i} person(s) were left untouched, so the next check reads them again.`);
       break;
     }
