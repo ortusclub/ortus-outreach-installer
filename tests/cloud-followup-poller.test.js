@@ -62,7 +62,7 @@ test('re-offered (already-drained) follow-up is re-acked but NEVER re-enqueued �
     enqueuePrimaryTask: async (t) => { enqueued.push(t); return t; },
     ackLocalFollowups: async (ids) => { acked = ids; return { delegated: ids.length }; },
   }));
-  assert.deepEqual(enqueued.map((t) => t.id), ['lb']); // ONLY t2 enqueued; t1 skipped
+  assert.deepEqual(enqueued.map((t) => t.sourceTaskId), ['t2']); // ONLY t2 enqueued; t1 skipped
   assert.deepEqual(acked, ['t1', 't2']);               // both acked (t1 re-acked to stop re-offers)
   assert.equal(res.enqueued, 1);
 });
@@ -77,7 +77,7 @@ test('acks ONLY what enqueued — enqueue failure never acks nor marks drained',
       { taskId: 't2', profileId: 'accB', leadUrl: 'lb', body: 'b2', dueAt: null },
     ] }),
     buildFollowUpTask: (a) => ({ id: a.leadUrl }),
-    enqueuePrimaryTask: async (t) => { if (t.id === 'lb') throw new Error('disk full'); return t; },
+    enqueuePrimaryTask: async (t) => { if (t.sourceTaskId === 't2') throw new Error('disk full'); return t; },
     ackLocalFollowups: async (ids) => { acked = ids; return { delegated: ids.length }; },
   }));
   assert.deepEqual(acked, ['t1']);        // t2 failed → not acked

@@ -67,11 +67,13 @@ test('the keep-monitoring caller asks for an immediate stop', () => {
   assert.match(APP, /_doStopCloud\(target\.id, \{ keepMonitoring: true, scope, immediate: true \}\)/);
 });
 
-test('every app stop query is immediate; finishCurrent is gone', () => {
+test('explicit Full Stop queries are immediate while graceful stopping remains a separate choice', () => {
   const fn = APP.slice(APP.indexOf('async function _doStopCloud('), APP.indexOf('// Pause / Resume a cloud campaign'));
   assert.match(fn, /&immediate=1/);
   assert.match(fn, /'\?immediate=1'/);
-  assert.doesNotMatch(fn, /finishCurrent/);
+  const fullStop = APP.slice(APP.indexOf('async function stopEverything()'), APP.indexOf('window.stopEverything'));
+  assert.match(fullStop, /immediate: true/);
+  assert.match(fullStop, /full: true, immediate: true/);
 });
 
 test('the node client forces immediate for every stop shape', () => {

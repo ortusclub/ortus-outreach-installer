@@ -6,10 +6,11 @@
 # launch, so the in-app safety banner reports what Kubernetes actually runs.
 set -u
 
-DEV_NAMESPACE="salesnav-dev"
+DEV_NAMESPACE="${ORTUS_ENGINE_NAMESPACE:-salesnav-dev}"
 LIVE_NAMESPACE="salesnav-scraper"
-DEPLOYMENT="salesnav-scraper"
-LOCAL_ENGINE_PORT="3001"
+DEPLOYMENT="${ORTUS_ENGINE_DEPLOYMENT:-salesnav-scraper}"
+LIVE_DEPLOYMENT="${ORTUS_LIVE_ENGINE_DEPLOYMENT:-salesnav-scraper}"
+LOCAL_ENGINE_PORT="${ORTUS_ENGINE_PORT:-3001}"
 ENGINE_TOKEN="${SCRAPER_ENGINE_TOKEN:-ortus2026scraper}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENGINE_REPO="${ORTUS_DEV_ENGINE_REPO:-$PROJECT_ROOT/../ortus-salesnav-scraper-cloud}"
@@ -44,9 +45,12 @@ trap cleanup EXIT INT TERM
 
 image_tag() {
   local namespace="$1"
+  local deployment="${2:-$DEPLOYMENT}"
   local image
-  image="$(kubectl -n "$namespace" get deploy/"$DEPLOYMENT" \
+  image="$(kubectl -n "$namespace" get deploy/"$deployment" \
     -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].image}')" || return 1
+  # A tagged digest remains immutable while retaining a readable preview name.
+  image="${image%@*}"
   printf '%s' "${image##*:}"
 }
 
@@ -73,11 +77,11 @@ wait_for_tunnel() {
   return 1
 }
 
-DEV_VERSION="$(image_tag "$DEV_NAMESPACE")" || {
+DEV_VERSION="$(image_tag "$DEV_NAMESPACE" "$DEPLOYMENT")" || {
   echo "Could not read the development engine version. Run: gcloud auth login"
   exit 1
 }
-LIVE_VERSION="$(image_tag "$LIVE_NAMESPACE")" || {
+LIVE_VERSION="$(image_tag "$LIVE_NAMESPACE" "$LIVE_DEPLOYMENT")" || {
   echo "Could not read the live engine version. Run: gcloud auth login"
   exit 1
 }
@@ -111,6 +115,31 @@ if ! wait_for_tunnel; then
   echo "Could not establish the development-engine tunnel."
   tail -20 /tmp/ortus-dev-engine-port-forward.log 2>/dev/null || true
   exit 1
+fi
+
+# A paced desktop must not open against an old/disabled or unrelated engine.
+# This reserves one allowance only; it makes no GoLogin or LinkedIn request.
+if [ "${GOLOGIN_REQUEST_PACING:-0}" = "1" ]; then
+  if [ "$DEV_NAMESPACE" != "salesnav-previews" ] || [ "$DEPLOYMENT" != "preview-pr-19-salesnav-scraper" ] || [ "$LOCAL_ENGINE_PORT" != "3119" ]; then
+    echo "Shared request pacing is restricted to isolated PR-19 on port 3119."
+    exit 1
+  fi
+  PACING_REPLY="$(curl -fsS --max-time 5 -X POST \
+    -H "Authorization: Bearer $ENGINE_TOKEN" -H 'Content-Type: application/json' \
+    --data '{"workspace":"ortus","priority":"ordinary"}' \
+    "http://127.0.0.1:$LOCAL_ENGINE_PORT/api/gologin/admission/reserve")" || {
+      echo "PR-19 request coordinator is unavailable or disabled; Electron was not started."
+      exit 1
+    }
+  if ! printf '%s' "$PACING_REPLY" | node -e '
+    let input=""; process.stdin.on("data",d=>input+=d).on("end",()=>{
+      try { const x=JSON.parse(input); if(x.namespace!=="preview-pr-19" || x.scope!=="pilot-fleet" || typeof x.allowed!=="boolean")process.exitCode=1; }
+      catch { process.exitCode=1; }
+    });'; then
+    echo "Coordinator identity does not match PR-19; Electron was not started."
+    exit 1
+  fi
+  echo "  pacing:       coordinated PR-19 pilot (fail closed)"
 fi
 
 # A teammate cloning only the app repository does not need the GoLogin secret
@@ -149,12 +178,17 @@ WORKSPACES="Ortus"
 [ -n "$DEV_GOLOGIN_TOKEN_LV" ] && WORKSPACES="$WORKSPACES + Linked Velocity"
 [ -n "$DEV_GOLOGIN_TOKEN_MKT" ] && WORKSPACES="$WORKSPACES + Marketing"
 echo "  workspaces:   $WORKSPACES"
+[ -n "${ORTUS_PREVIEW_PR:-}" ] && echo "  preview PR:   ${ORTUS_PREVIEW_PR}"
+[ "${ORTUS_ENGINE_ENVIRONMENT:-development}" = "preview" ] && echo "  account pool: full GoLogin workspaces"
 
 env \
   SCRAPER_ENGINE_URL="http://127.0.0.1:$LOCAL_ENGINE_PORT" \
   SCRAPER_ENGINE_TOKEN="$ENGINE_TOKEN" \
   SCRAPER_ENGINE_VERSION="$DEV_VERSION" \
   PRODUCTION_ENGINE_VERSION="$LIVE_VERSION" \
+  ORTUS_ENGINE_ENVIRONMENT="${ORTUS_ENGINE_ENVIRONMENT:-development}" \
+  ORTUS_PREVIEW_PR="${ORTUS_PREVIEW_PR:-}" \
+  ORTUS_ENGINE_SOURCE_SHA="$(read_bootstrap sourceSha)" \
   GOLOGIN_API_TOKEN="$DEV_GOLOGIN_API_TOKEN" \
   GOLOGIN_API_TOKEN_LINKEDVELOCITY="$DEV_GOLOGIN_TOKEN_LV" \
   GOLOGIN_API_TOKEN_MARKETING="$DEV_GOLOGIN_TOKEN_MKT" \

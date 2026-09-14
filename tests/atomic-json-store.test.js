@@ -24,3 +24,9 @@ test('a corrupt primary file recovers from the last known-good backup', async ()
   await writeFile(path, '{broken', 'utf8');
   assert.deepEqual(await readJson(path, {}), { revision: 1 });
 });
+
+test('campaign state loading imports the read helper it calls', async () => {
+  const source = await readFile(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.match(source, /import \{[^}]*\breadJson\b[^}]*\} from '\.\/atomic-json-store\.js';/s);
+  assert.match(source, /await readJson\(STATE_FILE,/);
+});

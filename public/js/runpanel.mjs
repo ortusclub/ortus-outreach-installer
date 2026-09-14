@@ -187,6 +187,8 @@ export function batchPips(done, size, live) {
 export function accountColumns(status) {
   const rows = (status && Array.isArray(status.accountPanel)) ? status.accountPanel : [];
   return rows.map((a) => ({
+    profileId: a.profileId || '',
+    verificationLeads: Array.isArray(a.verificationLeads) ? a.verificationLeads : [],
     email: a.email || '',
     state: a.state || '',
     live: !!a.live,

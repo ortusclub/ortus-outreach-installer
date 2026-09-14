@@ -30,9 +30,28 @@ test('needsHandshakeFromBody: missing templates / empty body → false, no throw
 
 test('handshakeRowView: connected is the only done state', () => {
   assert.equal(handshakeRowView('connected').done, true);
-  for (const s of ['pending', 'connecting', 'sent', 'accepting', 'error', 'sent-no-identity']) {
+  for (const s of ['pending', 'connecting', 'reopening', 'sent', 'accepting', 'error', 'sent-no-identity', 'browser-frozen']) {
     assert.equal(handshakeRowView(s).done, false, s);
   }
+});
+
+test('handshakeRowView: frozen browser is explicit and recoverable in GoLogin', () => {
+  const view = handshakeRowView('browser-frozen', 'Browser frozen while loading the primary — no request was confirmed.');
+  assert.equal(view.done, false);
+  assert.equal(view.icon, 'x');
+  assert.match(view.label, /Browser frozen.*GoLogin/i);
+});
+
+test('handshakeOutcome: frozen sender says no request was confirmed', () => {
+  const outcome = handshakeOutcome({
+    senders: [
+      { profileId: 'a', name: 'Alice', state: 'connected' },
+      { profileId: 'b', name: 'Bob', state: 'browser-frozen', reason: 'Browser frozen while loading the primary — no request was confirmed.' },
+    ],
+  });
+  assert.equal(outcome.kind, 'partial');
+  assert.match(outcome.detail, /Bob/);
+  assert.match(outcome.detail, /No request was confirmed/);
 });
 test('handshakeRowView: unknown state falls back to pending', () => {
   assert.deepEqual(handshakeRowView('nonsense'), handshakeRowView('pending'));
@@ -78,6 +97,8 @@ test('handshakeStepView: step 2 starts only when every sender is past the invite
   assert.equal(v2.step1Done, true);
   assert.equal(v2.step2Done, false);
   assert.equal(v2.connected, 1);
+  const reopening = handshakeStepView([{ state: 'connected' }, { state: 'reopening' }]);
+  assert.equal(reopening.step, 1, 'closing and reopening a sender is still part of step 1');
 });
 
 test('handshakeStepView: all connected finishes step 2', () => {

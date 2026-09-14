@@ -1,0 +1,59 @@
+.launch-review {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(620px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 28px;
+  border: 1px solid var(--gold, #b88e30);
+  border-radius: 12px;
+  background: var(--bg, #101010);
+  color: var(--ink, #fafafa);
+}
+.launch-review::backdrop { background: rgb(0 0 0 / 70%); }
+.launch-review h2 { margin: 0 0 20px; }
+.launch-review dl { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px 16px; }
+.launch-review dt { color: var(--gray, #999); font-size: 12px; }
+.launch-review dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.launch-review form { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
+.launch-review button { padding: 10px 18px; border: 1px solid currentColor; border-radius: 24px; background: transparent; color: inherit; cursor: pointer; }
+.launch-review .launch-review-confirm { background: var(--gold, #b88e30); color: #101010; border-color: var(--gold, #b88e30); }
+.launch-review button:focus-visible { outline: 2px solid var(--ink, #fafafa); outline-offset: 4px; }
+
+/* Continuation is a list of distinct actions, not a horizontal launch footer. */
+.continuation-choice {
+  width: min(580px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  border-color: var(--hairline, #777);
+  padding: 28px;
+  font-family: var(--body, sans-serif);
+}
+.continuation-choice h2 {
+  font-family: var(--display, sans-serif);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.15;
+  margin-bottom: 8px;
+}
+.continuation-choice-name {
+  font-size: 13px;
+  opacity: .7;
+  overflow-wrap: anywhere;
+}
+.continuation-choice form { display: flex; flex-direction: column; gap: 0; margin-top: 24px; }
+.continuation-choice section { padding: 18px 0; border-top: 1px solid var(--hairline, #777); }
+.continuation-choice section button {
+  font: 500 14px/1.4 var(--body, sans-serif);
+  padding: 10px 18px;
+  max-width: 100%;
+  text-align: left;
+}
+.continuation-choice section p { margin: 10px 0 0; font-size: 13px; line-height: 1.6; opacity: .75; }
+.continuation-choice button { transition: background-color 150ms ease; }
+.continuation-choice button:hover:not(:disabled) { background: var(--ink, #fafafa); color: var(--bg, #101010); }
+.continuation-choice button:disabled { opacity: .45; cursor: not-allowed; }
+.continuation-choice footer { display: flex; justify-content: flex-end; border-top: 1px solid var(--hairline, #777); padding-top: 18px; }
+.continuation-choice footer button { font: 400 13px/1.4 var(--body, sans-serif); padding: 9px 20px; }
+@media (max-width: 480px) { .continuation-choice { padding: 20px; } }

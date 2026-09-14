@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ortus · Primary login recovery sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#ececea;color:#161616;font-family:'Hanken Grotesk',sans-serif}
+main{max-width:1300px;margin:auto;padding:32px 28px 64px}.intro{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:30px}.intro h1{font-size:24px;margin:0 0 6px}.intro p{margin:0;font-size:14px;color:#555}.tag{font-size:11px;letter-spacing:.13em;text-transform:uppercase;white-space:nowrap}
+.theme-label{font-size:12px;letter-spacing:.16em;text-transform:uppercase;margin:28px 0 12px;font-weight:700}
+.canvas{--bg:#fff;--ink:#111;--muted:#595959;--line:#dedede;--amber:#9a6100;--tint:#fffaf2;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:26px}
+.dark{--bg:#111;--ink:#f5f5f5;--muted:#b8b8b8;--line:#363636;--amber:#f7be68;--tint:#1c1913}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;display:flex;gap:8px;align-items:center}.dot{width:6px;height:6px;background:var(--amber);border-radius:50%}.campaign{font-family:'Bebas Neue','Arial Narrow',sans-serif;font-size:27px;margin:8px 0 20px;font-weight:400}
+.recovery{border:1px solid var(--amber);background:var(--tint);border-radius:10px;padding:28px;display:grid;grid-template-columns:40px minmax(0,1fr);gap:20px}
+.warning{border:2px solid var(--amber);color:var(--amber);width:34px;height:34px;border-radius:50%;font-size:21px;font-weight:700;display:grid;place-items:center;margin-top:5px}
+h2{font-family:'Bebas Neue','Arial Narrow',sans-serif;font-size:34px;font-weight:400;line-height:1.1;margin:0 0 10px}.description{font-size:16px;line-height:1.5;margin:0;max-width:65ch}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin:24px 0 14px}button{font-family:inherit;cursor:pointer}.actions button{min-height:50px;border-radius:999px;padding:13px 24px;border:1.5px solid var(--ink);font-size:15px;line-height:1.4;font-weight:700;background:transparent;color:var(--ink)}.actions .primary{background:var(--ink);color:var(--bg)}button:hover:not(:disabled){opacity:.8}button:focus-visible{outline:3px solid var(--amber);outline-offset:4px}.actions button:disabled{cursor:wait;opacity:.65}
+.safety{font-size:13px;line-height:1.5;color:var(--muted);margin:0}.feedback{font-size:14px;margin:14px 0 0;color:var(--amber);font-weight:600}.feedback:empty{display:none}.progress{height:3px;background:var(--line);overflow:hidden;margin-top:16px;max-width:360px}.progress[hidden]{display:none}.progress span{display:block;width:40%;height:100%;background:var(--amber);animation:progress 1s ease-in-out infinite alternate}@keyframes progress{to{transform:translateX(150%)}}
+.facts{display:flex;gap:40px;flex-wrap:wrap;margin-top:26px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}.facts strong{color:var(--ink);margin-left:8px}
+.footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.footer span{border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-size:10px;letter-spacing:.13em;text-transform:uppercase}.note{font-size:13px;line-height:1.6;color:#555;margin:22px 0 0}
+@media(max-width:600px){main{padding:20px 12px}.intro{display:block}.tag{display:block;margin-top:14px}.canvas{padding:18px}.recovery{padding:20px;grid-template-columns:1fr;gap:12px}.actions{display:grid}.actions button{width:100%}.facts{gap:12px}.footer{flex-wrap:wrap}h2{font-size:30px}}
+@media(prefers-reduced-motion:reduce){.progress span{animation:none;width:100%;opacity:.5}}
+</style>
+</head>
+<body><main>
+<header class="intro"><div><h1>Primary login recovery</h1><p>Recovery actions beside the warning, not buried in the footer.</p></div><span class="tag">Interactive sketch · no real actions</span></header>
+<div id="examples"></div>
+<p class="note">Try either button. “Open primary” simulates the loading feedback only; it does not open a browser profile. In the real app, a successful retry can finish the handshake and allow configured outreach to continue.</p>
+<template id="card">
+<section class="canvas">
+  <div class="eyebrow"><span class="dot"></span>Waiting for you · This machine</div>
+  <h3 class="campaign">CC+IC · Primary connection setup</h3>
+  <div class="recovery">
+    <div class="warning" aria-hidden="true">!</div>
+    <div><h2>Primary needs login</h2>
+      <p class="description">Sending is waiting for you to sign in to LinkedIn in the primary browser.</p>
+      <div class="actions"><button class="primary" data-action="login">Open primary &amp; log in</button><button data-action="retry">I’ve logged in — retry</button></div>
+      <p class="safety">Retry checks acceptance only. Sender connection requests won’t be repeated.</p>
+      <div class="progress" hidden aria-hidden="true"><span></span></div>
+      <p class="feedback" role="status" aria-live="polite"></p>
+      <div class="facts"><span>Sending<strong>Waiting</strong></span><span>Primary<strong>Logged out</strong></span><span>Next<strong>Your sign-in</strong></span></div>
+    </div>
+  </div>
+  <footer class="footer"><span>Open campaign tab</span><span>Open sheet</span></footer>
+</section>
+</template>
+<script>
+const host=document.getElementById('examples');
+for(const theme of ['Light','Dark']){
+  const label=document.createElement('h2');label.className='theme-label';label.textContent=theme+' mode';host.append(label);
+  const card=document.getElementById('card').content.firstElementChild.cloneNode(true);
+  if(theme==='Dark')card.classList.add('dark');host.append(card);
+  card.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{
+    const login=button.dataset.action==='login';const text=button.textContent;
+    const buttons=card.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
+    button.textContent=login?'Opening primary browser…':'Checking primary session…';
+    card.querySelector('.progress').hidden=false;
+    card.querySelector('.feedback').textContent=login?'Opening the browser used by this campaign. Please wait.':'Checking whether LinkedIn is signed in.';
+    setTimeout(()=>{
+      buttons.forEach(b=>b.disabled=false);button.textContent=text;card.querySelector('.progress').hidden=true;
+      card.querySelector('.feedback').textContent=login?'Preview only: sign in in the opened primary browser, then choose “I’ve logged in — retry”.':'Preview only: the real app would re-check login before retrying acceptance. Nothing was sent.';
+    },2200);
+  }));
+}
+</script></main></body></html>

@@ -1,7 +1,11 @@
 import { readFile, writeFile, unlink } from 'node:fs/promises';
 import { dataPath } from './paths.js';
+import { writeJsonAtomic } from './atomic-json-store.js';
+import { writeFileSync, renameSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 const MONITORING_FILE = dataPath('monitoring-campaign.json');
+let pendingPersistence = 0;
 
 /**
  * Persistable slice of the campaign object — JUST the fields needed to
@@ -10,6 +14,9 @@ const MONITORING_FILE = dataPath('monitoring-campaign.json');
  */
 export const MONITORING_FIELDS = [
   'id',
+  'executionId',
+  'taskCampaignId',
+  'campaignRunId',
   'name',
   'state',
   'mode',
@@ -45,7 +52,25 @@ export const MONITORING_FIELDS = [
   // BASE cadence — the shorter one. Its absence can only ever make checks
   // MORE frequent, never less.
   'emptyCheckStreak',
+  'totalTargets',
+  'totalProcessed',
 ];
+
+// A small control-plane commit: no await between the caller's final revision
+// check, durable replacement and in-memory activation. A concurrent Stop cannot
+// interleave and leave a stale enabled snapshot that resumes after reboot.
+export function commitMonitoringState(campaign) {
+  if (pendingPersistence) throw new Error('A previous monitoring save or Stop is still finishing. Wait before continuing.');
+  const slice = extractMonitoringSlice(campaign);
+  if (!slice || slice.state !== 'monitoring') throw new Error('Monitoring commit requires a monitoring snapshot.');
+  const temporary = `${MONITORING_FILE}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(slice, null, 2), { mode: 0o600 });
+    renameSync(temporary, MONITORING_FILE);
+  } finally {
+    try { unlinkSync(temporary); } catch { /* renamed or never created */ }
+  }
+}
 
 export function extractMonitoringSlice(campaign) {
   if (!campaign) return null;
@@ -56,18 +81,24 @@ export function extractMonitoringSlice(campaign) {
   return out;
 }
 
-export async function writeMonitoringState(campaign) {
+export async function writeMonitoringState(campaign, { strict = false } = {}) {
+  pendingPersistence++;
+  try {
   const slice = extractMonitoringSlice(campaign);
   if (!slice || slice.state !== 'monitoring') {
+    if (strict) throw new Error('Strict monitoring persistence requires a monitoring snapshot.');
     // Either no monitoring active or campaign moved to done — clear the file
     await clearMonitoringState();
     return;
   }
   try {
-    await writeFile(MONITORING_FILE, JSON.stringify(slice, null, 2));
+    if (strict) await writeJsonAtomic(MONITORING_FILE, slice);
+    else await writeFile(MONITORING_FILE, JSON.stringify(slice, null, 2));
   } catch (err) {
+    if (strict) throw err;
     console.warn(`[monitoring-persistence] write failed: ${err.message}`);
   }
+  } finally { pendingPersistence--; }
 }
 
 export async function readMonitoringState() {
@@ -80,5 +111,7 @@ export async function readMonitoringState() {
 }
 
 export async function clearMonitoringState() {
+  pendingPersistence++;
   try { await unlink(MONITORING_FILE); } catch { /* not there is fine */ }
+  finally { pendingPersistence--; }
 }

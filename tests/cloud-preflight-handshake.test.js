@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { needsCloudHandshake, runCloudPreflightHandshake } from '../src/cloud-preflight-handshake.js';
+import {
+  needsCloudHandshake,
+  primaryBrowserProblemFromUrl,
+  runCloudPreflightHandshake,
+} from '../src/cloud-preflight-handshake.js';
 
 // ── needsCloudHandshake: the trigger matrix ──
 test('needsCloudHandshake: CC+IC + auto-accept + local-browser primary → true', () => {
@@ -19,6 +23,13 @@ test('needsCloudHandshake: non-CC+IC modes → false', () => {
   for (const mode of ['connect_only', 'connect_and_message', 'open_profile_only', 'message_only']) {
     assert.equal(needsCloudHandshake({ mode, autoAcceptPrimary: true, primarySource: 'local-browser' }), false, mode);
   }
+});
+
+test('primary browser login and checkpoint redirects are operator actions', () => {
+  assert.equal(primaryBrowserProblemFromUrl('https://www.linkedin.com/uas/login').state, 'logged-out');
+  assert.equal(primaryBrowserProblemFromUrl('https://www.linkedin.com/authwall').state, 'logged-out');
+  assert.equal(primaryBrowserProblemFromUrl('https://www.linkedin.com/checkpoint/challenge/').state, 'checkpoint');
+  assert.equal(primaryBrowserProblemFromUrl('https://www.linkedin.com/mynetwork/invitation-manager/received/'), null);
 });
 
 // ── injectable deps for runCloudPreflightHandshake ──
@@ -68,6 +79,24 @@ test('self-eliminates when every sender is already connected (launches nothing)'
   assert.equal(r.connected, 2);
 });
 
+test('GoLogin provider refusal does not trigger a second whole-browser launch', async () => {
+  const { deps, calls } = makeDeps();
+  deps.launchProfile = async id => {
+    calls.launchProfile.push(id);
+    throw Object.assign(new Error('GoLogin requests are limited'), {
+      provider: 'gologin', retryable: false, code: 'GOLOGIN_RATE_LIMIT',
+    });
+  };
+  const logs = [];
+  await runCloudPreflightHandshake({ senderProfileIds: ['a'],
+    primaryUrl: 'https://www.linkedin.com/in/fixture-primary/',
+    autoAcceptAllPending: false, deps, log: line => logs.push(line),
+  });
+  assert.deepEqual(calls.launchProfile, ['a']);
+  assert.equal(calls.accept.length, 0);
+  assert.ok(logs.some(line => /after 1 attempt/.test(line)));
+});
+
 test('happy path: N senders connect then get accepted by the primary', async () => {
   const { deps, calls } = makeDeps();
   const r = await runCloudPreflightHandshake({
@@ -83,6 +112,26 @@ test('happy path: N senders connect then get accepted by the primary', async () 
   assert.equal(r.accepted, 2);
   assert.equal(r.pending, 0);
   assert.equal(calls.enqueue.length, 0, 'nothing left for the idle runner');
+});
+
+test('a logged-out primary is reported explicitly and no accept is attempted', async () => {
+  let accepts = 0;
+  const { deps, calls } = makeDeps({
+    deps: {
+      async inspectPrimarySession() {
+        return { state: 'logged-out', reason: 'The primary browser is logged out of LinkedIn.' };
+      },
+      async acceptInvitationFrom() { accepts++; return { accepted: true }; },
+    },
+  });
+  const r = await runCloudPreflightHandshake({
+    senderProfileIds: ['a'], primaryUrl: 'https://linkedin.com/in/pat', deps,
+  });
+  assert.equal(accepts, 0, 'a sign-in page is not an invitation inbox');
+  assert.equal(r.primary.state, 'logged-out');
+  assert.equal(r.primary.source, 'local-browser');
+  assert.equal(r.pending, 1);
+  assert.equal(calls.enqueue.length, 1, 'the sent invitation remains recoverable');
 });
 
 test('accept timeout: unaccepted invites are enqueued for the idle runner', async () => {
@@ -203,7 +252,7 @@ test('accept-all that empties the list skips the per-sender wait entirely', asyn
   let slept = 0;
   const { deps } = makeDeps({
     deps: {
-      async acceptAllPendingInvitations() { return { cleared: 2, remaining: 0 }; },
+      async acceptAllPendingInvitations() { return { cleared: 2, remaining: 0, verifiedEmpty: true }; },
       async acceptInvitationFrom() { matcherCalls++; return { accepted: false }; },
       async sleep(ms) { slept += ms; },
     },
@@ -217,6 +266,28 @@ test('accept-all that empties the list skips the per-sender wait entirely', asyn
   assert.equal(matcherCalls, 0, 'the identifier-matching loop must not run at all');
   assert.equal(summary.pending, 0);
   assert.ok(slept <= 20_000, 'no 30s poll cycles — only the settle wait at most');
+});
+
+test('an ambiguous zero from changed LinkedIn markup does not falsely mark the sender accepted', async () => {
+  let matcherCalls = 0;
+  const { deps } = makeDeps({
+    deps: {
+      // This is the observed failure: no safe person-named Accept controls were
+      // readable, so remaining is numerically zero but emptiness is unverified.
+      async acceptAllPendingInvitations() { return { cleared: 0, remaining: 0, verifiedEmpty: false }; },
+      async acceptInvitationFrom() { matcherCalls++; return { accepted: false }; },
+      now: (() => { let t = 0; return () => (t += 200_000); })(),
+    },
+  });
+  const summary = await runCloudPreflightHandshake({
+    senderProfileIds: ['p1'],
+    primaryUrl: 'https://www.linkedin.com/in/primary/',
+    autoAcceptAllPending: true,
+    deps,
+  });
+  assert.ok(matcherCalls >= 1, 'fall back to the named sender verifier');
+  assert.equal(summary.connected, 0, 'never claim a connection that was not verified');
+  assert.equal(summary.pending, 1, 'leave the invitation pending for a later verified attempt');
 });
 
 test('accept-all that leaves something waiting still falls back to the matcher', async () => {
@@ -234,4 +305,121 @@ test('accept-all that leaves something waiting still falls back to the matcher',
     deps,
   });
   assert.ok(matcherCalls >= 1, 'a non-empty list means we cannot assume our own invites were accepted');
+});
+
+test('a frozen sender is closed, marked truthfully, and does not block the next sender', async () => {
+  const { deps, calls } = makeDeps({
+    deps: {
+      async checkAndConnectPrimary(page) {
+        if (page.__id === 'a') return new Promise(() => {});
+        return { connected: true, connectAttempted: false, connectResult: '' };
+      },
+    },
+  });
+  const events = [];
+  const summary = await runCloudPreflightHandshake({
+    senderProfileIds: ['a', 'b'],
+    primaryUrl: 'https://linkedin.com/in/pat',
+    senderStepTimeoutMs: 5,
+    deps,
+    onProgress: (event) => events.push(event),
+  });
+  assert.deepEqual(calls.launchProfile, ['a', 'a', 'b'], 'the frozen sender gets one fresh browser, then the next sender gets its turn');
+  assert.ok(calls.closeProfile.includes('a'), 'the exact frozen browser is closed');
+  const frozen = summary.senders.find((sender) => sender.profileId === 'a');
+  assert.equal(frozen.state, 'browser-frozen');
+  assert.match(frozen.reason, /no request was confirmed/i);
+  assert.equal(frozen.attempt, 2);
+  assert.equal(frozen.maxAttempts, 2);
+  assert.ok(events.some((event) => event.profileId === 'a' && event.state === 'reopening' && event.attempt === 2));
+  assert.ok(events.some((event) => event.profileId === 'a' && event.state === 'browser-frozen'));
+  assert.equal(summary.senders.find((sender) => sender.profileId === 'b').state, 'connected');
+});
+
+test('a sender that freezes once is reopened and can recover on attempt 2', async () => {
+  let checks = 0;
+  const { deps, calls } = makeDeps({
+    deps: {
+      async checkAndConnectPrimary() {
+        checks++;
+        if (checks === 1) return new Promise(() => {});
+        return { connected: true, connectAttempted: false, connectResult: '' };
+      },
+    },
+  });
+  const events = [];
+  const summary = await runCloudPreflightHandshake({
+    senderProfileIds: ['a'],
+    primaryUrl: 'https://linkedin.com/in/pat',
+    senderStepTimeoutMs: 5,
+    deps,
+    onProgress: (event) => events.push(event),
+  });
+  assert.deepEqual(calls.launchProfile, ['a', 'a']);
+  assert.ok(calls.closeProfile.filter((id) => id === 'a').length >= 2);
+  assert.ok(events.some((event) => event.state === 'reopening' && event.attempt === 2));
+  assert.ok(events.some((event) => event.state === 'connecting' && event.attempt === 2 && event.deadlineAt > 0));
+  assert.equal(summary.senders[0].state, 'connected');
+  assert.equal(summary.senders[0].attempt, 2);
+  assert.equal(summary.senders[0].reason, '');
+});
+
+test('an unreadable LinkedIn result gets one fresh-browser recheck', async () => {
+  let checks = 0;
+  const { deps, calls } = makeDeps({
+    deps: {
+      async checkAndConnectPrimary() {
+        checks++;
+        if (checks === 1) return { connected: null, connectAttempted: false, connectResult: '', error: 'page could not be read' };
+        return { connected: true, connectAttempted: false, connectResult: '' };
+      },
+    },
+  });
+  const summary = await runCloudPreflightHandshake({
+    senderProfileIds: ['a'], primaryUrl: 'https://linkedin.com/in/pat', deps,
+  });
+  assert.deepEqual(calls.launchProfile, ['a', 'a']);
+  assert.equal(summary.senders[0].state, 'connected');
+  assert.equal(summary.senders[0].attempt, 2);
+});
+
+test('a LinkedIn rate limit is not hammered with an immediate second attempt', async () => {
+  const { deps, calls } = makeDeps({
+    deps: {
+      async checkAndConnectPrimary() {
+        return { connected: null, connectAttempted: true, connectResult: 'failed', error: 'HTTP 429 Too Many Requests' };
+      },
+    },
+  });
+  const summary = await runCloudPreflightHandshake({
+    senderProfileIds: ['a'], primaryUrl: 'https://linkedin.com/in/pat', deps,
+  });
+  assert.deepEqual(calls.launchProfile, ['a']);
+  assert.equal(summary.senders[0].state, 'not-sent');
+  assert.match(summary.senders[0].reason, /429/);
+});
+
+test('cancelling closes the exact active sender and stops before later senders', async () => {
+  const controller = new AbortController();
+  let entered;
+  const insideCheck = new Promise((resolve) => { entered = resolve; });
+  const { deps, calls } = makeDeps({
+    deps: {
+      async checkAndConnectPrimary() {
+        entered();
+        return new Promise(() => {});
+      },
+    },
+  });
+  const running = runCloudPreflightHandshake({
+    senderProfileIds: ['a', 'b'],
+    primaryUrl: 'https://linkedin.com/in/pat',
+    signal: controller.signal,
+    deps,
+  });
+  await insideCheck;
+  controller.abort(new Error('operator cancelled'));
+  await assert.rejects(running, /operator cancelled/);
+  assert.ok(calls.closeProfile.includes('a'), 'active sender was closed');
+  assert.deepEqual(calls.launchProfile, ['a'], 'no later sender started after cancellation');
 });

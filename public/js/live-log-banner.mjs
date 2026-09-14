@@ -13,7 +13,7 @@ function relativeSchedule(raw, now = new Date()) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const target = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   const days = Math.round((target - today) / 86400000);
-  const time = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   if (days === 0) return `Today at ${time}`;
   if (days === 1) return `Tomorrow at ${time}`;
   return `${parsed.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} at ${time}`;

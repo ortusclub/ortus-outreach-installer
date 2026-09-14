@@ -69,7 +69,7 @@ test('an unreadable thread sends as normal rather than stopping everything', () 
 });
 
 test('a held follow-up can never be sent by the runner on its own', () => {
-  const held = { id: 'h', type: 'follow-up', status: 'held', dueAt: 1 };
+  const held = { id: 'h', campaignId: 'fixture', campaignRunId: 'run', type: 'follow-up', status: 'held', dueAt: 1 };
   assert.equal(selectDue([held], 2).length, 0);
   // …until the operator releases it, which is exactly what /send-held does.
   assert.equal(selectDue([{ ...held, status: 'pending' }], 2).length, 1);

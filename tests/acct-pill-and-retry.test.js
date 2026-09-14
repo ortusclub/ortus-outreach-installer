@@ -29,7 +29,7 @@ test('no daily limit known says what was sent rather than invent a denominator',
 test('a campaign that never started offers one safe restart, worded for that', () => {
   const r = failedStartRetry({ bad: true, badLabel: 'Error', id: 'c1', totalTargets: 123, totalProcessed: 0 });
   assert.equal(r.headline, 'This campaign never started');
-  assert.equal(r.label, 'Try again');
+  assert.equal(r.label, 'Continue campaign');
   assert.match(r.detail, /all 123 leads are still queued/);
 });
 
@@ -37,9 +37,9 @@ test('a campaign that sent before failing never offers to start over', () => {
   // From-the-beginning would re-invite the 31 people it already reached.
   const r = failedStartRetry({ bad: true, badLabel: 'Error', id: 'c1', totalTargets: 123, totalProcessed: 31 });
   assert.equal(r.headline, 'Stopped after 31 of 123');
-  assert.equal(r.label, 'Carry on from lead 32');
+  assert.equal(r.label, 'Continue campaign');
   assert.match(r.detail, /92 leads are still queued/);
-  assert.match(r.onclick, /false\)$/);
+  assert.match(r.onclick, /openCampaignContinuation/);
 });
 
 test('the engine reason leads the sentence when there is one', () => {
@@ -51,25 +51,28 @@ test('a campaign the operator stopped still gets a way back in when work is left
   // The block is about unfinished work, not about blame: 4 leads were never
   // touched, so there is something to offer whoever pressed Stop.
   const r = failedStartRetry({ bad: true, badLabel: 'Stopped', totalTargets: 4 });
-  assert.equal(r.label, 'Start from the first lead');
+  assert.equal(r.label, 'Continue campaign');
   // Nothing left to do, and nothing wrong: no block.
   assert.equal(failedStartRetry({ bad: true, badLabel: 'Stopped', totalTargets: 4, totalProcessed: 4 }), null);
   assert.equal(failedStartRetry({ state: 'done', totalTargets: 4 }), null);
   assert.equal(failedStartRetry({}), null);
 });
 
-test('the errored card does not also keep the two restart glyphs', () => {
-  // Same action offered twice, one of them the unsafe one.
+test('the errored card keeps one labelled guarded continuation action', () => {
+  // The unified terminal stage suppresses the obsolete retry block. Its footer
+  // therefore owns one labelled continuation action, never two restart glyphs.
   const c = vjCardControlsFor({ state: 'done', bad: true, badLabel: 'Error', id: 'c1', totalTargets: 9, totalProcessed: 3 });
-  assert.equal(c.extra.filter((e) => e.kind === 'play' || e.kind === 'restart').length, 0);
+  assert.equal(c.extra.filter((e) => e.kind === 'play' || e.kind === 'restart').length, 1);
+  assert.equal(c.extra.find((e) => e.kind === 'play').tip, 'Continue campaign');
   assert.ok(c.extra.some((e) => e.kind === 'dup'));
 });
 
 test('an operator-stopped campaign offers it once, not twice', () => {
-  // The big block now covers this case too, so the small glyphs must stand down
-  // — otherwise the same action is on the card twice, one of them unlabelled.
+  // One labelled footer action opens the guarded decision. The old overlapping
+  // retry block is suppressed by the unified terminal stage.
   const c = vjCardControlsFor({ state: 'done', bad: true, badLabel: 'Stopped', id: 'c1', totalTargets: 9, totalProcessed: 3 });
-  assert.equal(c.extra.filter((e) => e.kind === 'play' || e.kind === 'restart').length, 0);
+  assert.equal(c.extra.filter((e) => e.kind === 'play' || e.kind === 'restart').length, 1);
+  assert.equal(c.extra.find((e) => e.kind === 'play').tip, 'Continue campaign');
   assert.ok(c.extra.some((e) => e.kind === 'dup'));
 });
 
@@ -90,7 +93,7 @@ test('failedStartRetry: a stopped campaign with leads left gets the big way back
     totalProcessed: 0, totalTargets: 4, stopReason: 'operator_stopped',
   });
   assert.equal(r.headline, 'Stopped before anything was sent');
-  assert.equal(r.label, 'Start from the first lead');
+  assert.equal(r.label, 'Continue campaign');
   assert.match(r.detail, /all 4 leads are still queued/);
 });
 
@@ -100,7 +103,7 @@ test('failedStartRetry: a stopped campaign part-way through carries on', () => {
     totalProcessed: 7, totalTargets: 20, stopReason: 'operator_stopped',
   });
   assert.equal(r.headline, 'Stopped after 7 of 20');
-  assert.equal(r.label, 'Carry on from lead 8');
+  assert.equal(r.label, 'Continue campaign');
 });
 
 test('failedStartRetry: a finished campaign is offered nothing', () => {

@@ -24,7 +24,7 @@ import { checkAndConnectPrimary, primaryConnState } from './primary-connection.j
 import { readSelfIdentity } from './accept-invitation.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED } from './intro-constants.js';
 import { extractSheetId } from '../utils.js';
-import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask, enqueueFollowUpBatched } from '../primary-tasks.js';
+import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask, enqueueFollowUpBatched, isTaskOwnerStopped } from '../primary-tasks.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
@@ -200,7 +200,7 @@ async function _captureProfileAvatarToken(page, profileUrl, fullName) {
  * runner opens that browser. The body is already personalized above, so the
  * posting identity does not affect {sender first name} / {primary name}.
  */
-export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, sheetUrl, leadName, url, threadUrl, now, campaignId = '', campaignName = '' }) {
+export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, sheetUrl, leadName, url, threadUrl, now, campaignId = '', campaignName = '', campaignRunId = '' }) {
   if (!tpl || !tpl.followUpEnabled) return null;
   const rawBody = (tpl.followUpBody || '').trim();
   if (!rawBody) return null;
@@ -212,7 +212,7 @@ export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, she
   return buildFollowUpTask({
     // Stamped so the dashboard can attribute this follow-up to its campaign
     // rather than pooling it with every other campaign's — see followup-groups.js.
-    campaignId, campaignName,
+    campaignId, campaignName, campaignRunId,
     campaignProfileId: profileId,
     campaignProfileName: profileName,
     sheetId: extractSheetId(sheetUrl) || '',
@@ -390,8 +390,11 @@ export async function runAutoIntros({
   senderFirstNames = {},
   log = console.log,
   onProgress = null,
+  shouldAbort = () => false,
+  taskOwner = null,
 }) {
   const result = { sent: 0, failed: 0, skipped: 0 };
+  if (shouldAbort() || await isTaskOwnerStopped(taskOwner)) return result;
   if (!Array.isArray(connectedUrls) || connectedUrls.length === 0) return result;
 
   const primaryName      = (templates.primaryName      || '').trim();
@@ -455,6 +458,7 @@ export async function runAutoIntros({
     const _prevConn = campaign._primaryConn.get(profileId);
     if (_prevConn !== 'connected') {
       try {
+        if (shouldAbort() || await isTaskOwnerStopped(taskOwner)) return result;
         const _res = await checkAndConnectPrimary(page, primaryUrl, {
           log,
           pName: profileName,
@@ -473,6 +477,7 @@ export async function runAutoIntros({
             const _self = await readSelfIdentity(page);
             if (_self.name || _self.profileUrl) {
               const _stored = await enqueuePrimaryTask(buildAcceptTask({
+                ...(taskOwner || {}),
                 campaignProfileId: profileId,
                 campaignProfileName: profileName,
                 sheetId: extractSheetId(sheetUrl) || '',
@@ -605,7 +610,7 @@ export async function runAutoIntros({
     // left over are abandoned WITHOUT a stamp, so the next check reads them
     // again. This is why nothing is written here, unlike the Stop branch
     // below, which marks the rest as Skipped because the whole run is over.
-    if (campaign._abortCheck) {
+    if (shouldAbort() || campaign._abortCheck || await isTaskOwnerStopped(taskOwner)) {
       log(`  ■ [${profileName}] Check stopped by you. ${connectedUrls.length - i} person(s) were left untouched, so the next check reads them again.`);
       break;
     }
@@ -755,6 +760,7 @@ export async function runAutoIntros({
       : '';
 
     while (attempt < 2) {
+      if (shouldAbort() || await isTaskOwnerStopped(taskOwner)) return result;
       attempt++;
       try {
         progress({ ...baseProgress, step: 'selecting_recipients', stepLabel: 'Selecting both recipients', stepDetail: attempt > 1 ? `Retry ${attempt} · resolving the correct people` : 'Adding the accepted lead and primary person' });
@@ -874,6 +880,7 @@ export async function runAutoIntros({
         let _threadUrl = '';
         try { _threadUrl = page.url(); } catch { /* */ }
         const _fu = maybeBuildFollowUp({
+          ...(taskOwner || {}),
           tpl, introData, profileId, profileName, sheetUrl,
           leadName: `${leadFirstName} ${leadLastName}`.trim() || url,
           url, threadUrl: _threadUrl,

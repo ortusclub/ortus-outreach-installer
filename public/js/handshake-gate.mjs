@@ -28,6 +28,7 @@ export function needsHandshakeFromBody(body = {}) {
 const ROW = {
   pending:            { icon: 'wait',  label: 'Waiting',           done: false },
   connecting:         { icon: 'wait',  label: 'Connecting…',       done: false },
+  reopening:          { icon: 'spin',  label: 'Closing and reopening GoLogin…', done: false },
   sent:               { icon: 'dot',   label: 'Waiting to be accepted', done: false },
   'sent-no-identity': { icon: 'dot',   label: 'Sent · accept manually', done: false },
   accepting:          { icon: 'spin',  label: 'Accepting…',        done: false },
@@ -37,11 +38,28 @@ const ROW = {
   // not send a connect. It used to be reported as 'sent', so the wizard said the
   // primary had failed to accept an invitation that never existed.
   'not-sent':         { icon: 'x',     label: 'Nothing sent',      done: false },
+  'browser-frozen':   { icon: 'x',     label: 'Browser frozen · open GoLogin', done: false },
   error:              { icon: 'x',     label: 'Error',             done: false },
 };
 
-export function handshakeRowView(state) {
-  return ROW[state] || ROW.pending;
+export function handshakeRowView(state, reason = '') {
+  const base = ROW[state] || ROW.pending;
+  const why = String(reason || '').trim();
+  if (!why || !['not-sent', 'error', 'browser-frozen'].includes(state)) return base;
+
+  let short = why;
+  if (/logged out|sign[ -]?in|authwall/i.test(why)) short = 'logged out';
+  else if (/429|too many requests|rate.?limit/i.test(why)) short = 'rate-limited (HTTP 429)';
+  else if (/checkpoint/i.test(why)) short = 'LinkedIn checkpoint';
+  else if (short.length > 54) short = short.slice(0, 51).trimEnd() + '…';
+
+  return {
+    ...base,
+    label: state === 'error' ? `Error · ${short}`
+      : state === 'browser-frozen' ? 'Browser frozen · open GoLogin'
+        : `Not sent · ${short}`,
+    reason: why,
+  };
 }
 
 // ── Which of the two local steps the handshake is on ────────────────────────
@@ -62,7 +80,7 @@ export function handshakeStepView(senders = [], summary = null, everInvited = nu
   const states = (senders || []).map((s) => String((s && s.state) || 'pending'));
   const total = states.length;
   const connected = states.filter((s) => s === 'connected').length;
-  const invited = states.filter((s) => s !== 'pending' && s !== 'connecting').length;
+  const invited = states.filter((s) => !['pending', 'connecting', 'reopening'].includes(s)).length;
   const step = total > 0 && invited === total ? 2 : 1;
   const acceptCount = everInvited ? everInvited.size : null;
   return {
@@ -90,7 +108,6 @@ export function handshakeOutcome({ senders = [], summary = null, error = '', nam
   if (error) return { kind: 'error', headline: 'Handshake error', detail: String(error) };
   const v = handshakeStepView(senders, summary);
   const unaccepted = Math.max(0, v.total - v.connected);
-  if (unaccepted === 0) return { kind: 'ok', headline: 'All senders are connected to the primary', detail: '' };
   const stuck = (senders || []).filter((s) => String((s && s.state) || '') !== 'connected');
   // A sender that never sent anything is a DIFFERENT outcome from one waiting to
   // be accepted, and it needs a different instruction. Blaming the primary for
@@ -99,6 +116,29 @@ export function handshakeOutcome({ senders = [], summary = null, error = '', nam
   // correctly found nothing to accept (2026-09-01).
   const nameOf = (s) => String((s && s.name) || (nameFor && nameFor(s && s.profileId)) || 'a sender');
   const notSent = stuck.filter((s) => String((s && s.state) || '') === 'not-sent');
+  const frozen = stuck.filter((s) => String((s && s.state) || '') === 'browser-frozen');
+  const primaryProblem = summary && summary.primary;
+  if (primaryProblem && primaryProblem.state) {
+    const isLocal = !primaryProblem.source || primaryProblem.source === 'local-browser';
+    const senderNote = notSent.length
+      ? ` ${notSent.length} sender profile${notSent.length === 1 ? '' : 's'} also sent nothing and must be opened from the red status above.`
+      : '';
+    return {
+      kind: 'partial',
+      headline: primaryProblem.state === 'checkpoint' ? 'Primary needs verification' : 'Primary browser logged out',
+      detail: `${primaryProblem.reason || 'The primary browser cannot use LinkedIn.'} Open it, sign in${primaryProblem.state === 'checkpoint' ? ' or complete the checkpoint' : ''}, then press Try the primary again.${senderNote}`,
+      primaryRecovery: { source: primaryProblem.source || 'local-browser', isLocal },
+    };
+  }
+  if (unaccepted === 0) return { kind: 'ok', headline: 'All senders are connected to the primary', detail: '' };
+  if (frozen.length) {
+    const names = frozen.map(nameOf).join(', ');
+    return {
+      kind: 'partial',
+      headline: `${v.connected} of ${v.total} connected`,
+      detail: `${names}: the GoLogin browser froze while loading the primary. No request was confirmed for ${frozen.length === 1 ? 'this sender' : 'these senders'}. Open the red status, check LinkedIn, then retry the handshake.`,
+    };
+  }
   if (notSent.length === stuck.length) {
     const lines = notSent.map((s) => {
       const why = String((s && s.reason) || 'this account could not be read');

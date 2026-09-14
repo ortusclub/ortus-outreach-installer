@@ -1,11 +1,48 @@
 import GoLogin from 'gologin';
+import goLoginRequestPolicy from './gologin-request-policy.cjs';
+import { setupPacing } from './gologin-pacing-setup.js';
+setupPacing();
+goLoginRequestPolicy.installSdkRequestPolicy();
+import { startupAdmission } from './startup-admission.js';
 import puppeteer from 'puppeteer-core';
-import { hideByPid } from './mac-window.js';
+import { hideByPid, unhideByPids } from './mac-window.js';
 import { checkDiskFree, formatBytes } from './disk-check.js';
+import { confirmOwnedProcessExit } from './process-exit-evidence.js';
+import { guardSdkStartup } from './sdk-startup-control.js';
 import { configuredAccounts, tokenForAccount, DEFAULT_ACCOUNT_ID } from './gologin-accounts.js';
 
 const activeProfiles = new Map();
+const pendingLaunches = new Set();
+const startingProfiles = new Map();
+const closingProfiles = new Map();
+const closedProfileEvidence = new Map();
+const activeSessions = new Map(); // profileId → { browser, page }
 const spawnedPids = new Map(); // profileId → Orbita pid (every spawn, even failed launches)
+
+// Recovery readers may inspect an owned session, but must never implicitly
+// launch it or change it from manual control to automation.
+export function getProfileObservationBrowser(profileId) {
+  if (pendingLaunches.has(profileId) || closingProfiles.has(profileId)) return null;
+  return activeSessions.get(profileId)?.browser || null;
+}
+
+export function observeProfileShutdown(profileId) {
+  if (pendingLaunches.has(profileId) || closingProfiles.has(profileId)) {
+    return { state: 'unconfirmed', message: 'This profile is still starting or closing. Do not open another session.' };
+  }
+  const pid = activeProfiles.get(profileId)?.processSpawned?.pid || spawnedPids.get(profileId);
+  if (pid) {
+    try { process.kill(pid, 0); return { state: 'open', message: 'An owned browser process is still present. No browser was opened or restarted by this check.' }; }
+    catch (error) {
+      if (error.code !== 'ESRCH') return { state: 'unconfirmed', message: 'The owned process could not be inspected. Shutdown remains unconfirmed.' };
+    }
+  }
+  if (closedProfileEvidence.get(profileId)?.browserClosed === true) {
+    return { state: 'closed', message: 'The owned browser closure was confirmed. This check did not clear any account hold or resume a campaign.' };
+  }
+  // Absent tracking alone is NOT proof of closure.
+  return { state: 'unconfirmed', message: 'No live process was found in the current tracking. This alone cannot certify shutdown; the campaign closure receipt must also be confirmed. Nothing was restarted.' };
+}
 
 /**
  * Pick PIDs we spawned that are still alive but no longer tracked as active
@@ -153,16 +190,33 @@ export async function applyFocusEmulation(page, profileId = 'unknown') {
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
     // Re-apply on every main-frame navigation. Puppeteer 22.15.0 doesn't yet
     // track this setting across nav (PR #14501 added that, post-22.x).
-    page.on('framenavigated', (frame) => {
+    const reapply = (frame) => {
       if (frame === page.mainFrame()) {
         cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
       }
-    });
+    };
+    page.on('framenavigated', reapply);
     page.__ortusFocusEmulated = true;
+    page.__ortusFocusSession = cdp;
+    page.__ortusFocusReapply = reapply;
     console.log(`[gologin] Focus emulation enabled for ${profileId} (with nav re-apply)`);
   } catch (err) {
     console.warn(`[gologin] Focus emulation failed for ${profileId}: ${err.message}`);
   }
+}
+
+async function releaseFocusEmulation(page) {
+  if (!page) return;
+  const reapply = page.__ortusFocusReapply;
+  if (reapply) page.off('framenavigated', reapply);
+  const cdp = page.__ortusFocusSession;
+  if (cdp) {
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+    await cdp.detach().catch(() => {});
+  }
+  delete page.__ortusFocusEmulated;
+  delete page.__ortusFocusSession;
+  delete page.__ortusFocusReapply;
 }
 
 async function fetchAccountProfiles(accountId, token) {
@@ -179,15 +233,16 @@ async function fetchAccountProfiles(accountId, token) {
     // sheet fetch uses, and the reason is named rather than swallowed.
     let res;
     try {
-      res = await fetch(`https://api.gologin.com/browser/v2?page=${page}`, {
+      res = await goLoginRequestPolicy.pacedFetch(`https://api.gologin.com/browser/v2?page=${page}`, {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(30000),
       });
     } catch (err) {
+      if (err.provider === 'gologin') throw err;
       const why = err.cause?.code || err.cause?.message || err.name;
       throw new Error(`GoLogin did not answer while listing accounts (page ${page}) — ${err.message}${why ? ` (${why})` : ''}`);
     }
-    if (!res.ok) throw new Error(`GoLogin API ${res.status}`);
+    if (!res.ok) throw goLoginRequestPolicy.providerError(res.status, res.headers);
     // Pagination guard: the loop's only other exits are an empty page or
     // reaching allProfilesCount. A count that never becomes reachable would
     // otherwise spin forever against the API.
@@ -352,14 +407,34 @@ export function resolveProfileId(profiles, profileRef) {
  * Resolving in the one place they all funnel through is why adding a second
  * account did not need 22 edits.
  */
-export async function launchProfile(profileId, _ignoredLegacyToken) {
+export async function launchProfile(profileId, _ignoredLegacyToken, { visible = false, signal } = {}) {
+  startupAdmission.assertRuntimeReady();
+  if (pendingLaunches.has(profileId)) throw new Error('GoLogin profile launch is already in progress');
+  pendingLaunches.add(profileId);
+  try {
+  if (closingProfiles.has(profileId)) throw new Error('GoLogin profile shutdown is still in progress');
+  if (closedProfileEvidence.get(profileId)?.browserClosed === false) throw new Error('GoLogin profile shutdown is unconfirmed; do not launch another session');
+  if (signal?.aborted) throw (signal.reason instanceof Error ? signal.reason : new Error('GoLogin launch cancelled'));
   const token = await tokenForProfile(profileId);
   // Phase 2.8.20 (W3-C2): refuse to launch when free disk is below threshold.
   // Profile downloads + screenshots + logs accumulate; a full disk silently
   // corrupts state (writes return ENOSPC and the campaign limps on).
   const disk = await checkDiskFree();
+  startupAdmission.assertRuntimeReady();
+  if (signal?.aborted) throw signal.reason || new Error('GoLogin launch cancelled');
+  if (closingProfiles.has(profileId) || closedProfileEvidence.get(profileId)?.browserClosed === false) throw new Error('GoLogin profile shutdown is pending or unconfirmed');
   if (!disk.ok) {
     throw new Error(`Disk space too low (${formatBytes(disk.freeBytes)} free, ${formatBytes(disk.thresholdBytes)} required) — clear space before launching.`);
+  }
+
+  // Recovery leaves the exact GoLogin profile open so its newly-authenticated
+  // cookies are preserved. Retry must take that browser back rather than start
+  // a second Orbita process against the same locked profile directory.
+  if (activeProfiles.has(profileId) && activeSessions.has(profileId)) {
+    if (visible) await showProfileForManualControl(profileId);
+    else await prepareProfileForAutomation(profileId);
+    const session = activeSessions.get(profileId);
+    return { browser: session.browser, page: session.page };
   }
   console.log(`[gologin] Starting ${profileId}…`);
 
@@ -368,7 +443,7 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
     profile_id: profileId,
     // Push the window off-screen so it doesn't steal focus
     extra_params: [
-      '--window-position=-2400,-2400',
+      visible ? '--window-position=60,60' : '--window-position=-2400,-2400',
       '--window-size=1366,900',
       // Reduce per-Chromium RAM footprint (~100-150MB each) on low-resource hosts
       '--disable-extensions',
@@ -401,13 +476,19 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
   // own whatever Orbita process it managed to spawn, so kill it before
   // rethrowing; otherwise a stalled launch leaks a headless Chromium per retry.
   let status, wsUrl;
+  const startup = guardSdkStartup(GL, { signal, onSpawn: child => {
+    if (child?.pid) spawnedPids.set(profileId, child.pid);
+  } });
+  startingProfiles.set(profileId, startup);
+  startup.source.then(() => {}, () => {}).finally(() => {
+    if (startup.failed && startingProfiles.get(profileId) === startup && !activeProfiles.has(profileId)) pendingLaunches.delete(profileId);
+  });
   try {
-    ({ status, wsUrl } = await withTimeout(GL.start(), LAUNCH_TIMEOUT_MS, `GoLogin launch for ${profileId}`));
+    ({ status, wsUrl } = await withTimeout(startup.promise, LAUNCH_TIMEOUT_MS, `GoLogin launch for ${profileId}`));
   } catch (err) {
-    const stalledPid = GL?.processSpawned?.pid;
-    try { GL.killBrowser(); } catch { /* may not have got that far */ }
-    if (stalledPid) { try { process.kill(stalledPid, 'SIGKILL'); } catch { /* already dead */ } }
-    spawnedPids.delete(profileId);
+    startup.failed = true;
+    startup.cancel(err);
+    closedProfileEvidence.set(profileId, await startup.close(confirmOwnedProcessExit));
     throw err;
   }
 
@@ -416,19 +497,21 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
 
   if (status !== 'success') {
     console.warn(`[gologin] start failed for ${profileId} (status="${status}") — force-killing any spawned process`);
-    try { GL.killBrowser(); } catch { /* */ }
-    if (_spawnedPid) { try { process.kill(_spawnedPid, 'SIGKILL'); } catch { /* already dead */ } }
-    spawnedPids.delete(profileId);
-    await GL.stop().catch(() => {});   // cloud-commit only; kill already done
+    startup.failed = true;
+    closedProfileEvidence.set(profileId, await startup.close(confirmOwnedProcessExit));
     throw new Error(`GoLogin start failed: status="${status}"`);
   }
 
   activeProfiles.set(profileId, GL);
+  closedProfileEvidence.delete(profileId);
 
   const browser = await connectWithRetry(
     () => puppeteer.connect({
       browserWSEndpoint: wsUrl,
       ignoreHTTPSErrors: true,
+      // A recovery window belongs to the human until they press Retry. Do not
+      // install Puppeteer's synthetic 800x600 viewport on that window.
+      defaultViewport: visible ? null : { width: 1366, height: 900 },
       // 2.8.27: bumped 120s -> 180s. Slow profiles (large cookie jars, many
       // tabs from --restore-last-session) were timing out on Network.enable
       // before Puppeteer could attach. Rakibul.islam was launch-failing every
@@ -439,6 +522,7 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
   );
 
   const pages = await browser.pages();
+  if (signal?.aborted) { await closeProfile(profileId); throw signal.reason || new Error('GoLogin attachment cancelled'); }
   const page = pages.length > 0 ? pages[0] : await browser.newPage();
 
   // 2.8.27: close excess tabs that --restore-last-session brought back from
@@ -452,7 +536,7 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
     }
   }
 
-  await page.setViewport({ width: 1366, height: 900 });
+  if (!visible) await page.setViewport({ width: 1366, height: 900 });
   page.setDefaultNavigationTimeout(30000);
   // v2.86: 15s → 30s default action timeout — slow operator machines were
   // timing out clicks / waitForSelector before the page settled.
@@ -465,7 +549,8 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
   // bound to the page object, not the browser, so a fresh page reference
   // starts with focus emulation OFF and silently nullifies LinkedIn-side
   // behaviour that depends on document.hasFocus().
-  await applyFocusEmulation(page, profileId);
+  if (!visible) await applyFocusEmulation(page, profileId);
+  activeSessions.set(profileId, { browser, page });
 
   // 2.8.44: auto-handle browser dialogs. LinkedIn's compose page registers a
   // beforeunload handler when the textarea has unsaved text — if a send fails
@@ -482,53 +567,109 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
   // Phase 11.2 (D-16): minimize the Chromium window on macOS. Best-effort,
   // fire-and-forget so we don't stall the launch hot path.
   const pid = GL?.processSpawned?.pid;
-  if (pid) { hideByPid(pid).catch(() => {}); }
+  if (pid && !visible) { hideByPid(pid).catch(() => {}); }
 
+  if (signal?.aborted) { await closeProfile(profileId); throw signal.reason || new Error('GoLogin setup cancelled'); }
+  startup.detach();
+  startingProfiles.delete(profileId);
   return { browser, page };
+  } finally {
+    // Test/recovery harnesses can evaluate launchProfile in isolation. More
+    // importantly, cleanup must never mask the actual launch/abort error.
+    const starts = typeof startingProfiles === 'undefined' ? null : startingProfiles;
+    if (!starts || !starts.has(profileId) || starts.get(profileId).settled) pendingLaunches.delete(profileId);
+  }
+}
+
+/**
+ * Turn an already-running automated GoLogin profile into a normal operator
+ * recovery window. This is what every "Open browser / Logged out" action uses;
+ * merely unhiding the Orbita process left its synthetic viewport and forced
+ * focus emulation active, which made the visible page feel locked.
+ */
+export async function showProfileForManualControl(profileId) {
+  const GL = activeProfiles.get(profileId);
+  const session = activeSessions.get(profileId);
+  if (!GL || !session) return false;
+  const pages = await session.browser.pages();
+  const page = pages.find((p) => !p.isClosed()) || session.page;
+  if (!page || page.isClosed()) return false;
+
+  await releaseFocusEmulation(page);
+  await page.setViewport(null).catch(() => {});
+  const pid = GL?.processSpawned?.pid;
+  if (pid) await unhideByPids([pid]);
+  try {
+    const client = await page.target().createCDPSession();
+    const { windowId } = await client.send('Browser.getWindowForTarget');
+    await client.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { left: 60, top: 60, width: 1600, height: 1000, windowState: 'normal' },
+    });
+    await client.detach();
+  } catch { /* visible + native viewport are already enough */ }
+  await page.bringToFront().catch(() => {});
+  activeSessions.set(profileId, { browser: session.browser, page });
+  console.log(`[gologin] Manual control enabled for ${profileId}`);
+  return true;
+}
+
+async function prepareProfileForAutomation(profileId) {
+  const GL = activeProfiles.get(profileId);
+  const session = activeSessions.get(profileId);
+  if (!GL || !session) return false;
+  const pages = await session.browser.pages();
+  const page = pages.find((p) => !p.isClosed()) || session.page;
+  if (!page || page.isClosed()) return false;
+
+  await page.setViewport({ width: 1366, height: 900 });
+  await applyFocusEmulation(page, profileId);
+  try {
+    const client = await page.target().createCDPSession();
+    const { windowId } = await client.send('Browser.getWindowForTarget');
+    await client.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { left: -2400, top: -2400, width: 1366, height: 900, windowState: 'normal' },
+    });
+    await client.detach();
+  } catch { /* hiding is best-effort */ }
+  const pid = GL?.processSpawned?.pid;
+  if (pid) await hideByPid(pid);
+  activeSessions.set(profileId, { browser: session.browser, page });
+  console.log(`[gologin] Automation control restored for ${profileId}`);
+  return true;
 }
 
 export async function closeProfile(profileId) {
-  const GL = activeProfiles.get(profileId);
-  if (!GL) return;
-
-  const _proc = GL?.processSpawned;
-  console.log(`[gologin] closeProfile ${profileId}: pid=${_proc?.pid ?? 'NONE'} killed=${_proc?.killed ?? '?'}${_proc?.pid ? '' : ' (no process handle — orphan risk)'}`);
-
-  // Phase 2.8.11 root-cause fix: GL.stop() does NOT kill the Orbita Chromium
-  // process — it only uploads cookies + commits profile state to GoLogin's
-  // cloud (see node_modules/gologin/src/gologin.js stopAndCommit, line 1045).
-  // The actual process kill must come from GL.killBrowser() which calls
-  // processSpawned.kill() directly. Without this, the browser window stays
-  // visible until something else (Puppeteer's browser.close() over CDP) finally
-  // takes the process down — and for parked/idle profiles the CDP path is
-  // unreliable, leaving "ghost" windows after Stop.
-  try { GL.killBrowser(); }
-  catch (err) { console.warn(`[gologin] killBrowser warning: ${err.message}`); }
-
-  // 2.8.27: SIGKILL fallback. GL.killBrowser() sends SIGTERM to the spawned
-  // Orbita process. If Chromium is mid-something (uploading a profile,
-  // hung renderer, etc.), SIGTERM may be ignored and the process — plus all
-  // its visible windows — lingers indefinitely. After 2s, force-kill.
-  const proc = GL?.processSpawned;
-  if (proc?.pid && !proc.killed) {
-    setTimeout(() => {
-      try {
-        process.kill(proc.pid, 0); // throws ESRCH if already dead
-        console.warn(`[gologin] SIGTERM didn't take after 2s — SIGKILL pid ${proc.pid}`);
-        try { process.kill(proc.pid, 'SIGKILL'); } catch { /* */ }
-      } catch { /* already dead — good */ }
-    }, 2000);
+  if (closingProfiles.has(profileId)) return closingProfiles.get(profileId);
+  const starts = typeof startingProfiles === 'undefined' ? null : startingProfiles;
+  const pending = typeof pendingLaunches === 'undefined' ? null : pendingLaunches;
+  const startup = starts?.get(profileId);
+  if (startup) {
+    const evidence = await startup.close(confirmOwnedProcessExit);
+    closedProfileEvidence.set(profileId, evidence);
+    if (!evidence.browserClosed) return evidence;
+    if (startup.settled) { startup.detach(); starts?.delete(profileId); pending?.delete(profileId); }
+    if (!activeProfiles.has(profileId)) return evidence;
   }
-
-  // Cloud commit (cookies, profile state) is fire-and-forget — we don't want
-  // the Stop endpoint blocked for 3-20s of cloud sync just to acknowledge the
-  // user. The SDK's is_stopping guard makes a duplicate stopAndCommit safe.
-  GL.stopAndCommit({ posting: true }, false).catch(err => {
-    console.warn(`[gologin] background commit for ${profileId}: ${err.message}`);
-  });
-
-  activeProfiles.delete(profileId);
-  spawnedPids.delete(profileId);
+  const GL = activeProfiles.get(profileId);
+  if (!GL) return closedProfileEvidence.get(profileId) || { browserClosed: false };
+  const closing = (async () => {
+    try { GL.killBrowser(); } catch (err) { console.warn(`[gologin] killBrowser warning: ${err.message}`); }
+    const evidence = await confirmOwnedProcessExit(GL.processSpawned);
+    closedProfileEvidence.set(profileId, evidence);
+    if (evidence.browserClosed && activeProfiles.get(profileId) === GL) {
+      activeProfiles.delete(profileId);
+      activeSessions.delete(profileId);
+      spawnedPids.delete(profileId);
+      Promise.resolve().then(() => GL.stopAndCommit({ posting: true }, false))
+        .catch(err => console.warn(`[gologin] background commit for ${profileId}: ${err.message}`));
+    }
+    return evidence;
+  })();
+  closingProfiles.set(profileId, closing);
+  try { return await closing; }
+  finally { if (closingProfiles.get(profileId) === closing) closingProfiles.delete(profileId); }
 }
 
 export async function closeAllProfiles() {
@@ -536,21 +677,21 @@ export async function closeAllProfiles() {
   // GoLogin SDK to sync profile state to the cloud — serialized that means
   // 8-20s wall-clock with 4 profiles. Run in parallel: ~5s for all of them.
   // closeProfile already swallows its own errors so Promise.all won't reject.
-  const ids = [...activeProfiles.keys()];
+  const ids = [...new Set([...activeProfiles.keys(), ...startingProfiles.keys()])];
   await Promise.all(ids.map(id => closeProfile(id)));
 
   // v2.86.14: safety net — SIGKILL any browser WE spawned that escaped
   // activeProfiles (failed launch / close that didn't take). Only PIDs we
   // recorded in spawnedPids — never a name-matched or operator-opened browser.
   const activePids = new Set(getActiveBrowserPids());
-  const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; } };
   const orphans = selectOrphanPids({ spawned: spawnedPids, activePids, isAlive });
   for (const pid of orphans) {
     console.warn(`[gologin] orphan Orbita pid ${pid} survived close — SIGKILL`);
     try { process.kill(pid, 'SIGKILL'); } catch { /* */ }
   }
   for (const [pidProfile, pid] of [...spawnedPids.entries()]) {
-    if (orphans.includes(pid) || !isAlive(pid)) spawnedPids.delete(pidProfile);
+    if (!isAlive(pid)) spawnedPids.delete(pidProfile);
   }
 
   return ids.length;

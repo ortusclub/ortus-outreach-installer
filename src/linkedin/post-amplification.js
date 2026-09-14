@@ -34,6 +34,9 @@ import { resolve, join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { launchProfile, closeProfile, getProfiles } from '../gologin-launcher.js';
+import { preparePrimarySession } from '../primary-session-control.js';
+import * as browserSemaphore from '../browser-semaphore.js';
+import { writeJsonAtomic } from '../atomic-json-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -58,21 +61,24 @@ function jitter(minMs, maxMs) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ─── Dedup state I/O ──────────────────────────────────────────────────────
-export async function loadDedupState() {
+export async function loadDedupState({ strict = false } = {}) {
   try {
     const raw = await fs.readFile(STATE_FILE, 'utf8');
     const parsed = JSON.parse(raw || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid Post Amplification state');
+    return parsed;
+  } catch (error) {
+    if (strict && error.code !== 'ENOENT') throw error;
     // Missing or unreadable — start empty. Phase 1 wrote {} as the scaffold.
     return {};
   }
 }
 
-export async function saveDedupState(state) {
+export async function saveDedupState(state, { strict = false } = {}) {
   try {
-    await fs.writeFile(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+    await writeJsonAtomic(STATE_FILE, state);
   } catch (err) {
+    if (strict) throw err;
     console.warn(`[post-amp] could not persist dedup state: ${err.message}`);
   }
 }
@@ -812,15 +818,19 @@ export async function runAmplification({
   accountConfigs,
   status,
   shouldAbort = () => false,
+  signal,
+  taskOwner,
   log = () => {},
 }) {
   if (!postUrl) throw new Error('postUrl required');
+  const requestedAbort = shouldAbort;
+  shouldAbort = () => !!signal?.aborted || requestedAbort();
   if (!Array.isArray(accountConfigs) || accountConfigs.length === 0) {
     throw new Error('accountConfigs required');
   }
 
   const token = process.env.GOLOGIN_API_TOKEN;
-  const dedup = await loadDedupState();
+  const dedup = await loadDedupState({ strict: true });
 
   status.total = accountConfigs.length;
   status.completed = 0;
@@ -835,6 +845,11 @@ export async function runAmplification({
     }
 
     const cfg = accountConfigs[i];
+    if (dedup[postUrl]?.[cfg.profileId]?.interrupted) {
+      status.errors.push(`[${cfg.profileName}] Previous engagement outcome needs review; not retried`);
+      status.completed++;
+      continue;
+    }
     status.currentIndex = i + 1;
     status.currentProfile = cfg.profileName || cfg.profileId;
 
@@ -857,7 +872,13 @@ export async function runAmplification({
     log(`[post-amp] [${i + 1}/${accountConfigs.length}] ${cfg.profileName} starting…`);
     let session = null;
     try {
-      session = await launchProfile(cfg.profileId, token);
+      if (!taskOwner?.campaignId || !taskOwner?.campaignRunId) throw new Error('Post Amplification run ownership is required');
+      session = await preparePrimarySession([taskOwner], {
+        semaphore: browserSemaphore, signal,
+        launch: options => launchProfile(cfg.profileId, token, options),
+        close: () => closeProfile(cfg.profileId),
+      });
+      if (signal?.aborted || shouldAbort()) break;
       const reactionPlan = cfg.like ? pickReaction() : null;
       const commentPlan = (cfg.comment && (cfg.commentText || '').trim()) ? cfg.commentText.trim() : '';
 
@@ -869,6 +890,11 @@ export async function runAmplification({
       // correct behaviour matching the operator intent: only engage if
       // like is checked OR commentPlan is non-empty (asserted above).
       // When like is unchecked, skip reactionPlan entirely.
+      // Persist the uncertain state BEFORE a reaction/comment may reach LinkedIn.
+      // Only a confirmed result below clears it; failure must not invite a retry.
+      recordEngagement(dedup, postUrl, cfg.profileId, { interrupted: true, campaignRunId: taskOwner.campaignRunId });
+      await saveDedupState(dedup, { strict: true });
+      if (signal?.aborted || shouldAbort()) break;
       const result = await engagePost(session.page, postUrl, {
         reaction: cfg.like ? reactionPlan : null,
         commentText: commentPlan,
@@ -891,7 +917,7 @@ export async function runAmplification({
           reactionAlreadyExisted: !!result.reactionAlreadyExisted,
           commented: !!result.commented,
         });
-        await saveDedupState(dedup);
+        await saveDedupState(dedup, { strict: true });
       } else {
         status.errors.push(`[${cfg.profileName}] ${result.error}`);
         log(`[post-amp] ${cfg.profileName} failed: ${result.error}`);
@@ -901,7 +927,10 @@ export async function runAmplification({
       log(`[post-amp] ${cfg.profileName} threw: ${err.message}`);
     } finally {
       // Always close the profile, even on error.
-      try { await closeProfile(cfg.profileId); } catch { /* */ }
+      if (session) {
+        try { await session.close(); } catch { /* retained registry entry keeps shutdown unconfirmed */ }
+        browserSemaphore.release();
+      }
       status.completed++;
     }
 

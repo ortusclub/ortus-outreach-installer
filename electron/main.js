@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
 import { spawn } from 'node:child_process';
 import dotenv from 'dotenv';
+import { previewUserDataDir } from './preview-data-dir.mjs';
 // Same in-process singleton the server uses — flush its ops buffer on quit so
 // the last buffered events aren't lost when the operator closes the app.
 import { flushOpsLog } from '../src/log-writer.js';
@@ -42,6 +43,10 @@ if (existsSync(envPath)) {
 }
 
 // ── Per-user data dir — server modules read this via src/paths.js ────────────
+// Explicit preview launch isolation: never resume the normal app's saved work
+// merely by opening a newly deployed engine for verification.
+const isolatedPreviewDir = previewUserDataDir(app.getPath('appData'));
+if (isolatedPreviewDir) app.setPath('userData', isolatedPreviewDir);
 const userDataDir = join(app.getPath('userData'), 'data');
 process.env.ORTUS_DATA_DIR = userDataDir;
 process.env.ORTUS_ELECTRON_MODE = '1';

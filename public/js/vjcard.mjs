@@ -1,5 +1,6 @@
-import { terminalPresentation } from './campaign-terminal.mjs';
+import { terminalPresentation, normalizeTerminalStatus } from './campaign-terminal.mjs';
 import { normalizeLifecycle } from './campaign-lifecycle.mjs';
+import { historyRecoveryAccounts } from './account-recovery.mjs';
 
 // Pure helpers for rendering card #2 (the .vj-card live-status card) inside an
 // EXPANDED dashboard strip — browser-safe (no DOM), so app.js imports them and
@@ -24,7 +25,7 @@ export function statusFromItem(it = {}) {
   const state = (it.interrupted || it.waitingForLocal) ? 'interrupted'
     : stopping ? 'stopping'
     : it.dailyWait ? 'waiting_daily_reset'
-    : it.needsReview ? 'needs_review'
+    : lifecycle.needsReview ? 'needs_review'
     : monitoring ? 'monitoring'
     : it.bucket === 'done' ? 'done'
     : it.bucket === 'queued' ? 'queued'
@@ -32,6 +33,8 @@ export function statusFromItem(it = {}) {
   return {
     lifecycle,
     executionId: lifecycle.executionId,
+    primaryRecovery: it.primaryRecovery || null,
+    recoveryWait: it.recoveryWait || null,
     needsReview: lifecycle.needsReview,
     reviewAction: lifecycle.reviewAction,
     _cloud: cloud,
@@ -40,21 +43,27 @@ export function statusFromItem(it = {}) {
     // A released VM row can remain status='running' while ownership is local.
     // When the local singleton is not actually active that word is only the
     // engine's frozen handover record, not proof that work is happening here.
-    running: it.bucket === 'running' && !monitoring && !it.waitingForLocal && !it.dailyWait && !it.needsReview,
+    running: it.bucket === 'running' && !monitoring && !it.waitingForLocal && !it.dailyWait && !lifecycle.needsReview,
     state,
     name: it.name,
     mode: it.mode,
+    phase: it.phase,
+    launchPhase: it.launchPhase,
     isFG: !!it.isFG,
     totalTargets: Number(it.total) || 0,
+    totalKnown: it.totalKnown,
+    needsOutcomeReview: !!it.needsOutcomeReview,
     totalProcessed: Number(it.sent) || 0,
     pending: Number(it.pending) || 0,
     pendingCount: it.pending == null ? undefined : Math.max(0, Number(it.pending) || 0),
-    endNotice: it.endNotice || (it.hist && it.hist.endNotice) || null,
+    endNotice: it.endNotice || (it.hist && (it.hist.endNotice || it.hist.debrief?.endNotice)) || null,
+    recoveryAccounts: it.recoveryAccounts || (it.hist ? historyRecoveryAccounts(it.hist) : []),
     endReason: it.endReason || (it.hist && it.hist.endReason)
       || (it.bad ? 'stopped' : (it.bucket === 'done' ? 'completed' : '')),
     stopReason: it.stopReason || (it.hist && it.hist.stopReason) || '',
+    browserShutdownConfirmed: it.browserShutdownConfirmed,
     dailyWait: !!it.dailyWait,
-    needsReview: !!it.needsReview,
+    needsReview: lifecycle.needsReview,
     engineStatus: it.engineStatus || '',
     resumeAt: it.resumeAt || null,
     accountsCount: Number(it.accounts) || 0,
@@ -223,7 +232,7 @@ export function vjCardFields(status = {}) {
   const isInterrupted = s.state === 'interrupted' || !!s.interrupted;
   const isStopping = s.state === 'stopping';
   const done = Number(s.totalProcessed) || 0;
-  const total = Number(s.totalTargets) || 0;
+  const total = s.totalKnown === false ? '—' : (Number(s.totalTargets) || 0);
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   const accountsCount = (s.accountsCount != null)
     ? Number(s.accountsCount) || 0
@@ -272,7 +281,7 @@ function _esc(v) {
 }
 
 export function vjCardControlsFor(status = {}) {
-  const s = status || {};
+  const s = normalizeTerminalStatus(status) || {};
   const cloud = !!s._cloud;
   const id = _esc(String(s.id || ''));
   const rawId = _esc(String(s.rawId || String(s.id || '')));
@@ -282,7 +291,8 @@ export function vjCardControlsFor(status = {}) {
   // as running:false + engineStatus. Normalize that distinction here so sharing
   // the renderer does not accidentally give a cancelled campaign live controls.
   const terminalEngine = ['completed', 'cancelled', 'error', 'failed', 'stopped'].includes(String(s.engineStatus || '').toLowerCase());
-  const done = s.state === 'done' || (!s.running && terminalEngine);
+  const terminalDirect = !s.running && !!(s.stopReason || s.endReason || s.endNotice);
+  const done = s.state === 'done' || (!s.running && terminalEngine) || terminalDirect;
   const queued = s.state === 'queued';
   const interrupted = s.state === 'interrupted' || !!s.interrupted;
   const dailyWait = s.state === 'waiting_daily_reset';
@@ -317,6 +327,12 @@ export function vjCardControlsFor(status = {}) {
     resumeSending: null, deleteForever: null, bulk: null, monAuto: null, extra: [],
   };
 
+  if (s.primaryRecovery && !cloud && running) {
+    c.stop = { tip: 'Stop campaign', onclick: 'window.dashStopActive()' };
+    // Recovery actions live beside the warning in the shared stage, not twice
+    // (inside the panel and again in the footer).
+    return c;
+  }
   if (interrupted) {
     const interruptedPhase = s.interruption?.phase || (s.monitoringPhase ? 'monitoring' : 'sending');
     c.pause = { once: true, onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','${interruptedPhase}','local',this)` };
@@ -369,7 +385,9 @@ export function vjCardControlsFor(status = {}) {
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
       c.extra.push({ tip: 'Choose what resumes', kind: 'play', once: true,
-        onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','sending-from-monitoring','local',this)` });
+        onclick: !id || ['local-active', 'legacy-singleton'].includes(id)
+          ? `window.openCampaignContinuation('${id || 'local-active'}','local')`
+          : `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending-from-monitoring','local',this)` });
     }
   } else if (monitor && cloud) {
     c.stop = s.monitoringCheckInProgress
@@ -386,18 +404,21 @@ export function vjCardControlsFor(status = {}) {
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
       c.extra.push({ tip: 'Choose what resumes', kind: 'play', once: true,
-        onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending-from-monitoring','vm',this)` });
+        onclick: `window.openCampaignContinuation('${id}','vm')` });
     }
   } else if (done) {
-    // Restart controls — only for a STOPPED/CANCELLED/ERRORED campaign (never a
-    // cleanly-completed one). ▶ Continue where it left off · ⟲ from the beginning.
-    // An ERRORED campaign gets its restart as the card's big labelled button
-    // instead (failedStartRetry). Leaving the glyphs here too would offer the
-    // same action twice, one of them tipped "restart from the beginning" —
-    // which on a campaign that sent 31 invites re-sends to all 31.
-    if ((s.bad || terminalPresentation(s).pending > 0) && !failedStartRetry(s)) {
-      c.extra.push({ tip: 'Continue where it left off', kind: 'play', onclick: cloud ? `restartCloudCampaignUI('${id}', false)` : `restartLocalFromItem('${id}', false)` });
-      c.extra.push({ tip: 'Restart from the beginning', kind: 'restart', onclick: cloud ? `restartCloudCampaignUI('${id}', true)` : `restartLocalFromItem('${id}', true)` });
+    // The native current run has no historical board-item key. Restart it
+    // through its guarded saved-settings action, not restartLocalFromItem.
+    if (!cloud && !s.hist && ['legacy-singleton', 'local-active'].includes(s.id)) {
+      if (!terminalPresentation(s).complete || ['connect_and_introduce', 'connect_and_message'].includes(s.mode)) {
+        c.extra.push({ tip: 'Continue campaign', kind: 'play', onclick: "window.openCampaignContinuation('local-active','local')" });
+      }
+      return c;
+    }
+    // Ended campaigns keep the shared terminal stage and one labelled footer
+    // action. Only a refused launch uses the separate launch-settings panel.
+    if ((s.bad || terminalPresentation(s).pending > 0) && !s.launchFailed) {
+      c.extra.push({ tip: 'Continue campaign', kind: 'play', onclick: `window.openCampaignContinuation('${id}','${cloud ? 'vm' : 'local'}')` });
     }
     c.extra.push({ tip: 'Duplicate', kind: 'dup', onclick: `duplicateCampaign('${id}')` });
     if (!cloud && s.hist) c.extra.push({ tip: 'Debrief', kind: 'debrief', onclick: `window.openDebrief('${id}')` });
@@ -541,7 +562,9 @@ export function failedStartRetry(status = {}) {
   const id = _esc(String(s.id || ''));
   const sent = Number(s.totalProcessed) || 0;
   const total = Number(s.totalTargets) || 0;
-  const reason = String(s.endNotice || s.stopReason || '').trim();
+  const notice = typeof s.endNotice === 'string' ? s.endNotice
+    : (typeof s.endNotice?.detail === 'string' ? s.endNotice.detail : '');
+  const reason = (notice || (typeof s.stopReason === 'string' ? s.stopReason : '')).trim();
   // A launch that the server refused never created a campaign, so there is
   // nothing to restart — the operator has to go back and change something. The
   // strip used to tear itself down the moment the native alert was dismissed,
@@ -557,20 +580,20 @@ export function failedStartRetry(status = {}) {
   }
   // Continue-where-it-left-off in both cases: with nothing sent it covers every
   // lead anyway, and it can never re-invite someone who was already contacted.
-  const onclick = s._cloud ? `restartCloudCampaignUI('${id}', false)` : `restartLocalFromItem('${id}', false)`;
+  const onclick = `window.openCampaignContinuation('${id}','${s._cloud ? 'vm' : 'local'}')`;
   if (sent > 0) {
     const left = Math.max(0, total - sent);
     return {
       headline: `Stopped after ${sent} of ${total}`,
       detail: [reason, left ? `${left} lead${left === 1 ? '' : 's'} ${left === 1 ? 'is' : 'are'} still queued.` : ''].filter(Boolean).join(' '),
-      label: `Carry on from lead ${sent + 1}`,
+      label: 'Continue campaign',
       onclick,
     };
   }
   return {
     headline: isError ? 'This campaign never started' : 'Stopped before anything was sent',
     detail: [reason, total ? `Nothing was sent, so all ${total} leads are still queued.` : 'Nothing was sent.'].filter(Boolean).join(' '),
-    label: isError ? 'Try again' : 'Start from the first lead',
+    label: 'Continue campaign',
     onclick,
   };
 }

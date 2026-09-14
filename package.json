@@ -13,6 +13,7 @@
     "reset": "echo '{\"processed\":{},\"dailyCounts\":{}}' > data/state.json && echo 'State reset.'",
     "build:docs": "node docs/build.js",
     "electron:dev": "bash scripts/electron-dev-vm.sh",
+    "electron:preview": "bash scripts/electron-preview-vm.sh",
     "electron:dev:production": "electron .",
     "electron:dev:vm": "bash scripts/electron-dev-vm.sh",
     "dev:app": "ORTUS_DATA_DIR=\"$HOME/Library/Application Support/The Ortus Outreach/data\" electron .",

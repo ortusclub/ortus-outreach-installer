@@ -1,3 +1,6 @@
+import { startupAdmission } from './startup-admission.js';
+import { inspectPrimarySession, waitForPrimaryRecovery } from './primary-browser-session.js';
+
 /**
  * Campaign orchestrator — v17.
  *
@@ -21,6 +24,7 @@
 
 import { existsSync, mkdirSync, appendFileSync, statSync, renameSync } from 'fs';
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
+import { setTimeout as handshakeDelay } from 'node:timers/promises';
 import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
@@ -48,6 +52,10 @@ import { planAccountsNeedingConnect, handshakeProgress, shouldProceed } from './
 import { clampCadenceMinutes } from '../public/js/campaign-modes.mjs';
 import { runAutoDms } from './linkedin/auto-dm.js';
 import { registerSchedule as registerPostCampaignSweep, removeSchedulesForSheet as removeBulkSchedules } from './post-campaign-bulk-check.js';
+import { preparePrimarySession } from './primary-session-control.js';
+import { localStopStatus } from './local-stop-receipt.js';
+import { requestLocalPause, releaseLocalPause } from './local-pause-control.js';
+import { registerPrimaryOperation } from './primary-task-control.js';
 import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet as removeReplySchedules } from './post-campaign-reply-check.js';
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
@@ -65,6 +73,8 @@ import { identityRestrictionLabel } from './soo-restrictions.js';
 import { getOperatorEmail } from './operator-identity.js';
 import { dataPath } from './paths.js';
 import { readLastRun, writeLastRun } from './last-run-store.js';
+import { startTaskOwner, taskOwnerOf } from './task-owner.js';
+import { stopPrimaryTasksForOwner } from './primary-task-control.js';
 import { readBlocklist } from './blocklist.js';
 import { blocklistExcludedUrls } from './preflight-lint.js';
 import { CampaignRegistry } from './campaign-registry.js';
@@ -285,7 +295,7 @@ async function loadState() {
   let pruned = 0;
   for (const [url, entry] of Object.entries(s.processed || {})) {
     const ts = entry?.date ? Date.parse(entry.date) : NaN;
-    if (Number.isFinite(ts) && ts < cutoff) {
+    if (Number.isFinite(ts) && ts < cutoff && !['_in_progress', 'interrupted'].includes(entry?.action)) {
       delete s.processed[url];
       pruned++;
     }
@@ -1208,6 +1218,10 @@ export function log(msg) {
   // append stays cheap (no statSync per line).
   try {
     appendFileSync(CAMPAIGN_LOG_FILE, line + '\n');
+    if (campaign.executionId && /^[a-zA-Z0-9_-]+$/.test(campaign.executionId)) {
+      mkdirSync(dataPath('campaign-runs'), { recursive: true });
+      appendFileSync(dataPath('campaign-runs', `${campaign.executionId}.log`), line + '\n');
+    }
   } catch { /* never let logging take down the campaign */ }
 }
 
@@ -2028,9 +2042,24 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
-  clearRuntimeInterruption();
+export async function startCampaign(options = {}) {
+  startupAdmission.assertCurrent();
+  let {
+    profileIds, benchedProfileIds = [], sheetUrl, sheetGid: requestedSheetGid = '',
+    templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false,
+    delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {},
+    concurrency = 1, name = '', acceptanceTrackingDays = 0,
+    preflightCheckStatus = false, checkIntervalMinutes = 60,
+    autoChecksEnabled = true, createdBy = null, senderColumn = '',
+    allLeadsConnected = false, resumeContext = null,
+    primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [],
+  } = options;
+  let sheetGid = requestedSheetGid;
   if (campaign.running) throw new Error('Campaign already running');
+  clearRuntimeInterruption();
+  const taskOwner = startTaskOwner(options);
+  campaign.taskCampaignId = taskOwner.campaignId;
+  campaign.campaignRunId = taskOwner.campaignRunId;
   campaign.executionId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   campaign._abortController = new AbortController();
   campaign.dailyResetNeeded = false;
@@ -2058,7 +2087,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   // v2.14.x: snapshot for restoreCampaign(). Captured BEFORE anything can
   // throw, so even a campaign that fails preflight is recoverable.
   _lastRunSettings = {
-    profileIds, sheetUrl, sheetGid, templates, dailyLimit, mode, messageOpenProfiles,
+    // Keep the complete launch request, including UI-only choices such as the
+    // run target and any fields added in future versions. The explicit values
+    // below are the normalized runtime truth and intentionally win.
+    ...options,
+    taskCampaignId: taskOwner.campaignId,
+    campaignRunId: taskOwner.campaignRunId,
+    profileIds: Array.isArray(profileIds) ? profileIds.slice() : [],
+    sheetUrl, sheetGid,
+    templates: templates && typeof templates === 'object' ? { ...templates } : {},
+    dailyLimit, mode, messageOpenProfiles,
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
     senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled,
@@ -2075,22 +2113,6 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
   campaign.running = true;
   campaign.createdBy = createdBy || null;
-  // v2.58.x — pick up the launcher's stored timezone so sheet timestamps
-  // land in their local clock. Empty string resets any prior campaign's
-  // value (one-campaign-at-a-time invariant means no race). Best-effort:
-  // any read failure falls back to no tz, which preserves pre-feature
-  // behavior (GAS uses Session.getScriptTimeZone()).
-  try {
-    const prefs = createdBy ? await getOperatorPrefs(createdBy) : null;
-    setOperatorTz(prefs?.tz || '');
-    // v2.113.x: cache the operator's identity-safeguard choice for this run so
-    // the per-lead gate doesn't hit the prefs file on every lead. Default OFF
-    // (2026-06-22) — the gate only runs when an operator explicitly turns it ON
-    // (identityGate === true). No operator / missing pref / read failure all
-    // resolve to OFF, matching the v2.97 connect-straight-to-URL path (404 skip
-    // is preserved inside gateConnectIdentity's blind branch regardless).
-    campaign.identityGateEnabled = identityGateEnabled(prefs);
-  } catch { setOperatorTz(''); campaign.identityGateEnabled = identityGateEnabled(null); }
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign.stopReason = null;
@@ -2133,6 +2155,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign.dmSentInRun = new Set();
   campaign.composeAttempts = new Map();
   campaign._paused = false;
+  campaign._pauseReceipt = null;
+  campaign._pauseForeground = 0;
+  campaign._holdInterruptedWork = null;
   // v2.112: resume staging — paused edits accumulate here, applied at the pause boundary.
   campaign._pendingResume = { reloadSheet: false, newRows: null, addProfiles: [], benchToggles: {} };
   campaign._pauseRequested = false;
@@ -2148,17 +2173,6 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   const _resumeTotal = resumeContext && Number.isFinite(Number(resumeContext.totalProcessed)) ? Number(resumeContext.totalProcessed) : 0;
   campaign.processedToday = 0;
   campaign.totalProcessed = _resumeTotal;
-  // Tab-as-Bible: the "Recent Connections" tab is a per-campaign record. Wipe
-  // it clean at the start of a NEW campaign so stale rows from a prior run on
-  // the same sheet can't produce false matches. On resume, keep the tab — the
-  // accumulated record belongs to the campaign we're continuing.
-  if (!resumeContext) {
-    try {
-      await clearRecentConnectionsTab(sheetUrl);
-    } catch (err) {
-      console.warn(`[campaign] Recent Connections wipe failed (non-fatal): ${err.message}`);
-    }
-  }
   campaign.totalTargets = 0;
   campaign.mode = mode;
   // ISO timestamp marking when this campaign run began. Used by the
@@ -2290,6 +2304,39 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   const profilesThatSentAtLeastOne = new Set();
 
   try {
+    // Publish the complete run identity/control state before the first await.
+    // Pause/Stop arriving during preferences must never be reset by startup.
+  // v2.58.x — pick up the launcher's stored timezone so sheet timestamps
+  // land in their local clock. Empty string resets any prior campaign's
+  // value (one-campaign-at-a-time invariant means no race). Best-effort:
+  // any read failure falls back to no tz, which preserves pre-feature
+  // behavior (GAS uses Session.getScriptTimeZone()).
+  try {
+    const prefs = createdBy ? await getOperatorPrefs(createdBy) : null;
+    setOperatorTz(prefs?.tz || '');
+    // v2.113.x: cache the operator's identity-safeguard choice for this run so
+    // the per-lead gate doesn't hit the prefs file on every lead. Default OFF
+    // (2026-06-22) — the gate only runs when an operator explicitly turns it ON
+    // (identityGate === true). No operator / missing pref / read failure all
+    // resolve to OFF, matching the v2.97 connect-straight-to-URL path (404 skip
+    // is preserved inside gateConnectIdentity's blind branch regardless).
+    campaign.identityGateEnabled = identityGateEnabled(prefs);
+  } catch { setOperatorTz(''); campaign.identityGateEnabled = identityGateEnabled(null); }
+    await awaitUnpause(myGen);
+    if (isOrphan() || campaign._abort) return;
+  // Tab-as-Bible: the "Recent Connections" tab is a per-campaign record. Wipe
+  // it clean at the start of a NEW campaign so stale rows from a prior run on
+  // the same sheet can't produce false matches. On resume, keep the tab — the
+  // accumulated record belongs to the campaign we're continuing.
+  if (!resumeContext) {
+    try {
+      await clearRecentConnectionsTab(sheetUrl);
+    } catch (err) {
+      console.warn(`[campaign] Recent Connections wipe failed (non-fatal): ${err.message}`);
+    }
+  }
+    await awaitUnpause(myGen);
+    if (isOrphan() || campaign._abort) return;
     rotateCampaignLogIfBig();
     log('=== Campaign starting ===');
     log(`Mode: ${mode}`);
@@ -2589,8 +2636,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       ([, v]) => v?.action === '_in_progress'
     );
     if (stalePending.length > 0) {
-      log(`Clearing ${stalePending.length} stale _in_progress marker(s) from previous run`);
-      for (const [url] of stalePending) delete state.processed[url];
+      log(`Holding ${stalePending.length} interrupted lead(s) for outcome review`);
+      for (const [url, entry] of stalePending) state.processed[url] = { ...entry, action: 'interrupted', reviewReason: 'action-outcome-unknown' };
       await saveState(state);
     }
 
@@ -2602,7 +2649,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // activity so LinkedIn's per-day quotas can't be blown by stop-and-restart.
     // Skip-only actions don't count toward the daily send total.
     const _todayPrefix = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
-    const _skipActions = new Set(['_in_progress', 'email_required', 'not_open_profile']);
+    campaign._holdInterruptedWork = async () => {
+      for (const [url, entry] of Object.entries(state.processed)) {
+        if (entry.action === '_in_progress' && entry.campaignRunId === taskOwner.campaignRunId) {
+          state.processed[url] = { ...entry, action: 'interrupted', reviewReason: 'action-outcome-unknown' };
+        }
+      }
+      await saveState(state);
+    };
+    const _skipActions = new Set(['_in_progress', 'interrupted', 'email_required', 'not_open_profile']);
     let _seedTotal = 0;
     for (const entry of Object.values(state.processed)) {
       if (!entry || !entry.profileId || !entry.date) continue;
@@ -3009,10 +3064,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       // Phase 2.8.10: refuse to launch new browsers after stop has been
       // requested. Closes the launch-race that was leaving orphan windows
       // requiring a second Stop click to clean up.
-      if (campaign._abort) return null;
+      const launchSignal = campaign._abortController?.signal;
+      if (campaign._abort || campaign._pauseRequested || isOrphan() || launchSignal?.aborted) return null;
 
       const cached = sessions.get(profileId);
-      if (cached) return cached;
+      if (cached && !cached.signal?.aborted) return cached;
+      if (cached) {
+        if ((await cached.close())?.browserClosed !== true) return null;
+        sessions.delete(profileId);
+        browserSemaphore.release();
+      }
 
       // 2.9.2: never let the raw profileId 'local-browser' leak to the sheet
       // (it bypasses profileNameCache when that's stale). Force 'You'.
@@ -3027,14 +3088,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       if (semStatusBefore.count >= semStatusBefore.max) {
         log(`  ⏸ ${pName}: waiting for browser slot (${semStatusBefore.count}/${semStatusBefore.max} in use)`);
       }
-      try {
-        await browserSemaphore.acquire({ signal: campaign._abortController?.signal });
-      } catch (err) {
-        if (campaign._abort || err?.name === 'AbortError') return null;
-        throw err;
-      }
-
       let success = false;
+      let launched;
       try {
         if (campaign._abort) return null;
         log(`▶ Opening ${pName}…`);
@@ -3042,21 +3097,20 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           account: pName, phase: campaign.phase === 'preflight' ? 'starting' : 'sending',
           step: 'opening_browser', stepDetail: 'Starting the GoLogin browser and restoring its LinkedIn session',
         });
-        let launched;
-        if (profileId === 'local-browser') {
-          launched = await launchLocalBrowser();
-        } else {
-          launched = await launchProfile(profileId, token);
-        }
+        launched = await preparePrimarySession([taskOwner], {
+          semaphore: browserSemaphore, signal: launchSignal,
+          launch: ({ signal }) => profileId === 'local-browser'
+            ? launchLocalBrowser({ signal }) : launchProfile(profileId, token, { signal }),
+          close: () => profileId === 'local-browser' ? closeLocalBrowser() : closeProfile(profileId),
+        });
 
         // Phase 2.8.10: abort may have fired DURING the launch above. Close
         // the just-launched browser immediately rather than letting it become
         // an orphan that survives /api/campaign/stop.
-        if (campaign._abort) {
+        if (campaign._abort || launchSignal?.aborted || isOrphan()) {
           log(`■ ${pName}: stop requested mid-launch — closing immediately.`);
           try {
-            if (profileId === 'local-browser') await closeLocalBrowser();
-            else await closeProfile(profileId);
+            await launched.close();
           } catch { /* */ }
           return null;
         }
@@ -3089,10 +3143,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           return null;
         }
         if (!ok) return null;
-        if (campaign._abort) {
+        if (campaign._abort || launchSignal?.aborted || isOrphan()) {
           try {
-            if (profileId === 'local-browser') await closeLocalBrowser();
-            else await closeProfile(profileId);
+            await launched.close();
           } catch { /* */ }
           return null;
         }
@@ -3102,7 +3155,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // and the per-lead navigation has its own networkidle0 + DOM-settle
         // waits, so the additional dwell here was redundant.
 
-        const session = { profileId, pName, browser: launched.browser, page, warmedUp: true };
+        const session = { profileId, pName, browser: launched.browser, page, close: launched.close, signal: launchSignal, warmedUp: true };
         sessions.set(profileId, session);
         success = true;
 
@@ -3160,7 +3213,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       } finally {
         // Release the slot if we didn't return a live session — closeSession()
         // is responsible for releasing in the success path.
-        if (!success) browserSemaphore.release();
+        if (!success && launched) {
+          try { await launched.close(); } finally { browserSemaphore.release(); }
+        }
       }
     }
 
@@ -3187,29 +3242,20 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         }
       };
       try {
-        if (profileId === 'local-browser') {
-          await withinCloseDeadline(() => closeLocalBrowser(), 'Local browser');
-        } else {
-          await withinCloseDeadline(async () => {
-            const pages = await s.browser.pages().catch(() => []);
-            for (const p of pages) {
-              try { await p.close(); } catch { /* */ }
-            }
-            await s.browser.close().catch(() => {});
-            await closeProfile(profileId);
-          }, `${s.pName} browser`);
-        }
+        const evidence = await withinCloseDeadline(() => s.close(), `${s.pName} browser`);
+        if (evidence?.browserClosed !== true) throw new Error('Browser shutdown is unconfirmed; account remains held');
         const durationMs = Date.now() - t0;
         log(`✓ ${s.pName} browser closed. ⏱ close duration ${durationMs}ms`);
         sessions.delete(profileId);
         browserSemaphore.release();
-        return { durationMs };
+        return { durationMs, browserClosed: true };
       } catch (e) {
         const durationMs = Date.now() - t0;
         log(`Close ${s.pName}: ${e.message} (⏱ ${durationMs}ms)`);
-        sessions.delete(profileId);
-        browserSemaphore.release();
-        return { durationMs };
+        // Retain the session and slot: dropping them would authorize another
+        // launch while this browser may still be alive. Stop can retry closure.
+        weeklyLimited.add(profileId);
+        return { durationMs, browserClosed: false };
       }
     }
 
@@ -3220,22 +3266,23 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
      * returns true for a profile.
      */
     async function runIdleBulkCheck(profileId, pName) {
-      try {
-        await browserSemaphore.acquire({ signal: campaign._abortController?.signal });
-      } catch (err) {
-        if (campaign._abort || err?.name === 'AbortError') return;
-        throw err;
-      }
+      const checkSignal = campaign._abortController?.signal;
       // v2.74: if Stop landed while we waited for a semaphore slot, don't even
       // open the browser.
-      if (campaign._abort) { browserSemaphore.release(); return; }
+      if (campaign._abort || checkSignal?.aborted) return;
       let launched;
       // v2.74: register the in-flight check so stopCampaign() can force-close
       // this browser and interrupt a check already mid-flight.
       activeBulkChecks.add(profileId);
       try {
         log(`  📡 [${pName}] Idle bulk-check — briefly reopening profile…`);
-        launched = await launchProfile(profileId, token);
+        launched = await preparePrimarySession([taskOwner], {
+          semaphore: browserSemaphore, signal: checkSignal,
+          launch: ({ signal }) => profileId === 'local-browser'
+            ? launchLocalBrowser({ signal }) : launchProfile(profileId, token, { signal }),
+          close: () => profileId === 'local-browser' ? closeLocalBrowser() : closeProfile(profileId),
+        });
+        if (checkSignal?.aborted || campaign._abort) return;
 
         const willAutoIntro = mode === 'connect_and_introduce' && _primaryIntroAllowed(profileId) && !!(
           tpl && tpl.primaryName && tpl.primaryName.trim() &&
@@ -3254,6 +3301,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // batched into a single Apps Script write).
           suppressAcceptedStamp: false,
         });
+        if (checkSignal?.aborted || campaign._abort) return;
         if (r.error) {
           log(`  ⚠ [${pName}] Idle bulk-check: ${r.error}`);
         } else {
@@ -3262,6 +3310,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
         if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
           await runAutoIntros({
+            taskOwner,
+            shouldAbort: () => !!checkSignal?.aborted,
             page: launched.page,
             profileId,
             profileName: pName,
@@ -3274,6 +3324,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           });
         } else if (willAutoDm && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
           await runAutoDms({
+            shouldAbort: () => !!checkSignal?.aborted,
             page: launched.page,
             profileId,
             profileName: pName,
@@ -3295,11 +3346,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         log(`  ⚠ [${pName}] Idle bulk-check failed: ${err.message}`);
       } finally {
         activeBulkChecks.delete(profileId);
-        try {
-          if (profileId === 'local-browser') await closeLocalBrowser();
-          else await closeProfile(profileId);
-        } catch { /* */ }
-        browserSemaphore.release();
+        if (launched) {
+          try { await launched.close(); } catch { /* ownership remains held when unconfirmed */ }
+          browserSemaphore.release();
+        }
       }
     }
 
@@ -3545,7 +3595,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
      * weeklyLimited, consecutiveSkips, leadsExhausted).
      */
     async function runProfileTurn(profileId) {
-        if (campaign._abort || isOrphan()) return;
+        const turnSignal = campaign._abortController?.signal;
+        if (campaign._abort || campaign._pauseRequested || turnSignal?.aborted || isOrphan()) return;
         if (leadsExhausted) return;
 
         const restriction = await restrictionForProfile(profileId);
@@ -3644,6 +3695,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                       throw new Error('could not read this account\'s identity (nav not ready) — skipping auto-accept queue');
                     }
                     const _task = buildAcceptTask({
+                      ...taskOwner,
                       campaignProfileId: profileId,
                       campaignProfileName: pName,
                       sheetId: _extractSheetIdFromUrl(sheetUrl) || '',
@@ -3705,7 +3757,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           size: Number.isFinite(innerLimit) ? innerLimit : null,
         };
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
-        await awaitUnpause(myGen);
+        if (campaign._pauseRequested || turnSignal?.aborted) break;
         // v2.112 (#2a): also bail if the operator benched this account while paused — without
         // this, the post-pause path would send one more lead before the for-condition re-checks.
         if (campaign._abort || isOrphan() || campaign._skippedProfiles?.has(profileId)) break;
@@ -3829,9 +3881,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         campaign.currentProfile = pName;
 
         const url = extractLinkedInUrl(row, linkedinColumn);
+        if (state.processed[url]?.action === 'interrupted') {
+          log(`⏸ Held for outcome review — ${url}. No automatic retry.`);
+          continue;
+        }
 
         // Mark as in-progress
-        state.processed[url] = { profileId, profileName: pName, action: '_in_progress', date: new Date().toISOString() };
+        state.processed[url] = { ...taskOwner, profileId, profileName: pName, action: '_in_progress', date: new Date().toISOString() };
         await saveState(state);
 
         // In-loop skip check. Mirrors the pre-filter rules; catches rows
@@ -4045,7 +4101,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 // happened. Abort-aware so Stop breaks out immediately.
                 const _ndWaitMs = Math.floor((delayMin + delayMax) / 2) * 1000;
                 const _ndEnd = Date.now() + _ndWaitMs;
-                while (Date.now() < _ndEnd && !campaign._abort) {
+                while (Date.now() < _ndEnd && !campaign._abort && !campaign._pauseRequested) {
                   await new Promise((r) => setTimeout(r, 2000));
                 }
                 continue;
@@ -4098,7 +4154,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               const _gateWaitMs = degradationBackoffMs(_gateBase, degradationStreak.get(profileId) || 0, { maxMult: DEGRADE_MAX_MULT, maxMs: DEGRADE_MAX_WAIT_MS });
               log(`  ⏳ ${(_gateWaitMs / 1000).toFixed(0)}s (degradation backoff after unverified lead)`);
               const _gateSleepEnd = Date.now() + _gateWaitMs;
-              while (Date.now() < _gateSleepEnd && !campaign._abort) {
+              while (Date.now() < _gateSleepEnd && !campaign._abort && !campaign._pauseRequested) {
                 await new Promise((r) => setTimeout(r, 2000));
               }
               continue;
@@ -4120,6 +4176,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           let _throttleHandled = false;
           const MAX_RETRIES = 3;
           for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            if (turnSignal?.aborted) { result = { action: 'interrupted' }; break; }
             // Phase 2.8.20 (W2-A1): wrap with watchdog so a Puppeteer hang
             // can't freeze the loop indefinitely. On timeout, returns a
             // skipped result with the lead_timeout_watchdog signal which
@@ -4139,6 +4196,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   withWatchdog(
                     performOutreach(page, url, { ...tpl, data }, {
                       profileId, skipNavigation: _identityVerified,
+                      invitationIdentity: _verifiedIdentityMeta,
                       onProgress: (event) => {
                         const e = (event && typeof event === 'object') ? event : {};
                         setAction(e.stepLabel || 'Processing lead', {
@@ -4160,7 +4218,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               if (err && err.kind === 'preempt') {
                 // Solo check is taking over. Leave the lead unstamped (no result
                 // handling below) so the next pass re-attempts it on resume.
-                log(`  ⏭ ${pName}: lead preempted for a solo bulk check — will retry on resume — ${url}`);
+                log(`  ⏸ ${pName}: lead interrupted for a solo bulk check — outcome requires review — ${url}`);
                 _preempted = true;
                 break;
               } else if (err && err.kind === 'watchdog') {
@@ -4205,7 +4263,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // Phase 2.8.10: bail retries entirely if user clicked Stop —
             // no point retrying a dead browser, and the 15s/30s sleeps were
             // the dominant source of "loop won't exit" lag after Stop.
-            if (campaign._abort) { log('  ■ Abort detected — skipping retry.'); break; }
+            if (campaign._abort || turnSignal?.aborted) { log('  ■ Interruption detected — skipping retry.'); break; }
 
             // v2.112.7 (Fix B): a retry is about to happen — classify the prior
             // failure and route. Only a `transient` glitch warrants an inline
@@ -4224,7 +4282,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             setAction(`Retrying lead (${attempt}/${MAX_RETRIES})`, { lead: data.firstName || '?', account: pName, durationMs: backoff });
             // Abort-aware sleep: 1s polling chunks so Stop interrupts within ~1s.
             const retryEnd = Date.now() + backoff;
-            while (Date.now() < retryEnd && !campaign._abort) {
+            while (Date.now() < retryEnd && !campaign._abort && !campaign._pauseRequested) {
               await new Promise(r => setTimeout(r, 1000));
             }
             if (campaign._abort) { log('  ■ Abort during retry backoff.'); break; }
@@ -4284,6 +4342,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // which flips _paused=true so the sweep can run. The lead stays
           // unstamped and is re-attempted on resume.
           if (_preempted) continue;
+          if (turnSignal?.aborted && !SENT_ACTIONS.has(result?.action)) {
+            state.processed[url] = { ...state.processed[url], action: 'interrupted', reviewReason: 'action-outcome-unknown' };
+            await saveState(state);
+            break;
+          }
 
           // 2.9.8: surface a normalized "Skipped: <reason>" in the dashboard
           // log too, so the operator sees the same wording the Audit Log uses.
@@ -4681,6 +4744,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   // Phase-2 dispatch — same helper pattern, mode-routed.
                   if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
                     await runAutoIntros({
+                      taskOwner,
                       page,
                       profileId,
                       profileName: pName,
@@ -4817,7 +4881,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 });
                 // Abort-aware backoff sleep in 2s chunks so Stop interrupts ~2s.
                 const _tSleepEnd = Date.now() + _tWaitMs;
-                while (Date.now() < _tSleepEnd && !campaign._abort) {
+                while (Date.now() < _tSleepEnd && !campaign._abort && !campaign._pauseRequested) {
                   await new Promise((r) => setTimeout(r, 2000));
                 }
                 _throttleHandled = true;
@@ -5059,23 +5123,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Not yet connected'),
               }, linkedinColumn);
-            } else if (errorMsg.includes('SEND_NOT_CONFIRMED')) {
-              log(`  ⚠ Send clicked but Pending NOT confirmed for ${data.firstName || '?'}. LinkedIn may have silently dropped it.`);
-              delete state.processed[url];
+            } else if (/SEND_NOT_CONFIRMED|VOYAGER_REJECTED|LINKEDIN_ERROR_TOAST/.test(errorMsg)) {
+              log('  ⏸ Invitation outcome unresolved — held for review. No automatic resend.');
+              state.processed[url] = { ...state.processed[url], profileId, profileName: pName,
+                action: 'interrupted', reviewReason: 'invitation-outcome-unknown', error: errorMsg, date: now };
               await saveState(state);
+              pushError(new Error(`${url}: ${errorMsg}`));
               await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
-                ...buildSkipSheetData(mode, normalizeSkipReason('Send not confirmed'), pName),
+                ...buildSkipSheetData(mode, normalizeSkipReason(errorMsg), pName),
                 dateLastAction: now,
-                auditAction: normalizeSkipReason('Send not confirmed'),
-              }, linkedinColumn);
-            } else if (errorMsg.includes('LINKEDIN_ERROR_TOAST')) {
-              log(`  ⚠ LinkedIn showed an error toast for ${data.firstName || '?'}.`);
-              delete state.processed[url];
-              await saveState(state);
-              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
-                ...buildSkipSheetData(mode, normalizeSkipReason('LinkedIn error toast'), pName),
-                dateLastAction: now,
-                auditAction: normalizeSkipReason('LinkedIn error toast'),
+                auditAction: 'Held for invitation verification — do not resend',
               }, linkedinColumn);
             } else if (errorMsg.includes('NOT_OPEN_PROFILE')) {
               log('  ✗ Not an Open Profile — will skip in future runs.');
@@ -5202,7 +5259,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // Sleep in 2s chunks so abort is checked frequently
             setAction('Waiting before next lead', { account: pName, durationMs: waitMs });
             const sleepEnd = Date.now() + waitMs;
-            while (Date.now() < sleepEnd && !campaign._abort) {
+            while (Date.now() < sleepEnd && !campaign._abort && !campaign._pauseRequested) {
               await new Promise(r => setTimeout(r, 2000));
             }
             if (campaign._abort) log('  ■ Abort detected during delay.');
@@ -5229,7 +5286,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           return;
         }
 
-        const stayOpen = (mode === 'check_status' || mode === 'message_only')
+        const stayOpen = !campaign._pauseRequested && !turnSignal?.aborted && (mode === 'check_status' || mode === 'message_only')
           && profileQueue.length === 0
           && profilesBeingRun.size <= 1;
 
@@ -5251,6 +5308,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       let _idleCooldownCacheAt = 0;
 
       while (!campaign._abort && !leadsExhausted && !isOrphan()) {
+        await awaitUnpause(myGen);
+        if (campaign._abort || isOrphan()) break;
         // Adaptive RAM throttle: drop browser cap to 1 when throttle engages,
         // restore on release (Q1=(a) "drain to 1").
         const t = campaign._throttle;
@@ -5319,11 +5378,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         }
 
         try {
+          if (!isOrphan()) campaign._pauseForeground = (campaign._pauseForeground || 0) + 1;
           await runProfileTurn(profileId);
         } catch (err) {
           log(`✗ Worker ${workerId} crashed running ${profileId}: ${err.message}`);
           pushError(err);
         } finally {
+          if (!isOrphan()) campaign._pauseForeground = Math.max(0, (campaign._pauseForeground || 0) - 1);
           profilesBeingRun.delete(profileId);
           // Cooldown timestamp is set even on error, so a flapping profile
           // doesn't get re-picked instantly by another worker.
@@ -5345,6 +5406,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // Best-effort — NEVER blocks the campaign: any error or straggler falls back
     // to the existing idle-runner queue via enqueuePrimaryTask().
     async function runPreflightHandshake() {
+      const handshakeSignal = campaign._abortController?.signal;
+      const handshakeAborted = () => handshakeSignal?.aborted || campaign._abort || isOrphan();
+      if (handshakeAborted()) return;
       const primaryUrl = (tpl && tpl.primaryUrl || '').trim();
       if (mode !== 'connect_and_introduce' || !tpl?.autoAcceptPrimary || !primaryUrl) return;
       // NOTE: campaign.participatingProfileIds is empty here (only filled at
@@ -5368,16 +5432,21 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       const sender = tpl.primarySource || 'local-browser';
       const queuedAccepts = [];
       for (const profileId of need) {
-        if (campaign._abort) break;
+        if (handshakeAborted()) return;
         // ensureOpen() returns { profileId, pName, browser, page, warmedUp } or
         // null. It launches fresh on a cache miss and holds a semaphore slot;
         // closeSession() (below) deletes it from `sessions` AND releases that
         // slot, so the later rotation re-opens this account cleanly in its turn.
         const session = await ensureOpen(profileId);
+        if (handshakeAborted()) {
+          if (session) { try { await closeSession(profileId); } catch { /* normal cleanup also follows */ } }
+          return;
+        }
         if (!session) { campaign._primaryConn.set(profileId, 'unverified'); continue; }
         const pName = session.pName;
         try {
           const _res = await checkAndConnectPrimary(session.page, primaryUrl, { log, pName, attemptConnect: true });
+          if (handshakeAborted()) return;
           {
             const _live = primaryConnState(_res.connected);
             const _entry = campaign._primaryKey
@@ -5401,7 +5470,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // pending invite was detected, NOT re-sent (good), but also never
           // accepted, so the account stayed non-1st-degree and its intros held.
           if (_shouldQueueAutoAccept({ autoAcceptPrimary: true, connectAttempted: _res.connectAttempted, connectResult: _res.connectResult })) {
+            if (handshakeAborted()) return;
             const _self = await readSelfIdentity(session.page, { log });
+            if (handshakeAborted()) return;
             if (_self.name || _self.profileUrl) {
               // 'sent' is a TRANSIENT pre-flight-only state (request out, not yet
               // accepted) — used for both freshly-sent and already-pending invites.
@@ -5411,6 +5482,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               // (→ 'pending'/'connected') BEFORE any intro gate.
               campaign._primaryConn.set(profileId, 'sent');
               queuedAccepts.push(buildAcceptTask({
+                ...taskOwner,
                 campaignProfileId: profileId, campaignProfileName: pName,
                 sheetId: _extractSheetIdFromUrl(sheetUrl) || '', sheetUrl,
                 account: _self, primaryUrl, sender,
@@ -5423,6 +5495,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             }
           }
         } catch (e) {
+          if (handshakeAborted()) return;
           log(`  ⚠ [${pName}] Pre-flight connect error: ${e.message}`);
         } finally {
           // Real single-account close: closeSession() closes the browser,
@@ -5430,55 +5503,98 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           try { await closeSession(profileId); } catch { /* */ }
         }
       }
+      if (handshakeAborted()) return;
       // Open the primary's session when there are matched senders to accept OR
       // the operator turned on accept-all (which sweeps the rest of the inbox).
+      let primaryBlocked;
+      do {
+      primaryBlocked = null;
       if (queuedAccepts.length || tpl.autoAcceptAllPending) {
         const CAP_MS = 120_000, POLL_MS = 30_000;
         const startedAt = Date.now();
+        let launched;
         try {
-          try {
-            await browserSemaphore.acquire({ signal: campaign._abortController?.signal });
-          } catch (err) {
-            if (campaign._abort || err?.name === 'AbortError') return;
-            throw err;
-          }
-          const launched = (sender === 'local-browser')
-            ? await launchLocalBrowser()
-            : await launchProfile(sender, token);
+          if (handshakeAborted()) return;
+          launched = await preparePrimarySession([taskOwner], {
+            semaphore: browserSemaphore, signal: handshakeSignal,
+            launch: ({ signal }) => sender === 'local-browser'
+              ? launchLocalBrowser({ signal }) : launchProfile(sender, token, { signal }),
+            close: () => sender === 'local-browser' ? closeLocalBrowser() : closeProfile(sender),
+          });
+          if (handshakeAborted()) return;
           const page = launched.page;
-          let pending = [...queuedAccepts];
-          while (pending.length && !campaign._abort) {
+          const problem = await inspectPrimarySession(page);
+          if (handshakeAborted()) return;
+          if (problem) throw Object.assign(new Error(problem.reason), { primaryProblem: problem });
+          let pending = queuedAccepts.filter(t => campaign._primaryConn.get(t.campaignProfileId) !== 'connected');
+          while (pending.length && !handshakeAborted()) {
             const still = [];
             for (const t of pending) {
+              if (handshakeAborted()) return;
               campaign._primaryConn.set(t.campaignProfileId, 'accepting');
               const r = await acceptInvitationFrom(page, t.account, { log })
                 .catch((e) => { log(`  ⚠ [${t.campaignProfileName}] primary accept errored: ${e.message}`); return { accepted: false }; });
+              if (handshakeAborted()) return;
               if (r.accepted) { campaign._primaryConn.set(t.campaignProfileId, 'connected'); log(`  ✓ primary accepted ${t.campaignProfileName}`); }
               else { campaign._primaryConn.set(t.campaignProfileId, 'sent'); still.push(t); }
             }
             pending = still;
             const { accepted, total } = handshakeProgress(campaign._primaryConn, queuedAccepts.map(t => t.campaignProfileId));
             if (shouldProceed({ startedAt, now: Date.now(), capMs: CAP_MS, accepted, total })) break;
-            if (pending.length) await new Promise(r => setTimeout(r, POLL_MS));
+            if (pending.length) await handshakeDelay(POLL_MS, undefined, { signal: handshakeSignal });
           }
-          for (const t of pending) { try { await enqueuePrimaryTask(t); } catch { /* */ } }
+          if (handshakeAborted()) return;
+          for (const t of pending) {
+            if (handshakeAborted()) return;
+            try { await enqueuePrimaryTask(t); } catch { /* */ }
+          }
+          if (handshakeAborted()) return;
           if (pending.length) log(`  ⏳ ${pending.length} link(s) finishing in the background — outreach starting anyway`);
           // Accept-all sweep (opt-in, default OFF): after the matched senders are
           // handled, accept every OTHER pending invite in the primary's inbox —
           // strangers included. Bounded internally so a huge inbox can't stall
           // pre-flight. Best-effort: a sweep error never blocks outreach.
-          if (tpl.autoAcceptAllPending && !campaign._abort) {
+          if (tpl.autoAcceptAllPending && !handshakeAborted()) {
             log('🧹 Accept-all: clearing remaining pending invitations on the primary…');
             try { await acceptAllPendingInvitations(page, { log }); }
             catch (e) { log(`  ⚠ Accept-all sweep error: ${e.message}`); }
           }
         } catch (e) {
+          if (handshakeAborted()) return;
+          if (e.primaryProblem) {
+            primaryBlocked = e.primaryProblem;
+          } else {
           log(`  ⚠ Pre-flight: primary accept session failed (${e.message}) — queuing for the idle runner`);
-          for (const t of queuedAccepts) { try { await enqueuePrimaryTask(t); } catch { /* */ } }
+          for (const t of queuedAccepts) {
+            if (handshakeAborted()) return;
+            try { await enqueuePrimaryTask(t); } catch { /* */ }
+          }
+          }
         } finally {
-          try { (sender === 'local-browser') ? await closeLocalBrowser() : await closeProfile(sender); } catch { /* */ }
-          browserSemaphore.release();
+          if (launched) {
+            try { await launched.close(); } catch { /* ownership remains held when unconfirmed */ }
+            browserSemaphore.release();
+          }
         }
+      }
+      if (primaryBlocked && !handshakeAborted()) {
+        log(`⚠ ${primaryBlocked.reason} Sending is waiting. Open the primary browser, sign in, then choose Retry primary acceptance. Sender requests will not be repeated.`);
+        setAction(primaryBlocked.state === 'checkpoint' ? 'Primary needs verification' : 'Primary needs login', {
+          phase: 'starting', step: 'primary_login_required',
+          stepDetail: 'Sending is waiting · log in to the primary, then retry acceptance',
+        });
+        if (!await waitForPrimaryRecovery(campaign, primaryBlocked, sender, handshakeSignal)) return;
+      }
+      } while (primaryBlocked && !handshakeAborted());
+      if (handshakeAborted()) return;
+      const unresolved = planAccountsNeedingConnect(participating, campaign._primaryConn).length;
+      if (unresolved) {
+        log(`⚠ Primary preparation incomplete — ${unresolved} account(s) still need verification or acceptance. Continuing under the existing per-account introduction checks.`);
+        setAction('Primary preparation incomplete', {
+          phase: 'starting', step: 'primary_pending',
+          stepDetail: `${unresolved} account(s) unresolved · introductions remain subject to per-account checks`,
+        });
+        return;
       }
       log('✅ Primary connections ready — starting outreach');
       setAction('Primary connections ready', {
@@ -5506,19 +5622,25 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       }
     }
 
-    if (!_deferPrimary) { try { await runPreflightHandshake(); } finally { campaign.phase = null; } }
+    if (!_deferPrimary) {
+      campaign._pauseForeground++;
+      try { await runPreflightHandshake(); } finally { if (!isOrphan()) { campaign._pauseForeground--; campaign.phase = null; } }
+    }
 
     const workerCount = Math.max(1, Number(concurrency) || 1);
     await Promise.all(
       Array.from({ length: workerCount }, (_, i) => worker(i))
     );
+    await awaitUnpause(myGen);
 
     // #7: deferred primary step — all accounts have finished sending their
     // connections for the day; now run the same handshake (connect + accept)
     // before entering monitoring, restoring the pre-2102 "after connections" order.
     if (_deferPrimary && !campaign._abort) {
       campaign.phase = 'primary';
-      try { await runPreflightHandshake(); } finally { campaign.phase = null; }
+      campaign._pauseForeground++;
+      try { await runPreflightHandshake(); } finally { if (!isOrphan()) { campaign._pauseForeground--; campaign.phase = null; } }
+      await awaitUnpause(myGen);
     }
 
     // Log per-profile stats (from the sessions Map — covers both still-open
@@ -5633,10 +5755,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     }
 
     // Save campaign history (D-10)
+    if (endReason === 'completed') {
+      if (campaign._endNotice?.reason === 'all_parked') endReason = 'blocked';
+      else if (campaign.errors.length || getSkips().some(s => /429|unconfirmed|not confirmed|confirming|uncertain/i.test(s.detail || ''))) endReason = 'needs_review';
+    }
     try {
       await appendHistory({
         runId: campaign.executionId,
         executionId: campaign.executionId,
+        startedAt: campaign.startedAt,
+        totalTargets: campaign.totalTargets,
         date: new Date().toISOString(),
         name: campaign.name || '',
         mode: campaign.mode,
@@ -5682,12 +5810,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // typed into the wizard), and the file is in the user-only data
         // dir. Future privacy hardening can hash/encrypt these later.
         settings: {
+          // The launch snapshot is the canonical reopen payload. Spreading it
+          // first prevents Done/Stopped/Error campaigns from losing a newly
+          // introduced wizard field merely because this history writer was not
+          // updated at the same time.
+          ...(_lastRunSettings || {}),
           profileIds: Array.isArray(profileIds) ? [...profileIds] : [],
           sheetUrl: sheetUrl || '',
           // Lead-source guard: persist the chosen tab so Re-run reads the
           // SAME tab the operator launched with (not Google's first-tab default).
           sheetGid: campaign.sheetGid || '',
           templates: {
+            ...((_lastRunSettings && _lastRunSettings.templates) || {}),
             connectionNote: tpl.connectionNote || '',
             followUpMessage: tpl.followUpMessage || '',
             inmailSubject: tpl.inmail?.subject || '',
@@ -5706,6 +5840,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             ccDmBody:         (templates && templates.ccDmBody)         || '',
           },
           dailyLimit,
+          messageGap: Number(_lastRunSettings && _lastRunSettings.messageGap) || 60,
           messageOpenProfiles: !!messageOpenProfiles,
           delayMin,
           delayMax,
@@ -5715,6 +5850,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // flows can carry it forward. Pre-2.52 history entries don't have
           // this field — resume falls back to the server's 60-min default.
           checkIntervalMinutes: campaign.checkIntervalMinutes || undefined,
+          autoChecksEnabled: autoChecksEnabled !== false,
+          preflightCheckStatus: !!preflightCheckStatus,
+          senderColumn: senderColumn || '',
+          allLeadsConnected: !!allLeadsConnected,
+          primaryCheckTiming: primaryCheckTiming || 'immediately',
+          pauseOnThrottle: pauseOnThrottle === true,
+          benchedProfileIds: Array.isArray(benchedProfileIds) ? [...benchedProfileIds] : [],
+          senderFirstNames: senderFirstNames && typeof senderFirstNames === 'object'
+            ? { ...senderFirstNames }
+            : {},
         },
       });
     } catch (histErr) {
@@ -5819,6 +5964,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           if (getCampaignSendCount(pid) === 0) continue;
           const pName = (campaign.profileNames || [])[i] || pid;
           await registerPostCampaignSweep({
+            taskOwner,
             sheetId: _sheetId,
             sheetUrl,
             profileId: pid,
@@ -5889,6 +6035,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           if (!participated) continue;
           const pName = (campaign.profileNames || [])[i] || pid;
           await registerReplyTracking({
+            taskOwner,
             sheetId: _sheetId,
             sheetUrl,
             profileId: pid,
@@ -6008,6 +6155,7 @@ function _persistRunSettings() {
 // stopped" and "waiting here"), so changing it to say 'shutdown' would move UI
 // state to fix a log line.
 export function stopCampaign({ full = false, reason = 'operator-stopped', quitting = false } = {}) {
+  campaign._controlRevision = (campaign._controlRevision || 0) + 1;
   campaign._abort = true;
   if (campaign._abortController && !campaign._abortController.signal.aborted) {
     campaign._abortController.abort(new DOMException('Campaign stopped', 'AbortError'));
@@ -6076,12 +6224,16 @@ export function stopCampaign({ full = false, reason = 'operator-stopped', quitti
 }
 
 export async function stopCampaignBackgroundTracking() {
+  const owner = taskOwnerOf(campaign);
   const sheetId = _extractSheetIdFromUrl(campaign.sheetUrl);
   const profileIds = (campaign.profileIds || []).slice();
-  if (!sheetId) return { ok: true, removed: false };
   const results = await Promise.allSettled([
-    removeReplySchedules(sheetId, profileIds),
-    removeBulkSchedules(sheetId, profileIds),
+    sheetId && owner ? removeReplySchedules(sheetId, profileIds, owner) : Promise.resolve(),
+    sheetId && owner ? removeBulkSchedules(sheetId, profileIds, owner) : Promise.resolve(),
+    stopPrimaryTasksForOwner(owner).then(result => {
+      if (!result.stopped) throw new Error('Primary tasks are still in progress or unconfirmed; background stop is not confirmed');
+      return result;
+    }),
   ]);
   const failed = results.filter((r) => r.status === 'rejected');
   return failed.length
@@ -6090,35 +6242,60 @@ export async function stopCampaignBackgroundTracking() {
 }
 
 // Phase 2.8.9: pause/resume.
-// Pause sets a request flag — the loop checks at lead boundaries (top of the
-// inner BATCH_SIZE loop) and only then flips _paused = true. Browsers stay
-// open during pause; resume clears both flags and the awaitUnpause loop exits.
+// Pause interrupts owned browsers now. Confirmation additionally requires the
+// foreground to settle; Resume never releases a pending or superseded pause.
 export function pauseCampaign() {
   if (!campaign.running) return { ok: false, reason: 'not-running' };
-  if (campaign._paused || campaign._pauseRequested) {
-    return { ok: true, alreadyPausing: true };
-  }
+  // Every new Pause is a new operator decision, even while already paused.
+  // Replace the receipt and durable command so an older manual check (or an
+  // in-flight Resume) cannot release this newer pause during cleanup.
+  campaign._paused = false;
   campaign._pauseRequested = true;
   // v2.112: snapshot the settings the paused editors can change, so the resume review can
   // diff them honestly. Deep-copy templates (setLiveTemplates mutates it in place).
-  campaign._pauseSnapshot = {
+  campaign._pauseSnapshot ||= {
     dailyLimit: campaign.dailyLimit,
     checkIntervalMinutes: campaign.checkIntervalMinutes,
     templates: JSON.parse(JSON.stringify(campaign.templates || {})),
   };
-  log('⏸ Pause requested — will pause after current lead completes.');
-  return { ok: true };
+  const generation = campaign._generation;
+  const receipt = requestLocalPause({
+    owner: taskOwnerOf(campaign), controller: campaign._abortController,
+    hold: () => campaign._holdInterruptedWork?.() || Promise.resolve(),
+    drained: async () => {
+      const deadline = Date.now() + 2000;
+      while (campaign._pauseForeground > 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+      return !campaign._pauseForeground && campaign._generation === generation;
+    },
+  });
+  campaign._pauseReceipt = receipt;
+  receipt.done.then(confirmed => {
+    if (campaign._pauseReceipt !== receipt || campaign._generation !== generation || !campaign._pauseRequested || campaign._abort) return;
+    campaign._paused = confirmed;
+    log(confirmed ? '⏸ Paused — browsers closed; uncertain work is held for review.' : `⏸ Pause unconfirmed — ${receipt.error}. Retry Pause before resuming.`);
+  });
+  log('⏸ Pause requested — interrupting browsers now; future work stays suspended.');
+  return { ok: true, accepted: true, pauseConfirmed: false };
 }
 
-export function resumeCampaign({ applyPending = false } = {}) {
+export async function resumeCampaign({ applyPending = false, expectedPause } = {}) {
   if (!campaign.running) return { ok: false, reason: 'not-running' };
+  if (expectedPause !== undefined && (!expectedPause || campaign._pauseReceipt !== expectedPause)) {
+    return { ok: false, reason: 'pause-superseded' };
+  }
   if (!campaign._paused && !campaign._pauseRequested) {
     return { ok: true, notPaused: true };
   }
+  const receipt = campaign._pauseReceipt;
+  const generation = campaign._generation;
+  const current = () => campaign._pauseReceipt === receipt && campaign._generation === generation && campaign._pauseRequested && !campaign._abort;
+  if (!(await releaseLocalPause(receipt, current))) return { ok: false, reason: 'pause-not-confirmed-or-superseded' };
   if (applyPending) {
     try { _applyPendingResume(); } catch (err) { log(`⚠ resume apply failed: ${err.message}`); }
   }
   campaign._pauseSnapshot = null;
+  campaign._abortController = new AbortController();
+  campaign._pauseReceipt = null;
   campaign._pauseRequested = false;
   campaign._paused = false; // awaitUnpause's while-loop will exit on next tick
   log('▶ Resume requested.');
@@ -6142,40 +6319,22 @@ function _applyPendingResume() {
   campaign._pendingResume = { reloadSheet: false, newRows: null, addProfiles: [], benchToggles: {} };
 }
 
-// v2.14.x: Restore — "panic button" for when the campaign is stuck and
-// neither Stop nor Pause are responding. Force-kills browsers, lies to the
-// rest of the system about `running` being false (even if the in-flight
-// loop is hung mid-await), then re-launches the same campaign with the
-// snapshotted settings. Today's per-account counts are seeded from
-// state.processed by startCampaign so accounts pick up where they left
-// off, not from 0/dailyLimit.
-//
-// The old (potentially hung) loop is left in memory — its awaits will
-// resolve to errors as browsers die under it. State writes from that loop
-// are tolerated because saveState() atomically overwrites; the worst-case
-// race is one slightly-stale write, which the next live save corrects.
-//
-// Returns { ok, restartedFrom, reason? }:
-//   restartedFrom: 'running' | 'history' | null (idle no-op)
-export async function restoreCampaign() {
+// Restore needs a same-generation shutdown proof from the owned recovery
+// path. Never manufacture idle state or globally close unrelated browsers.
+export async function restoreCampaign({ shutdownProof } = {}) {
+  if (!shutdownProof?.ok || shutdownProof.generation !== campaign._generation || campaign.running) {
+    return { ok: false, reason: 'shutdown-unconfirmed' };
+  }
   const wasRunning = campaign.running;
   let settings = _lastRunSettings;
 
-  // Force-kill browser processes synchronously. closeAllProfiles handles
-  // the SIGTERM + SIGKILL fallback path inside gologin-launcher.
-  try { await closeAllProfiles(); } catch (err) { console.warn('[restore] closeAllProfiles:', err.message); }
-  try { await closeLocalBrowser(); } catch (err) { console.warn('[restore] closeLocalBrowser:', err.message); }
-
-  // Lie to the rest of the system: the old loop's `running = false` may
-  // never fire if it's hung. Set it ourselves so UI + status endpoints
-  // immediately reflect idle. Mark _skipCleanup so any awakening from the
-  // hung loop short-circuits without touching state.
+  // The old loop has already finished; keep cleanup disabled while selecting
+  // the recovery snapshot. startCampaign initializes the replacement run.
   campaign._abort = true;
   campaign._skipCleanup = true;
-  campaign.running = false;
   campaign.currentProfile = null;
   campaign.currentAction = null;
-  log('↻ Restore: campaign engine force-reset.');
+  log('↻ Restore: confirmed source shutdown; preparing saved settings.');
 
   // If we weren't running but have a persisted snapshot, restore from there
   // (covers the "app restarted after crash" case). Prefer last-run-settings.json —
@@ -6225,12 +6384,14 @@ export async function restoreCampaign() {
 
   if (!settings) {
     log('↻ Restore: no settings to restart with — engine is idle now.');
-    return { ok: true, restartedFrom: null, reason: 'nothing-to-restore' };
+    return { ok: false, restartedFrom: null, reason: 'nothing-to-restore' };
   }
 
   // Brief wait so the old loop's pending I/O has a chance to fail out
   // before the new loop starts touching the same files.
-  await new Promise((r) => setTimeout(r, 1500));
+  if (shutdownProof.generation !== campaign._generation || campaign.running) {
+    return { ok: false, reason: 'recovery-superseded' };
+  }
 
   // Re-launch. Fire-and-forget — startCampaign awaits the full lifecycle
   // and we don't want to block the HTTP response on that.
@@ -6238,7 +6399,7 @@ export async function restoreCampaign() {
   const launchName = wasRunning
     ? `${settings.name || ''} (restored)`.trim()
     : settings.name;
-  startCampaign({ ...settings, name: launchName }).catch((err) => {
+  startCampaign({ ...settings, name: launchName, resumeTaskRun: true }).catch((err) => {
     log(`↻ Restore: restart failed — ${err.message}`);
   });
 
@@ -6247,21 +6408,21 @@ export async function restoreCampaign() {
 
 async function awaitUnpause(myGen) {
   if (!campaign._pauseRequested && !campaign._paused) return;
-  campaign._paused = true;
-  setAction('Paused — awaiting resume');
-  log('⏸ Campaign paused — browsers stay open. Press Resume to continue.');
+  setAction('Pausing or paused — awaiting confirmed shutdown and Resume');
   // v2.52.0: also exit when the generation no longer matches (orphan loop
   // left over from a restoreCampaign re-launch). Without this an orphan
   // sitting in awaitUnpause would block forever on a 1s poll that only
   // checked _abort — which startCampaign reset to false.
-  while (campaign._paused && !campaign._abort && (myGen === undefined || campaign._generation === myGen)) {
+  while ((campaign._pauseRequested || campaign._paused) && !campaign._abort && (myGen === undefined || campaign._generation === myGen)) {
     await new Promise(r => setTimeout(r, 1000));
   }
   if (!campaign._abort && (myGen === undefined || campaign._generation === myGen)) {
     log('▶ Campaign resumed.');
   }
-  campaign._paused = false;
-  campaign._pauseRequested = false;
+  if (myGen === undefined || campaign._generation === myGen) {
+    campaign._paused = false;
+    campaign._pauseRequested = false;
+  }
 }
 
 // v2.83: expose the live settings snapshot of the running/last campaign so
@@ -6369,9 +6530,12 @@ function buildAccountPanel() {
     const result = [missedLine, problem].filter(Boolean).join(' ');
 
     return {
+      profileId: pid,
       email,
       state,
       live,
+      verificationLeads: mine.filter(s => /429|unconfirmed|not confirmed|confirming|uncertain/i.test(s.detail || ''))
+        .map(s => ({ url: s.url, name: s.leadName || s.url, detail: s.detail, timestamp: s.timestamp })),
       batchDone: turn.done == null ? null : turn.done,
       batchSize: turn.size == null ? null : turn.size,
       sentToday: getCampaignSendCount(pid),
@@ -6479,18 +6643,23 @@ export function getCampaignStatus() {
     // "the cloud campaign that now lives here" — without it the same campaign was
     // listed twice, once RUNNING/local and once MONITORING/VM.
     id: campaign.id || SINGLETON_CAMPAIGN_ID,
+    executionId: campaign.executionId || null,
     paused: interrupted ? true : campaign._paused,
     pauseRequested: campaign._pauseRequested,
+    pauseUnconfirmed: !!(campaign._pauseRequested && campaign._pauseReceipt && !campaign._pauseReceipt.pending && !campaign._pauseReceipt.confirmed),
+    pauseError: campaign._pauseReceipt?.error || '',
     // v2.78: accounts the operator has benched from the rotation this run.
     skippedProfiles: [...(campaign._skippedProfiles || [])],
     // v2.78: CC+IC per-account connection-to-primary status for Live Status.
     primaryConn: Object.fromEntries(campaign._primaryConn || []),
+    primaryRecovery: campaign.primaryRecovery || null,
     primaryConnSource: Object.fromEntries(campaign._primaryConnSource || []),
     primaryName: (campaign.templates && campaign.templates.primaryName) || '',
     primaryCheckTiming: campaign.primaryCheckTiming || 'immediately',
     // v2.13.14: surface monitoring fields so the cockpit + run-bar can
     // reflect post-campaign monitoring state without a second poll.
-    state: interrupted ? 'interrupted' : (campaign.state || 'idle'),
+    state: interrupted ? 'interrupted' : (localStopStatus(campaign._stopReceipt, { generation: campaign._generation, running: campaign.running })?.stopping ? 'stopping' : (campaign.state || 'idle')),
+    ...localStopStatus(campaign._stopReceipt, { generation: campaign._generation, running: campaign.running }),
     dailyResetNeeded: !!campaign.dailyResetNeeded,
     resumeAt: campaign.resumeAt || null,
     stoppedManually: !!campaign._stoppedManually,
@@ -6556,9 +6725,14 @@ export function getCampaignStatus() {
     mode: interrupted ? (interruption.mode || '') : (campaign.mode || ''),
     name: interrupted ? (interruption.name || '') : (campaign.name || ''),
     sheetUrl: interrupted ? (interruption.sheetUrl || '') : (campaign.sheetUrl || ''),
+    // Manual checks carry the settings belonging to this status snapshot.
+    linkedinColumn: interrupted ? (interruption.linkedinColumn || '') : (campaign.linkedinColumn || ''),
+    templates: structuredClone((interrupted ? interruption.templates : campaign.templates) || {}),
     // Feature ⑩ Team status: real start timestamp (set in the run loop),
     // surfaced here so the admin table can show "Started" instead of "—".
     startedAt: campaign.startedAt || null,
+    taskCampaignId: campaign.taskCampaignId || '',
+    campaignRunId: campaign.campaignRunId || '',
     // v2.72: one-shot end-of-run notice (no more rows) for the dashboard popup.
     endNotice: campaign._endNotice || null,
     profileNames: campaign.profileNames || [],
@@ -6607,6 +6781,9 @@ export function getCampaignStatus() {
  *   - Restart resume finds an expired monitoringUntil (reason: 'window-elapsed-on-restart')
  */
 export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
+  // Fence a pending monitoring-only continuation, including an idempotent
+  // Stop that arrives while its browser-closure proof is still being awaited.
+  campaign._controlRevision = (campaign._controlRevision || 0) + 1;
   // v2.14.x DIAG: trace which step fires (or doesn't) when the cockpit's
   // "stale monitoring view after Stop" symptom recurs. Captured in
   // /tmp/dev-app.log via server stdout. Pure additive — no behaviour change.
@@ -6945,11 +7122,21 @@ export function stopMonitoringWatcher() {
  * Idempotent — safe to call multiple times.
  */
 export async function resumeMonitoringFromDisk() {
+  const revision = campaign._controlRevision;
+  const generation = campaign._generation;
+  const executionId = campaign.executionId;
+  const abort = campaign._abort;
+  if (campaign.running) return { action: 'noop', reason: 'run-active' };
   const slice = await readMonitoringState();
+  if (campaign.running || campaign._generation !== generation || campaign.executionId !== executionId || campaign._abort !== abort || campaign._controlRevision !== revision) {
+    return { action: 'noop', reason: 'restore-superseded' };
+  }
   if (!slice) return { action: 'noop', reason: 'no-persisted-state' };
 
   // Rehydrate the campaign global with the persisted slice fields
   Object.assign(campaign, slice);
+  campaign.taskCampaignId = slice.taskCampaignId || slice.id || '';
+  campaign.campaignRunId = slice.campaignRunId || '';
 
   const decision = decideResumeAction(campaign, new Date());
   if (decision.action === 'expire') {
@@ -7015,6 +7202,8 @@ export async function adoptMonitoring(slice = {}) {
   const cadence = clampCadenceMinutes(slice.checkIntervalMinutes);
   const sendingEndedAt = slice.sendingEndedAt || now.toISOString();
   Object.assign(campaign, slice, {
+    taskCampaignId: slice.taskCampaignId || slice.id || '',
+    campaignRunId: slice.campaignRunId || '',
     state: 'monitoring',
     checkIntervalMinutes: cadence,
     emptyCheckStreak: 0,
@@ -7132,11 +7321,12 @@ export async function runMonitoringCheck(profileId, profileName) {
   const linkedinColumn = campaign.linkedinColumn || '';
   const templates = campaign.templates || {};
   const token = process.env.GOLOGIN_API_TOKEN;
-
-  await browserSemaphore.acquire();
-  // v2.74: Stop landed while we queued for a slot — don't open the browser.
-  if (campaign._abort) { browserSemaphore.release(); return { ok: false, aborted: true }; }
+  const checkOwner = taskOwnerOf(campaign);
+  const checkGeneration = campaign._generation;
+  const checkAborted = () => campaign._abort || campaign._abortCheck || campaign.state !== 'monitoring' || campaign._generation !== checkGeneration;
+  if (!checkOwner) return { ok: false, error: 'Monitoring ownership is unavailable; review this campaign before checking' };
   let launched;
+  let operation;
   // v2.74: register so stopMonitoring()/stopCampaign() can force-close this
   // in-flight check's browser.
   activeBulkChecks.add(profileId);
@@ -7161,7 +7351,13 @@ export async function runMonitoringCheck(profileId, profileName) {
     // Same two lines the manual bulk check already writes (server.js), so the
     // banner maps them with no new UI.
     campaign.logs.push(`[${new Date().toISOString()}] 📡 [${profileName}] Launching browser…`);
-    launched = await launchProfile(profileId, token);
+    launched = await preparePrimarySession([checkOwner], {
+      semaphore: browserSemaphore,
+      launch: options => profileId === 'local-browser' ? launchLocalBrowser(options) : launchProfile(profileId, token, options),
+      close: () => profileId === 'local-browser' ? closeLocalBrowser() : closeProfile(profileId),
+    });
+    operation = registerPrimaryOperation(checkOwner, launched.close);
+    if (checkAborted() || operation.signal.aborted) return { ok: false, aborted: true };
     campaign.logs.push(`[${new Date().toISOString()}] 📡 [${profileName}] Sweeping recent connections…`);
     setAction(`Checking ${profileName} for new acceptances`, {
       account: profileName, phase: 'checking', step: 'loading_invitations',
@@ -7188,6 +7384,7 @@ export async function runMonitoringCheck(profileId, profileName) {
       // batched into a single Apps Script write).
       suppressAcceptedStamp: false,
     });
+    if (checkAborted() || operation.signal.aborted) return { ok: false, aborted: true };
     setAction(`Matching acceptances for ${profileName}`, {
       account: profileName, phase: 'checking', step: 'acceptances_matched',
       stepLabel: 'Acceptance check complete', stepDetail: `${Number(r.freshConnected ?? r.matched) || 0} newly accepted connection(s) found`,
@@ -7207,6 +7404,8 @@ export async function runMonitoringCheck(profileId, profileName) {
 
     if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
       await runAutoIntros({
+        taskOwner: checkOwner,
+        shouldAbort: () => checkAborted() || operation.signal.aborted,
         page: launched.page,
         profileId,
         profileName,
@@ -7222,6 +7421,7 @@ export async function runMonitoringCheck(profileId, profileName) {
       });
     } else if (willAutoDm && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
       await runAutoDms({
+        shouldAbort: () => checkAborted() || operation.signal.aborted,
         page: launched.page,
         profileId,
         profileName,
@@ -7258,11 +7458,11 @@ export async function runMonitoringCheck(profileId, profileName) {
     return { ok: false, error: err.message };
   } finally {
     activeBulkChecks.delete(profileId);
-    try {
-      if (profileId === 'local-browser') await closeLocalBrowser();
-      else await closeProfile(profileId);
-    } catch { /* */ }
-    browserSemaphore.release();
+    if (launched) {
+      try { await launched.close(); } catch { /* */ }
+      browserSemaphore.release();
+    }
+    operation?.finish();
     if (campaign.currentAction && ['checking', 'introducing'].includes(campaign.currentAction.phase)) {
       campaign.currentAction = null;
     }

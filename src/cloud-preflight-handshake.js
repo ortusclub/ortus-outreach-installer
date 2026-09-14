@@ -33,6 +33,7 @@ import {
 import { launchProfile, closeProfile } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { dataPath } from './paths.js';
+import { withTimeout } from './promise-timeout.js';
 
 const PRIMARY_STATUS_FILE = dataPath('primary-status.json');
 const CAP_MS = 120_000;   // bound the accept-wait, same as runPreflightHandshake
@@ -44,6 +45,61 @@ const POLL_MS = 30_000;
 // of propagation and find nothing ("too fast — it didn't work"). Waiting here lets
 // the requests land; the Phase-2 retry loop still covers a slower invite.
 const SEND_SETTLE_MS = 20_000;
+const SENDER_STEP_TIMEOUT_MS = 120_000;
+
+function handshakeAbortError(signal) {
+  const reason = signal?.reason;
+  const error = reason instanceof Error ? reason : new Error('Handshake cancelled — no campaign was dispatched.');
+  error.code ||= 'HANDSHAKE_ABORTED';
+  return error;
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) throw handshakeAbortError(signal);
+}
+
+/** Make any browser wait reject immediately when the operator cancels. */
+function abortable(promise, signal, cleanup) {
+  if (!signal) return Promise.resolve(promise);
+  if (signal.aborted) {
+    try { Promise.resolve(cleanup?.()).catch(() => {}); } catch { /* */ }
+    return Promise.reject(handshakeAbortError(signal));
+  }
+  return new Promise((resolve, reject) => {
+    const stop = () => {
+      try { Promise.resolve(cleanup?.()).catch(() => {}); } catch { /* */ }
+      reject(handshakeAbortError(signal));
+    };
+    signal.addEventListener('abort', stop, { once: true });
+    Promise.resolve(promise).then(
+      (value) => { signal.removeEventListener('abort', stop); resolve(value); },
+      (error) => { signal.removeEventListener('abort', stop); reject(error); },
+    );
+  });
+}
+
+/**
+ * A definite primary-browser session problem, derived only from LinkedIn's
+ * final URL. Normal Chrome and this automation profile have separate cookies,
+ * so a redirect here must be surfaced as an operator action, not mistaken for
+ * an empty invitation inbox.
+ */
+export { primaryBrowserProblemFromUrl } from './primary-browser-session.js';
+import { primaryBrowserProblemFromUrl } from './primary-browser-session.js';
+
+async function inspectPrimarySession(page) {
+  if (!page) return null;
+  try {
+    if (typeof page.goto === 'function') {
+      await page.goto('https://www.linkedin.com/mynetwork/invitation-manager/received/', {
+        waitUntil: 'domcontentloaded', timeout: 45_000,
+      }).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 900));
+    }
+  } catch { /* the final URL below is still useful */ }
+  try { return primaryBrowserProblemFromUrl(typeof page.url === 'function' ? page.url() : ''); }
+  catch { return null; }
+}
 
 /**
  * Pure trigger gate. Path A runs only for a cloud CC+IC campaign whose primary is
@@ -62,6 +118,7 @@ const DEFAULT_DEPS = {
   checkAndConnectPrimary, readSelfIdentity, acceptInvitationFrom, acceptAllPendingInvitations,
   capturePrimaryCookies, postPrimarySession,
   enqueuePrimaryTask, loadPrimaryStatus, savePrimaryStatus,
+  inspectPrimarySession,
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
 };
@@ -92,22 +149,34 @@ export async function runCloudPreflightHandshake(opts = {}) {
     sheetUrl = '',
     onProgress = () => {},
     log = () => {},
+    signal,
+    senderStepTimeoutMs = SENDER_STEP_TIMEOUT_MS,
     deps: injected = {},
   } = opts;
   const deps = { ...DEFAULT_DEPS, ...injected };
   const pUrl = (primaryUrl || '').trim();
+  throwIfAborted(signal);
 
   const nameById = new Map();
   const reasonById = new Map();
-  const emit = (profileId, state, name, reason) => {
+  const attemptById = new Map();
+  const maxAttemptsById = new Map();
+  const deadlineById = new Map();
+  const emit = (profileId, state, name, reason, progress = {}) => {
     if (name) nameById.set(profileId, name);
-    if (reason) reasonById.set(profileId, reason);
+    if (reason !== undefined) reasonById.set(profileId, reason);
+    if (Number.isFinite(Number(progress.attempt))) attemptById.set(profileId, Number(progress.attempt));
+    if (Number.isFinite(Number(progress.maxAttempts))) maxAttemptsById.set(profileId, Number(progress.maxAttempts));
+    if (Number.isFinite(Number(progress.deadlineAt))) deadlineById.set(profileId, Number(progress.deadlineAt));
     try {
       onProgress({
         profileId,
         state,
         name: nameById.get(profileId) || '',
         reason: reasonById.get(profileId) || '',
+        attempt: attemptById.get(profileId) || 0,
+        maxAttempts: maxAttemptsById.get(profileId) || 0,
+        deadlineAt: deadlineById.get(profileId) || 0,
       });
     } catch { /* progress is best-effort */ }
   };
@@ -154,7 +223,13 @@ export async function runCloudPreflightHandshake(opts = {}) {
     return '';
   };
   const buildSenders = (primaryConn) => senderProfileIds.map((id) => ({
-    profileId: id, name: nameById.get(id) || '', state: primaryConn.get(id) || 'unverified',
+    profileId: id,
+    name: nameById.get(id) || '',
+    state: primaryConn.get(id) || 'unverified',
+    reason: reasonById.get(id) || '',
+    attempt: attemptById.get(id) || 0,
+    maxAttempts: maxAttemptsById.get(id) || 0,
+    deadlineAt: deadlineById.get(id) || 0,
   }));
 
   const summary = { ok: false, connected: 0, accepted: 0, pending: 0, senders: [] };
@@ -201,20 +276,73 @@ export async function runCloudPreflightHandshake(opts = {}) {
   // ── Phase 1: each sender sends a connect-request to the primary ──
   const queuedAccepts = [];
   for (const profileId of need) {
-    emit(profileId, 'connecting');
-    let launched = null;
-    try {
-      launched = await deps.launchProfile(profileId, token);
-    } catch (e) {
-      log(`  ⚠ [${profileId}] could not launch to connect: ${e.message}`);
-      primaryConn.set(profileId, 'unverified');
-      emit(profileId, 'error');
-      continue;
-    }
-    const page = launched && launched.page;
-    if (page) await tuckAway(page);
-    try {
-      const res = await deps.checkAndConnectPrimary(page, pUrl, { log, pName: profileId, attemptConnect: true });
+    throwIfAborted(signal);
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      throwIfAborted(signal);
+      const senderDeadline = Date.now() + Math.max(1, Number(senderStepTimeoutMs) || SENDER_STEP_TIMEOUT_MS);
+      const progress = { attempt, maxAttempts, deadlineAt: senderDeadline };
+      const senderTimeLeft = () => Math.max(1, senderDeadline - Date.now());
+      const senderStep = (promise) => abortable(
+        withTimeout(promise, {
+          ms: senderTimeLeft(),
+          label: 'Sender browser step',
+          onTimeout: () => deps.closeProfile(profileId),
+        }),
+        signal,
+        () => deps.closeProfile(profileId),
+      );
+      emit(profileId, 'connecting', '', '', progress);
+      let launched = null;
+      let retryReason = '';
+      try {
+        launched = await senderStep(deps.launchProfile(profileId, token, { signal }));
+      } catch (e) {
+        if (signal?.aborted) throw handshakeAbortError(signal);
+        const timedOut = /^Sender browser step timed out/.test(String(e?.message || ''));
+        const reason = timedOut
+          ? 'Browser frozen while opening — no request was confirmed.'
+          : (e.message || 'the GoLogin browser could not open');
+        try { await deps.closeProfile(profileId); } catch { /* */ }
+        if (attempt < maxAttempts && !(e?.provider === 'gologin' && e?.retryable === false)) {
+          log(`  ↻ [${profileId}] Attempt ${attempt} of ${maxAttempts} could not open the sender. Closed that browser and reopening GoLogin for one final 2-minute check.`);
+          emit(profileId, 'reopening', '', reason, { attempt: attempt + 1, maxAttempts, deadlineAt: 0 });
+          continue;
+        }
+        primaryConn.set(profileId, timedOut ? 'browser-frozen' : 'error');
+        log(timedOut
+          ? `  🧊 [${profileId}] ${reason} Both attempts finished; continuing with the next sender.`
+          : `  ⚠ [${profileId}] could not launch to connect after ${attempt} attempt(s): ${reason}`);
+        emit(profileId, timedOut ? 'browser-frozen' : 'error', '', reason, progress);
+        break;
+      }
+      const page = launched && launched.page;
+      if (page) {
+        // Window placement is cosmetic. Bound it tightly so a wedged CDP target
+        // cannot consume this sender's entire safety window before real work begins.
+        await abortable(
+          withTimeout(tuckAway(page), {
+            ms: Math.min(5_000, senderTimeLeft()),
+            label: 'Sender window positioning',
+          }),
+          signal,
+          () => deps.closeProfile(profileId),
+        ).catch((error) => { if (signal?.aborted) throw error; });
+      }
+      try {
+        let check;
+        try {
+          check = await senderStep(
+            deps.checkAndConnectPrimary(page, pUrl, { log, pName: profileId, attemptConnect: true }),
+          );
+        } catch (error) {
+          if (signal?.aborted) throw handshakeAbortError(signal);
+          if (/^Sender browser step timed out/.test(String(error?.message || ''))) {
+            error.code = 'SENDER_BROWSER_FROZEN';
+          }
+          throw error;
+        }
+        const res = check;
       // Whether an invitation actually EXISTS, not whether one was attempted.
       // checkAndConnectPrimary sets connectAttempted before it tries to send, so
       // a send that throws (LinkedIn renders no Connect button, and it fails
@@ -236,7 +364,11 @@ export async function runCloudPreflightHandshake(opts = {}) {
       // ...and only accept an invitation that exists. _shouldQueueAutoAccept
       // reads connectAttempted alone, which is true even when the send failed.
       if (sentOk && _shouldQueueAutoAccept({ autoAcceptPrimary: true, connectAttempted: res.connectAttempted, connectResult: res.connectResult })) {
-        const self = await deps.readSelfIdentity(page, { log }).catch(() => ({}));
+        let self = {};
+        try { self = await senderStep(deps.readSelfIdentity(page, { log })); }
+        catch (error) {
+          if (signal?.aborted || /^Sender browser step timed out/.test(String(error?.message || ''))) throw error;
+        }
         const name = (self && self.name) || '';
         if (self && (self.name || self.profileUrl)) {
           primaryConn.set(profileId, 'sent'); // transient: request out, not yet accepted
@@ -244,15 +376,15 @@ export async function runCloudPreflightHandshake(opts = {}) {
             campaignProfileId: profileId, campaignProfileName: name || profileId,
             sheetId: '', sheetUrl, account: self, primaryUrl: pUrl, sender: primarySource, now: deps.now(),
           }));
-          emit(profileId, 'sent', name);
+          emit(profileId, 'sent', name, '', progress);
         } else {
           // Invite is outstanding but we can't identify this account → the primary
           // can't match it. Surface rather than silently drop (2026-06-16 bug).
           log(`  ⚠ [${profileId}] couldn't read this account's identity — not queuing its auto-accept.`);
-          emit(profileId, 'sent-no-identity');
+          emit(profileId, 'sent-no-identity', '', '', progress);
         }
       } else if (primaryConn.get(profileId) === 'connected') {
-        emit(profileId, 'connected');
+        emit(profileId, 'connected', '', '', progress);
       } else if (primaryConn.get(profileId) === 'unverified') {
         // NOTHING WAS SENT. checkAndConnectPrimary could not read the page, so it
         // deliberately did not send a connect ("leaving unverified, not sending a
@@ -261,29 +393,60 @@ export async function runCloudPreflightHandshake(opts = {}) {
         // never sent, and the operator's accept-all sweep correctly found nothing
         // to accept (2026-09-01).
         const why = await whyUnreadable(page);
-        log(why
-          ? `  🔒 [${profileId}] ${why} — no invitation was sent. Reconnect this account in GoLogin, then try the primary again.`
-          : `  ❓ [${profileId}] couldn't read this account against the primary — no invitation was sent.`);
-        emit(profileId, 'not-sent', '', why || 'this account could not be read');
+        // A fresh browser can recover a failed read, but it cannot cure a real
+        // LinkedIn account restriction. Do not hammer a logged-out, checkpointed
+        // or rate-limited account for another two minutes.
+        const nonRetryable = !!why || /429|too many requests|rate.?limit/i.test(String(res.error || ''));
+        if (!nonRetryable && attempt < maxAttempts) {
+          retryReason = 'LinkedIn could not be read — no request was confirmed.';
+        } else {
+          primaryConn.set(profileId, 'not-sent');
+          log(why
+            ? `  🔒 [${profileId}] ${why} — no invitation was sent. Reconnect this account in GoLogin, then try the primary again.`
+            : `  ❓ [${profileId}] couldn't read this account against the primary — no invitation was sent.`);
+          emit(profileId, 'not-sent', '', why || res.error || 'this account could not be read', progress);
+        }
       } else if (res.connectAttempted && !sentOk) {
         // It tried and could not. Saying 'sent' here is the same lie as above,
         // one branch further down.
+        primaryConn.set(profileId, 'not-sent');
         log(`  ⚠ [${profileId}] not connected to the primary, and the invitation could not be sent${res.error ? `: ${res.error}` : ''}.`);
-        emit(profileId, 'not-sent', '', res.error || 'the invitation could not be sent');
+        emit(profileId, 'not-sent', '', res.error || 'the invitation could not be sent', progress);
       } else {
-        emit(profileId, 'sent');
+        emit(profileId, 'sent', '', '', progress);
       }
-    } catch (e) {
-      log(`  ⚠ [${profileId}] connect error: ${e.message}`);
-      primaryConn.set(profileId, 'unverified');
-      emit(profileId, 'error');
-    } finally {
-      try { await deps.closeProfile(profileId); } catch { /* */ }
+      } catch (e) {
+        if (signal?.aborted) throw handshakeAbortError(signal);
+        const frozen = e?.code === 'SENDER_BROWSER_FROZEN';
+        const reason = frozen
+          ? 'Browser frozen while loading the primary — no request was confirmed.'
+          : (e.message || 'the primary connection check failed');
+        if (attempt < maxAttempts) {
+          retryReason = reason;
+        } else if (frozen) {
+          primaryConn.set(profileId, 'browser-frozen');
+          log(`  🧊 [${profileId}] ${reason} Both attempts finished; continuing with the next sender.`);
+          emit(profileId, 'browser-frozen', '', reason, progress);
+        } else {
+          primaryConn.set(profileId, 'error');
+          log(`  ⚠ [${profileId}] connect error after 2 attempts: ${reason}`);
+          emit(profileId, 'error', '', reason, progress);
+        }
+      } finally {
+        try { await deps.closeProfile(profileId); } catch { /* */ }
+      }
+      if (retryReason) {
+        log(`  ↻ [${profileId}] Attempt ${attempt} of ${maxAttempts} did not finish safely. Closed that browser and reopening GoLogin for one final 2-minute check.`);
+        emit(profileId, 'reopening', '', retryReason, { attempt: attempt + 1, maxAttempts, deadlineAt: 0 });
+        continue;
+      }
+      break;
     }
   }
 
   // ── Phase 2: the local primary browser accepts the queued invitations ──
   if (queuedAccepts.length || autoAcceptAllPending) {
+    throwIfAborted(signal);
     // Give the just-sent connect requests time to LAND in the primary's invites
     // before opening it to accept — removes the guaranteed-miss first pass (see
     // SEND_SETTLE_MS). The senders stay on "Request sent" in the wizard meanwhile.
@@ -291,15 +454,31 @@ export async function runCloudPreflightHandshake(opts = {}) {
     // already-outstanding invites needs no settle).
     if (queuedAccepts.length) {
       log(`⏳ Letting ${queuedAccepts.length} connect request(s) reach the primary's invites (${Math.round(SEND_SETTLE_MS / 1000)}s) before accepting…`);
-      await deps.sleep(SEND_SETTLE_MS);
+      await abortable(deps.sleep(SEND_SETTLE_MS), signal);
     }
     const startedAt = deps.now();
     let primaryPage = null;
     try {
       const launched = (primarySource === 'local-browser')
-        ? await deps.launchLocalBrowser()
-        : await deps.launchProfile(primarySource, token);
+        ? await abortable(deps.launchLocalBrowser(), signal, () => deps.closeLocalBrowser())
+        : await abortable(deps.launchProfile(primarySource, token, { signal }), signal, () => deps.closeProfile(primarySource));
       primaryPage = launched && launched.page;
+
+      // Prove that the PRIMARY session is usable before interpreting a missing
+      // Accept button. In the recorded PR-preview run, this browser was sitting
+      // on /uas/login while the wizard merely said it was waiting for invites.
+      // The invitation matcher can never succeed on a sign-in wall.
+      const primaryProblem = await abortable(
+        deps.inspectPrimarySession(primaryPage),
+        signal,
+        () => primarySource === 'local-browser' ? deps.closeLocalBrowser() : deps.closeProfile(primarySource),
+      );
+      if (primaryProblem) {
+        summary.primary = { ...primaryProblem, source: primarySource };
+        const err = new Error(primaryProblem.reason);
+        err.code = 'PRIMARY_BROWSER_BLOCKED';
+        throw err;
+      }
 
       let pending = [...queuedAccepts];
 
@@ -313,9 +492,16 @@ export async function runCloudPreflightHandshake(opts = {}) {
       if (autoAcceptAllPending) {
         log('🧹 Accept-all: clearing every pending invitation on the primary in one pass…');
         let swept = null;
-        try { swept = await deps.acceptAllPendingInvitations(primaryPage, { log }); }
+        try {
+          swept = await abortable(
+            deps.acceptAllPendingInvitations(primaryPage, { log }),
+            signal,
+            () => primarySource === 'local-browser' ? deps.closeLocalBrowser() : deps.closeProfile(primarySource),
+          );
+        }
         catch (e) { log(`  ⚠ Accept-all sweep error: ${e.message}`); }
-        if (swept && Number(swept.remaining) === 0) {
+        throwIfAborted(signal);
+        if (swept && swept.verifiedEmpty === true) {
           if (pending.length) {
             log(`  ✓ Nothing is left waiting on the primary, so all ${pending.length} sender invitation(s) are accepted — skipping the per-sender wait.`);
           }
@@ -328,12 +514,18 @@ export async function runCloudPreflightHandshake(opts = {}) {
       }
 
       while (pending.length) {
+        throwIfAborted(signal);
         const still = [];
         for (const t of pending) {
           primaryConn.set(t.campaignProfileId, 'accepting');
           emit(t.campaignProfileId, 'accepting');
-          const r = await deps.acceptInvitationFrom(primaryPage, t.account, { log })
+          const r = await abortable(
+            deps.acceptInvitationFrom(primaryPage, t.account, { log }),
+            signal,
+            () => primarySource === 'local-browser' ? deps.closeLocalBrowser() : deps.closeProfile(primarySource),
+          )
             .catch((e) => { log(`  ⚠ [${t.campaignProfileName}] primary accept errored: ${e.message}`); return { accepted: false }; });
+          throwIfAborted(signal);
           if (r && r.accepted) {
             primaryConn.set(t.campaignProfileId, 'connected');
             emit(t.campaignProfileId, 'connected');
@@ -345,7 +537,7 @@ export async function runCloudPreflightHandshake(opts = {}) {
         pending = still;
         const { accepted, total } = handshakeProgress(primaryConn, queuedAccepts.map((t) => t.campaignProfileId));
         if (shouldProceed({ startedAt, now: deps.now(), capMs: CAP_MS, accepted, total })) break;
-        if (pending.length) await deps.sleep(POLL_MS);
+        if (pending.length) await abortable(deps.sleep(POLL_MS), signal);
       }
 
       // Leftover accepts finish in the background via the existing idle runner.
@@ -361,11 +553,21 @@ export async function runCloudPreflightHandshake(opts = {}) {
       // AS the primary on the VM. A capture/post failure must never fail the
       // handshake — the whole thing is wrapped and swallowed here.
       try {
-        const cap = await deps.capturePrimaryCookies(primaryPage);
-        if (cap) { await deps.postPrimarySession(cap); log(`  🔑 primary session captured for ${cap.publicIdentifier} — follow-ups can run on the VM`); }
+        const closePrimary = () => primarySource === 'local-browser' ? deps.closeLocalBrowser() : deps.closeProfile(primarySource);
+        const cap = await abortable(deps.capturePrimaryCookies(primaryPage), signal, closePrimary);
+        if (cap) {
+          await abortable(deps.postPrimarySession(cap), signal, closePrimary);
+          log(`  🔑 primary session captured for ${cap.publicIdentifier} — follow-ups can run on the VM`);
+        }
       } catch (e) { log(`  ⚠ primary session capture failed (${e.message}) — follow-ups will park until next handshake`); }
     } catch (e) {
-      log(`  ⚠ primary accept session failed (${e.message}) — queuing for the idle runner`);
+      if (signal?.aborted) throw handshakeAbortError(signal);
+      if (e && e.code === 'PRIMARY_BROWSER_BLOCKED') {
+        const where = primarySource === 'local-browser' ? 'primary browser' : 'primary GoLogin profile';
+        log(`  🔒 ${e.message} Open the ${where}, sign in, then try the primary again.`);
+      } else {
+        log(`  ⚠ primary accept session failed (${e.message}) — queuing for the idle runner`);
+      }
       for (const t of queuedAccepts) { try { await deps.enqueuePrimaryTask(t); } catch { /* */ } }
       summary.pending = queuedAccepts.length;
     } finally {
@@ -375,6 +577,7 @@ export async function runCloudPreflightHandshake(opts = {}) {
     }
   }
 
+  throwIfAborted(signal);
   try { await deps.savePrimaryStatus(PRIMARY_STATUS_FILE, store); } catch { /* */ }
 
   summary.ok = true;

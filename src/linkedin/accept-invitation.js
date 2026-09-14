@@ -481,5 +481,11 @@ export async function acceptAllPendingInvitations(page, { log = () => {}, maxAcc
   // `remaining` is what the caller needs to shortcut the per-sender matcher: an
   // empty received list means nothing we sent is still outstanding.
   const remaining = await countAccepts().catch(() => 1);
-  return { cleared, remaining };
+  // Zero labelled controls is only proof of an empty inbox when the page
+  // successfully rendered at least one trustworthy, person-named Accept control
+  // during this sweep. If LinkedIn changed the markup, countAccepts() also
+  // returns zero; treating that as "empty" falsely marks queued senders as
+  // accepted. The caller must fall back to its per-sender verifier instead.
+  const verifiedEmpty = painted && remaining === 0;
+  return { cleared, remaining, verifiedEmpty };
 }

@@ -76,9 +76,9 @@ test('enqueueFollowUpBatched aligns the new task + existing siblings to now+dela
   const file = tmpFile();
   const now = 1_000_000;
   await saveTasks([
-    { id:'old', type:'follow-up', status:'pending', campaignProfileId:'p1', leadUrl:'x', dueAt: now - 50_000, sender:'local-browser' },
+    { id:'old', campaignId:'fixture', campaignRunId:'run', type:'follow-up', status:'pending', campaignProfileId:'p1', leadUrl:'x', dueAt: now - 50_000, sender:'local-browser' },
   ], file);
-  const task = buildFollowUpTask({ campaignProfileId:'p1', leadUrl:'y', sender:'local-browser', now });
+  const task = buildFollowUpTask({ campaignId:'fixture', campaignRunId:'run', campaignProfileId:'p1', leadUrl:'y', sender:'local-browser', now });
   const stored = await enqueueFollowUpBatched(task, 10, now, file);
   const all = await loadTasks(file);
   const expected = now + 10 * 60_000;
@@ -90,9 +90,9 @@ test('enqueueFollowUpBatched returns null on a duplicate lead but still slides s
   const file = tmpFile();
   const now = 2_000_000;
   await saveTasks([
-    { id:'dup', type:'follow-up', status:'pending', campaignProfileId:'p1', leadUrl:'y', dueAt: now - 99_000, sender:'local-browser' },
+    { id:'dup', campaignId:'fixture', campaignRunId:'run', type:'follow-up', status:'pending', campaignProfileId:'p1', leadUrl:'y', dueAt: now - 99_000, sender:'local-browser' },
   ], file);
-  const task = buildFollowUpTask({ campaignProfileId:'p1', leadUrl:'y', sender:'local-browser', now });
+  const task = buildFollowUpTask({ campaignId:'fixture', campaignRunId:'run', campaignProfileId:'p1', leadUrl:'y', sender:'local-browser', now });
   const stored = await enqueueFollowUpBatched(task, 10, now, file);
   const all = await loadTasks(file);
   assert.equal(stored, null);
@@ -103,7 +103,7 @@ test('enqueueFollowUpBatched returns null on a duplicate lead but still slides s
 test('enqueueFollowUpBatched defaults to 10 minutes for an invalid delay', async () => {
   const file = tmpFile();
   const now = 3_000_000;
-  const task = buildFollowUpTask({ campaignProfileId:'p1', leadUrl:'z', sender:'local-browser', now });
+  const task = buildFollowUpTask({ campaignId:'fixture', campaignRunId:'run', campaignProfileId:'p1', leadUrl:'z', sender:'local-browser', now });
   const stored = await enqueueFollowUpBatched(task, 0, now, file);
   assert.equal(stored.dueAt, now + 10 * 60_000);
 });

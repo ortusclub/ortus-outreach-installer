@@ -28,14 +28,14 @@ test('an unreadable sender is reported as nothing-sent, not as sent', () => {
   assert.match(HS, /} else if \(primaryConn\.get\(profileId\) === 'unverified'\) \{/,
     'the unverified case must be split out of the catch-all');
   const i = HS.indexOf("primaryConn.get(profileId) === 'unverified'");
-  const branch = HS.slice(i, i + 900);
+  const branch = HS.slice(i, i + 1_500);
   assert.match(branch, /emit\(profileId, 'not-sent'/);
   assert.doesNotMatch(branch, /emit\(profileId, 'sent'\)/);
 });
 
 test('the log says which account and why, in words', () => {
   const i = HS.indexOf("primaryConn.get(profileId) === 'unverified'");
-  const branch = HS.slice(i, i + 900);
+  const branch = HS.slice(i, i + 1_500);
   assert.match(branch, /log\(why/, 'the reason has to reach the operator log, not just the banner');
   assert.match(branch, /no invitation was sent/i);
   assert.match(branch, /Reconnect this account in GoLogin/i, 'tell the operator what to do');
@@ -58,6 +58,27 @@ test('the row for a nothing-sent sender does not read as sent', () => {
   assert.equal(view.done, false);
   assert.match(view.label, /nothing sent/i);
   assert.doesNotMatch(view.label, /accept/i, 'nothing is waiting to be accepted');
+});
+
+test('failed sender rows say why without making the operator read the raw log', () => {
+  assert.match(handshakeRowView('not-sent', 'VOYAGER_REJECTED: HTTP 429').label, /rate-limited \(HTTP 429\)/i);
+  assert.match(handshakeRowView('not-sent', 'logged out').label, /logged out/i);
+  assert.match(handshakeRowView('error', 'Too many requests').label, /rate-limited \(HTTP 429\)/i);
+});
+
+test('the final handshake snapshot preserves each sender reason', () => {
+  const JOB = fs.readFileSync(path.join(HERE, '..', 'src', 'cloud-handshake-job.js'), 'utf8');
+  assert.match(JOB, /reason: fs\.reason \|\| cur\.reason \|\| ''/);
+  assert.match(HS, /reason: reasonById\.get\(id\) \|\| ''/);
+});
+
+test('an unverified connect reports the returned HTTP error', () => {
+  assert.match(HS, /why \|\| res\.error \|\| 'this account could not be read'/);
+});
+
+test('accept-all only claims queued senders when an empty inbox was verified', () => {
+  assert.match(HS, /swept\.verifiedEmpty === true/);
+  assert.doesNotMatch(HS, /Number\(swept\.remaining\) === 0/);
 });
 
 test('the outcome stops blaming the primary when nothing was sent', () => {
@@ -102,6 +123,53 @@ test('a mixed run describes both halves', () => {
   assert.match(out.detail, /the primary will accept it in the background/i);
 });
 
+test('a logged-out primary gets its own instruction and recovery action', () => {
+  const out = handshakeOutcome({
+    senders: [{ profileId: 'a', state: 'sent', name: 'Jerianne' }],
+    summary: {
+      connected: 0,
+      accepted: 0,
+      pending: 1,
+      primary: {
+        state: 'logged-out',
+        reason: 'The primary browser is logged out of LinkedIn.',
+        source: 'local-browser',
+      },
+    },
+  });
+  assert.equal(out.kind, 'partial');
+  assert.match(out.headline, /primary browser logged out/i);
+  assert.match(out.detail, /sign in/i);
+  assert.deepEqual(out.primaryRecovery, { source: 'local-browser', isLocal: true });
+});
+
+test('a primary login failure is visible even when every sender was already connected', () => {
+  const out = handshakeOutcome({
+    senders: [{ profileId: 'a', state: 'connected', name: 'Jerianne' }],
+    summary: {
+      connected: 1,
+      accepted: 0,
+      pending: 0,
+      primary: { state: 'logged-out', reason: 'The primary browser is logged out of LinkedIn.', source: 'local-browser' },
+    },
+  });
+  assert.equal(out.kind, 'partial');
+  assert.match(out.headline, /logged out/i);
+});
+
+test('failed sender statuses open the exact GoLogin profile', () => {
+  assert.match(APP, /class="st hs-open-sender" disabled/);
+  assert.match(APP, /st\.onclick = canOpen \? \(\) => openProfileBrowser\(String\(s\.profileId/);
+  assert.match(APP, /\/api\/primary-browser\/open-login/);
+});
+
+test('the primary handshake has no unsafe dispatch bypass', () => {
+  assert.doesNotMatch(APP, /hs-wiz-anyway/);
+  assert.doesNotMatch(APP, /Handshake skipped — dispatching anyway/);
+  assert.match(APP, /cloud-preflight-handshake\/cancel/,
+    'Cancel must stop the underlying server job, not merely close the modal');
+});
+
 test('the wizard never falls back to a raw profile id for a name', () => {
   assert.doesNotMatch(APP, /const nameOf = \(id\) => \(typeof selectedProfileNames[^\n]*\|\| id;/,
     'the id-as-name fallback is back');
@@ -121,7 +189,9 @@ test('the sender browser really is put off-screen, as the wizard promises', () =
   assert.match(HS, /const tuckAway = async \(page\) => \{/);
   assert.match(HS, /Browser\.setWindowBounds/);
   assert.match(HS, /left: -2400, top: -2400/);
-  assert.match(HS, /if \(page\) await tuckAway\(page\);/);
+  assert.match(HS, /if \(page\) \{/);
+  assert.match(HS, /withTimeout\(tuckAway\(page\)/,
+    'moving the sender off-screen must itself be bounded so a frozen CDP target cannot hang the handshake');
 });
 
 test('the PRIMARY browser is left visible', () => {

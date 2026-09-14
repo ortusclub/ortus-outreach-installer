@@ -34,6 +34,15 @@ function removeLog() {
 }
 
 describe('readCampaignLog', { concurrency: 1 }, () => {
+  test('per-run file follows execution identity after history indices change', async () => {
+    writeHistory([{ name: 'B', executionId: 'run-B', totalTargets: 2 }, { name: 'A', executionId: 'run-A', totalTargets: 3 }]);
+    fs.mkdirSync(path.join(TEST_DATA_DIR, 'campaign-runs'), { recursive: true });
+    fs.writeFileSync(path.join(TEST_DATA_DIR, 'campaign-runs/run-A.log'), 'A only\n');
+    fs.writeFileSync(path.join(TEST_DATA_DIR, 'campaign-runs/run-B.log'), 'B only\n');
+    const result = await readCampaignLog(0, { executionId: 'run-A' });
+    assert.deepEqual(result.lines, ['A only']); assert.equal(result.totalTargets, 3);
+    assert.equal((await readCampaignLog(0, { executionId: 'missing' })).ok, false);
+  });
   test('returns only lines mentioning the campaign name', async () => {
     writeHistory([{ name: 'UniqueTestName', mode: 'CC' }]);
     writeLog([

@@ -1,0 +1,14 @@
+.stg-acct-recovery { display: inline-flex; align-items: center; gap: 3px; }
+.stg-recovery-action { border: 1px solid var(--hairline); border-radius: 999px; padding: 4px 9px; background: var(--card-bg); color: var(--ink); font: 11px var(--body); cursor: pointer; }
+.account-recovery-dialog { width: min(680px, 92vw); max-height: 85dvh; overflow: auto; border: 1px solid var(--card-border); border-radius: 14px; background: var(--card-bg); color: var(--ink); padding: 28px; }
+.account-recovery-dialog::backdrop { background: #0008; }
+.account-recovery-dialog h2 { font: 28px var(--display); }
+.account-recovery-dialog p { font: 14px/1.6 var(--body); overflow-wrap: anywhere; }
+.account-recovery-dialog button { padding: 9px 16px; margin: 8px 8px 0 0; border: 1px solid var(--hairline); border-radius: 999px; color: var(--ink); background: var(--card-bg); cursor: pointer; }
+.account-recovery-dialog button:disabled { opacity: .5; cursor: wait; }
+.account-recovery-lead { border-top: 1px solid var(--hairline); padding: 18px 0; }
+.account-recovery-dialog button:focus-visible, .stg-recovery-action:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.stg-login-btn { min-height: 40px; padding: 10px 20px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--card-bg); font: 600 13px var(--body); cursor: pointer; }
+.stg-login-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.account-login-progress { display: block; width: 100%; height: 5px; margin: 16px 0 8px; accent-color: var(--gold); }
+.account-login-progress[hidden] { display: none; }

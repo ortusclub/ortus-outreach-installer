@@ -18,10 +18,8 @@ test('every non-pending lead is excluded from the new side', () => {
     'pending is the only status that means "still to do"; a blank URL is unusable');
 });
 
-test('the lead in flight is NOT excluded, so the new side retries it', () => {
-  // The operator chose retry over drain, accepting a possible duplicate connect.
-  // in_progress must therefore read as still-to-do.
-  assert.deepEqual(processedLeadUrls([{ leadUrl: 'https://x', status: 'in_progress' }]), []);
+test('the lead in flight is excluded from automatic retry', () => {
+  assert.deepEqual(processedLeadUrls([{ leadUrl: 'https://x', status: 'in_progress' }]), ['https://x']);
 });
 
 test('the plan always stops the source before starting the target', () => {
