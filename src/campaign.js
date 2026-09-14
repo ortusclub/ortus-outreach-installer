@@ -19,7 +19,7 @@
  *    g. Open next GoLogin profile, repeat
  */
 
-import { existsSync, mkdirSync, appendFileSync, statSync, renameSync } from 'fs';
+import { existsSync, mkdirSync, appendFileSync, statSync, renameSync, writeFileSync } from 'fs';
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
@@ -91,6 +91,15 @@ import {
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
 const LAST_RUN_FILE = dataPath('last-run-settings.json');
+const ACTIVE_OPERATION_FILE = dataPath('active-operation.json');
+
+function persistActiveOperation(value) {
+  try {
+    const tmp = `${ACTIVE_OPERATION_FILE}.tmp`;
+    writeFileSync(tmp, JSON.stringify(value, null, 2));
+    renameSync(tmp, ACTIVE_OPERATION_FILE);
+  } catch { /* diagnostics must never block outreach */ }
+}
 // Acceptance-check timing:
 //   • First check is gated by FIRST_HOUR_BLACKOUT_MS (in-batch) and
 //     IDLE_CAMPAIGN_MIN_DURATION_MS (idle) — always ~1h after campaign start,
@@ -924,6 +933,13 @@ function setAction(label, opts = {}) {
     endsAt: typeof durationMs === 'number' && durationMs > 0 ? Date.now() + durationMs : null,
     startedAt: Date.now(),
   };
+  persistActiveOperation({
+    at: new Date().toISOString(),
+    campaign: campaign.name || '(unnamed)',
+    mode: campaign.mode || '',
+    generation: campaign._generation,
+    action: campaign.currentAction,
+  });
 }
 
 // Helper for the central Operations Log (Ortus Operations Log sheet via
@@ -5422,6 +5438,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     campaign._abort = false;
     log('=== Campaign ended ===');
     campaign.currentAction = null; // clear cockpit
+    persistActiveOperation(null);
   }
 }
 

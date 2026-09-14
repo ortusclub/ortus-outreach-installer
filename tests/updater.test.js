@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseVersion, compareSemver, isBehind, archLabel, dmgAssetName,
-  latestDownloadUrl, latestReleaseUrl, UPDATE_REPO,
+  latestDownloadUrl, taggedDownloadUrl, latestReleaseUrl, UPDATE_REPO,
 } from '../src/updater.js';
 
 test('parseVersion strips leading v and whitespace', () => {
@@ -53,4 +53,11 @@ test('download + release URLs point at the latest release of the right repo', ()
   );
   assert.equal(latestReleaseUrl(), `https://github.com/${UPDATE_REPO}/releases/latest`);
   assert.equal(UPDATE_REPO, 'ortusclub/ortus-outreach-installer');
+});
+
+test('taggedDownloadUrl points at a specific release, not latest', () => {
+  assert.equal(
+    taggedDownloadUrl('v3.1.5', 'arm64'),
+    'https://github.com/ortusclub/ortus-outreach-installer/releases/download/v3.1.5/Ortus-Outreach-arm64.dmg'
+  );
 });

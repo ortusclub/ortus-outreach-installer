@@ -68,6 +68,15 @@ export function latestDownloadUrl(archLbl) {
   return `https://github.com/${UPDATE_REPO}/releases/latest/download/${dmgAssetName(archLbl)}`;
 }
 
+/**
+ * Download URL for a SPECIFIC release tag, e.g. "v3.1.5". Used by the version
+ * switcher: while 3.0 and 3.1.25 each have their own broken bits, operators
+ * pick which build to install rather than always taking `latest`.
+ */
+export function taggedDownloadUrl(tag, archLbl) {
+  return `https://github.com/${UPDATE_REPO}/releases/download/${tag}/${dmgAssetName(archLbl)}`;
+}
+
 /** Public release page URL for the latest release. */
 export function latestReleaseUrl() {
   return `https://github.com/${UPDATE_REPO}/releases/latest`;

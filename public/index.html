@@ -22,6 +22,10 @@
              when up to date, as a subtle "Check for updates" button. Wired by
              checkForUpdate() / onUpdateClick() in public/js/app.js. -->
         <button type="button" id="update-pill" class="update-pill hidden" onclick="onUpdateClick(event)"></button>
+        <!-- Temporary while 3.0 and 3.1.x each have their own broken bits:
+             let the operator install either build instead of only `latest`. -->
+        <button type="button" class="update-pill update-pill-muted version-switch" onclick="onUpdateClick(event, 'v3.1.25')">Install 3.1.25</button>
+        <button type="button" class="update-pill update-pill-muted version-switch" onclick="onUpdateClick(event, 'v3.1.5')">Install 3.0</button>
         <!-- Download progress, shown under the button while the DMG downloads. -->
         <div id="update-status" class="update-status hidden">
           <div class="update-bar"><div id="update-bar-fill" class="update-bar-fill"></div></div>
@@ -207,6 +211,10 @@
     <!-- Phase 2.8.20 (W3-C2): disk-low banner -->
     <div id="disk-warning-banner" class="disk-warning-banner" hidden>
       <span id="disk-warning-text">—</span>
+    </div>
+    <div id="stop-recovery-banner" class="disk-warning-banner" hidden>
+      <span id="stop-recovery-text">—</span>
+      <button type="button" class="vj-log-act" onclick="window.dismissStopRecovery()">Dismiss</button>
     </div>
 
     <!-- ── Dashboard view (default route #/) ── -->

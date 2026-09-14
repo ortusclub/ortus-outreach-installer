@@ -23,6 +23,9 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
+import { createStopWatchdog } from './src/stop-watchdog.js';
+import { terminalPresentation } from './public/js/campaign-terminal.mjs';
+import { launchValidationError } from './src/launch-validation.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
@@ -89,7 +92,7 @@ import { listPresets, getPreset, savePreset, deletePreset, getLastUsed as getLas
 import { lintLeads, blocklistExcludedUrls, normalizeProfileUrl } from './src/preflight-lint.js';
 import { ackFor, decidePreflightGate } from './src/preflight-gate.js';
 import { checkDiskFree } from './src/disk-check.js';
-import { LATEST_RELEASE_API, parseVersion, isBehind, archLabel, dmgAssetName, latestDownloadUrl, latestReleaseUrl } from './src/updater.js';
+import { LATEST_RELEASE_API, parseVersion, isBehind, archLabel, dmgAssetName, latestDownloadUrl, taggedDownloadUrl, latestReleaseUrl } from './src/updater.js';
 import {
   createUser, verifyCredentials, userExists,
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
@@ -464,11 +467,14 @@ app.get('/api/update-check', async (req, res) => {
 // download off and returns immediately; the UI polls GET /api/update-progress.
 let _downloadState = { active: false, received: 0, total: 0, done: false, error: null, path: null };
 
-app.post('/api/update-download', (_req, res) => {
+app.post('/api/update-download', (req, res) => {
   if (_downloadState.active) return res.json({ ok: true, alreadyRunning: true });
   const arch = archLabel(process.arch);
   const asset = dmgAssetName(arch);
-  const url = latestDownloadUrl(arch);
+  // ?tag=v3.1.5 → install that exact release instead of whatever is `latest`.
+  // Only a vX.Y.Z shape is accepted so the tag can't be bent into another URL.
+  const tag = /^v\d+\.\d+\.\d+$/.test(String(req.query.tag || '')) ? String(req.query.tag) : '';
+  const url = tag ? taggedDownloadUrl(tag, arch) : latestDownloadUrl(arch);
   // Prefer ~/Downloads so the operator can find the DMG; fall back to a temp dir.
   const downloads = join(homedir(), 'Downloads');
   const destDir = existsSync(downloads) ? downloads : tmpdir();
@@ -1191,9 +1197,10 @@ function launchCampaign(config, owner) {
   preventSleep('campaign');
   startCampaign({ ...config, createdBy: owner }).then(() => {
     const status = getCampaignStatus();
+    const terminal = terminalPresentation(status);
     notifyEmail(owner, {
-      title: 'Campaign finished',
-      body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+      title: `Campaign ${terminal.label.toLowerCase()}`,
+      body: `Your campaign ${terminal.label.toLowerCase()}: ${status.processedToday || 0} actions, ${terminal.pending} pending, ${(status.errors || []).length} error(s).`,
       link: '/',
     }).catch(() => {});
   }).catch(err => {
@@ -2271,6 +2278,15 @@ async function runPreflightGate(req, res) {
       tabCount: gateTabs,
       gidExplicit: gateGidExplicit,
     });
+    const launchError = launchValidationError({
+      mode: req.body?.mode,
+      profileIds: req.body?.profileIds,
+      targetCount: gateFindings.targetCount,
+    });
+    if (launchError) {
+      res.status(400).json({ error: launchError, launchRejected: true });
+      return false;
+    }
     const expected = ackFor(gateFindings);
     const provided = String(req.body?.preflightAck || '');
     const ackKnown = _preflightAcks.has(provided) && provided === expected;
@@ -4615,6 +4631,50 @@ app.post('/api/monitoring/wake', async (_req, res) => {
 // blocks overlapping sweeps; _manualSweepAbort lets Stop halt one in flight.
 let _manualSweepRunning = false;
 let _manualSweepAbort = false;
+const STOP_RECOVERY_FILE = dataPath('stop-recovery.json');
+
+function readStopRecovery() {
+  try { return JSON.parse(readFileSync(STOP_RECOVERY_FILE, 'utf8')); } catch { return null; }
+}
+
+function writeStopRecovery(entry) {
+  const tmp = `${STOP_RECOVERY_FILE}.tmp`;
+  writeFileSync(tmp, JSON.stringify(entry, null, 2));
+  renameSync(tmp, STOP_RECOVERY_FILE);
+}
+
+// A normal Stop remains graceful, but it now has a hard ceiling. The campaign
+// engine and Electron server share one process, so a process relaunch is the
+// only safe escalation for an await that never settles: forcibly reusing the
+// singleton would let the abandoned continuation mutate a newer campaign.
+const _campaignStopWatchdog = createStopWatchdog({
+  isRunning: ({ generation }) => campaign.running
+    && campaign._abort
+    && campaign._generation === generation,
+  onStuck: async ({ graceMs, name, mode, phase, account }) => {
+    const seconds = Math.round(graceMs / 1000);
+    campaignLog(`■ Stop did not settle within ${seconds}s — restarting the app safely.`);
+    console.error('[stop-watchdog] Campaign still running; requesting application relaunch.', {
+      seconds, name: name || '(unnamed)', mode: mode || '', phase: phase || '', account: account || '',
+    });
+    try {
+      const status = getCampaignStatus();
+      const terminal = terminalPresentation(status);
+      writeStopRecovery({
+        at: new Date().toISOString(), reason: 'campaign-stop-timeout',
+        name: name || '(unnamed)', mode: mode || '', phase: phase || '', account: account || '',
+        processed: status.totalProcessed || 0, total: status.totalTargets || 0,
+        pending: terminal.pending,
+      });
+    } catch (err) { console.error('[stop-watchdog] Could not persist recovery:', err.message); }
+    if (process.listenerCount('ortus:relaunch-requested') > 0) {
+      process.emit('ortus:relaunch-requested', { reason: 'campaign-stop-timeout' });
+    } else {
+      // Supervised Electron child: exit with a dedicated recoverable code.
+      process.exit(75);
+    }
+  },
+});
 
 // v2.78: bench / un-bench an account in the live sending rotation. Body:
 // { profileId, skip }. skip=false also retries an auto-parked account.
@@ -4662,6 +4722,15 @@ app.post('/api/campaign/stop', async (req, res) => {
   // when the running campaign is mode=connect_and_introduce.
   const fullHalt = !!(req.body && req.body.full);
   const result = stopCampaign({ full: fullHalt });
+  const watchdog = campaign.running
+    ? _campaignStopWatchdog.arm({
+        generation: campaign._generation,
+        name: campaign.name,
+        mode: campaign.mode,
+        phase: campaign.currentAction?.phase || campaign.phase,
+        account: campaign.currentAction?.account || campaign.currentProfile,
+      })
+    : _campaignStopWatchdog.status();
   // v2.14.x: ALSO flip the abort flags for Check DMs and Post Amplification.
   // The bottom-bar Stop button posts to /api/campaign/stop regardless of
   // which subsystem is currently running (the cockpit overlay sets
@@ -4680,7 +4749,7 @@ app.post('/api/campaign/stop', async (req, res) => {
   // v2.14.x: respond to the UI immediately so the dashboard flips to
   // 'stopping' without waiting for the browser-close round-trip. The actual
   // browser kill runs after a short drain window — see comment block below.
-  res.json(result);
+  res.json({ ...result, stopping: campaign.running, stopDeadlineAt: watchdog.deadlineAt });
 
   // v2.14.x: drain-then-kill instead of kill-then-loop-discovers-it.
   //
@@ -5298,7 +5367,20 @@ app.get('/api/campaign/status', async (_req, res) => {
   }
   let followUp = null;
   try { followUp = await _activeFollowUpSummary(base); } catch { /* non-fatal — countdown just hides */ }
-  res.json({ ...base, followUp, skippedCount: getSkips().length });
+  const stopWatchdog = _campaignStopWatchdog.status();
+  res.json({
+    ...base,
+    followUp,
+    skippedCount: getSkips().length,
+    stopRequestedAt: (campaign._abort && campaign.running) ? stopWatchdog.requestedAt : null,
+    stopDeadlineAt: (campaign._abort && campaign.running) ? stopWatchdog.deadlineAt : null,
+    stopRecovery: readStopRecovery(),
+  });
+});
+
+app.post('/api/campaign/recovery-dismiss', (_req, res) => {
+  try { writeStopRecovery(null); } catch { /* already absent/unwritable */ }
+  res.json({ ok: true });
 });
 
 app.get('/api/campaign/skips', (_req, res) => {
@@ -7021,9 +7103,10 @@ function registerSchedule(schedule) {
       if (s) { s.lastRun = new Date().toISOString(); await saveSchedules(all); }
 
       const status = getCampaignStatus();
+      const terminal = terminalPresentation(status);
       notify({
-        title: 'Campaign finished',
-        body: `${schedule.name}: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+        title: `Campaign ${terminal.label.toLowerCase()}`,
+        body: `${schedule.name}: ${status.processedToday || 0} actions, ${terminal.pending} pending, ${(status.errors || []).length} error(s).`,
         link: '/',
       }).catch(() => {});
     } catch (err) {

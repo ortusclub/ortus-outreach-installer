@@ -1,3 +1,5 @@
+import { terminalPresentation } from './campaign-terminal.mjs';
+
 // Pure helpers for rendering card #2 (the .vj-card live-status card) inside an
 // EXPANDED dashboard strip — browser-safe (no DOM), so app.js imports them and
 // node --test unit-tests them. The DOM parts (vjCardSkeleton clone + fillVjCard)
@@ -75,6 +77,7 @@ export function vjCardFields(status = {}) {
     ? Number(s.accountsCount) || 0
     : (((isMonitor ? s.participatingProfileIds : s.profileIds) || s.profileIds || []).length);
   const accepted = (s.acceptedCount == null) ? '—' : String(s.acceptedCount);
+  const terminal = isDone ? terminalPresentation(s) : null;
   // Asleep on the engine's blocked_until. The DB status stays 'running' so the
   // acceptance sweep keeps running, so EVERY status word here would otherwise
   // fall through to 'Running'/'Sending' — printed directly above a card that
@@ -85,11 +88,11 @@ export function vjCardFields(status = {}) {
   const eyebrow = s.bad ? (s.badLabel || 'Stopped')
     : isMonitor ? 'Monitoring'
     : isQueued ? 'Queued'
-    : isDone ? 'Finished'
+    : isDone ? terminal.label
     : isWaiting ? 'Waiting'
     : (s.paused ? 'Paused' : 'Running');
   const sendingLbl = isMonitor ? 'Watching'
-    : isDone ? 'Finished'
+    : isDone ? terminal.activity
     : isQueued ? 'Queued'
     : isWaiting ? 'Waiting'
     : (s.paused ? 'Paused' : 'Sending');
@@ -175,7 +178,7 @@ export function vjCardControlsFor(status = {}) {
   } else if (done) {
     // Restart controls — only for a STOPPED/CANCELLED/ERRORED campaign (never a
     // cleanly-completed one). ▶ Continue where it left off · ⟲ from the beginning.
-    if (s.bad) {
+    if (s.bad || terminalPresentation(s).pending > 0) {
       c.extra.push({ tip: 'Continue where it left off', kind: 'play', onclick: cloud ? `restartCloudCampaignUI('${id}', false)` : `restartLocalFromItem('${id}', false)` });
       c.extra.push({ tip: 'Restart from the beginning', kind: 'restart', onclick: cloud ? `restartCloudCampaignUI('${id}', true)` : `restartLocalFromItem('${id}', true)` });
     }

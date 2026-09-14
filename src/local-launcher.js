@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer-core';
+import { withTimeout } from './promise-timeout.js';
 import { existsSync, mkdirSync } from 'fs';
 import { dataPath } from './paths.js';
 import { hideByPid } from './mac-window.js';
@@ -57,7 +58,7 @@ export async function launchLocalBrowser() {
   console.log(`[local] Chrome: ${chromePath}`);
   console.log(`[local] Profile: ${LOCAL_PROFILE_DIR}`);
 
-  const browser = await puppeteer.launch({
+  const browser = await withTimeout(puppeteer.launch({
     executablePath: chromePath,
     headless: false,
     userDataDir: LOCAL_PROFILE_DIR,
@@ -73,7 +74,7 @@ export async function launchLocalBrowser() {
     ],
     ignoreHTTPSErrors: true,
     protocolTimeout: 60000,
-  });
+  }), { ms: 90_000, label: 'Local Chrome launch' });
 
   activeBrowser = browser;
 

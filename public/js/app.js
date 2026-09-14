@@ -32,6 +32,7 @@ import { buildLiveActivity, monitorHeroState, monitorHeroView, monitorTickText }
 import { cloudThroughputView } from '/js/throughput-view.mjs';
 import { needsHandshakeFromBody, handshakeRowView } from '/js/handshake-gate.mjs';
 import { statusFromItem, vjCardFields, vjCardControlsFor } from '/js/vjcard.mjs';
+import { terminalPresentation } from '/js/campaign-terminal.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
@@ -13701,7 +13702,8 @@ async function pollStatus() {
     // Detect campaign completion and refresh history
     if (wasRunning && !s.running) {
       fetchHistory();
-      notify('Campaign finished', `${s.processedToday} connections sent. ${(s.errors || []).length} errors.`);
+      const terminal = terminalPresentation(s);
+      notify(`Campaign ${terminal.label.toLowerCase()}`, `${s.processedToday} connections sent. ${terminal.pending} pending. ${(s.errors || []).length} errors.`);
     }
     // Detect new errors
     if (s.running && (s.errors || []).length > (wasErrorCount || 0)) {
@@ -13713,6 +13715,7 @@ async function pollStatus() {
     renderParkedProfiles(s.parked);
     renderSoftWarnings(s.softWarnings);
     renderDiskBanner(s.disk);
+    renderStopRecovery(s.stopRecovery);
 
     // Phase 2.8.13: status / mode / profile pills moved INTO the cockpit panel
     // (handled by renderCockpit). The legacy st-running/st-mode/st-profile
@@ -15652,6 +15655,21 @@ const MODE_TAG = {
   check_status: 'Status',
 };
 
+function renderStopRecovery(recovery) {
+  const banner = document.getElementById('stop-recovery-banner');
+  const text = document.getElementById('stop-recovery-text');
+  if (!banner || !text) return;
+  if (!recovery) { banner.hidden = true; return; }
+  const pending = Math.max(0, Number(recovery.pending) || 0);
+  text.textContent = `Recovered from a stuck campaign: ${recovery.name || '(unnamed)'}. The stuck engine was terminated and cannot continue sending.${pending ? ` ${pending} lead${pending === 1 ? '' : 's'} remain pending and can be continued.` : ''}`;
+  banner.hidden = false;
+}
+
+window.dismissStopRecovery = async function() {
+  try { await fetch('/api/campaign/recovery-dismiss', { method: 'POST' }); } catch { /* hide locally anyway */ }
+  renderStopRecovery(null);
+};
+
 function relativeTime(iso) {
   if (!iso) return '—';
   const t = new Date(iso).getTime();
@@ -16048,18 +16066,22 @@ function _pollDownloadProgress() {
   });
 }
 
-async function onUpdateClick(e) {
+// `tag` (e.g. 'v3.1.5') forces that exact release instead of `latest` — the
+// version-switch buttons pass it so an operator can move between 3.0 and 3.1.x
+// while each has its own broken bits.
+async function onUpdateClick(e, tag) {
   if (e) e.preventDefault();
   const pill = document.getElementById('update-pill');
   if (!pill) return;
 
-  // Behind → download + open, with a live progress bar under the button.
-  if (_updateInfo && _updateInfo.ok && _updateInfo.behind) {
+  // Behind (or an explicit version pick) → download + install, with a live
+  // progress bar under the button.
+  if (tag || (_updateInfo && _updateInfo.ok && _updateInfo.behind)) {
     pill.disabled = true;
     pill.innerHTML = '<span class="update-pill-arrow">↓</span> Downloading…';
     _setUpdateStatus(0, 0, 0);
     try {
-      const r = await fetch('/api/update-download', { method: 'POST' });
+      const r = await fetch('/api/update-download' + (tag ? '?tag=' + encodeURIComponent(tag) : ''), { method: 'POST' });
       const d = await r.json();
       if (!d || !d.ok) throw new Error('start failed');
       const res = await _pollDownloadProgress();
@@ -25194,13 +25216,14 @@ window.renderActiveCard = function(status) {
     const done = Number(status.totalProcessed) || 0;
     const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
     v3SetText('activeName', status.name || '(unnamed)');
-    v3SetText('activeEyebrow', 'Finished');
+    const terminal = terminalPresentation(status);
+    v3SetText('activeEyebrow', terminal.label);
     v3SetText('activePct', String(pct));
     v3SetText('activeSent', String(done));
     v3SetText('activeTotal', String(total));
     v3SetText('activeAccounts', String((status.profileIds || []).length));
     v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
-    v3SetText('sendingLbl', 'Finished');
+    v3SetText('sendingLbl', terminal.activity);
     v3SetText('batchEta', '—');
     const glyph = document.getElementById('activeGlyph');
     if (glyph) glyph.textContent = (typeof v3ModeBadge === 'function') ? v3ModeBadge(status.mode) : '';
@@ -25361,8 +25384,10 @@ window.renderActiveCard = function(status) {
   const total = Number(status.totalTargets) || 0;
   const done = Number(status.totalProcessed) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  const isStopping = !!(status.stopRequestedAt && status.stopDeadlineAt);
   v3SetText('activeName', status.name || '(unnamed)');
-  v3SetText('activeEyebrow', _isPreflight ? 'Phase 0 · Primary handshake'
+  v3SetText('activeEyebrow', isStopping ? 'Stopping…'
+    : _isPreflight ? 'Phase 0 · Primary handshake'
     : isMonitoring ? 'Monitoring' : (status._paused || status.paused ? 'Paused' : 'Running'));
   v3SetText('activePct', String(pct));
   v3SetText('activeSent', String(done));
@@ -25374,7 +25399,8 @@ window.renderActiveCard = function(status) {
   // "Sending" while every account is capped or benched is the same lie the live
   // line used to tell. If the engine says nothing can send, this says so too.
   const _waiting = !!(status.currentAction && status.currentAction.phase === 'waiting');
-  v3SetText('sendingLbl', _isPreflight ? 'Connecting to primary'
+  v3SetText('sendingLbl', isStopping ? 'Closing safely…'
+    : _isPreflight ? 'Connecting to primary'
     : isMonitoring
       ? (status.monitoringCheckInProgress ? 'Checking now…' : 'Monitoring')
       : (isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : (_waiting ? 'Waiting' : 'Sending'))));

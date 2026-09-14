@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
+import { spawn } from 'node:child_process';
 import dotenv from 'dotenv';
 // Same in-process singleton the server uses — flush its ops buffer on quit so
 // the last buffered events aren't lost when the operator closes the app.
@@ -81,16 +82,54 @@ async function pickFreePort() {
 let mainWindow = null;
 let serverPort = null;
 let tray = null;
+let relaunchRequested = false;
+let serverProcess = null;
+let shuttingDown = false;
+
+// server.js emits this only when a campaign ignored graceful Stop for the full
+// watchdog window. Relaunching the host clears the hung promise before another
+// campaign can reuse the in-process singleton. The persisted state files remain
+// intact, so this is recovery, not a progress reset.
+process.on('ortus:relaunch-requested', async ({ reason } = {}) => {
+  if (relaunchRequested) return;
+  relaunchRequested = true;
+  console.error(`[main] Safe relaunch requested: ${reason || 'unspecified'}`);
+  try {
+    await Promise.race([flushOpsLog(), new Promise((resolve) => setTimeout(resolve, 2000))]);
+  } catch (_) { /* relaunch must not be blocked by logging */ }
+  app.relaunch();
+  app.exit(0);
+});
 
 async function startServer() {
-  serverPort = await pickFreePort();
-  process.env.PORT = String(serverPort);
+  if (!serverPort) serverPort = await pickFreePort();
 
   // Resolve the bundled server.js. In dev, ../server.js. In packaged builds,
   // electron-builder includes the source under app.asar so the same relative
   // path works.
   const serverEntry = resolve(__dirname, '..', 'server.js');
-  await import(serverEntry);
+  serverProcess = spawn(process.execPath, [serverEntry], {
+    cwd: REPO_ROOT,
+    env: {
+      ...process.env,
+      PORT: String(serverPort),
+      ELECTRON_RUN_AS_NODE: '1',
+      ORTUS_ELECTRON_MODE: '1',
+      ORTUS_DATA_DIR: userDataDir,
+    },
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+  serverProcess.once('exit', (code, signal) => {
+    serverProcess = null;
+    if (shuttingDown) return;
+    if (code === 75) {
+      console.warn('[main] Campaign engine requested a clean recovery restart.');
+      setTimeout(() => startServer().catch((err) => console.error('[main] Engine restart failed:', err.message)), 500);
+      return;
+    }
+    console.error(`[main] Campaign engine exited unexpectedly (code=${code}, signal=${signal || 'none'}). Restarting…`);
+    setTimeout(() => startServer().catch((err) => console.error('[main] Engine restart failed:', err.message)), 1500);
+  });
 
   // Wait for the server to actually be listening (the import returns
   // immediately; app.listen is async). Poll /api/health up to ~10s.
@@ -254,6 +293,8 @@ app.on('before-quit', async (e) => {
   if (_flushedOnQuit) return;
   e.preventDefault();
   _flushedOnQuit = true;
+  shuttingDown = true;
+  if (serverProcess && !serverProcess.killed) serverProcess.kill('SIGTERM');
   try { await Promise.race([flushOpsLog(), new Promise((r) => setTimeout(r, 4000))]); } catch (_) { /* */ }
   app.quit();
 });

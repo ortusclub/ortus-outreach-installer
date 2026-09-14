@@ -64,6 +64,13 @@ test('vjCardFields: done reads Finished', () => {
   assert.equal(vjCardFields(statusFromItem({ bucket: 'done', sent: 9, total: 9 })).eyebrow, 'Finished');
 });
 
+test('vjCardFields: an incomplete ended run reads Stopped early', () => {
+  const s = statusFromItem({ bucket: 'done', sent: 30, total: 148, pending: 118 });
+  const f = vjCardFields(s);
+  assert.equal(f.eyebrow, 'Stopped early');
+  assert.equal(f.sendingLbl, '118 pending');
+});
+
 // ── vjCardControlsFor: the matrix ──
 test('controls: running local → pause/stop/restart/copy + bulk run-check, open=viewRunningCampaign', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'local', id: 'local-active', bucket: 'running', sent: 1, total: 2 }));
@@ -108,6 +115,11 @@ test('controls: done → duplicate + delete, no bulk/stop/pause', () => {
   assert.ok(cloud.extra.find((e) => e.kind === 'delete' && /deleteBoardCampaign/.test(e.onclick)));
   const local = vjCardControlsFor(statusFromItem({ where: 'local', id: 'h1', bucket: 'done', hist: true }));
   assert.ok(local.extra.find((e) => e.kind === 'debrief'));
+});
+
+test('controls: incomplete done campaign can continue where it left off', () => {
+  const c = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'cD', bucket: 'done', sent: 30, total: 148, pending: 118 }));
+  assert.ok(c.extra.find((e) => e.kind === 'play'));
 });
 test('controls: a nasty local done id (quote / angle brackets) is escaped in onclicks', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'local', id: "h-O'Brien <b>Q3</b>", bucket: 'done', hist: true }));

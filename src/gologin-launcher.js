@@ -1,4 +1,5 @@
 import GoLogin from 'gologin';
+import { withTimeout } from './promise-timeout.js';
 import puppeteer from 'puppeteer-core';
 import { hideByPid } from './mac-window.js';
 import { checkDiskFree, formatBytes } from './disk-check.js';
@@ -270,7 +271,11 @@ export async function launchProfile(profileId, _ignoredLegacyToken) {
     ],
   });
 
-  const { status, wsUrl } = await GL.start();
+  const { status, wsUrl } = await withTimeout(GL.start(), {
+    ms: 120_000,
+    label: `GoLogin launch for ${profileId}`,
+    onTimeout: () => { try { GL.killBrowser(); } catch { /* no process yet */ } },
+  });
 
   const _spawnedPid = GL?.processSpawned?.pid;
   if (_spawnedPid) spawnedPids.set(profileId, _spawnedPid);
