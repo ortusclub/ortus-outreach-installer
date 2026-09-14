@@ -79,6 +79,17 @@ export function buildOutcome(state = {}) {
       problems.push(`${n(dupes)} ${dupes === 1 ? 'person is' : 'people are'} in HubSpot more than once — `
         + 'their connection was recorded on the record with a real email address, so nothing was missed');
     }
+    // Connections LinkedIn returned with no member id at all — deactivated,
+    // restricted or private accounts that still count toward the connection
+    // total but come back with no name and no profile, just a date. There's
+    // nothing to key on, so they can't be imported — but nothing was missed
+    // either (there was never anything to import for them). This is the number
+    // that explains the gap between "806 connections" and "786 checked".
+    const hidden = (pv.totals && pv.totals.hidden) || 0;
+    if (hidden) {
+      problems.push(`${n(hidden)} ${hidden === 1 ? 'person is' : 'people are'} hidden by LinkedIn — `
+        + 'no name or profile, just a date (a deactivated or restricted account), so nothing could be imported for them — and nothing was missed');
+    }
     const blocked = pv.blocked || [];
     if (blocked.length) {
       problems.push(`${blocked.length} account${blocked.length === 1 ? '' : 's'} skipped: `
