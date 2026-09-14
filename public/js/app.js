@@ -12251,6 +12251,10 @@ async function _renderCampaignsBoardInner() {
       // its log after the running → done transition.
       const endedLogs = (_endedLogs && _endedName && p.name === _endedName) ? _endedLogs : null;
       if (endedLogs) _endedLogs = null; // only the newest matching strip gets it
+      // A recovered historical log belongs to the normalized campaign item,
+      // not only to the small HTML preview. Keeping the lines on the item makes
+      // the compact preview and the expanded VJ card two views of one log.
+      const recoveredLogs = _histLogLinesCache.get(histIdx);
       items.push({ where: 'local', id: hid, name: p.name, mode: p.mode,
         isFG: p.mode === 'follower_growth', bucket: 'done', sent: p.totalProcessed || 0,
         total: p.totalProcessed || 0, accounts: (p.profiles || []).length, mine: true,
@@ -12258,7 +12262,7 @@ async function _renderCampaignsBoardInner() {
         profileIds: (p.settings && Array.isArray(p.settings.profileIds)) ? p.settings.profileIds : (p.profiles || []),
         sheetUrl: (p.settings && p.settings.sheetUrl) || '',
         hist: p,
-        logs: endedLogs });
+        logs: endedLogs || (Array.isArray(recoveredLogs) ? recoveredLogs : null) });
     }
   } catch (_) { /* */ }
 
@@ -12574,6 +12578,7 @@ window.undoDiscardFollowups = async function () {
 // history index so the 5s board re-render doesn't refetch; in-flight guard so
 // overlapping renders don't double-fetch.
 const _histLogCache = new Map();
+const _histLogLinesCache = new Map();
 const _histLogInFlight = new Set();
 function _fillHistLogBoxes(board) {
   board.querySelectorAll('[data-histlog]').forEach(async (box) => {
@@ -12582,14 +12587,31 @@ function _fillHistLogBoxes(board) {
     _histLogInFlight.add(idx);
     try {
       const d = await (await fetch(`/api/history/${idx}/log`)).json();
-      const lines = Array.isArray(d.lines) ? d.lines.slice(-8) : [];
-      const html = lines.length
-        ? lines.map((l) => escHtml(l)).join('<br>')
+      const recoveredLines = Array.isArray(d.lines) ? d.lines.slice(-200) : [];
+      const previewLines = recoveredLines.slice(-8);
+      const html = previewLines.length
+        ? previewLines.map((l) => escHtml(l)).join('<br>')
         : 'No stored log lines for this campaign.';
+      _histLogLinesCache.set(idx, recoveredLines);
       _histLogCache.set(idx, html);
+      // Hydrate the normalized campaign item as well as the compact preview.
+      // The expanded dashboard card reads `it.logs`; without this handoff it
+      // truthfully rendered the empty array it received at board construction
+      // even though the adjacent preview had fetched the persisted log.
+      const matchingItems = new Set();
+      for (const it of _snItemsById.values()) {
+        if (Number(it.histIdx) === idx) matchingItems.add(it);
+      }
+      for (const it of _boardItemsById.values()) {
+        if (Number(it.histIdx) === idx) matchingItems.add(it);
+      }
+      for (const it of matchingItems) it.logs = recoveredLines;
       // Fill in place if the box is still on screen (board may have re-rendered).
       const live = board.querySelector(`[data-histlog="${idx}"]`);
       if (live) { live.innerHTML = html; live.removeAttribute('data-histlog'); }
+      // Repaint every expanded/hidden detailed clone from the same recovered
+      // lines. Hidden clones are intentionally filled so opening one is instant.
+      _fillVjCards(board);
     } catch {
       _histLogCache.set(idx, 'Log unavailable.');
     } finally {

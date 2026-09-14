@@ -74,9 +74,17 @@ try {
   const dashboardState = await page.evaluate((name) => {
     const target = [...document.querySelectorAll('.sn-strip')]
       .find((el) => el.textContent.includes(name));
-    return { campaignId: target?.dataset.cid || '', logText: target?.querySelector('.sn-logbox')?.textContent || '' };
+    return {
+      campaignId: target?.dataset.cid || '',
+      logText: target?.querySelector('.sn-logbox')?.textContent || '',
+      detailedLogText: target?.querySelector('.sn-vjcard')?.textContent || '',
+    };
   }, campaignName);
   const dashboardLogText = dashboardState.logText;
+  assert.match(dashboardState.detailedLogText, /Campaign ended/i,
+    'expanded Dashboard card did not receive the recovered historical log');
+  assert.doesNotMatch(dashboardState.detailedLogText, /LAST 0 EVENTS/i,
+    'expanded Dashboard card still reports an empty historical log');
   const campaignId = dashboardState.campaignId;
   assert.ok(campaignId, 'saved Dashboard card has no campaign id');
   await page.evaluate(async (id) => window.openLocalHistoryCampaign(id), campaignId);

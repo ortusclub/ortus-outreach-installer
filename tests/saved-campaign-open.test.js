@@ -45,6 +45,15 @@ test('expanding a Dashboard card hydrates its historical log immediately', () =>
   assert.match(body, /_fillHistLogBoxes\(board\)/);
 });
 
+test('historical log recovery hydrates the shared item used by the detailed Dashboard card', () => {
+  const start = app.indexOf('function _fillHistLogBoxes(board)');
+  const end = app.indexOf('// Bulk-dismiss every Done strip', start);
+  const body = app.slice(start, end);
+  assert.match(body, /_histLogLinesCache\.set\(idx, recoveredLines\)/);
+  assert.match(body, /it\.logs = recoveredLines/);
+  assert.match(body, /_fillVjCards\(board\)/);
+});
+
 test('saved settings mapping keeps fields added after the original mapper', () => {
   const start = app.indexOf('function _configFromSettings(mode, s)');
   const end = app.indexOf('// A local history row has no live runtime', start);
