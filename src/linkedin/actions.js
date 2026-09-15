@@ -3240,7 +3240,23 @@ async function typeAndSendSalesNavComposer(page, subject, body) {
   }
 
   const typedOk = await typeIntoField(page, body);
-  if (!typedOk) return { ok: false, error: 'Could not type message (Sales Nav composer)' };
+  if (!typedOk) {
+    // The message box never appeared. The most common real cause is the SENDER
+    // account being out of InMail credits: Sales Nav then renders the New-message
+    // panel with no textbox and shows "you've used up all your InMail credits" —
+    // even for a lead that IS free to message (Open Profile / TeamLink), LinkedIn
+    // still gates the send behind having >=1 credit. The upfront panel read can
+    // miss this (the "no credits" screen paints a beat later), so re-probe HERE,
+    // after the type failure, when it's reliably on screen. Surfacing it as a
+    // retryable out-of-credits reason (INMAIL_NO_CREDITS -> eject the account,
+    // leave the lead for one that still has credits) beats a cryptic "could not
+    // type message" that the loop would stamp as a hard error against the lead.
+    const st = await readSalesNavComposerState(page).catch(() => ({}));
+    if (st.noInMailCredits) {
+      return { ok: false, error: 'INMAIL_NO_CREDITS: account is out of InMail credits' };
+    }
+    return { ok: false, error: 'Could not type message (Sales Nav composer)' };
+  }
 
   await new Promise(r => setTimeout(r, 800));
   const sendOk = await page.evaluate(async () => {
@@ -3294,8 +3310,20 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
   // v2.11.3: dual-fact dialog detection — checked BEFORE the generic
   // hasCompose check because in this state hasCompose is also false but
   // the cause is specific and actionable (eject account + mark lead non-OP).
+  //
+  // BUT the "used up all your InMail credits" screen ALSO appears for a lead
+  // that IS free to message: LinkedIn shows "Free to Open Profile" / "Free to
+  // TeamLink" in the SAME panel yet still gates the send behind having >=1
+  // credit (proven 2026-09-15 — Kelvin's composer: "Free to TeamLink" AND "used
+  // up all your InMail credits" together). So this screen proves the ACCOUNT is
+  // out of credits, NOT that the lead is non-OP. Only conclude non-OP when there
+  // is no free signal at all; when the lead IS free, treat it as account-level
+  // credit exhaustion (no_credits -> eject the account, leave the lead retryable
+  // on an account that still has credits) instead of mislabelling a reachable
+  // lead "Not Open Profile" and skipping it forever.
   if (panel.noInMailCredits) {
-    return { ok: false, reason: 'inmail_no_credits_lead_not_op' };
+    const freeToMessage = panel.isFreeToOpenProfile || panel.isFreeToTeamLink;
+    return { ok: false, reason: freeToMessage ? 'no_credits' : 'inmail_no_credits_lead_not_op' };
   }
 
   // force_connect_op_fallback intentionally handles the no-composer case by

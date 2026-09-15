@@ -24,7 +24,7 @@ const REASON_RULES = [
   { match: /429|rate.?limit/i,                 outcome: 'rate_limited', phase: 'Request', label: 'Rate-limited (HTTP 429)' },
   { match: /weekly limit|invitation limit/i,   outcome: 'parked',       phase: 'Account', label: 'Weekly limit reached' },
   { match: /session expired/i,                 outcome: 'skipped',      phase: 'Account', label: 'Session expired' },
-  { match: /inmail credits/i,                  outcome: 'skipped',      phase: 'InMail',  label: 'InMail credits exhausted' },
+  { match: /inmail credits|inmail_no_credits/i, outcome: 'skipped',     phase: 'InMail',  label: 'InMail credits exhausted' },
   { match: /legacy sales nav|sales nav link/i, outcome: 'skipped',      phase: 'Request', label: 'Legacy Sales Nav URL' },
 ];
 
