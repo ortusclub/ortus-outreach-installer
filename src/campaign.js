@@ -475,7 +475,7 @@ export function normalizeSkipReason(msg) {
   // sending account isn't Premium, so Send stayed disabled. Operator wording.
   if (lower.includes('note_too_long')) return 'Skipped: Profile not premium, custom notes limit';
   if (lower.includes('weekly invitation limit') || lower.includes('weekly_limit')) return 'Skipped: Weekly limit reached';
-  if (lower.includes('inmail credits') || lower.includes('inmail_no_credits')) return 'Skipped: InMail credits exhausted';
+  if (lower.includes('inmail credits') || lower.includes('inmail_no_credits')) return "Skipped: account out of InMail credits — can't message this lead (Open Profile needs a credit too). Retry from an account that has credits.";
   if (lower.includes('not yet connected')) return 'Skipped: Not yet connected';
   if (lower.includes('not confirmed connected')) return 'Skipped: Not confirmed connected';
   if (lower.includes('linkedin error toast') || lower.includes('linkedin_error_toast')) return 'Skipped: LinkedIn error toast';
@@ -5030,7 +5030,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 auditAction: normalizeSkipReason('Not Open Profile'),
               }, linkedinColumn);
             } else if (errorMsg.includes('INMAIL_NO_CREDITS')) {
-              log(`  ⚠ InMail credits exhausted for ${pName}. Removing from rotation.`);
+              log(`  ⚠ ${pName} is out of InMail credits — can't message this lead (Open Profile needs a credit too). Ejecting this account; the lead stays queued to retry from one that has credits.`);
               weeklyLimited.add(profileId);
               recordProfileEnd(profileId, pName, 'InMail credits exhausted');
               await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
