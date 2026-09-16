@@ -28,6 +28,22 @@ test('mergeConnections is idempotent — re-collecting never grows the value', (
   assert.equal(mergeConnections(';ANTONIO@ortusclub.com', ACCT), null);
 });
 
+test('mergeConnections preserves the casing of existing values (never corrupts a mixed-case option)', () => {
+  // The property is a HubSpot checkbox and a few options are NOT lowercase
+  // ("Irisht@ortus.solutions", "Jhengh@ortus.solutions", "No Connections").
+  // Lowercasing them on re-send made them invalid options; HubSpot's atomic
+  // batch/update then rejected the WHOLE batch, silently dropping the account
+  // write for every clean contact in it. Existing values must keep their casing.
+  assert.equal(
+    mergeConnections('Irisht@ortus.solutions;benz@ortus.solutions', ACCT),
+    ';Irisht@ortus.solutions;benz@ortus.solutions;antonio@ortusclub.com');
+  assert.equal(
+    mergeConnections('No Connections', ACCT),
+    ';No Connections;antonio@ortusclub.com');
+  // Dedup stays case-insensitive even with a mixed-case stored value.
+  assert.equal(mergeConnections('Antonio@ortusclub.com', ACCT), null);
+});
+
 test('rows LinkedIn blanked out are hidden, not written', () => {
   // A real archive row: everything empty except Connected On.
   assert.equal(isHidden({ slug: '', memberId: '', firstName: '', lastName: '' }), true);
