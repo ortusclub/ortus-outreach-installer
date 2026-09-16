@@ -61,12 +61,21 @@ export function syntheticEmail(memberId) {
 export function mergeConnections(existingValue, account) {
   const acct = String(account || '').trim().toLowerCase();
   if (!acct) return null;
-  const have = String(existingValue || '')
+  // Preserve the STORED casing of existing values. This property is a HubSpot
+  // enumeration/checkbox, and a few options are NOT lowercase (measured on the
+  // live portal: "Irisht@ortus.solutions", "Jhengh@ortus.solutions", "No
+  // Connections"). Lowercasing an existing value on re-send turns it into an
+  // option HubSpot doesn't recognise ("irisht@…" → VALIDATION_ERROR "not one of
+  // the allowed options"). Because HubSpot's batch/update is ATOMIC, that one
+  // bad value fails the ENTIRE batch — silently dropping the account write for
+  // every clean contact batched alongside it. So we lowercase ONLY for the
+  // dedup comparison; the value we actually send keeps its stored casing.
+  const raw = String(existingValue || '')
     .split(';')
-    .map((s) => s.trim().toLowerCase())
+    .map((s) => s.trim())
     .filter(Boolean);
-  if (have.includes(acct)) return null;
-  return `;${[...have, acct].join(';')}`;
+  if (raw.some((s) => s.toLowerCase() === acct)) return null;
+  return `;${[...raw, acct].join(';')}`;
 }
 
 /**
