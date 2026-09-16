@@ -9562,22 +9562,55 @@ window.openLocalCampaignDetail = openLocalCampaignDetail;
 function dismissLocalDone(id) { _localDismissed.add(id); renderCampaignsBoard(); }
 window.dismissLocalDone = dismissLocalDone;
 
-// Delete a finished/stopped campaign from the board (replaces the old Dismiss).
-// Local campaigns are truly deleted from history.json; cloud campaigns have no
-// engine delete endpoint yet, so they're stopped (if somehow still active) and
-// removed from this dashboard durably. Always confirms first.
+// Cloud campaigns have no engine delete endpoint. Never hide an active VM run
+// until its immediate stop has a confirmed shutdown receipt.
+async function emergencyStopAndRemoveCloud(id) {
+  const it = _boardItemsById.get(id);
+  if (!it || it.where !== 'cloud') return;
+  if (!confirm(`Stop "${it.name || 'this campaign'}" immediately and remove it from this dashboard?\n\nThe VM must confirm that all work stopped. If it cannot, the card will stay visible. This does not erase campaign history from the engine.`)) return;
+  if (_stoppingCloudIds.has(String(id))) return;
+  _markCloudStopping(id, true);
+  try {
+    const response = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop?immediate=1`, { method: 'POST' });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.ok !== true || result.stopping || !['cancelled', 'done'].includes(result.status || result.campaign?.status)) {
+      throw new Error(result.error || 'The VM has not confirmed shutdown yet. Retry after checking the worker.');
+    }
+    // The board renders from a background snapshot. Apply only the confirmed
+    // terminal response so the recovered card disappears immediately, not on
+    // the next network poll; the engine remains the durable source of truth.
+    for (const detail of _cloudRaw) {
+      if (String(detail.campaign?.id) === String(id)) detail.campaign.status = result.status || result.campaign.status;
+    }
+    _cloudDismissed.add(id);
+    _cloudSaveDismissed();
+    renderCampaignsBoard();
+  } catch (error) {
+    alert(`Campaign was NOT removed. ${error.message} Sending may still be active.`);
+  } finally {
+    _markCloudStopping(id, false);
+  }
+}
+window.emergencyStopAndRemoveCloud = emergencyStopAndRemoveCloud;
+
+// Delete a finished/stopped campaign from the board. Local campaigns are
+// deleted from history.json; cloud campaigns can only be hidden on this device.
 async function deleteBoardCampaign(id, btn) {
   const it = _boardItemsById.get(id) || (_snItemsById && _snItemsById.get(id));
   const name = (it && it.name) || 'this campaign';
-  if (!confirm(`Delete "${name}"?\n\nThis removes it from your dashboard for good.`)) return;
+  if (!confirm(`Remove "${name}" from this dashboard?\n\nCloud campaign history remains on the engine.`)) return;
   try {
     if (it && it.where === 'cloud') {
-      // Kill any live engine activity for this campaign FIRST — stop halts sending
-      // + monitoring and releases its account locks — THEN durably hide it from the
-      // board. Previously delete only hid it, so a running campaign kept sending on
-      // the VM (and held its accounts) after being "deleted". Best-effort: hide it
-      // even if the stop call fails.
-      try { await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop`, { method: 'POST' }); } catch (_) { /* still hide it below */ }
+      // Even a stale terminal-looking card may represent an active VM run.
+      // Re-read authoritative state; never hide after a failed read or stop.
+      const response = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`);
+      const detail = await response.json().catch(() => ({}));
+      const current = detail.campaign || {};
+      if (!response.ok || !['cancelled', 'done'].includes(current.status)
+          || current.delegatedStopUnconfirmed) {
+        alert('Campaign was not removed: VM shutdown is not confirmed. Use Stop & remove after checking the worker.');
+        return;
+      }
       _cloudDismissed.add(id); _cloudSaveDismissed();
     } else if (it && it.id === 'local-active' && it.interrupted) {
       const r = await fetch('/api/campaign/interrupted', { method: 'DELETE' });
@@ -10889,6 +10922,11 @@ function renderUnifiedStrip(it) {
   // handshake panel, but says where it actually is — "Primary handshake" would be
   // a lie once the handshake is done and we're reading the sheet.
   if (it.launching) statusTxt = it.launchPhase === 'dispatching' ? '☁︎ Handing over to the VM…' : '🤝 Connecting to primary';
+  // A timeout is not proof that a VM browser closed. Give a stale transitional
+  // campaign an honest warning and an explicit recovery action after one minute.
+  const stopAgeMs = it.stopping ? Date.now() - Date.parse(it.updatedAt || '') : 0;
+  const staleCloudStop = cloud && it.stopping && Number.isFinite(stopAgeMs) && stopAgeMs >= 60_000;
+  if (staleCloudStop) statusTxt = 'Stop unconfirmed — check VM';
 
   // Primary needs-login (Task 9) — only fires when the engine's
   // c.primarySession.state is 'needs_login' (see /js/primary-session-render.mjs).
@@ -11076,15 +11114,18 @@ function renderUnifiedStrip(it) {
     // locked while it runs) instead of the live sheet. "👁 Show" remains the way
     // to watch the VM browser live.
     const _openRO = `<button class="mini solid" onclick="openRunningCampaignReadOnly('${escHtml(it.id)}')">Open</button>`;
+    const emergencyRemove = staleCloudStop
+      ? `<button type="button" class="mini sn-delete-forever" onclick="event.stopPropagation();emergencyStopAndRemoveCloud('${escHtml(it.id)}')" title="Request immediate VM abort; remove only after confirmed shutdown">Stop & remove</button>`
+      : '';
     if (monitoring) {
-      foot = _showBtn + _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openRO;
+      foot = _showBtn + _dib(V3_SVG_STOP, 'Stop monitoring', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + emergencyRemove + _openRO;
     } else {
       // Pause/Resume — 1:1 with the local running cluster (engine resume flips
       // status paused→running; pause halts sending after the current lead).
       const _pauseBtn = it.paused
         ? _dib(V3_SVG_PLAY, 'Resume', `pauseCloudCampaignUI('${escHtml(it.id)}', true)`)
         : _dib(V3_SVG_PAUSE, 'Pause', `pauseCloudCampaignUI('${escHtml(it.id)}', false)`);
-      foot = _showBtn + _pauseBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + _openRO;
+      foot = _showBtn + _pauseBtn + _dib(V3_SVG_STOP, 'Stop', `stopCloudCampaignUI('${escHtml(it.id)}')`, 'danger') + emergencyRemove + _openRO;
     }
   } else if (queued) {
     if (cloud) {
@@ -11140,6 +11181,9 @@ function renderUnifiedStrip(it) {
   // No card #2 clone for a launch: it has no campaign status to fill, and
   // _fillVjCards would paint the generic "running" hero over the handshake panel.
   const richCard = (queued || it.launching) ? '' : vjCardSkeleton(it.id);
+  const expandedStopRecovery = staleCloudStop && !collapsed
+    ? `<div class="sn-foot"><div class="right"><button type="button" class="mini sn-delete-forever" onclick="event.stopPropagation();emergencyStopAndRemoveCloud('${escHtml(it.id)}')" title="Request immediate VM abort; remove only after confirmed shutdown">Stop & remove</button></div></div>`
+    : '';
   return `
   <div class="sn-strip ${stateCls}" data-cid="${escHtml(it.id)}">
     ${expandBtn}
@@ -11159,6 +11203,7 @@ function renderUnifiedStrip(it) {
     <div class="sn-foot"><div class="right">${foot}${_stripOverflow()}</div></div>
     </div>
     ${richCard}
+    ${expandedStopRecovery}
   </div>`;
 }
 

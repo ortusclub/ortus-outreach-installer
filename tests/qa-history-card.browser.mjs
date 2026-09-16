@@ -194,5 +194,36 @@ try {
   });
   assert.notEqual(afterNew.id, 'h-selected-fixture');
   assert.equal(afterNew.display, 'none');
+  const emergencyStop = await page.evaluate(async () => {
+    const item = { id: 'cloud-stop-fixture', where: 'cloud', bucket: 'running', name: 'VM stop fixture',
+      mode: 'connect_only', engineStatus: 'stopping', stopping: true, mine: true,
+      updatedAt: new Date(Date.now() - 90_000).toISOString(), total: 1, sent: 0, accounts: 1 };
+    __qa.seedItem(item);
+    const markup = __qa.renderUnifiedStrip(item);
+    const originalFetch = window.fetch;
+    const originalConfirm = window.confirm;
+    const originalAlert = window.alert;
+    const alerts = [];
+    window.confirm = () => true;
+    window.alert = message => alerts.push(message);
+    try {
+      window.fetch = async () => ({ ok: true, json: async () => ({ ok: false, stopping: true, status: 'stopping' }) });
+      await window.emergencyStopAndRemoveCloud(item.id);
+      const refused = !JSON.parse(localStorage.getItem('cloudDismissedDone') || '[]').includes(item.id);
+      window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, stopping: false, status: 'cancelled' }) });
+      await window.emergencyStopAndRemoveCloud(item.id);
+      const removed = JSON.parse(localStorage.getItem('cloudDismissedDone') || '[]').includes(item.id);
+      return { markup, refused, removed, alerts };
+    } finally {
+      window.fetch = originalFetch;
+      window.confirm = originalConfirm;
+      window.alert = originalAlert;
+    }
+  });
+  assert.match(emergencyStop.markup, /Stop unconfirmed — check VM/);
+  assert.match(emergencyStop.markup, /Stop & remove/);
+  assert.equal(emergencyStop.refused, true, 'an unconfirmed VM stop must not hide the card');
+  assert.equal(emergencyStop.removed, true, 'confirmed shutdown permits local removal');
+  assert.match(emergencyStop.alerts.join(' '), /NOT removed/);
   console.log('PASS: actual expanded-card renderer preserves separate logs, blocked/review outcomes and exact-account recovery buttons. All requests intercepted.');
 } finally { await browser.close(); }
