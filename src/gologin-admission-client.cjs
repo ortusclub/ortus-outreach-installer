@@ -24,6 +24,7 @@ function boundedCall(fn, ms, signal) {
     const abort = () => { controller.abort(signal.reason); finish(signal.reason || admissionError('Request cancelled')); };
     const timer = setTimeout(() => {
       const error = admissionError('GoLogin coordinator did not respond in time; request not dispatched.');
+      error.coordinatorTimeout = true;
       controller.abort(error); finish(error);
     }, ms);
     signal?.addEventListener('abort', abort, { once: true });
@@ -35,7 +36,7 @@ function boundedCall(fn, ms, signal) {
   });
 }
 function createAdmissionClient({ reserve, cooldown, workspaceForToken, maxWaitMs = 30000,
-  now = Date.now, wait = sleep, onWait = () => {} }) {
+  now = Date.now, wait = sleep, onWait = () => {}, onFailure = () => {} }) {
   return {
     async acquire({ token, signal, priority = 'ordinary' }) {
       const workspace = workspaceForToken(token);
@@ -46,8 +47,21 @@ function createAdmissionClient({ reserve, cooldown, workspaceForToken, maxWaitMs
         signal?.throwIfAborted();
         if (now() >= deadline) throw admissionError('GoLogin request allowance is still unavailable; request not dispatched.');
         let result;
+        const started = now();
         try { result = await boundedCall(s => reserve({ workspace, priority }, s), Math.min(2000, deadline - now()), signal); }
-        catch { signal?.throwIfAborted(); throw admissionError('GoLogin request coordinator unavailable; request not dispatched.'); }
+        catch (error) {
+          signal?.throwIfAborted();
+          const status = Number(error?.coordinatorHttpStatus);
+          const rawCode = error?.cause?.code || error?.code;
+          const code = typeof rawCode === 'string' && /^[A-Z][A-Z0-9_]{1,39}$/.test(rawCode) ? rawCode : null;
+          const kind = error?.coordinatorTimeout ? 'client_timeout'
+            : Number.isInteger(status) && status >= 400 && status <= 599 ? 'http_error'
+              : error?.coordinatorIdentityMismatch ? 'identity_mismatch'
+                : error?.name === 'TypeError' ? 'transport_error' : 'other';
+          try { onFailure({ action: 'reserve', workspace, kind, status: kind === 'http_error' ? status : null,
+            code, elapsedMs: Math.max(0, now() - started) }); } catch {}
+          throw admissionError('GoLogin request coordinator unavailable; request not dispatched.');
+        }
         signal?.throwIfAborted();
         if (now() >= deadline) throw admissionError('GoLogin request allowance expired; request not dispatched.');
         if (result?.allowed === true) return;

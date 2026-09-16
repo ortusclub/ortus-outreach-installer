@@ -59,3 +59,24 @@ test('desktop setup refuses production fallback and checks PR-19 coordinator ide
     }
   }
 });
+
+test('coordinator diagnostics distinguish timeout, HTTP and transport without leaking error text', async () => {
+  const failures = [];
+  const options = { workspaceForToken: () => 'ortus', cooldown: async () => {},
+    onFailure: detail => failures.push(detail) };
+  await assert.rejects(clientModule.createAdmissionClient({ ...options, maxWaitMs: 15,
+    reserve: () => new Promise(() => {}),
+  }).acquire({ token: 'secret-token' }), /coordinator unavailable/);
+  await assert.rejects(clientModule.createAdmissionClient({ ...options,
+    reserve: async () => { const error = new Error('secret-token in response'); error.coordinatorHttpStatus = 503; throw error; },
+  }).acquire({ token: 'secret-token' }), /coordinator unavailable/);
+  await assert.rejects(clientModule.createAdmissionClient({ ...options,
+    reserve: async () => { const error = new TypeError('secret-token in transport'); error.cause = { code: 'ECONNRESET' }; throw error; },
+  }).acquire({ token: 'secret-token' }), /coordinator unavailable/);
+  assert.deepEqual(failures.map(({ kind, status, code }) => ({ kind, status, code })), [
+    { kind: 'client_timeout', status: null, code: 'GOLOGIN_ADMISSION_UNAVAILABLE' },
+    { kind: 'http_error', status: 503, code: null },
+    { kind: 'transport_error', status: null, code: 'ECONNRESET' },
+  ]);
+  assert.ok(!JSON.stringify(failures).includes('secret-token'));
+});
