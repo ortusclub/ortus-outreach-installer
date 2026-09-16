@@ -33719,3 +33719,87 @@ window.previewMagellan = previewMagellan;
 window.importMagellan = importMagellan;
 window.toggleMagellanLog = toggleMagellanLog;
 window.stopMagellanCollect = stopMagellanCollect;
+
+// ── GoLogin credentials modal ──────────────────────────────────────────────
+// Simplified from Ortus Basics: no custom workspaces, just the built-in ones.
+
+async function renderCredentialsModal() {
+  const wrap = document.getElementById('cred-fields');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="cred-loading">Loading…</div>';
+  let creds = [];
+  try {
+    const r = await fetch('/api/credentials');
+    const d = await r.json();
+    creds = d.credentials || [];
+  } catch (e) {
+    wrap.innerHTML = `<div class="cred-msg is-bad">Could not read settings: ${escHtml(e.message)}</div>`;
+    return;
+  }
+  wrap.innerHTML = creds.map((c) => {
+    const state = c.set
+      ? `<span class="cred-state is-set">set · ${escHtml(c.hint)}</span>`
+      : `<span class="cred-state is-unset">${c.required ? 'required' : 'not set'}</span>`;
+    const envNote = c.fromEnvironment
+      ? '<div class="cred-note">Currently supplied by the environment (.env). Saving here overrides it.</div>'
+      : '';
+    return `<div class="cred-row">
+      <label class="cred-label" for="cred-${escHtml(c.id)}">${escHtml(c.label)} ${state}</label>
+      <input type="password" class="cred-input" id="cred-${escHtml(c.id)}"
+             data-env="${escHtml(c.env)}" autocomplete="off" spellcheck="false"
+             placeholder="${c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
+      ${envNote}
+    </div>`;
+  }).join('');
+}
+
+function openCredentialsModal() {
+  const m = document.getElementById('credentials-modal');
+  if (!m) return;
+  const msg = document.getElementById('cred-msg');
+  if (msg) { msg.hidden = true; msg.textContent = ''; }
+  m.classList.remove('hidden');
+  renderCredentialsModal();
+}
+function closeCredentialsModal() {
+  document.getElementById('credentials-modal')?.classList.add('hidden');
+}
+
+async function saveCredentialsFromModal() {
+  const btn = document.getElementById('cred-save');
+  const msg = document.getElementById('cred-msg');
+  const show = (text, bad) => {
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = 'cred-msg' + (bad ? ' is-bad' : ' is-ok');
+    msg.hidden = false;
+  };
+  const body = {};
+  document.querySelectorAll('#cred-fields .cred-input').forEach((el) => {
+    const v = (el.value || '').trim();
+    if (v) body[el.dataset.env] = v;
+  });
+  if (!Object.keys(body).length) return show('Nothing to save — paste a token first.', true);
+
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const r = await fetch('/api/credentials', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    show('Saved. Reloading the account list…', false);
+    await renderCredentialsModal();
+    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) {} }
+    if (typeof showCampaignToast === 'function') showCampaignToast('GoLogin tokens saved');
+  } catch (e) {
+    show('Could not save: ' + e.message, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = prev || 'Save tokens'; }
+  }
+}
+
+window.openCredentialsModal = openCredentialsModal;
+window.closeCredentialsModal = closeCredentialsModal;
+window.saveCredentialsFromModal = saveCredentialsFromModal;

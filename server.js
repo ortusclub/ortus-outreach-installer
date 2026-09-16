@@ -1,13 +1,16 @@
 import 'dotenv/config';
 
-// ── Startup env validation (D-06) ──────────────────────────────────
-// v2.52.0: SHEETS_WEBAPP_URL removed from REQUIRED_ENV. The URL is now
-// hard-coded in src/sheets-webapp-url.js and the .env value is ignored.
-const REQUIRED_ENV = ['GOLOGIN_API_TOKEN'];
-const missing = REQUIRED_ENV.filter(k => !process.env[k]);
-if (missing.length) {
-  console.error(`\n  FATAL: Missing required environment variables:\n${missing.map(k => '    - ' + k).join('\n')}\n\n  Copy .env.example to .env and fill in all values.\n`);
-  process.exit(1);
+// ── GoLogin credentials: saved tokens take precedence over .env ────
+// Tokens saved via Settings (gologin-credentials.json in the data dir) are
+// pushed into process.env here, BEFORE any module captures them at load time.
+// A .env token still works as a fallback for existing installs.
+const { applyCredentials } = await import('./src/gologin-credentials.js');
+const _appliedCreds = applyCredentials();
+if (_appliedCreds.length) {
+  console.log(`  ✦ GoLogin workspaces from Settings: ${_appliedCreds.join(', ')}`);
+}
+if (!process.env.GOLOGIN_API_TOKEN) {
+  console.warn('\n  ⚠ No GoLogin token yet — add one in Settings or set GOLOGIN_API_TOKEN in .env.\n');
 }
 
 import express from 'express';
@@ -793,9 +796,7 @@ app.get('/api/check-status/preview', async (req, res) => {
       (async () => {
         try {
           const { getProfiles } = await import('./src/gologin-launcher.js');
-          const token = process.env.GOLOGIN_API_TOKEN;
-          if (!token) return [];
-          return await getProfiles(token);
+          return await getProfiles();
         } catch { return []; }
       })(),
     ]);
@@ -1356,7 +1357,7 @@ async function handleStartCloud(req, res) {
     // Profiles are fetched for ALL modes now (not just auto-routed): the engine
     // needs an accountEmails map (profileId -> SoO email) so it can stamp SoO
     // Needs-Login when a cloud session dies. Best-effort — [] on failure.
-    const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
+    const profs = await getProfiles().catch(() => []);
     const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
     let nameToId = null;
     if (autoRouted) {
@@ -1834,7 +1835,7 @@ async function reconcileCloud(id, leads) {
     if (sheetUrl && freshRows.length) {
       const linkedinColumn = (c.config && c.config.linkedinColumn) || 'linkedin url';
       const { updateSheetRow } = await import('./src/sheets-writer.js');
-      const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
+      const profs = await getProfiles().catch(() => []);
       const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
       // Issued together, NOT awaited one at a time: sheets-writer coalesces
       // concurrent row writes into 100-row executions, and an await-per-row
@@ -2436,7 +2437,7 @@ async function handoverToLocal(id, req, res) {
   if (preserveMonitoring || handoverTargetForCampaign(camp.status, allLeads) === 'monitor') {
     let profileNames = [];
     try {
-      const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+      const profs = await getProfiles();
       const byId = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
       profileNames = profileIds.map((pid) => byId.get(pid) || pid);
     } catch { profileNames = profileIds.slice(); }
@@ -2817,7 +2818,7 @@ app.post('/api/campaign/cloud/:id/accounts', async (req, res) => {
   // never found the account. Best-effort: a SoO failure leaves the client's value.
   if (add.length) {
     try {
-      const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
+      const profs = await getProfiles().catch(() => []);
       const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
       const soo = await fetchSoOData();
       const sooEmails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
@@ -3170,8 +3171,7 @@ app.post('/api/campaign/preflight-ic-senders', async (req, res) => {
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
 
     const rows = await fetchSheet(sheetUrl);
-    const token = process.env.GOLOGIN_API_TOKEN;
-    const profiles = token ? await getProfiles(token) : [];
+    const profiles = await getProfiles();
     const nameToId = {};
     for (const p of profiles) nameToId[p.name] = p.id;
     nameToId['You'] = 'local-browser';
@@ -3844,11 +3844,10 @@ app.post('/api/fg/send/start', async (req, res) => {
           note: `No queued invites for ${operator}. The send only fires rows already saved to the sheet as “Queued” for this operator — click “Queue these invites” first, and make sure the operator selected matches the one you queued under.` };
         return;
       }
-      const token = process.env.GOLOGIN_API_TOKEN;
       const isLocal = profileId === 'local-browser';
       preventSleep('fg-invite');
       campaignLog(`[FG-invite] Launching ${isLocal ? 'local browser' : `profile ${profileId}`} for ${operator} — ${queued.length} queued invite(s)`);
-      const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId, token);
+      const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId);
       launchedProfile = true;
       const page = launched.page;
       _fgSend.phase = 'inviting';
@@ -4165,7 +4164,7 @@ let _fgProfileMap = { map: null, at: 0 };
 async function fgProfileIdsByEmail() {
   if (_fgProfileMap.map && Date.now() - _fgProfileMap.at < FG_PROFILES_TTL_MS) return _fgProfileMap.map;
   const map = {};
-  const profiles = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+  const profiles = await getProfiles();
   for (const p of profiles || []) {
     const name = String(p?.name || '').trim().toLowerCase();
     if (name.includes('@')) map[name] = p.id;
@@ -4717,7 +4716,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
   _fgTeam = makeInitialStatus(pairs);
   _fgTeam.phase = 'launching';
   _fgTeamAbort = false;
-  const token = process.env.GOLOGIN_API_TOKEN;
+
 
   (async () => {
     try {
@@ -4748,7 +4747,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
         launch: async (pair) => {
           const isLocal = pair.profileId === 'local-browser';
           campaignLog(`[FG-team] Launching ${isLocal ? 'local browser' : `profile ${pair.profileId}`} for ${pair.account}`);
-          const launched = isLocal ? await launchLocalBrowser() : await launchProfile(pair.profileId, token);
+          const launched = isLocal ? await launchLocalBrowser() : await launchProfile(pair.profileId);
           return { page: launched.page, close: async () => { await (isLocal ? closeLocalBrowser() : closeProfile(pair.profileId)); } };
         },
         send: ({ page, queued, log, shouldAbort }) => runFollowerInvites({ page, inviteUrl: ORTUS_PAGE_INVITE_URL, queued, log, shouldAbort }),
@@ -4904,7 +4903,7 @@ app.get('/api/reply-sweep/accounts', async (req, res) => {
   catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}`, accounts: [] }); }
   let nameToId = {}; const nameById = new Map();
   try {
-    const allProfiles = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+    const allProfiles = await getProfiles();
     for (const p of allProfiles) { nameToId[(p.name || '').toLowerCase()] = p.id; nameById.set(p.id, p.name || p.id); }
   } catch { /* fall back to sender string as id */ }
   const byAcct = new Map();
@@ -4943,7 +4942,7 @@ app.post('/api/reply-sweep/open-thread', async (req, res) => {
     : fallbackUrl;
   if (!url) return res.status(400).json({ error: 'threadId or profileUrl required' });
   try {
-    const token = process.env.GOLOGIN_API_TOKEN;
+
     const isLocal = profileId === 'local-browser';
     const existingPid = getProfilePid(profileId);
     if (existingPid) {
@@ -4952,7 +4951,7 @@ app.post('/api/reply-sweep/open-thread', async (req, res) => {
       if (process.platform === 'darwin') { try { await unhideByPids([existingPid]); } catch (_) {} }
       return res.json({ ok: true, action: 'focused-existing', pid: existingPid, url });
     }
-    const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId, token);
+    const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId);
     try { await launched.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }); } catch (_) {}
     const newPid = getProfilePid(profileId);
     if (process.platform === 'darwin' && newPid) { try { await unhideByPids([newPid]); } catch (_) {} }
@@ -4976,7 +4975,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
   linkedinColumn = linkedinColumn || 'Linkedin URL';
 
   // Load + group sent rows by sender (same grouping as /api/reply-check-now).
-  const token = process.env.GOLOGIN_API_TOKEN;
+
   let rows;
   try { rows = await fetchSheet(sheetUrl); }
   catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}` }); }
@@ -4984,7 +4983,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
   let nameByProfileId = new Map();
   let nameToId = {};
   try {
-    const allProfiles = await getProfiles(token);
+    const allProfiles = await getProfiles();
     nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
     for (const p of allProfiles) nameToId[(p.name || '').toLowerCase()] = p.id;
   } catch { /* fall back to id-as-name */ }
@@ -5591,7 +5590,7 @@ app.post('/api/campaign/resume/accounts', async (req, res) => {
   if (Array.isArray(add) && add.length) {
     // getProfiles already imported from ./src/gologin-launcher.js (same source
     // the /api/profiles route uses). Returns [{ id, name, ... }].
-    const available = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+    const available = await getProfiles();
     addById = new Map(available.map(p => [p.id, p.name]));
     for (const a of add) {
       if (!addById.has(a.id)) return res.status(400).json({ error: `unknown profile ${a.id}` });
@@ -6314,7 +6313,7 @@ app.post('/api/replies/seen', async (_req, res) => {
 // v2.98 — resolve the swept-account NAMES (lowercased, for matching the sheet's
 // Sender column) for a solo-check request. Returns null for "all senders".
 // Mirrors the account resolution inside /api/bulk-check-now.
-async function _resolveSweptAccountNames({ profileId, profileIds, allSenders }, token) {
+async function _resolveSweptAccountNames({ profileId, profileIds, allSenders }) {
   if (allSenders) return null;
   let ids = [];
   if (Array.isArray(profileIds) && profileIds.length) {
@@ -6325,7 +6324,7 @@ async function _resolveSweptAccountNames({ profileId, profileIds, allSenders }, 
   if (!ids.length) return null;
   let nameById = new Map();
   try {
-    const all = await getProfiles(token);
+    const all = await getProfiles();
     nameById = new Map(all.map((p) => [p.id, String(p.name || '').toLowerCase()]));
   } catch { /* fall back to no names → treat as all */ }
   const names = new Set();
@@ -6363,8 +6362,8 @@ app.post('/api/intro-failures/preview', async (req, res) => {
       linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
-    const token = process.env.GOLOGIN_API_TOKEN;
-    const names = await _resolveSweptAccountNames({ profileId, profileIds, allSenders }, token);
+
+    const names = await _resolveSweptAccountNames({ profileId, profileIds, allSenders });
     const failures = await _findReconnectableIntroFailures(sheetUrl, linkedinColumn || '', names);
     const accounts = [...new Set(failures.map((f) => f.sender).filter(Boolean))];
     const effPrimary = (primaryName && String(primaryName).trim())
@@ -6384,7 +6383,7 @@ app.post('/api/intro-failures/preview', async (req, res) => {
     if (effSource && effSource !== 'local-browser') {
       acceptVia = 'gologin';
       try {
-        const all = await getProfiles(token);
+        const all = await getProfiles();
         const p = all.find((x) => x.id === effSource);
         acceptViaName = (p && p.name) || effSource;
       } catch { acceptViaName = effSource; }
@@ -6478,7 +6477,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
       }
     }
 
-    const token = process.env.GOLOGIN_API_TOKEN;
+
     const { bulkCheckConnections } = await import('./src/linkedin/bulk-check-connections.js');
     const { runAutoIntros } = await import('./src/linkedin/auto-intro.js');
     const { runAutoDms } = await import('./src/linkedin/auto-dm.js');
@@ -6507,7 +6506,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
         if (accountEmails.size === 0) {
           return res.status(400).json({ error: 'No accounts selected and no Account Used values found on the sheet to derive from.' });
         }
-        const allProfiles = await getProfiles(token);
+        const allProfiles = await getProfiles();
         const byName = new Map(allProfiles.map((p) => [String(p.name || '').toLowerCase(), p.id]));
         for (const email of accountEmails) {
           const pid = byName.get(email);
@@ -6528,7 +6527,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
     // passes pName; the manual button used to skip this lookup.
     let nameByProfileId = new Map();
     try {
-      const allProfiles = await getProfiles(token);
+      const allProfiles = await getProfiles();
       nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
     } catch { /* fall back to id-as-name if cache fetch fails */ }
 
@@ -6861,7 +6860,7 @@ app.post('/api/reply-check-now', async (req, res) => {
       campaignLog('✓ Campaign paused — starting reply check.');
     }
 
-    const token = process.env.GOLOGIN_API_TOKEN;
+
     const { checkProfileDms } = await import('./src/linkedin/check-dms.js');
     const { appendReplies } = await import('./src/replies-log.js');
     const { scanRepliesForProfile } = await import('./src/post-campaign-reply-check.js');
@@ -6880,7 +6879,7 @@ app.post('/api/reply-check-now', async (req, res) => {
     let nameByProfileId = new Map();
     let nameToId = {};
     try {
-      const allProfiles = await getProfiles(token);
+      const allProfiles = await getProfiles();
       nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
       for (const p of allProfiles) nameToId[(p.name || '').toLowerCase()] = p.id;
     } catch { /* fall back to id-as-name */ }
@@ -7132,8 +7131,8 @@ app.post('/api/profile/:id/open-browser', async (req, res) => {
       }
       return res.json({ ok: true, action: 'focused-existing', pid: existingPid });
     }
-    const token = process.env.GOLOGIN_API_TOKEN;
-    await launchProfile(profileId, token);
+
+    await launchProfile(profileId);
     const newPid = getProfilePid(profileId);
     if (process.platform === 'darwin' && newPid) {
       await unhideByPids([newPid]);
@@ -7163,9 +7162,9 @@ app.post('/api/campaign/profile/:id/retry', async (req, res) => {
       if (process.platform === 'darwin') await unhideByPids([existingPid]);
       launchInfo = { action: 'focused-existing', pid: existingPid };
     } else {
-      const token = process.env.GOLOGIN_API_TOKEN;
+  
       try {
-        await launchProfile(profileId, token);
+        await launchProfile(profileId);
         const newPid = getProfilePid(profileId);
         if (process.platform === 'darwin' && newPid) await unhideByPids([newPid]);
         launchInfo = { action: 'launched', pid: newPid };
@@ -7238,8 +7237,7 @@ app.post('/api/check-dms/start', async (req, res) => {
 
     let profiles = [];
     try {
-      const token = process.env.GOLOGIN_API_TOKEN;
-      if (token) profiles = await getProfiles(token);
+      profiles = await getProfiles();
     } catch (err) {
       console.warn(`[check-dms] getProfiles failed: ${err.message}`);
     }
@@ -7408,9 +7406,7 @@ app.get('/api/check-dms/preview', async (req, res) => {
       fetchSheet(url),
       (async () => {
         try {
-          const token = process.env.GOLOGIN_API_TOKEN;
-          if (!token) return [];
-          return await getProfiles(token);
+          return await getProfiles();
         } catch { return []; }
       })(),
     ]);
@@ -8067,7 +8063,7 @@ app.post('/api/history/:idx/monitoring', async (req, res) => {
     // scheduler's name→id step works; best-effort if GoLogin is unreachable.
     let idToName = {};
     try {
-      const profiles = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+      const profiles = await getProfiles();
       for (const p of profiles) idToName[p.id] = p.name;
     } catch { /* names optional */ }
     const linkedinColumn = entry?.settings?.linkedinColumn || '';
@@ -8297,6 +8293,35 @@ app.get('/api/export/csv', async (_req, res) => {
   }
 });
 
+// ── GoLogin workspace tokens (Settings) ─────────────────────────────────
+// Operators paste tokens here; saved to the data dir so they survive updates.
+app.get('/api/credentials', async (_req, res) => {
+  try {
+    const { credentialStatus } = await import('./src/gologin-credentials.js');
+    res.json({ ok: true, credentials: credentialStatus() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/credentials', async (req, res) => {
+  try {
+    const { saveCredentials, credentialStatus, credentialFields } = await import('./src/gologin-credentials.js');
+    const body = req.body || {};
+    const allowed = new Set(credentialFields().map((f) => f.env));
+    const input = {};
+    for (const [k, v] of Object.entries(body)) if (allowed.has(k)) input[k] = v;
+    if (!Object.keys(input).length) {
+      return res.status(400).json({ ok: false, error: 'No known token fields in the request.' });
+    }
+    saveCredentials(input);
+    res.json({ ok: true, credentials: credentialStatus() });
+  } catch (err) {
+    console.error('[credentials] save failed:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
@@ -8304,7 +8329,7 @@ app.listen(PORT, '127.0.0.1', async () => {
   console.log(`\n  ✦ Ortus Outreach v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   startAmbientSampling(getActiveBrowserPids);
-  console.log(`  ✦ GoLogin token: ${process.env.GOLOGIN_API_TOKEN ? '✓ loaded' : '✗ MISSING'}`);
+  console.log(`  ✦ GoLogin: ${configuredAccounts().length} workspace(s) configured`);
   console.log(`  ✦ Sheet tracking: ✓ centralized (Antonio's Apps Script)`);
 
   await initNotifier();
@@ -8683,12 +8708,12 @@ app.post('/api/diagnostic/navigate', async (req, res) => {
   if (!profileEmail && !profileIdRaw) {
     return res.status(400).json({ error: 'profileEmail or profileId required' });
   }
-  const token = process.env.GOLOGIN_API_TOKEN;
+
   let profileId = profileIdRaw;
   let resolvedFromEmail = null;
   if (!profileId && profileEmail) {
     try {
-      const allProfiles = await getProfiles(token);
+      const allProfiles = await getProfiles();
       const match = allProfiles.find((p) => String(p.name || '').toLowerCase() === String(profileEmail).toLowerCase());
       if (!match) {
         return res.status(404).json({ error: `Profile not found for email: ${profileEmail}` });
@@ -8704,7 +8729,7 @@ app.post('/api/diagnostic/navigate', async (req, res) => {
 
   let launched;
   try {
-    launched = await launchProfile(profileId, token);
+    launched = await launchProfile(profileId);
   } catch (err) {
     return res.status(500).json({ error: `Launch failed: ${err.message}` });
   }
