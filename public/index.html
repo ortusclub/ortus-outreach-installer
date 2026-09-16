@@ -134,6 +134,12 @@
             </label>
           </span>
         </div>
+        <div class="sb-line">
+          <span class="sb-line-k">GoLogin tokens</span>
+          <span class="sb-line-v">
+            <button type="button" class="sb-link" onclick="openCredentialsModal()">Manage</button>
+          </span>
+        </div>
       </div>
 
       <div class="sidebar-footer">
@@ -4573,5 +4579,23 @@
     </div>
   </div>
 </div>
+
+  <!-- ── GoLogin workspace tokens ────────────────────────────────────────────
+       Filled by renderCredentialsModal() from /api/credentials. A token is
+       never sent back to the browser — only whether it's set + last 4 chars. -->
+  <div id="credentials-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCredentialsModal()">
+    <div class="modal-card cred-card" role="dialog" aria-modal="true" aria-labelledby="cred-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCredentialsModal()">&times;</button>
+      <div class="stop-choice-eyebrow">Settings</div>
+      <h3 id="cred-title" class="modal-title">GoLogin workspace tokens</h3>
+      <p class="stop-choice-sub">Paste the tokens for each workspace. Tokens are saved on this Mac and survive app updates. A workspace with no token contributes no accounts.</p>
+      <div id="cred-fields"></div>
+      <div id="cred-msg" class="cred-msg" hidden></div>
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="btn btn-secondary" onclick="closeCredentialsModal()">Cancel</button>
+        <button type="button" class="btn" id="cred-save" onclick="saveCredentialsFromModal()">Save tokens</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
