@@ -72,7 +72,10 @@ export function buildOutcome(state = {}) {
     // they read as a contradiction — "34 people are in HubSpot more than once"
     // directly above "30 × This person is in HubSpot twice". Once an import has
     // run, its line carries the same fact AND the fix, so this one stands down.
-    const dupes = (pv.duplicates || []).length;
+    // duplicatesTotal is the true count; pv.duplicates is only a capped sample
+    // now (the full list lives in magellan-run's _duplicates). Fall back to the
+    // array length for any caller/test that still hands the whole list.
+    const dupes = pv.duplicatesTotal != null ? pv.duplicatesTotal : (pv.duplicates || []).length;
     const importSaidIt = ((s.imported && s.imported.problems) || [])
       .some((p) => p.code === 'duplicate_contact');
     if (dupes && !importSaidIt) {

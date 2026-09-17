@@ -3507,12 +3507,15 @@ app.post('/api/magellan/stop', (_req, res) => {
   }
 });
 
-app.post('/api/magellan/preview', async (req, res) => {
+app.post('/api/magellan/preview', (req, res) => {
+  // Start the Check and return immediately — the page polls /api/magellan/state
+  // for the result (_state.preview). Awaiting buildPreview here is what made a
+  // big account's Check run past the page's 30s fetch guard and print "The app
+  // did not answer" over a check that had actually succeeded.
   try {
-    const { totals, blocked, duplicates } = await magellan.buildPreview((req.body || {}).accounts || []);
-    res.json({ totals, blocked, duplicates });
+    res.json(magellan.startPreview((req.body || {}).accounts || []));
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -33031,7 +33031,16 @@ function renderMagellanState(s) {
   // A button that says "Checking…" for three minutes is indistinguishable from
   // one that has hung. A number moving on it is not.
   const prevBtn = el('mg-preview-btn');
-  if (prevBtn && checking) prevBtn.textContent = s.running ? `Checking… ${pct}%` : 'Check what would happen';
+  if (prevBtn && checking) {
+    prevBtn.disabled = !!s.running;
+    prevBtn.textContent = s.running ? `Checking… ${pct}%` : 'Check what would happen';
+  } else if (prevBtn && !s.running) {
+    // A finished check leaves phase 'done' (not 'checking'), so reset the button
+    // here too — otherwise it stays stuck disabled on "Checking…" after a big
+    // account's check completes via the poller rather than the fetch response.
+    prevBtn.disabled = false;
+    prevBtn.textContent = 'Check what would happen';
+  }
   if (s.stopped) set('mg-eyebrow', 'Stopped');
 
   // What happened. Only ever drawn from the run's own outcome record, which the
@@ -33048,6 +33057,23 @@ function renderMagellanState(s) {
           ? `<ul class="oc-list">${oc.problems.map((p) => `<li>${escHtml(p)}</li>`).join('')}</ul>`
           : '')
       : '';
+  }
+
+  // Step 3 — the Import preview — rendered from POLLED state. buildPreview only
+  // sets _state.preview once the Check has finished, so its presence is the
+  // signal: a big account's check (minutes, far past the 30s fetch guard) still
+  // lands its result, and a finished preview survives a reload. Not while an
+  // import/merge owns the card, and not once an import has run (its outcome
+  // supersedes the preview — newest run wins, same rule the hero uses above).
+  if (s.preview && !imp && s.phase !== 'importing' && s.phase !== 'merging') {
+    renderMagellanPreview(s.preview);
+  }
+  // A check that failed (missing property, HubSpot down) settles with
+  // phase:'error'. Surface it and clear stale Import affordances — here, not just
+  // once on settle, so a reload onto an errored run recovers the message too.
+  if (s.phase === 'error' && s.error) {
+    showMagellanError(s.error);
+    hideMagellanStep3();
   }
 
   // Stage block — the account being worked on and what is happening to it.
@@ -33228,6 +33254,94 @@ async function openMagellanSheet() {
 }
 window.openMagellanSheet = openMagellanSheet;
 
+// Step 3 — the Import preview — rendered from POLLED state (_state.preview), not
+// the response to the check request. A big account's Check runs minutes, far
+// past the 30s fetch guard, so the result has to arrive by polling; the same
+// function renders a live check finishing AND a finished preview recovered on
+// reload. Takes { totals, blocked }. Idempotent — safe to call on every poll.
+function renderMagellanPreview(preview) {
+  const t = (preview && preview.totals) || {};
+  const blocked = (preview && preview.blocked) || [];
+  document.getElementById('mg-led-new').textContent = mgNum(t.created || 0);
+  // `existing`, not `updated`: a contact HubSpot already holds complete needs
+  // no property written, so it is in neither the creates nor the updates.
+  document.getElementById('mg-led-existing').textContent = mgNum(t.existing || 0);
+  document.getElementById('mg-led-hidden').textContent = mgNum(t.hidden || 0);
+  document.getElementById('mg-ledger').hidden = false;
+  // The Import button number is ONLY the NEW people — the actual additions to
+  // HubSpot. Everyone already there just gets their connection recorded, which
+  // is real work but is NOT an "import", so we state it SEPARATELY rather than
+  // summing the two into one number (a run used to read "Import 1,112" when only
+  // 40 were actually new — confusing). `stamped` = existing records that get a
+  // write (willWrite counts creates + those); the rest are already complete.
+  const created = t.created || 0;
+  const willWrite = t.willWrite != null ? t.willWrite : created;
+  const stamped = Math.max(0, willWrite - created);
+  const ppl = (n) => (n === 1 ? 'person' : 'people');
+
+  // Reconcile the two numbers explicitly: `stamped` is a SUBSET of the "Already
+  // there" total (t.existing). Saying "190" next to a card reading "1,785 already
+  // there" reads as a contradiction unless we spell out that the 190 are the ones
+  // that get a write and the other 1,595 already have the connection.
+  const existing = t.existing || 0;
+  const already = Math.max(0, existing - stamped);
+  const hl = (s) => `<span class="mg-hl">${s}</span>`;
+  let stampNote = '';
+  if (stamped > 0) {
+    const whose = ppl(stamped) === 'person' ? "person's" : "people's";
+    stampNote = ` Of the <b>${mgNum(existing)}</b> already in HubSpot, it ${hl(`adds you to <b>${mgNum(stamped)}</b> ${whose} connection list`)}`
+      + (already > 0 ? ` — the other ${mgNum(already)} already have you, so nothing changes for them.` : ' — nothing else on their record changes.');
+  } else if (existing > 0) {
+    stampNote = ` The <b>${mgNum(existing)}</b> already in HubSpot ${hl('already have you on their connection list')} — nothing changes for them.`;
+  }
+  document.getElementById('mg-confirm-t').innerHTML =
+    '<b>Nothing has gone into HubSpot yet.</b> '
+    + `Pressing Import adds the <b>${mgNum(created)}</b> new ${ppl(created)}.${stampNote}`;
+
+  const imp = document.getElementById('mg-import-btn');
+  imp.hidden = false;
+  if (created === 0 && stamped === 0) {
+    imp.textContent = 'Nothing to import';
+    imp.disabled = true;
+  } else if (created === 0) {
+    // No new people at all — the whole action is recording connections.
+    imp.textContent = `Add connection to ${mgNum(stamped)} ${ppl(stamped)}`;
+    imp.disabled = false;
+  } else {
+    imp.textContent = `Import ${mgNum(created)} ${ppl(created)}`;
+    imp.disabled = false;
+  }
+  // Only once Check has produced a plan — a link to an empty sheet is worse
+  // than no link.
+  const rev = document.getElementById('mg-review');
+  if (rev) rev.hidden = false;
+
+  // Accounts HubSpot will not accept. "Linkedin 1st Connections" is a fixed
+  // list of Ortus emails; anything else — a GoLogin profile NAME, a typo —
+  // has no option to write to, so its people cannot be imported at all.
+  const bbox = document.getElementById('mg-blocked');
+  if (bbox) {
+    bbox.hidden = blocked.length === 0;
+    bbox.innerHTML = blocked.length
+      ? `<div class="mg-det-h">${blocked.length} account${blocked.length === 1 ? '' : 's'} cannot be imported</div>`
+        + '<div class="mg-det-why">HubSpot\'s "Linkedin 1st Connections" field is a fixed list of Ortus account '
+        + 'emails. These names are not on it, so there is nothing to write their connections to.</div>'
+        + '<div class="mg-det-fix">Rename them to the account\'s email address and collect again, or ask for the '
+        + 'email to be added as an option in HubSpot.</div>'
+        + `<div class="mg-det-raw">${blocked.map(escHtml).join(', ')}</div>`
+      : '';
+  }
+}
+
+// A previous check's step 3 must not linger while a new one runs — a stale
+// Import button would import last run's plan.
+function hideMagellanStep3() {
+  for (const id of ['mg-ledger', 'mg-import-btn', 'mg-review', 'mg-blocked']) {
+    const e = document.getElementById(id);
+    if (e) e.hidden = true;
+  }
+}
+
 async function previewMagellan() {
   showMagellanError('');
   // What is ticked, and nothing else. This used to fall back to "whatever the
@@ -33241,8 +33355,14 @@ async function previewMagellan() {
   if (!accounts.length) return showMagellanError('Pick at least one account first.');
 
   const btn = document.getElementById('mg-preview-btn');
+  // A previous check's step 3 is stale the instant a new one starts.
+  hideMagellanStep3();
   if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
-  // Three minutes of HubSpot calls. Drive the card so it visibly works.
+  // The Check runs in the background; the card, the button and step 3 are all
+  // driven by the 2s poller (renderMagellanState) reading _state.preview. This
+  // request only STARTS it and returns immediately, so it never trips the 30s
+  // fetch guard — which is what made a big account's check read "The app did not
+  // answer. It may have restarted" over a check that had actually succeeded.
   startMagellanPolling();
   try {
     const j = await mgFetch('/api/magellan/preview', {
@@ -33250,87 +33370,14 @@ async function previewMagellan() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accounts }),
     });
-    const t = j.totals || {};
-    document.getElementById('mg-led-new').textContent = mgNum(t.created || 0);
-    // `existing`, not `updated`: a contact HubSpot already holds complete needs
-    // no property written, so it is in neither the creates nor the updates.
-    document.getElementById('mg-led-existing').textContent = mgNum(t.existing || 0);
-    document.getElementById('mg-led-hidden').textContent = mgNum(t.hidden || 0);
-    document.getElementById('mg-ledger').hidden = false;
-    // The Import button number is ONLY the NEW people — the actual additions to
-    // HubSpot. Everyone already there just gets their connection recorded, which
-    // is real work but is NOT an "import", so we state it SEPARATELY rather than
-    // summing the two into one number (a run used to read "Import 1,112" when only
-    // 40 were actually new — confusing). `stamped` = existing records that get a
-    // write (willWrite counts creates + those); the rest are already complete.
-    const created = t.created || 0;
-    const willWrite = t.willWrite != null ? t.willWrite : created;
-    const stamped = Math.max(0, willWrite - created);
-    const ppl = (n) => (n === 1 ? 'person' : 'people');
-
-    // Reconcile the two numbers explicitly: `stamped` is a SUBSET of the "Already
-    // there" total (t.existing). Saying "190" next to a card reading "1,785 already
-    // there" reads as a contradiction unless we spell out that the 190 are the ones
-    // that get a write and the other 1,595 already have the connection.
-    const existing = t.existing || 0;
-    const already = Math.max(0, existing - stamped);
-    const hl = (s) => `<span class="mg-hl">${s}</span>`;
-    let stampNote = '';
-    if (stamped > 0) {
-      const whose = ppl(stamped) === 'person' ? "person's" : "people's";
-      stampNote = ` Of the <b>${mgNum(existing)}</b> already in HubSpot, it ${hl(`adds you to <b>${mgNum(stamped)}</b> ${whose} connection list`)}`
-        + (already > 0 ? ` — the other ${mgNum(already)} already have you, so nothing changes for them.` : ' — nothing else on their record changes.');
-    } else if (existing > 0) {
-      stampNote = ` The <b>${mgNum(existing)}</b> already in HubSpot ${hl('already have you on their connection list')} — nothing changes for them.`;
+    if (j && j.started === false) {
+      showMagellanError(j.reason || 'Could not start the check.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Check what would happen'; }
     }
-    document.getElementById('mg-confirm-t').innerHTML =
-      '<b>Nothing has gone into HubSpot yet.</b> '
-      + `Pressing Import adds the <b>${mgNum(created)}</b> new ${ppl(created)}.${stampNote}`;
-
-    const imp = document.getElementById('mg-import-btn');
-    imp.hidden = false;
-    if (created === 0 && stamped === 0) {
-      imp.textContent = 'Nothing to import';
-      imp.disabled = true;
-    } else if (created === 0) {
-      // No new people at all — the whole action is recording connections.
-      imp.textContent = `Add connection to ${mgNum(stamped)} ${ppl(stamped)}`;
-      imp.disabled = false;
-    } else {
-      imp.textContent = `Import ${mgNum(created)} ${ppl(created)}`;
-      imp.disabled = false;
-    }
-    // Only once Check has produced a plan — a link to an empty sheet is worse
-    // than no link.
-    const rev = document.getElementById('mg-review');
-    if (rev) rev.hidden = false;
-
-    // Accounts HubSpot will not accept. "Linkedin 1st Connections" is a fixed
-    // list of Ortus emails; anything else — a GoLogin profile NAME, a typo —
-    // has no option to write to, so its people cannot be imported at all.
-    const bbox = document.getElementById('mg-blocked');
-    const blocked = j.blocked || [];
-    if (bbox) {
-      bbox.hidden = blocked.length === 0;
-      bbox.innerHTML = blocked.length
-        ? `<div class="mg-det-h">${blocked.length} account${blocked.length === 1 ? '' : 's'} cannot be imported</div>`
-          + '<div class="mg-det-why">HubSpot\'s "Linkedin 1st Connections" field is a fixed list of Ortus account '
-          + 'emails. These names are not on it, so there is nothing to write their connections to.</div>'
-          + '<div class="mg-det-fix">Rename them to the account\'s email address and collect again, or ask for the '
-          + 'email to be added as an option in HubSpot.</div>'
-          + `<div class="mg-det-raw">${blocked.map(escHtml).join(', ')}</div>`
-        : '';
-    }
-
+    // started:true → the poller renders step 3 the moment the check finishes,
+    // and re-enables the button on settle.
   } catch (err) {
     showMagellanError(err.message);
-    // A failed re-check must not leave a stale Import button or review link
-    // up — either would point at a plan from a run that never finished.
-    const impErr = document.getElementById('mg-import-btn');
-    if (impErr) impErr.hidden = true;
-    const revErr = document.getElementById('mg-review');
-    if (revErr) revErr.hidden = true;
-  } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Check what would happen'; }
   }
 }
