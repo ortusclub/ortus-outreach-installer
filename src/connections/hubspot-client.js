@@ -390,17 +390,40 @@ export async function batchUpdate(inputs, { fetchImpl = fetch, token = process.e
   if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
   let updated = 0;
   const errors = [];
-  for (const batch of chunk(inputs)) {
+
+  // HubSpot's batch update is atomic: ONE row it rejects (e.g. a value that is
+  // not a valid option) fails the whole 100-row batch, silently dropping the
+  // write for every clean row alongside it — the exact shape of the "existing
+  // contacts never got tagged" bug. BISECT a failed batch down to the single
+  // offending row, so the clean updates go through and only the real bad row(s)
+  // are isolated and reported. Mirrors batchCreate; O(log n) extra calls per bad
+  // row, not O(n).
+  const attempt = async (batch) => {
+    let json = null;
+    let errMsg = null;
     try {
       const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/batch/update`, token,
         { inputs: batch.map((b) => ({ id: b.id, properties: b.properties })) });
-      const json = await res.json();
+      json = await res.json();
+    } catch (err) { errMsg = err.message; }
+
+    if (!errMsg) {
       updated += (json.results || []).length;
       const partial = partialFailure(json);
       if (partial) errors.push(partial);
-    } catch (err) {
-      errors.push({ size: batch.length, error: err.message });
+      return;
     }
+    if (batch.length === 1) {
+      errors.push({ size: 1, id: batch[0].id, error: errMsg });
+      return;
+    }
+    const mid = Math.floor(batch.length / 2);
+    await attempt(batch.slice(0, mid));
+    await attempt(batch.slice(mid));
+  };
+
+  for (const batch of chunk(inputs)) {
+    await attempt(batch);
     onProgress?.({ updated, errors: errors.length });
   }
   return { updated, errors };

@@ -72,11 +72,29 @@ test('a fully accepted batch reports no errors', async () => {
   assert.deepStrictEqual(r.errors, []);
 });
 
-test('a wholly refused batch costs everyone in it', async () => {
+test('one bad row in an update batch is isolated; the rest still write', async () => {
+  // 400 for any batch that still contains the poisoned id ('5'), 200 otherwise —
+  // so bisection has to narrow all the way down to it while the clean rows write.
+  const fetchImpl = async (url, opts) => {
+    const ids = JSON.parse(opts.body).inputs.map((i) => i.id);
+    if (ids.includes('5')) return { ok: false, status: 400, text: async () => 'not one of the allowed options', json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({ results: ids.map((id) => ({ id })) }) };
+  };
+  const inputs = [...Array(10)].map((_, i) => ({ id: String(i), properties: {} }));
+  const r = await batchUpdate(inputs, { fetchImpl, token: 't' });
+  assert.strictEqual(r.updated, 9);
+  assert.strictEqual(r.errors.length, 1);
+  assert.strictEqual(r.errors[0].id, '5');
+});
+
+test('a wholly refused batch is bisected down to single rows, each reported', async () => {
+  // Every row is bad, so nothing updates — but bisection isolates each one and
+  // reports it individually instead of hiding all 61 behind one batch error.
   const fetchImpl = async () => ({ ok: false, status: 400, text: async () => 'not one of the allowed options', json: async () => ({}) });
   const r = await batchUpdate([...Array(61)].map((_, i) => ({ id: String(i), properties: {} })), { fetchImpl, token: 't' });
   assert.strictEqual(r.updated, 0);
-  assert.strictEqual(r.errors[0].size, 61);
+  assert.strictEqual(r.errors.length, 61);
+  assert.ok(r.errors.every((e) => e.size === 1), 'each failing row is isolated to a size-1 error');
 });
 
 test('batchCreate bisects a rejected batch — clean creates go through, the collision is isolated with its existing id', async () => {

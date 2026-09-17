@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  startCollect, stopCollect, buildPreview, runImport, mergeDuplicates, getState, getPlans, reset,
+  startCollect, stopCollect, startPreview, buildPreview, runImport, mergeDuplicates, getState, getPlans, reset,
 } from '../../src/connections/magellan-run.js';
 import { CONNECTIONS_PROP } from '../../src/connections/magellan.js';
 
@@ -119,6 +119,56 @@ test('preview totals up new vs existing across accounts, writing nothing', async
   assert.equal(totals.created, 2);
   assert.equal(totals.updated, 1);
   assert.equal(totals.extraEmails, 1, 'existing contact gets the key as an extra address');
+});
+
+test('startPreview returns immediately (started:true); the result arrives by polling', async () => {
+  reset();
+  let releaseLookup;
+  const held = new Promise((r) => { releaseLookup = r; });
+  const r = startPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => { await held; return new Map(); },
+    sheet: noSheet,
+  });
+  // The route returns instantly, while the check is still running — never the
+  // 30s-blocking response that made a big account read "The app did not answer".
+  assert.deepEqual(r, { started: true });
+  assert.equal(getState().running, true);
+  assert.equal(getState().phase, 'checking');
+  assert.equal(getState().preview, null);
+  releaseLookup();
+  await settle();
+  // The finished preview is now in state, for the poller to render.
+  assert.equal(getState().running, false);
+  assert.equal(getState().phase, 'done');
+  assert.equal(getState().preview.totals.created, 1);
+});
+
+test('a Check with many duplicates keeps only a capped sample in state; the full list still merges', async () => {
+  reset();
+  const dupes = [...Array(30)].map((_, i) => ({
+    memberId: String(i), keptId: String(1000 + i), otherIds: [String(2000 + i)], name: `D${i}`, nameMatch: true,
+  }));
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => dupes.map((d) => ({ slug: `s${d.memberId}`, memberId: d.memberId, firstName: d.name })),
+    lookup: async () => Object.assign(new Map(), { duplicates: dupes }),
+    sheet: noSheet,
+  });
+  // State carries a bounded sample plus the true count — not the whole list, so
+  // getState() stays small on every poll no matter how large the account is.
+  assert.equal(getState().preview.duplicates.length, 25);
+  assert.equal(getState().preview.duplicatesTotal, 30);
+  // The outcome counts all 30, not the 25-row sample.
+  assert.ok(getState().outcome.problems.some((p) => p.includes('30') && p.includes('more than once')));
+  // mergeDuplicates reads the FULL list (from the module holder), not the sample.
+  let merged = 0;
+  const res = await mergeDuplicates(null, { merge: async () => { merged += 1; }, sheet: noSheet });
+  assert.equal(res.ok, true);
+  assert.equal(merged, 30);
 });
 
 test('Check auto-adds a selected account missing from the connections property, then imports it', async () => {
@@ -748,14 +798,15 @@ test('a Check refuses to start on top of a live collect', async () => {
   await settle();
   assert.equal(getState().running, true);
 
-  await assert.rejects(
-    () => buildPreview(['a@o.com'], {
-      checkProps: async () => { throw new Error('must not be reached'); },
-      options: async () => { throw new Error('must not be reached'); },
-      sheet: noSheet,
-    }),
-    /already running/i,
-  );
+  // The guard lives in startPreview now (it returns a reason rather than
+  // throwing, because the route hands the reason straight to the page).
+  const refused = startPreview(['a@o.com'], {
+    checkProps: async () => { throw new Error('must not be reached'); },
+    options: async () => { throw new Error('must not be reached'); },
+    sheet: noSheet,
+  });
+  assert.equal(refused.started, false);
+  assert.match(refused.reason, /already running/i);
   // The collect's own run is untouched by the refusal.
   assert.equal(getState().phase, 'collecting');
   release();
