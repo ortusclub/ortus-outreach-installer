@@ -28,6 +28,22 @@ test('mergeConnections is idempotent — re-collecting never grows the value', (
   assert.equal(mergeConnections(';ANTONIO@ortusclub.com', ACCT), null);
 });
 
+test('mergeConnections preserves the casing of existing values (never corrupts a mixed-case option)', () => {
+  // The property is a HubSpot checkbox and a few options are NOT lowercase
+  // ("Irisht@ortus.solutions", "Jhengh@ortus.solutions", "No Connections").
+  // Lowercasing them on re-send made them invalid options; HubSpot's atomic
+  // batch/update then rejected the WHOLE batch, silently dropping the account
+  // write for every clean contact in it. Existing values must keep their casing.
+  assert.equal(
+    mergeConnections('Irisht@ortus.solutions;benz@ortus.solutions', ACCT),
+    ';Irisht@ortus.solutions;benz@ortus.solutions;antonio@ortusclub.com');
+  assert.equal(
+    mergeConnections('No Connections', ACCT),
+    ';No Connections;antonio@ortusclub.com');
+  // Dedup stays case-insensitive even with a mixed-case stored value.
+  assert.equal(mergeConnections('Antonio@ortusclub.com', ACCT), null);
+});
+
 test('rows LinkedIn blanked out are hidden, not written', () => {
   // A real archive row: everything empty except Connected On.
   assert.equal(isHidden({ slug: '', memberId: '', firstName: '', lastName: '' }), true);
@@ -114,6 +130,34 @@ test('planAccount splits new, existing, hidden and unresolved', () => {
   assert.equal(plan.counts.updated, 1);
   assert.equal(plan.counts.hidden, 1);
   assert.equal(plan.counts.unresolved, 1);
+  // The '111' record has a real email and no synthetic key, so it gets BOTH an
+  // update and an additional email — but it is one person, counted once.
+  assert.equal(plan.counts.willWrite, 2); // 1 create + 1 existing record touched
+});
+
+test('willWrite counts people Import writes (not "existing", which can be all no-ops)', () => {
+  // A record already carrying everything Import would fill (name/company/title
+  // from person(), the synthetic key, member id) plus a connections value —
+  // updateProperties only fills blanks, so nothing gets written.
+  const filled = (over = {}) => ({ id: '900', properties: {
+    firstname: 'Alessandra', lastname: 'Brambilla', company: 'NTT DATA',
+    jobtitle: 'Executive Managing Director', email: syntheticEmail('111'),
+    [MEMBER_ID_PROP]: '111', ...over,
+  } });
+
+  // Complete AND already tagged with this account → a pure no-op. Must NOT count,
+  // even though it is "existing" — the "Import 0 people" → "Nothing to import" case.
+  const noop = planAccount([person({ memberId: '111' })], ACCT,
+    () => filled({ [CONNECTIONS_PROP]: `;${ACCT}` }));
+  assert.equal(noop.counts.existing, 1);
+  assert.equal(noop.counts.willWrite, 0);
+
+  // Same person, but this account is not yet on their record → exactly one write.
+  const stamp = planAccount([person({ memberId: '111' })], ACCT,
+    () => filled({ [CONNECTIONS_PROP]: ';someone@else.com' }));
+  assert.equal(stamp.counts.created, 0);
+  assert.equal(stamp.counts.updated, 1);
+  assert.equal(stamp.counts.willWrite, 1);
 });
 
 test('an existing contact with a real email keeps it — synthetic goes alongside', () => {

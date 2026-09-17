@@ -72,9 +72,52 @@ test('a fully accepted batch reports no errors', async () => {
   assert.deepStrictEqual(r.errors, []);
 });
 
-test('a wholly refused batch costs everyone in it', async () => {
+test('one bad row in an update batch is isolated; the rest still write', async () => {
+  // 400 for any batch that still contains the poisoned id ('5'), 200 otherwise —
+  // so bisection has to narrow all the way down to it while the clean rows write.
+  const fetchImpl = async (url, opts) => {
+    const ids = JSON.parse(opts.body).inputs.map((i) => i.id);
+    if (ids.includes('5')) return { ok: false, status: 400, text: async () => 'not one of the allowed options', json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({ results: ids.map((id) => ({ id })) }) };
+  };
+  const inputs = [...Array(10)].map((_, i) => ({ id: String(i), properties: {} }));
+  const r = await batchUpdate(inputs, { fetchImpl, token: 't' });
+  assert.strictEqual(r.updated, 9);
+  assert.strictEqual(r.errors.length, 1);
+  assert.strictEqual(r.errors[0].id, '5');
+});
+
+test('a wholly refused batch is bisected down to single rows, each reported', async () => {
+  // Every row is bad, so nothing updates — but bisection isolates each one and
+  // reports it individually instead of hiding all 61 behind one batch error.
   const fetchImpl = async () => ({ ok: false, status: 400, text: async () => 'not one of the allowed options', json: async () => ({}) });
   const r = await batchUpdate([...Array(61)].map((_, i) => ({ id: String(i), properties: {} })), { fetchImpl, token: 't' });
   assert.strictEqual(r.updated, 0);
-  assert.strictEqual(r.errors[0].size, 61);
+  assert.strictEqual(r.errors.length, 61);
+  assert.ok(r.errors.every((e) => e.size === 1), 'each failing row is isolated to a size-1 error');
+});
+
+test('batchCreate bisects a rejected batch — clean creates go through, the collision is isolated with its existing id', async () => {
+  // HubSpot's batch create is all-or-nothing: one duplicate rejects the whole
+  // batch. Bisecting lets the genuinely-new rows land and isolates the collision,
+  // whose error names the record to recover ("Existing ID: 555").
+  const POISON = 'poison@linkedinmembership.id';
+  const fetchImpl = async (_url, opts) => {
+    const inputs = JSON.parse(opts.body).inputs;
+    if (inputs.some((i) => i.properties.email === POISON)) {
+      return { ok: false, status: 409, text: async () => 'Contact already exists. Existing ID: 555', json: async () => ({}) };
+    }
+    return okRes({ results: inputs.map((i, n) => ({ id: `new${n}`, properties: { email: i.properties.email } })) });
+  };
+  const creates = ['1', 'poison', '3', '4'].map((m) => ({
+    connection: { memberId: m }, properties: { email: `${m}@linkedinmembership.id` },
+  }));
+  creates[1].properties.email = POISON;
+
+  const r = await batchCreate(creates, { fetchImpl, token: 't' });
+  assert.strictEqual(r.created, 3, 'the 3 clean creates landed despite the collision');
+  assert.strictEqual(r.conflicts.length, 1, 'the collision is isolated, not a plain failure');
+  assert.strictEqual(r.conflicts[0].existingId, '555');
+  assert.strictEqual(r.conflicts[0].input.connection.memberId, 'poison');
+  assert.strictEqual(r.errors.length, 0);
 });

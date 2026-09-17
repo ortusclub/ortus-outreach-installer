@@ -8,7 +8,7 @@
 import * as launcher from '../gologin-launcher.js';
 import * as browserSemaphore from '../browser-semaphore.js';
 import { collectAccount, readForPlan } from './magellan-pull.js';
-import { planAccount } from './magellan.js';
+import { planAccount, updateProperties } from './magellan.js';
 import { diagnose, logLine, summarise } from './magellan-diagnose.js';
 import { explainProblem, problemLine, summariseProblems } from './magellan-problems.js';
 import {
@@ -18,6 +18,7 @@ import {
 import {
   lookupByMemberIds, batchCreate, batchUpdate, attachSyntheticEmail,
   checkMagellanProperties, connectionsPropOptions, addConnectionsOptions, mergeContacts,
+  readContactsByIds,
 } from './hubspot-client.js';
 import { buildOutcome } from './magellan-outcome.js';
 
@@ -85,6 +86,12 @@ function startRun(patch, keep = {}) {
 // the totals cross the wire. Import replays what preview actually saw rather
 // than trusting a payload the browser round-tripped.
 let _plans = null;
+// The full duplicate list stays here for the same reason: a 30k account can hold
+// thousands of duplicate rows, and getState() is serialized on every 2s poll —
+// so _state.preview carries only a count + a capped sample (see DUP_SAMPLE_CAP),
+// and mergeDuplicates reads the whole list from here.
+let _duplicates = null;
+const DUP_SAMPLE_CAP = 25;
 // Set by stopCollect(). Watched by the per-account watchdog as well as checked
 // between accounts, so the account in flight is abandoned rather than finished:
 // "after this account" is indistinguishable from "never" when that account is
@@ -140,7 +147,7 @@ function sheetAfterRun(state, sheet, what) {
 
 export function getPlans() { return _plans; }
 export function reset() {
-  _state = idle(); _plans = null; _stopRequested = false;
+  _state = idle(); _plans = null; _duplicates = null; _stopRequested = false;
   resetPlanVerdicts();   // stale verdicts must not survive into the next sweep
   // The contact links deliberately DO survive. A verdict describes one run; a
   // HubSpot contact id is permanent. Clearing them here is what made a fresh
@@ -172,6 +179,12 @@ export function startCollect(accounts, deps = {}) {
   const seen = new Set();
   const list = (accounts || []).filter((a) => {
     if (!a || !a.profileId || !a.account) return false;
+    // CSV-staged accounts have a synthetic 'csv:<email>' profileId and no
+    // GoLogin profile — launchProfile can't open them. Their connections are
+    // already on disk from the upload, so Collect must skip them (they go
+    // straight to Check). Guard here too, not just in the UI, so a stray
+    // selection can never crash a browser launch.
+    if (String(a.profileId).startsWith('csv:')) return false;
     const key = String(a.account).trim().toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
@@ -327,6 +340,37 @@ export function startCollect(accounts, deps = {}) {
  * the review sheet, so a second person can see the answer before anyone
  * presses Import.
  */
+/**
+ * Phase 2 — Check, started in the background. The route returns the instant this
+ * does; the page then polls getState() for the result in _state.preview. Check
+ * on a big account is minutes of HubSpot calls — far past the page's 30s fetch
+ * guard — so awaiting the whole thing in the route printed "The app did not
+ * answer" over a check that had actually succeeded. Mirrors startCollect.
+ */
+export function startPreview(accounts, deps = {}) {
+  if (_state.running) return { started: false, reason: 'Magellan is already running — wait for it to finish.' };
+  // Flip to 'checking' synchronously, so the very next poll shows the check
+  // starting rather than a previous run's finished preview. buildPreview refines
+  // these (the real usable-account count, per-account progress) once it runs.
+  _state = {
+    ...idle(), running: true, phase: 'checking', startedAt: new Date().toISOString(),
+    step: 'Starting the check', total: (accounts || []).length,
+  };
+  // Fire-and-forget. The .catch is the backstop for a throw that lands BEFORE
+  // buildPreview's own try/catch — checkProps and addConnectionsOptions run
+  // outside it, so a missing-property error would otherwise leave the card stuck
+  // on running:true forever with the poller waiting on a run that never settles.
+  // On buildPreview's own error path running is already false, so this no-ops.
+  buildPreview(accounts, deps).catch((err) => {
+    if (_state.running) {
+      _state.error = err.message;
+      _state.phase = 'error';
+      _state.running = false;
+    }
+  });
+  return { started: true };
+}
+
 export async function buildPreview(accounts, deps = {}) {
   const { lookup = lookupByMemberIds, read = readForPlan, checkProps = checkMagellanProperties,
     options = connectionsPropOptions, addOptions = addConnectionsOptions, sheet = publishSheet,
@@ -337,13 +381,11 @@ export async function buildPreview(accounts, deps = {}) {
     // always loses. Named for what it watches, not what it does.
     onRunEnd = () => {} } = deps;
 
-  // startCollect, runImport and mergeDuplicates each refuse to start on top of
-  // a live run; Check was the one that did not. It shares the same module-level
-  // _state, so a Check clicked during a collect replaced the collect's counters
-  // mid-sweep, and the collect then ended the Check for it — writing a COLLECT
-  // outcome and running:false while HubSpot calls were still in flight. Throws
-  // rather than returning a reason because the route destructures the result.
-  if (_state.running) throw new Error('Magellan is already running — wait for it to finish.');
+  // The "already running" guard lives in startPreview now (mirroring
+  // startCollect / runImport), which sets running:true synchronously before
+  // calling this — so a guard here would always false-trigger. buildPreview is
+  // reached only through startPreview (route) or directly by tests (which reset
+  // first), never on top of a live run.
 
   // Fail before doing any work if the portal is missing the properties we write
   // — otherwise every single create silently drops the fields that matter.
@@ -381,7 +423,7 @@ export async function buildPreview(accounts, deps = {}) {
   }
 
   const plans = [];
-  const totals = { created: 0, existing: 0, updated: 0, extraEmails: 0, hidden: 0, unresolved: 0, total: 0 };
+  const totals = { created: 0, existing: 0, updated: 0, extraEmails: 0, hidden: 0, unresolved: 0, total: 0, willWrite: 0 };
 
   // Check is three minutes of silence on a real sweep. Drive the same card the
   // collect and import halves drive, so "is it still going?" is answered by
@@ -416,8 +458,14 @@ export async function buildPreview(accounts, deps = {}) {
     for (const account of usable) {
       const rows = read(account);
       const memberIds = rows.map((r) => r.memberId).filter(Boolean);
+      // Lets lookupByMemberIds run its third pass — matching people already in
+      // HubSpot under their LinkedIn URL (no member id) instead of duplicating.
+      const slugByMemberId = new Map(
+        rows.filter((r) => r.memberId && r.slug).map((r) => [String(r.memberId), r.slug]),
+      );
       _state.account = account;
       const existing = await lookup(memberIds, {
+        slugByMemberId,
         onProgress: ({ done, total }) => {
           _state.current = { account, count: done, total, stage: 'check' };
           _state.checked = checkedSoFar + done;
@@ -463,8 +511,14 @@ export async function buildPreview(accounts, deps = {}) {
     }
 
     _plans = plans;
+    _duplicates = duplicates;
     _state.preview = {
-      totals, blocked, duplicates, builtAt: new Date().toISOString(), accounts: usable,
+      totals, blocked,
+      // A count plus a capped sample, NOT the whole list — a 30k account holds
+      // thousands of these and _state crosses the wire on every 2s poll. The
+      // outcome text reads duplicatesTotal; mergeDuplicates reads _duplicates.
+      duplicates: duplicates.slice(0, DUP_SAMPLE_CAP), duplicatesTotal: duplicates.length,
+      builtAt: new Date().toISOString(), accounts: usable,
       // Accounts that actually had a file to read. `accounts` is what HubSpot
       // ALLOWED, which is not the same thing: tick an allowed account that was
       // never collected and readForPlan returns [] silently, so every total
@@ -533,7 +587,9 @@ export async function buildPreview(accounts, deps = {}) {
  */
 export async function mergeDuplicates(pairs = null, deps = {}) {
   const { merge = mergeContacts, sheet = publishSheet } = deps;
-  const list = pairs || (_state.preview && _state.preview.duplicates) || [];
+  // The FULL list from _duplicates, not the capped sample now held in
+  // _state.preview.duplicates — merging must fold every duplicate, not the first 25.
+  const list = pairs || _duplicates || (_state.preview && _state.preview.duplicates) || [];
 
   if (_state.running) return { ok: false, reason: 'Magellan is already running' };
   if (!list.length) return { ok: false, reason: 'No duplicates to merge — run Check first' };
@@ -586,7 +642,8 @@ export async function mergeDuplicates(pairs = null, deps = {}) {
       + (unsafe.length ? `, ${unsafe.length} left alone for a human to check.` : '.'));
     // The duplicates are gone, so the preview that named them is stale — a
     // second Check is the honest way to see what is left.
-    if (_state.preview) _state.preview.duplicates = [];
+    _duplicates = null;
+    if (_state.preview) { _state.preview.duplicates = []; _state.preview.duplicatesTotal = 0; }
     _state.phase = 'done';
     sheetAfterRun(_state, sheet, 'review');
     return { ok: true, ...result };
@@ -638,7 +695,7 @@ export function startImport(plans = _plans, deps = {}) {
 
 export async function runImport(plans = _plans, deps = {}) {
   const { create = batchCreate, update = batchUpdate, attach = attachSyntheticEmail,
-    sheet = publishSheet } = deps;
+    sheet = publishSheet, readByIds = readContactsByIds } = deps;
 
   if (_state.running) return { ok: false, reason: 'Magellan is already running' };
   if (!plans) return { ok: false, reason: 'Nothing to import — build a preview first' };
@@ -674,9 +731,33 @@ export async function runImport(plans = _plans, deps = {}) {
       if (c.ids) addHubspotIds(c.ids);
       row.errors.push(...c.errors.map((e) => ({ stage: 'create', ...e })));
 
+      // 409-recovery: creates that collided with a record already in HubSpot —
+      // usually a search-invisible / quarantined synthetic-email duplicate the
+      // lookup could not find. HubSpot named the existing contact, so read it BY
+      // ID (search can't return it), merge the connection onto it with
+      // updateProperties (so other operators' tags survive), and update it — the
+      // connection is recorded instead of the person being "not written".
+      if (c.conflicts && c.conflicts.length) {
+        _state.step = `Recording ${c.conflicts.length} that already existed`;
+        const existing = await readByIds(c.conflicts.map((x) => x.existingId));
+        const recoveries = [];
+        const recoveredIds = new Map();
+        for (const { input, existingId } of c.conflicts) {
+          recoveredIds.set(String(input.connection.memberId), String(existingId));
+          const props = updateProperties(input.connection, account, existing.get(String(existingId)) || {});
+          if (Object.keys(props).length) recoveries.push({ id: existingId, properties: props });
+        }
+        addHubspotIds(recoveredIds); // fills the HubSpot Link column for the recovered people
+        if (recoveries.length) {
+          const rec = await update(recoveries);
+          row.updated += rec.updated;
+          row.errors.push(...rec.errors.map((e) => ({ stage: 'update', ...e })));
+        }
+      }
+
       _state.step = `Updating ${plan.updates.length} existing people`;
       const u = await update(plan.updates);
-      row.updated = u.updated;
+      row.updated += u.updated; // += not =: the 409-recovery above may already have counted some
       row.errors.push(...u.errors.map((e) => ({ stage: 'update', ...e })));
 
       // One call each — no batch endpoint exists for secondary emails.

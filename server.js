@@ -118,6 +118,7 @@ import * as magellan from './src/connections/magellan-run.js';
 import { listCollected as magellanListCollected,
   migrateLegacyConnections as magellanMigrateLegacy } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
+import { stageConnectionsCsv } from './src/connections/magellan-csv-import.js';
 import { connectionsPropOptions, addConnectionsOptions, tokenScopes } from './src/connections/hubspot-client.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
@@ -3587,9 +3588,50 @@ app.get('/api/magellan/accounts', async (req, res) => {
         collectedAt: c ? c.at : null,
       };
     });
+
+    // Accounts staged via "Import from CSV" have no GoLogin profile, so the map
+    // above never surfaces them. Append any collected list whose account isn't
+    // already shown, so a staged account survives a refresh and stays usable.
+    const shown = new Set(accounts.map((a) => String(a.account).trim().toLowerCase()));
+    for (const [acct, c] of collected) {
+      const key = String(acct).trim().toLowerCase();
+      if (shown.has(key)) continue;
+      shown.add(key);
+      accounts.push({
+        profileId: `csv:${key}`, account: acct, profile: acct,
+        resolved: true, ambiguous: false,
+        importable: hsOptions ? hsOptions.has(key) : null,
+        collected: true, count: c.count, withMemberId: c.withMemberId, collectedAt: c.at,
+        fromCsv: true,
+      });
+    }
+
     res.json({ accounts, canEditOptions: await magellanCanEditOptions({ maxAgeMs }) });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Import from CSV — stage a Connections Collector export as an account's
+// connections so Check → Import runs against it WITHOUT a GoLogin browser. This
+// is the Collect step's stand-in for accounts that are not in GoLogin: the
+// extension export already carries the numeric member id the raw LinkedIn export
+// lacks. The body is the raw CSV text (Content-Type text/plain) with the owner
+// in the query string, NOT JSON — a multi-thousand-row export is several MB, past
+// the app-wide express.json() (100kb) limit that runs first and would reject it.
+// text/plain slips past that parser; this route's own express.text() (60mb) reads
+// it. The owner is optional here — stageConnectionsCsv recovers it from the file's
+// own "Linkedin First Connections" tag when the field is left blank.
+app.post('/api/magellan/import-csv', express.text({ type: '*/*', limit: '60mb' }), (req, res) => {
+  try {
+    const ownerEmail = String(req.query.owner || '');
+    const csvText = typeof req.body === 'string' ? req.body : '';
+    if (!csvText) return res.status(400).json({ error: 'No file contents received.' });
+    const out = stageConnectionsCsv(ownerEmail, csvText);
+    console.log(`[magellan] import-csv staged ${out.staged} connection(s) for ${out.account} (skipped ${out.skippedNoMemberId} with no member id, of ${out.total})`);
+    res.json(out);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -3631,12 +3673,15 @@ app.post('/api/magellan/stop', (_req, res) => {
   }
 });
 
-app.post('/api/magellan/preview', async (req, res) => {
+app.post('/api/magellan/preview', (req, res) => {
+  // Start the Check and return immediately — the page polls /api/magellan/state
+  // for the result (_state.preview). Awaiting buildPreview here is what made a
+  // big account's Check run past the page's 30s fetch guard and print "The app
+  // did not answer" over a check that had actually succeeded.
   try {
-    const { totals, blocked, duplicates } = await magellan.buildPreview((req.body || {}).accounts || []);
-    res.json({ totals, blocked, duplicates });
+    res.json(magellan.startPreview((req.body || {}).accounts || []));
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
