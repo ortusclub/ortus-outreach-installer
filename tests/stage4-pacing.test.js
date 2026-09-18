@@ -77,6 +77,52 @@ test('coordinator diagnostics distinguish timeout, HTTP and transport without le
     { kind: 'client_timeout', status: null, code: 'GOLOGIN_ADMISSION_UNAVAILABLE' },
     { kind: 'http_error', status: 503, code: null },
     { kind: 'transport_error', status: null, code: 'ECONNRESET' },
+    { kind: 'transport_error', status: null, code: 'ECONNRESET' },
   ]);
   assert.ok(!JSON.stringify(failures).includes('secret-token'));
+});
+
+test('one transient coordinator transport failure retries admission without bypassing it', async () => {
+  let attempts = 0;
+  const client = clientModule.createAdmissionClient({
+    workspaceForToken: () => 'ortus', cooldown: async () => {},
+    wait: async () => {},
+    reserve: async () => {
+      attempts++;
+      if (attempts === 1) throw new TypeError('temporary tunnel disconnect');
+      return { allowed: true };
+    },
+  });
+  await client.acquire({ token: 'fixture-token' });
+  assert.equal(attempts, 2);
+});
+
+test('a coordinator response slower than the old two-second cutoff still admits the request', async () => {
+  let attempts = 0;
+  const client = clientModule.createAdmissionClient({
+    workspaceForToken: () => 'ortus', cooldown: async () => {},
+    reserve: async () => {
+      attempts++;
+      await new Promise(resolve => setTimeout(resolve, 2100));
+      return { allowed: true };
+    },
+  });
+  await client.acquire({ token: 'fixture-token' });
+  assert.equal(attempts, 1);
+});
+
+test('coordinator HTTP and identity failures never retry admission', async () => {
+  for (const failure of [
+    Object.assign(new Error('unauthorized'), { coordinatorHttpStatus: 401 }),
+    Object.assign(new Error('wrong preview'), { coordinatorIdentityMismatch: true }),
+  ]) {
+    let attempts = 0;
+    const client = clientModule.createAdmissionClient({
+      workspaceForToken: () => 'ortus', cooldown: async () => {},
+      wait: async () => {},
+      reserve: async () => { attempts++; throw failure; },
+    });
+    await assert.rejects(client.acquire({ token: 'fixture-token' }), /coordinator unavailable/);
+    assert.equal(attempts, 1);
+  }
 });

@@ -4,11 +4,12 @@ export function continuationChoices(status, { monitoringAvailable = false, check
   const policy = continuationPolicy(status.mode);
   const monitoring = status.state === 'monitoring' || status.status === 'monitoring';
   const active = monitoring && (status.autoChecksEnabled ?? status.auto_checks_enabled) !== false;
+  const tabWide = (status.monitoringScope || status.monitoring_scope || status.config?.monitoringScope) === 'tab';
   return [
     { value: 'sending', label: 'Continue remaining sending', detail: policy.remainingDetail, disabled: policy.retired },
     ...(policy.acceptance ? [
-      { value: 'check', label: 'Run one check now', disabled: !checkAvailable,
-        detail: 'One campaign-scoped acceptance check. Sending stays stopped and the automatic-check setting stays unchanged. Configured introductions/messages/follow-ups may send.' },
+      { value: 'check', label: tabWide ? 'Run one tab-wide check now' : 'Run one check now', disabled: !checkAvailable,
+        detail: `${tabWide ? 'Checks all matching senders in the current sheet tab.' : 'Checks this campaign’s configured accounts.'} Sending stays stopped and the automatic-check setting stays unchanged. Configured introductions/messages/follow-ups may send.` },
       { value: 'monitoring', label: active ? 'Automatic monitoring is already active' : 'Resume automatic monitoring',
         disabled: active || !monitoringAvailable,
         detail: active ? 'The existing schedule stays active. No need to resume it.' : monitoringAvailable

@@ -10,6 +10,7 @@ try {
     return route.fulfill({ contentType: 'text/html', body: '<main><section><h1>Recipient</h1><button>Pending</button></section></main>' });
   });
   await page.goto('https://www.linkedin.com/in/recipient');
+  await page.addStyleTag({ content: '* { margin: 0; padding: 0; box-sizing: border-box; } ' + fs.readFileSync(new URL('../public/css/account-recovery.css', import.meta.url), 'utf8') });
   assert.equal((await observeOpenInvitation({ browser: { pages: async () => [page] }, url: page.url() })).state, 'pending_observed');
   await page.evaluate(() => { document.querySelector('main button').remove(); document.body.insertAdjacentHTML('beforeend', '<aside><button>Pending</button></aside>'); });
   assert.equal((await observeOpenInvitation({ browser: { pages: async () => [page] }, url: page.url() })).state, 'unknown');
@@ -22,6 +23,10 @@ try {
     });
     open({ profileId: 'exact-id', email: '<img src=x onerror=alert(1)>', verificationLeads: [{ name: 'Recipient', url: 'https://www.linkedin.com/in/recipient', detail: '429' }] });
   });
+  const dialogPosition = await page.locator('dialog').boundingBox();
+  const viewport = page.viewportSize();
+  assert.ok(Math.abs(dialogPosition.x + dialogPosition.width / 2 - viewport.width / 2) < 2);
+  assert.ok(Math.abs(dialogPosition.y + dialogPosition.height / 2 - viewport.height / 2) < 2);
   // Exercise the real pill builder, not just the dialog in isolation.
   const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
   const start = app.indexOf('function _stageAcctPill(');
@@ -81,5 +86,39 @@ try {
   await page.waitForFunction(() => document.querySelector('dialog progress').hidden);
   assert.match(await page.locator('dialog [role=status]').innerText(), /Browser opened/);
   await page.getByRole('button', { name: 'Close', exact: true }).click();
+  const browserOpenStart = app.indexOf('const _openingProfileBrowsers = new Set();');
+  const browserOpenEnd = app.indexOf('window.stopProfileBrowserOpening = stopProfileBrowserOpening;', browserOpenStart)
+    + 'window.stopProfileBrowserOpening = stopProfileBrowserOpening;'.length;
+  await page.addScriptTag({ content: `
+    const showCampaignToast = line => window.profileToasts.push(line);
+    window.profileToasts = []; window.profileRequests = 0;
+    window.fetch = () => { window.profileRequests++; return new Promise(resolve => { window.finishProfileOpen = () => resolve({ ok: true, json: async () => ({ action: 'launched' }) }); }); };
+    ${app.slice(browserOpenStart, browserOpenEnd)}
+    window.openProfileBrowser = openProfileBrowser;
+  ` });
+  await page.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<button data-open-profile-id="exact-id" onclick="openProfileBrowser(\'exact-id\',\'campaign-id\')">Open GoLogin profile</button><button data-stop-profile-id="exact-id" onclick="stopProfileBrowserOpening(\'exact-id\')" hidden>Stop opening</button><div role="status" data-profile-opening-id="exact-id" hidden></div>'); });
+  await page.getByRole('button', { name: 'Open GoLogin profile' }).click();
+  assert.equal(await page.getByRole('button', { name: 'Profile is opening…' }).isDisabled(), true);
+  assert.match(await page.locator('[data-profile-opening-id]').innerText(), /Profile is opening · 0s elapsed/);
+  await page.waitForFunction(() => document.querySelector('[data-profile-opening-id]').textContent.includes('1s elapsed'));
+  await page.evaluate(() => openProfileBrowser('exact-id', 'campaign-id'));
+  assert.equal(await page.evaluate(() => profileRequests), 1);
+  await page.evaluate(() => finishProfileOpen());
+  await page.getByRole('button', { name: 'Open GoLogin profile' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Open GoLogin profile' }).isEnabled(), true);
+  assert.equal(await page.locator('[data-profile-opening-id]').isHidden(), true);
+  await page.evaluate(() => {
+    window.fetch = url => {
+      if (url.includes('cancel-open-browser')) {
+        window.abortOpen();
+        return Promise.resolve({ json: async () => ({ ok: true, cancelled: true, browserClosed: true }) });
+      }
+      return new Promise(resolve => { window.abortOpen = () => resolve({ ok: false, json: async () => ({ cancelled: true, browserClosed: true }) }); });
+    };
+  });
+  await page.getByRole('button', { name: 'Open GoLogin profile' }).click();
+  await page.getByRole('button', { name: 'Stop opening' }).click();
+  await page.waitForFunction(() => document.querySelector('[data-profile-opening-id]').textContent.includes('Manual profile opening stopped'));
+  assert.equal(await page.getByRole('button', { name: 'Open GoLogin profile' }).isEnabled(), true);
   console.log('PASS: scoped Pending DOM read; sidebar Pending ignored; dialog opens without actions; exact recipient dispatch; login separate; escaped text; Escape/Close cleanup. All requests intercepted.');
 } finally { await browser.close(); }

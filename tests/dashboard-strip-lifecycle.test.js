@@ -12,7 +12,8 @@ test('compact strip treats monitoring as a lifecycle on either machine', () => {
 });
 
 test('local monitoring uses monitoring controls and blue presentation', () => {
-  assert.match(app, /monitoring\s*\?\s*_dib\(V3_SVG_STOP, 'Stop monitoring'/);
+  assert.match(app, /monitoring\s*\?\s*\(it\.monitoringCheckInProgress/);
+  assert.match(app, /stopLocalCheckUI\(this\)/);
   assert.match(html, /\.sn-strip\.monitoring::before[^}]+background:var\(--blue\)/);
   assert.match(html, /\.sn-strip\.monitoring \.sn-status\{color:var\(--blue\)/);
 });

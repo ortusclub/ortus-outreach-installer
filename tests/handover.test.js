@@ -4,7 +4,19 @@
 // once.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { processedLeadUrls, handoverPlan, sheetProcessedUrls } from '../src/handover.js';
+import { processedLeadUrls, handoverPlan, sheetProcessedUrls, heldLocalOutcomeUrls, waitForVerifiedCloudRelease } from '../src/handover.js';
+
+test('VM move waits for a verified source release and never advances from a pending receipt', async () => {
+  const replies = [{ pending: true }, { pending: true }, { released: true }];
+  let calls = 0;
+  const result = await waitForVerifiedCloudRelease(async () => replies[calls++], { wait: async () => {} });
+  assert.equal(calls, 3);
+  assert.deepEqual(result, { released: true });
+  const stuck = await waitForVerifiedCloudRelease(async () => ({ pending: true }), { attempts: 2, wait: async () => {} });
+  assert.deepEqual(stuck, { pending: true });
+  const refusal = await waitForVerifiedCloudRelease(async () => ({ error: 'outcome review required' }), { wait: async () => {} });
+  assert.deepEqual(refusal, { error: 'outcome review required' });
+});
 
 test('every non-pending lead is excluded from the new side', () => {
   const urls = processedLeadUrls([
@@ -20,6 +32,16 @@ test('every non-pending lead is excluded from the new side', () => {
 
 test('the lead in flight is excluded from automatic retry', () => {
   assert.deepEqual(processedLeadUrls([{ leadUrl: 'https://x', status: 'in_progress' }]), ['https://x']);
+  assert.deepEqual(processedLeadUrls([{ leadUrl: 'https://held', status: 'needs_review' }]), ['https://held']);
+});
+
+test('local unconfirmed actions stay out of VM work after shutdown', () => {
+  const rows = [{ url: 'https://clicked' }, { url: 'https://held' }, { url: 'https://untouched' }];
+  assert.deepEqual(heldLocalOutcomeUrls(rows, row => row.url, {
+    'https://clicked': { action: '_in_progress' },
+    'https://held': { action: 'needs_review' },
+    'https://untouched': { action: 'pending' },
+  }), ['https://clicked', 'https://held']);
 });
 
 test('the plan always stops the source before starting the target', () => {

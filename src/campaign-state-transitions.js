@@ -1,5 +1,12 @@
 import { computeMonitoringUntil, recomputeNextCheckAt } from './monitoring-time.js';
 
+export function monitoringProfilesForRun(selectedProfileIds, sentProfileIds, keepMonitoringRequested = false) {
+  const sent = [...(sentProfileIds || [])];
+  return keepMonitoringRequested
+    ? [...new Set([...sent, ...(selectedProfileIds || [])])]
+    : sent;
+}
+
 function _hhmm(d) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }

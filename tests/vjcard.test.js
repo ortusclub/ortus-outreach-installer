@@ -1,6 +1,48 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition } from '../public/js/vjcard.mjs';
+import { statusFromItem, vjCardFields, vjCardControlsFor, monitorSweepDisposition, workerStartupOwnsStage, resumedVmWorkerAction } from '../public/js/vjcard.mjs';
+
+test('VM worker startup owns the card until a real browser action begins', () => {
+  const cloud = { _cloud: true, state: 'running' };
+  assert.equal(workerStartupOwnsStage(cloud, { phase: 'starting' }, 'sending-resumed'), true);
+  assert.equal(workerStartupOwnsStage(cloud, { phase: 'starting' }, 'account-browser-closed'), false);
+  assert.equal(workerStartupOwnsStage(cloud, { phase: 'sending' }), false);
+  const canonical = { ...cloud, _canonicalStatusV1: { activity: 'starting' } };
+  assert.equal(workerStartupOwnsStage(canonical, { phase: 'starting' }, 'sending-resumed'), true);
+  assert.equal(workerStartupOwnsStage(canonical, { phase: 'starting' }, 'account-browser-closed'), false);
+  assert.equal(workerStartupOwnsStage({ _cloud: false }, { phase: 'starting' }), false);
+});
+
+test('dashboard card keeps canonical startup evidence when adapting a VM row', () => {
+  const marker = { contractVersion: 1, activity: 'starting' };
+  const adapted = statusFromItem({ where: 'cloud', bucket: 'running', _canonicalStatusV1: marker,
+    currentAction: { phase: 'starting' } });
+  assert.equal(adapted._canonicalStatusV1, marker);
+  assert.equal(workerStartupOwnsStage(adapted, adapted.currentAction, 'account-browser-closed'), false);
+  assert.equal(workerStartupOwnsStage(adapted, adapted.currentAction, 'sending-resumed'), true);
+});
+
+test('resumed VM worker view keeps the queue safe and browser in the future', () => {
+  const action = resumedVmWorkerAction({ pending: 509, accounts: 2 });
+  assert.equal(action.phase, 'starting');
+  assert.equal(action.label, 'Starting the cloud machine');
+  assert.match(action.sub, /509 leads queued across 2 accounts/);
+  assert.match(action.sub, /about 2 minutes/);
+  assert.equal(action.milestones[1][2], 'active');
+  assert.equal(action.milestones[2][2], 'future');
+});
+
+test('pending VM Stop never exposes terminal or send controls from an older stop reason', () => {
+  const status = statusFromItem({ where: 'cloud', id: 'pending-stop', bucket: 'running',
+    stopping: true, engineStatus: 'stopping', stopReason: 'operator-stopped', logs: ['Stop requested'] });
+  assert.equal(status.state, 'stopping');
+  assert.equal(vjCardFields(status).eyebrow, 'Stopping…');
+  const controls = vjCardControlsFor(status);
+  assert.equal(controls.pause, null);
+  assert.equal(controls.stop, null);
+  assert.equal(controls.bulk, null);
+  assert.equal(controls.extra.length, 0);
+});
 
 // ── statusFromItem ──
 test('statusFromItem: cloud monitoring item → monitoring state, cloud flag', () => {
@@ -273,16 +315,16 @@ test('controls: monitoring cloud → check-now bulk + auto toggle + stop monitor
   // Both card surfaces open the same explicit campaign/all-accounts scope choice.
   assert.match(c.bulk.onclick, /promptCloudCheckScope\('c9',this\)/);
   assert.ok(c.monAuto && c.monAuto.checked === true);
-  assert.match(c.monAuto.onclick, /setCloudAutoChecks\('c9'/);
+  assert.match(c.monAuto.onchange, /setCloudAutoChecks\('c9'/);
   assert.match(c.stop.tip, /monitoring/i);
   assert.equal(c.pause, null);
 });
-test('controls: monitoring local → dashRunCheck bulk + pause + stop', () => {
+test('controls: monitoring local → dashRunCheck bulk and separate monitoring stop', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'local', id: 'local-active', bucket: 'running', monitoring: true, sent: 22, total: 198 }));
   assert.match(c.bulk.onclick, /dashRunCheck/);
-  assert.ok(c.pause);
-  assert.ok(c.stop);
-  assert.equal(c.monAuto, null);
+  assert.equal(c.pause, null);
+  assert.match(c.stop.tip, /Stop monitoring/);
+  assert.match(c.monAuto.onchange, /setMonitoringAutoChecks\(this.checked,this\)/);
   const resume = c.extra.find((x) => x.kind === 'play');
   assert.ok(resume);
   assert.equal(resume.once, true);
@@ -307,12 +349,15 @@ test('controls: a nasty local done id (quote / angle brackets) is escaped in onc
   assert.match(del.onclick, /&lt;b&gt;/);
 });
 
-test('controls: queued → cancel + open routes to edit/viewCloud', () => {
+test('controls: queued VM has labelled Stop; local queue keeps Cancel', () => {
   const local = vjCardControlsFor(statusFromItem({ where: 'local', id: 'q1', rawId: 'r1', bucket: 'queued' }));
   assert.match(local.open.onclick, /editQueuedCampaign.*r1/);
   assert.ok(local.extra.find((e) => e.kind === 'cancel'));
   const cloud = vjCardControlsFor(statusFromItem({ where: 'cloud', id: 'qc', bucket: 'queued' }));
   assert.match(cloud.open.onclick, /viewCloudCampaign\('qc'\)/);
+  assert.equal(cloud.stop.tip, 'Stop campaign');
+  assert.match(cloud.stop.onclick, /stopCloudCampaignUI\('qc'\)/);
+  assert.equal(cloud.extra.find((e) => e.kind === 'cancel'), undefined);
 });
 
 test('a cloud monitoring campaign with unsent leads offers Resume sending', () => {
@@ -349,13 +394,20 @@ test('Stop monitoring and Run check now survive on the monitoring card', () => {
   assert.ok(c.bulk, 'Run check now must not be displaced');
 });
 
-test('an active cloud sweep replaces Stop monitoring with Stop check', () => {
-  const c = vjCardControlsFor({
-    _cloud: true, id: 'c1', state: 'monitoring', monitoringCheckInProgress: true,
-  });
-  assert.equal(c.stop.tip, 'Stop check');
-  assert.match(c.stop.onclick, /stopCloudCheckUI\('c1',this\)/);
-  assert.ok(c.bulk, 'the check control remains visible so the renderer can show it disabled');
+test('CC+DM and CC+IC checks expose Stop check without repurposing Pause or Stop monitoring', () => {
+  for (const mode of ['connect_and_message', 'connect_and_introduce']) {
+    for (const cloud of [false, true]) {
+      const c = vjCardControlsFor({
+        _cloud: cloud, id: cloud ? 'c1' : 'local-active', mode,
+        state: 'monitoring', monitoringCheckInProgress: true,
+      });
+      assert.equal(c.pause, null);
+      assert.match(c.stop.tip, /Stop monitoring/);
+      assert.equal(c.checkStop.tip, 'Stop check');
+      assert.match(c.checkStop.onclick, cloud ? /stopCloudCheckUI/ : /stopLocalCheckUI/);
+      assert.ok(c.bulk, 'check-now remains available to show its disabled state');
+    }
+  }
 });
 
 test('statusFromItem carries pending through to the card', () => {

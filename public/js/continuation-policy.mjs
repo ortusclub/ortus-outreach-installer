@@ -14,7 +14,7 @@ export function continuationPolicy(mode) {
     monitoringDetail: acceptance
       ? `No new invitations. Acceptance checks can send configured ${action} and follow-ups. This is not read-only.`
       : 'This campaign has no supported acceptance-monitoring phase. Full Stop remains available.',
-    scopeDetail: 'Uses this campaign’s configured accounts and lead scope. Sheet-wide monitoring is not supported by this control.',
+    scopeDetail: 'Choose this campaign’s accounts or all matching senders in the current sheet tab for every scheduled check.',
   };
 }
 

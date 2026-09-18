@@ -385,4 +385,6 @@ test('an emoji glyph with a variation selector is fully stripped', () => {
   const r = latestBannerEvent(['▶️ Resumed sending — 92 leads still to go. Acceptance checks re-arm once they’re sent.']);
   assert.equal(r.kind, 'sending-resumed');
   assert.equal(r.headline, 'Sending resumed');
+  const exact = latestBannerEvent(['▶️ Resumed · 16:31']);
+  assert.equal(exact.kind, 'sending-resumed');
 });

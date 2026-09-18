@@ -1204,6 +1204,16 @@ select {
   position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
 }
 .browse-icon-btn.refresh-soo .refresh-soo-bar { display: block; height: 100%; background: var(--gold); }
+#profiles-loading.profiles-roster-warning {
+  margin: 12px 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--gold) 9%, var(--card-bg));
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
 
 .browse-secondary {
   display: flex; align-items: center; justify-content: space-between;
@@ -3905,10 +3915,30 @@ body.theme-light .launch-actions.launch-actions--four #btn-start {
 }
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
 }
 .modal-actions .btn { min-width: 120px; }
+.modal-actions .ac-ok {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.vj-controls .btn-pill.ck-stop,
+.sn-foot .mini.sn-check-stop {
+  border-color: var(--gold);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--gold) 10%, var(--card-bg));
+  font-weight: 700;
+}
+.vj-controls .btn-pill.ck-stop:hover,
+.sn-foot .mini.sn-check-stop:hover {
+  background: color-mix(in srgb, var(--gold) 20%, var(--card-bg));
+}
+#btn-stop-check-rb[hidden],
+#btn-pause-rb[hidden] { display: none; }
 
 .machine-choice-card { padding: 40px 44px 36px; }
 .machine-choice-card .modal-body { max-width: 480px; margin-bottom: 24px; }
@@ -8588,6 +8618,7 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .wh-seg button.on { background: var(--ink); color: var(--bg); }
 .wh-seg button.busy { color: var(--ink); }
 .wh-seg button[disabled] { cursor: default; }
+.wh-starting .wh-seg button { opacity: .45; }
 .wh-note { font-family: var(--mono); font-size: .7rem; color: var(--gray); margin-left: auto; }
 .wh-warn { font-family: var(--mono); font-size: .7rem; color: var(--ink); margin-left: auto; }
 

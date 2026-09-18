@@ -64,21 +64,23 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { processedLeadUrls, sheetProcessedUrls, heldLocalOutcomeUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal, waitForVerifiedCloudRelease } from './src/handover.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignLeadsAll, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob, cancelHandshakeJob } from './src/cloud-handshake-job.js';
 import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, showProfileForManualControl, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
+import { getProfiles, getProfilesForPicker, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, showProfileForManualControl, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, usesProfileAsGuest, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
+import { resolveMonitoringTabSenders } from './src/monitoring-tab-senders.js';
 import { clampCadenceMinutes, isRetiredMode, usesMonitoringCadence } from './public/js/campaign-modes.mjs';
 import { confirmRecoveryShutdown, unresolvedHandoverLeads, waitForDestinationStart } from './src/recovery-control.js';
 import { observeOpenInvitation } from './src/invitation-observation.js';
 import { observeCloudInvitation } from './src/campaigns-client.js';
 import { getProfileObservationBrowser, observeProfileShutdown } from './src/gologin-launcher.js';
+import { createManualProfileOpenControl } from './src/manual-profile-open-control.js';
 import { validatePrimaryUrl } from './public/js/primary-url-validation.mjs';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
@@ -91,6 +93,7 @@ import { stopCloudWithLocalTasks, resumeCloudWithLocalTasks, withLocalCloudContr
 import { clearRuntimeInterruption, readRuntimeInterruption } from './src/runtime-interruption.js';
 import { launchValidation } from './src/launch-validation.js';
 import { terminalPresentation } from './public/js/campaign-terminal.mjs';
+import { applyManualCheckStatus } from './src/manual-check-status.js';
 
 // Surface a repeated Operations Log write failure instead of letting it die
 // silently (the 2026-06-10 → 06-11 blackout). Routed to the fatal-error log
@@ -173,7 +176,8 @@ function startupAdmissionMiddleware(req, res, next) {
   if (req.path === '/api/campaign/cloud-preflight-handshake' && (campaign.running || checkDms.running || postAmp.running || _recoveryInFlight)) {
     return res.status(409).json({ error: 'Stop the active foreground operation before starting a handshake.' });
   }
-  if (_manualSweepRunning || (handshake.active && (!handshake.done || handshake.stopping))) {
+  if (req.path !== '/api/campaign/cloud-preflight-handshake' && !/^\/api\/campaign\/[^/]+\/handover$/.test(req.path)
+      && (_manualSweepRunning || (handshake.active && (!handshake.done || handshake.stopping)))) {
     return res.status(409).json({ error: 'A manual check or handshake is still active or stopping.' });
   }
   try {
@@ -709,7 +713,9 @@ app.delete('/api/server-log', (_req, res) => {
 // wonders where an account went.
 app.get('/api/profiles', async (req, res) => {
   try {
-    const profiles = await getProfiles();
+    const { profiles, source, fetchedAt } = await getProfilesForPicker({ forceRefresh: req.query.refresh === '1' });
+    res.set('X-Ortus-Roster-Source', source);
+    res.set('X-Ortus-Roster-Fetched-At', String(fetchedAt));
     const email = viewerEmail(req);
     res.json(profiles.map((p) => ({
       ...p,
@@ -726,6 +732,12 @@ app.get('/api/profiles', async (req, res) => {
     })));
   } catch (err) {
     console.error('Error fetching profiles:', err.message);
+    if (err.code === 'GOLOGIN_RATE_LIMIT') {
+      return res.status(503).json({
+        error: 'GoLogin is limiting profile-list requests. No saved roster is available yet. Please wait before refreshing; repeated attempts can prolong the limit.',
+        code: 'GOLOGIN_RATE_LIMIT',
+      });
+    }
     const unauthorized = /GoLogin API 401|unauthori[sz]ed/i.test(String(err && err.message));
     const devEngine = /^(?:dev-|preview-pr-)/.test(String(process.env.SCRAPER_ENGINE_VERSION || ''));
     res.status(unauthorized ? 401 : 500).json({
@@ -1273,6 +1285,7 @@ function buildCampaignConfig(body) {
     // Shape: { totalProcessed: number }. Other fields ignored for now.
     resumeContext: (resumeContext && typeof resumeContext === 'object') ? {
       totalProcessed: Number(resumeContext.totalProcessed) || 0,
+      handoverLogs: handoverLogSnapshot(resumeContext.handoverLogs),
     } : null,
     // #7: when the primary connect/check happens. 'immediately' (default) =
     // pre-loop handshake (today's behavior); 'after_connections' = after all
@@ -1389,7 +1402,7 @@ function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 // /api/campaign/start path below is untouched.
 // Named so /api/campaign/cloud/:id/edit-redispatch can re-enter the same
 // pipeline after stopping the original campaign (excludeLeadUrls set).
-async function handleStartCloud(req, res) {
+async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
   try {
     const body = req.body || {};
     const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
@@ -1408,7 +1421,10 @@ async function handleStartCloud(req, res) {
     if (await rejectIfForeignProfiles(req, res, profileIds, mode)) return;
 
     // ── Pre-flight gate: same ack/blocklist check as /api/campaign/start ─────
-    if (!await runPreflightGate(req, res)) return;
+    // An existing campaign already passed launch preflight. Re-running it
+    // during a machine move can strand a confirmed-stopped source on a fresh
+    // warning that has no bearing on ownership or duplicate-send safety.
+    if (!handoverLogs && !await runPreflightGate(req, res)) return;
 
     // Auto-routed modes derive the account per-row from the sheet's sender
     // column (the picker is hidden for them), so we pin each lead to its
@@ -1574,6 +1590,10 @@ async function handleStartCloud(req, res) {
     const t = templates || {};
     const config = {
       ...t,
+      ...(handoverLogs ? { handoverLogs } : {}),
+      checkIntervalMinutes: body.checkIntervalMinutes ?? t.checkIntervalMinutes ?? 60,
+      autoChecksEnabled: body.autoChecksEnabled ?? t.autoChecksEnabled ?? true,
+      primaryCheckTiming: body.primaryCheckTiming || t.primaryCheckTiming || 'immediately',
       message: t.message || t.followUp1 || '',            // message_only DM body
       followUpMessage: t.followUpMessage || t.followUp1 || '',
       senderFirstNames: body.senderFirstNames || t.senderFirstNames || {},
@@ -1667,13 +1687,14 @@ async function handleStartCloud(req, res) {
       dailyLimit: dailyLimit || 50, sheetUrl: cloudSheetUrl,
       primaryConn,
       startAt: startAt || undefined,
+      startPaused: body.startPaused === true,
     });
     if (result.error) return res.status(502).json({ error: result.error, cloud: true });
-    cloudLog(`[cloud] campaign ${result.id} (${mode}) ${result.scheduled ? `SCHEDULED for ${result.startAt}` : 'dispatched'} to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
+    cloudLog(`[cloud] campaign ${result.id} (${mode}) ${result.paused ? 'moved paused' : (result.scheduled ? `SCHEDULED for ${result.startAt}` : 'dispatched')} to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
     // Snapshot the wizard config so the campaign can be duplicated later (the
     // engine doesn't return templates/delays). Best-effort — never blocks dispatch.
     saveCloudLaunchConfig(result.id, name || '', body).catch((e) => cloudLog(`[cloud] launch-config save failed: ${e.message}`));
-    res.json({ ok: true, cloud: true, ...result });
+    res.json({ ok: true, cloud: true, ...result, phase: result.paused ? 'paused' : undefined });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2337,11 +2358,13 @@ app.post('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   }
 });
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
-  if (req.query.keepMonitoring && req.query.monitoringScope && req.query.monitoringScope !== 'campaign') {
-    return res.status(409).json({ ok: false, error: 'Only configured campaign monitoring is supported; sheet-wide scope was not applied.' });
+  if (req.query.keepMonitoring && req.query.monitoringScope && !['campaign', 'tab'].includes(req.query.monitoringScope)) {
+    return res.status(409).json({ ok: false, error: 'Choose campaign or current-tab monitoring.' });
   }
-  // The control supports configured campaign scope only. Reject wider scopes
-  // above instead of advertising a choice the engine cannot apply.
+  if (req.query.keepMonitoring && req.query.monitoringScope === 'tab'
+      && !['bd87927', 'bff2d5c', '549de46'].some((sha) => String(process.env.ORTUS_ENGINE_SOURCE_SHA || '').startsWith(sha))) {
+    return res.status(409).json({ ok: false, error: 'The isolated VM engine does not support tab-wide scheduled checks yet.' });
+  }
   const how = req.query.keepMonitoring ? 'stop sending, keep monitoring'
     : req.query.pause ? 'pause'
     : 'stop now';
@@ -2364,7 +2387,7 @@ app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
 });
 // Resume a paused cloud campaign (mirror of local Resume).
 app.post('/api/campaign/cloud/:id/resume', async (req, res) => {
-  const r = await resumeCloudWithLocalTasks(req.params.id, { resumeRemote: resumeCloudCampaign });
+  const r = await resumeCloudWithLocalTasks(req.params.id, { resumeRemote: resumeCloudCampaign, getRemote: getCloudCampaign });
   if (r.conflict) return res.status(409).json(r);
   if (r.error) return res.status(502).json(r);
   res.json(r);
@@ -2445,13 +2468,27 @@ app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
 // stamps nothing in the sheet (see its comment), so a monitoring campaign can
 // leave this Mac without its still-pending leads being closed off.
 let _recoveryInFlight = false;
+function handoverLogSnapshot(lines) {
+  return Array.isArray(lines) ? lines.filter(line => typeof line === 'string' && line.trim())
+    .slice(-300).map(line => line.slice(0, 1200)) : [];
+}
 async function stopLocalAndConfirm({ timeoutMs = 5000 } = {}) {
-  if (_manualSweepRunning || [checkDms, postAmp, _manualSweepControl].some(r => r && (r.running || standaloneStopStatus(r).stopping))) {
-    return { ok: false, reason: 'another-operation-needs-shutdown' };
-  }
   const generation = campaign._generation;
   const owner = taskOwnerOf(campaign);
   if (!owner) return { ok: false, reason: 'source-ownership-unproven' };
+  if (_manualSweepRunning) {
+    _manualSweepAbort = true;
+    _manualSweepController?.abort();
+  }
+  const standalone = [checkDms, postAmp, _manualSweepControl]
+    .filter(r => r && (r.running || standaloneStopStatus(r).stopping));
+  for (const runner of standalone) requestStandaloneStop(runner);
+  const deadline = Date.now() + timeoutMs;
+  while ((_manualSweepRunning || standalone.some(r => r.running || !standaloneStopStatus(r).stopConfirmed))
+      && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+  if (_manualSweepRunning || standalone.some(r => r.running || !standaloneStopStatus(r).stopConfirmed)) {
+    return { ok: false, reason: 'another-operation-needs-shutdown' };
+  }
   return confirmRecoveryShutdown({ generation, timeoutMs,
     currentGeneration: () => campaign._generation, status: getCampaignStatus,
     stop: async () => {
@@ -2476,32 +2513,38 @@ async function handoverToLocal(id, req, res) {
   if (cur && cur.error) return res.status(502).json({ error: `Could not read the campaign on the VM: ${cur.error}` });
   const camp = (cur && cur.campaign) || cur || {};
   const cfg = camp.config || {};
+  const sourceStatus = camp.status === 'pausing' && cfg.handoverSourceStatus
+    ? cfg.handoverSourceStatus : camp.status;
   if (!camp.sheet_url) return res.status(400).json({ error: 'That cloud campaign has no source sheet, so it cannot be rebuilt here.' });
 
   // Release FIRST. Fails closed: a live sweep, a lost race, or an engine too old
   // to know the route all answer 409 and the campaign stays on the VM.
-  const rel = await releaseCloudCampaign(id);
+  // A worker can take longer than one HTTP response to close its browser.
+  // The engine fences new work on the first request and makes repeat release
+  // calls idempotent; keep waiting here rather than asking the operator to
+  // click Move again while the source is already stopping.
+  const rel = await waitForVerifiedCloudRelease(() => releaseCloudCampaign(id));
   if (!rel || rel.error || !rel.released) {
-    if (rel && rel.status === 409) {
-      return res.status(409).json({
-        reason: 'sweep_in_flight',
-        error: 'The VM is part-way through a check on this campaign, so it will not hand it over yet. Wait for that check to finish, then move it again.',
-      });
-    }
-    return res.status(502).json({ ok: false, error: `VM release was not confirmed: ${(rel && rel.error) || 'no confirmation'}. Nothing was started here. Refresh the source status; it may be paused or already released.` });
+    const reason = rel?.pendingReason || rel?.error || 'the source did not confirm shutdown';
+    return res.status(rel?.pending || rel?.status === 409 ? 409 : 502).json({ ok: false,
+      reason: rel?.reason || (rel?.pending ? 'source_shutdown_pending' : 'release_failed'),
+      error: `The VM has not confirmed that all campaign work stopped (${reason}). Nothing started on this Mac. Open the VM campaign status before moving again.` });
   }
 
   // The source ledger must preserve uncertain outcomes; never infer a safe
   // retry from an interrupted action or a missing ledger response.
-  const got = await getCloudCampaignLeads(id);
+  const got = await getCloudCampaignLeadsAll(id);
   if (got && got.error) {
     return res.status(502).json({ error: `The VM released the campaign but its lead list could not be read (${got.error}), so nothing was started here. The campaign is now waiting on this Mac: move it back, or start it here yourself.` });
   }
   const allLeads = (got && got.leads) || [];
-  if (!Array.isArray(got?.leads) || unresolvedHandoverLeads(allLeads).length) {
+  const unresolved = unresolvedHandoverLeads(allLeads);
+  if (!Array.isArray(got?.leads) || unresolved.some(lead => ['claimed', 'in_progress'].includes(lead.status))) {
     return res.status(409).json({ ok: false, reason: 'outcome-review-required',
-      error: 'The source was released, but its lead outcomes are incomplete or unresolved. Nothing was started here. Review the source actions before continuing.' });
+      error: 'The VM stopped, but an active lead has not been placed on hold yet. Nothing started here; retry the move after the worker records its final state.' });
   }
+  const heldForReview = unresolved.length;
+  const sourceLogs = handoverLogSnapshot(req.body?.sourceLogs);
   const excluded = processedLeadUrls(allLeads);
   const remaining = allLeads.length - excluded.length;
   const profileIds = Array.isArray(camp.profile_ids) ? camp.profile_ids : [];
@@ -2541,6 +2584,7 @@ async function handoverToLocal(id, req, res) {
       autoChecksEnabled: camp.auto_checks_enabled !== false,
       totalTargets: allLeads.length,
       totalProcessed: excluded.length,
+      logs: sourceLogs,
     });
     if (!adopted.ok) {
       return res.status(409).json({ error: `${adopted.error} The campaign is now waiting on this Mac: move it back, or free this machine and try again.` });
@@ -2548,10 +2592,12 @@ async function handoverToLocal(id, req, res) {
     campaign.runsOn = 'local';
     campaign.handoverAt = Date.now();
     cloudLog(`[cloud] handover: ${id} → local (monitoring adopted, next check ${adopted.nextCheckAt})`);
-    return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length, adopted: 'monitoring', nextCheckAt: adopted.nextCheckAt });
+    return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length, heldForReview, adopted: 'monitoring', nextCheckAt: adopted.nextCheckAt });
   }
 
   const config = buildCampaignConfig({
+    taskCampaignId: id,
+    campaignRunId: `handover-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     profileIds,
     sheetUrl: camp.sheet_url,
     sheetGid: cfg.sheetGid,
@@ -2571,7 +2617,7 @@ async function handoverToLocal(id, req, res) {
     _preflightExcludedUrls: excluded,
     // This is a continuation, not a new run: keeps the campaign's log, its
     // Recent Connections tab and its counters instead of wiping them.
-    resumeContext: { totalProcessed: excluded.length },
+    resumeContext: { totalProcessed: excluded.length, handoverLogs: sourceLogs },
   });
 
   // Decision 2: an operator who moves a campaign wants to see something happen,
@@ -2586,25 +2632,36 @@ async function handoverToLocal(id, req, res) {
   const launch = launchCampaign(config, req.user, { onError: error => { startFailure = error; } });
   if (!launch?.accepted) return res.status(409).json({ ok: false, sourceReleased: true,
     error: 'Local startup was refused. Source remains released; review operator identity before retrying.' });
+  // The source was paused. startCampaign yields before its first browser or
+  // sheet action, so request the local pause synchronously at this boundary.
+  // The local loop then waits for Resume without sending or checking anyone.
+  if (sourceStatus === 'paused') {
+    const pause = pauseCampaign();
+    if (!pause.ok) return res.status(409).json({ ok: false, sourceReleased: true,
+      error: 'The VM was released, but this Mac could not preserve Pause. Stop the local run before retrying.' });
+  }
   const startup = await waitForDestinationStart({ failure: () => startFailure,
-    started: () => campaign.running && campaign._generation === (previousGeneration || 0) + 1 && campaign.sheetUrl === config.sheetUrl });
-  if (!startup.ok) return res.status(startup.pending ? 202 : 409).json({ ...startup, sourceReleased: true });
+    started: () => campaign.running && campaign._generation === (previousGeneration || 0) + 1 && campaign.sheetUrl === config.sheetUrl,
+    timeoutMs: 120000 });
+  if (!startup.ok) return res.status(409).json({ ...startup, sourceReleased: true });
   campaign.runsOn = 'local';
   campaign.handoverAt = Date.now();
+  if (heldForReview) campaignLog(`⚠ ${heldForReview} lead outcome${heldForReview === 1 ? '' : 's'} held for review on the VM; excluded from automatic sending here.`);
   cloudLog(`[cloud] handover: ${id} → local startup confirmed`);
-  return res.json({ ok: true, to: 'local', id, remaining, excluded: excluded.length });
+  return res.json({ ok: true, to: 'local', id, phase: sourceStatus === 'paused' ? 'paused' : 'sending', remaining, excluded: excluded.length, heldForReview });
 }
 
 // This Mac → VM. The local campaign is the singleton, so `id` is only used for
 // the log line: what moves is whatever is running here.
 async function handoverToVm(id, req, res) {
+  const sourceLogs = handoverLogSnapshot(req.body?.sourceLogs);
   const running = campaign.running;
   const monitoring = !running && campaign.state === 'monitoring';
   if ((running || monitoring) && id !== 'local-active' && String(id) !== String(campaign.id)) {
     return res.status(409).json({ ok: false, error: 'This Mac is operating a different campaign. Nothing was stopped or moved.' });
   }
   if (!running && !monitoring) {
-    const stopped = await stopLocalAndConfirm();
+    const stopped = await stopLocalAndConfirm({ timeoutMs: 120000 });
     if (!stopped.ok) return res.status(409).json({ ok: false, reason: stopped.reason,
       error: 'This Mac cannot prove the previous session is closed. The VM was not restarted; review recovery first.' });
     // Recovery after sleep/quit: the engine row still exists and says it was
@@ -2638,7 +2695,7 @@ async function handoverToVm(id, req, res) {
   // snapshot, so the settings check below would refuse it.
   const cloudId = monitoring ? reclaimableCloudId(campaign, SINGLETON_CAMPAIGN_ID) : '';
   if (cloudId) {
-    const stopped = await stopLocalAndConfirm();
+    const stopped = await stopLocalAndConfirm({ timeoutMs: 120000 });
     if (!stopped.ok) return res.status(409).json({ ok: false, reason: stopped.reason,
       error: 'Local shutdown is not confirmed. The VM was not asked to resume.' });
     const rec = await reclaimCloudCampaign(cloudId);
@@ -2665,20 +2722,10 @@ async function handoverToVm(id, req, res) {
   }
   if (!isCloudMode(last.mode)) return res.status(400).json({ error: `Mode "${last.mode}" cannot run in the cloud, so this campaign has to stay on this Mac.` });
 
-  // What this Mac already did. The local side keeps no per-lead table: the sheet
-  // is its ledger, stamped as it goes, so that is what the VM must skip.
+  // Stop before reading the sheet. Reading it can take a while, and the
+  // operator asked the active sender to stop as soon as Move is pressed.
   const gid = String(last.sheetGid || '').replace(/\D/g, '');
-  const rows = await fetchSheet(withGid(last.sheetUrl, gid));
   const urlOf = (row) => extractLinkedInUrl(row, last.linkedinColumn || '');
-  const excluded = sheetProcessedUrls(rows, urlOf);
-  const excludedSet = new Set(excluded);
-  const remaining = rows.filter((r) => { const u = urlOf(r); return u && !excludedSet.has(String(u).trim()); }).length;
-  if (!remaining) {
-    // Started here and finished sending here: there is no engine row to reclaim
-    // (the reclaim path above already handled the ones that have one), and the
-    // engine only takes campaigns that have leads.
-    return res.status(409).json({ error: 'Every lead in the sheet has already been sent, so there is nothing for the VM to run. Keep the acceptance checks on this Mac.' });
-  }
 
   const cloudBody = {
     profileIds: Array.isArray(last.profileIds) ? last.profileIds : [],
@@ -2693,16 +2740,14 @@ async function handoverToVm(id, req, res) {
     senderFirstNames: last.senderFirstNames || {},
     delayMin: last.delayMin,
     delayMax: last.delayMax,
-    excludeLeadUrls: excluded,
+    checkIntervalMinutes: last.checkIntervalMinutes,
+    autoChecksEnabled: last.autoChecksEnabled,
+    primaryCheckTiming: last.primaryCheckTiming,
+    startPaused: req.body?.phase === 'paused' || !!campaign._paused,
   };
   req.body = cloudBody;
-  // Run the same gate the cloud launch will run, BEFORE stopping this Mac. If
-  // the sheet has unacknowledged blockers the gate answers the operator itself
-  // and the local campaign carries on untouched.
-  if (!await runPreflightGate(req, res)) return;
-
   // Now, and only now, stop this side, and prove it stopped.
-  const stopped = await stopLocalAndConfirm();
+  const stopped = await stopLocalAndConfirm({ timeoutMs: 120000 });
   if (!stopped.ok) {
     return res.status(409).json({
       reason: 'source_still_running',
@@ -2719,19 +2764,22 @@ async function handoverToVm(id, req, res) {
   }
   const freshRows = await fetchSheet(withGid(last.sheetUrl, gid));
   const freshExcluded = new Set(sheetProcessedUrls(freshRows, urlOf));
-  for (const row of freshRows) {
+  const heldLocal = heldLocalOutcomeUrls(freshRows, urlOf, outcomeState.processed);
+  for (const url of heldLocal) freshExcluded.add(url);
+  const remaining = freshRows.filter(row => {
     const url = urlOf(row);
-    const entry = outcomeState.processed[url];
-    if (entry && ['_in_progress', 'interrupted'].includes(entry.action)) {
-      return res.status(409).json({ ok: false, reason: 'outcome-review-required',
-        error: 'A local action has an unresolved outcome. Review it before moving sending to the VM.' });
-    }
-  }
-  cloudBody.excludeLeadUrls = [...new Set([...excluded, ...freshExcluded])];
+    return url && !freshExcluded.has(String(url).trim());
+  }).length;
+  if (!remaining) return res.status(409).json({ ok: false, sourceStopped: true,
+    error: 'This Mac has stopped. Every lead is already sent or held for review, so there is no sender work to move to the VM.' });
+  cloudBody.excludeLeadUrls = [...freshExcluded];
 
   campaign.emptyCheckStreak = 0;
-  campaignLog(`⇄ Local source stopped; submitting ${remaining} remaining lead(s) to the VM. Destination acceptance is pending.`);
-  return handleStartCloud(req, res);
+  campaignLog(`⇄ Local source stopped; submitting ${remaining} remaining lead(s) to the VM.${heldLocal.length ? ` ${heldLocal.length} uncertain outcome(s) remain held for review and will not be retried.` : ''} Destination acceptance is pending.`);
+  // Read the final source log after shutdown, so the last held outcome and
+  // browser-close lines travel with the campaign as well.
+  return handleStartCloud(req, res, { handoverLogs: handoverLogSnapshot(campaign.logs).length
+    ? handoverLogSnapshot(campaign.logs) : sourceLogs });
 }
 
 app.post('/api/campaign/:id/handover', async (req, res) => {
@@ -5631,8 +5679,14 @@ const _campaignStopWatchdog = createStopWatchdog({
 
 app.post('/api/campaign/stop', async (req, res) => {
   if (req.body?.full === false && (!usesMonitoringCadence(campaign.mode)
-      || (req.body.monitoringScope && req.body.monitoringScope !== 'campaign'))) {
-    return res.status(409).json({ ok: false, error: 'This control supports configured campaign acceptance monitoring only. No monitoring change was applied.' });
+      || (req.body.monitoringScope && !['campaign', 'tab'].includes(req.body.monitoringScope)))) {
+    return res.status(409).json({ ok: false, error: 'This control supports acceptance monitoring for this campaign or the selected tab only. No monitoring change was applied.' });
+  }
+  if (req.body?.full === false && !campaign.running) {
+    return res.status(409).json({ ok: false, error: 'Sending has already ended. No monitoring change was applied; use this campaign’s continuation controls.' });
+  }
+  if (req.body?.full === false && req.body.monitoringScope === 'tab' && !campaign.sheetUrl) {
+    return res.status(409).json({ ok: false, error: 'The selected sheet tab is unavailable; tab-wide monitoring was not started.' });
   }
   if (req.body?.full === false && (campaign._pauseRequested || campaign._paused)) {
     return res.status(409).json({ ok: false, error: 'This campaign is paused or pausing. Review Resume first, or choose full Stop; monitoring was not started.' });
@@ -5668,7 +5722,7 @@ app.post('/api/campaign/stop', async (req, res) => {
   // can start a new monitoring phase. Receipt remains pending until confirmed.
   closeCurrentCampaignBrowsers(stopContext).then(result => { receipt.browsersClosed = result.browserClosed === true; },
     err => { receipt.error = err.message; });
-  const result = stopCampaign({ full: fullHalt });
+  const result = stopCampaign({ full: fullHalt, monitoringScope: req.body?.monitoringScope });
   const stopState = campaign.running ? _campaignStopWatchdog.arm({ generation: campaign._generation }) : _campaignStopWatchdog.status();
   let tracking = { ok: true };
   if (fullHalt) {
@@ -6321,12 +6375,7 @@ app.get('/api/campaign/status', async (_req, res) => {
   const base = getCampaignStatus();
   if (_manualSweepControl) {
     const proof = standaloneStopStatus(_manualSweepControl);
-    base.manualCheck = { running: _manualSweepControl.running, ...proof };
-    if (proof.stopping) {
-      base.stopping = true;
-      base.stopConfirmed = false;
-      base.state = 'stopping';
-    }
+    applyManualCheckStatus(base, _manualSweepControl.running, proof);
   }
   // v2.12.x: when Post Amplification is running, surface its state through
   // the same payload the Live Status panel already polls. Logs are already
@@ -6765,6 +6814,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
     // column, then map to profile IDs via the GoLogin profile cache.
     let profileIdsToSweep = [];
     let derivedFromSheet = false;
+    let derivedNames = {};
     if (Array.isArray(profileIds) && profileIds.length > 0) {
       profileIdsToSweep = profileIds.filter((p) => typeof p === 'string' && p.length);
     } else if (profileId) {
@@ -6772,26 +6822,17 @@ app.post('/api/bulk-check-now', async (req, res) => {
     } else {
       try {
         const rows = await fetchSheet(sheetUrl);
-        const accountEmails = new Set();
-        for (const row of rows) {
-          // v2.78: prefer the canonical Sender column (the "all senders in the
-          // sheet" solo check), falling back to Account Used for older sheets.
-          const v = (row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').toString().trim();
-          if (v && v.includes('@')) accountEmails.add(v.toLowerCase());
-        }
-        if (accountEmails.size === 0) {
-          return res.status(400).json({ error: 'No accounts selected and no Account Used values found on the sheet to derive from.' });
-        }
-        const allProfiles = await getProfiles(token);
-        const byName = new Map(allProfiles.map((p) => [String(p.name || '').toLowerCase(), p.id]));
-        for (const email of accountEmails) {
-          const pid = byName.get(email);
-          if (pid) profileIdsToSweep.push(pid);
-        }
+        const roster = await getProfilesForPicker();
+        const resolved = resolveMonitoringTabSenders(rows, roster.profiles);
+        profileIdsToSweep = resolved.ids;
+        derivedNames = resolved.names;
         derivedFromSheet = true;
         if (profileIdsToSweep.length === 0) {
-          return res.status(400).json({ error: `Found ${accountEmails.size} account email(s) on the sheet but none matched a GoLogin profile.` });
+          return res.status(400).json({ error: resolved.unresolved.length
+            ? `No Sender values in this tab matched an available browser. Unmatched: ${resolved.unresolved.slice(0, 5).join(', ')}`
+            : 'No Sender or Account Used values found in this tab.' });
         }
+        if (resolved.unresolved.length) campaignLog(`⚠ Skipping ${resolved.unresolved.length} unmatched or ambiguous Sender value(s) in this tab.`);
       } catch (err) {
         return res.status(500).json({ error: `Could not derive accounts from sheet: ${err.message}` });
       }
@@ -6803,9 +6844,11 @@ app.post('/api/bulk-check-now', async (req, res) => {
     // passes pName; the manual button used to skip this lookup.
     let nameByProfileId = new Map();
     try {
-      const allProfiles = await getProfiles(token);
+      const { profiles: allProfiles } = await getProfilesForPicker();
       nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
     } catch { /* fall back to id-as-name if cache fetch fails */ }
+    nameByProfileId.set('local-browser', 'You');
+    for (const [id, name] of Object.entries(derivedNames)) nameByProfileId.set(id, name);
 
     // Filter out accounts the most-recent campaign parked. parkedProfiles is
     // in-memory (not persisted across restarts) so this only catches the
@@ -6900,8 +6943,8 @@ app.post('/api/bulk-check-now', async (req, res) => {
         if (wasAlreadyRunning) throw new Error('Account browser is already in use; its ownership must be resolved before this check');
         launched = await preparePrimarySession([manualControl.taskOwner], {
           semaphore: browserSemaphore, signal: sweepController.signal,
-          launch: options => launchProfile(pid, token, options),
-          close: () => _closeProfile(pid),
+          launch: options => pid === 'local-browser' ? launchLocalBrowser(options) : launchProfile(pid, token, options),
+          close: () => pid === 'local-browser' ? closeLocalBrowser() : _closeProfile(pid),
         });
       } catch (err) {
         const msg = `Launch failed: ${err.message}`;
@@ -7461,29 +7504,31 @@ app.get('/api/profile/:id/shutdown-observation', (req, res) => {
   res.set('Cache-Control', 'no-store').json(observeProfileShutdown(req.params.id));
 });
 
+const manualProfileOpen = createManualProfileOpenControl({
+  resolve: async ref => resolveProfileId(await getProfiles(), ref),
+  getPid: getProfilePid,
+  focus: showProfileForManualControl,
+  launch: (id, signal, onOwnedStart) => launchProfile(id, process.env.GOLOGIN_API_TOKEN, { visible: true, signal, onOwnedStart }),
+  unhide: async pid => { if (process.platform === 'darwin') await unhideByPids([pid]); },
+  close: closeProfile,
+});
+
 app.post('/api/profile/:id/open-browser', async (req, res) => {
-  const profileRef = req.params.id;
-  if (!profileRef) return res.status(400).json({ error: 'profileId required' });
   try {
-    const profileId = resolveProfileId(await getProfiles(), profileRef);
-    if (!profileId) {
-      return res.status(404).json({ error: `No exact GoLogin profile matches ${profileRef}` });
-    }
-    const existingPid = getProfilePid(profileId);
-    if (existingPid) {
-      await showProfileForManualControl(profileId);
-      return res.json({ ok: true, action: 'focused-existing', pid: existingPid });
-    }
-    const token = process.env.GOLOGIN_API_TOKEN;
-    await launchProfile(profileId, token, { visible: true });
-    const newPid = getProfilePid(profileId);
-    if (process.platform === 'darwin' && newPid) {
-      await unhideByPids([newPid]);
-    }
-    res.json({ ok: true, action: 'launched', pid: newPid });
+    res.json(await manualProfileOpen.open(req.params.id));
   } catch (err) {
-    console.error(`[open-browser] ${profileRef}: ${err.message}`);
-    res.status(500).json({ error: err.message });
+    if (!err.cancelled) console.error(`[open-browser] ${req.params.id}: ${err.message}`);
+    res.status(err.cancelled ? 409 : /No exact GoLogin profile matches/.test(err.message) ? 404 : 500)
+      .json({ error: err.message, cancelled: !!err.cancelled, browserClosed: err.browserClosed });
+  }
+});
+
+app.post('/api/profile/:id/cancel-open-browser', async (req, res) => {
+  try {
+    const result = await manualProfileOpen.cancel(req.params.id);
+    res.status(result.pending ? 202 : result.ok ? 200 : 409).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message, browserClosed: false });
   }
 });
 

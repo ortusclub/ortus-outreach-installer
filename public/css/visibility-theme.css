@@ -83,6 +83,19 @@ body[data-dashboard='v3'] .stg-drawer .acts .stg-login-btn {
   padding: 10px 18px;
   font-weight: 700;
 }
+body[data-dashboard='v3'] .stg-drawer .acts .stg-login-btn:disabled {
+  border-color: var(--hairline);
+  background: var(--card-bg);
+  color: var(--gray);
+  cursor: wait;
+  opacity: .7;
+}
+body[data-dashboard='v3'] .stg-drawer .acts .stg-stop-opening {
+  border-color: var(--red);
+  background: transparent;
+  color: var(--red);
+}
+body[data-dashboard='v3'] .stg-drawer .acts .stg-stop-opening[hidden] { display: none; }
 body[data-dashboard='v3'] .vj-card button:focus-visible {
   outline: 3px solid var(--gold);
   outline-offset: 3px;

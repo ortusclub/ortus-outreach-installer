@@ -43,12 +43,13 @@ function createAdmissionClient({ reserve, cooldown, workspaceForToken, maxWaitMs
       if (!workspace) throw admissionError('GoLogin workspace cannot be identified; request not dispatched.');
       const deadline = now() + maxWaitMs;
       let announced = false;
+      let transientFailures = 0;
       while (true) {
         signal?.throwIfAborted();
         if (now() >= deadline) throw admissionError('GoLogin request allowance is still unavailable; request not dispatched.');
         let result;
         const started = now();
-        try { result = await boundedCall(s => reserve({ workspace, priority }, s), Math.min(2000, deadline - now()), signal); }
+        try { result = await boundedCall(s => reserve({ workspace, priority }, s), Math.min(12000, deadline - now()), signal); }
         catch (error) {
           signal?.throwIfAborted();
           const status = Number(error?.coordinatorHttpStatus);
@@ -60,6 +61,15 @@ function createAdmissionClient({ reserve, cooldown, workspaceForToken, maxWaitMs
                 : error?.name === 'TypeError' ? 'transport_error' : 'other';
           try { onFailure({ action: 'reserve', workspace, kind, status: kind === 'http_error' ? status : null,
             code, elapsedMs: Math.max(0, now() - started) }); } catch {}
+          // A brief tunnel stall must not empty the entire account picker. A
+          // timed-out reservation may have reached the coordinator, so a retry
+          // can consume another pacing slot, but cannot dispatch a GoLogin
+          // request or launch a browser. Never retry auth/identity failures.
+          if ((kind === 'client_timeout' || kind === 'transport_error') &&
+              transientFailures++ < 1 && now() + 250 < deadline) {
+            await wait(250, signal);
+            continue;
+          }
           throw admissionError('GoLogin request coordinator unavailable; request not dispatched.');
         }
         signal?.throwIfAborted();

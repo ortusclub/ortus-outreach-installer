@@ -84,6 +84,7 @@ export function statusFromItem(it = {}) {
     live: !!it.live,
     liveAccount: it.liveAccount || '',
     currentAction: it.currentAction || null,
+    _canonicalStatusV1: it._canonicalStatusV1 || null,
     logs: Array.isArray(it.logs) ? it.logs : [],
     nextCheckAt: it.nextCheckAt,
     monitoringUntil: it.monitoringUntil,
@@ -213,6 +214,30 @@ export function heroFollowsLog(kind, monitoringIdle) {
   return !WORK_LOG_KINDS.has(String(kind || ''));
 }
 
+// A restart is accepted before a VM worker opens a sender browser. The resume
+// event belongs in the log, while the current worker-starting action owns the
+// card until the engine reports a real browser/lead phase.
+export function workerStartupOwnsStage(status = {}, action = null, latestLogKind = '') {
+  return !!status._cloud && action?.phase === 'starting'
+    && !status.monitoringCheckInProgress
+    && latestLogKind === 'sending-resumed';
+}
+
+export function resumedVmWorkerAction({ pending = 0, accounts = 0 } = {}) {
+  const left = Math.max(0, Number(pending) || 0);
+  const count = Math.max(0, Number(accounts) || 0);
+  return {
+    phase: 'starting', workerStarting: true,
+    label: 'Starting the cloud machine',
+    sub: `warming a worker and preparing the GoLogin browser runtime · normally about 2 minutes · ${left} leads queued across ${count} accounts`,
+    safety: `${left} pending lead${left === 1 ? '' : 's'} safe · none consumed while warming`,
+    facts: [['Campaign queue', 'waiting for VM worker'], ['Current account', 'not selected yet'],
+      ['Next expected event', 'first GoLogin browser opens'], ['Normal warm-up', 'about 2 minutes']],
+    milestones: [['Received', `${left} leads ready`, 'done'], ['Worker', 'VM pod waking', 'active'],
+      ['Browser runtime', 'opens automatically', 'future'], ['First lead', 'remains safely queued', 'future']],
+  };
+}
+
 /** Authoritative presentation state for a monitoring sweep. */
 export function monitorSweepDisposition(status = {}) {
   const value = String(status.monitorCheckStatus || '').trim().toLowerCase();
@@ -255,7 +280,7 @@ export function vjCardFields(status = {}) {
     : isWaiting ? 'Waiting'
     : (s.paused ? 'Paused' : 'Running');
   const sendingLbl = isInterrupted ? 'Stopped safely'
-    : isStopping ? 'Finishing the current lead'
+    : isStopping ? 'No new leads starting'
     : isMonitor ? (s.monitoringCheckInProgress ? 'Checking now' : 'Waiting between checks')
     : isDone ? terminal.activity
     : isQueued ? 'Queued'
@@ -292,7 +317,9 @@ export function vjCardControlsFor(status = {}) {
   // the renderer does not accidentally give a cancelled campaign live controls.
   const terminalEngine = ['completed', 'cancelled', 'error', 'failed', 'stopped'].includes(String(s.engineStatus || '').toLowerCase());
   const terminalDirect = !s.running && !!(s.stopReason || s.endReason || s.endNotice);
-  const done = s.state === 'done' || (!s.running && terminalEngine) || terminalDirect;
+  const stopping = s.state === 'stopping' || s.state === 'pausing'
+    || ['stopping', 'pausing'].includes(String(s.engineStatus || '').toLowerCase());
+  const done = !stopping && (s.state === 'done' || (!s.running && terminalEngine) || terminalDirect);
   const queued = s.state === 'queued';
   const interrupted = s.state === 'interrupted' || !!s.interrupted;
   const dailyWait = s.state === 'waiting_daily_reset';
@@ -323,9 +350,13 @@ export function vjCardControlsFor(status = {}) {
   const c = {
     open: { onclick: openOnclick },
     sheet: { onclick: 'window.openVjCardSheet && window.openVjCardSheet(this)' },
-    pause: null, stop: null, restart: null, copy: null,
+    pause: null, stop: null, checkStop: null, restart: null, copy: null,
     resumeSending: null, deleteForever: null, bulk: null, monAuto: null, extra: [],
   };
+
+  // The stop has fenced future sends but closure is still being verified.
+  // Keep the record and sheet available without offering Pause, Check or Resume.
+  if (stopping) return c;
 
   if (s.primaryRecovery && !cloud && running) {
     c.stop = { tip: 'Stop campaign', onclick: 'window.dashStopActive()' };
@@ -378,9 +409,10 @@ export function vjCardControlsFor(status = {}) {
     c.copy = { onclick: `duplicateCampaign('${id}')` };
     c.extra.push({ tip: 'Show', kind: 'show', onclick: `openCloudCampaignView('${id}','${id}')` });
   } else if (monitor && !cloud) {
-    c.pause = { once: true, onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','monitoring','local',this)` };
-    c.stop = { tip: 'Stop', onclick: 'window.dashStopActive && window.dashStopActive()' };
+    c.stop = { tip: 'Stop monitoring…', onclick: 'window.dashStopActive && window.dashStopActive()' };
+    if (s.monitoringCheckInProgress) c.checkStop = { tip: 'Stop check', onclick: 'window.stopLocalCheckUI && window.stopLocalCheckUI(this)' };
     c.bulk = { label: 'Run check now', onclick: 'window.dashRunCheck && window.dashRunCheck()' };
+    c.monAuto = { checked: s.autoChecksEnabled !== false, onchange: 'setMonitoringAutoChecks(this.checked,this)' };
     const remaining = Number(s.pending) > 0
       || Number(s.totalTargets) > Number(s.totalProcessed);
     if (remaining) {
@@ -390,11 +422,10 @@ export function vjCardControlsFor(status = {}) {
           : `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending-from-monitoring','local',this)` });
     }
   } else if (monitor && cloud) {
-    c.stop = s.monitoringCheckInProgress
-      ? { tip: 'Stop check', onclick: `stopCloudCheckUI('${id}',this)` }
-      : { tip: 'Stop monitoring', onclick: `stopCloudCampaignUI('${id}')` };
+    c.stop = { tip: 'Stop monitoring…', onclick: `stopCloudCampaignUI('${id}')` };
+    if (s.monitoringCheckInProgress) c.checkStop = { tip: 'Stop check', onclick: `stopCloudCheckUI('${id}',this)` };
     c.bulk = { label: 'Run check now', onclick: `window.promptCloudCheckScope && window.promptCloudCheckScope('${id}',this)` };
-    c.monAuto = { checked: s.autoChecksEnabled !== false, onclick: `setCloudAutoChecks('${id}',this.checked,this)` };
+    c.monAuto = { checked: s.autoChecksEnabled !== false, onchange: `setCloudAutoChecks('${id}',this.checked,this)` };
     // A campaign that switched to monitoring because nothing could send still has
     // leads waiting. The engine already accepts a restart in this state (it only
     // short-circuits when nothing is pending); the app just never offered it, so
@@ -424,7 +455,8 @@ export function vjCardControlsFor(status = {}) {
     if (!cloud && s.hist) c.extra.push({ tip: 'Debrief', kind: 'debrief', onclick: `window.openDebrief('${id}')` });
     c.extra.push({ tip: 'Delete', kind: 'delete', onclick: `deleteBoardCampaign('${id}', this)` });
   } else if (queued) {
-    c.extra.push({ tip: 'Cancel', kind: 'cancel', onclick: cloud ? `stopCloudCampaignUI('${id}')` : `window.cancelQueuedCampaign && window.cancelQueuedCampaign('${rawId}')` });
+    if (cloud) c.stop = { tip: 'Stop campaign', onclick: `stopCloudCampaignUI('${id}')` };
+    else c.extra.push({ tip: 'Cancel', kind: 'cancel', onclick: `window.cancelQueuedCampaign && window.cancelQueuedCampaign('${rawId}')` });
   }
   return c;
 }

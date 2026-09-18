@@ -12,7 +12,7 @@ for (const mode of ['connect_and_introduce', 'connect_and_message']) {
     assert.match(policy.checkLabel, /One acceptance check/);
     assert.match(policy.monitoringDetail, /not read-only/);
     assert.match(policy.monitoringDetail, mode === 'connect_and_message' ? /direct messages/ : /introductions/);
-    assert.match(policy.scopeDetail, /Sheet-wide monitoring is not supported/);
+    assert.match(policy.scopeDetail, /all matching senders in the current sheet tab/);
   });
 }
 for (const mode of ['connect_only', 'open_profile_only', 'introduce_back', 'follower_growth', 'post_amplification', 'unknown']) {
@@ -92,30 +92,103 @@ test('failed preview never falls through to confirm Resume', async () => {
   assert.equal(confirms, 0);
 });
 
-test('cloud keep-monitoring uses nested campaign mode, campaign scope and no handover', async () => {
+test('cloud keep-monitoring uses its own campaign mode and opens the scope choice', async () => {
   const start = app.indexOf('async function stopAndKeepMonitoring()');
   const end = app.indexOf('async function _finishStopAndKeepMonitoring(', start);
-  let received;
   const target = { cloud: true, id: 'fixture' };
+  let opened = false;
+  const run = vm.runInNewContext(app.slice(start, end) + '\nstopAndKeepMonitoring;', {
+    window: {},
+    _stopChoiceTarget: target, closeStopChoiceModal() {}, continuationPolicy,
+    _cloudDetailCache: new Map([['fixture', { campaign: { mode: 'connect_and_message' } }]]),
+    fetch: async () => ({ json: async () => ({ scraperEngineSourceSha: 'bd87927758bfed7611d72d210bf5efeac2e64a83' }) }),
+    document: { getElementById: () => ({ classList: { remove() { opened = true; } } }) },
+  });
+  assert.equal(await run(), true);
+  assert.equal(opened, true);
+});
+
+test('older isolated VM engine only offers its supported campaign scope', async () => {
+  const start = app.indexOf('async function stopAndKeepMonitoring()');
+  const end = app.indexOf('function closeStopMonitoringScope()', start);
+  const target = { cloud: true, id: 'fixture' };
+  let sent;
   const run = vm.runInNewContext(app.slice(start, end) + '\nstopAndKeepMonitoring;', {
     _stopChoiceTarget: target, closeStopChoiceModal() {}, continuationPolicy,
     _cloudDetailCache: new Map([['fixture', { campaign: { mode: 'connect_and_message' } }]]),
-    appConfirm: async text => { assert.match(text, /direct messages/); assert.match(text, /current machine/); return true; },
-    _finishStopAndKeepMonitoring: async (...args) => { received = args; return true; },
+    fetch: async () => ({ json: async () => ({ scraperEngineSourceSha: 'ee138dbe7982' }) }),
+    appConfirm: async () => true,
+    _finishStopAndKeepMonitoring: async (...args) => { sent = args; return true; },
   });
   assert.equal(await run(), true);
-  assert.equal(received[0], target);
-  assert.equal(received[1], 'campaign');
+  assert.equal(sent[1], 'campaign');
 });
 
-test('local endpoint rejects unsupported monitoring modes and ignored tab scope before mutation', async () => {
+test('local CC+DM Stop between leads offers the monitoring choice before any stop request', () => {
+  const start = app.indexOf('function confirmStopCampaign()');
+  const end = app.indexOf('function closeStopModal()', start);
+  const choice = { hidden: true, classList: { remove() { choice.hidden = false; } } };
+  const sub = { textContent: '' };
+  let immediateStops = 0;
+  const run = vm.runInNewContext(app.slice(start, end) + '\nconfirmStopCampaign;', {
+    cancelCloudLaunch: () => false, _viewingCloudId: null,
+    __cockpit: { running: true, state: 'running', mode: 'connect_and_message', currentAction: { lead: '' } },
+    _stopChoiceTarget: {}, usesMonitoringCadence,
+    document: { getElementById: id => id === 'stop-choice-modal' ? choice : id === 'stop-choice-sub' ? sub : null },
+    confirmStopCampaignNow: () => { immediateStops++; },
+  });
+  run();
+  assert.equal(choice.hidden, false);
+  assert.match(sub.textContent, /acceptance checks/);
+  assert.equal(immediateStops, 0);
+});
+
+test('local tab-wide monitoring choice is confirmed and sent with tab scope', async () => {
+  const start = app.indexOf('function closeStopMonitoringScope()');
+  const end = app.indexOf('async function _finishStopAndKeepMonitoring(', start);
+  let sent, prompt;
+  const modal = { classList: { add() {} } };
+  const target = { cloud: false, id: null };
+  const run = vm.runInNewContext(app.slice(start, end) + '\nconfirmStopMonitoringScope;', {
+    window: {}, _stopMonitoringScopeTarget: target,
+    document: { getElementById: () => modal },
+    __cockpit: { mode: 'connect_and_message' }, continuationPolicy,
+    appConfirm: async text => { prompt = text; return true; },
+    _finishStopAndKeepMonitoring: async (...args) => { sent = args; return true; },
+  });
+  assert.equal(await run('tab'), true);
+  assert.match(prompt, /older requests/);
+  assert.equal(sent[0], target);
+  assert.equal(sent[1], 'tab');
+});
+
+test('VM tab-wide monitoring choice is confirmed and sent with tab scope', async () => {
+  const start = app.indexOf('function closeStopMonitoringScope()');
+  const end = app.indexOf('async function _finishStopAndKeepMonitoring(', start);
+  let sent, prompt;
+  const target = { cloud: true, id: 'cloud-a' };
+  const run = vm.runInNewContext(app.slice(start, end) + '\nconfirmStopMonitoringScope;', {
+    window: {}, _stopMonitoringScopeTarget: target,
+    document: { getElementById: () => ({ classList: { add() {} } }) },
+    _cloudDetailCache: new Map([['cloud-a', { campaign: { mode: 'connect_and_introduce' } }]]),
+    continuationPolicy,
+    appConfirm: async text => { prompt = text; return true; },
+    _finishStopAndKeepMonitoring: async (...args) => { sent = args; return true; },
+  });
+  assert.equal(await run('tab'), true);
+  assert.match(prompt, /the VM/);
+  assert.equal(sent[0], target);
+  assert.equal(sent[1], 'tab');
+});
+
+test('local endpoint rejects unsupported modes and invalid scope but accepts the tab scope', async () => {
   const server = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
   const route = server.indexOf("app.post('/api/campaign/stop'");
   const start = server.indexOf("  if (req.body?.full === false", route);
   const end = server.indexOf('  const fullHalt', start);
-  for (const [mode, scope, expected] of [['open_profile_only', 'campaign', 409], ['connect_and_message', 'tab', 409], ['connect_and_message', 'campaign', 200]]) {
+  for (const [mode, scope, expected] of [['open_profile_only', 'campaign', 409], ['connect_and_message', 'sheet', 409], ['connect_and_message', 'tab', 200], ['connect_and_message', 'campaign', 200]]) {
     let handler, status = 200;
-    const context = { handler: null, usesMonitoringCadence, campaign: { mode },
+    const context = { handler: null, usesMonitoringCadence, campaign: { mode, running: true, sheetUrl: 'https://docs.google.com/spreadsheets/d/fixture/edit#gid=19' },
       _manualSweepRunning: false, _manualSweepControl: null,
       _manualSweepAbort: false, _manualSweepController: null,
       checkDms: { running: false }, postAmp: { running: false },

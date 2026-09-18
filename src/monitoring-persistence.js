@@ -29,6 +29,8 @@ export const MONITORING_FIELDS = [
   'profileIds',
   'profileNames',
   'participatingProfileIds',
+  'monitoringScope',
+  'monitoringProfileNames',
   'sendingEndedAt',
   'monitoringUntil',
   'nextCheckAt',

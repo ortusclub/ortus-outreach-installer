@@ -1,11 +1,12 @@
 {
   "name": "ortus-outreach",
   "productName": "The Ortus Outreach",
-  "version": "3.1.60.14",
+  "version": "3.1.60.35",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
+    "version:next": "node scripts/bump-preview-version.mjs",
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test tests/*.test.js tests/connections/*.test.js tests/linkedin/*.test.js",

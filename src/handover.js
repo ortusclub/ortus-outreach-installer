@@ -6,8 +6,8 @@
 // same lead gets two intro DMs.
 
 // Which leads must the new side skip? Everything the old side already finished.
-// Only pending is untouched work. In-progress/uncertain outcomes must never
-// become automatic retries; the route requires review before moving them.
+// Only pending is untouched work. Reviewed or interrupted outcomes stay on the
+// source ledger and are excluded from automatic retries after moving.
 export function processedLeadUrls(leads) {
   return (Array.isArray(leads) ? leads : [])
     .filter((l) => l && l.leadUrl && l.status !== 'pending')
@@ -68,6 +68,17 @@ export function sheetProcessedUrls(rows, urlOf) {
   return out;
 }
 
+export function heldLocalOutcomeUrls(rows, urlOf, processed) {
+  const held = [];
+  for (const row of (Array.isArray(rows) ? rows : [])) {
+    const url = String((typeof urlOf === 'function' ? urlOf(row) : '') || '').trim();
+    if (!url) continue;
+    const action = processed && processed[url] && processed[url].action;
+    if (['_in_progress', 'interrupted', 'needs_review'].includes(action)) held.push(url);
+  }
+  return held;
+}
+
 // Does this Mac hold a campaign the VM can take BACK, rather than one it would
 // have to be given from scratch? adoptMonitoring stamps the engine's campaign id
 // onto the campaign global (it is one of MONITORING_FIELDS); a campaign started
@@ -99,6 +110,20 @@ export function reclaimRefusal(reason) {
     };
   }
   return { stopLocal: false, error: 'The VM did not take the campaign back, so nothing changed here.' };
+}
+
+// The VM fences all new work on the first release request. Its existing
+// browser may close after that request times out, so poll the same durable
+// command until the shutdown receipt arrives. Only a confirmed release lets
+// the caller create work on this Mac.
+export async function waitForVerifiedCloudRelease(release, { attempts = 30, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  let result;
+  for (let i = 0; i < attempts; i++) {
+    result = await release();
+    if (!result?.pending) return result;
+    if (i + 1 < attempts) await wait(1000);
+  }
+  return result;
 }
 
 // The fixed sequence. Returned as data so a test can assert the order without

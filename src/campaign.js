@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, appendFileSync, statSync, renameSync } from 'fs'
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import { setTimeout as handshakeDelay } from 'node:timers/promises';
 import os from 'node:os';
-import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
+import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilesForPicker, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
 import { withGid, extractSheetGid } from './utils.js';
@@ -57,7 +57,8 @@ import { localStopStatus } from './local-stop-receipt.js';
 import { requestLocalPause, releaseLocalPause } from './local-pause-control.js';
 import { registerPrimaryOperation } from './primary-task-control.js';
 import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet as removeReplySchedules } from './post-campaign-reply-check.js';
-import { transitionToMonitoring } from './campaign-state-transitions.js';
+import { transitionToMonitoring, monitoringProfilesForRun } from './campaign-state-transitions.js';
+import { resolveMonitoringTabSenders } from './monitoring-tab-senders.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
 import { computeMonitoringUntil } from './monitoring-time.js';
@@ -2117,6 +2118,9 @@ export async function startCampaign(options = {}) {
   campaign._stoppedManually = false;
   campaign.stopReason = null;
   campaign._skipCleanup = false;
+  campaign._keepMonitoringRequested = false;
+  campaign.monitoringScope = 'campaign';
+  campaign.monitoringProfileNames = {};
   clearSkips(); // reset skip ledger for this run
   // v2.78: seed the rotation benches from any accounts pre-benched in the wizard.
   campaign._skippedProfiles = new Set(Array.isArray(benchedProfileIds) ? benchedProfileIds : []);
@@ -2188,7 +2192,8 @@ export async function startCampaign(options = {}) {
   // activity. On resume, keep the buffer — we're continuing the same campaign, so
   // its log history is still ours (mirrors the Recent-Connections-tab rule above).
   // Placed before any of this run's log() calls, so no new lines are lost.
-  if (!resumeContext) campaign.logs = [];
+  if (Array.isArray(resumeContext?.handoverLogs)) campaign.logs = resumeContext.handoverLogs.slice(-300);
+  else if (!resumeContext) campaign.logs = [];
   campaign.tally = emptyTally(); // v2.93 — per-run funnel + leak counters
   campaign.parkedProfiles = [];
   campaign._cooldown429 = new Map(); // profileId -> { until, pName, reason }
@@ -5671,14 +5676,18 @@ export async function startCampaign(options = {}) {
     // bot signature, and in-campaign idle bulk-checks already catch
     // mid-run acceptances while the 6h post-campaign scheduler catches
     // the rest.
-    if (!campaign._skipCleanup && (mode === 'connect_and_introduce' || mode === 'connect_and_message') && profilesThatSentAtLeastOne.size > 0) {
+    const tabWideMonitoring = campaign.monitoringScope === 'tab';
+    const monitoredIds = monitoringProfilesForRun(profileIds, profilesThatSentAtLeastOne,
+      campaign._keepMonitoringRequested === true);
+    if (!campaign._skipCleanup && (mode === 'connect_and_introduce' || mode === 'connect_and_message')
+        && monitoredIds.length > 0) {
       const updated = transitionToMonitoring(campaign, {
         now: new Date(),
-        participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
+        participatingProfileIds: monitoredIds,
       });
       Object.assign(campaign, updated);
       _ops('INFO', 'Monitoring started', {
-        details: `${profilesThatSentAtLeastOne.size} account(s) · cadence: ${campaign.checkIntervalMinutes || 60}min · ends: ${campaign.monitoringUntil || ''}`,
+        details: `${tabWideMonitoring ? 'all senders in selected tab' : `${monitoredIds.length} account(s)`} · cadence: ${campaign.checkIntervalMinutes || 60}min · ends: ${campaign.monitoringUntil || ''}`,
       });
 
       try {
@@ -5954,7 +5963,7 @@ export async function startCampaign(options = {}) {
     // opted out of post-campaign monitoring.
     try {
       const trackingApplies = (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message');
-      if (!campaign._skipCleanup && trackingApplies && acceptanceTrackingDays > 0) {
+      if (!campaign._skipCleanup && campaign.monitoringScope !== 'tab' && trackingApplies && acceptanceTrackingDays > 0) {
         const _sheetId = _extractSheetIdFromUrl(sheetUrl);
         // v2.14 verified: per-profile registration ensures every participating
         // account's post-campaign 6h × 7d sweep fires independently, including
@@ -6154,7 +6163,7 @@ function _persistRunSettings() {
 // dashboard (app.js compares it to 'operator-stopped' to decide "deliberately
 // stopped" and "waiting here"), so changing it to say 'shutdown' would move UI
 // state to fix a log line.
-export function stopCampaign({ full = false, reason = 'operator-stopped', quitting = false } = {}) {
+export function stopCampaign({ full = false, reason = 'operator-stopped', quitting = false, monitoringScope = 'campaign' } = {}) {
   campaign._controlRevision = (campaign._controlRevision || 0) + 1;
   campaign._abort = true;
   if (campaign._abortController && !campaign._abortController.signal.aborted) {
@@ -6171,6 +6180,8 @@ export function stopCampaign({ full = false, reason = 'operator-stopped', quitti
   // post-campaign sweep registration. Default false preserves the existing
   // "Stop sending, keep monitoring" semantics.
   campaign._skipCleanup = !!full;
+  campaign._keepMonitoringRequested = !full && !quitting && reason === 'operator-stopped';
+  campaign.monitoringScope = !full && monitoringScope === 'tab' ? 'tab' : 'campaign';
   // Wake any in-flight awaitUnpause() so the loop can exit cleanly.
   campaign._paused = false;
   campaign._pauseRequested = false;
@@ -6483,7 +6494,8 @@ function buildAccountPanel() {
     const idx = (campaign.profileIds || []).indexOf(pid);
     // The account's display name (operators name their GoLogin profiles by
     // email), never the raw profile id, which means nothing to anybody.
-    const email = (idx >= 0 && names[idx]) || (health[pid] && health[pid].profileName) || profileNameCache[pid] || '';
+    const email = (idx >= 0 && names[idx]) || (campaign.monitoringProfileNames || {})[pid]
+      || (health[pid] && health[pid].profileName) || profileNameCache[pid] || '';
     const live = !!(campaign.running && !campaign._paused && email && email === liveName);
 
     const cool = cooldowns.get ? cooldowns.get(pid) : null;
@@ -6671,6 +6683,8 @@ export function getCampaignStatus() {
     phase: campaign.phase || null,
     monitoringUntil: campaign.monitoringUntil || null,
     nextCheckAt: campaign.nextCheckAt || null,
+    autoChecksEnabled: campaign.autoChecksEnabled !== false,
+    monitoringScope: campaign.monitoringScope || 'campaign',
     monitorCheckError: campaign.monitorCheckError || '',
     // v2.52.0: surface the operator-chosen cadence so the cockpit tips +
     // the dashboard Monitoring tab show the ACTUAL running value, not the
@@ -6954,7 +6968,9 @@ function _firePreCheckNotification() {
       .filter(Boolean)
       .join(', ');
     const title = 'Bulk check fires in 15s';
-    const body = names
+    const body = campaign.monitoringScope === 'tab'
+      ? 'About to check connections for matching senders in the selected sheet tab.'
+      : names
       ? `About to check connections for ${names}.`
       : 'About to fire monitoring auto-check.';
     enqueueDesktopNotification({ title, body, audience: campaign.createdBy || null });
@@ -7478,7 +7494,27 @@ export async function runMonitoringCheckAll() {
     return { ok: false, error: 'Campaign not in monitoring state' };
   }
   const results = [];
-  const monitoringProfiles = campaign.participatingProfileIds || [];
+  let monitoringProfiles = campaign.participatingProfileIds || [];
+  if (campaign.monitoringScope === 'tab') {
+    try {
+      const [rows, roster] = await Promise.all([fetchSheetRows(campaign.sheetUrl), getProfilesForPicker()]);
+      if (campaign.state !== 'monitoring' || campaign._abort || campaign._abortCheck) {
+        return { ok: false, results, error: 'Monitoring stopped before the tab-wide check began.' };
+      }
+      const resolved = resolveMonitoringTabSenders(rows, roster.profiles);
+      if (!resolved.ids.length) {
+        return { ok: false, results, error: 'No Sender in this tab matches the local browser or a saved GoLogin profile. Check the Sender names before the next check.' };
+      }
+      monitoringProfiles = resolved.ids;
+      campaign.participatingProfileIds = resolved.ids;
+      campaign.monitoringProfileNames = resolved.names;
+      if (resolved.unresolved.length) {
+        campaign.logs.push(`[${new Date().toISOString()}] ⚠ ${resolved.unresolved.length} Sender name(s) in this tab did not match a browser: ${resolved.unresolved.slice(0, 5).join(', ')}`);
+      }
+    } catch (error) {
+      return { ok: false, results, error: `Could not resolve all senders in this tab: ${error.message}` };
+    }
+  }
   // Monitoring opens the same sender browsers as outreach, so the SoO safety
   // rule applies here too. Refresh once per sweep and skip restricted accounts
   // before a browser opens; a restriction never prevents the other accounts
@@ -7490,7 +7526,7 @@ export async function runMonitoringCheckAll() {
     const emails = accounts.map((a) => a.email);
     for (const pid of monitoringProfiles) {
       const idx = (campaign.profileIds || []).indexOf(pid);
-      const name = idx >= 0 ? (campaign.profileNames || [])[idx] : pid;
+      const name = idx >= 0 ? (campaign.profileNames || [])[idx] : (campaign.monitoringProfileNames || {})[pid] || pid;
       const resolved = resolveSoOEmail(name, emails);
       if (!resolved || !resolved.email || resolved.ambiguous) continue;
       const row = accounts.find((a) => String(a.email).toLowerCase().trim() === String(resolved.email).toLowerCase().trim());
@@ -7510,7 +7546,7 @@ export async function runMonitoringCheckAll() {
     // check time all survive it.
     if (campaign._abort || campaign._abortCheck || campaign.state !== 'monitoring') break;
     const idx = (campaign.profileIds || []).indexOf(pid);
-    const pName = idx >= 0 ? (campaign.profileNames || [])[idx] : pid;
+    const pName = idx >= 0 ? (campaign.profileNames || [])[idx] : (campaign.monitoringProfileNames || {})[pid] || pid;
     if (restrictedNow.has(pid)) {
       const note = `${restrictedNow.get(pid)} in the SoO. Monitoring skipped this account; the other accounts continue.`;
       campaign._restrictedProfiles.set(pid, restrictedNow.get(pid));

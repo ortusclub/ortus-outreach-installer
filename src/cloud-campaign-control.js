@@ -1,5 +1,5 @@
 import { stopCloudPrimaryTasks } from './primary-task-control.js';
-import { cloudTaskControl, resumeCloudTaskOwner, recordCloudControlReceipt } from './primary-tasks.js';
+import { cloudTaskControl, resumeCloudTaskOwner, recordCloudControlReceipt, clearEmptyStoppedCloudControl, confirmEmptyCloudStopFromVm } from './primary-tasks.js';
 
 // The VM receipt covers VM work only. A full campaign receipt must also report
 // this app's delegated work. Never roll back local protection on a network error.
@@ -17,8 +17,10 @@ export async function stopCloudWithLocalTasks(id, options, deps) {
     try { await recordCloudControlReceipt(id, delegated.commandId, remoteConfirmed && delegated.stopped, deps.file); }
     catch (error) { delegated.stopped = false; delegated.error = `Could not save shutdown receipt: ${error.message}`; }
   }
-  return { ...vm, delegated, ok: remoteConfirmed && delegated.stopped,
-    stopping: !(remoteConfirmed && delegated.stopped) };
+  const confirmed = remoteConfirmed && delegated.stopped;
+  return { ...vm, delegated, ok: confirmed,
+    pending: !!vm.pending || (!confirmed && !vm.error),
+    stopping: !confirmed };
 }
 
 export async function withLocalCloudControl(snapshot, file) {
@@ -32,6 +34,8 @@ export async function withLocalCloudControl(snapshot, file) {
         delegatedStopUnconfirmed: true, stopConfirmed: false, localControlError: error.message };
     }
     if (!marker || marker.shutdownConfirmed === true) return campaign;
+    if (marker.status === 'stopped' && campaign.status === 'cancelled'
+      && await confirmEmptyCloudStopFromVm(campaign.id, marker.commandId, file)) return campaign;
     return { ...campaign, vmStatus: campaign.status,
       status: marker.status === 'paused' ? 'pausing' : 'stopping',
       delegatedStopUnconfirmed: true, stopConfirmed: false };
@@ -42,8 +46,21 @@ export async function withLocalCloudControl(snapshot, file) {
 }
 
 export async function resumeCloudWithLocalTasks(id, deps) {
-  const before = await cloudTaskControl(id, deps.file);
-  if (before?.status === 'stopped') return { ok: false, error: 'This campaign was stopped. Review remaining work before restarting.', conflict: true };
+  let before = await cloudTaskControl(id, deps.file);
+  if (before?.status === 'stopped') {
+    // A failed or superseded Stop can leave this local marker behind even
+    // though the VM is still paused. The operator's explicit Resume may clear
+    // it only when there are no delegated tasks whose Stop was irreversible.
+    const snapshot = await deps.getRemote?.(id);
+    const vm = snapshot?.campaign || snapshot;
+    if (vm?.status !== 'paused') {
+      return { ok: false, error: 'The VM no longer reports this campaign as paused. Refresh its state before resuming; nothing was started.', conflict: true };
+    }
+    if (!(await clearEmptyStoppedCloudControl(id, before.commandId, deps.file))) {
+      return { ok: false, error: 'The VM is paused, but a local Stop record still protects campaign work. Resume needs a recovery review; nothing was started.', conflict: true };
+    }
+    before = null;
+  }
   const remote = await deps.resumeRemote(id);
   if (remote?.error || remote?.ok === false || remote?.status !== 'running') return remote || { ok: false, error: 'VM did not confirm Resume' };
   const resumed = await resumeCloudTaskOwner(id, before?.commandId, deps.file);

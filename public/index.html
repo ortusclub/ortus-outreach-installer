@@ -7,13 +7,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.60.14" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
-  <link rel="stylesheet" href="/css/launch-review.css?v=3.1.60.14" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.60.35" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.35" />
+  <link rel="stylesheet" href="/css/launch-review.css?v=3.1.60.35" />
   <link rel="stylesheet" href="/css/automation-layout.css?v=layout-a-1" />
-  <link rel="stylesheet" href="/css/account-recovery.css?v=1" />
+  <link rel="stylesheet" href="/css/account-recovery.css?v=4" />
   <link rel="stylesheet" href="/css/recovery-panel.css?v=1" />
-  <link rel="stylesheet" href="/css/visibility-theme.css?v=1" />
+  <link rel="stylesheet" href="/css/visibility-theme.css?v=3" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -2059,6 +2059,8 @@
   .vj-stage-fix .fu-dnc{color:var(--red,#b4553f);font-weight:600;}
   #campaign-toast .toast-action{margin-left:14px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:5px 11px;border-radius:9999px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;}
   .sn-foot .mini,.skipped-actions .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.sn-queued-stop{color:var(--red);border-color:var(--red);font-weight:700;}
+  .sn-foot .mini.sn-queued-stop:hover{background:var(--red);color:var(--bg);}
   .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
   .sn-foot .mini.sn-delete-forever{background:#d92d2d;color:#fff;border-color:#ff5a5a;font-weight:700;}
   .sn-foot .mini.sn-delete-forever:hover{background:#ff4545;border-color:#ff7777;}
@@ -2446,7 +2448,7 @@
               <button type="button" class="chip" data-filter="selected" onclick="applyFilter('selected')">Selected <span class="count" id="chip-count-selected">0</span></button>
             </div>
             <div class="browse-icon-row">
-              <button class="browse-icon-btn" onclick="loadProfiles()" title="Refresh profile list" aria-label="Refresh profile list">
+              <button class="browse-icon-btn" onclick="loadProfiles({ refresh: true })" title="Refresh profile list" aria-label="Refresh profile list">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
               </button>
               <button class="browse-icon-btn refresh-soo" id="refresh-soo-btn" onclick="refreshSoO()" title="Re-fetch account statuses from the State of Operations sheet" aria-label="Refresh State of Operations">
@@ -3661,6 +3663,7 @@
             <span class="runbar-group-label">Run</span>
             <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start</button>
             <button type="button" id="btn-pause-rb" class="btn btn-sm btn-pause" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open. One-click Resume.">Pause</button>
+            <button type="button" id="btn-stop-check-rb" class="btn btn-sm btn-pause" onclick="stopViewedCheckUI(this)" hidden>Stop check</button>
             <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers.">Stop</button>
           </div>
 
@@ -4076,6 +4079,22 @@
     </div>
   </div>
 
+  <div id="queued-cloud-stop-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeQueuedCloudStop()">
+    <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="queued-cloud-stop-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeQueuedCloudStop()">&times;</button>
+      <div class="stop-choice-eyebrow">Before the first send</div>
+      <h3 id="queued-cloud-stop-title" class="modal-title stop-choice-headline">Stop this queued campaign?</h3>
+      <p class="stop-choice-sub" id="queued-cloud-stop-copy">The VM worker has not started sending. Stopping cancels this run; unsent leads remain in the sheet.</p>
+      <div class="stop-choice-row">
+        <button type="button" class="stop-choice-pill is-stop" onclick="confirmQueuedCloudStop()">
+          <div class="stop-choice-pill-headline">Stop<br>campaign</div>
+          <div class="stop-choice-pill-sub">Cancel the queued run before the first send.</div>
+        </button>
+      </div>
+      <div class="stop-choice-cancel-row"><button type="button" class="modal-cancel-link" onclick="closeQueuedCloudStop()">Keep waiting</button></div>
+    </div>
+  </div>
+
   <div id="launch-diagnostic-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeLaunchDiagnostic()">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="launch-diagnostic-title">
       <div class="stop-choice-eyebrow">Campaign not started</div>
@@ -4083,6 +4102,26 @@
       <p class="modal-body" id="launch-diagnostic-copy">Nothing was sent. Choose a suggested fix below.</p>
       <div class="modal-actions" id="launch-diagnostic-actions"></div>
       <div class="stop-choice-cancel-row"><button type="button" class="modal-cancel-link" onclick="closeLaunchDiagnostic()">Close</button></div>
+    </div>
+  </div>
+
+  <div id="stop-monitor-scope-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeStopMonitoringScope()">
+    <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="stop-monitor-scope-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeStopMonitoringScope()">&times;</button>
+      <div class="stop-choice-eyebrow">Stop sending · keep monitoring</div>
+      <h3 id="stop-monitor-scope-title" class="modal-title stop-choice-headline">Which senders should be checked?</h3>
+      <p class="stop-choice-sub">This scope applies to scheduled checks and Run one check now. Checks can send configured DMs, introductions or follow-ups for accepted connections.</p>
+      <div class="stop-choice-row">
+        <button type="button" class="stop-choice-pill is-monitor" onclick="confirmStopMonitoringScope('campaign')">
+          <div class="stop-choice-pill-headline">This campaign's<br>accounts</div>
+          <div class="stop-choice-pill-sub">Use the accounts selected for this run, including their older requests in this tab.</div>
+        </button>
+        <button type="button" class="stop-choice-pill is-monitor" onclick="confirmStopMonitoringScope('tab')">
+          <div class="stop-choice-pill-headline">All senders<br>in this tab</div>
+          <div class="stop-choice-pill-sub">Use every matching Sender in this tab, including requests from earlier campaigns.</div>
+        </button>
+      </div>
+      <div class="stop-choice-cancel-row"><button type="button" class="modal-cancel-link" onclick="closeStopMonitoringScope()">Cancel</button></div>
     </div>
   </div>
 
@@ -4161,7 +4200,7 @@
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeSoloCheckModal()">&times;</button>
       <div class="stop-choice-eyebrow">Run a solo check</div>
       <h3 id="solo-check-title" class="modal-title stop-choice-headline">Check which accounts?</h3>
-      <p class="stop-choice-sub">One connection check now — stamps newly Connected, and for Connect + Introduce fires the intro where Introduction Status is blank.</p>
+      <p class="stop-choice-sub">One connection check now. Newly accepted leads are marked Connected; Connect + DM can send the saved DM, and Connect + Introduce can send the saved introduction where it is still due.</p>
       <div class="stop-choice-row">
         <button type="button" class="stop-choice-pill is-monitor" onclick="runSoloCheck('campaign')">
           <div class="stop-choice-pill-headline">This campaign's<br>accounts</div>
@@ -4359,7 +4398,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.60.14"></script>
+<script type="module" src="/js/app.js?v=3.1.60.35"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before

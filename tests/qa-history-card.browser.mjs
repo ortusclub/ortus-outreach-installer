@@ -113,6 +113,32 @@ try {
   assert.ok(coldStoppedCard.buttons.includes('Continue campaign'));
   assert.ok(!coldStoppedCard.buttons.includes('Stop campaign'));
   assert.ok(!coldStoppedCard.buttons.includes('Pause'));
+  const checkControls = await page.evaluate(() => {
+    const results = [];
+    for (const where of ['local', 'cloud']) for (const mode of ['connect_and_message', 'connect_and_introduce']) {
+      const item = { where, id: where === 'local' ? 'local-active' : 'vm-check', bucket: 'running',
+        name: 'Checking', mode, monitoring: true, monitoringCheckInProgress: true,
+        autoChecksEnabled: false,
+        sent: 1, total: 827, accounts: 1, profileIds: ['sender'], participatingProfileIds: ['sender'] };
+      const compact = document.createElement('div'); compact.innerHTML = __qa.renderUnifiedStrip(item);
+      const expanded = document.createElement('div'); expanded.innerHTML = __qa.vjCardSkeleton(item.id);
+      __qa.fillVjCard(expanded.firstElementChild, __qa.statusFromItem(item));
+      const buttons = root => [...root.querySelectorAll('button')].map(b => b.textContent.trim());
+      results.push({ where, mode, compact: buttons(compact), expanded: buttons(expanded),
+        auto: expanded.querySelector('.vj-auto-checks input')?.checked,
+        autoHandler: expanded.querySelector('.vj-auto-checks input')?.getAttribute('onchange') });
+    }
+    return results;
+  });
+  for (const controls of checkControls) {
+    assert.ok(controls.compact.includes('Stop check'), `${controls.where} ${controls.mode} collapsed check control`);
+    assert.ok(controls.expanded.includes('Stop check'), `${controls.where} ${controls.mode} expanded check control`);
+    assert.ok(controls.expanded.includes('Stop monitoring…'));
+    assert.ok(!controls.expanded.includes('Pause'));
+    assert.ok(!controls.expanded.includes('Resume'));
+    assert.equal(controls.auto, false, `${controls.where} auto-checks state must survive the card adapter`);
+    assert.match(controls.autoHandler, controls.where === 'local' ? /setMonitoringAutoChecks/ : /setCloudAutoChecks/);
+  }
   const dashboardParity = await page.evaluate(() => {
     const item = { id: 'h-su02', where: 'local', bucket: 'done', name: 'SU-02', mode: 'connect_only',
       sent: 0, total: 2, bad: true, mine: true, accounts: 1,

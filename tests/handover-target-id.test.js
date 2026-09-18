@@ -25,11 +25,20 @@ test('active handover keeps Live Status expanded', () => {
   assert.match(src, /sec\.classList\.remove\('collapsed'\)/);
 });
 
-test('a queued VM campaign keeps the location switch and a warming activity stage', () => {
+test('a queued VM campaign shows its warming stage and still allows a location switch', () => {
   assert.match(src, /const queued = !!status\.queued \|\| status\.state === 'queued'/);
+  assert.match(src, /const starting = queued \|\| status\.currentAction\?\.phase === 'starting'/);
+  assert.match(src, /const dis = busy \|\| side === to \? ' disabled' : ''/);
+  assert.match(src, /starting · tap to stop and move/);
   assert.match(src, /!running && !monitoring && !waiting && !queued/);
   assert.match(src, /label: c\.status === 'scheduled' \? 'Waiting for the scheduled start' : 'Starting the cloud machine'/);
-  assert.match(src, /state: isMon \? 'monitoring' : \(isQueued \? 'queued' : undefined\)/);
+  assert.match(src, /state: isMon \? 'monitoring' : \(isQueued \? 'queued'/);
+});
+
+test('a handover carries visible logs to the destination and holds uncertain leads', () => {
+  assert.match(src, /sourceLogs: Array\.isArray\(_handoverStatus\?\.logs\)/);
+  assert.match(src, /_cloudLogWithHandover\(c,/);
+  assert.match(src, /An unconfirmed lead stays held for review and is not sent again automatically/);
 });
 
 test('successful handover ownership overrides the slower board cache immediately', () => {
@@ -38,17 +47,18 @@ test('successful handover ownership overrides the slower board cache immediately
   assert.match(src, /if \(_handoverOwner\.has\(String\(id\)\)\)/);
 });
 
-test('every machine switch starts an acceptance check on the destination', () => {
+test('active machine switches start a check while paused moves remain paused', () => {
   assert.match(src, /async function _startHandoverCheck\(id, to, phase, response\)/);
   assert.match(src, /fetch\('\/api\/monitoring\/check-now', \{ method: 'POST' \}\)/);
   assert.match(src, /cloudCheckLocal\(targetId, null, 'campaign'\)/);
   assert.match(src, /cloudCheckNow\(targetId, null, 'campaign'\)/);
-  assert.match(src, /await _startHandoverCheck\(targetId, to, phase, d\)/);
+  assert.match(src, /await _startHandoverCheck\(targetId, to, movePhase, d\)/);
+  assert.match(src, /if \(phase === 'paused' \|\| response\?\.phase === 'paused'\)/);
 });
 
 test('the switch confirmation tells the operator about the automatic check', () => {
-  assert.match(src, /An acceptance check starts automatically on this Mac as soon as the move completes/);
-  assert.match(src, /An acceptance check starts automatically on the VM as soon as the move completes/);
+  assert.match(src, /An acceptance check starts automatically as soon as the move completes/);
+  assert.match(src, /It stays paused on the destination/);
 });
 
 test('handover transition cannot display either completion UI', () => {

@@ -140,6 +140,10 @@ function readablePresentation(line, phase = '', now = new Date()) {
     kind: 'sending-resumed', eyebrow: 'Sending is active',
     headline: 'Sending resumed', detail: m[1], explanation: '',
   };
+  if (/^Resumed$/i.test(clean)) return {
+    kind: 'sending-resumed', eyebrow: 'Campaign resumed',
+    headline: 'Resumed', detail: '', explanation: '',
+  };
   if (/^Started\s*\(continuing where it left off\)/i.test(clean)) return {
     kind: 'sending-resumed', eyebrow: 'Sending is active',
     headline: 'Continuing where it left off', detail: '', explanation: '',

@@ -98,6 +98,22 @@ export async function cloudTaskControl(campaignId, file = PRIMARY_TASKS_FILE) {
   return tasks.find(t => t.type === 'cloud-control' && t.campaignId === campaignId) || null;
 }
 
+// A remote campaign can be paused while an older local Stop marker remains.
+// Clearing it is safe only when this campaign has no delegated primary tasks:
+// a Stop cancels pending tasks, and removing that protection cannot restore
+// their prior state. The caller must first verify the VM is actually paused.
+export function clearEmptyStoppedCloudControl(campaignId, commandId, file = PRIMARY_TASKS_FILE) {
+  return mutateTasks(tasks => {
+    const index = tasks.findIndex(t => t.type === 'cloud-control' && t.campaignId === campaignId);
+    const marker = tasks[index];
+    if (!marker || marker.status !== 'stopped' || marker.commandId !== commandId
+      || marker.shutdownConfirmed !== true
+      || tasks.some(t => t.sourceTaskId && t.campaignId === campaignId)) return false;
+    tasks.splice(index, 1);
+    return true;
+  }, file);
+}
+
 export function resumeCloudTaskOwner(campaignId, commandId, file = PRIMARY_TASKS_FILE) {
   return mutateTasks(tasks => {
     const index = tasks.findIndex(t => t.type === 'cloud-control' && t.campaignId === campaignId);
@@ -114,6 +130,20 @@ export function recordCloudControlReceipt(campaignId, commandId, confirmed, file
     const marker = tasks.find(t => t.type === 'cloud-control' && t.campaignId === campaignId);
     if (!marker || marker.commandId !== commandId) return false;
     marker.shutdownConfirmed = confirmed === true;
+    return true;
+  }, file);
+}
+
+// The VM may confirm a Stop after the app's short HTTP wait has ended. Its
+// cancelled lifecycle is durable proof of VM shutdown; when this campaign has
+// no delegated tasks, atomically settle the matching local marker too. Never
+// clear a marker that still protects local work or a newer control command.
+export function confirmEmptyCloudStopFromVm(campaignId, commandId, file = PRIMARY_TASKS_FILE) {
+  return mutateTasks(tasks => {
+    const marker = tasks.find(t => t.type === 'cloud-control' && t.campaignId === campaignId);
+    if (!marker || marker.commandId !== commandId || marker.status !== 'stopped'
+      || tasks.some(t => t.sourceTaskId && t.campaignId === campaignId)) return false;
+    marker.shutdownConfirmed = true;
     return true;
   }, file);
 }

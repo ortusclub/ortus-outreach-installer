@@ -21,6 +21,14 @@ test('a stop the VM never confirms survives in the log, not just a toast', () =>
   assert.match(APP, /The VM did not confirm the stop/);
 });
 
+test('accepted pending Stop keeps both campaign cards in Stopping until VM proof arrives', () => {
+  assert.match(APP, /res\.status === 202 && data\.pending === true\) return data/);
+  assert.match(APP, /if \(result\.pending\) \{/);
+  assert.match(APP, /Stop recorded\. New sending is blocked; waiting for the VM browser shutdown receipt/);
+  assert.match(APP, /const terminalLike = status && !stopping &&/);
+  assert.match(APP, /if \(stopping\) \{\s*phase = 'stopping';\s*logEvent = null;/);
+});
+
 test('the server records the stop and its outcome', () => {
   assert.match(SERVER, /\[cloud\] stop requested for/);
   assert.match(SERVER, /was NOT accepted by the VM/);

@@ -67,6 +67,7 @@ test('adopted monitoring shuts down locally before reclaim is requested', async 
   const end = server.indexOf("app.post('/api/campaign/:id/handover'", start);
   let reclaimed = false, status;
   const run = vm.runInNewContext(server.slice(start, end) + '\nhandoverToVm;', {
+    handoverLogSnapshot: () => [],
     campaign: { running: false, state: 'monitoring', id: 'cloud-fixture' }, SINGLETON_CAMPAIGN_ID: 'local-active',
     reclaimableCloudId: () => 'cloud-fixture', stopLocalAndConfirm: async () => ({ ok: false }),
     reclaimCloudCampaign: async () => { reclaimed = true; },
@@ -74,4 +75,29 @@ test('adopted monitoring shuts down locally before reclaim is requested', async 
   await run('cloud-fixture', { body: {} }, { status(value) { status = value; return this; }, json() {} });
   assert.equal(status, 409);
   assert.equal(reclaimed, false);
+});
+
+test('local startup requests a stop before a machine move', async () => {
+  const server = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
+  const start = server.indexOf('async function handoverToVm(');
+  const end = server.indexOf("app.post('/api/campaign/:id/handover'", start);
+  let stopCalled = false;
+  const run = vm.runInNewContext(server.slice(start, end) + '\nhandoverToVm;', {
+    handoverLogSnapshot: () => [],
+    campaign: { running: true, state: 'running', currentAction: { phase: 'starting' } },
+    getLastRunSettings: () => ({ sheetUrl: 'https://sheet.test', mode: 'connect_only', profileIds: ['p1'] }),
+    isCloudMode: () => true,
+    withGid: value => value,
+    fetchSheet: async () => [{ url: 'https://linkedin.com/in/one' }],
+    extractLinkedInUrl: row => row.url,
+    sheetProcessedUrls: () => [],
+    stopLocalAndConfirm: async () => { stopCalled = true; return { ok: false, reason: 'shutdown-unconfirmed' }; },
+  });
+  let code, body;
+  await run('local-active', { body: {} }, {
+    status(value) { code = value; return this; }, json(value) { body = value; },
+  });
+  assert.equal(code, 409);
+  assert.equal(body.reason, 'source_still_running');
+  assert.equal(stopCalled, true);
 });

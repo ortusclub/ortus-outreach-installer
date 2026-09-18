@@ -88,6 +88,13 @@ async function requestOnce(method, path, body) {
     const text = await res.text();
     let parsed;
     try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+    // A durable Stop accepted by the engine can still be awaiting its browser
+    // closure receipt. Keep 202 as a pending result, not a transient error that
+    // retries Stop and creates another command.
+    if (res.status === 202 && parsed?.pending === true) {
+      const { error: pendingReason, ...pending } = parsed;
+      return { ...pending, pendingReason: pendingReason || '' };
+    }
     if (!res.ok) {
       const detail = parsed && parsed.error ? `: ${parsed.error}` : '';
       // Carry `reason` through. The handover routes refuse with a reason and no
@@ -233,6 +240,35 @@ export function getCloudCampaignLeads(id) {
   return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}/leads`);
 }
 
+// Handover must see the entire source ledger. The card endpoint defaults to
+// 500 rows, which can omit an early held lead on a large campaign.
+export async function getCloudCampaignLeadsAll(id, { requestPage = requestWithRetry } = {}) {
+  const leads = [];
+  const seen = new Set();
+  const limit = 2000;
+  let total = null;
+  for (let offset = 0; offset < 100000; offset += limit) {
+    const page = await requestPage('GET', `/api/campaign/${encodeURIComponent(id)}/leads?limit=${limit}&offset=${offset}`);
+    if (!page || page.error || !Array.isArray(page.leads) || page.total == null || !Number.isSafeInteger(Number(page.total))) {
+      return { error: page?.error || 'The VM lead ledger could not be read completely.' };
+    }
+    if (total == null) total = Number(page.total);
+    if (Number(page.total) !== total || (page.leads.length === 0 && leads.length < total)) {
+      return { error: 'The VM lead ledger changed or ended before every lead was read.' };
+    }
+    for (const lead of page.leads) {
+      if (!lead || lead.id == null || seen.has(String(lead.id))) {
+        return { error: 'The VM lead ledger contained a duplicate or incomplete page.' };
+      }
+      seen.add(String(lead.id));
+      leads.push(lead);
+    }
+    if (leads.length === total) return { leads, total };
+    if (leads.length > total || page.leads.length < limit) break;
+  }
+  return { error: 'The VM lead ledger could not be read completely.' };
+}
+
 /** Per-account status for the campaign's accounts (daily used vs limit, parked/
  *  throttled/weekly-cap, needs-login). Feeds the Live Status "Accounts" panel. */
 export function getCloudCampaignAccounts(id) {
@@ -330,12 +366,12 @@ export function ackLocalFollowups(taskIds, owner) {
  *   stopAndKeepMonitoring path. pause + keepMonitoring are mutually exclusive;
  *   keepMonitoring wins.
  */
-export function stopCloudCampaign(id, { pause = false, keepMonitoring = false, immediate = false } = {}) {
+export function stopCloudCampaign(id, { pause = false, keepMonitoring = false, monitoringScope = 'campaign', immediate = false } = {}) {
   // Every operator Stop is immediate. keepMonitoring only decides what remains
   // after sending is cut; it never changes how quickly sending stops.
   immediate = true;
   const qs = keepMonitoring
-    ? '?keepMonitoring=1&immediate=1'
+    ? `?keepMonitoring=1&monitoringScope=${monitoringScope === 'tab' ? 'tab' : 'campaign'}&immediate=1`
     : (pause ? '?pause=1&immediate=1' : '?immediate=1');
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${qs}`);
 }

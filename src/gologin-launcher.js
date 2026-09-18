@@ -10,6 +10,8 @@ import { checkDiskFree, formatBytes } from './disk-check.js';
 import { confirmOwnedProcessExit } from './process-exit-evidence.js';
 import { guardSdkStartup } from './sdk-startup-control.js';
 import { configuredAccounts, tokenForAccount, DEFAULT_ACCOUNT_ID } from './gologin-accounts.js';
+import { dataRoot } from './paths.js';
+import { readRosterSnapshot, saveRosterSnapshot, PICKER_ROSTER_FRESH_MS } from './gologin-roster-snapshot.js';
 
 const activeProfiles = new Map();
 const pendingLaunches = new Set();
@@ -219,10 +221,13 @@ async function releaseFocusEmulation(page) {
   delete page.__ortusFocusReapply;
 }
 
-async function fetchAccountProfiles(accountId, token) {
+export async function fetchAccountProfiles(accountId, token, {
+  waitOnRateLimit = ms => new Promise(resolve => setTimeout(resolve, ms)),
+} = {}) {
   const allProfiles = [];
   let page = 1;
   let totalCount = Infinity;
+  let rateLimitWaits = 0;
 
   while (allProfiles.length < totalCount) {
     // The ONLY unbounded call on the cloud-launch path (sheets is 30s x2, the
@@ -242,7 +247,22 @@ async function fetchAccountProfiles(accountId, token) {
       const why = err.cause?.code || err.cause?.message || err.name;
       throw new Error(`GoLogin did not answer while listing accounts (page ${page}) — ${err.message}${why ? ` (${why})` : ''}`);
     }
-    if (!res.ok) throw goLoginRequestPolicy.providerError(res.status, res.headers);
+    if (!res.ok) {
+      const error = goLoginRequestPolicy.providerError(res.status, res.headers);
+      if (error.code === 'GOLOGIN_RATE_LIMIT' && rateLimitWaits < 3) {
+        // This is a read-only paged list. Keep completed pages in this one
+        // attempt, then retry ONLY the limited page after a bounded pause.
+        // Do not use this pattern for launches, writes, or LinkedIn actions.
+        const delay = Number.isFinite(error.retryAfterMs) ? Math.max(1000, error.retryAfterMs) : 60_000;
+        if (delay <= 120_000) {
+          rateLimitWaits++;
+          console.warn(`[gologin] ${accountId} profile list paused after HTTP 429 on page ${page}; retry ${rateLimitWaits}/3 after ${Math.ceil(delay / 1000)}s`);
+          await waitOnRateLimit(delay);
+          continue;
+        }
+      }
+      throw error;
+    }
     // Pagination guard: the loop's only other exits are an empty page or
     // reaching allProfilesCount. A count that never becomes reachable would
     // otherwise spin forever against the API.
@@ -251,7 +271,20 @@ async function fetchAccountProfiles(accountId, token) {
     const data = await res.json();
     totalCount = data.allProfilesCount || 0;
     const profiles = data.profiles || [];
-    if (!profiles.length) break;
+    if (!profiles.length) {
+      if (totalCount > allProfiles.length) {
+        const gap = totalCount - allProfiles.length;
+        // GoLogin can include a few non-returned profiles in allProfilesCount
+        // (observed 501 returned / 503 counted on PR-19). A terminal empty
+        // page is still the end of the accessible list. Never accept a large
+        // shortfall as a complete roster.
+        if (allProfiles.length < 30 || gap > 5 || allProfiles.length / totalCount < 0.99) {
+          throw new Error(`GoLogin profile list ended early at ${allProfiles.length}/${totalCount}; no incomplete roster was saved.`);
+        }
+        console.warn(`[gologin] ${accountId} terminal page empty; provider counted ${totalCount}, returned ${allProfiles.length} accessible profiles`);
+      }
+      break;
+    }
 
     for (const p of profiles) {
       // Trim once, here, so no consumer has to. GoLogin lets a profile be named
@@ -283,7 +316,7 @@ async function fetchAccountProfiles(accountId, token) {
  * per account — passing one here cannot mean anything sensible once there is
  * more than one.
  */
-export async function getProfiles(_ignoredLegacyToken) {
+export async function getProfiles(_ignoredLegacyToken, { forceRefresh = false, onAccountFailure = null } = {}) {
   const out = [];
   // Owner decided fresh on every run, then published in one go below — so a
   // profile that genuinely MOVES workspaces re-tags on the next list instead of
@@ -294,7 +327,7 @@ export async function getProfiles(_ignoredLegacyToken) {
     const cached = profileCaches.get(acc.id);
     let list;
 
-    if (cached && Date.now() - cached.time < CACHE_TTL) {
+    if (!forceRefresh && cached && Date.now() - cached.time < CACHE_TTL) {
       list = cached.list;
     } else {
       try {
@@ -318,6 +351,7 @@ export async function getProfiles(_ignoredLegacyToken) {
         // account still throws: an empty picker there is a real outage and has
         // always surfaced as one.
         if (acc.id === DEFAULT_ACCOUNT_ID) throw err;
+        try { onAccountFailure?.(acc.id); } catch {}
         console.warn(`[gologin] ${acc.id} profile list failed (${err.message}) — using ${cached ? 'stale cache' : 'no profiles'} for it`);
         list = cached ? cached.list : [];
       }
@@ -347,6 +381,62 @@ export async function getProfiles(_ignoredLegacyToken) {
 
   console.log(`[gologin] Total: ${out.length} profiles across ${configuredAccounts().length} account(s)`);
   return out;
+}
+
+let lastForcedPickerRefreshAt = 0;
+function pickerCredentialFingerprintInput() {
+  // The snapshot is invalid when the workspace roster or any credential
+  // changes, or when the same data directory is opened in another engine
+  // environment. The tokens themselves are never written to disk or logs.
+  const environment = process.env.ORTUS_ENGINE_ENVIRONMENT || 'production';
+  const preview = environment === 'preview' ? String(process.env.ORTUS_PREVIEW_PR || '') : '';
+  return JSON.stringify({ environment, preview,
+    accounts: configuredAccounts().map(acc => [acc.id, tokenForAccount(acc.id)]) });
+}
+
+/** Read-only picker fallback. Campaign launches still use strict getProfiles(). */
+export async function getProfilesForPicker({ forceRefresh = false } = {}) {
+  const now = Date.now();
+  const credential = pickerCredentialFingerprintInput();
+  const snapshot = readRosterSnapshot(dataRoot(), 'picker', credential, { now });
+  // A verified snapshot still carries the workspace owner. Preserve that
+  // mapping so a later browser launch uses the matching workspace token.
+  if (snapshot) for (const profile of snapshot.profiles) profileAccount.set(profile.id, profile.account);
+  if (!forceRefresh && snapshot) {
+    // A read-only picker should never block or repeatedly page GoLogin merely
+    // because its last verified roster crossed an arbitrary one-hour mark.
+    return { profiles: snapshot.profiles,
+      source: now - snapshot.fetchedAt <= PICKER_ROSTER_FRESH_MS ? 'cached' : 'stale',
+      fetchedAt: snapshot.fetchedAt };
+  }
+  if (forceRefresh) {
+    // Repeated clicks must not turn a 503-profile picker into an API burst.
+    if (now - lastForcedPickerRefreshAt < 60_000) {
+      if (snapshot) return { profiles: snapshot.profiles, source: 'cooldown', fetchedAt: snapshot.fetchedAt };
+      throw new Error('Profile refresh was just attempted. Wait a minute before trying again.');
+    }
+    lastForcedPickerRefreshAt = now;
+  }
+  try {
+    const failedAccounts = [];
+    const profiles = await getProfiles(undefined, { forceRefresh, onAccountFailure: id => failedAccounts.push(id) });
+    if (profiles.length && failedAccounts.length === 0) saveRosterSnapshot(dataRoot(), 'picker', credential, profiles);
+    return { profiles, source: failedAccounts.length ? 'partial' : 'fresh', fetchedAt: Date.now() };
+  } catch (error) {
+    const transient = error?.code === 'GOLOGIN_RATE_LIMIT' ||
+      error?.code === 'GOLOGIN_ADMISSION_UNAVAILABLE' ||
+      error?.code === 'GOLOGIN_UNAVAILABLE' ||
+      /GoLogin did not answer while listing accounts/i.test(String(error?.message || ''));
+    if (!transient || !snapshot) throw error;
+    console.warn(`[gologin] picker using verified cached roster after ${error.code || error.name}; no campaign launch bypass`);
+    return { profiles: snapshot.profiles,
+      source: error?.code === 'GOLOGIN_RATE_LIMIT' ? 'limited' : 'stale',
+      fetchedAt: snapshot.fetchedAt };
+  } finally {
+    // A multi-minute provider cooldown must not allow another full traversal
+    // immediately after the first one finally returns.
+    if (forceRefresh) lastForcedPickerRefreshAt = Date.now();
+  }
 }
 
 /**
@@ -407,7 +497,7 @@ export function resolveProfileId(profiles, profileRef) {
  * Resolving in the one place they all funnel through is why adding a second
  * account did not need 22 edits.
  */
-export async function launchProfile(profileId, _ignoredLegacyToken, { visible = false, signal } = {}) {
+export async function launchProfile(profileId, _ignoredLegacyToken, { visible = false, signal, onOwnedStart } = {}) {
   startupAdmission.assertRuntimeReady();
   if (pendingLaunches.has(profileId)) throw new Error('GoLogin profile launch is already in progress');
   pendingLaunches.add(profileId);
@@ -437,6 +527,9 @@ export async function launchProfile(profileId, _ignoredLegacyToken, { visible = 
     return { browser: session.browser, page: session.page };
   }
   console.log(`[gologin] Starting ${profileId}…`);
+  // A manual Stop may close this launch only after this call has passed the
+  // shared pending-launch guard. A competing campaign launch owns its own stop.
+  if (typeof onOwnedStart === 'function') onOwnedStart();
 
   const GL = new GoLogin({
     token,
