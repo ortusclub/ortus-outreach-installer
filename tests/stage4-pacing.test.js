@@ -35,10 +35,13 @@ test('desktop setup refuses production fallback and checks PR-19 coordinator ide
   const saved = { ...process.env };
   try {
     const { setupPacing } = await import('../src/gologin-pacing-setup.js');
-    process.env.GOLOGIN_REQUEST_PACING = '1'; delete process.env.SCRAPER_ENGINE_URL;
-    assert.throws(setupPacing, /isolated PR-19/);
+    process.env.GOLOGIN_REQUEST_PACING = '1';
+    process.env.ORTUS_ENGINE_ENVIRONMENT = 'preview';
+    process.env.ORTUS_PREVIEW_PR = '19';
+    delete process.env.SCRAPER_ENGINE_URL;
+    assert.throws(setupPacing, /isolated PR-19:3119/);
     process.env.SCRAPER_ENGINE_URL = 'https://scraper.ortusclub.com';
-    assert.throws(setupPacing, /isolated PR-19/);
+    assert.throws(setupPacing, /isolated PR-19:3119/);
     process.env.SCRAPER_ENGINE_URL = 'http://127.0.0.1:3119';
     process.env.GOLOGIN_API_TOKEN = 'fixture-token';
     const sent = [];
@@ -54,7 +57,7 @@ test('desktop setup refuses production fallback and checks PR-19 coordinator ide
     assert.ok(sent[0].url.startsWith('http://127.0.0.1:3119/api/gologin/admission/'));
     assert.ok(!sent[0].body.includes('fixture-token'));
   } finally {
-    for (const key of ['GOLOGIN_REQUEST_PACING', 'SCRAPER_ENGINE_URL', 'GOLOGIN_API_TOKEN']) {
+    for (const key of ['GOLOGIN_REQUEST_PACING', 'ORTUS_ENGINE_ENVIRONMENT', 'ORTUS_PREVIEW_PR', 'SCRAPER_ENGINE_URL', 'GOLOGIN_API_TOKEN']) {
       if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
     }
   }
