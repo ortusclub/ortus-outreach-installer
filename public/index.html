@@ -7,9 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.60.35" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.35" />
-  <link rel="stylesheet" href="/css/launch-review.css?v=3.1.60.35" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.60.36" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.36" />
+  <link rel="stylesheet" href="/css/launch-review.css?v=3.1.60.36" />
   <link rel="stylesheet" href="/css/automation-layout.css?v=layout-a-1" />
   <link rel="stylesheet" href="/css/account-recovery.css?v=4" />
   <link rel="stylesheet" href="/css/recovery-panel.css?v=1" />
@@ -2071,6 +2071,12 @@
   /* Expanded-strip card #2 parity: expanded shows the cloned .vj-card, collapsed
      shows the compact body. (docs/.../2026-07-11-expanded-strip-card2-parity) */
   .sn-strip:not(.sn-collapsed) .sn-compact{display:none;}
+  .sn-strip.launching:not(.sn-collapsed) .sn-compact{display:block;padding:22px;border:1px solid var(--hairline);border-radius:12px;background:var(--card-bg);}
+  .sn-launch-evidence{display:grid;gap:6px;margin:16px 0;padding:14px 16px;border:1px solid var(--hairline);border-left:3px solid var(--gold);border-radius:8px;background:var(--card-bg);font-size:12px;}
+  .sn-launch-evidence strong{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;}
+  .sn-launch-evidence small{color:var(--gray);font-size:11px;}
+  .sn-launch-log{display:grid;gap:5px;margin-top:8px;padding-top:9px;border-top:1px solid var(--hairline);font-family:var(--mono);font-size:11px;line-height:1.4;}
+  .sn-strip.launching.sn-collapsed .sn-launch-log{display:none;}
   .sn-strip.sn-collapsed .sn-vjcard{display:none;}
   /* Expanded = ONE clean card: the .vj-card is the frame, so strip the outer
      strip's border / background / padding / left rail — no card-in-a-card. */
@@ -4398,7 +4404,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.60.35"></script>
+<script type="module" src="/js/app.js?v=3.1.60.36"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before

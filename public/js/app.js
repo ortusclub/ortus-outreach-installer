@@ -7810,6 +7810,22 @@ function _tickQueueWait(id, campaign) {
   _queueTickBucket.set(id, bucket);
   _pushCloudEvent(id, queueWaitLine(bucket * 30));
 }
+const _firstBrowserWaitBucket = new Map();
+function _tickFirstBrowserWait(id, detail) {
+  const c = detail && detail.campaign;
+  const created = Date.parse(c?.created_at || c?.createdAt || '');
+  const age = Date.now() - created;
+  if (!c || c.status !== 'running' || detail.liveProgress?.phase
+      || _cloudProgressSeen.has(id) || !Number.isFinite(age) || age < 0 || age > 8 * 60 * 1000) {
+    _firstBrowserWaitBucket.delete(id);
+    return;
+  }
+  const bucket = Math.floor(age / 30000);
+  if (_firstBrowserWaitBucket.get(id) === bucket) return;
+  _firstBrowserWaitBucket.set(id, bucket);
+  const elapsed = bucket ? `${Math.floor(bucket / 2)}m ${bucket % 2 ? '30s' : '00s'}` : 'under 30s';
+  _pushCloudEvent(id, `VM reports this campaign running; first sender browser event is not confirmed yet (${elapsed} since engine receipt).`);
+}
 
 function _pushCloudEvent(id, line, at) {
   if (!id || !line) return;
@@ -8882,6 +8898,7 @@ async function _refreshCloudActiveStatus(id) {
       catch (_) { /* queueState says nothing without a reading, which is correct */ }
     }
     if (d && d.campaign) _tickQueueWait(id, d.campaign);
+    _tickFirstBrowserWait(id, d);
     // Engine's per-account check-sweep events (reliable — one line per account the
     // VM opens, e.g. "🖥️ Checking liza.advocate@ortus.solutions…"). Captured here
     // and merged into the log by _combineCloudEvents. Newest-first from Redis.
@@ -10900,6 +10917,7 @@ function renderUnifiedStrip(it) {
   // pill on the same row said This machine (operator, 2026-08-28).
   const _ownedLocal = it.where === 'local' || String(it.runsOn || '') === 'local';
   const stateCls = [
+    it.launching ? 'launching' : '',
     _ownedLocal ? 'local' : '',
     running && !monitoring && !waiting && !resumeWorkerStarting ? 'run' : '',
     (monitoring || waiting) ? 'monitoring' : '',
@@ -10954,7 +10972,9 @@ function renderUnifiedStrip(it) {
   // A launch still running on THIS Mac (handshake → dispatch). Reuses the same
   // handshake panel, but says where it actually is — "Primary handshake" would be
   // a lie once the handshake is done and we're reading the sheet.
-  if (it.launching) statusTxt = it.launchPhase === 'dispatching' ? '☁︎ Handing over to the VM…' : '🤝 Connecting to primary';
+  if (it.launching) statusTxt = it.launchPhase === 'reconciling' ? 'Checking VM receipt…'
+    : it.launchPhase === 'dispatching' ? '☁︎ Handing over to the VM…'
+    : it.launchPhase === 'preflight' ? 'Checking accounts…' : '🤝 Connecting to primary';
   // A timeout is not proof that a VM browser closed. Give a stale transitional
   // campaign an honest warning and an explicit recovery action after one minute.
   // updatedAt advances during status polling, so it cannot measure how long a
@@ -11224,6 +11244,14 @@ function renderUnifiedStrip(it) {
   // No card #2 clone for a launch: it has no campaign status to fill, and
   // _fillVjCards would paint the generic "running" hero over the handshake panel.
   const richCard = (queued || it.launching) ? '' : vjCardSkeleton(it.id);
+  const launchLogHtml = it.launching ? `<div class="sn-launch-evidence">
+    <strong>${it.launchPhase === 'reconciling' ? 'Engine outcome not confirmed' : 'Last confirmed on this Mac'}</strong>
+    <span>${escHtml((it.logs || []).slice(-1)[0] || 'Starting the handover…')}</span>
+    <small>${it.launchPhase === 'reconciling'
+      ? 'The saved settings are safe. Checking the VM by request ID; do not start again yet.'
+      : 'The VM worker has not been confirmed yet. The log updates when a step finishes.'}</small>
+    <div class="sn-launch-log">${(it.logs || []).slice(-6).map((line) => `<div>${escHtml(line)}</div>`).join('')}</div>
+  </div>` : '';
   return `
   <div class="sn-strip ${stateCls}" data-cid="${escHtml(it.id)}">
     ${expandBtn}
@@ -11233,6 +11261,7 @@ function renderUnifiedStrip(it) {
     <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
     ${_campaignTimestampHtml(it)}
     <div class="sn-flow">${flow}</div>
+    ${launchLogHtml}
     ${psBadgeHtml}
     ${acctBadgeHtml}
     ${queueHtml}
@@ -11808,6 +11837,8 @@ async function _refreshCloudItems() {
       }
       _cloudDetailCache.set(c.id, d);
       _cloudPolledAt.set(c.id, Date.now()); // feeds the live stage's heartbeat
+      if (d && d.campaign) _tickQueueWait(c.id, d.campaign);
+      _tickFirstBrowserWait(c.id, d);
       // A STALLED campaign needs its per-account states on the board, not just
       // in the opened campaign's panel — that's where the stage names which
       // account is capped and which is benched, and offers Retry. Fetched only
@@ -12413,11 +12444,15 @@ async function _renderCampaignsBoardInner() {
     } catch { /* drafts rail is best-effort — board renders without it */ }
   }
   let _draftsHtml = '';
+  let _visibleDraftCount = 0;
   for (const d of _draftRows) {
-    try { _draftsHtml += renderDraftStrip(d); }
+    const pendingDraftId = (_cloudLaunch && !_cloudLaunch.failure && _cloudLaunch.draftId)
+      || _pendingCloudLaunch()?.draftId;
+    if (pendingDraftId && String(d.id) === String(pendingDraftId)) continue;
+    try { _draftsHtml += renderDraftStrip(d); _visibleDraftCount += 1; }
     catch (e) { try { console.error('[board] draft strip render failed for', d && d.id, e); } catch { /* */ } }
   }
-  const _draftOpts = _draftsHtml ? { draftsHtml: _draftsHtml, draftsCount: _draftRows.length } : {};
+  const _draftOpts = _draftsHtml ? { draftsHtml: _draftsHtml, draftsCount: _visibleDraftCount } : {};
 
   // ── Board layout ──────────────────────────────────────────────────────────
   // Admins get three minimisable sections (Your / Other users / Admin = Follower
@@ -14292,6 +14327,84 @@ function _icPreflightScrollToColumnPicker() {
 // new markup: the card reuses its gold `is-preflight` state (v2.105) and the
 // strip reuses the `awaiting_primary_accept` handshake panel.
 let _cloudLaunch = null;
+const CLOUD_LAUNCH_PENDING_KEY = 'ortus.pr19.cloudLaunchPending.v1';
+function _pendingCloudLaunch() {
+  try { return JSON.parse(localStorage.getItem(CLOUD_LAUNCH_PENDING_KEY) || 'null'); }
+  catch { return null; }
+}
+function _saveCloudLaunchPending() {
+  const L = _cloudLaunch;
+  if (!L || !L.launchId || (!L.postStarted && !L.recovering)) return;
+  try { localStorage.setItem(CLOUD_LAUNCH_PENDING_KEY, JSON.stringify({
+    launchId: L.launchId, draftId: L.draftId || '', name: L.name,
+    mode: L.mode, profileIds: L.profileIds, startedAt: L.startedAt,
+    phase: L.phase, logs: (L.logs || []).slice(-60), stopRequested: !!L.stopRequested,
+  })); } catch { /* the in-memory card still works */ }
+}
+function _clearCloudLaunchPending() {
+  try { localStorage.removeItem(CLOUD_LAUNCH_PENDING_KEY); } catch { /* */ }
+}
+async function _consumeCloudLaunchDraft(draftId) {
+  if (!draftId) return true;
+  try {
+    const r = await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' });
+    if (!r.ok) return false;
+    const result = await r.json().catch(() => ({}));
+    if (result.ok !== true) {
+      const check = await fetch('/api/drafts/' + encodeURIComponent(draftId));
+      if (check.status !== 404) return false;
+    }
+    if (getActiveDraftId() === draftId) clearActiveDraft();
+    return true;
+  } catch { return false; /* keep the draft as a recovery copy */ }
+}
+let _cloudLaunchRecoveryTimer = null;
+async function _reconcilePendingCloudLaunch() {
+  const pending = _pendingCloudLaunch();
+  if (!pending || !pending.launchId || !/^[-\w]{8,}$/.test(pending.launchId)) return;
+  try {
+    const r = await fetch('/api/campaign/cloud/' + encodeURIComponent(pending.launchId));
+    if (!r.ok) return; // 404 can mean the server is still reading the sheet.
+    const detail = await r.json();
+    if (!detail || !detail.campaign || String(detail.campaign.id) !== String(pending.launchId)) return;
+    for (const line of (pending.logs || [])) _pushCloudEvent(pending.launchId, line);
+    _pushCloudEvent(pending.launchId, '☁︎ Engine receipt confirmed after the page refreshed.');
+    if (pending.stopRequested) {
+      try {
+        const stop = await fetch('/api/campaign/cloud/' + encodeURIComponent(pending.launchId) + '/stop', { method: 'POST' });
+        _pushCloudEvent(pending.launchId, stop.ok
+          ? '■ Earlier Cancel request sent to the VM after recovery.'
+          : '⚠ Earlier Cancel request could not be confirmed. Review this campaign now.');
+      } catch { _pushCloudEvent(pending.launchId, '⚠ Earlier Cancel request could not reach the VM. Review this campaign now.'); }
+    }
+    if (!await _consumeCloudLaunchDraft(pending.draftId)) return;
+    if (_cloudLaunchRecoveryTimer) { clearInterval(_cloudLaunchRecoveryTimer); _cloudLaunchRecoveryTimer = null; }
+    _clearCloudLaunchPending();
+    if (_cloudLaunch && _cloudLaunch.launchId === pending.launchId && _cloudLaunch.recovering) {
+      _cloudLaunch = null;
+      paintCloudLaunch();
+    }
+    await _forceCloudItemsAfterAction(pending.launchId);
+  } catch { /* leave the honest unconfirmed state visible and retry */ }
+}
+function _restorePendingCloudLaunch() {
+  const p = _pendingCloudLaunch();
+  if (!p || !p.launchId || !/^[-\w]{8,}$/.test(p.launchId)) return;
+  _cloudLaunch = {
+    phase: 'reconciling', recovering: true, launchId: p.launchId,
+    draftId: p.draftId || '', name: p.name || 'VM campaign', mode: p.mode || '',
+    profileIds: Array.isArray(p.profileIds) ? p.profileIds : [],
+    hasHandshake: false, conn: {}, logs: Array.isArray(p.logs) ? p.logs.slice(-60) : [],
+    startedAt: Number(p.startedAt) || Date.now(), stopRequested: !!p.stopRequested,
+    postStarted: true,
+  };
+  _cloudLaunch.logs.push('⏳ Page reopened during VM handover — checking for the engine receipt. Do not start this draft again until the outcome is known.');
+  paintCloudLaunch();
+  _reconcilePendingCloudLaunch();
+  if (!_cloudLaunchRecoveryTimer) _cloudLaunchRecoveryTimer = setInterval(_reconcilePendingCloudLaunch, 5000);
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _restorePendingCloudLaunch, { once: true });
+else queueMicrotask(_restorePendingCloudLaunch);
 
 // handshake sender state → the pf-list vocabulary renderActiveCard already
 // speaks. `error` maps to 'unverified' rather than a hard failure: the operator
@@ -14306,7 +14419,7 @@ const _HS_STATE_TO_PF = {
 // straight to the dispatch phase — those launches have no per-sender step, and
 // claiming a "Primary handshake" that never runs would be a worse lie than the
 // blank screen this replaces.
-function beginCloudLaunch({ name, profileIds, handshake = true } = {}) {
+function beginCloudLaunch({ name, profileIds, handshake = true, launchId = '', draftId = '', mode = '' } = {}) {
   _cloudLaunch = {
     phase: handshake ? 'handshake' : 'dispatching',
     hasHandshake: !!handshake,
@@ -14318,6 +14431,7 @@ function beginCloudLaunch({ name, profileIds, handshake = true } = {}) {
     logs: [],
     leadsRead: null,
     startedAt: Date.now(),
+    launchId, draftId, mode,
   };
   // A launch is operational status immediately, even before an engine campaign
   // row exists. Reveal section 7 now so the handshake/dispatch card cannot sit
@@ -14354,6 +14468,7 @@ function launchLog(line) {
   _cloudLaunch.logs.push(`${line} · ${clock}`);
   // A launch is a minute or two, but a retry loop must never grow this forever.
   if (_cloudLaunch.logs.length > 60) _cloudLaunch.logs.splice(0, _cloudLaunch.logs.length - 60);
+  _saveCloudLaunchPending();
   paintCloudLaunch();
 }
 window.launchLog = launchLog;
@@ -14374,6 +14489,7 @@ function updateCloudLaunchSenders(senders) {
 function setCloudLaunchPhase(phase) {
   if (!_cloudLaunch) return;
   _cloudLaunch.phase = phase;
+  _saveCloudLaunchPending();
   paintCloudLaunch();
 }
 
@@ -14402,6 +14518,7 @@ function cancelCloudLaunch() {
   }
   _cloudLaunch.stopRequested = true;
   launchLog('■ Cancel requested — this launch will not be left running.');
+  _saveCloudLaunchPending();
   paintCloudLaunch();
   if (typeof showCampaignToast === 'function') {
     showCampaignToast('Cancelling this launch. If it has already reached the VM it is stopped straight away.', 6000);
@@ -14412,7 +14529,10 @@ window.cancelCloudLaunch = cancelCloudLaunch;
 
 // Force-clear a failed launch card once the operator has read it.
 function dismissCloudLaunch() {
-  if (_cloudLaunch) _cloudLaunch.failure = null;
+  if (_cloudLaunch) {
+    _cloudLaunch.failure = null;
+    if (!_cloudLaunch.recovering) _clearCloudLaunchPending();
+  }
   endCloudLaunch();
 }
 window.dismissCloudLaunch = dismissCloudLaunch;
@@ -14422,7 +14542,7 @@ function endCloudLaunch() {
   // A failed launch is the one case the card must OUTLIVE the launch: the
   // `finally` below runs on every exit path, and it used to wipe the only place
   // the failure was written down.
-  if (_cloudLaunch.failure) { paintCloudLaunch(); return; }
+  if (_cloudLaunch.failure || _cloudLaunch.recovering) { paintCloudLaunch(); return; }
   _cloudLaunch = null;
   // Repaint both surfaces once more so the synthetic strip/card are replaced by
   // the real campaign (or by the idle state if the launch was cancelled).
@@ -14451,7 +14571,7 @@ function cloudLaunchStatus() {
     return {
       running: false, paused: false, state: 'error', phase: 'done',
       bad: true, badLabel: 'Error', launchFailed: true,
-      id: '__launching__', name: L.name, mode: 'connect_and_introduce',
+      id: '__launching__', name: L.name, mode: L.mode || 'connect_and_introduce',
       profileIds: L.profileIds.slice(), profileNames: L.profileIds.map(nameOf),
       totalTargets: 0, totalProcessed: 0, acceptedCount: '—',
       endNotice: fixes.length ? `${L.failure.message} Try: ${fixes.join(', ')}.` : L.failure.message,
@@ -14464,7 +14584,7 @@ function cloudLaunchStatus() {
     // to the VM has NO local phase 0, and labelling it "Phase 0 · Primary
     // handshake / handshake started" describes work that is not happening.
     hasHandshake: !!L.hasHandshake,
-    mode: 'connect_and_introduce',
+    mode: L.mode || 'connect_and_introduce',
     name: L.name,
     profileIds: L.profileIds.slice(),
     profileNames: L.profileIds.map(nameOf),
@@ -14475,10 +14595,14 @@ function cloudLaunchStatus() {
     launchPhase: L.phase || '',
     leadsRead: L.leadsRead == null ? null : L.leadsRead,
     sendersDone: doneN,
-    preflightL1: L.phase === 'handshake'
+    preflightL1: L.phase === 'reconciling'
+      ? 'Checking whether the VM accepted this campaign'
+      : L.phase === 'handshake'
       ? 'Sending connections to the primary account'
       : 'Handing the campaign over to the VM',
-    preflightSub: L.phase !== 'handshake'
+    preflightSub: L.phase === 'reconciling'
+      ? 'The page refreshed during dispatch. The saved draft is safe, but the engine outcome is not confirmed yet. Do not press Start again.'
+      : L.phase !== 'handshake'
       ? (L.hasHandshake
         ? 'Handshake done — reading your lead sheet and handing the campaign to the VM…'
         : 'Reading your lead sheet and dispatching to the VM…')
@@ -14503,6 +14627,7 @@ function paintCloudLaunch() {
 function cloudLaunchBoardItem() {
   const L = _cloudLaunch;
   if (!L) return null;
+  if (L.launchId && _cloudRaw.some((d) => String(d?.campaign?.id || '') === String(L.launchId))) return null;
   const nameOf = (id) => {
     const picked = (typeof selectedProfileNames !== 'undefined' && selectedProfileNames && selectedProfileNames[id]) || '';
     if (picked) return picked;
@@ -14514,10 +14639,12 @@ function cloudLaunchBoardItem() {
   };
   return {
     where: 'cloud', id: '__launching__', rawId: '__launching__',
-    name: L.name, mode: 'connect_and_introduce', isFG: false,
+    name: L.name, mode: L.mode || 'connect_and_introduce', isFG: false,
     bucket: 'running', sent: 0, total: 0, accounts: L.profileIds.length,
     mine: true, owner: '', live: false, launching: true,
     launchPhase: L.phase,
+    launchStartedAt: L.startedAt,
+    logs: (L.logs || []).slice(),
     // Only a real handshake gets the handshake panel; a plain cloud launch falls
     // through to the normal strip body with the "handing over" status text.
     state: L.hasHandshake ? 'awaiting_primary_accept' : '',
@@ -14946,6 +15073,13 @@ if (typeof window !== 'undefined') window._fmtCloudStartAt = _fmtCloudStartAt;
 
 async function _submitCloudCampaign(body) {
   if (_cloudSubmitInFlight) return; // ignore re-clicks while a start is dispatching
+  const launchDraftId = getActiveDraftId();
+  const previous = _pendingCloudLaunch();
+  if (previous && previous.launchId && launchDraftId && previous.draftId === launchDraftId) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('This draft may already have reached the VM. Checking its launch outcome before another Start.', 7000);
+    _reconcilePendingCloudLaunch();
+    return;
+  }
   _cloudSubmitInFlight = true;
   // Idempotency backstop: a stable id per launch attempt so any duplicated POST
   // (network retry, second app window) collapses to ONE campaign engine-side.
@@ -14985,7 +15119,8 @@ async function _submitCloudCampaign(body) {
     };
   }
   const _hsHere = needsHandshakeFromBody(body);
-  beginCloudLaunch({ name: body.name, profileIds: body.profileIds, handshake: _hsHere });
+  beginCloudLaunch({ name: body.name, profileIds: body.profileIds, handshake: _hsHere,
+    launchId: body.launchId, draftId: launchDraftId, mode: body.mode });
   launchLog(`▶ Launch started — ${(body.profileIds || []).length} account${(body.profileIds || []).length === 1 ? '' : 's'}, Cloud VM`);
   if (body.mode === 'connect_and_introduce') {
     launchLog(_hsHere
@@ -15061,6 +15196,7 @@ async function _submitCloudCampaign(body) {
     // really is a clean stop.
     if (_cloudLaunch && _cloudLaunch.stopRequested) {
       launchLog('■ Launch cancelled before it reached the VM — nothing was dispatched.');
+      _clearCloudLaunchPending();
       if (typeof showCampaignToast === 'function') {
         showCampaignToast('Launch cancelled — nothing reached the VM, and your campaign is still saved as a draft.', 6000);
       }
@@ -15075,6 +15211,10 @@ async function _submitCloudCampaign(body) {
     // shows up as a card that spins forever instead of an error the operator
     // can read. 4 minutes clears the worst honest case (a big sheet: 30s x2 for
     // the CSV, plus GoLogin, plus a 20s engine call) with room to spare.
+    if (_cloudLaunch) {
+      _cloudLaunch.postStarted = true;
+      _saveCloudLaunchPending();
+    }
     const res = await fetch('/api/campaign/start-cloud', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -15089,6 +15229,7 @@ async function _submitCloudCampaign(body) {
     if (!res.ok || data.error) {
       const why = String(data.error || txt).split('\n')[0];
       launchLog(`✗ Launch failed — ${why}`);
+      _clearCloudLaunchPending();
       // No native alert: it blocks the whole app, says nothing about what to do
       // next, and the card underneath it was being torn down anyway.
       failCloudLaunch(why, (data.diagnostic && data.diagnostic.fixes) || []);
@@ -15118,17 +15259,20 @@ async function _submitCloudCampaign(body) {
           : 'Launch cancelled, but the VM did not confirm. Open the campaign and stop it by hand.', 9000);
       }
       if (!stopped) failCloudLaunch('The campaign reached the VM but the stop was not confirmed. Open it and stop it by hand.');
+      _clearCloudLaunchPending();
       return;
     }
     if (_cloudLaunch) _cloudLaunch.leadsRead = Number(data.leadsAdded) || 0;
     setCloudLaunchPhase('accepted');
     launchLog(`☁︎ Campaign accepted by the VM — ${data.leadsAdded || 0} lead(s) loaded`);
     // Draft consumed on launch, same as the local path.
-    try {
-      const draftId = getActiveDraftId();
-      if (draftId) await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
-      clearActiveDraft();
-    } catch { /* non-fatal */ }
+    const draftConsumed = await _consumeCloudLaunchDraft(launchDraftId);
+    if (draftConsumed) _clearCloudLaunchPending();
+    for (const line of (_cloudLaunch?.logs || [])) _pushCloudEvent(data.id, line);
+    if (!draftConsumed && !_cloudLaunchRecoveryTimer) {
+      _reconcilePendingCloudLaunch();
+      _cloudLaunchRecoveryTimer = setInterval(_reconcilePendingCloudLaunch, 5000);
+    }
     // Scheduled on the VM: the engine holds it in 'scheduled' and wakes itself at
     // the chosen time. Nothing is live yet, so there's no live card to open —
     // land back on the dashboard where the campaign shows with its start time.
@@ -15145,6 +15289,14 @@ async function _submitCloudCampaign(body) {
     if (data.id) { try { await openCloudLive(data.id); } catch (_) { /* */ } }
   } catch (e) {
     launchLog(`✗ Launch stopped — ${e.name === 'TimeoutError' || e.name === 'AbortError' ? 'it did not finish within 4 minutes' : e.message}`);
+    if (_cloudLaunch && _cloudLaunch.postStarted && _pendingCloudLaunch()) {
+      _cloudLaunch.phase = 'reconciling';
+      _cloudLaunch.recovering = true;
+      launchLog('⏳ Dispatch response is unavailable. Checking the engine by launch ID; do not press Start again until this is resolved.');
+      _reconcilePendingCloudLaunch();
+      if (!_cloudLaunchRecoveryTimer) _cloudLaunchRecoveryTimer = setInterval(_reconcilePendingCloudLaunch, 5000);
+      return;
+    }
     // Name the reason. A timeout here is not "could not reach the engine" — the
     // request may never have got past reading the sheet — and saying so sent
     // operators looking at the wrong thing.
@@ -29077,7 +29229,9 @@ function _stageOverview(status, ca, la, phase) {
     // or three words, and say what is happening NOW: during a launch the sheet
     // is being read on this Mac, and nothing on the VM has started at all.
     const _lp = String((status && status.launchPhase) || '');
-    side = _lp === 'handshake'
+    side = _lp === 'reconciling'
+      ? ['Engine receipt', 'not confirmed', 'Checking the VM by launch ID · do not start again']
+      : _lp === 'handshake'
       ? ['Connecting to the primary', 'on this Mac', 'Nothing has been sent yet']
       : _lp === 'preflight'
         ? ['Checking your accounts', 'on this Mac', 'Nothing has been sent yet']
@@ -29086,7 +29240,9 @@ function _stageOverview(status, ca, la, phase) {
           : _lp === 'dispatching'
             ? ['Reading your sheet', 'on this Mac', 'Nothing has been sent yet']
             : ['Starting up', 'about 2 minutes', 'Workers sleep when idle · nothing is lost while it wakes'];
-    next = ['Next expected event', 'First sender browser opens', `${pending} lead${pending === 1 ? '' : 's'} remain safe and unconsumed.`];
+    next = _lp === 'reconciling'
+      ? ['Next expected event', 'Engine confirms or rejects this launch', 'The saved draft remains available for recovery.']
+      : ['Next expected event', 'First sender browser opens', `${pending} lead${pending === 1 ? '' : 's'} remain safe and unconsumed.`];
   } else if (phase === 'paused') {
     side = ['Campaign state', 'Paused safely', 'No new lead starts until the operator resumes'];
     next = ['Operator action', 'Resume here or switch machines', 'The campaign continues from its saved queue position.'];
