@@ -81,10 +81,18 @@ DEV_VERSION="$(image_tag "$DEV_NAMESPACE" "$DEPLOYMENT")" || {
   echo "Could not read the development engine version. Run: gcloud auth login"
   exit 1
 }
-LIVE_VERSION="$(image_tag "$LIVE_NAMESPACE" "$LIVE_DEPLOYMENT")" || {
-  echo "Could not read the live engine version. Run: gcloud auth login"
+if [ -n "${ORTUS_EXPECTED_ENGINE_TAG:-}" ] && [ "$DEV_VERSION" != "$ORTUS_EXPECTED_ENGINE_TAG" ]; then
+  echo "Engine image mismatch: expected $ORTUS_EXPECTED_ENGINE_TAG, found $DEV_VERSION. Electron was not started."
   exit 1
-}
+fi
+if [ "${ORTUS_ENGINE_ENVIRONMENT:-}" = "preview" ]; then
+  LIVE_VERSION="not queried"
+else
+  LIVE_VERSION="$(image_tag "$LIVE_NAMESPACE" "$LIVE_DEPLOYMENT")" || {
+    echo "Could not read the live engine version. Run: gcloud auth login"
+    exit 1
+  }
+fi
 
 # Electron must list profiles from the SAME GoLogin workspaces as the dev engine
 # — all of them, not just the primary one. Loading the app's normal .env here
@@ -120,26 +128,27 @@ fi
 # A paced desktop must not open against an old/disabled or unrelated engine.
 # This reserves one allowance only; it makes no GoLogin or LinkedIn request.
 if [ "${GOLOGIN_REQUEST_PACING:-0}" = "1" ]; then
-  if [ "$DEV_NAMESPACE" != "salesnav-previews" ] || [ "$DEPLOYMENT" != "preview-pr-19-salesnav-scraper" ] || [ "$LOCAL_ENGINE_PORT" != "3119" ]; then
-    echo "Shared request pacing is restricted to isolated PR-19 on port 3119."
+  PACING_PR="${ORTUS_PREVIEW_PR:-}"
+  if [ "$DEV_NAMESPACE" != "salesnav-previews" ] || { [ "$PACING_PR" != "19" ] && [ "$PACING_PR" != "40" ]; } || [ "$DEPLOYMENT" != "preview-pr-${PACING_PR}-salesnav-scraper" ] || { [ "$PACING_PR" = "19" ] && [ "$LOCAL_ENGINE_PORT" != "3119" ]; } || { [ "$PACING_PR" = "40" ] && [ "$LOCAL_ENGINE_PORT" != "3140" ]; }; then
+    echo "Shared request pacing requires isolated PR-19:3119 or DEV-40:3140."
     exit 1
   fi
   PACING_REPLY="$(curl -fsS --max-time 5 -X POST \
     -H "Authorization: Bearer $ENGINE_TOKEN" -H 'Content-Type: application/json' \
     --data '{"workspace":"ortus","priority":"ordinary"}' \
     "http://127.0.0.1:$LOCAL_ENGINE_PORT/api/gologin/admission/reserve")" || {
-      echo "PR-19 request coordinator is unavailable or disabled; Electron was not started."
+      echo "Preview request coordinator is unavailable or disabled; Electron was not started."
       exit 1
     }
   if ! printf '%s' "$PACING_REPLY" | node -e '
     let input=""; process.stdin.on("data",d=>input+=d).on("end",()=>{
-      try { const x=JSON.parse(input); if(x.namespace!=="preview-pr-19" || x.scope!=="pilot-fleet" || typeof x.allowed!=="boolean")process.exitCode=1; }
+      try { const x=JSON.parse(input); if(x.namespace!==`preview-pr-${process.argv[1]}` || x.scope!=="pilot-fleet" || typeof x.allowed!=="boolean")process.exitCode=1; }
       catch { process.exitCode=1; }
-    });'; then
-    echo "Coordinator identity does not match PR-19; Electron was not started."
+    });' "$PACING_PR"; then
+    echo "Coordinator identity does not match the preview; Electron was not started."
     exit 1
   fi
-  echo "  pacing:       coordinated PR-19 pilot (fail closed)"
+  echo "  pacing:       coordinated preview $PACING_PR (fail closed)"
 fi
 
 # A teammate cloning only the app repository does not need the GoLogin secret
@@ -185,6 +194,7 @@ env \
   SCRAPER_ENGINE_URL="http://127.0.0.1:$LOCAL_ENGINE_PORT" \
   SCRAPER_ENGINE_TOKEN="$ENGINE_TOKEN" \
   SCRAPER_ENGINE_VERSION="$DEV_VERSION" \
+  ORTUS_ENGINE_LABEL="${ORTUS_ENGINE_LABEL:-}" \
   PRODUCTION_ENGINE_VERSION="$LIVE_VERSION" \
   ORTUS_ENGINE_ENVIRONMENT="${ORTUS_ENGINE_ENVIRONMENT:-development}" \
   ORTUS_PREVIEW_PR="${ORTUS_PREVIEW_PR:-}" \

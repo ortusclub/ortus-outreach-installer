@@ -479,6 +479,7 @@ app.get('/api/health', (_req, res) => {
     scraperConfigured: isScraperConfigured(),
     scraperEngineUrl,
     scraperEngineVersion,
+    scraperEngineLabel: process.env.ORTUS_ENGINE_LABEL || null,
     scraperEngineEnvironment,
     previewPr: process.env.ORTUS_PREVIEW_PR || null,
     scraperEngineSourceSha: process.env.ORTUS_ENGINE_SOURCE_SHA || null,

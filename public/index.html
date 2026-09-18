@@ -7,9 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.60.35" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.35" />
-  <link rel="stylesheet" href="/css/launch-review.css?v=3.1.60.35" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.60.36" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.36" />
+  <link rel="stylesheet" href="/css/launch-review.css?v=3.1.60.36" />
   <link rel="stylesheet" href="/css/automation-layout.css?v=layout-a-1" />
   <link rel="stylesheet" href="/css/account-recovery.css?v=4" />
   <link rel="stylesheet" href="/css/recovery-panel.css?v=1" />
@@ -4398,7 +4398,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.60.35"></script>
+<script type="module" src="/js/app.js?v=3.1.60.36"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4420,12 +4420,12 @@
         const isDev = d.scraperEngineEnvironment === 'development' || isPreview;
         banner.classList.remove('is-loading', 'is-development', 'is-production', 'is-error');
         banner.classList.add(isDev ? 'is-development' : 'is-production');
-        document.getElementById('engine-version-environment').textContent = isPreview ? 'PR PREVIEW ENGINE' : (isDev ? 'DEVELOPMENT ENGINE' : 'LIVE PRODUCTION');
+        document.getElementById('engine-version-environment').textContent = d.scraperEngineLabel || (isPreview ? 'PR PREVIEW ENGINE' : (isDev ? 'DEVELOPMENT ENGINE' : 'LIVE PRODUCTION'));
         document.getElementById('engine-version-current').textContent = d.scraperEngineVersion || 'unverified';
         document.getElementById('engine-version-live').textContent = d.productionEngineVersion || 'unverified';
         document.getElementById('engine-version-url').textContent = d.scraperEngineUrl || 'Not configured';
         document.getElementById('engine-version-explanation').textContent = isPreview
-          ? `Temporary isolated engine for PR ${d.previewPr || '?'}, source ${(d.scraperEngineSourceSha || 'unverified').slice(0, 12)}. Full GoLogin pool available — confirm the chosen account is idle elsewhere before testing.`
+          ? `${d.scraperEngineLabel || `Temporary isolated engine for PR ${d.previewPr || '?'}`}, source ${(d.scraperEngineSourceSha || 'unverified').slice(0, 12)}. Full GoLogin pool available — confirm the chosen account is idle elsewhere before testing.`
           : isDev
           ? 'Shared development environment. Your colleagues may be testing here too; use a PR preview for simultaneous work.'
           : 'This app and your colleagues are using the same live production engine.';
