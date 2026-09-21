@@ -11,6 +11,8 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage();
   await page.addInitScript(({ launchId, draftId }) => {
+    if (sessionStorage.getItem('cloud-recovery-test-initialized')) return;
+    sessionStorage.setItem('cloud-recovery-test-initialized', '1');
     localStorage.setItem('ortus.activeDraftId', draftId);
     localStorage.setItem('ortus.pr19.cloudLaunchPending.v1', JSON.stringify({
       launchId, draftId, name: 'Saved VM draft', mode: 'connect_and_message',
@@ -48,6 +50,43 @@ try {
   await page.waitForFunction(() => !localStorage.getItem('ortus.pr19.cloudLaunchPending.v1'), { timeout: 12000 });
   assert.equal(draftDeleted, true, 'the exact saved draft is consumed after engine receipt');
   assert.equal(await page.evaluate(() => localStorage.getItem('ortus.activeDraftId')), null);
+
+  // A refresh before POST must leave the saved draft available, with a clear
+  // outcome rather than an endless "checking VM" card.
+  draftDeleted = false;
+  engineAccepted = false;
+  await page.evaluate(({ launchId, draftId }) => {
+    localStorage.setItem('ortus.pr19.cloudLaunchPending.v1', JSON.stringify({
+      launchId, draftId, name: 'Saved VM draft', mode: 'message_only',
+      profileIds: [], startedAt: Date.now(), phase: 'preflight', postStarted: false,
+      logs: ['Checking the sheet · 10:24'],
+    }));
+  }, { launchId, draftId });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#active-card')?.textContent.includes('The page closed before the campaign was sent'));
+  assert.match(await page.locator('#active-retry').innerText(), /Back to launch settings/);
+  assert.equal(draftDeleted, false, 'the pre-dispatch draft remains saved');
+  assert.equal(await page.evaluate(() => localStorage.getItem('ortus.pr19.cloudLaunchPending.v1')), null);
+
+  // A missing receipt after the bounded wait is a review state, not an
+  // indefinite spinner or permission to send again under a new launch ID.
+  await page.evaluate(({ launchId, draftId }) => {
+    localStorage.setItem('ortus.pr19.cloudLaunchPending.v1', JSON.stringify({
+      launchId, draftId, name: 'Saved VM draft', mode: 'follower_growth',
+      profileIds: ['sender-1'], startedAt: Date.now() - 7 * 60 * 1000,
+      postStartedAt: Date.now() - 6 * 60 * 1000, postStarted: true,
+      phase: 'dispatching', logs: ['Sending to VM · 10:24'],
+    }));
+  }, { launchId, draftId });
+  await page.reload();
+  await page.waitForFunction(() => {
+    try { return JSON.parse(localStorage.getItem('ortus.pr19.cloudLaunchPending.v1'))?.needsReview === true; }
+    catch { return false; }
+  });
+  assert.match(await page.locator('#active-card').innerText(), /Launch needs review/);
+  assert.match(await page.locator('#active-retry').innerText(), /Review and clear pending launch/);
+  assert.equal(draftDeleted, false, 'the unresolved draft remains saved for review');
+  assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('ortus.pr19.cloudLaunchPending.v1'))).needsReview, true);
 } finally {
   await browser.close();
 }

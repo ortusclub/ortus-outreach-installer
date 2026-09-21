@@ -64,11 +64,16 @@ export function queueState(campaign = {}, capacity = {}, accounts = null) {
     };
   }
 
-  // Position is the engine's own FIFO order read back, not a guess. Absent from
-  // the queue (or no capacity reading at all) → say nothing rather than invent.
+  // Position is the engine's own FIFO order read back, not a guess. When that
+  // reading is missing, still say what is known: the engine accepted the run.
+  // Never imply that a worker has picked it up or give a guessed position.
   const queue = Array.isArray(capacity.queue) ? capacity.queue : [];
   const idx = queue.indexOf(campaign.id);
-  if (capacity.unavailable || idx < 0) return null;
+  if (capacity.unavailable || idx < 0) return {
+    kind: 'unknown', badge: 'ACCEPTED BY VM',
+    line: `Campaign accepted — checking worker and queue status${waiting}`,
+    note: 'The engine has the campaign. Its worker position is not available yet; this card will update when the VM reports it.',
+  };
 
   const ahead = idx;
   const active = Number(capacity.active) || 0;

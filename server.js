@@ -65,7 +65,7 @@ import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSal
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, heldLocalOutcomeUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal, waitForVerifiedCloudRelease } from './src/handover.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignLeadsAll, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, prepareCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignLeadsAll, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob, cancelHandshakeJob } from './src/cloud-handshake-job.js';
 import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
@@ -1054,15 +1054,9 @@ app.post('/api/templates/preview', async (req, res) => {
         ? (_soOFirstByName[_perRowSender.toLowerCase()] || '')
         : '';
 
-      data.senderName = _perRowSender || pName || '';
       const resolvedFirst = _perRowFirst || senderFirstNames[profileId];
-      // v2.11.14: friendlier fallback for local-browser — if the operator
-      // hasn't set a localBrowserFirstName yet, prefer "You" over the raw
-      // profile id string so the preview reads naturally.
-      const fallbackFirst = (profileId === 'local-browser')
-        ? 'You'
-        : ((pName || '').split(/\s+/)[0] || '');
-      data.senderFirstName = (resolvedFirst && resolvedFirst.trim()) || fallbackFirst;
+      data.senderName = (resolvedFirst && resolvedFirst.trim()) || (_wantsPerRowSender ? '' : pName);
+      data.senderFirstName = (resolvedFirst && resolvedFirst.trim()) || '';
 
       // v2.11.14: when intro mode is on, mirror outreach.js:462's introData
       // injection so {intro name} / {intro first name} / {intro last name}
@@ -1402,12 +1396,59 @@ function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 // /api/campaign/start path below is untouched.
 // Named so /api/campaign/cloud/:id/edit-redispatch can re-enter the same
 // pipeline after stopping the original campaign (excludeLeadUrls set).
+// The start request can spend minutes in sheet and account preparation before
+// the engine has a campaign row. Keep a short-lived, launch-id-scoped receipt
+// for the UI to poll while that request is still open.
+const cloudLaunchProgress = new Map();
+const cloudLaunchControls = new Map();
+function reportCloudLaunchProgress(id, message, phase = 'preparing') {
+  if (!id || !/^[-\w]{8,}$/.test(String(id))) return;
+  cloudLaunchProgress.set(String(id), { phase, message, at: Date.now() });
+  for (const [key, value] of cloudLaunchProgress) {
+    if (Date.now() - value.at > 15 * 60 * 1000) cloudLaunchProgress.delete(key);
+  }
+}
+app.get('/api/campaign/cloud-launch/:id/progress', (req, res) => {
+  const progress = cloudLaunchProgress.get(String(req.params.id));
+  if (!progress) return res.status(404).json({ error: 'No launch progress recorded yet' });
+  res.json(progress);
+});
+app.post('/api/campaign/cloud-launch/:id/cancel', (req, res) => {
+  const id = String(req.params.id || '');
+  const control = cloudLaunchControls.get(id);
+  if (!control) {
+    reportCloudLaunchProgress(id, 'Cancel recorded before cloud dispatch.', 'cancelled');
+    return res.json({ ok: true, cancelled: true, pending: false });
+  }
+  control.cancelled = true;
+  try { control.controller.abort(new Error('Launch cancelled by operator')); } catch { /* already stopped */ }
+  reportCloudLaunchProgress(id, 'Cancelled immediately. Sheet and account preparation stopped.', 'cancelled');
+  res.json({ ok: true, cancelled: true, pending: true });
+});
+
 async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
+  const requestedLaunchId = String(req.body?.launchId || '');
+  const launchControl = requestedLaunchId
+    ? { controller: new AbortController(), cancelled: false, createdAt: Date.now() }
+    : null;
+  if (launchControl) cloudLaunchControls.set(requestedLaunchId, launchControl);
+  const throwIfCancelled = () => {
+    if (!launchControl?.cancelled && !launchControl?.controller.signal.aborted) return;
+    const err = new Error('Launch cancelled by operator');
+    err.code = 'LAUNCH_CANCELLED';
+    throw err;
+  };
   try {
     const body = req.body || {};
     const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
-      delayMin, delayMax, launchId, startAt } = body;
+      delayMin, delayMax, launchId, startAt, vmWorkerNumber } = body;
+    reportCloudLaunchProgress(launchId, 'Checking campaign settings and accounts…');
     if (!isCloudMode(mode)) return res.status(400).json({ error: `Mode "${mode}" can't run in the cloud yet.` });
+    const vmSlot = Number(vmWorkerNumber);
+    if (!handoverLogs && (!Number.isInteger(vmSlot) || vmSlot < 1 || vmSlot > 20)) {
+      return res.status(400).json({ error: 'Choose a VM worker from 01 to 20.' });
+    }
+    if (mode === 'open_profile_only' && !templates?.openProfileBody?.trim()) return res.status(400).json({ error: 'Message Campaign body required' });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     // "Schedule on the VM": validate the instant HERE so a typo fails at the
     // click, not silently at 6am. The engine ignores a past startAt (starts now),
@@ -1419,12 +1460,25 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
     }
     if (rejectIfNoOperatorEmail(res)) return;
     if (await rejectIfForeignProfiles(req, res, profileIds, mode)) return;
+    throwIfCancelled();
+
+    // Product capacity is deliberately one plain number in the app. The
+    // cluster can burst higher internally, but new operator launches stop at
+    // the agreed safe limit so “20 total” is a rule rather than decoration.
+    if (!handoverLogs) {
+      const capacity = await getCloudCapacity();
+      if (!capacity?.error && Number(capacity?.active) >= 20) {
+        return res.status(409).json({ error: 'All 20 cloud campaign slots are in use. Run this campaign on This Mac or wait for a slot.', capacityFull: true });
+      }
+      throwIfCancelled();
+    }
 
     // ── Pre-flight gate: same ack/blocklist check as /api/campaign/start ─────
     // An existing campaign already passed launch preflight. Re-running it
     // during a machine move can strand a confirmed-stopped source on a fresh
     // warning that has no bearing on ownership or duplicate-send safety.
     if (!handoverLogs && !await runPreflightGate(req, res)) return;
+    throwIfCancelled();
 
     // Auto-routed modes derive the account per-row from the sheet's sender
     // column (the picker is hidden for them), so we pin each lead to its
@@ -1434,7 +1488,9 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
     // Profiles are fetched for ALL modes now (not just auto-routed): the engine
     // needs an accountEmails map (profileId -> SoO email) so it can stamp SoO
     // Needs-Login when a cloud session dies. Best-effort — [] on failure.
+    reportCloudLaunchProgress(launchId, 'Loading GoLogin account names…');
     const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
+    throwIfCancelled();
     const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
     let nameToId = null;
     if (autoRouted) {
@@ -1453,7 +1509,14 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
     // Resolve the correct tab (mirrors runPreflightGate + campaign.js withGid).
     const cloudGid = body.sheetGid != null ? String(body.sheetGid).replace(/\D/g, '') : '';
     const cloudSheetUrl = withGid(sheetUrl, cloudGid);
-    const rows = await fetchSheet(cloudSheetUrl);
+    const preparedRows = Array.isArray(req._preflightRows)
+      ? req._preflightRows.map((entry) => entry && entry.row).filter(Boolean)
+      : null;
+    reportCloudLaunchProgress(launchId, preparedRows
+      ? `Using the ${preparedRows.length} rows already verified by pre-flight…`
+      : 'Reading the selected sheet tab…');
+    const rows = preparedRows || await fetchSheet(cloudSheetUrl, { signal: launchControl?.controller.signal });
+    throwIfCancelled();
 
     // Hard-exclude blocklisted + client-pre-flight-excluded URLs. Applies to
     // ALL modes now (operator decision 2026-07-10) — blocklistExcludedUrls is no
@@ -1508,6 +1571,7 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
     // Ensure the sheet has the tracking columns before the cloud engine writes
     // back to them (the engine's write skips columns that don't exist). Same
     // step the local campaign flow does at start. Best-effort — never blocks.
+    reportCloudLaunchProgress(launchId, `Prepared ${leads.length} leads${skippedNoAccount.length ? `; ${skippedNoAccount.length} rows have no matching sender` : ''}. Checking sheet columns…`);
     try {
       const { ensureTrackingColumns } = await import('./src/sheets-writer.js');
       // cloudSheetUrl (NOT the raw sheetUrl) — the operator's chosen tab. The raw
@@ -1515,6 +1579,7 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
       // ensured on the SAME tab the engine reads + writes back to.
       await ensureTrackingColumns(cloudSheetUrl, mode);
     } catch (e) { cloudLog(`[cloud] ensureColumns skipped: ${e.message}`); }
+    throwIfCancelled();
     // Accounts: picker for normal modes; distinct routed accounts otherwise.
     const accounts = autoRouted
       ? [...new Set(leads.map((l) => l.routeAccount).filter(Boolean))]
@@ -1523,6 +1588,7 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
     // accountEmails: profileId -> SoO Email, resolved with the same fuzzy
     // matcher (+ skip-on-doubt) local flipSoOInUse uses. Lets the engine stamp
     // SoO Needs-Login for a dead cloud session. Best-effort — {} on failure.
+    reportCloudLaunchProgress(launchId, `Checking ${accounts.length} sender account${accounts.length === 1 ? '' : 's'}…`);
     const accountEmails = {};
     try {
       const soo = await fetchSoOData();
@@ -1535,6 +1601,7 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
         else if (r && r.ambiguous) cloudLog(`[cloud] SoO email ambiguous for "${label}" — skipped (no Needs-Login stamping for it)`);
       }
     } catch (e) { cloudLog(`[cloud] accountEmails skipped: ${e.message}`); }
+    throwIfCancelled();
 
     // SoO "In Use" flip at DISPATCH. The engine has no SoO code, so the app does
     // here what a local campaign does at its first send: flip each account's
@@ -1590,6 +1657,7 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
     const t = templates || {};
     const config = {
       ...t,
+      ...(Number.isInteger(vmSlot) && vmSlot >= 1 && vmSlot <= 20 ? { vmWorkerNumber: vmSlot } : {}),
       ...(handoverLogs ? { handoverLogs } : {}),
       checkIntervalMinutes: body.checkIntervalMinutes ?? t.checkIntervalMinutes ?? 60,
       autoChecksEnabled: body.autoChecksEnabled ?? t.autoChecksEnabled ?? true,
@@ -1672,6 +1740,8 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
     // /api/operator-identity). Tagging with req.user (the shared login) made a
     // running campaign show as "someone else's" → hidden → unstoppable from the
     // UI. Fall back to the login only when no operator email is set.
+    reportCloudLaunchProgress(launchId, 'Sending the campaign to the cloud engine…', 'dispatching');
+    throwIfCancelled();
     const result = await startCloudCampaign({
       // Idempotency: a duplicated POST (operator re-click, retry, second window)
       // with the same launchId collapses to ONE campaign engine-side.
@@ -1688,15 +1758,36 @@ async function handleStartCloud(req, res, { handoverLogs = null } = {}) {
       primaryConn,
       startAt: startAt || undefined,
       startPaused: body.startPaused === true,
+      ...(Number.isInteger(vmSlot) && vmSlot >= 1 && vmSlot <= 20 ? { vmWorkerNumber: vmSlot } : {}),
     });
-    if (result.error) return res.status(502).json({ error: result.error, cloud: true });
+    if (launchControl?.cancelled || launchControl?.controller.signal.aborted) {
+      if (result && !result.error && result.id) await stopCloudCampaign(result.id).catch(() => null);
+      reportCloudLaunchProgress(launchId, 'Cancelled. Any dispatch race was stopped.', 'cancelled');
+      return res.status(409).json({ ok: false, cancelled: true, error: 'Launch cancelled by operator' });
+    }
+    if (result.error) {
+      reportCloudLaunchProgress(launchId, `Cloud engine refused the launch: ${result.error}`, 'failed');
+      return res.status(502).json({ error: result.error, cloud: true });
+    }
+    reportCloudLaunchProgress(launchId, `Cloud engine accepted ${result.leadsAdded} leads across ${accounts.length} accounts.`, 'accepted');
     cloudLog(`[cloud] campaign ${result.id} (${mode}) ${result.paused ? 'moved paused' : (result.scheduled ? `SCHEDULED for ${result.startAt}` : 'dispatched')} to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
     // Snapshot the wizard config so the campaign can be duplicated later (the
     // engine doesn't return templates/delays). Best-effort — never blocks dispatch.
     saveCloudLaunchConfig(result.id, name || '', body).catch((e) => cloudLog(`[cloud] launch-config save failed: ${e.message}`));
-    res.json({ ok: true, cloud: true, ...result, phase: result.paused ? 'paused' : undefined });
+    res.json({ ok: true, cloud: true, ...result, skippedNoAccount: skippedNoAccount.length,
+      phase: result.paused ? 'paused' : undefined });
   } catch (e) {
+    if (e?.code === 'LAUNCH_CANCELLED' || launchControl?.cancelled || launchControl?.controller.signal.aborted) {
+      reportCloudLaunchProgress(req.body?.launchId, 'Cancelled immediately. Nothing was dispatched.', 'cancelled');
+      if (!res.headersSent) return res.status(409).json({ ok: false, cancelled: true, error: 'Launch cancelled by operator' });
+      return;
+    }
+    reportCloudLaunchProgress(req.body?.launchId, `Launch failed: ${e.message}`, 'failed');
     res.status(500).json({ error: e.message });
+  } finally {
+    if (requestedLaunchId) setTimeout(() => {
+      if (cloudLaunchControls.get(requestedLaunchId) === launchControl) cloudLaunchControls.delete(requestedLaunchId);
+    }, 60_000).unref?.();
   }
 }
 const CLOUD_MEMO_TTL_MS = 10_000;
@@ -1747,6 +1838,13 @@ app.use('/api/campaign', (req, _res, next) => {
 
 app.post('/api/campaign/start-cloud', handleStartCloud);
 
+app.post('/api/campaign/cloud-capacity/prepare', async (_req, res) => {
+  const result = await prepareCloudCapacity();
+  if (result?.error) return res.status(result.status || 502).json(result);
+  _cloudMemo.delete('capacity');
+  res.json(result);
+});
+
 // Cloud-campaign observability — proxied through the local server so the
 // frontend never handles the engine token (it lives in campaigns-client). The
 // "Cloud Campaigns" panel polls these.
@@ -1770,6 +1868,7 @@ app.get('/api/campaign/cloud-list', async (req, res) => {
 // A 502 here is not an error worth showing — the card simply falls back to its
 // old wording. Answer with an empty shape so the renderer has one code path.
 app.get('/api/campaign/cloud-capacity', async (_req, res) => {
+  if (_req.query?.t) _cloudMemo.delete('capacity');
   const r = await memoCloud('capacity', () => getCloudCapacity());
   if (r.error) return res.json({ queue: [], unavailable: true });
   res.json(r);
@@ -2446,7 +2545,7 @@ app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
   }
 });
 
-// ── Handover: move a live campaign between the Cloud VM and this Mac ────────
+// ── Handover: move a live campaign between the Cloud and this Mac ────────
 // Same shape as edit-redispatch above (stop one side, resume the remainder on
 // the other with the already-processed leads excluded), generalised into a
 // durable ownership change in either direction.
@@ -3112,9 +3211,22 @@ app.get('/api/campaign/cloud/:id/view', async (req, res) => {
 // In-memory ack registry: token → expiry. Proves the operator saw exactly
 // these findings when /api/campaign/start later carries preflightAck.
 const _preflightAcks = new Map();
+const _preflightLaunchSnapshots = new Map();
 function _registerAck(token) {
   _preflightAcks.set(token, Date.now() + 15 * 60 * 1000); // 15-min validity
   for (const [t, exp] of _preflightAcks) if (exp < Date.now()) _preflightAcks.delete(t);
+}
+function _rememberPreflightSnapshot(token, req, effectiveUrl, rows) {
+  if (!token || !Array.isArray(rows)) return;
+  _preflightLaunchSnapshots.set(token, {
+    owner: String(req.user || getOperatorEmail() || '').toLowerCase(),
+    effectiveUrl,
+    rows,
+    expiresAt: Date.now() + 2 * 60 * 1000,
+  });
+  for (const [key, value] of _preflightLaunchSnapshots) {
+    if (!value || value.expiresAt < Date.now()) _preflightLaunchSnapshots.delete(key);
+  }
 }
 
 /**
@@ -3135,7 +3247,13 @@ async function runPreflightGate(req, res) {
       ? String(req.body.sheetGid).replace(/\D/g, '')
       : '';
     const effectiveUrl = withGid(rawSheetUrl, resolvedGid);
-    const gateRows = await fetchSheetWithRows(effectiveUrl);
+    const provided = String(req.body?.preflightAck || '');
+    const owner = String(req.user || getOperatorEmail() || '').toLowerCase();
+    const saved = _preflightLaunchSnapshots.get(provided);
+    const gateRows = saved && saved.expiresAt >= Date.now()
+      && saved.owner === owner && saved.effectiveUrl === effectiveUrl
+      ? saved.rows
+      : await fetchSheetWithRows(effectiveUrl);
     const gateGidExplicit = /[#&?]gid=\d+/.test(effectiveUrl) || !!resolvedGid;
     let gateTabs = 1;
     if (!gateGidExplicit) {
@@ -3165,7 +3283,6 @@ async function runPreflightGate(req, res) {
       return false;
     }
     const expected = ackFor(gateFindings);
-    const provided = String(req.body?.preflightAck || '');
     const ackKnown = _preflightAcks.has(provided) && provided === expected;
     const gate = decidePreflightGate({ findings: gateFindings, ackProvided: ackKnown ? provided : '', ackExpected: expected });
     if (!gate.allow) {
@@ -3176,6 +3293,10 @@ async function runPreflightGate(req, res) {
     if (gate.excludeRows.length) {
       req.body._preflightExcludedUrls = gate.excludeRows.map((f) => f.url).filter(Boolean);
     }
+    // handleStartCloud needs these exact rows next. Passing this request-scoped
+    // snapshot prevents a third download of the same Google Sheet while keeping
+    // the gate authoritative and scoped to this user, URL and two-minute window.
+    req._preflightRows = gateRows;
     return true;
   } catch (gateErr) {
     // If the sheet cannot be read the campaign couldn't run anyway — refuse loudly.
@@ -3218,6 +3339,7 @@ app.post('/api/preflight', async (req, res) => {
 
     const ack = ackFor(findings);
     _registerAck(ack);
+    _rememberPreflightSnapshot(ack, req, effectiveUrl, rows);
     res.json({ ok: true, findings, ack });
   } catch (err) {
     // Sheet unreachable/429 etc. — surfaced now instead of at campaign start.
@@ -3249,6 +3371,7 @@ app.post('/api/campaign/start', async (req, res) => {
 
     const body = req.body || {};
     const { profileIds, sheetUrl, dailyLimit, mode } = body;
+    if (mode === 'open_profile_only' && !body.templates?.openProfileBody?.trim()) return res.status(400).json({ error: 'Message Campaign body required' });
 
     // Retired modes (2026-08-06) — the picker no longer offers them, but a saved
     // draft, a schedule or an old queued row can still carry one, and those all
@@ -5354,6 +5477,7 @@ app.post('/api/campaign/queue-only', async (req, res) => {
 
     const body = req.body || {};
     const { profileIds, sheetUrl, dailyLimit, mode } = body;
+    if (mode === 'open_profile_only' && !body.templates?.openProfileBody?.trim()) return res.status(400).json({ error: 'Message Campaign body required' });
 
     // Retired modes — same gate as /api/campaign/start. Queueing one would just
     // defer the rejection to drain time, where nobody is watching for the error.
@@ -5768,7 +5892,7 @@ app.post('/api/campaign/stop', async (req, res) => {
 });
 
 // Permanently remove the local crash/stop recovery copy. This deliberately
-// cannot touch a running local campaign, monitoring watcher, or any Cloud VM
+// cannot touch a running local campaign, monitoring watcher, or any Cloud
 // campaign; it only deletes the inactive runtime-interruption journal that
 // creates the stale "This Mac unavailable" board card.
 app.delete('/api/campaign/interrupted', (_req, res) => {
@@ -8208,8 +8332,10 @@ function registerSchedule(schedule) {
   // Stop existing jobs for this schedule (main + pre-fire)
   if (activeJobs.has(schedule.id)) {
     const { main, prefire } = activeJobs.get(schedule.id);
-    main?.stop();
-    prefire?.stop();
+    main?.stop?.();
+    prefire?.stop?.();
+    main?.clear?.();
+    prefire?.clear?.();
   }
   if (!schedule.enabled) return;
   if (!cron.validate(schedule.cron)) {
@@ -8220,7 +8346,7 @@ function registerSchedule(schedule) {
   // Pre-fire heads-up (5 minutes before) — sent to the creator of the schedule
   const preExpr = shiftCronMinutes(schedule.cron, -5);
   let prefire = null;
-  if (preExpr && cron.validate(preExpr)) {
+  if (!schedule.startAt && preExpr && cron.validate(preExpr)) {
     prefire = cron.schedule(preExpr, () => {
       const [mn, hr] = schedule.cron.split(' ');
       const timeStr = `${String(hr).padStart(2, '0')}:${String(mn).padStart(2, '0')}`;
@@ -8238,7 +8364,14 @@ function registerSchedule(schedule) {
   }
 
   // Main fire
-  const main = cron.schedule(schedule.cron, async () => {
+  const fire = async () => {
+    const current = (await loadSchedules()).find((s) => s.id === schedule.id);
+    if (!current?.enabled || current.startAt !== schedule.startAt) return;
+    if (schedule.startAt) {
+      current.enabled = false; // a dated schedule is consumed before any network work
+      current.lastRun = new Date().toISOString();
+      await saveSchedules((await loadSchedules()).map((s) => s.id === current.id ? current : s));
+    }
     const handshake = getHandshakeJob();
     if (handshake.active && (!handshake.done || handshake.stopping)) return;
     if (!startupAdmission.available() || checkDms.running || postAmp.running || _manualSweepRunning || _recoveryInFlight) return;
@@ -8250,21 +8383,24 @@ function registerSchedule(schedule) {
       ? notifyEmail(schedule.createdBy, payload)
       : notifyAll(payload);
 
-    notify({
-      title: 'Campaign started',
-      body: `${schedule.name} is running now on ${schedule.profileIds.length} account(s).`,
-      link: '/',
-    }).catch(() => {});
     preventSleep(`schedule:${schedule.name}`);
     try {
+      let gateError = null;
+      const gateResponse = {
+        status(code) { gateError = { code }; return this; },
+        json(body) { gateError = { ...gateError, ...body }; return this; },
+      };
+      const gateRequest = { body: { ...schedule } };
+      if (!await runPreflightGate(gateRequest, gateResponse)) {
+        throw new Error(gateError?.error || 'Scheduled campaign pre-flight failed');
+      }
+      notify({
+        title: 'Scheduled campaign starting',
+        body: `${schedule.name} passed its pre-flight check and is starting on ${schedule.profileIds.length} account(s).`,
+        link: '/',
+      }).catch(() => {});
       await startCampaign({
-        profileIds: schedule.profileIds,
-        sheetUrl: schedule.sheetUrl,
-        templates: schedule.templates || {},
-        dailyLimit: schedule.dailyLimit || 50,
-        mode: schedule.mode || 'connect_only',
-        delayMin: schedule.delayMin,
-        delayMax: schedule.delayMax,
+        ...buildCampaignConfig(gateRequest.body),
         createdBy: schedule.createdBy || null,
         // Fix B Task 3: schedules default to pausing on throttle.
         pauseOnThrottle: schedule.pauseOnThrottle === false ? false : true,
@@ -8292,7 +8428,20 @@ function registerSchedule(schedule) {
     } finally {
       allowSleep();
     }
-  });
+  };
+  let main;
+  if (schedule.startAt) {
+    let timer = null;
+    const arm = () => {
+      const delay = Date.parse(schedule.startAt) - Date.now();
+      if (delay <= 0) { fire().catch((err) => console.error('[scheduler] One-time fire failed:', err)); return; }
+      timer = setTimeout(arm, Math.min(delay, 2_147_000_000));
+    };
+    if (Date.parse(schedule.startAt) > Date.now()) arm();
+    main = { clear: () => clearTimeout(timer) };
+  } else {
+    main = cron.schedule(schedule.cron, fire);
+  }
   activeJobs.set(schedule.id, { main, prefire });
 }
 
@@ -8304,11 +8453,18 @@ app.get('/api/schedules', async (_req, res) => {
 
 app.post('/api/schedules', async (req, res) => {
   try {
-    const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, dailyLimit, delayMin, delayMax, enabled } = req.body;
+    const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, enabled, startAt } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
+    if (isRetiredMode(mode)) return res.status(400).json({ error: `"${mode}" campaigns have been retired.` });
     if (!cronExpr || !cron.validate(cronExpr)) return res.status(400).json({ error: 'valid cron expression required' });
-    if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
+    const cronParts = String(cronExpr).split(' ');
+    if (cronParts[2] !== '*' && cronParts[3] !== '*' && !startAt) return res.status(400).json({ error: 'One-time schedules require a dated startAt' });
+    if (!profileIds?.length && mode !== 'introduce_back') return res.status(400).json({ error: 'profileIds required' });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+    if (!Number.isFinite(Number(req.body.dailyLimit)) || Number(req.body.dailyLimit) < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
+    if (req.body.multiTab === true && !String(req.body.sheetGid || '').replace(/\D/g, '')) return res.status(400).json({ error: 'Pick a sheet tab before scheduling' });
+    if (startAt && (!Number.isFinite(Date.parse(startAt)) || Date.parse(startAt) <= Date.now())) return res.status(400).json({ error: 'startAt must be a future date' });
+    if (mode === 'open_profile_only' && !templates?.openProfileBody?.trim()) return res.status(400).json({ error: 'Message Campaign body required' });
 
     const all = await loadSchedules();
     // P-06 fix (2.8.18): validate any client-supplied id against the expected
@@ -8327,10 +8483,9 @@ app.post('/api/schedules', async (req, res) => {
     }
     const existing = all.findIndex(s => s.id === id);
     const schedule = {
-      id, name, cron: cronExpr, profileIds, sheetUrl,
+      ...buildCampaignConfig(req.body),
+      id, name, cron: cronExpr, startAt: startAt || null, profileIds, sheetUrl,
       mode: mode || 'connect_only', templates: templates || {},
-      dailyLimit: dailyLimit || 50,
-      delayMin, delayMax,
       enabled: enabled !== false, lastRun: null,
       // P-06 fix (2.8.18): never trust req.body.createdBy — that lets a
       // logged-in user spoof schedule ownership and redirect notification
@@ -8355,8 +8510,10 @@ app.delete('/api/schedules/:id', async (req, res) => {
     const filtered = all.filter(s => s.id !== req.params.id);
     if (activeJobs.has(req.params.id)) {
       const { main, prefire } = activeJobs.get(req.params.id);
-      main?.stop();
-      prefire?.stop();
+      main?.stop?.();
+      prefire?.stop?.();
+      main?.clear?.();
+      prefire?.clear?.();
       activeJobs.delete(req.params.id);
     }
     await saveSchedules(filtered);
@@ -8757,6 +8914,23 @@ app.listen(PORT, '127.0.0.1', async () => {
 
   // Load and register saved schedules (D-05)
   const bootSchedules = await loadSchedules();
+  let missedSchedule = false;
+  for (const schedule of bootSchedules) {
+    const cronParts = String(schedule.cron || '').split(' ');
+    if (schedule.enabled && !schedule.startAt && cronParts.length === 5
+      && cronParts[2] !== '*' && cronParts[3] !== '*') {
+      // Old "once" schedules had no year and otherwise repeat annually.
+      schedule.enabled = false;
+      schedule.needsReschedule = true;
+      missedSchedule = true;
+    }
+    if (schedule.enabled && schedule.startAt && Date.parse(schedule.startAt) <= Date.now()) {
+      schedule.enabled = false;
+      schedule.missedAt = new Date().toISOString();
+      missedSchedule = true;
+    }
+  }
+  if (missedSchedule) await saveSchedules(bootSchedules);
 
   // v2.14 — resume any in-flight monitoring state from disk before the watcher
   // starts, so the campaign global is populated on the first watcher tick.

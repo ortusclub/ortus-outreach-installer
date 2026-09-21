@@ -8,7 +8,7 @@ const CLIENT = readFileSync(new URL('../src/campaigns-client.js', import.meta.ur
 
 test('dashboard and campaign-card Resume Sending share the explicit sending command', () => {
   const decision = APP.slice(APP.indexOf('window.openCampaignResumeDecision'), APP.indexOf('function _activeCardCloudId'));
-  assert.match(decision, /restartCloudCampaignUI\(id, false, undefined, true\)/);
+  assert.match(decision, /restartCloudCampaignUI\(id, false, undefined, true, true\)/);
 });
 
 test('monitoring Resume asks whether to start sending or acceptance checking', () => {
@@ -21,7 +21,7 @@ test('monitoring Resume asks whether to start sending or acceptance checking', (
 
 test('the large campaign card uses the same monitoring choice as the dashboard', () => {
   const start = APP.indexOf('function _adaptActiveCardControls');
-  const controls = APP.slice(start, APP.indexOf('// Cloud "Open"', start));
+  const controls = APP.slice(start, APP.indexOf('function stopViewedCheckUI', start));
   assert.match(controls, /_renderVjCardControls\(card, status, \{ active: true \}\)/);
   assert.doesNotMatch(controls, /_viewingCloudId/);
 });

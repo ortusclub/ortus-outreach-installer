@@ -22,6 +22,13 @@ test('dashboard card keeps canonical startup evidence when adapting a VM row', (
   assert.equal(workerStartupOwnsStage(adapted, adapted.currentAction, 'sending-resumed'), true);
 });
 
+test('dashboard card keeps the selected VM worker number', () => {
+  const adapted = statusFromItem({
+    where: 'cloud', bucket: 'queued', vmWorkerNumber: 7,
+  });
+  assert.equal(adapted.vmWorkerNumber, 7);
+});
+
 test('resumed VM worker view keeps the queue safe and browser in the future', () => {
   const action = resumedVmWorkerAction({ pending: 509, accounts: 2 });
   assert.equal(action.phase, 'starting');
@@ -251,6 +258,27 @@ test('vjCardFields: done reads Finished', () => {
 });
 
 // ── vjCardControlsFor: the matrix ──
+test('controls: synthetic VM launch offers only Cancel launch, then becomes read-only', () => {
+  const launching = vjCardControlsFor({
+    _launching: true, id: '__launching__', running: true,
+    launchPhase: 'preflight', launchStopRequested: false,
+  });
+  assert.equal(launching.stop.tip, 'Cancel launch');
+  assert.equal(launching.pause, null);
+  assert.equal(launching.restart, null);
+  assert.equal(launching.bulk, null);
+  assert.equal(launching.open, null);
+  assert.equal(launching.sheet, null);
+
+  const cancelling = vjCardControlsFor({
+    _launching: true, id: '__launching__', running: true,
+    launchPhase: 'cancelling', launchStopRequested: true,
+  });
+  assert.equal(cancelling.stop, null);
+  assert.equal(cancelling.pause, null);
+  assert.equal(cancelling.bulk, null);
+});
+
 test('controls: running local → pause/stop/restart/copy + bulk run-check, open=viewRunningCampaign', () => {
   const c = vjCardControlsFor(statusFromItem({ where: 'local', id: 'local-active', bucket: 'running', sent: 1, total: 2 }));
   assert.match(c.open.onclick, /viewRunningCampaign/);

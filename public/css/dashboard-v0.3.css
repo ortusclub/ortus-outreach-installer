@@ -2176,3 +2176,38 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-stage.is-done {
 .sp-col.rate-limited .sp-state,
 .sp-col.identity-restricted .sp-state,
 .sp-col.trouble .sp-state { color: var(--red); }
+
+/* One real VM viewport under the existing status summary. The summary and its
+   milestone strip remain the single explanation of the campaign state; this
+   panel only shows the browser when the engine has one. */
+body[data-dashboard='v3'] .vj-stage-vm {
+  --op-tone: var(--vj-tone, var(--green)); margin-top: 15px;
+  border: 1px solid color-mix(in srgb, var(--op-tone) 52%, var(--hairline)); border-radius: 10px; overflow: hidden;
+  background: color-mix(in srgb, var(--op-tone) 4%, #080a0c);
+}
+body[data-dashboard='v3'] .vj-stage-vm[hidden] { display: none; }
+body[data-dashboard='v3'] .vj-stage-vm-head {
+  min-height: 38px; display: flex; justify-content: space-between; align-items: center; gap: 18px;
+  padding: 9px 13px; border-bottom: 1px solid var(--hairline-soft);
+  font-family: var(--mono); font-size: .64rem; letter-spacing: .1em; text-transform: uppercase;
+}
+body[data-dashboard='v3'] .vj-stage-vm-head span { display: inline-flex; align-items: center; gap: 8px; color: var(--op-tone); }
+body[data-dashboard='v3'] .vj-stage-vm-head i {
+  width: 7px; height: 7px; border-radius: 9999px; background: var(--op-tone);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--op-tone) 40%, transparent);
+  animation: vj-operation-pulse 1.45s ease-out infinite;
+}
+@keyframes vj-operation-pulse { 65% { box-shadow: 0 0 0 7px transparent; } }
+body[data-dashboard='v3'] .vj-stage-vm-head strong { color: var(--gray); font-weight: 500; font-variant-numeric: tabular-nums; }
+body[data-dashboard='v3'] .vj-stage-vm-screen { position: relative; min-height: 176px; max-height: 320px; overflow: hidden; background: #050607; }
+body[data-dashboard='v3'] .vj-stage-vm-screen img { width: 100%; height: 100%; min-height: 176px; max-height: 320px; object-fit: contain; background: #050607; }
+body[data-dashboard='v3'] .vj-stage-vm-screen img[hidden] { display: none; }
+body[data-dashboard='v3'] .vj-stage-vm-empty { min-height: 176px; display: flex; align-items: center; justify-content: center; gap: 18px; padding: 25px; text-align: left; }
+body[data-dashboard='v3'] .vj-stage-vm-empty[hidden] { display: none; }
+body[data-dashboard='v3'] .vj-stage-vm-empty strong { display: block; margin-bottom: 6px; color: var(--ink); font-size: .9rem; }
+body[data-dashboard='v3'] .vj-stage-vm-empty p { margin: 0; color: var(--gray); font-size: .76rem; line-height: 1.5; }
+body[data-dashboard='v3'] .vj-stage-vm-orbit { width: 34px; height: 34px; border: 2px solid color-mix(in srgb, var(--op-tone) 28%, transparent); border-top-color: var(--op-tone); border-radius: 50%; animation: spin .9s linear infinite; flex: 0 0 auto; }
+body[data-dashboard='v3'] .vj-stage-vm-foot { min-height: 40px; display: flex; align-items: center; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--hairline-soft); color: var(--gray); font-size: .7rem; }
+body[data-dashboard='v3'] .vj-stage-vm-foot span { flex: 1; }
+body[data-dashboard='v3'] .vj-card.is-paused .vj-stage-vm *,
+body[data-dashboard='v3'] .vj-card.is-done .vj-stage-vm * { animation: none !important; }

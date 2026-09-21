@@ -49,6 +49,8 @@ export function statusFromItem(it = {}) {
     mode: it.mode,
     phase: it.phase,
     launchPhase: it.launchPhase,
+    _launching: !!it.launching,
+    launchStopRequested: !!it.launchStopRequested,
     isFG: !!it.isFG,
     totalTargets: Number(it.total) || 0,
     totalKnown: it.totalKnown,
@@ -84,6 +86,7 @@ export function statusFromItem(it = {}) {
     live: !!it.live,
     liveAccount: it.liveAccount || '',
     currentAction: it.currentAction || null,
+    vmWorkerNumber: it.vmWorkerNumber == null ? null : Number(it.vmWorkerNumber),
     _canonicalStatusV1: it._canonicalStatusV1 || null,
     logs: Array.isArray(it.logs) ? it.logs : [],
     nextCheckAt: it.nextCheckAt,
@@ -354,6 +357,20 @@ export function vjCardControlsFor(status = {}) {
     resumeSending: null, deleteForever: null, bulk: null, monAuto: null, extra: [],
   };
 
+  // A synthetic launch exists before the engine has created a campaign row.
+  // Campaign controls against it are meaningless and previously exposed Pause,
+  // Restart and Run check now. Offer only Cancel launch; once cancellation is
+  // requested, leave the evidence card read-only until the local pre-flight
+  // unwinds and removes it.
+  if (s._launching) {
+    c.open = null;
+    c.sheet = null;
+    if (!s.launchStopRequested) {
+      c.stop = { tip: 'Cancel launch', onclick: 'window.dashStopActive && window.dashStopActive()' };
+    }
+    return c;
+  }
+
   // The stop has fenced future sends but closure is still being verified.
   // Keep the record and sheet available without offering Pause, Check or Resume.
   if (stopping) return c;
@@ -603,6 +620,12 @@ export function failedStartRetry(status = {}) {
   // leaving no trace of why (operator, 2026-08-28 14:09: "the strip, after I
   // pressed OK, just closed itself").
   if (s.launchFailed) {
+    if (s.launchUnconfirmed) return {
+      headline: 'VM launch outcome not confirmed',
+      detail: [reason, 'Check the VM campaign list before allowing another Start.'].filter(Boolean).join(' '),
+      label: 'Review and clear pending launch',
+      onclick: 'resolveCloudLaunchReview()',
+    };
     return {
       headline: 'The campaign was not started',
       detail: [reason, 'Nothing was sent and no lead was used, so nothing has to be undone.'].filter(Boolean).join(' '),

@@ -1,5 +1,6 @@
 import { startupAdmission } from './startup-admission.js';
 import { inspectPrimarySession, waitForPrimaryRecovery } from './primary-browser-session.js';
+import { CREDIT_RETRY_STAGE, creditChannelForMode, isPreSendCreditRetryable } from './credit-recovery.js';
 
 /**
  * Campaign orchestrator — v17.
@@ -2804,12 +2805,12 @@ export async function startCampaign(options = {}) {
         // rows. Any non-blank value means 'leave alone' (either a prior
         // run touched it, it's terminal, or it's a manual note).
         if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
-          return stage === '';
+          return stage === '' || stage === CREDIT_RETRY_STAGE;
         }
         if (mode === 'inmail_only' || mode === 'open_profile_only') {
           // InMail and OP are 'coming soon' in v2.59 but kept aligned with
           // the cold-lead rule above for consistency if re-enabled.
-          return stage === '';
+          return stage === '' || stage === CREDIT_RETRY_STAGE;
         }
         // Other modes: terminal stages skip, everything else passes through.
         if (TERMINAL.has(stage) || isSkipped) return false;
@@ -3369,6 +3370,40 @@ export async function startCampaign(options = {}) {
     const _checkStatusCursorByProfile = {};
     const _checkStatusExhausted = new Set();
     const weeklyLimited = new Set(); // Profiles that hit weekly/credit limit
+    const creditRecoveryCandidates = new Map(); // safe pre-send skips in this run
+    async function queueCreditLead(candidateUrl, candidateRow, leadName, channel, reason) {
+      const prior = state.processed[candidateUrl];
+      if (prior && (prior.action === 'interrupted' || SENT_ACTIONS.has(prior.action))) return false;
+      delete state.processed[candidateUrl];
+      await saveState(state);
+      candidateRow.Stage = CREDIT_RETRY_STAGE;
+      candidateRow.stage = CREDIT_RETRY_STAGE;
+      candidateRow.Status = CREDIT_RETRY_STAGE;
+      candidateRow.status = CREDIT_RETRY_STAGE;
+      if (channel === 'cc') candidateRow['Connection Status'] = CREDIT_RETRY_STAGE;
+      await trackedSheetWrite(sheetUrl, candidateUrl, leadName, {
+        stage: CREDIT_RETRY_STAGE,
+        status: CREDIT_RETRY_STAGE,
+        ...(channel === 'cc' ? { connectionStatus: CREDIT_RETRY_STAGE } :
+          mode === 'open_profile_only' ? { opStatus: CREDIT_RETRY_STAGE } : { inmStatus: CREDIT_RETRY_STAGE }),
+        auditAction: reason,
+      }, linkedinColumn);
+      targets.push(candidateRow);
+      return true;
+    }
+    async function recoverEarlierCreditSkips(profileId, channel, currentUrl) {
+      if (creditChannelForMode(mode) !== channel) return;
+      let restored = 0;
+      for (const [candidateUrl, candidate] of creditRecoveryCandidates) {
+        if (candidate.profileId !== profileId || candidateUrl === currentUrl) continue;
+        const prior = state.processed[candidateUrl];
+        if (prior && (prior.action === 'interrupted' || SENT_ACTIONS.has(prior.action))) continue;
+        creditRecoveryCandidates.delete(candidateUrl);
+        if (await queueCreditLead(candidateUrl, candidate.row, candidate.leadName, channel,
+          `Earlier pre-send skip returned to queue after ${channel === 'cc' ? 'connection' : 'InMail'} credits ran out`)) restored++;
+      }
+      if (restored) log(`  ↩ ${restored} earlier pre-send skip${restored === 1 ? '' : 's'} from ${profileNameCache[profileId] || profileId} returned to the queue after the ${channel === 'cc' ? 'connection' : 'InMail'} credit limit was confirmed. Uncertain sends stayed held.`);
+    }
     // Phase 2.8.8: silent-failure guard — if a profile produces N
     // consecutive non-success outcomes, park it for the rest of the run.
     // Catches silent weekly-limit exhaustion and any other systemic per-account
@@ -3853,7 +3888,7 @@ export async function startCampaign(options = {}) {
             }
             const sheetStatus = (candidate['Connection Status'] || candidate['connection status'] || candidate['Status'] || candidate['status'] || '').toLowerCase();
             if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
-              if (sheetStatus) continue;
+              if (sheetStatus && sheetStatus !== CREDIT_RETRY_STAGE.toLowerCase()) continue;
             }
             row = candidate;
             break;
@@ -3959,7 +3994,7 @@ export async function startCampaign(options = {}) {
           if (_hasStageHere) {
             // New schema: pre-filter required Stage in {'', 'Send Connect'}.
             // If a concurrent run flipped it to anything else, skip.
-            if (_stage !== '' && _stage !== 'Send Connect') {
+            if (_stage !== '' && _stage !== 'Send Connect' && _stage !== CREDIT_RETRY_STAGE) {
               recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: Stage is "${_stage}" (not eligible for ${mode}) — skipping` });
               delete state.processed[url]; continue;
             }
@@ -3990,11 +4025,9 @@ export async function startCampaign(options = {}) {
         data.lastName = row['Last Name'] || row['lastName'] || row['last_name'] || '';
         data.company = row['Company'] || row['company'] || '';
         data.title = row['Title'] || row['title'] || row['Job Title'] || '';
-        data.senderName = pName || '';
+        data.senderName = (senderFirstNames[profileId] || '').trim();
         const resolvedFirst = senderFirstNames[profileId];
-        data.senderFirstName = (resolvedFirst && resolvedFirst.trim())
-          || (pName || '').split(/\s+/)[0]
-          || '';
+        data.senderFirstName = (resolvedFirst && resolvedFirst.trim()) || '';
 
         let hint = getModeHint(mode, state.processed[url]?.action);
 
@@ -4403,6 +4436,12 @@ export async function startCampaign(options = {}) {
                 result._meta = meta;
               }
             } catch { /* best-effort */ }
+          }
+
+          if (result.action === 'skipped' && isPreSendCreditRetryable(mode, result.error)) {
+            creditRecoveryCandidates.set(url, {
+              profileId, row, leadName: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
+            });
           }
 
           // 2.9.2: human-readable local time for the sheet ("May 4th, 13:43"),
@@ -4976,6 +5015,7 @@ export async function startCampaign(options = {}) {
                     parkedAt: Date.now(),
                     reason: 'weekly_limit_429',
                   });
+                  await recoverEarlierCreditSkips(profileId, 'cc', url);
                 }
               }
             } else {
@@ -5029,11 +5069,8 @@ export async function startCampaign(options = {}) {
                 kind: 'weekly_limit',
                 message: 'Weekly invitation limit reached',
               });
-              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
-                ...buildSkipSheetData(mode, normalizeSkipReason('Weekly invitation limit reached'), pName),
-                dateLastAction: now,
-                auditAction: normalizeSkipReason('Weekly invitation limit reached'),
-              }, linkedinColumn);
+              await queueCreditLead(url, row, `${data.firstName || ''} ${data.lastName || ''}`.trim(), 'cc', 'Weekly invitation limit reached — retry queued');
+              await recoverEarlierCreditSkips(profileId, 'cc', url);
             } else if (errorMsg.includes('NOTE_LIMIT_REACHED')) {
               // v2.112.32 — account is out of FREE custom notes (monthly cap on
               // personalized invites). Distinct from the weekly invite cap: the
@@ -5052,11 +5089,8 @@ export async function startCampaign(options = {}) {
               });
               // Audit breadcrumb ONLY (no terminal Stage/Status) so the row stays
               // eligible for another account/run — mirrors the identity-skip path.
-              delete state.processed[url];
-              await saveState(state);
-              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
-                auditAction: 'Skipped: Account out of free notes',
-              }, linkedinColumn);
+              await queueCreditLead(url, row, `${data.firstName || ''} ${data.lastName || ''}`.trim(), 'cc', 'Account out of free notes — retry queued');
+              await recoverEarlierCreditSkips(profileId, 'cc', url);
             } else if (errorMsg.includes('NOTE_TOO_LONG')) {
               // v2.112.x — the note exceeds LinkedIn's free 200-char custom-note
               // cap and this account isn't Premium, so it can NEVER send this (or
@@ -5084,29 +5118,19 @@ export async function startCampaign(options = {}) {
                 auditAction: 'Skipped: Profile not premium, custom notes limit',
               }, linkedinColumn);
             } else if (errorMsg.includes('INMAIL_NO_CREDITS_NOT_OP')) {
-              // v2.11.3: dual-fact signal — account is out of InMail credits
-              // (eject for run) AND lead is confirmed non-OP (mark in sheet).
-              // The lead-level fact takes precedence in the sheet write because
-              // it's permanent across runs; the account-level fact is run-only.
-              log(`  ⚠ ${pName}: 0 InMail credits + lead not Open Profile. Removing account from rotation, marking lead Not OP.`);
+              // This account is out of InMail credits. Another selected sender
+              // may have credits, so preserve the lead in the queue.
+              log(`  ⚠ ${pName}: 0 InMail credits + lead not Open Profile. Removing account from rotation; lead stays queued.`);
               weeklyLimited.add(profileId);
               recordProfileEnd(profileId, pName, 'No InMail credits left');
-              state.processed[url] = { profileId, profileName: pName, action: 'not_open_profile', date: now };
-              await saveState(state);
-              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
-                ...buildSkipSheetData(mode, normalizeSkipReason('Not Open Profile'), pName),
-                dateLastAction: now,
-                auditAction: normalizeSkipReason('Not Open Profile'),
-              }, linkedinColumn);
+              await queueCreditLead(url, row, `${data.firstName || ''} ${data.lastName || ''}`.trim(), 'inmail', 'InMail credits exhausted — retry queued for another account');
+              await recoverEarlierCreditSkips(profileId, 'inmail', url);
             } else if (errorMsg.includes('INMAIL_NO_CREDITS')) {
               log(`  ⚠ InMail credits exhausted for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);
               recordProfileEnd(profileId, pName, 'InMail credits exhausted');
-              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
-                ...buildSkipSheetData(mode, normalizeSkipReason('InMail credits exhausted'), pName),
-                dateLastAction: now,
-                auditAction: normalizeSkipReason('InMail credits exhausted'),
-              }, linkedinColumn);
+              await queueCreditLead(url, row, `${data.firstName || ''} ${data.lastName || ''}`.trim(), 'inmail', 'InMail credits exhausted — retry queued');
+              await recoverEarlierCreditSkips(profileId, 'inmail', url);
             } else if (errorMsg.includes('EMAIL_REQUIRED')) {
               // Per-lead skip — LinkedIn asked for the recipient's email.
               // Not an account-level issue, so no soft-warning chip; the log
@@ -5376,8 +5400,22 @@ export async function startCampaign(options = {}) {
             }
             break;
           }
-          // Eligible profiles exist but they're all in cooldown or mid-turn.
-          // Idle briefly and retry.
+          // Show the next eligible turn while every account is cooling down.
+          // Avoid resetting the countdown and logging on every 5-second poll.
+          const nextTurn = profileQueue
+            .filter((id) => !weeklyLimited.has(id))
+            .map((id) => ({ id, at: profileCooldownUntil.get(id) || 0 }))
+            .filter((item) => item.at > Date.now())
+            .sort((a, b) => a.at - b.at)[0];
+          if (nextTurn && !profilesBeingRun.has(nextTurn.id)
+            && campaign.currentAction?.step !== 'account-cooldown') {
+            const durationMs = Math.max(1000, nextTurn.at - Date.now());
+            setAction('Waiting for the next account turn', {
+              account: nextTurn.id, phase: 'waiting', step: 'account-cooldown', durationMs,
+              stepDetail: `${profileNameCache[nextTurn.id] || nextTurn.id} can take its next turn when this timer ends.`,
+            });
+            log(`⏳ All accounts are resting · next turn in about ${Math.ceil(durationMs / 60000)} min.`);
+          }
           await new Promise(r => setTimeout(r, 5000));
           continue;
         }

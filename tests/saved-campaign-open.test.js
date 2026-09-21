@@ -21,6 +21,27 @@ test('opening a draft applies its complete saved config', () => {
   assert.match(body, /applyPresetConfig\(draft\.config\)/);
 });
 
+test('dashboard drafts can start through the normal hydrated launch path', () => {
+  assert.match(app, /onclick="startDraftFromDashboard\('\$\{escHtml\(d\.id\)\}', this\)"/);
+  const start = app.indexOf('async function startDraftFromDashboard(id, btn)');
+  const end = app.indexOf('window.startDraftFromDashboard = startDraftFromDashboard;', start);
+  const body = app.slice(start, end);
+  assert.match(body, /fetch\('\/api\/drafts\/'/);
+  assert.match(body, /await applyPresetConfig/);
+  assert.match(body, /setRunTarget\(target\)/);
+  assert.match(body, /await startCampaign\(\)/);
+});
+
+test('draft snapshots preserve their machine, sheet tab and benched accounts', () => {
+  const start = app.indexOf('function collectCurrentConfig()');
+  const end = app.indexOf('function applyPresetConfig(config)', start);
+  const body = app.slice(start, end);
+  assert.match(body, /runTarget:/);
+  assert.match(body, /sheetGid:/);
+  assert.match(body, /multiTab:/);
+  assert.match(body, /benchedProfileIds:/);
+});
+
 test('older history entries restore settings snapshots when config is absent', () => {
   const start = app.indexOf('async function editPastCampaign(idx)');
   const end = app.indexOf('window.editPastCampaign = editPastCampaign;', start);

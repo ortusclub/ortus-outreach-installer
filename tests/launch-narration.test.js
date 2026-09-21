@@ -17,7 +17,16 @@ test('the strip moves off the sheet once the engine has the campaign', () => {
 
   const accepted = launchMilestones({ phase: 'accepted', hasHandshake: false, leadsRead: 4 });
   assert.deepEqual(accepted[1], ['Sheet', '4 leads read', 'done']);
-  assert.deepEqual(accepted[2], ['VM', 'waiting for a worker', 'active']);
+  assert.deepEqual(accepted[2], ['Cloud', 'preparing capacity', 'active']);
+});
+
+test('a pre-dispatch cancel says nothing reached the VM', () => {
+  assert.deepEqual(launchMilestones({ phase: 'cancelling', hasHandshake: false }), [
+    ['Cancel requested', 'recorded', 'done'],
+    ['Validation', 'finishing locally', 'active'],
+    ['Cloud', 'nothing dispatched', 'future'],
+    ['Campaign', 'will not start', 'future'],
+  ]);
 });
 
 test('one lead is not "1 leads read"', () => {
@@ -48,9 +57,9 @@ test('no step is ever both done and still in progress', () => {
 });
 
 test('the wait says how long it has been, and what is normal', () => {
-  assert.match(queueWaitLine(30), /^⏳ Still waiting for a VM worker · 30s/);
+  assert.match(queueWaitLine(30), /^⏳ Cloud capacity is preparing · 30s/);
   assert.match(queueWaitLine(90), /1m 30s/);
-  assert.match(queueWaitLine(90), /about 2 minutes to wake/);
+  assert.match(queueWaitLine(90), /normally takes about 2 minutes/);
 });
 
 test('past three minutes it stops calling the wait normal', () => {

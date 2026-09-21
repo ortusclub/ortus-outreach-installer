@@ -669,10 +669,8 @@ export async function runAutoIntros({
       'last name': leadLastName,
       company: row['Company'] || row['company'] || '',
       title: row['Title'] || row['title'] || row['Job Title'] || '',
-      senderName: profileName || '',
-      senderFirstName: (resolvedFirst && resolvedFirst.trim())
-        || (profileName || '').split(/\s+/)[0]
-        || '',
+      senderName: (resolvedFirst || '').trim(),
+      senderFirstName: (resolvedFirst && resolvedFirst.trim()) || '',
       // Surface the primary person under every naming flavour the
       // operator might have typed: legacy "primary name", new
       // "primary full name" (v2.14.x rename), and the camelCase form.

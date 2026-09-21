@@ -83,10 +83,16 @@ test('an account block outranks the queue — it is true either way', () => {
   assert.equal(s.kind, 'accounts');
 });
 
-test('an unreadable capacity says nothing rather than guessing', () => {
-  assert.equal(queueState(camp(), { queue: [], unavailable: true }), null);
-  assert.equal(queueState(camp(), {}), null, 'no queue field at all');
-  assert.equal(queueState(camp({ id: 'zzz' }), CAP), null, 'not in the queue we were given');
+test('an unreadable capacity reports engine acceptance without inventing a queue position', () => {
+  for (const state of [
+    queueState(camp(), { queue: [], unavailable: true }),
+    queueState(camp(), {}),
+    queueState(camp({ id: 'zzz' }), CAP),
+  ]) {
+    assert.equal(state.kind, 'unknown');
+    assert.match(state.line, /Campaign accepted/);
+    assert.doesNotMatch(state.line, /ahead|in line|worker picked/i);
+  }
 });
 
 test('a campaign with no lead count drops the phrase, not the card', () => {

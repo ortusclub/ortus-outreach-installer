@@ -134,7 +134,7 @@ function parseCSVWithRowNumbers(csv) {
  * @param {string} sheetUrl
  * @returns {Promise<string>}
  */
-async function fetchSheetCsv(sheetUrl) {
+async function fetchSheetCsv(sheetUrl, { signal } = {}) {
   const sheetId = extractSheetId(sheetUrl);
   // Honor the tab the operator pasted. Google's CSV export defaults to the
   // first sheet when no gid is given, which silently pulls the wrong data
@@ -154,12 +154,17 @@ async function fetchSheetCsv(sheetUrl) {
   // CSV exports occasionally take 15-25s on bigger sheets and the original
   // single-shot fetch failed the bulk-check on every slow sweep.
   async function tryFetch(timeoutMs) {
-    return fetch(csvUrl, { signal: AbortSignal.timeout(timeoutMs) });
+    if (signal?.aborted) throw signal.reason || new DOMException('Launch cancelled', 'AbortError');
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const combined = signal && typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([signal, timeout]) : timeout;
+    return fetch(csvUrl, { signal: combined });
   }
   let response;
   try {
     response = await tryFetch(30000);
   } catch (err) {
+    if (signal?.aborted) throw signal.reason || err;
     // Timeout (AbortError) or network blip — give it one more shot before
     // surfacing as a sweep failure. Bulk-check is gated by a 6h cooldown,
     // so spending a few extra seconds here is cheap insurance.
@@ -171,10 +176,17 @@ async function fetchSheetCsv(sheetUrl) {
     // connect, while the same URL answered in ~1.4s a minute later). A short
     // pause is what makes the retry an independent attempt rather than a
     // formality; the gate is already a multi-second step, so nobody notices it.
-    await new Promise((r) => setTimeout(r, 2500));
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 2500);
+      if (signal) signal.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(signal.reason || new DOMException('Launch cancelled', 'AbortError'));
+      }, { once: true });
+    });
     try {
       response = await tryFetch(30000);
     } catch (err2) {
+      if (signal?.aborted) throw signal.reason || err2;
       // undici collapses DNS failures, refused connections, socket exhaustion
       // and TLS interception into a bare "fetch failed" — the reason only ever
       // lives on .cause, and without it the operator's screen is a dead end
@@ -206,8 +218,8 @@ async function fetchSheetCsv(sheetUrl) {
  * @param {string} sheetUrl - The Google Sheet URL
  * @returns {Promise<Record<string, string>[]>}
  */
-export async function fetchSheet(sheetUrl) {
-  const rows = parseCSV(await fetchSheetCsv(sheetUrl));
+export async function fetchSheet(sheetUrl, options = {}) {
+  const rows = parseCSV(await fetchSheetCsv(sheetUrl, options));
   console.log(`[sheets] Parsed ${rows.length} row(s). Columns: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : '(none)'}`);
   return rows;
 }
