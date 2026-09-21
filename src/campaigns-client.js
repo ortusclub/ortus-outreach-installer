@@ -191,6 +191,17 @@ export function listCloudCampaigns(owner) {
   return requestWithRetry('GET', `/api/campaign/list${q}`);
 }
 
+/** Self-serve GoLogin token: per-workspace health from the engine (no token). */
+export function gologinTokenStatus() {
+  return requestWithRetry('GET', '/api/gologin-token/status');
+}
+
+/** Update the engine's GoLogin token for a workspace. requestOnce (not retried):
+ *  the engine validates + can answer needs_confirm, which the caller must see. */
+export function gologinTokenUpdate({ workspace = 'ortus', token, confirmReplaceLive = false } = {}) {
+  return requestOnce('POST', '/api/gologin-token', { workspace, token, confirmReplaceLive });
+}
+
 /**
  * Cloud load: how many campaigns are drawing a runtime against the ceiling, and
  * the ordered ids of everything waiting for a slot.

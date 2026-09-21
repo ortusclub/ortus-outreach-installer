@@ -36,6 +36,21 @@
 // modes rather than a parallel boolean.
 export const POST_AMPLIFICATION_MODE = 'post_amplification';
 
+// Operator-set token overrides, written by the Settings "GoLogin token" panel to
+// ORTUS_DATA_DIR/gologin-tokens.json. Kept in the data dir (not the baked .env)
+// so it survives a reinstall and lets an operator self-fix a deleted token
+// without a new build. Read at call time so a Save takes effect immediately.
+import { readFileSync } from 'node:fs';
+import { dataPath } from './paths.js';
+
+function tokenOverride(id) {
+  try {
+    const map = JSON.parse(readFileSync(dataPath('gologin-tokens.json'), 'utf8'));
+    const t = map && map[id];
+    return (typeof t === 'string' && t.trim()) ? t.trim() : '';
+  } catch { return ''; }
+}
+
 export const GL_ACCOUNTS = Object.freeze([
   Object.freeze({
     id: 'ortus',
@@ -98,7 +113,7 @@ export function accountLabel(id) {
 export function tokenForAccount(id) {
   const acc = accountById(id);
   if (!acc) return '';
-  return process.env[acc.env] || '';
+  return tokenOverride(id) || process.env[acc.env] || '';
 }
 
 /**

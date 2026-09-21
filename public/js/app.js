@@ -18368,6 +18368,96 @@ window.openOpTzModal = openOpTzModal;
 window.closeOpTzModal = closeOpTzModal;
 window.saveOpTzFromModal = saveOpTzFromModal;
 
+// ─── Self-serve GoLogin token ───────────────────────────────────────────────
+let _glTokenStatus = null; // last { workspaces:[...] } from the engine
+
+async function refreshGologinTokenStatus() {
+  try {
+    const r = await fetch('/api/gologin-token/status');
+    _glTokenStatus = r.ok ? await r.json() : null;
+  } catch { _glTokenStatus = null; }
+  // Sidebar chip: the Ortus workspace's health at a glance.
+  const chip = document.getElementById('gl-token-state');
+  if (chip) {
+    const ortus = _glTokenStatus?.workspaces?.find((w) => w.workspace === 'ortus');
+    if (!ortus) { chip.textContent = '—'; chip.className = 'notif-row-v'; }
+    else if (ortus.live === 200) { chip.textContent = 'Live'; chip.className = 'notif-row-v good'; }
+    else { chip.textContent = ortus.present ? 'Dead' : 'Not set'; chip.className = 'notif-row-v bad'; }
+  }
+  renderGologinTokenStatus();
+}
+
+function _glWs() { return document.getElementById('gl-token-ws')?.value || 'ortus'; }
+
+function renderGologinTokenStatus() {
+  const box = document.getElementById('gl-token-current');
+  if (!box) return;
+  const w = _glTokenStatus?.workspaces?.find((x) => x.workspace === _glWs());
+  if (!w) { box.textContent = 'Current status unavailable.'; return; }
+  const health = w.live === 200 ? 'live ✓' : w.present ? 'DEAD (401) — needs a fresh token' : 'not set';
+  const who = w.updatedBy ? ` · last set by ${w.updatedBy}` : '';
+  const when = w.updatedAt ? ` (${new Date(w.updatedAt).toLocaleString()})` : '';
+  box.textContent = `Current: ${health}${who}${when}`;
+}
+
+function openGologinTokenModal() {
+  const modal = document.getElementById('gologin-token-modal');
+  if (!modal) return;
+  const inp = document.getElementById('gl-token-input');
+  if (inp) inp.value = '';
+  const msg = document.getElementById('gl-token-msg');
+  if (msg) { msg.textContent = ''; msg.style.color = ''; }
+  modal.classList.remove('hidden');
+  refreshGologinTokenStatus();
+}
+
+function closeGologinTokenModal() {
+  document.getElementById('gologin-token-modal')?.classList.add('hidden');
+}
+
+async function saveGologinToken(confirmReplaceLive) {
+  const token = (document.getElementById('gl-token-input')?.value || '').trim();
+  const workspace = _glWs();
+  const msg = document.getElementById('gl-token-msg');
+  const btn = document.getElementById('gl-token-save');
+  const say = (t, ok) => { if (msg) { msg.textContent = t; msg.style.color = ok ? '#7bb87b' : '#d08770'; } };
+  if (!token) return say('Paste a token first.', false);
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    const res = await fetch('/api/gologin-token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace, token, confirmReplaceLive: !!confirmReplaceLive }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (j.ok && j.changed) say('Updated ✓', true);
+    else if (j.ok && j.changed === false) say('Already up to date — nothing changed.', true);
+    else if (j.reason === 'needs_confirm') {
+      // The one place the operator is asked before a fleet-wide swap of a token
+      // that already works.
+      if (confirm('The engine already has a working token — replace it?')) {
+        return saveGologinToken(true);
+      }
+      say('Kept the current token.', true);
+    }
+    else if (j.reason === 'dead token') say('That token is dead — GoLogin refused it. Get a fresh one.', false);
+    else if (j.reason === 'wrong account') say('That token is for a different GoLogin account.', false);
+    else say(j.reason || 'Could not update the token.', false);
+    await refreshGologinTokenStatus();
+  } catch (e) {
+    say(`Could not reach the engine: ${e.message}`, false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Validate & save'; }
+  }
+}
+
+window.openGologinTokenModal = openGologinTokenModal;
+window.closeGologinTokenModal = closeGologinTokenModal;
+window.saveGologinToken = saveGologinToken;
+window.renderGologinTokenStatus = renderGologinTokenStatus;
+// Prime the sidebar chip once the page settles (the engine round-trip is cheap
+// and cached engine-side); never blocks first paint.
+setTimeout(() => { try { refreshGologinTokenStatus(); } catch {} }, 3000);
+
 function initServerDesktopNotifier() {
   // Poll every 60s — the post-campaign scheduler ticks every 30 min, so a
   // minute of latency on a popup is well within the user's tolerance and
