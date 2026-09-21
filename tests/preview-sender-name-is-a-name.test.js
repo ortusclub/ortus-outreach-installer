@@ -41,15 +41,14 @@ test('an unknown account resolves to nothing, never to a hash', () => {
   assert.match(line, /\|\| ''/);
 });
 
-test('the app sends the names it already knows', () => {
+test('the app sends verified sender names rather than GoLogin email labels', () => {
   assert.match(APP, /const senderNames = \{\};/);
-  assert.match(APP, /senderNames\[id\] = pName;/);
+  assert.match(APP, /senderNames\[id\] = senderDisplayName\(id, pName\);/);
 });
 
-test('the app never sends an id dressed up as a name', () => {
-  // profileLabel() falls back to the raw id when nothing knows the account.
-  // Passing that through would defeat the whole fix.
-  assert.match(APP, /if \(pName && pName !== id\) senderNames\[id\] = pName;/);
+test('the app never sends an email dressed up as a human name', () => {
+  assert.match(APP, /function senderDisplayName\(profileId, profileName\)/);
+  assert.match(APP, /if \(!first\) return '';/);
 });
 
 test('the preview payload carries it', () => {

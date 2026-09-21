@@ -432,6 +432,14 @@ export function splitSafetyCount(safety) {
 // A card that contradicts itself reads as a stalled campaign.
 export function launchMilestones({ phase = '', hasHandshake = false, leadsRead = null,
   sendersDone = 0, sendersTotal = 0 } = {}) {
+  if (phase === 'cancelling') {
+    return [
+      ['Cancel requested', 'recorded', 'done'],
+      ['Validation', 'finishing locally', 'active'],
+      ['Cloud', 'nothing dispatched', 'future'],
+      ['Campaign', 'will not start', 'future'],
+    ];
+  }
   const accepted = phase === 'accepted';
   const shaking = phase === 'handshake';
   const leads = Number.isFinite(Number(leadsRead)) ? Number(leadsRead) : null;
@@ -442,8 +450,8 @@ export function launchMilestones({ phase = '', hasHandshake = false, leadsRead =
       ? ['Sheet', 'reading your leads', 'future']
       : ['Sheet', 'reading your leads', 'active'];
   const vm = accepted
-    ? ['VM', 'waiting for a worker', 'active']
-    : ['VM', 'handing over', 'future'];
+    ? ['Cloud', 'preparing capacity', 'active']
+    : ['Cloud', 'handing over', 'future'];
   if (!hasHandshake) {
     return [
       ['Request', 'launch accepted', 'done'],
@@ -471,6 +479,6 @@ export function queueWaitLine(seconds) {
   const rest = s % 60;
   const elapsed = m ? `${m}m ${String(rest).padStart(2, '0')}s` : `${rest}s`;
   return s >= 180
-    ? `⏳ Still waiting for a VM worker · ${elapsed} · longer than the usual 2 minutes. Nothing is lost: the campaign is still queued and starts when a worker frees up.`
-    : `⏳ Still waiting for a VM worker · ${elapsed} · workers sleep when idle and take about 2 minutes to wake`;
+    ? `⏳ Cloud capacity is still preparing · ${elapsed} · longer than the usual 2 minutes. Nothing is lost: the campaign remains queued and starts when capacity is ready.`
+    : `⏳ Cloud capacity is preparing · ${elapsed} · a cold start normally takes about 2 minutes`;
 }

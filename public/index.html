@@ -7,9 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.60.35" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.35" />
-  <link rel="stylesheet" href="/css/launch-review.css?v=3.1.60.35" />
+  <link rel="stylesheet" href="/css/style.css?v=3.1.60.49" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.49" />
+  <link rel="stylesheet" href="/css/launch-review.css?v=3.1.60.49" />
   <link rel="stylesheet" href="/css/automation-layout.css?v=layout-a-1" />
   <link rel="stylesheet" href="/css/account-recovery.css?v=4" />
   <link rel="stylesheet" href="/css/recovery-panel.css?v=1" />
@@ -361,6 +361,26 @@
               </div>
             </div>
             <div class="vj-stage-safety" id="stageSafety"></div>
+            <div class="vj-stage-vm" id="stageVm" hidden>
+              <div class="vj-stage-vm-head">
+                <span><i></i><b id="stageVmLabel">VM view</b></span>
+                <strong id="stageVmFresh">Checking for a browser…</strong>
+              </div>
+              <div class="vj-stage-vm-screen">
+                <img id="stageVmFrame" alt="Live cloud campaign browser" hidden />
+                <div class="vj-stage-vm-empty" id="stageVmEmpty">
+                  <span class="vj-stage-vm-orbit" aria-hidden="true"></span>
+                  <div>
+                    <strong id="stageVmTitle">Preparing the campaign on this Mac</strong>
+                    <p id="stageVmDetail">The VM browser will appear here automatically when it exists.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="vj-stage-vm-foot">
+                <span id="stageVmProof">No VM browser exists yet.</span>
+                <button type="button" class="mini" id="stageVmOpen" hidden>Open larger</button>
+              </div>
+            </div>
             <div class="vj-stage-facts" id="stageFacts"></div>
             <div class="vj-stage-miles" id="stageMiles"></div>
             <div class="vj-stage-outcome" id="stageOutcome">
@@ -1165,6 +1185,18 @@
         </button>
       </div>
       <div class="rt-facts" id="run-target-facts"></div>
+      <section class="vm-worker-picker" id="vm-worker-picker" hidden aria-labelledby="vm-worker-picker-title">
+        <div class="vm-worker-picker-head">
+          <div>
+            <span class="vm-worker-kicker">Cloud VM</span>
+            <h3 id="vm-worker-picker-title">Choose a VM worker</h3>
+            <p>One campaign uses one numbered worker. Busy workers cannot be selected.</p>
+          </div>
+          <button type="button" class="vm-worker-refresh" onclick="refreshVmWorkerSlots(true)">Refresh</button>
+        </div>
+        <div class="vm-worker-grid" id="vm-worker-grid" role="radiogroup" aria-label="VM workers 1 to 20"></div>
+        <div class="vm-worker-status" id="vm-worker-status" role="status" aria-live="polite">Checking VM workers…</div>
+      </section>
     </div>
 
     <!-- ── Settings (reordered to position 1) ── -->
@@ -2071,6 +2103,12 @@
   /* Expanded-strip card #2 parity: expanded shows the cloned .vj-card, collapsed
      shows the compact body. (docs/.../2026-07-11-expanded-strip-card2-parity) */
   .sn-strip:not(.sn-collapsed) .sn-compact{display:none;}
+  .sn-strip.launching:not(.sn-collapsed) .sn-compact{display:none;}
+  .sn-launch-evidence{display:grid;gap:6px;margin:16px 0;padding:14px 16px;border:1px solid var(--hairline);border-left:3px solid var(--gold);border-radius:8px;background:var(--card-bg);font-size:12px;}
+  .sn-launch-evidence strong{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;}
+  .sn-launch-evidence small{color:var(--gray);font-size:11px;}
+  .sn-launch-log{display:grid;gap:5px;margin-top:8px;padding-top:9px;border-top:1px solid var(--hairline);font-family:var(--mono);font-size:11px;line-height:1.4;}
+  .sn-strip.launching.sn-collapsed .sn-launch-log{display:none;}
   .sn-strip.sn-collapsed .sn-vjcard{display:none;}
   /* Expanded = ONE clean card: the .vj-card is the frame, so strip the outer
      strip's border / background / padding / left rail — no card-in-a-card. */
@@ -2463,6 +2501,7 @@
             <div class="browse-bulk-row">
               <button class="bulk-pill" onclick="selectAllVisible()">Select all visible</button>
               <button class="bulk-pill" onclick="deselectAll()">Deselect all</button>
+              <button class="bulk-pill" onclick="openAccountPaste()">Paste account list</button>
             </div>
           </div>
 
@@ -2485,6 +2524,15 @@
       </div>
       </div><!-- /.collapsible-body -->
     </div>
+
+    <dialog id="account-paste-dialog" class="account-paste-dialog" aria-labelledby="account-paste-title">
+      <div class="account-paste-head"><div><small>III. SELECT GOLOGIN ACCOUNTS</small><h2 id="account-paste-title">Paste account list</h2></div><button type="button" class="account-paste-close" onclick="closeAccountPaste()" aria-label="Close">&times;</button></div>
+      <p>Paste emails or exact GoLogin profile names, one per line. Commas and semicolons also work. Review matches before adding them.</p>
+      <label for="account-paste-input">Accounts to add</label>
+      <textarea id="account-paste-input" rows="7" placeholder="camille.aniel@ortus.solutions&#10;ritika.bisht@ortus.solutions"></textarea>
+      <div class="account-paste-actions"><button type="button" class="bulk-pill" onclick="previewAccountPaste()">Preview matches</button><button type="button" class="btn btn-primary" id="account-paste-apply" onclick="applyAccountPaste()" disabled>Add matched accounts</button></div>
+      <div id="account-paste-results" aria-live="polite">Paste a list, then preview the matches.</div>
+    </dialog>
 
     <!-- ── Post Amplification (v3.0): URL + per-account engagement table.
          Sits AFTER nav-accounts so the operator picks participating profiles
@@ -3768,7 +3816,7 @@
               <span class="wiz-launch-menu-hint">Launch immediately (or auto-drain queue)</span>
             </span>
           </button>
-          <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchQueueIt()">
+          <button type="button" role="menuitem" id="launch-menu-queue" class="wiz-launch-menu-item" onclick="window.launchQueueIt()">
             <span class="wiz-launch-menu-ic">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="3"/><rect x="3" y="11" width="18" height="3"/><rect x="3" y="16" width="18" height="3"/></svg>
             </span>
@@ -4398,7 +4446,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.60.35"></script>
+<script type="module" src="/js/app.js?v=3.1.60.49"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before

@@ -3,7 +3,9 @@ export function launchReviewRows(body, { engine, accountName, modeName, tabName 
   return [
     ['Campaign', body.name || 'Unnamed campaign'],
     ['Mode', modeName || body.mode],
-    ['Runs on', body.runTarget === 'cloud' ? 'Cloud VM' : 'This Mac'],
+    ['Runs on', body.runTarget === 'cloud'
+      ? `Cloud VM${body.vmWorkerNumber ? ` ${String(body.vmWorkerNumber).padStart(2, '0')}` : ''}`
+      : 'This Mac'],
     ['Engine', engine.scraperEngineVersion || 'Unverified'],
     ['Engine URL', engine.scraperEngineUrl || 'Unverified'],
     ['Accounts', (body.profileIds || []).map(accountName).join(', ') || 'Auto-routed from sheet'],

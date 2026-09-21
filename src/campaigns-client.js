@@ -181,6 +181,7 @@ export function startCloudCampaign(c = {}) {
     sheetUrl: c.sheetUrl || '',
     dailyLimit: c.dailyLimit ?? 50,
     config: c.config || {},
+    vmWorkerNumber: c.vmWorkerNumber || c.config?.vmWorkerNumber,
     leads,
     // CC+IC: accounts this machine already knows are connected to the primary,
     // so the engine's per-campaign table starts with the truth instead of blank.
@@ -207,6 +208,11 @@ export function listCloudCampaigns(owner) {
  */
 export function getCloudCapacity() {
   return requestWithRetry('GET', '/api/campaign/capacity');
+}
+
+/** Ask the autoscaler to keep enough cloud capacity warm for the next launch. */
+export function prepareCloudCapacity() {
+  return requestOnce('POST', '/api/campaign/capacity/prepare', {});
 }
 
 /**

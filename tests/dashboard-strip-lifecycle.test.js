@@ -46,7 +46,7 @@ test('monitoring with unsent leads shows the approved restart action band', () =
 
 test('cloud Start now from monitoring restarts pending sending instead of resuming a pause', () => {
   assert.match(app, /sendingFromMonitoring = phase === 'sending-from-monitoring'/);
-  assert.match(app, /if \(sendingFromMonitoring\) \{[\s\S]*?What should resume now\?[\s\S]*?restartCloudCampaignUI\(id, false, undefined, true\)/);
+  assert.match(app, /if \(sendingFromMonitoring\) \{[\s\S]*?What should resume now\?[\s\S]*?restartCloudCampaignUI\(id, false, undefined, true, true\)/);
   assert.match(app, /_resumeAcceptanceCheckNow\(id, current, btn\)/);
   assert.match(app, /await _forceCloudItemsAfterAction\(id\)/);
   assert.match(app, /if \(btn && btn\.isConnected && !accepted\)/);
@@ -55,4 +55,11 @@ test('cloud Start now from monitoring restarts pending sending instead of resumi
 test('expanded banner cannot override the visible log with a private remembered event', () => {
   assert.doesNotMatch(app, /_stageNewestLogEvent/);
   assert.match(app, /latestBannerEvent\(status && status\.logs, \{ phase \}\)/);
+});
+
+test('VM launch setup cannot masquerade as an acceptance sweep or survive a pre-dispatch cancel', () => {
+  assert.match(app, /if \(status && status\._launching\) logEvent = null/);
+  assert.match(app, /launchStopRequested:\s*!!L\.stopRequested/);
+  assert.match(app, /_cloudLaunch\.stopRequested && !_cloudLaunch\.postStarted/);
+  assert.match(app, /_activeLaunchPreflightAbort\.controller\.abort\(\)/);
 });
