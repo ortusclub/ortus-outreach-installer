@@ -134,6 +134,18 @@
             </label>
           </span>
         </div>
+
+        <!-- Self-serve GoLogin token. GoLogin tokens die the moment someone
+             deletes/regenerates them, breaking every account roster at once.
+             Manage lets any operator paste a fresh one — validated, then written
+             to BOTH the engine and this app, with no reinstall/restart. -->
+        <div class="sb-line" title="Update the GoLogin API token the engine and this app use to open browsers. Validated before it's saved.">
+          <span class="sb-line-k">GoLogin token</span>
+          <span class="sb-line-v">
+            <span id="gl-token-state" class="notif-row-v">—</span>
+            <button type="button" class="sb-link" onclick="openGologinTokenModal()">Manage</button>
+          </span>
+        </div>
       </div>
 
       <div class="sidebar-footer">
@@ -4029,6 +4041,33 @@
       </div>
       <div style="text-align:center; margin-top: 12px;">
         <button type="button" class="modal-cancel-link" onclick="closeOpTzModal()">Skip for now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Self-serve GoLogin token. Validated (works + right account) before it's
+       written to the engine AND this app; a live-token swap asks to confirm. -->
+  <div id="gologin-token-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeGologinTokenModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="gl-token-title">
+      <h3 id="gl-token-title" class="modal-title">Update GoLogin token</h3>
+      <div class="modal-body">
+        <p style="margin: 0 0 12px;">Paste a fresh GoLogin API token. It's checked before it's saved, then written to the engine and this app — no restart, no reinstall.</p>
+        <label for="gl-token-ws" style="display:block; font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; color: #8b867a; margin-bottom: 6px;">Workspace</label>
+        <select id="gl-token-ws" onchange="renderGologinTokenStatus()" style="width: 100%; padding: 10px 12px; background: #14140f; color: #fafaf9; border: 1px solid rgba(197,162,85,0.3); border-radius: 6px; font-family: inherit; font-size: 0.9rem; margin-bottom: 10px;">
+          <option value="ortus">Ortus</option>
+          <option value="linkedvelocity">Linked Velocity</option>
+          <option value="marketing">Marketing</option>
+        </select>
+        <div id="gl-token-current" class="notif-row-v" style="margin: 0 0 12px; font-size: 0.85rem;">Checking current status…</div>
+        <label for="gl-token-input" style="display:block; font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; color: #8b867a; margin-bottom: 6px;">New token</label>
+        <input id="gl-token-input" type="password" autocomplete="off" spellcheck="false" placeholder="eyJhbGci…" style="width: 100%; padding: 10px 12px; background: #14140f; color: #fafaf9; border: 1px solid rgba(197,162,85,0.3); border-radius: 6px; font-family: inherit; font-size: 0.9rem;">
+        <div id="gl-token-msg" style="margin-top: 10px; font-size: 0.85rem; min-height: 1.1em;"></div>
+      </div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" id="gl-token-save" class="btn btn-primary" onclick="saveGologinToken(false)">Validate &amp; save</button>
+      </div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" onclick="closeGologinTokenModal()">Cancel</button>
       </div>
     </div>
   </div>

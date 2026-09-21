@@ -56,7 +56,7 @@ import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSal
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession, gologinTokenStatus, gologinTokenUpdate } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
@@ -1690,6 +1690,37 @@ app.get('/api/campaign/cloud-capacity', async (_req, res) => {
   const r = await memoCloud('capacity', () => getCloudCapacity());
   if (r.error) return res.json({ queue: [], unavailable: true });
   res.json(r);
+});
+
+// ─── Self-serve GoLogin token ───────────────────────────────────────────────
+// Per-workspace health, straight from the engine (never carries the token).
+app.get('/api/gologin-token/status', async (_req, res) => {
+  const r = await gologinTokenStatus();
+  if (r && r.error) return res.status(502).json({ error: r.error });
+  res.json(r);
+});
+
+// Update a workspace's token. The ENGINE is the authority — it validates (works +
+// right account) and answers needs_confirm for a live-token swap. Only once the
+// engine accepts do we persist the operator's LOCAL override (dataPath/gologin-
+// tokens.json), so a dead or wrong-account token never lands in either place and
+// the operator's own roster is fixed in the same click.
+app.post('/api/gologin-token', async (req, res) => {
+  const { workspace = 'ortus', token, confirmReplaceLive = false } = req.body || {};
+  if (!token || typeof token !== 'string') return res.status(400).json({ ok: false, reason: 'no token' });
+  const eng = await gologinTokenUpdate({ workspace, token, confirmReplaceLive });
+  if (eng && eng.error) return res.status(502).json({ ok: false, reason: `engine did not answer: ${eng.error}` });
+  if (eng && eng.ok) {
+    try {
+      const file = dataPath('gologin-tokens.json');
+      let map = {};
+      try { map = JSON.parse(readFileSync(file, 'utf8')) || {}; } catch { map = {}; }
+      map[workspace] = token;
+      writeFileSync(`${file}.tmp`, JSON.stringify(map));
+      renameSync(`${file}.tmp`, file);
+    } catch (e) { /* local persist is best-effort; the engine already accepted */ }
+  }
+  res.json(eng);
 });
 
 // One browser request supplies the board's list, detail snapshots and global
