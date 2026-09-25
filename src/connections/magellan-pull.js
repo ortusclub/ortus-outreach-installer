@@ -111,8 +111,10 @@ export function readExistingBySlug(filePath) {
 }
 
 /**
- * Merge a live pull with what's already on disk. Live wins on identity
- * (name, member id); disk wins on company/position, which only it has.
+ * Merge a live pull with what's already on disk. Live wins on everything it
+ * now carries (name, member id, location, current company + title — all from
+ * the enrichment pass); disk is the fallback for a connection that skipped
+ * enrichment this run, and still the only source of a prior archive's email.
  */
 export function mergeRows(live, existingBySlug) {
   return (live || []).map((c) => {
@@ -123,8 +125,9 @@ export function mergeRows(live, existingBySlug) {
       lastName: c.lastName || '',
       url: slug ? `https://www.linkedin.com/in/${slug}` : '',
       email: prev.email || '',
-      company: prev.company || '',
-      position: prev.position || '',
+      // Current company + job title from the enriched profile; disk fallback.
+      company: c.company || prev.company || '',
+      position: c.title || prev.position || '',
       connectedOn: formatConnectedOn(c.connectedAt) || prev.connectedOn || '',
       memberId: c.memberNumber || prev.memberId || '',
       // Live wins: the enriched profile carries the current location; disk is the
@@ -308,13 +311,28 @@ export function readForPlan(account, { dir = CONNECTIONS_DIR } = {}) {
       const iU = header.indexOf('URL');
       const iF = header.indexOf('First Name');
       const iL = header.indexOf('Last Name');
+      const iM = header.indexOf('Member ID');
       const byS = new Map(out.map((o) => [o.slug, o]));
       for (let i = h + 1; i < rows.length; i++) {
-        const slug = normalizeSlug(rows[i][iU]);
+        const row = rows[i];
+        if (!row || !row.some((c) => (c || '').trim())) continue; // skip a truly empty line
+        const slug = normalizeSlug(row[iU]);
         const rec = slug && byS.get(slug);
-        if (!rec) continue;
-        rec.firstName = (rows[i][iF] || '').trim();
-        rec.lastName = (rows[i][iL] || '').trim();
+        if (rec) {
+          rec.firstName = (row[iF] || '').trim();
+          rec.lastName = (row[iL] || '').trim();
+          continue;
+        }
+        // A row LinkedIn told us nothing usable about — no URL and no member id
+        // (blank except "Connected On"; deactivated / restricted accounts).
+        // readExistingBySlug keys on slug, so these never reached `out`; keep them
+        // here as hidden placeholders so Check counts them (planAccount's isHidden)
+        // instead of silently reporting 0 hidden while Collect counted them. This
+        // is the gap between "806 connections" and "786 checked".
+        const memberId = iM >= 0 ? (row[iM] || '').trim() : '';
+        if (!slug && !memberId) {
+          out.push({ slug: '', memberId: '', firstName: '', lastName: '', company: '', jobTitle: '', location: '' });
+        }
       }
     }
   }

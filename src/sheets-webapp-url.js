@@ -71,7 +71,12 @@ export const FG_WEBAPP_URL = process.env.FG_WEBAPP_URL || 'https://script.google
 // magellan-apps-script.js into a NEW Apps Script project, deploy as a web app
 // ("execute as me", "anyone with the link"), and put its /exec URL here.
 // Until then Magellan still runs; only the sheet write is skipped.
-export const MAGELLAN_WEBAPP_URL = process.env.MAGELLAN_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbyxj7ySr0MxECDf8PQHWVi8ks93WxPCqWsEe4YZo02Ie3zuo0mSL5p3gU0n9JYM4Ypr/exec';
+// 2026-09-25: the original deployment (…zuo0mSL5p3gU0n9J…/exec) started answering
+// every anonymous call with Google's 403 "Access Denied" HTML — the deployment
+// itself had gone bad (not an org policy: a fresh deployment of the SAME project,
+// bound to the SAME "Operation Magellan" sheet, serves anonymous GET/POST fine).
+// Re-deployed as a new web app under stevenj@ortusclub.com and repointed here.
+export const MAGELLAN_WEBAPP_URL = process.env.MAGELLAN_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzV4Aaf5rPK42R3B0RCplpW1ZSZ9LNdQo0-Lyjp3TdjNpbXj0wztD4_mDzQaL9LrtWR/exec';
 
 // Follower Growth Phase 2 — the Ortus Club page "Invite to follow" modal URL.
 // The ?invite=true query opens the invite modal directly; the /posts/ path +

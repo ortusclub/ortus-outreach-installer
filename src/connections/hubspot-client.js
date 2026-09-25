@@ -100,7 +100,7 @@ function chunk(arr, size = BATCH_LIMIT) {
  * Returns a Map memberId → { id, properties }.
  */
 export async function lookupByMemberIds(memberIds,
-  { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN, onProgress = null } = {}) {
+  { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN, onProgress = null, slugByMemberId = null } = {}) {
   if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
   const out = new Map();
   // Two contacts can carry the same LinkedIn id — the old manual process made
@@ -165,7 +165,19 @@ export async function lookupByMemberIds(memberIds,
     });
     const json = await res.json();
     for (const r of json.results || []) {
-      const mid = idByEmail.get(String(r.properties?.email || '').trim().toLowerCase());
+      // HubSpot's `email` search matches the synthetic address whether it is the
+      // record's PRIMARY email OR one of its ADDITIONAL emails (hs_additional_emails).
+      // Checking only `email` here missed the records that carry it as a SECONDARY
+      // address — their primary is a real email, so this map lookup returned nothing,
+      // the person was mis-planned as "new", and the create then collided on that very
+      // address ("already used by someone else"). Map back from whichever slot holds a
+      // synthetic address we actually asked for. (Measured: 40 of Nicolle's connections
+      // failed exactly this way, 2026-09-10.)
+      const slots = [String(r.properties?.email || ''),
+        ...String(r.properties?.hs_additional_emails || '').split(/[;,]/)]
+        .map((s) => s.trim().toLowerCase());
+      let mid = null;
+      for (const s of slots) { const m = idByEmail.get(s); if (m) { mid = m; break; } }
       // Never overwrite a member-id hit: that one is the record a human
       // maintains, this one is the synthetic shell.
       if (!mid || all.has(mid)) continue;
@@ -173,6 +185,46 @@ export async function lookupByMemberIds(memberIds,
     }
     asked += batch.length;
     onProgress?.({ done: Math.min(asked, ids.length), total: ids.length });
+  }
+
+  // Third pass: the person is in HubSpot under their LinkedIn URL but with NO
+  // member id — Apollo / Sales-Nav / manual imports that carry `linkedinbio`
+  // and never a linkedin_membership_id. Neither pass above can see them, so the
+  // import used to create a DUPLICATE (measured on Kyle Andersen @ Pfizer,
+  // 2026-09-02: in HubSpot as kyle.andersen@pfizer.com, bio /in/kyle-andersen-…,
+  // member id blank → planned as new). Matching by the profile URL recovers the
+  // record; updateProperties then writes the missing member id onto it, so —
+  // like the synthetic pass — every run permanently repairs what it touches and
+  // this pass shrinks over time. Only runs when the caller supplies slugs.
+  const stillMissing = slugByMemberId ? ids.filter((id) => !all.has(id)) : [];
+  if (stillMissing.length) {
+    const getSlug = (id) => {
+      const s = slugByMemberId.get ? slugByMemberId.get(id) : slugByMemberId[id];
+      return String(s || '').trim().toLowerCase();
+    };
+    const slugToId = new Map();
+    for (const id of stillMissing) { const s = getSlug(id); if (s) slugToId.set(s, id); }
+    const slugs = [...slugToId.keys()];
+    // 2 URL variants per slug, so halve the batch to stay under the value cap.
+    for (const batch of chunk(slugs, Math.floor(BATCH_LIMIT / 2))) {
+      const values = batch.flatMap((s) => slugVariants(s));
+      const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/search`, token, {
+        filterGroups: [{ filters: [{ propertyName: 'linkedinbio', operator: 'IN', values }] }],
+        properties: MAGELLAN_PROPS,
+        limit: BATCH_LIMIT,
+      });
+      const json = await res.json();
+      for (const r of json.results || []) {
+        const m = String(r.properties?.linkedinbio || '').match(/\/in\/([^/?#,]+)/i);
+        const slug = m ? m[1].trim().toLowerCase() : '';
+        const mid = slug && slugToId.get(slug);
+        // Never displace a member-id or synthetic hit — those are more certain.
+        if (!mid || all.has(mid)) continue;
+        all.set(mid, [{ id: r.id, properties: r.properties || {} }]);
+      }
+      asked += batch.length;
+      onProgress?.({ done: Math.min(asked, ids.length), total: ids.length });
+    }
   }
 
   // Prefer the human-maintained record — the one with a real email — over the
@@ -267,11 +319,26 @@ export async function batchCreate(inputs, { fetchImpl = fetch, token = process.e
   // was to search for them again. Keyed off the synthetic email because that is
   // the one property we are certain we sent for every create.
   const ids = new Map();
-  for (const batch of chunk(inputs)) {
+  // Creates that collided with an EXISTING contact — reported so the caller can
+  // record the connection on that record instead of losing the person. HubSpot's
+  // batch create is all-or-nothing: ONE duplicate rejects the whole 100-row
+  // batch, so a few collisions used to fail every genuinely-new person alongside
+  // them (0 added, all "not written"). BISECT a failed batch down to the single
+  // row, so the clean creates go through and only the real collisions are
+  // isolated; the error names the existing contact ("Existing ID: 123"), which
+  // we hand back for the 409-recovery.
+  const conflicts = [];
+
+  const attempt = async (batch) => {
+    let json = null;
+    let errMsg = null;
     try {
       const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/batch/create`, token,
         { inputs: batch.map((b) => ({ properties: b.properties })) });
-      const json = await res.json();
+      json = await res.json();
+    } catch (err) { errMsg = err.message; }
+
+    if (!errMsg) {
       created += (json.results || []).length;
       for (const r of json.results || []) {
         const mid = memberIdFromSynthetic(r.properties?.email);
@@ -279,12 +346,43 @@ export async function batchCreate(inputs, { fetchImpl = fetch, token = process.e
       }
       const partial = partialFailure(json);
       if (partial) errors.push(partial);
-    } catch (err) {
-      errors.push({ size: batch.length, error: err.message });
+      return;
     }
+    if (batch.length === 1) {
+      const existingId = (errMsg.match(/Existing ID:\s*(\d+)/i) || [])[1];
+      if (existingId) conflicts.push({ input: batch[0], existingId });
+      else errors.push({ size: 1, error: errMsg });
+      return;
+    }
+    const mid = Math.floor(batch.length / 2);
+    await attempt(batch.slice(0, mid));
+    await attempt(batch.slice(mid));
+  };
+
+  for (const batch of chunk(inputs)) {
+    await attempt(batch);
     onProgress?.({ created, errors: errors.length });
   }
-  return { created, errors, ids };
+  return { created, errors, ids, conflicts };
+}
+
+/**
+ * Read contacts straight by id (batch read), NOT by search. The 409-recovery
+ * needs this: the colliding record is often quarantined / never returned by
+ * search, but a read by the id HubSpot handed back always works. Returns
+ * Map(id -> properties).
+ */
+export async function readContactsByIds(idList, { fetchImpl = fetch, token = process.env.HUBSPOT_TOKEN } = {}) {
+  if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
+  const out = new Map();
+  const uniq = [...new Set((idList || []).map(String).filter(Boolean))];
+  for (const batch of chunk(uniq)) {
+    const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/batch/read`, token,
+      { properties: MAGELLAN_PROPS, inputs: batch.map((id) => ({ id })) });
+    const json = await res.json();
+    for (const r of json.results || []) out.set(String(r.id), r.properties || {});
+  }
+  return out;
 }
 
 /** Update contacts in batches. `inputs` is [{ id, properties }]. */
@@ -292,17 +390,40 @@ export async function batchUpdate(inputs, { fetchImpl = fetch, token = process.e
   if (!token) throw new Error('HUBSPOT_TOKEN not set — add it to .env');
   let updated = 0;
   const errors = [];
-  for (const batch of chunk(inputs)) {
+
+  // HubSpot's batch update is atomic: ONE row it rejects (e.g. a value that is
+  // not a valid option) fails the whole 100-row batch, silently dropping the
+  // write for every clean row alongside it — the exact shape of the "existing
+  // contacts never got tagged" bug. BISECT a failed batch down to the single
+  // offending row, so the clean updates go through and only the real bad row(s)
+  // are isolated and reported. Mirrors batchCreate; O(log n) extra calls per bad
+  // row, not O(n).
+  const attempt = async (batch) => {
+    let json = null;
+    let errMsg = null;
     try {
       const res = await postWithRetry(fetchImpl, `${BASE}/crm/v3/objects/contacts/batch/update`, token,
         { inputs: batch.map((b) => ({ id: b.id, properties: b.properties })) });
-      const json = await res.json();
+      json = await res.json();
+    } catch (err) { errMsg = err.message; }
+
+    if (!errMsg) {
       updated += (json.results || []).length;
       const partial = partialFailure(json);
       if (partial) errors.push(partial);
-    } catch (err) {
-      errors.push({ size: batch.length, error: err.message });
+      return;
     }
+    if (batch.length === 1) {
+      errors.push({ size: 1, id: batch[0].id, error: errMsg });
+      return;
+    }
+    const mid = Math.floor(batch.length / 2);
+    await attempt(batch.slice(0, mid));
+    await attempt(batch.slice(mid));
+  };
+
+  for (const batch of chunk(inputs)) {
+    await attempt(batch);
     onProgress?.({ updated, errors: errors.length });
   }
   return { updated, errors };

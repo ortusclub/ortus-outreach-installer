@@ -17,8 +17,8 @@ const TOKEN = 'test-token';
  * A fake portal. `byMemberId` answers the first pass, `byEmail` the second, so
  * a test can make a record visible to exactly one of them.
  */
-function portal({ byMemberId = {}, byEmail = {} } = {}) {
-  const calls = { memberId: 0, email: 0, emailValues: [] };
+function portal({ byMemberId = {}, byEmail = {}, byBio = {} } = {}) {
+  const calls = { memberId: 0, email: 0, emailValues: [], bio: 0, bioValues: [] };
   const fetchImpl = async (url, opts) => {
     const body = JSON.parse(opts.body);
     const filter = body.filterGroups[0].filters[0];
@@ -30,6 +30,10 @@ function portal({ byMemberId = {}, byEmail = {} } = {}) {
       calls.email += 1;
       calls.emailValues.push(...filter.values);
       results = filter.values.flatMap((v) => byEmail[v] || []);
+    } else if (filter.propertyName === 'linkedinbio') {
+      calls.bio += 1;
+      calls.bioValues.push(...filter.values);
+      results = filter.values.flatMap((v) => byBio[v] || []);
     }
     return { ok: true, json: async () => ({ results }) };
   };
@@ -85,6 +89,58 @@ test('an unrelated contact returned by the email search is ignored', async () =>
   const p = portal({ byEmail: { [syntheticEmail('666')]: [{ id: 'x', properties: { email: 'someone@else.com' } }] } });
   const out = await lookupByMemberIds(['666'], { fetchImpl: p.fetchImpl, token: TOKEN });
   assert.equal(out.has('666'), false);
+});
+
+test('a shell holding the synthetic address as a SECONDARY email is recovered (not planned as a create)', async () => {
+  // Nicolle's 40 failures (2026-09-10): the record's PRIMARY email is a real
+  // address and the synthetic key sits in hs_additional_emails. HubSpot's email
+  // search still returns it, but the old map-back read only `email` (the real
+  // one) and found nothing — so the person was planned as new and the create
+  // collided on the synthetic address. The map-back now also reads the secondary.
+  const patrick = { id: 'p1', properties: { email: 'patrick@real.com', hs_additional_emails: syntheticEmail('167892408') } };
+  const p = portal({ byEmail: { [syntheticEmail('167892408')]: [patrick] } });
+  const out = await lookupByMemberIds(['167892408'], { fetchImpl: p.fetchImpl, token: TOKEN });
+  assert.equal(out.get('167892408').id, 'p1', 'matched via the secondary email → updated, not duplicated');
+});
+
+// ── Third pass: match by LinkedIn URL (people in HubSpot with no member id) ──
+
+test('a contact found only by its LinkedIn URL is recovered (prevents a duplicate)', async () => {
+  // Kyle @ Pfizer: in HubSpot under a real email, no member id, only a bio URL.
+  const kyle = { id: 'kyle', properties: { email: 'kyle.andersen@pfizer.com', linkedinbio: 'http://www.linkedin.com/in/kyle-andersen-875870170' } };
+  const p = portal({ byBio: { 'https://www.linkedin.com/in/kyle-andersen-875870170': [kyle], 'http://www.linkedin.com/in/kyle-andersen-875870170': [kyle] } });
+  const out = await lookupByMemberIds(['682941401'], {
+    fetchImpl: p.fetchImpl, token: TOKEN,
+    slugByMemberId: new Map([['682941401', 'kyle-andersen-875870170']]),
+  });
+  assert.equal(out.get('682941401').id, 'kyle', 'matched by URL → will be updated, not duplicated');
+  assert.equal(p.calls.bio, 1);
+});
+
+test('the third pass does NOT run when the caller supplies no slugs (back-compat)', async () => {
+  const p = portal({});
+  await lookupByMemberIds(['777'], { fetchImpl: p.fetchImpl, token: TOKEN });
+  assert.equal(p.calls.bio, 0, 'no slugByMemberId → no URL search');
+});
+
+test('a member-id / synthetic hit is never displaced by a URL hit', async () => {
+  const p = portal({
+    byMemberId: { 888: [{ id: 'real', properties: { email: 'x@real.com', linkedin_membership_id: '888' } }] },
+    byBio: { 'https://www.linkedin.com/in/x-slug': [{ id: 'url', properties: {} }] },
+  });
+  const out = await lookupByMemberIds(['888'], {
+    fetchImpl: p.fetchImpl, token: TOKEN, slugByMemberId: new Map([['888', 'x-slug']]),
+  });
+  assert.equal(out.get('888').id, 'real');
+  assert.equal(p.calls.bio, 0, 'it was already found, so the URL pass never asks about it');
+});
+
+test('a URL row whose slug we did not ask for is ignored', async () => {
+  const p = portal({ byBio: { 'https://www.linkedin.com/in/wanted': [{ id: 'z', properties: { linkedinbio: 'https://www.linkedin.com/in/SOMEONE-ELSE' } }] } });
+  const out = await lookupByMemberIds(['999'], {
+    fetchImpl: p.fetchImpl, token: TOKEN, slugByMemberId: new Map([['999', 'wanted']]),
+  });
+  assert.equal(out.has('999'), false, 'the returned bio maps to a different slug → not mapped back');
 });
 
 test('mixed batch: found, recovered and new are each sorted correctly', async () => {
