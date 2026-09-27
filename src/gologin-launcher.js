@@ -104,6 +104,7 @@ export function selectOrphanPids({ spawned, activePids, isAlive }) {
 // entire campaign. Keyed by account id since v2.160.138: the app lists more
 // than one GoLogin workspace and a single shared cache would let whichever
 // account refreshed last stand in for both.
+let profileCacheGeneration = 0;
 const profileCaches = new Map(); // accountId → { list, time }
 // accountId → the in-flight fetch, so callers that arrive while one workspace is
 // still listing WAIT for it instead of starting a second one. profileCaches only
@@ -245,14 +246,15 @@ export async function getProfiles(_ignoredLegacyToken) {
       try {
         let pending = profileFetches.get(acc.id);
         if (!pending) {
+          const generation = profileCacheGeneration;
           pending = fetchAccountProfiles(acc.id, tokenForAccount(acc.id))
             .then((fresh) => {
               // Stamped when the list ARRIVES, not when it was asked for, so a
               // slow page-through cannot spend most of its own TTL loading.
-              profileCaches.set(acc.id, { list: fresh, time: Date.now() });
+              if (generation === profileCacheGeneration) profileCaches.set(acc.id, { list: fresh, time: Date.now() });
               return fresh;
             })
-            .finally(() => profileFetches.delete(acc.id));
+            .finally(() => { if (generation === profileCacheGeneration) profileFetches.delete(acc.id); });
           profileFetches.set(acc.id, pending);
         }
         list = await pending;
@@ -320,6 +322,8 @@ export async function tokenForProfile(profileId) {
 }
 
 export function clearProfileCache() {
+  profileCacheGeneration += 1;
+  profileFetches.clear();
   profileCaches.clear();
   profileAccount.clear();
 }

@@ -71,7 +71,7 @@ const SERVER = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 const APP = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
 
 test('the list route slims, the single-record route does not', () => {
-  assert.match(SERVER, /res\.json\(\{ campaigns: slimBoard\(board\.campaigns\)/);
+  assert.match(SERVER, /res\.json\(\{ campaigns: slimBoard\(\(board\.campaigns \|\| \[\]\)\.filter/);
   // Open and Re-run read full search URLs from here; slimming it would silently
   // re-run a scrape with no searches.
   assert.match(SERVER, /const rec = \(board\.campaigns \|\| \[\]\)\.find\(\(c\) => c\.id === req\.params\.id\) \|\| null;\s*\n\s*res\.json\(\{ campaign: rec/);

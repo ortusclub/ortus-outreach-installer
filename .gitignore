@@ -62,3 +62,6 @@ data/magellan-hubspot-ids.json
 # state it is already designed for.
 data/monitoring-campaign.json
 data/monitoring-campaign.local-backup.json
+
+# Local dependency symlink used by isolated Electron previews
+node_modules

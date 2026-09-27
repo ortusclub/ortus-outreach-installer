@@ -1,3 +1,4 @@
+import { campaignLifecycle, withCampaignLifecycle } from './campaign-lifecycle.mjs';
 // Floating live console — pure helpers.
 // Imported by public/js/app.js for DOM glue and by tests/live-console.test.js
 // for unit verification. Keep this module DOM-free: no document/window access.
@@ -18,11 +19,13 @@ export function computePillState(s) {
     return _emptyState();
   }
 
+  if (s.campaignId && !s._cloud) s = withCampaignLifecycle(s);
   const name = (s.name || '').trim() || '—';
   const modeShort = MODE_LABELS[s.mode] || (s.mode || '').toUpperCase() || '—';
   const errCount = Array.isArray(s.errors) ? s.errors.length : 0;
   const parkedCount = Array.isArray(s.parked) ? s.parked.length : 0;
   const throttleActive = !!(s.throttle && s.throttle.active);
+  const isChecking = !!s.monitoringCheckInProgress;
   const isPaused = !!s.paused;
   const isMonitoring = s.state === 'monitoring';
 
@@ -31,7 +34,11 @@ export function computePillState(s) {
   let pulse = false;
   let labelSuffix = modeShort;
 
-  if (isPaused) {
+  if (isChecking) {
+    dot = 'green';
+    pulse = true;
+    labelSuffix = 'checking';
+  } else if (isPaused) {
     dot = 'gray';
     pulse = false;
     labelSuffix = 'paused';
@@ -51,7 +58,8 @@ export function computePillState(s) {
   // (→ 'idle') during ACTIVE sending — only flipping to 'monitoring'/'done'
   // later. Derive a truthful display state so the console never reads
   // "STATE · IDLE" while a campaign is actually running.
-  const displayState = isPaused ? 'paused'
+  const displayState = s.campaignId && !isChecking ? campaignLifecycle(s).status : isChecking ? 'checking'
+    : isPaused ? 'paused'
     : isMonitoring ? 'monitoring'
     : s.running ? 'running'
     : (s.state || 'idle');
