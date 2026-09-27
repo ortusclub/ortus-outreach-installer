@@ -8864,3 +8864,7 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 
 .campaign-identifier { display: block; color: var(--gray); font: 11px var(--mono); overflow-wrap: anywhere; margin-top: 8px; user-select: text; }
 .campaign-identifier[hidden] { display: none; }
+
+#credentials-modal .cred-state.is-error, #credentials-modal .cred-error { color: var(--red, #c83030); }
+#credentials-modal .cred-other-row { flex-wrap: wrap; }
+#credentials-modal .cred-other-row .cred-error { flex-basis: 100%; }

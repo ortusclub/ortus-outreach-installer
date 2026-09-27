@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import { accountById, tokenForAccount } from './gologin-accounts.js';
 
 /** Read-only check. No token or upstream response body is returned to the UI. */
-export async function checkWorkspaceCredential(id, { fetchImpl = fetch, timeoutMs = 12000 } = {}) {
+async function checkWorkspaceCredentialOnce(id, { fetchImpl = fetch, timeoutMs = 12000 } = {}) {
   const account = accountById(id);
   if (!account) return { id, ok: false, error: 'Workspace no longer exists.' };
   const result = { id, label: account.label };
@@ -23,4 +24,22 @@ export async function checkWorkspaceCredential(id, { fetchImpl = fetch, timeoutM
       ? 'GoLogin did not respond within 12 seconds. The token is saved; try checking again.'
       : 'Could not reach GoLogin. Check your internet connection and try again.' };
   }
+}
+
+// Results belong to the exact token checked. Replacing/removing a token clears
+// its displayed verdict automatically; the token itself is never returned.
+const checks = new Map();
+const fingerprint = id => createHash('sha256').update(tokenForAccount(id) || '').digest('hex');
+export function getWorkspaceVerification(id) {
+  const entry = checks.get(id);
+  return entry && entry.fingerprint === fingerprint(id) ? { ...entry.result } : null;
+}
+export function recordWorkspaceVerification(id, result) {
+  checks.set(id, { fingerprint: fingerprint(id), result: { ...result, checkedAt: new Date().toISOString() } });
+}
+export async function checkWorkspaceCredential(id, options) {
+  const initial = fingerprint(id);
+  const result = await checkWorkspaceCredentialOnce(id, options);
+  if (initial === fingerprint(id)) recordWorkspaceVerification(id, result);
+  return result;
 }

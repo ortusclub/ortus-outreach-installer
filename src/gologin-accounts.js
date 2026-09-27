@@ -91,6 +91,14 @@ export const DEFAULT_ACCOUNT_ID = 'ortus';
 // there is no domain that could gate it. `modes: null` — no mode restriction.
 let _customAccounts = [];
 
+// Tokens explicitly saved on this installation grant access across team domains.
+// Bundled/environment credentials retain their existing membership rules.
+let _operatorTokens = new Map();
+export function setOperatorCredentialAccounts(ids) {
+  _operatorTokens = new Map(ids.map(id => [id, tokenForAccount(id)]).filter(([, token]) => token));
+}
+
+
 export function setCustomAccounts(list) {
   _customAccounts = (Array.isArray(list) ? list : [])
     .filter((a) => a && a.id && a.env)
@@ -255,6 +263,7 @@ export function grantsForProfile(profileId) {
 export function canOperatorUseProfile(email, profileAccountId, profileId) {
   const id = profileAccountId || DEFAULT_ACCOUNT_ID;
   const acc = accountById(id);
+  if (_operatorTokens.get(id) && _operatorTokens.get(id) === tokenForAccount(id)) return true;
   if (acc && acc.openToAll) return true;
   const mine = accountForEmail(email);
   if (mine === id) return true;

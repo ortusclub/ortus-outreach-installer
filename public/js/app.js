@@ -2427,7 +2427,9 @@ async function loadProfiles() {
     if (!window.__passoverInterval) {
       window.__passoverInterval = setInterval(renderPassoverBanner, 60000);
     }
-    return { ok: true, count: allProfilesData.length };
+    let warnings = [];
+    try { warnings = JSON.parse(decodeURIComponent(profilesRes.headers.get('X-GoLogin-Warnings') || '[]')); } catch { /* older backend */ }
+    return { ok: true, count: allProfilesData.length, warnings };
   } catch (err) {
     const error = ['TimeoutError', 'AbortError'].includes(err.name) ? 'GoLogin account loading timed out after 20 seconds.' : err.message;
     loading.textContent = `Failed: ${error}`;
@@ -35052,9 +35054,11 @@ async function renderCredentialsModal() {
     return;
   }
   wrap.innerHTML = creds.map((c) => {
-    const state = c.set
-      ? `<span class="cred-state is-set">set · ${escHtml(c.hint)}</span>`
-      : `<span class="cred-state is-unset">${c.required ? 'required' : 'not set'}</span>`;
+    const check = c.verification;
+    const state = check
+      ? `<span class="cred-state ${check.ok ? 'is-set' : 'is-error'}">${check.ok ? `Connected · ${Number(check.profileCount) || 0} accounts` : 'Error'}</span><span class="cred-state is-unset">${escHtml(c.hint || '')}</span>`
+      : `<span class="cred-state is-unset">${c.set ? `Saved · not checked · ${escHtml(c.hint)}` : 'Not set'}</span>`;
+    const errorNote = check && !check.ok ? `<div class="cred-note cred-error" role="status">${escHtml(check.error || 'Connection check failed.')}</div>` : '';
     const envNote = c.fromEnvironment
       ? '<div class="cred-note">Currently supplied by the environment (dev launcher). Saving here overrides it.</div>'
       : '';
@@ -35068,7 +35072,7 @@ async function renderCredentialsModal() {
       <input type="password" class="cred-input" id="cred-${escHtml(c.id)}"
              data-env="${escHtml(c.env)}" autocomplete="off" spellcheck="false"
              placeholder="${c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
-      ${envNote}
+      ${envNote}${errorNote}
     </div>`;
   }).join('');
 
@@ -35079,7 +35083,8 @@ async function renderCredentialsModal() {
   // you can drive". Saved rows show only the last four characters.
   const rows = _credOthers.map((o) => `<div class="cred-other-row" data-id="${escHtml(o.id)}">
       <span class="cred-other-name">${escHtml(o.label)}</span>
-      <span class="cred-state is-set">${escHtml(o.hint)}</span>
+      <span class="cred-state ${o.verification ? (o.verification.ok ? 'is-set' : 'is-error') : 'is-unset'}">${o.verification ? (o.verification.ok ? 'Connected' : 'Error') : 'Not checked'} · ${escHtml(o.hint)}</span>
+      ${o.verification && !o.verification.ok ? `<span class="cred-note cred-error">${escHtml(o.verification.error)}</span>` : ''}
       <button type="button" class="cred-other-del" title="Remove this workspace" onclick="removeCredOther('${escHtml(o.id)}')">Remove</button>
     </div>`).join('');
   wrap.insertAdjacentHTML('beforeend', `
@@ -35146,7 +35151,7 @@ async function updateCredentials(body, savedMessage = 'Saved.') {
         : [],
       refresh: () => loadProfiles(),
     });
-  } finally { setCredentialBusy(false); }
+  } finally { try { await renderCredentialsModal(); } finally { setCredentialBusy(false); } }
 }
 async function addCredOther() {
   const label = (document.getElementById('cred-other-label')?.value || '').trim();

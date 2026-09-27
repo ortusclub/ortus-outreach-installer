@@ -25,3 +25,9 @@ test('partial workspace failure names the failure and the connections that worke
   const {last}=await run({verify:async()=>[{label:'Good workspace',ok:true,profileCount:3},{label:'Bad workspace',ok:false,error:'Token rejected'}]});
   assert.equal(last.bad,true);assert.match(last.text,/Bad workspace.*Token rejected.*Working: Good workspace: 3 accounts/);
 });
+
+test('a bad old workspace does not negate a newly verified working token',async()=>{
+ const {result,last}=await run({refresh:async()=>({ok:true,count:535,warnings:[{label:'Ortus',error:'Token rejected (401)'}]})});
+ assert.equal(result.refreshed,true);assert.match(last.text,/refreshed \(535 accounts\).*Done.*Other workspaces.*Ortus/);
+ assert.doesNotMatch(last.text,/did not finish/);
+});

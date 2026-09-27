@@ -31,3 +31,16 @@ test('removing one custom workspace preserves every other workspace identity and
   assert.equal(accounts.tokenForAccount(second[0].id),'fake-token-b');
   assert.ok(!JSON.stringify(second).includes('fake-token-b'));
 });
+
+test('saving a workspace token enables cross-team selection and launch, removal revokes it', () => {
+  const email = 'member@ortusclub.com';
+  process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY = 'bundled-test-token';
+  assert.equal(accounts.canOperatorUseProfile(email, 'linkedvelocity', 'test-profile'), false);
+  creds.saveCredentials({ GOLOGIN_API_TOKEN_LINKEDVELOCITY: 'operator-test-token' });
+  assert.equal(accounts.canOperatorUseProfile(email, 'linkedvelocity', 'test-profile'), true);
+  assert.equal(accounts.profileUsableFor(email, 'linkedvelocity', 'message', 'test-profile'), true);
+  creds.applyCredentials();
+  assert.equal(accounts.canOperatorUseProfile(email, 'linkedvelocity', 'test-profile'), true);
+  creds.saveCredentials({ GOLOGIN_API_TOKEN_LINKEDVELOCITY: '' });
+  assert.equal(accounts.canOperatorUseProfile(email, 'linkedvelocity', 'test-profile'), false);
+});

@@ -1,3 +1,4 @@
+import { getWorkspaceVerification } from './gologin-credential-check.js';
 /**
  * src/gologin-credentials.js — operator-entered GoLogin workspace tokens.
  *
@@ -18,7 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 import { dataPath } from './paths.js';
-import { GL_ACCOUNTS, setCustomAccounts } from './gologin-accounts.js';
+import { GL_ACCOUNTS, setCustomAccounts, setOperatorCredentialAccounts } from './gologin-accounts.js';
 
 const FILE = () => dataPath('gologin-credentials.json');
 
@@ -74,6 +75,7 @@ export function applyCredentials(creds = readCredentials()) {
     process.env[otherEnv(workspaceId(o, i))] = String(o.token).trim();
     applied.push(workspaceId(o, i));
   });
+  setOperatorCredentialAccounts(applied);
   return applied;
 }
 
@@ -82,7 +84,7 @@ export function readOthers() {
   const others = readCredentials()[OTHERS_KEY];
   return (Array.isArray(others) ? others : [])
     .filter((o) => o && String(o.token || '').trim())
-    .map((o, i) => ({ id: workspaceId(o, i), label: String(o.label || `Other ${i + 1}`), hint: `••••${String(o.token).trim().slice(-4)}` }));
+    .map((o, i) => ({ id: workspaceId(o, i), label: String(o.label || `Other ${i + 1}`), hint: `••••${String(o.token).trim().slice(-4)}`, verification: getWorkspaceVerification(workspaceId(o, i)) }));
 }
 
 /** Replace the whole custom-workspace list. Entries: { label, token }. */
@@ -128,6 +130,7 @@ export function saveCredentials(input) {
   const p = FILE();
   writeFileSync(`${p}.tmp`, JSON.stringify(creds, null, 2), { encoding: 'utf8', mode: 0o600 });
   renameSync(`${p}.tmp`, p);
+  applyCredentials(creds);
   return creds;
 }
 
@@ -142,6 +145,7 @@ export function credentialStatus() {
       env: f.env,
       required: f.required,
       set: !!v,
+      verification: getWorkspaceVerification(f.id),
       // Enough to recognise a token, useless to steal.
       hint: v ? `••••${v.slice(-4)}` : '',
       fromEnvironment: !!process.env[f.env] && !creds[f.env],

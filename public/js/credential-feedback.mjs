@@ -19,7 +19,8 @@ export async function completeCredentialUpdate({ save, verify, refresh, show, sa
   try {
     const roster = await refresh();
     if (!roster?.ok) throw new Error(roster?.error || 'The account list could not be refreshed.');
-    show(`${savedMessage} ${summary ? `GoLogin connected — ${summary}. ` : ''}Account list refreshed (${roster.count} account${roster.count === 1 ? '' : 's'}). Done.`, false);
+    const warning = (roster.warnings || []).map(w => `${w.label}: ${w.error}`).join(' ');
+    show(`${savedMessage} ${summary ? `GoLogin connected — ${summary}. ` : ''}Account list refreshed (${roster.count} account${roster.count === 1 ? '' : 's'}). Done.${warning ? ` Other workspaces need attention: ${warning}` : ''}`, !!warning);
     return { saved: true, verified: true, refreshed: true };
   } catch (error) {
     show(`${savedMessage} ${summary ? `Token verified (${summary}), but ` : ''}the account list did not finish loading: ${error.message} Use Check connection to retry.`, true);
