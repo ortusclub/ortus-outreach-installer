@@ -1,5 +1,6 @@
+import { campaignTitle } from './campaign-title.mjs';
 import { terminalPresentation } from './campaign-terminal.mjs';
-import { normalizeLifecycle } from './campaign-lifecycle.mjs';
+import { normalizeLifecycle, campaignLifecycle, withCampaignLifecycle, campaignActionSpecs } from './campaign-lifecycle.mjs';
 
 // Pure helpers for rendering card #2 (the .vj-card live-status card) inside an
 // EXPANDED dashboard strip — browser-safe (no DOM), so app.js imports them and
@@ -31,6 +32,7 @@ export function statusFromItem(it = {}) {
     : undefined;
   return {
     lifecycle,
+    campaignId: it.campaignId,
     executionId: lifecycle.executionId,
     needsReview: lifecycle.needsReview,
     reviewAction: lifecycle.reviewAction,
@@ -216,6 +218,7 @@ export function monitorSweepDisposition(status = {}) {
 /** Computed field values for the card body (no time-based countdown here — that
  *  is filled live by the ticker). Pure + testable. */
 export function vjCardFields(status = {}) {
+  if (status.campaignId && !status._cloud) status = withCampaignLifecycle(status);
   const s = status || {};
   const isMonitor = s.state === 'monitoring';
   const isDone = s.state === 'done';
@@ -237,7 +240,7 @@ export function vjCardFields(status = {}) {
   // eyebrow is a SEPARATE renderer and was still echoing the raw status.
   const isWaiting = !isMonitor && !isDone && !isQueued && !s.bad
     && !!(s.currentAction && s.currentAction.phase === 'waiting');
-  const eyebrow = isInterrupted ? 'Stopped · This Mac unavailable'
+  const eyebrow = s._loadingIdentity ? 'Loading campaign…' : isInterrupted ? 'Stopped · This Mac unavailable'
     : isStopping ? 'Stopping…'
     : s.bad ? (s.badLabel || 'Stopped')
     : isMonitor ? 'Monitoring'
@@ -254,8 +257,8 @@ export function vjCardFields(status = {}) {
     : (s.paused ? 'Paused' : 'Sending');
   return {
     isMonitor, isDone, isQueued, isWaiting, isInterrupted,
-    name: s.name || '(unnamed)',
-    eyebrow, pct, done, total, accountsCount, accepted, sendingLbl,
+    name: campaignTitle(s),
+    eyebrow: s.campaignId && !s._cloud ? campaignLifecycle(s).label : eyebrow, pct, done, total, accountsCount, accepted, sendingLbl,
   };
 }
 
@@ -271,7 +274,27 @@ function _esc(v) {
     .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+export function hasLocalCampaignRun(s = {}) {
+  if (s.state === 'draft' || s.hasRun === false) return false;
+  return !!(s.hist || s.startedAt || s.running || s.interrupted
+    || s.state === 'monitoring' || s.endNotice || Number(s.totalProcessed) > 0
+    || Number(s.totalTargets) > 0);
+}
+
 export function vjCardControlsFor(status = {}) {
+  if (status.campaignId && !status._cloud) {
+    const c = { open: null, sheet: { onclick: 'window.openVjCardSheet(this)' }, pause: null, stop: null, restart: null, copy: null, extra: [] };
+    for (const spec of campaignActionSpecs(status)) {
+      const control = { tip: spec.label, kind: spec.kind, onclick: spec.onclick };
+      if (spec.action === 'open') c.open = control;
+      else if (spec.action === 'pause' || (spec.action === 'resume' && campaignLifecycle(status).status === 'paused')) c.pause = control;
+      else if (spec.action === 'stop') c.stop = control;
+      else if (spec.action === 'check') c.bulk = control;
+      else c.extra.push(control);
+    }
+    if (status.monitoringCheckInProgress) c.stop = { tip: 'Stop check', onclick: 'stopSoloCheck(this)' };
+    return c;
+  }
   const s = status || {};
   const cloud = !!s._cloud;
   const id = _esc(String(s.id || ''));
@@ -282,7 +305,10 @@ export function vjCardControlsFor(status = {}) {
   // as running:false + engineStatus. Normalize that distinction here so sharing
   // the renderer does not accidentally give a cancelled campaign live controls.
   const terminalEngine = ['completed', 'cancelled', 'error', 'failed', 'stopped'].includes(String(s.engineStatus || '').toLowerCase());
-  const done = s.state === 'done' || (!s.running && terminalEngine);
+  const localStopped = !cloud && s.running === false && !monitor
+    && !['queued', 'interrupted', 'waiting_daily_reset', 'needs_review', 'stopping'].includes(s.state)
+    && !!(s.sheetUrl || s.endNotice || Number(s.totalTargets) > 0);
+  const done = s.state === 'done' || (!s.running && terminalEngine) || localStopped;
   const queued = s.state === 'queued';
   const interrupted = s.state === 'interrupted' || !!s.interrupted;
   const dailyWait = s.state === 'waiting_daily_reset';
@@ -314,6 +340,23 @@ export function vjCardControlsFor(status = {}) {
     pause: null, stop: null, restart: null, copy: null,
     resumeSending: null, deleteForever: null, bulk: null, monAuto: null, extra: [],
   };
+
+  if (!cloud && !queued && !s.running && !s.monitoringCheckInProgress && !hasLocalCampaignRun(s)) {
+    c.extra.push({ tip: 'Start campaign', kind: 'play',
+      onclick: 'window.showCampaignStart()' });
+    return c;
+  }
+
+  if (localStopped && s.monitoringCheckInProgress) {
+    c.stop = { tip: 'Stop check', onclick: 'stopSoloCheck(this)' };
+    return c;
+  }
+
+  if (localStopped && (!id || id === 'local-active' || id === 'legacy-singleton')) {
+    c.extra.push({ tip: 'Resume campaign', kind: 'play', once: true,
+      onclick: "window.openCampaignResumeDecision('local-active','sending','local',this)" });
+    return c;
+  }
 
   if (interrupted) {
     const interruptedPhase = s.interruption?.phase || (s.monitoringPhase ? 'monitoring' : 'sending');
@@ -460,6 +503,10 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
   // Parked by 3 consecutive proxy 407s: the VM cannot open this profile's
   // browser at all. Distinct from a throttle, because waiting will not fix it.
   else if (a.parkReason === 'proxy') { pills.push(['bad', 'Proxy refused']); status = 'The VM cannot open this profile — fix its proxy in GoLogin, then try again'; }
+  else if (weekly && a.weeklySuspected) {
+    pills.push(['bad', 'Suspected weekly limit']);
+    status = `Stopped — suspected weekly invitation limit (LinkedIn refused its invite). If it is the limit, it resets ${nextMonday}`;
+  }
   else if (weekly) {
     // The pill gets the date, the drawer gets the countdown. "Stopped until
     // Monday 7 Sept (in 5 days)" is a sentence, and a sentence in a pill is
@@ -469,6 +516,7 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
   }
   else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') { pills.push(['bad', 'Throttled']); status = 'Throttled — pausing between sends, it comes back on its own'; }
   else if (a.parkReason === 'unconfirmed_streak') { pills.push(['bad', '5 unconfirmed']); status = 'Five leads in a row could not be confirmed — open the account, then try again'; }
+  else if (a.parkReason === 'op_credit_limit') { pills.push(['bad', 'Suspected OP credits limit reached']); status = 'Benched — five contacts in a row were not Open Profile, so its monthly OP credits are probably used up. Retry to unbench'; }
   else if (a.parked) {
     const reason = String(a.parkReason || 'stopped').replace(/[_-]+/g, ' ');
     pills.push(['bad', 'Stopped']); status = `Stopped — ${reason}`;

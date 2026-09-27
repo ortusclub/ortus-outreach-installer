@@ -1,0 +1,46 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const dir=mkdtempSync(join(tmpdir(),'outreach-credentials-'));
+process.env.ORTUS_DATA_DIR=dir;
+const creds=await import('../src/gologin-credentials.js');
+const accounts=await import('../src/gologin-accounts.js');
+test.after(()=>rmSync(dir,{recursive:true,force:true}));
+test('a saved replacement or explicit removal wins over an old bundled token after restart',()=>{
+  process.env.GOLOGIN_API_TOKEN='old-test-value';
+  creds.saveCredentials({GOLOGIN_API_TOKEN:'new-test-value'});
+  process.env.GOLOGIN_API_TOKEN='old-test-value';
+  creds.applyCredentials();
+  assert.equal(process.env.GOLOGIN_API_TOKEN,'new-test-value');
+  assert.ok(!JSON.stringify(creds.credentialStatus()).includes('new-test-value'));
+  creds.saveCredentials({GOLOGIN_API_TOKEN:''});
+  process.env.GOLOGIN_API_TOKEN='old-test-value';
+  creds.applyCredentials();
+  assert.equal(process.env.GOLOGIN_API_TOKEN,undefined);
+  assert.equal(statSync(join(dir,'gologin-credentials.json')).mode & 0o777,0o600);
+});
+test('removing one custom workspace preserves every other workspace identity and token',()=>{
+  const first=creds.saveOthers([{label:'A',token:'fake-token-a'},{label:'B',token:'fake-token-b'}]);
+  const second=creds.saveOthers([{keep:first[1].id}]);
+  assert.equal(second[0].id,first[1].id);
+  assert.equal(accounts.accountById(first[0].id),null);
+  assert.equal(accounts.tokenForAccount(second[0].id),'fake-token-b');
+  creds.applyCredentials();
+  assert.equal(accounts.tokenForAccount(second[0].id),'fake-token-b');
+  assert.ok(!JSON.stringify(second).includes('fake-token-b'));
+});
+
+test('saving a workspace token enables cross-team selection and launch, removal revokes it', () => {
+  const email = 'member@ortusclub.com';
+  process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY = 'bundled-test-token';
+  assert.equal(accounts.canOperatorUseProfile(email, 'linkedvelocity', 'test-profile'), false);
+  creds.saveCredentials({ GOLOGIN_API_TOKEN_LINKEDVELOCITY: 'operator-test-token' });
+  assert.equal(accounts.canOperatorUseProfile(email, 'linkedvelocity', 'test-profile'), true);
+  assert.equal(accounts.profileUsableFor(email, 'linkedvelocity', 'message', 'test-profile'), true);
+  creds.applyCredentials();
+  assert.equal(accounts.canOperatorUseProfile(email, 'linkedvelocity', 'test-profile'), true);
+  creds.saveCredentials({ GOLOGIN_API_TOKEN_LINKEDVELOCITY: '' });
+  assert.equal(accounts.canOperatorUseProfile(email, 'linkedvelocity', 'test-profile'), false);
+});

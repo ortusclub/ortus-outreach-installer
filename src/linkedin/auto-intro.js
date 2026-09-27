@@ -22,11 +22,11 @@ import { sendIntroMessage, sendIntroViaCleanCompose } from './actions.js';
 import { personalizeTemplate, getConnectionStatus } from './helpers.js';
 import { checkAndConnectPrimary, primaryConnState } from './primary-connection.js';
 import { readSelfIdentity } from './accept-invitation.js';
-import { INTRO_FAILED_PRIMARY_NOT_CONNECTED } from './intro-constants.js';
+import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_HELD_PRIMARY_NOT_CONNECTED, INTRO_ASSUMED_PRIMARY_NOT_CONNECTED } from './intro-constants.js';
 import { extractSheetId } from '../utils.js';
 import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask, enqueueFollowUpBatched } from '../primary-tasks.js';
 import { fetchSheet } from '../sheets.js';
-import { updateSheetRow } from '../sheets-writer.js';
+import { updateSheetRow, batchUpdateSheet } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
 import { leadIdentityKeys } from './bulk-check-connections.js';
 
@@ -496,9 +496,14 @@ export async function runAutoIntros({
         }
 
         if (_shouldHoldIntros(_res)) {
-          log(`  ⏸ [${profileName}] Not yet connected to ${primaryName} — holding ${connectedUrls.length} intro(s) until the connection is accepted (will retry on the next check).`);
+          log(`  ⏸ [${profileName}] Not connected to ${primaryName} — ${connectedUrls.length} accepted lead(s) not introduced. Noted on the sheet; clear the note and run a check once they are connected.`);
+          try {
+            await batchUpdateSheet(sheetUrl, connectedUrls.map((u) => ({ linkedinUrl: u, introductionStatus: INTRO_HELD_PRIMARY_NOT_CONNECTED })));
+          } catch (e) {
+            log(`  ⚠ [${profileName}] Could not note the held intros on the sheet: ${e.message}`);
+          }
           result.skipped = connectedUrls.length;
-          return result; // leave Introduction Status blank → next sweep retries
+          return result;
         }
       } catch (e) {
         // Gate failure must never block intros — if the degree read throws,
@@ -520,7 +525,7 @@ export async function runAutoIntros({
     introName: primaryName,
     followUpMessage: primaryIntroBody,
     introUrl: primaryUrl,
-    introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+    introTitle: templates.introTitle || 'Introduction: {firstName} <> {primaryFirstName}',
   };
 
   // Campaign-level: did this campaign send a connection note? If so the lead has a
@@ -598,6 +603,9 @@ export async function runAutoIntros({
   }
 
   log(`  🤝 [${profileName}] Auto-introducing ${connectedUrls.length} new connection(s) to ${primaryName}…`);
+  // Three-strikes rule: consecutive failures for THIS sender in THIS pass.
+  const INTRO_STRIKES = 3;
+  let _consecutiveFailures = 0;
   for (let i = 0; i < connectedUrls.length; i++) {
     const url = connectedUrls[i];
 
@@ -919,7 +927,31 @@ export async function runAutoIntros({
         leadUrl: url,
         details: errMsg || 'unknown',
       });
+      _consecutiveFailures++;
+      if (_consecutiveFailures >= INTRO_STRIKES) {
+        // The pre-check reads the sender→primary degree, but an unreadable
+        // degree ('unverified') lets intros proceed — and then every one fails.
+        // Three in a row is the signal: assume not connected, hold the sender
+        // (campaign._primaryConn 'pending' makes every later intro point hold
+        // and note it), and say so on the rows we are no longer attempting.
+        const rest = connectedUrls.slice(i + 1);
+        log(`  ⛔ [${profileName}] ${INTRO_STRIKES} introductions in a row failed — assuming this account is not connected to ${primaryName}. ${rest.length ? `Noting the remaining ${rest.length} on the sheet; ` : ''}connect them, clear the notes and run a check to retry.`);
+        try {
+          if (!campaign._primaryConn) campaign._primaryConn = new Map();
+          campaign._primaryConn.set(profileId, 'pending');
+        } catch { /* singleton absent in unit tests */ }
+        if (rest.length) {
+          try {
+            await batchUpdateSheet(sheetUrl, rest.map((u) => ({ linkedinUrl: u, introductionStatus: INTRO_ASSUMED_PRIMARY_NOT_CONNECTED })));
+          } catch (e) {
+            log(`  ⚠ [${profileName}] Could not note the assumed disconnection on the sheet: ${e.message}`);
+          }
+          result.skipped += rest.length;
+        }
+        break;
+      }
     }
+    if (ok || alreadyMade) _consecutiveFailures = 0;
 
     // v2.14.x: brief feed visit between IC DMs. Mirrors the organic
     // browsing the campaign loop does between connect requests — gives

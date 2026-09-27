@@ -1,14 +1,17 @@
+import { hasLocalBrowserSelection, GOLOGIN_REQUIRED } from './src/gologin-only.js';
+import { cloudOptionError } from './public/js/cloud-option-compatibility.mjs';
+import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
+import { canViewCampaign, visibleCampaigns } from './src/campaign-visibility.js';
+import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
+import { ensureCampaignIdentity, getConfigById } from './src/campaign-configs.js';
+import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
+import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
+import { applyCredentials } from './src/gologin-credentials.js';
+applyCredentials();
 
-// ── Startup env validation (D-06) ──────────────────────────────────
-// v2.52.0: SHEETS_WEBAPP_URL removed from REQUIRED_ENV. The URL is now
-// hard-coded in src/sheets-webapp-url.js and the .env value is ignored.
-const REQUIRED_ENV = ['GOLOGIN_API_TOKEN'];
-const missing = REQUIRED_ENV.filter(k => !process.env[k]);
-if (missing.length) {
-  console.error(`\n  FATAL: Missing required environment variables:\n${missing.map(k => '    - ' + k).join('\n')}\n\n  Copy .env.example to .env and fill in all values.\n`);
-  process.exit(1);
-}
+// Workspace credentials are optional at startup: Settings must remain reachable
+// to add a token, and another workspace can operate without an Ortus token.
 
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -22,7 +25,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin, nextCheckLogLine } from './src/campaign.js';
+import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, removeProfileFromCampaign, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin, nextCheckLogLine } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNextReady } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
@@ -37,7 +40,7 @@ import {
 } from './public/js/scrape-board.mjs';
 import { getOperatorId } from './src/operator-id.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
-import { getDrafts, getDraft, addDraft, updateDraft, removeDraft, trashDraft, trashAllDrafts, purgeTrashedDrafts } from './src/drafts.js';
+import { getDrafts, getDraft, addDraft, updateDraft, removeDraft, trashDraft, trashAllDrafts, purgeTrashedDrafts, DRAFT_IDENTITY_MISMATCH } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
@@ -61,8 +64,8 @@ import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js
 import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
-import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
+import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT, INTRO_HELD_NO_PRIMARY } from './src/linkedin/intro-constants.js';
+import { getProfiles, getProfileLoadWarnings, clearProfileCache, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, usesProfileAsGuest, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes, isRetiredMode } from './public/js/campaign-modes.mjs';
@@ -145,7 +148,26 @@ const UI_PREVIEW = process.env.ORTUS_UI_PREVIEW === '1';
 const pkg = JSON.parse(await readFile(resolve(__dirname, 'package.json'), 'utf8'));
 const APP_VERSION = pkg.version;
 
+// API responses are live state, never cacheable. They carried only an ETag and
+// no Cache-Control, which lets Chromium apply heuristic freshness and serve
+// them from its own disk cache — a cache that lives in the user-data dir and
+// survives restarting the app. Campaign settings edited on disk kept coming
+// back as the previous values, and an updated app kept reporting its old
+// version, because the renderer never asked the server (operator, 2026-09-04).
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 app.use(express.json());
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.path !== '/followups/board' && hasLocalBrowserSelection(req.body)) {
+    return res.status(400).json({ error: GOLOGIN_REQUIRED });
+  }
+  next();
+});
 app.use(cookieParser());
 
 // ── Public auth endpoints (no session required) ────────────────────
@@ -318,6 +340,8 @@ function viewerIsAdmin(req) {
 function viewerEmail(req) {
   return getOperatorEmail() || (req && req.user) || '';
 }
+
+function campaignViewer(req) { return { admin: viewerIsAdmin(req), email: viewerEmail(req), operatorId: getOperatorId() }; }
 
 // The GoLogin account this viewer may drive.
 function viewerAccount(req) {
@@ -567,6 +591,17 @@ for i in $(seq 1 120); do
   pgrep -f "$APP/Contents/MacOS/" >/dev/null || break
   sleep 0.5
 done
+# Never swap the bundle underneath a still-running app: it keeps showing the old
+# version and "relaunch" only re-focuses it. Ask it to quit, then insist.
+if pgrep -f "$APP/Contents/MacOS/" >/dev/null; then
+  echo "[updater] app still running after 60s — asking it to quit"
+  osascript -e 'tell application "${pkg.productName}" to quit' >/dev/null 2>&1
+  for i in $(seq 1 40); do pgrep -f "$APP/Contents/MacOS/" >/dev/null || break; sleep 0.5; done
+  if pgrep -f "$APP/Contents/MacOS/" >/dev/null; then
+    echo "[updater] still running — terminating"; pkill -TERM -f "$APP/Contents/MacOS/"; sleep 3
+  fi
+fi
+cd /tmp 2>/dev/null
 sleep 1
 MNT="$(mktemp -d /tmp/ortus-mnt.XXXXXX)"
 if ! hdiutil attach "$DMG" -nobrowse -noautoopen -mountpoint "$MNT" >/dev/null 2>&1; then
@@ -607,7 +642,22 @@ fi
 rm -rf "$BK"
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null
 echo "[updater] relaunching"
-open "$APP"
+# One open call is not enough. macOS sometimes refuses to launch a bundle it has
+# just watched get replaced — LaunchServices is still holding the old record —
+# and the helper exits "successfully" with no app on screen (operator,
+# 2026-09-04: swap logged, /Applications on the new version, nothing running).
+# Re-register the bundle, then retry until a process actually appears.
+LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+[ -x "$LSREG" ] && "$LSREG" -f "$APP" >/dev/null 2>&1
+for i in 1 2 3 4 5; do
+  open "$APP" 2>&1 && sleep 2
+  if pgrep -f "$APP/Contents/MacOS/" >/dev/null; then
+    echo "[updater] relaunched on attempt $i"; exit 0
+  fi
+  echo "[updater] relaunch attempt $i did not stick — retrying"
+  sleep 2
+done
+echo "[updater] could not relaunch — the update IS installed; open ${pkg.productName} from Applications"
 `;
   try {
     writeFileSync(scriptPath, script, 'utf8');
@@ -620,11 +670,12 @@ open "$APP"
   // Respond first, then quit so the helper can swap + relaunch. Quitting needs
   // app.isQuitting=true to bypass the tray "hide on close" behavior.
   res.json({ ok: true, relaunching: true });
-  if (process.versions && process.versions.electron) {
-    import('electron')
-      .then(({ app }) => { app.isQuitting = true; setTimeout(() => app.quit(), 400); })
-      .catch(() => {});
-  }
+  // This server is a CHILD of the Electron main process (ELECTRON_RUN_AS_NODE),
+  // so it has no `app` to quit — the old import('electron') here silently did
+  // nothing, the app never quit, and the helper swapped the bundle underneath a
+  // still-running old version (operator, 2026-09-19). Exit with the code main.js
+  // reads as "quit the whole app for an update".
+  if (process.env.ORTUS_ELECTRON_MODE === '1') setTimeout(() => process.exit(76), 400);
 });
 
 // v2.112: expose the detached install-helper log so a failed update is
@@ -665,9 +716,12 @@ app.get('/api/profiles', async (req, res) => {
   try {
     const profiles = await getProfiles();
     const email = viewerEmail(req);
+    const warnings = getProfileLoadWarnings();
+    res.set('X-GoLogin-Warnings', encodeURIComponent(JSON.stringify(warnings)));
+    const failedAccounts = new Set(warnings.map(w => w.id));
     res.json(profiles.map((p) => ({
       ...p,
-      available: canOperatorUseProfile(email, p.account, p.id),
+      available: !failedAccounts.has(p.account) && canOperatorUseProfile(email, p.account, p.id),
       // Reached through a grant or a named membership rather than by owning the
       // workspace. The picker uses it to stop applying the Ortus SoO to an
       // account another team runs — see usesProfileAsGuest.
@@ -680,14 +734,9 @@ app.get('/api/profiles', async (req, res) => {
     })));
   } catch (err) {
     console.error('Error fetching profiles:', err.message);
-    const unauthorized = /GoLogin API 401|unauthori[sz]ed/i.test(String(err && err.message));
-    const devEngine = /^dev-/.test(String(process.env.SCRAPER_ENGINE_VERSION || ''));
+    const unauthorized = /HTTP (401|403)/.test(String(err?.message));
     res.status(unauthorized ? 401 : 500).json({
-      error: unauthorized
-        ? (devEngine
-          ? 'DEV GOLOGIN TOKEN REJECTED (HTTP 401). No development profiles can be loaded, so campaign browsers cannot open. Replace DEV_GOLOGIN_API_TOKEN in the engine .env and Kubernetes salesnav-secrets-dev, then restart this app. Production profiles are intentionally hidden here.'
-          : 'GoLogin rejected the configured API token (HTTP 401). Replace the token, then restart the app.')
-        : err.message,
+      error: err.message,
       code: unauthorized ? 'GOLOGIN_UNAUTHORIZED' : 'PROFILE_LOAD_FAILED',
       environment: devEngine ? 'development' : 'production',
     });
@@ -1109,6 +1158,9 @@ app.post('/api/templates/preview', async (req, res) => {
 function rejectIfBadPrimaryUrl(body, res) {
   const mode = body && body.mode;
   if (mode !== 'connect_and_introduce' && mode !== 'introduce_back') return false;
+  // v1.7.49: "Connections only" (skipIntroductions) never introduces, so a
+  // CC+IB launch without a primary is fine — nothing would ever use it.
+  if (mode === 'connect_and_introduce' && body.skipIntroductions === true) return false;
   const url = ((body && body.templates && body.templates.primaryUrl) || '').toString().trim();
   if (!url) {
     // v2.119: ICB's URL is optional (leads are already connected; the URL only
@@ -1157,6 +1209,7 @@ function blockIfNoOperatorEmail(context, notifyTo) {
 
 // runs with exactly the same shape as a directly-launched one.
 function buildCampaignConfig(body) {
+  const identity = ensureCampaignIdentity({ campaignId: body?.campaignId, name: body?.name, config: body });
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
           delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name,
           acceptanceTrackingDays, preflightCheckStatus, checkIntervalMinutes,
@@ -1179,7 +1232,7 @@ function buildCampaignConfig(body) {
           multiTab,
           // Fix B Task 3: pause the campaign when a 429/throttle is detected.
           // Defaults to true when absent or undefined so legacy clients opt-in automatically.
-          pauseOnThrottle: pauseOnThrottleRaw } = body || {};
+          pauseOnThrottle: pauseOnThrottleRaw, stopBeforeWeeklyReset, stopBeforeMonthlyReset, skipIntroductions } = body || {};
   const pauseOnThrottle = pauseOnThrottleRaw === false ? false : true;
   // Coerce sheetGid to digits only; fall back to extracting from the URL.
   const sheetGid = sheetGidRaw != null
@@ -1191,6 +1244,7 @@ function buildCampaignConfig(body) {
     if ((profileIds?.length || 0) >= 5) concurrencyClean = n;
   }
   return {
+    campaignId: identity.campaignId,
     profileIds,
     benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.filter((x) => typeof x === 'string') : [],
     sheetUrl,
@@ -1213,7 +1267,7 @@ function buildCampaignConfig(body) {
       : false,
     senderFirstNames: senderFirstNames || {},
     concurrency: concurrencyClean,
-    name: typeof name === 'string' ? name : '',
+    name: identity.name,
     acceptanceTrackingDays: Math.max(0, Math.min(30, Number(acceptanceTrackingDays) || 0)),
     checkIntervalMinutes: clampCadenceMinutes(checkIntervalMinutes),
     // v2.112: default-on; only false when the operator explicitly turned it off.
@@ -1235,6 +1289,12 @@ function buildCampaignConfig(body) {
     sheetGid,
     // Fix B Task 3: pause campaign on 429/throttle detection. Default true.
     pauseOnThrottle,
+    // "Free for all Friday" — opt-in only.
+    stopBeforeWeeklyReset: stopBeforeWeeklyReset === true,
+    // "Free for all 25th" — opt-in only.
+    stopBeforeMonthlyReset: stopBeforeMonthlyReset === true,
+    // "Connections only" — CC+IB without the introduction step. Opt-in only.
+    skipIntroductions: skipIntroductions === true,
     // Pre-flight hard exclusions (blocklist URLs): set by the /api/campaign/start gate.
     excludedUrls: Array.isArray(body._preflightExcludedUrls) ? body._preflightExcludedUrls : [],
   };
@@ -1328,6 +1388,8 @@ function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 // Named so /api/campaign/cloud/:id/edit-redispatch can re-enter the same
 // pipeline after stopping the original campaign (excludeLeadUrls set).
 async function handleStartCloud(req, res) {
+  const unsupported = cloudOptionError(req.body);
+  if (unsupported) return res.status(400).json({ error: unsupported });
   try {
     const body = req.body || {};
     const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
@@ -1345,7 +1407,6 @@ async function handleStartCloud(req, res) {
     if (rejectIfNoOperatorEmail(res)) return;
     if (await rejectIfForeignProfiles(req, res, profileIds, mode)) return;
 
-    // ── Pre-flight gate: same ack/blocklist check as /api/campaign/start ─────
     if (!await runPreflightGate(req, res)) return;
 
     // Auto-routed modes derive the account per-row from the sheet's sender
@@ -1678,7 +1739,7 @@ app.post('/api/campaign/start-cloud', handleStartCloud);
 app.get('/api/campaign/cloud-list', async (req, res) => {
   const r = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
   if (r.error) return res.status(502).json(r);
-  res.json(r);
+  res.json({ ...r, campaigns: visibleCampaigns(r.campaigns, campaignViewer(req)) });
 });
 // Cloud load + the global queue order, for the "why hasn't it started" block on
 // a waiting campaign. Memoised on the same lane as the list: every queued strip
@@ -1686,10 +1747,10 @@ app.get('/api/campaign/cloud-list', async (req, res) => {
 //
 // A 502 here is not an error worth showing — the card simply falls back to its
 // old wording. Answer with an empty shape so the renderer has one code path.
-app.get('/api/campaign/cloud-capacity', async (_req, res) => {
+app.get('/api/campaign/cloud-capacity', async (req, res) => {
   const r = await memoCloud('capacity', () => getCloudCapacity());
   if (r.error) return res.json({ queue: [], unavailable: true });
-  res.json(r);
+  res.json({ ...r, queue: viewerIsAdmin(req) ? r.queue : visibleCampaigns(r.queue, campaignViewer(req)) });
 });
 
 // One browser request supplies the board's list, detail snapshots and global
@@ -1698,7 +1759,7 @@ app.get('/api/campaign/cloud-capacity', async (_req, res) => {
 app.get('/api/campaign/cloud-board-summary', async (req, res) => {
   const list = await memoCloud(`list:${req.query.owner || ''}`, () => listCloudCampaigns(req.query.owner));
   if (list && list.error) return res.status(502).json(list);
-  const campaigns = Array.isArray(list?.campaigns) ? list.campaigns : [];
+  const campaigns = visibleCampaigns(list?.campaigns, campaignViewer(req));
   const details = {};
   let nextIndex = 0;
   const worker = async () => {
@@ -1716,7 +1777,8 @@ app.get('/api/campaign/cloud-board-summary', async (req, res) => {
   await Promise.all(Array.from({ length: Math.min(6, campaigns.length) }, worker));
   const live = campaigns.some((c) => ['queued', 'running', 'stopping', 'monitoring', 'paused'].includes(c.status));
   const capacity = live ? await memoCloud('capacity', () => getCloudCapacity()) : { queue: [] };
-  res.json({ campaigns, details, capacity: capacity?.error ? { queue: [], unavailable: true } : capacity });
+  const safeCapacity = capacity?.error ? { queue: [], unavailable: true } : { ...capacity, queue: viewerIsAdmin(req) ? capacity?.queue : (capacity?.queue || []).filter(q => campaigns.some(c => c.id === (q.campaignId || q.campaign_id || q.id))) };
+  res.json({ campaigns, details, capacity: safeCapacity });
 });
 // Per-account block truth for the Waiting card and the Start prompt.
 //
@@ -1749,6 +1811,15 @@ app.get('/api/campaign/cloud-preflight', async (req, res) => {
     usable: typeof r.usable === 'number' ? r.usable : null,
     earliest: typeof r.earliest === 'string' ? r.earliest : null,
   });
+});
+app.use('/api/campaign/cloud/:id', async (req, res, next) => {
+  if (viewerIsAdmin(req)) return next();
+  try {
+    const result = await memoCloud(`campaign:${req.params.id}`, () => getCloudCampaign(req.params.id));
+    if (result?.error) return res.status(502).json({ error: 'Could not verify campaign access.' });
+    if (!canViewCampaign(result?.campaign || result, campaignViewer(req))) return res.status(404).json({ error: 'Campaign not found.' });
+    next();
+  } catch { res.status(502).json({ error: 'Could not verify campaign access.' }); }
 });
 app.get('/api/campaign/cloud/:id', async (req, res) => {
   const id = req.params.id;
@@ -1991,7 +2062,7 @@ app.get('/api/campaign/cloud-details', async (req, res) => {
         const v = await memoCloud(`campaign:${id}`, () => getCloudCampaign(id), {
           onFresh: (fresh) => { reconcilePrimaryHandshake(id, fresh).catch(() => {}); },
         });
-        if (v && !v.error) details[id] = v;
+        if (v && !v.error && canViewCampaign(v.campaign || v, campaignViewer(req))) details[id] = v;
       } catch { /* one bad id must not fail the board */ }
     }
   };
@@ -2328,6 +2399,8 @@ app.post('/api/campaign/cloud/:id/restart', async (req, res) => {
 // edited wizard config. Already-processed leads are excluded via
 // excludeLeadUrls so nobody is contacted twice.
 app.post('/api/campaign/cloud/:id/edit-redispatch', async (req, res) => {
+  const unsupported = cloudOptionError(req.body);
+  if (unsupported) return res.status(400).json({ error: unsupported });
   try {
     const id = req.params.id;
     const cur = await getCloudCampaign(id);
@@ -2597,9 +2670,6 @@ async function handoverToVm(id, req, res) {
     excludeLeadUrls: excluded,
   };
   req.body = cloudBody;
-  // Run the same gate the cloud launch will run, BEFORE stopping this Mac. If
-  // the sheet has unacknowledged blockers the gate answers the operator itself
-  // and the local campaign carries on untouched.
   if (!await runPreflightGate(req, res)) return;
 
   // Now, and only now, stop this side, and prove it stopped.
@@ -2759,17 +2829,8 @@ app.post('/api/followups/restore', async (req, res) => {
 // Same Chrome profile the follow-up runner uses, so signing in here is what
 // unblocks the parked follow-ups. Deliberately left OPEN: closing it is the
 // operator's signal that they are done.
-app.post('/api/followups/open-login', async (_req, res) => {
-  try {
-    const { page } = await launchLocalBrowser({ visible: true });
-    await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 45000 })
-      .catch(() => { /* the window is open either way — that is the point */ });
-    console.log('[followups] opened the follow-up browser on screen for sign-in');
-    res.json({ ok: true });
-  } catch (e) {
-    console.warn(`[followups] could not open the follow-up browser: ${e.message}`);
-    res.status(500).json({ error: e.message });
-  }
+app.post('/api/followups/open-login', (_req, res) => {
+  res.status(410).json({ error: GOLOGIN_REQUIRED });
 });
 
 // ── put failed / parked follow-ups back in the queue ──
@@ -3060,9 +3121,6 @@ app.post('/api/campaign/start', async (req, res) => {
       }
     }
 
-    // ── Pre-flight gate (spec 2026-07-07): refuse un-acknowledged blockers;
-    // blocklisted rows are excluded server-side regardless of the client.
-    // Shared with /api/campaign/queue-only via runPreflightGate().
     if (!await runPreflightGate(req, res)) return;
 
     const config = buildCampaignConfig(body);
@@ -3274,8 +3332,10 @@ app.get('/api/queue', async (_req, res) => {
     // Strip large/sensitive fields the UI doesn't need (templates can be big).
     const summary = queue.map(e => ({
       id: e.id,
-      name: e.name,
+      name: getConfigById(e.campaignId || e.config?.campaignId)?.name || e.name,
       queuedAt: e.queuedAt,
+      campaignId: e.campaignId || e.config?.campaignId,
+      lifecycle: campaignLifecycle({ queued: true, scheduledAt: e.scheduledAt }),
       mode: e.config?.mode || '',
       profileIds: e.config?.profileIds || [],
       sheetUrl: e.config?.sheetUrl || '',
@@ -5155,10 +5215,6 @@ app.post('/api/campaign/queue-only', async (req, res) => {
       }
     }
 
-    // ── Pre-flight gate: same ack check as /api/campaign/start — blocklist
-    // rows get a 409 until the operator acknowledges; blocklisted URLs are
-    // always hard-excluded regardless of ack (via _preflightExcludedUrls →
-    // buildCampaignConfig → excludedUrls → startCampaign central guard).
     if (!await runPreflightGate(req, res)) return;
 
     const config = buildCampaignConfig(body);
@@ -5350,12 +5406,31 @@ app.post('/api/runtime/resumed', async (_req, res) => {
 let _manualSweepRunning = false;
 let _manualSweepAbort = false;
 
-// v2.78: bench / un-bench an account in the live sending rotation. Body:
-// { profileId, skip }. skip=false also retries an auto-parked account.
+// Put an account BACK into the live sending rotation. Body: { profileId }.
+//
+// This used to bench too (skip=true). Benching an account mid-run is no longer
+// a thing the app can do: a campaign's accounts are decided before it starts,
+// and to take one out you stop the campaign, remove it, and start again
+// (operator, 2026-09-04). The UI no longer offers it, and the endpoint refuses
+// it — so the rule holds even if some caller asks.
+//
+// The other direction stays: it retries an auto-parked account (weekly cap,
+// signed out, skipped), which is recovery, not benching.
 app.post('/api/campaign/profile-skip', (req, res) => {
   const { profileId, skip } = req.body || {};
   if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  // Benching mid-run is back (operator, 2026-09-19): the account finishes the
+  // lead it is on, then sits out until un-benched.
   const result = setProfileSkip(profileId, !!skip);
+  res.json(result);
+});
+
+// Take an account out of the running campaign for good. Body: { profileId }.
+app.post('/api/campaign/profile-remove', (req, res) => {
+  const { profileId } = req.body || {};
+  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  const result = removeProfileFromCampaign(profileId);
+  if (!result.ok) return res.status(409).json({ error: result.reason });
   res.json(result);
 });
 
@@ -5857,13 +5932,13 @@ async function getScrapeBoard() {
   return _scrapeBoard;
 }
 
-app.get('/api/scrape/campaigns', async (_req, res) => {
+app.get('/api/scrape/campaigns', async (req, res) => {
   try {
     const board = await getScrapeBoard();
     // Slimmed: the full board is 20.4MB and this is polled every 2.5s. The
     // strips need a label and a count, not 2,247 full Sales Nav search URLs.
     // /api/scrape/campaigns/:id below still serves the complete record.
-    res.json({ campaigns: slimBoard(board.campaigns), me: board.me, cachedAt: board.at });
+    res.json({ campaigns: slimBoard((board.campaigns || []).filter(c => viewerIsAdmin(req) || canViewCampaign(c, campaignViewer(req)) || (!c.owner && c.mine))), me: board.me, cachedAt: board.at });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -6415,6 +6490,13 @@ app.post('/api/bulk-check-now', async (req, res) => {
   }
   _manualSweepRunning = true;
   _manualSweepAbort = false;
+  // A Stop pressed while nothing was running leaves campaign._abort armed
+  // (stopCampaign flips it unconditionally and only a campaign start clears
+  // it). The sweep loop below reads that flag, so the next manual check used to
+  // log "Stop detected" and finish with 0 accounts swept before opening a
+  // single browser (Sam, 2026-09-23 20:32). A stale abort with no campaign or
+  // monitoring to abort belongs to nobody: clear it here so the check can run.
+  if (!campaign.running && campaign.state !== 'monitoring') campaign._abort = false;
   // Say "checking" the INSTANT the click is accepted, not 180 lines later.
   // The flag used to be set down at the sweep loop, after account resolution and
   // a sheet read over the network, so the operator pressed the button and the
@@ -6432,7 +6514,11 @@ app.post('/api/bulk-check-now', async (req, res) => {
           // Cloud-campaign local check (v2.160.87): the request carries the CLOUD
           // campaign's mode/templates, since the local `campaign` singleton may
           // hold a stale/unrelated local config. Fall back to current behaviour.
-          mode: reqMode, ccDmBody: reqCcDmBody, senderFirstNames: reqSenderFirstNames } = req.body || {};
+          mode: reqMode, ccDmBody: reqCcDmBody, senderFirstNames: reqSenderFirstNames,
+          skipIntroductions: reqSkipIntros } = req.body || {};
+    // "Connections only": the wizard says so explicitly; a check that carries no
+    // answer (older clients, the running campaign's own card) follows the campaign.
+    const skipIntros = reqSkipIntros === true || (reqSkipIntros == null && !!campaign.skipIntroductions);
     // v2.78: "all senders in the sheet" — ignore any campaign/explicit accounts
     // and derive every account from the sheet's Sender column (below), even
     // while a campaign is running.
@@ -6452,6 +6538,31 @@ app.post('/api/bulk-check-now', async (req, res) => {
       linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    // A check stamps "Still Pending (…)" and "Connected" into Connection
+    // Accepted Status. That column is provisioned when a campaign STARTS, so a
+    // check on a tab whose campaign was never started had nowhere to write, and
+    // the Apps Script reports success for a field whose column is missing
+    // (Sam, 2026-09-23 21:46, "Test" tab: 3 rows "refreshed", nothing on the
+    // sheet). Provision it here the same non-lossy way Start does. Sheets that
+    // already have the column are left alone.
+    try {
+      const probe = await fetchSheet(sheetUrl).catch(() => []);
+      const headers = probe.length ? Object.keys(probe[0]) : [];
+      const hasAccepted = headers.some((h) => /^(connection accepted status|connected status)$/i.test(String(h || '').trim()));
+      if (!hasAccepted) {
+        const { prepareSheet } = await import('./src/sheets-writer.js');
+        // connect_only's column set has no accepted-status column, so a check on
+        // that mode borrows the check_status set, which is exactly that column.
+        const prepMode = ['connect_and_introduce', 'connect_and_message'].includes(reqMode) ? reqMode : 'check_status';
+        const prep = await prepareSheet(sheetUrl, prepMode);
+        campaignLog(prep.ok
+          ? `🧱 This tab had no tracking columns yet — added ${(prep.added || []).join(', ') || 'them'} so the check has somewhere to write.`
+          : '⚠ Could not add tracking columns to this tab — the check will run, but its results may not reach the sheet.');
+      }
+    } catch (e) {
+      campaignLog(`⚠ Tracking-column check failed: ${e.message}`);
+    }
 
     // v2.97: take precedence over a running campaign. Instead of waiting up to
     // 90s for a cooperative pause boundary (and failing if a slow lead — e.g. a
@@ -6532,13 +6643,28 @@ app.post('/api/bulk-check-now', async (req, res) => {
       nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
     } catch { /* fall back to id-as-name if cache fetch fails */ }
 
-    // Filter out accounts the most-recent campaign parked. parkedProfiles is
-    // in-memory (not persisted across restarts) so this only catches the
-    // current/last-run session-dead accounts — but that's exactly the case
-    // the operator is hitting: ran a campaign, an account got parked for
-    // session-expired, then they hit Bulk Check and it tried that dead
-    // account anyway. Now skip it and tell them why in the response.
-    const parkedSet = new Set((campaign.parkedProfiles || []).map((p) => p.profileId));
+    // Filter out accounts the most-recent campaign parked — but ONLY the ones
+    // that genuinely cannot be driven. parkedProfiles is in-memory (not
+    // persisted across restarts) so this catches the current/last-run
+    // accounts, which is the case this guard was written for: ran a campaign,
+    // an account got parked for session-expired, then Bulk Check tried that
+    // dead account anyway.
+    //
+    // A park is not one thing, though, and this used to treat it as one. A
+    // weekly invitation cap says nothing about whether the browser works: the
+    // session is fine, the account can still read its connections and still
+    // send messages — it just cannot send more INVITES. Skipping it here cost
+    // the operator both halves of this endpoint, because it does the
+    // acceptance sweep AND fires runAutoIntros. Five capped accounts sat out
+    // their own introductions for a limit that has nothing to do with either
+    // (operator, 2026-09-04). Same for a throttle or a skip streak: they are
+    // sending problems, and a sweep is not sending.
+    //
+    // So the test is "can this browser be driven at all", not "was it parked".
+    const CANNOT_BE_DRIVEN = /session.?expired|challenge|checkpoint|proxy|407|cannot.?open|identity.?restricted/i;
+    const parkedSet = new Set((campaign.parkedProfiles || [])
+      .filter((p) => CANNOT_BE_DRIVEN.test(String(p.reason || '')))
+      .map((p) => p.profileId));
     const skippedParked = [];
     profileIdsToSweep = profileIdsToSweep.filter((pid) => {
       if (parkedSet.has(pid)) {
@@ -6706,6 +6832,8 @@ app.post('/api/bulk-check-now', async (req, res) => {
             } else {
               campaignLog(`⚠ [${pName}] CC+DM bulk-check: post-acceptance DM body missing — no DM sent.`);
             }
+          } else if (skipIntros && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+            campaignLog(`ℹ [${pName}] Connections only — ${r.connectedUrls.length} accepted connection(s) stamped, no introduction sent.`);
           } else if (_effectiveTemplates.primaryName && _effectiveTemplates.primaryIntroBody) {
             try {
               await runAutoIntros({
@@ -6721,6 +6849,17 @@ app.post('/api/bulk-check-now', async (req, res) => {
               });
             } catch (introErr) {
               campaignLog(`⚠ [${pName}] Auto-intro pass threw: ${introErr.message}`);
+            }
+          } else if (_phaseMode === 'connect_and_introduce' && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+            // CC+IB with no primary person (name or intro message missing): the
+            // intro step cannot run. Say so on the sheet instead of leaving the
+            // Introduction Status blank as if the lead had not been reached.
+            campaignLog(`⏸ [${pName}] ${r.connectedUrls.length} accepted lead(s) not introduced — no primary person set on this campaign. Noted on the sheet.`);
+            try {
+              const { batchUpdateSheet: _batch } = await import('./src/sheets-writer.js');
+              await _batch(sheetUrl, r.connectedUrls.map((u) => ({ linkedinUrl: u, introductionStatus: INTRO_HELD_NO_PRIMARY })));
+            } catch (e) {
+              campaignLog(`⚠ [${pName}] Could not note the missing primary on the sheet: ${e.message}`);
             }
           }
         }
@@ -6784,6 +6923,12 @@ app.post('/api/bulk-check-now', async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     _manualSweepRunning = false;
+    // A Stop pressed during a solo sweep (no campaign running) also arms
+    // campaign._abort so the auto-intros inside the sweep halt. That job is
+    // done once the sweep unwinds; leaving it armed would stop the NEXT check
+    // on sight. Same guard as the start of the route: never touch a live
+    // campaign's flag.
+    if (!campaign.running && campaign.state !== 'monitoring') campaign._abort = false;
     // Pairs with the early set at the top of this route. A throw during setup
     // would otherwise leave the card claiming a check is running forever, and a
     // stuck flag also blocks every scheduled tick.
@@ -7058,14 +7203,30 @@ function _draftNameCollision(name) {
   return null;
 }
 
+const _draftNamesBeingCreated = new Set();
+
 app.post('/api/drafts', async (req, res) => {
+  const { name, config, uniqueName } = req.body || {};
+  const key = String(name || '').trim().toLowerCase();
+  let reserved = false;
   try {
-    const { name, config } = req.body || {};
+    if (uniqueName || key) {
+      if (!key) return res.status(400).json({ message: 'Enter a campaign name.' });
+      const conflict = () => res.status(409).json({ error: 'name_exists', message: `A campaign named "${String(name).trim()}" already exists. Please choose a different name.` });
+      if (_draftNamesBeingCreated.has(key)) return conflict();
+      _draftNamesBeingCreated.add(key);
+      reserved = true;
+      const { listConfigs } = await import('./src/campaign-configs.js');
+      const [drafts, history, queue, schedules] = await Promise.all([getDrafts(), listHistory({ includeArchived: true }), getQueue(), loadSchedules()]);
+      const existing = [...drafts, ...history, ...queue, ...schedules, ...listConfigs(), campaign];
+      if (existing.some(item => String(item?.name || '').trim().toLowerCase() === key)) return conflict();
+    }
     const collision = _draftNameCollision(name);
     if (collision) return res.status(collision.status).json(collision.body);
     const entry = await addDraft({ name, config });
     res.json({ ok: true, draft: entry });
   } catch (err) { res.status(500).json({ error: err.message }); }
+  finally { if (reserved) _draftNamesBeingCreated.delete(key); }
 });
 
 app.patch('/api/drafts/:id', async (req, res) => {
@@ -7073,6 +7234,11 @@ app.patch('/api/drafts/:id', async (req, res) => {
     const collision = _draftNameCollision(req.body?.name);
     if (collision) return res.status(collision.status).json(collision.body);
     const updated = await updateDraft(req.params.id, req.body || {});
+    // The write named one campaign; this draft belongs to another. Refuse it —
+    // the client detaches on 409 rather than continuing to write across.
+    if (updated === DRAFT_IDENTITY_MISMATCH) {
+      return res.status(409).json({ error: 'This draft belongs to a different campaign' });
+    }
     if (!updated) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, draft: updated });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -7149,12 +7315,27 @@ app.post('/api/profile/:id/open-browser', async (req, res) => {
 // (weeklyLimited, parkedProfiles, profileEndReasons, consecutive counters)
 // AND opens the GoLogin browser so the operator can re-authenticate. The
 // next campaign rotation picks the profile up again.
+// Clear only the Sales Navigator restriction; the account can still send via LinkedIn.
+// Probe on the next eligible message rather than navigating an active send's tab.
+app.post('/api/campaign/profile/:id/sales-nav/retry', (req, res) => {
+  const id = req.params.id;
+  if (!getSalesNavAccess(id)) return res.status(404).json({ error: 'No saved Sales Navigator access check for this profile' });
+  const access = setSalesNavAccess(id, 'retry_pending');
+  return res.json({ ok: true, access });
+});
+
 app.post('/api/campaign/profile/:id/retry', async (req, res) => {
   const profileId = req.params.id;
   if (!profileId) return res.status(400).json({ error: 'profileId required' });
   try {
     const result = retryParkedProfile(profileId);
     if (!result.ok) return res.status(409).json({ error: result.reason || 'retry-failed' });
+    // "I've logged back in" sends open:false — the operator has already got the
+    // browser open, that is where they signed in. Launching it again would fight
+    // them for the window.
+    if (req.body && req.body.open === false) {
+      return res.json({ ok: true, profileName: result.profileName, browser: { action: 'skipped' } });
+    }
     // Same launch + unhide flow as /api/profile/:id/open-browser. We don't
     // delegate so the response can carry both the unpark + launch outcome.
     let launchInfo;
@@ -7851,14 +8032,43 @@ function registerSchedule(schedule) {
       ? notifyEmail(schedule.createdBy, payload)
       : notifyAll(payload);
 
-    notify({
+    // Not when it is about to be queued behind a running campaign — that path
+    // sends its own "queued" notice instead of a false "running now".
+    if (!campaign.running) notify({
       title: 'Campaign started',
       body: `${schedule.name} is running now on ${schedule.profileIds.length} account(s).`,
       link: '/',
     }).catch(() => {});
     preventSleep(`schedule:${schedule.name}`);
     try {
-      await startCampaign({
+      // A schedule made from the wizard carries the whole launch — run exactly
+      // that, under the campaign's own permanent id, so nothing is cloned and no
+      // setting (primary person, intro message, stop options…) is dropped.
+      // Something is already running → join the queue instead of failing with
+      // "Campaign already running" (operator, 2026-09-21). Same rule as pressing
+      // Start while busy; the queue starts it when the current campaign finishes.
+      if (campaign.running) {
+        const queuedConfig = schedule.launchBody
+          ? buildCampaignConfig({ ...schedule.launchBody, campaignId: schedule.campaignId, name: schedule.name })
+          : buildCampaignConfig({ campaignId: schedule.campaignId, name: schedule.name, profileIds: schedule.profileIds,
+              sheetUrl: schedule.sheetUrl, templates: schedule.templates || {}, dailyLimit: schedule.dailyLimit || 50,
+              mode: schedule.mode || 'connect_only', delayMin: schedule.delayMin, delayMax: schedule.delayMax,
+              pauseOnThrottle: schedule.pauseOnThrottle });
+        await addToQueue(queuedConfig, schedule.createdBy || null);
+        const busyWith = campaign.name || 'another campaign';
+        campaignLog(`🗓 Scheduled campaign "${schedule.name}" is due, but "${busyWith}" is running — added to the queue. It starts when that one finishes.`);
+        const allS = await loadSchedules();
+        const sq = allS.find(x => x.id === schedule.id);
+        if (sq) { sq.lastRun = new Date().toISOString(); await saveSchedules(allS); }
+        notify({ title: 'Scheduled campaign queued', body: `${schedule.name} was due while "${busyWith}" is running — it is queued and starts next.`, link: '/' }).catch(() => {});
+        return;
+      }
+      if (schedule.launchBody) {
+        const fullConfig = buildCampaignConfig({ ...schedule.launchBody, campaignId: schedule.campaignId, name: schedule.name });
+        fullConfig.createdBy = schedule.createdBy || null;
+        await startCampaign(fullConfig);
+      } else await startCampaign({
+        campaignId: schedule.campaignId, name: schedule.name,
         profileIds: schedule.profileIds,
         sheetUrl: schedule.sheetUrl,
         templates: schedule.templates || {},
@@ -7926,13 +8136,33 @@ app.post('/api/schedules', async (req, res) => {
     } else {
       id = `sched_${Date.now()}`;
     }
+    // One schedule per campaign: scheduling a campaign that already has one
+    // REPLACES it (operator, 2026-09-21) — it used to pile up a new run per press.
+    let replaced = false;
+    if (!req.body.id && req.body.campaignId) {
+      const mine = all.filter(s => s.campaignId === req.body.campaignId);
+      if (mine.length) {
+        replaced = true;
+        id = mine[0].id;                                   // keep the first, overwrite it below
+        for (const extra of mine.slice(1)) {
+          const job = activeJobs.get(extra.id);
+          if (job) { job.main?.stop(); job.prefire?.stop(); activeJobs.delete(extra.id); }
+        }
+        for (let i = all.length - 1; i >= 0; i--) if (all[i].campaignId === req.body.campaignId && all[i].id !== id) all.splice(i, 1);
+      }
+    }
     const existing = all.findIndex(s => s.id === id);
+    const identity = ensureCampaignIdentity({ campaignId: existing >= 0 ? all[existing].campaignId : req.body.campaignId, name, config: req.body });
     const schedule = {
-      id, name, cron: cronExpr, profileIds, sheetUrl,
+      campaignId: identity.campaignId, id, name: identity.name, cron: cronExpr, profileIds, sheetUrl,
       mode: mode || 'connect_only', templates: templates || {},
       dailyLimit: dailyLimit || 50,
       delayMin, delayMax,
       enabled: enabled !== false, lastRun: null,
+      // The FULL launch the wizard would have sent to /api/campaign/start (primary
+      // person, intro message, sender names, sheet tab, stop options…). The thin
+      // fields above are kept for the schedules panel and as a fallback.
+      launchBody: (req.body.launchBody && typeof req.body.launchBody === 'object') ? req.body.launchBody : (existing >= 0 ? all[existing].launchBody : undefined),
       // P-06 fix (2.8.18): never trust req.body.createdBy — that lets a
       // logged-in user spoof schedule ownership and redirect notification
       // emails to other operators. createdBy is always derived from req.user
@@ -7944,7 +8174,7 @@ app.post('/api/schedules', async (req, res) => {
     else { all.push(schedule); }
     await saveSchedules(all);
     registerSchedule(schedule);
-    res.json({ saved: true, schedule });
+    res.json({ saved: true, replaced, schedule });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -8297,9 +8527,194 @@ app.get('/api/export/csv', async (_req, res) => {
   }
 });
 
+// ── Campaign settings, kept by name (Ortus Basics 1.0) ─────────────────────
+// Saved on Save and on Start; restored when a campaign of that name is opened.
+// Keyed by name because an engine campaign id never survived a restart, which
+// is why reopening a campaign kept coming back empty.
+app.get('/api/campaign-configs', async (_req, res) => {
+  try {
+    const { listConfigs } = await import('./src/campaign-configs.js');
+    res.json({ ok: true, configs: listConfigs() });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.delete('/api/campaign-configs/:name', async (req, res) => {
+  try {
+    const { deleteConfig, normaliseName } = await import('./src/campaign-configs.js');
+    const entry = req.query.campaignId ? getConfigById(String(req.query.campaignId)) : null;
+    if (req.query.campaignId && !entry) return res.status(404).json({ error: 'Campaign not found.' });
+    const key = normaliseName(entry?.name || req.params.name);
+    const matches = row => entry ? row.campaignId === entry.campaignId : normaliseName(row.name) === key;
+    const queue = await getQueue();
+    if (((campaign.running || campaign.state === 'monitoring') && matches(campaign))
+        || queue.some(matches)) {
+      return res.status(409).json({ ok: false, error: 'Stop or remove this campaign from the queue before deleting its saved settings.' });
+    }
+    if (!deleteConfig(req.params.name, entry?.campaignId)) return res.status(404).json({ ok: false, error: 'Saved campaign not found.' });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.get('/api/campaign-configs/by-id/:campaignId', (req, res) => {
+  const entry = getConfigById(req.params.campaignId);
+  if (!entry) return res.status(404).json({ ok: false, error: 'Campaign not found.' });
+  res.json({ ok: true, ...entry });
+});
+
+app.get('/api/campaign-configs/:name', async (req, res) => {
+  try {
+    const { getConfig } = await import('./src/campaign-configs.js');
+    const entry = getConfig(req.params.name);
+    if (!entry) return res.status(404).json({ ok: false, error: 'No saved settings for that campaign name.' });
+    res.json({ ok: true, ...entry });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// Rename a campaign everywhere it is named, in one call.
+//
+// A campaign's name is its identity: settings are keyed by it, and the board
+// reads it from the run history. Renaming used to touch neither — Save wrote a
+// SECOND settings record under the new name and the board kept showing the old
+// one (operator, 2026-09-04). All three stores move together here, or the
+// campaign ends up existing twice.
+app.post('/api/campaign-configs/rename', async (req, res) => {
+  try {
+    const from = String(req.body?.from || '').trim();
+    const to = String(req.body?.to || '').trim();
+    if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
+
+    const { renameConfig } = await import('./src/campaign-configs.js');
+    const moved = renameConfig(from, to, req.body?.campaignId);
+    // 'missing' just means this campaign had no saved settings yet — the board
+    // rename below is still worth doing. A clash is fatal: two campaigns must
+    // not collapse into one record.
+    if (!moved.ok && moved.reason === 'clash') {
+      return res.status(409).json({ error: `A campaign named "${to}" already exists` });
+    }
+    if (!moved.ok && moved.reason === 'invalid') {
+      return res.status(400).json({ error: 'Invalid name' });
+    }
+
+    // The dashboard's local campaigns read their name from the run history.
+    let historyRenamed = 0;
+    try {
+      let history = [];
+      try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf-8')); } catch { /* none yet */ }
+      if (Array.isArray(history)) {
+        const key = (v) => String(v || '').trim().toLowerCase();
+        for (const entry of history) {
+          if (entry && (entry.campaignId ? entry.campaignId === moved.campaignId : key(entry.name) === key(from))) { entry.name = to; historyRenamed += 1; }
+        }
+        if (historyRenamed) await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf-8');
+      }
+    } catch (err) {
+      console.warn('[rename] history rename failed:', err.message);
+    }
+
+    // Drafts. The dashboard lists these by name, so a draft left on the old
+    // name is a renamed campaign that reappears under its old one.
+    let draftsRenamed = 0;
+    try {
+      const { renameDrafts } = await import('./src/drafts.js');
+      draftsRenamed = await renameDrafts(from, to, moved.campaignId);
+    } catch (err) {
+      console.warn('[rename] draft rename failed:', err.message);
+    }
+
+    // And the per-run snapshots, which the wizard falls back to.
+    let snapshotsRenamed = 0;
+    try {
+      const { renameCloudLaunchConfigs } = await import('./src/cloud-launch-configs.js');
+      snapshotsRenamed = await renameCloudLaunchConfigs(from, to);
+    } catch (err) {
+      console.warn('[rename] launch-config rename failed:', err.message);
+    }
+
+    // A campaign running right now carries its name in memory too.
+    try {
+      if (campaign && (campaign.campaignId ? campaign.campaignId === moved.campaignId : String(campaign.name || '').trim().toLowerCase() === from.toLowerCase())) {
+        setCampaignName(to);
+      }
+    } catch (_) { /* nothing running */ }
+
+    res.json({ ok: true, campaignId: moved.campaignId, name: to, settingsMoved: !!moved.ok, historyRenamed, draftsRenamed, snapshotsRenamed });
+  } catch (err) {
+    console.error('[campaign-configs] rename failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/campaign-configs', async (req, res) => {
+  try {
+    const { saveConfig } = await import('./src/campaign-configs.js');
+    const { name, config } = req.body || {};
+    if (!String(name || '').trim()) {
+      return res.status(400).json({ ok: false, error: 'A campaign needs a name before its settings can be saved.' });
+    }
+    res.json({ ok: true, saved: saveConfig(name, config, { campaignId: req.body?.campaignId || config?.campaignId, listed: true }) });
+  } catch (err) {
+    console.error('[campaign-configs] save failed:', err);
+    res.status(err.status || 500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── GoLogin workspace tokens (Ortus Basics 1.0) ────────────────────────────
+// The app ships with no secrets. These two routes are the Settings stage: the
+// operator pastes the tokens they hold, and the workspaces those tokens unlock
+// become selectable. Nothing here ever echoes a token back.
+app.get('/api/credentials', async (_req, res) => {
+  try {
+    const { credentialStatus, readOthers } = await import('./src/gologin-credentials.js');
+    res.json({ ok: true, credentials: credentialStatus(), others: readOthers() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/credentials/check', async (req, res) => {
+  const ids = [...new Set(Array.isArray(req.body?.ids) ? req.body.ids : [])].filter(id => typeof id === 'string').slice(0, 13);
+  if (!ids.length) return res.status(400).json({ error: 'Choose a workspace to check.' });
+  const checks = await Promise.all(ids.map(id => checkWorkspaceCredential(id)));
+  res.json({ ok: checks.every(check => check.ok), checks });
+});
+
+app.post('/api/credentials', async (req, res) => {
+  try {
+    const { saveCredentials, credentialStatus } = await import('./src/gologin-credentials.js');
+    const body = req.body || {};
+    // Only the known token names are accepted — an arbitrary key would end up
+    // in process.env, which is not somewhere untrusted input belongs.
+    const { credentialFields } = await import('./src/gologin-credentials.js');
+    const allowed = new Set(credentialFields().map((f) => f.env));
+    const input = {};
+    for (const [k, v] of Object.entries(body)) if (allowed.has(k)) input[k] = v;
+    // `others` is the operator's own workspace list — replaced wholesale.
+    if (Array.isArray(body.others)) {
+      const { saveOthers } = await import('./src/gologin-credentials.js');
+      saveOthers(body.others);
+      clearProfileCache();
+    }
+    if (!Object.keys(input).length && !Array.isArray(body.others)) {
+      return res.status(400).json({ ok: false, error: 'No known token fields in the request.' });
+    }
+    if (!Object.keys(input).length) {
+      const { readOthers } = await import('./src/gologin-credentials.js');
+      return res.json({ ok: true, credentials: credentialStatus(), others: readOthers(), changedAccounts: readOthers().map(o => o.id) });
+    }
+    saveCredentials(input);
+    clearProfileCache();
+    res.json({ ok: true, credentials: credentialStatus(), changedAccounts: credentialFields().filter(f => input[f.env]).map(f => f.id) });
+  } catch (err) {
+    console.error('[credentials] save failed:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
+migrateCampaignIdentities();
+
 app.listen(PORT, '127.0.0.1', async () => {
   console.log(`\n  ✦ Ortus Outreach v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
@@ -8358,7 +8773,22 @@ app.listen(PORT, '127.0.0.1', async () => {
   startReplyCheckScheduler();
 
   // Load and register saved schedules (D-05)
-  loadSchedules().then(schedules => {
+  loadSchedules().then(async (schedules) => {
+    // One schedule per campaign. Older builds added a run per press, so collapse
+    // any leftovers to the MOST RECENTLY CREATED one (ids are sched_<timestamp>).
+    const newest = new Map();
+    for (const sch of schedules) {
+      if (!sch.campaignId) continue;
+      const stamp = Number(String(sch.id || '').replace(/\D/g, '')) || 0;
+      const cur = newest.get(sch.campaignId);
+      if (!cur || stamp > cur.stamp) newest.set(sch.campaignId, { id: sch.id, stamp });
+    }
+    const kept = schedules.filter((sch) => !sch.campaignId || newest.get(sch.campaignId).id === sch.id);
+    if (kept.length !== schedules.length) {
+      console.log(`[scheduler] Removed ${schedules.length - kept.length} duplicate schedule(s) — one schedule per campaign.`);
+      try { await saveSchedules(kept); } catch (err) { console.warn('[scheduler] could not save de-duplicated schedules:', err.message); }
+      schedules = kept;
+    }
     for (const s of schedules) registerSchedule(s);
     if (schedules.length) console.log(`  ✦ Schedules: ${schedules.filter(s => s.enabled).length} active of ${schedules.length} total`);
   }).catch(err => console.error('Failed to load schedules:', err.message));
@@ -8629,7 +9059,7 @@ app.post('/api/preview-intro-dm', async (req, res) => {
 
     const resolvedBody  = personalizeTemplate(introBody, data);
     const resolvedTitle = personalizeTemplate(
-      introTitle || 'Introduction: {first name} <> {intro name}',
+      introTitle || 'Introduction: {firstName} <> {primaryFirstName}',
       data
     );
 
