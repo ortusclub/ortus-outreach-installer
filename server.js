@@ -1,3 +1,4 @@
+import { hasLocalBrowserSelection, GOLOGIN_REQUIRED } from './src/gologin-only.js';
 import { cloudOptionError } from './public/js/cloud-option-compatibility.mjs';
 import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
 import { canViewCampaign, visibleCampaigns } from './src/campaign-visibility.js';
@@ -161,6 +162,12 @@ app.use('/api', (_req, res, next) => {
 });
 
 app.use(express.json());
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.path !== '/followups/board' && hasLocalBrowserSelection(req.body)) {
+    return res.status(400).json({ error: GOLOGIN_REQUIRED });
+  }
+  next();
+});
 app.use(cookieParser());
 
 // ── Public auth endpoints (no session required) ────────────────────
@@ -2822,17 +2829,8 @@ app.post('/api/followups/restore', async (req, res) => {
 // Same Chrome profile the follow-up runner uses, so signing in here is what
 // unblocks the parked follow-ups. Deliberately left OPEN: closing it is the
 // operator's signal that they are done.
-app.post('/api/followups/open-login', async (_req, res) => {
-  try {
-    const { page } = await launchLocalBrowser({ visible: true });
-    await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 45000 })
-      .catch(() => { /* the window is open either way — that is the point */ });
-    console.log('[followups] opened the follow-up browser on screen for sign-in');
-    res.json({ ok: true });
-  } catch (e) {
-    console.warn(`[followups] could not open the follow-up browser: ${e.message}`);
-    res.status(500).json({ error: e.message });
-  }
+app.post('/api/followups/open-login', (_req, res) => {
+  res.status(410).json({ error: GOLOGIN_REQUIRED });
 });
 
 // ── put failed / parked follow-ups back in the queue ──

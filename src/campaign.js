@@ -1,3 +1,4 @@
+import { assertGoLoginOnly } from './gologin-only.js';
 import { hasDailySendLimit, dailyQuotaCount, utcDayKey, nextDailyResetAt } from './campaign-limits.js';
 import { getSalesNavAccess } from './linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById, saveConfig } from './campaign-configs.js';
@@ -2131,6 +2132,7 @@ export function setLiveCadence(min) {
 }
 
 export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, stopBeforeWeeklyReset = false, stopBeforeMonthlyReset = false, skipIntroductions = false, excludedUrls = [] }) {
+  assertGoLoginOnly({ profileIds, templates });
   if (campaign.running) throw new Error('Campaign already running');
   const identity = ensureCampaignIdentity({ campaignId, name, config: { profileIds, sheetUrl, templates, mode } });
   campaignId = identity.campaignId;

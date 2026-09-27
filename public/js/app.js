@@ -940,7 +940,7 @@ async function openScrapeSetupFor(cid) {
         // direct Re-run button. rec.profileIds are the scrape's job profileIds,
         // which are GoLogin profile ids (== p.id in the picker).
         if (Array.isArray(rec.profileIds) && rec.profileIds.length) {
-          selectedProfileIds = rec.profileIds.filter(Boolean);
+          selectedProfileIds = rec.profileIds.filter(id => id && id !== 'local-browser');
           for (const id of selectedProfileIds) {
             const p = (allProfilesData || []).find((x) => x.id === id);
             if (p) selectedProfileNames[id] = p.name;
@@ -1605,7 +1605,7 @@ function gatherCampaignFormState() {
       ? (document.getElementById('follow-up-body')?.value || '')
       : '',
     followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
-    primarySource: _isIntroFlow ? readPrimarySource() : 'local-browser',
+    primarySource: _isIntroFlow ? readPrimarySource() : '',
     // v2.62: CC+DM post-acceptance body. Only meaningful when
     // mode === 'connect_and_message'; campaign.js reads templates.ccDmBody
     // from runAutoDms. Other modes ignore it.
@@ -2441,63 +2441,8 @@ function renderProfiles(profiles) {
   const grid = document.getElementById('profiles-grid');
   grid.innerHTML = '';
 
-  // Local Browser — rendered into a dedicated host above the GoLogin grid.
-  // It has unique semantics (local Chromium, not Orbita) and the first-name
-  // input is gated behind the checkbox: we only ask once the operator opts in.
-  const localHost = document.getElementById('local-browser-host');
-  if (localHost) {
-    const isSelected = selectedProfileIds.includes('local-browser');
-    localHost.innerHTML = '';
-    const localItem = document.createElement('label');
-    localItem.className = 'profile-item local-browser local-browser-tile' + (isSelected ? ' selected' : '');
-    localItem.dataset.profileId = 'local-browser';
-    localItem.innerHTML = `
-      <input type="checkbox" class="local-cb" value="local-browser" ${isSelected ? 'checked' : ''} />
-      <div class="local-browser-body">
-        <div class="name">Local Browser</div>
-        <div class="id">Your system Chrome. If this is your first time, you will have to log in to LinkedIn when the Chrome browser pops up locally.</div>
-        <div class="local-browser-name-row" ${isSelected ? '' : 'hidden'}>
-          <label for="local-browser-first-name" class="local-browser-name-label">Your first name (used as {senderFirstName})</label>
-          <input type="text" id="local-browser-first-name" placeholder="e.g. Antonio"
-            value="${escHtml(localBrowserFirstName)}" />
-        </div>
-      </div>
-    `;
-    const localNameRow = localItem.querySelector('.local-browser-name-row');
-    const localNameInput = localItem.querySelector('#local-browser-first-name');
-    localNameInput.addEventListener('click', (e) => e.stopPropagation());
-    localNameInput.addEventListener('input', (e) => {
-      localBrowserFirstName = e.target.value;
-      try { localStorage.setItem('localBrowserFirstName', localBrowserFirstName); } catch { /* */ }
-      renderSelectedPanel();
-    });
-    const localCb = localItem.querySelector('input.local-cb');
-    localCb.addEventListener('change', () => {
-      if (localCb.checked) {
-        if (!selectedProfileIds.includes('local-browser')) {
-          selectedProfileIds.push('local-browser');
-          selectedProfileNames['local-browser'] = 'Local Browser';
-        }
-        localItem.classList.add('selected');
-        if (localNameRow) {
-          localNameRow.hidden = false;
-          // Auto-focus the name input the first time someone ticks the box —
-          // makes the "now we need your name" interaction feel obvious.
-          if (!localNameInput.value) setTimeout(() => localNameInput.focus(), 0);
-        }
-      } else {
-        selectedProfileIds = selectedProfileIds.filter(id => id !== 'local-browser');
-        delete selectedProfileNames['local-browser'];
-        localItem.classList.remove('selected');
-        if (localNameRow) localNameRow.hidden = true;
-      }
-      renderSelectedPanel();
-      // The Local Browser counts as an account toward the 2+-account parallel
-      // unlock and the throughput math — recompute, matching the GoLogin handler.
-      updateCampaignSummary();
-    });
-    localHost.appendChild(localItem);
-  }
+  selectedProfileIds = selectedProfileIds.filter(id => id !== 'local-browser');
+  delete selectedProfileNames['local-browser'];
 
   // v2.112.10 (Window C, free-first): compute each profile's state ONCE so we can
   // both sort (usable accounts first) and render from the same value. State comes
@@ -7231,7 +7176,7 @@ async function startCampaign(opts = {}) {
     followUpEnabled: _isIntroFlow ? !!document.getElementById('follow-up-toggle')?.checked : false,
     followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
     followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
-    primarySource: _isIntroFlow ? readPrimarySource() : 'local-browser',
+    primarySource: _isIntroFlow ? readPrimarySource() : '',
     // v2.62: CC+DM post-acceptance body — read at launch time too.
     // v2.160.126: mode-gated, matching the preview path. Every consumer
     // already checks mode === 'connect_and_message' (campaign.js:2956, 4205,
@@ -7249,7 +7194,7 @@ async function startCampaign(opts = {}) {
     const _src = document.querySelector('input[name="primary-source"]:checked')?.value;
     if ((_aaOn || _fuOn) && _src === 'gologin' && !(document.getElementById('primary-source-profile-id')?.value || '')) {
       if (typeof showCampaignToast === 'function') {
-        showCampaignToast('Pick which GoLogin profile your primary uses, or switch to your local browser.');
+        showCampaignToast('Pick which GoLogin profile your primary uses.');
       }
       return;
     }
@@ -11339,8 +11284,8 @@ function renderUnifiedStrip(it) {
             : "Your Mac is accepting the primary's invitations"}</div>
         <div class="hs-bar"><i style="width:${pct}%"></i></div>
         <div class="hs-expl">${_launching
-          ? `Your Mac opens each sender in turn, sends <b>${pname}</b> a connection request, then accepts them in your local browser. This is the only step that runs on this machine — the campaign then moves entirely to the VM. It takes a couple of minutes.`
-          : `Each account sent <b>${pname}</b> a connection request from the VM. Accepting them in <b>your local browser</b> is the only step that runs on this machine — then the campaign continues entirely on the VM.`}</div>
+          ? `Your Mac opens each sender in turn, sends <b>${pname}</b> a connection request, then accepts them in the selected GoLogin profile. This is the only step that runs on this machine — the campaign then moves entirely to the VM. It takes a couple of minutes.`
+          : `Each account sent <b>${pname}</b> a connection request from the VM. Accepting them in <b>the selected GoLogin profile</b> is the only step that runs on this machine — then the campaign continues entirely on the VM.`}</div>
         <div class="hs-list">${rows}</div>
         <div class="hs-keep">◈ Keep this app open — it's the only local step this campaign needs.</div>
       </div>`;
@@ -11829,7 +11774,7 @@ function maybeOpenHandshakeModal(items) {
   document.getElementById('hs-modal-count').textContent = String(accepted);
   document.getElementById('hs-modal-sub').textContent = `${accepted} of ${total} accepted`;
   document.getElementById('hs-modal-body').innerHTML =
-    `Accepting <b>${pname}</b>'s connection requests in <b>your local browser</b> is the only step that runs on this machine — then <b>${escHtml(it.name || 'the campaign')}</b> runs entirely in the cloud. Keep this app open.`;
+    `Accepting <b>${pname}</b>'s connection requests in <b>the selected GoLogin profile</b> is the only step that runs on this machine — then <b>${escHtml(it.name || 'the campaign')}</b> runs entirely in the cloud. Keep this app open.`;
   scrim.classList.add('open');
 }
 function closeHandshakeModal() {
@@ -12874,8 +12819,7 @@ async function renderStaleFollowups(items) {
     const who = g.leadNames.length
       ? `<div class="fu-who">${escHtml(g.leadNames.slice(0, 6).join(' · '))}${g.leadNames.length > 6 ? ` and ${g.leadNames.length - 6} more` : ''}</div>`
       : '';
-    const login = g.reason === 'signed-out'
-      ? '<button class="mini" onclick="openFollowupLogin(this)">Open the follow-up browser</button>' : '';
+    const login = g.reason === 'signed-out' ? '<span>Check the selected GoLogin profile’s LinkedIn login.</span>' : '';
     return `<div class="fu-grp" data-key="${escHtml(g.key)}">
       <div class="fu-top">${name}
         <span class="fu-dt">queued ${escHtml(_fuWhen(g.firstQueuedAt))}</span>
@@ -19290,7 +19234,7 @@ function collectCurrentConfig() {
       followUpEnabled: document.getElementById('follow-up-toggle')?.checked === true,
       followUpBody: getV('follow-up-body'),
       followUpDelayMinutes: getN('follow-up-delay', 10),
-      primarySource: (typeof readPrimarySource === 'function') ? readPrimarySource() : 'local-browser',
+      primarySource: (typeof readPrimarySource === 'function') ? readPrimarySource() : '',
       primaryCheckTiming: getV('primary-timing-select') || 'immediately',
       ccDmBody: getV('tpl-cc-dm-body'),
     },
@@ -19328,7 +19272,7 @@ function applyPresetConfig(config) {
   // which is how one campaign's settings walked into another's (operator,
   // 2026-09-04). Campaigns are separate; loading one replaces the form entirely.
   {
-    selectedProfileIds = Array.isArray(config.profileIds) ? config.profileIds.filter(Boolean) : [];
+    selectedProfileIds = Array.isArray(config.profileIds) ? config.profileIds.filter(id => id && id !== 'local-browser') : [];
     selectedProfileNames = (config.profileNames && typeof config.profileNames === 'object')
       ? { ...config.profileNames }
       : {};
@@ -19452,7 +19396,7 @@ function applyPresetConfig(config) {
     const localR = document.querySelector('input[name="primary-source"][value="local-browser"]');
     const goR = document.querySelector('input[name="primary-source"][value="gologin"]');
     if (localR) localR.checked = !isGo;
-    if (goR) goR.checked = isGo;
+    if (goR) goR.checked = true;
     if (typeof togglePrimarySource === 'function') togglePrimarySource();
   }
   if (typeof toggleFollowUpFields === 'function') toggleFollowUpFields();
@@ -19508,7 +19452,7 @@ function applyPresetConfig(config) {
   // Restore selected profiles. If profiles haven't loaded yet the selection
   // will be re-applied by renderProfiles once they arrive.
   if (Array.isArray(config.profileIds)) {
-    selectedProfileIds = [...config.profileIds];
+    selectedProfileIds = config.profileIds.filter(id => id !== 'local-browser');
     if (typeof renderProfiles === 'function' && Array.isArray(allProfilesData)) {
       renderProfiles(allProfilesData);
     }
@@ -20286,34 +20230,6 @@ try {
   if (_migrateStaleH2Numbers() && typeof applySavedEdits === 'function') applySavedEdits();
 } catch (_) {}
 
-// Phase 2.8.19 (C3) — two-way bind Settings "Local browser name" with the
-// dynamically-rendered profile-card input (#local-browser-first-name). Both
-// read/write the same localStorage.localBrowserFirstName key, but the card
-// input is rendered conditionally inside renderProfiles, so we use a
-// delegated listener for that direction.
-(function bindLocalBrowserNameSetting() {
-  const settingsInput = document.getElementById('settings-local-browser-name');
-  if (!settingsInput) return;
-
-  // Initial hydrate from the module-local value (already loaded from localStorage at top of file)
-  settingsInput.value = (typeof localBrowserFirstName === 'string') ? localBrowserFirstName : '';
-
-  // Settings → state + card mirror
-  settingsInput.addEventListener('input', (e) => {
-    localBrowserFirstName = e.target.value;
-    try { localStorage.setItem('localBrowserFirstName', localBrowserFirstName); } catch (_) {}
-    const cardInput = document.getElementById('local-browser-first-name');
-    if (cardInput && cardInput.value !== e.target.value) cardInput.value = e.target.value;
-  });
-
-  // Card → settings mirror (delegated because card input may not exist yet)
-  document.addEventListener('input', (e) => {
-    if (e.target && e.target.id === 'local-browser-first-name') {
-      if (settingsInput.value !== e.target.value) settingsInput.value = e.target.value;
-    }
-  });
-})();
-
 // Phase 2.8.19 (C4) — sidebar Notifications panel state rendering.
 async function refreshNotifPanel() {
   // Browser push permission
@@ -20641,7 +20557,7 @@ function renderManifest() {
   const r = buildManifestReadback({
     mode,
     primaryName: document.getElementById('primary-person-name')?.value || '',
-    primarySource: (typeof readPrimarySource === 'function') ? readPrimarySource() : 'local-browser',
+    primarySource: (typeof readPrimarySource === 'function') ? readPrimarySource() : '',
     autoAcceptPrimary: !!document.getElementById('auto-accept-toggle')?.checked,
     autoAcceptAllPending: !!document.getElementById('auto-accept-all-toggle')?.checked,
     primaryCheckTiming: document.getElementById('primary-timing-select')?.value || 'immediately',
@@ -21056,7 +20972,7 @@ window.reloadPrimarySourceSoO = reloadPrimarySourceSoO;
 function readPrimarySource() {
   const src = document.querySelector('input[name="primary-source"]:checked')?.value;
   if (src === 'gologin') return document.getElementById('primary-source-profile-id')?.value || '';
-  return 'local-browser';
+  return '';
 }
 window.readPrimarySource = readPrimarySource;
 
@@ -21064,7 +20980,7 @@ window.readPrimarySource = readPrimarySource;
 // auto-accept + follow-up cards from the shared selector.
 function refreshPrimarySourceLabels() {
   const src = readPrimarySource();
-  let name = 'your local browser';
+  let name = 'choose a GoLogin profile';
   if (src && src !== 'local-browser') {
     const p = (allProfilesData || []).find(x => x.id === src);
     name = p ? p.name : 'a GoLogin profile';
@@ -25059,7 +24975,7 @@ let _fgViewReady = false;
 let fgtlPeople = [];      // [{ email, name, total, matched, paired }]
 let fgtlPicked = {};      // email -> { profile, pq, changing }
 let fgtlChips = [];       // active role keyword chips
-const FGTL_LOCAL = { id: 'local-browser', name: 'Local Browser' };
+
 let _fgtlRefreshTimer = null;
 // Quick-add: the adjacent departments the marketing default deliberately leaves
 // out. Same substring rule as FG_DEFAULT_CHIPS, so these are stems too.
@@ -25347,7 +25263,7 @@ function fgtlInvitesLeft(person, profileName) {
   return Math.max(0, Math.min(person.matched, b === Infinity ? person.matched : b));
 }
 function fgtlProfileNames() {
-  return ['Local Browser', ...((allProfilesData || []).map((p) => p.name).filter(Boolean))];
+  return (allProfilesData || []).filter(p => p.id !== 'local-browser').map(p => p.name).filter(Boolean);
 }
 
 /** Render keyword chips in #fgtl-chips. */
@@ -25869,10 +25785,6 @@ function fgRenderSendAccounts() {
   };
 
   const cards = [];
-  // Local Browser — always first (your system Chrome), unless filtered/searched out.
-  if (_fgAcctFilter !== 'done' && (!q || 'local browser'.includes(q))) {
-    cards.push(card('local-browser', 's-local', 'LOCAL', 'Local Browser', 'Your system Chrome — log in when it opens.'));
-  }
   for (const { p, c } of list) {
     const { remaining, allowance } = c;
     let band = 's-inuse', word = `${remaining}/${allowance}`, sub = `${remaining} of ${allowance} invites left`;
@@ -29185,10 +29097,9 @@ function _followupFixHtml(cid) {
   if (!stuck) return heldHtml;
   const n = stuck === 1 ? 'follow-up' : 'follow-ups';
   const row = h.reason === 'signed-out' || h.blocked
-    ? `<b>${stuck} ${n} are waiting.</b> The follow-up browser is signed out of LinkedIn. It is its own Chrome window, separate from your everyday one — which is why you never saw it open. Sign in once and they go out on their own; nothing is lost and no lead was messaged twice.`
+    ? `<b>${stuck} ${n} are waiting.</b> Check the selected GoLogin profile’s LinkedIn login. Older campaigns that used Local Browser must be saved with a GoLogin profile.`
     : `<b>${stuck} ${n} could not be sent.</b> ${escHtml(h.lastError || 'LinkedIn did not open the message box')}. The leads themselves are fine — only the follow-up is missing.`;
   const acts = [
-    '<button type="button" onclick="openFollowupLogin(this)">Open the follow-up browser to log in</button>',
     `<button type="button" onclick="retryFollowups(this)">Retry the ${stuck} now</button>`,
   ];
   return heldHtml

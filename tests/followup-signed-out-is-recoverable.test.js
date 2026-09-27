@@ -51,10 +51,11 @@ test('the session is probed once per run, not once per lead', () => {
     'the probe must come before the per-lead loop');
 });
 
-test('the login flow opens the browser where a human can see it', () => {
-  assert.match(LAUNCH, /launchLocalBrowser\(\{ visible = false \} = \{\}\)/);
-  assert.match(LAUNCH, /visible \? \['--window-position=60,60'\] : \['--window-position=-2400,-2400'\]/);
-  assert.match(SERVER, /launchLocalBrowser\(\{ visible: true \}\)/);
+test('the old follow-up login endpoint cannot launch a local browser', () => {
+  assert.match(LAUNCH, /Local Browser is no longer supported/);
+  const route = SERVER.slice(SERVER.indexOf("app.post('/api/followups/open-login'"), SERVER.indexOf("// ── put failed"));
+  assert.match(route, /status\(410\)/);
+  assert.doesNotMatch(route, /launchLocalBrowser/);
 });
 
 test('retry revives BOTH parked and already-failed follow-ups', () => {

@@ -38,3 +38,9 @@ The extra connections-only and timed-stop flags are refused on a cloud launch un
 Tests that depend on the remotely deployed engine or actual LinkedIn sending remain outside these local checks. Production publishing should use a separately reviewed version increment and release.
 
 Saved workspace tokens now grant cross-team profile selection and launch access on this installation. Bundled tokens retain their domain rules. Removing the saved token revokes the additional access. Campaign ownership visibility remains separate.
+
+## GoLogin-only browser selection
+
+Removed Local Browser from campaign accounts, primary-person source selection, follower-growth pairing and send accounts, and the old follow-up login action. Restored campaign selections discard the retired sender; legacy API requests and campaign starts reject it with an instruction to choose GoLogin. The local Chrome launcher is disabled, including calls from old background tasks. GoLogin profiles can still run on this Mac.
+
+Validation: 2,890 tests passed, zero failures, two skipped. Electron UI checks with a synthetic GoLogin profile found no Local Browser selector, confirmed the GoLogin primary default, and found no renderer errors. No campaign was started.
