@@ -9,15 +9,8 @@ import 'dotenv/config';
 import { applyCredentials } from './src/gologin-credentials.js';
 applyCredentials();
 
-// ── Startup env validation (D-06) ──────────────────────────────────
-// v2.52.0: SHEETS_WEBAPP_URL removed from REQUIRED_ENV. The URL is now
-// hard-coded in src/sheets-webapp-url.js and the .env value is ignored.
-const REQUIRED_ENV = ['GOLOGIN_API_TOKEN'];
-const missing = REQUIRED_ENV.filter(k => !process.env[k]);
-if (missing.length) {
-  console.error(`\n  FATAL: Missing required environment variables:\n${missing.map(k => '    - ' + k).join('\n')}\n\n  Copy .env.example to .env and fill in all values.\n`);
-  process.exit(1);
-}
+// Workspace credentials are optional at startup: Settings must remain reachable
+// to add a token, and another workspace can operate without an Ortus token.
 
 import express from 'express';
 import cookieParser from 'cookie-parser';
