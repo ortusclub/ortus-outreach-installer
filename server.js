@@ -32,6 +32,7 @@ import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeRes
 // dispatches scrape jobs here; it never launches a scraper browser locally.
 import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getAllJobsFast as getAllScrapeJobsFast, getLogs as getScrapeLogs, getRunLogs as getScrapeRunLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
 import { addScrapeCampaign, listScrapeCampaigns, getScrapeCampaign, updateScrapeCampaign } from './src/scrape-campaigns.js';
+import { readEngineTarget, saveEngineTarget, resolveEngine, PROD_URL, DEV_URL, DEV_TOKEN, engineTargetLockedByEnv } from './src/engine-target.js';
 import { getScrapeOverride, saveScrapeOverride } from './src/scrape-config-overrides.js';
 import { appendAction, appendScrapeLog, readScrapeLog } from './src/scrape-campaign-logs.js';
 import {
@@ -318,7 +319,7 @@ app.use(async (req, res, next) => {
 // so an unset env still has one admin. Used by the client for the admin-vs-own
 // campaigns view + Conductor filter.
 const ADMIN_EMAIL_SET = new Set(
-  String(process.env.ADMIN_EMAILS || 'antonio@ortusclub.com,antoniov@ortusclub.com,sam@ortusclub.com')
+  String(process.env.ADMIN_EMAILS || 'antonio@ortusclub.com,antoniov@ortusclub.com,sam@ortusclub.com,stevenj@ortusclub.com,mickey@ortusclub.com,ej@ortusclub.com')
     .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
 );
 function isAdminEmail(email) {
@@ -343,6 +344,18 @@ function viewerEmail(req) {
 }
 
 function campaignViewer(req) { return { admin: viewerIsAdmin(req), email: viewerEmail(req), operatorId: getOperatorId() }; }
+
+// Who may point the app at the DEV engine (Settings → Engine → Dev). Same
+// identity model as the admin gate — the per-machine operator email, because the
+// dashboard login is shared across installs. Env-overridable via ENGINE_DEV_EMAILS
+// (comma-separated); default is the engine owner.
+const ENGINE_DEV_EMAIL_SET = new Set(
+  String(process.env.ENGINE_DEV_EMAILS || 'stevenj@ortusclub.com,ortus@ortusclub.com,mickey@ortusclub.com,sam@ortusclub.com,ej@ortusclub.com')
+    .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+);
+function canSwitchEngineToDev(req) {
+  return ENGINE_DEV_EMAIL_SET.has(String(viewerEmail(req) || '').trim().toLowerCase());
+}
 
 // The GoLogin account this viewer may drive.
 function viewerAccount(req) {
@@ -441,15 +454,25 @@ console.error = (...args) => { captureLog('ERR', args); origError.apply(console,
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
   // Make the runtime target visible in the app. A development Electron build
   // can point at a frozen engine image without moving the team's live engine.
   const scraperEngineUrl = getScrapeEngineUrl();
   const productionEngineUrl = 'https://scraper.ortusclub.com';
   const isProductionEngine = scraperEngineUrl.replace(/\/+$/, '') === productionEngineUrl;
   const productionEngineVersion = process.env.PRODUCTION_ENGINE_VERSION || 'v139';
-  const scraperEngineVersion = process.env.SCRAPER_ENGINE_VERSION
-    || (isProductionEngine ? productionEngineVersion : 'unverified');
+  let scraperEngineVersion = process.env.SCRAPER_ENGINE_VERSION
+    || (isProductionEngine ? productionEngineVersion : null);
+  if (!scraperEngineVersion) {
+    // Non-prod (dev) engine: ask it which build it's on (ENGINE_VERSION) so the
+    // banner shows dev-N instead of "unverified". Best-effort, short timeout.
+    try {
+      const eng = resolveEngine();
+      const r = await fetch(`${eng.url}/api/health`, { headers: { Authorization: `Bearer ${eng.token}` }, signal: AbortSignal.timeout(4000) });
+      const h = await r.json().catch(() => ({}));
+      scraperEngineVersion = h.version || 'unverified';
+    } catch { scraperEngineVersion = 'unverified'; }
+  }
   res.json({
     ok: true,
     time: new Date().toISOString(),
@@ -461,6 +484,58 @@ app.get('/api/health', (_req, res) => {
     productionEngineUrl,
     productionEngineVersion,
   });
+});
+
+// ---------------------------------------------------------------------------
+// Engine target — point the app's scraper + campaign calls at prod or a dev
+// engine. Per-operator, on-machine (src/engine-target.js). Switching to dev is
+// gated by a live health-check so the app never silently points at a dead or
+// wrong engine. /api/health above already reports the resolved environment.
+// ---------------------------------------------------------------------------
+app.get('/api/engine-target', (req, res) => {
+  const stored = readEngineTarget();
+  const active = resolveEngine();
+  res.json({
+    ok: true,
+    engine: stored.engine,               // the operator's saved choice (prod|dev)
+    active: active.environment,          // what actually resolves right now
+    activeUrl: active.url,
+    source: active.source,               // env | stored | default
+    prodUrl: PROD_URL,
+    devUrl: DEV_URL,                      // fixed dev engine URL (shown read-only)
+    canDev: canSwitchEngineToDev(req),   // may this operator switch to dev?
+    lockedByEnv: engineTargetLockedByEnv(),
+  });
+});
+
+app.post('/api/engine-target', async (req, res) => {
+  const engine = req.body && req.body.engine === 'dev' ? 'dev' : 'prod';
+  if (engineTargetLockedByEnv()) {
+    return res.status(409).json({ error: 'A SCRAPER_ENGINE_URL env var is pinning the engine — unset it to use the toggle.' });
+  }
+  // Only allow-listed operators may point the app at the dev engine (switching
+  // back to prod is always allowed). Enforced here so the client can't bypass it.
+  if (engine === 'dev' && !canSwitchEngineToDev(req)) {
+    return res.status(403).json({ error: 'Your account isn\'t allowed to switch to the dev engine.' });
+  }
+  if (engine === 'prod') {
+    saveEngineTarget({ engine: 'prod' });
+    return res.json({ ok: true, engine: 'prod', environment: 'production' });
+  }
+  // engine === 'dev' — health-check the fixed dev engine before switching, so the
+  // app never points at a dev engine that's parked (salesnav-dev scales to zero).
+  let health;
+  try {
+    const r = await fetch(`${DEV_URL}/api/health`, { headers: { Authorization: `Bearer ${DEV_TOKEN}` }, signal: AbortSignal.timeout(8000) });
+    if (r.status === 401 || r.status === 403) return res.status(400).json({ error: `The dev engine rejected the token (HTTP ${r.status}).` });
+    if (!r.ok) return res.status(400).json({ error: `The dev engine did not answer OK (HTTP ${r.status}). Is salesnav-dev scaled up?` });
+    health = await r.json().catch(() => ({}));
+  } catch (err) {
+    const timeout = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    return res.status(400).json({ error: timeout ? 'The dev engine did not respond within 8s — is salesnav-dev running?' : `Could not reach the dev engine: ${err && err.message}` });
+  }
+  saveEngineTarget({ engine: 'dev' });
+  res.json({ ok: true, engine: 'dev', environment: 'development', engineVersion: health && health.scraperEngineVersion });
 });
 
 // ---------------------------------------------------------------------------
@@ -8723,6 +8798,45 @@ app.post('/api/credentials/check', async (req, res) => {
   res.json({ ok: checks.every(check => check.ok), checks });
 });
 
+// Push a GoLogin workspace token to the CURRENT engine (dev or prod, per the
+// engine toggle). Validated engine-side (works + right account + confirm-on-live).
+// Runs server-side so the token never round-trips through the browser.
+async function pushGologinTokenToEngine(workspace, token, confirmReplaceLive, operatorEmail) {
+  const eng = resolveEngine(); // { url, token, environment }
+  try {
+    const r = await fetch(`${eng.url}/api/gologin-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${eng.token}`, 'x-operator': operatorEmail || 'app' },
+      body: JSON.stringify({ workspace, token, confirmReplaceLive: !!confirmReplaceLive }),
+      signal: AbortSignal.timeout(12000),
+    });
+    const body = await r.json().catch(() => ({}));
+    return { environment: eng.environment, httpStatus: r.status, ...body };
+  } catch (e) {
+    const timeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    return { environment: eng.environment, ok: false, reason: timeout ? 'the engine did not respond' : `engine unreachable: ${e && e.message}` };
+  }
+}
+
+// Confirm-push an ALREADY-saved workspace token to the engine — used when the
+// initial auto-push returned needs_confirm (replacing a live token). Reads the
+// token from the local store so the browser never has to resend it.
+app.post('/api/gologin-token', async (req, res) => {
+  try {
+    // Rotating the engine's shared token is admin-only (see /api/credentials).
+    if (!viewerIsAdmin(req)) return res.status(403).json({ ok: false, error: 'Only admins can update the GoLogin token on the engine.' });
+    const { workspace, confirmReplaceLive = false } = req.body || {};
+    const { credentialFields } = await import('./src/gologin-credentials.js');
+    if (!credentialFields().some((f) => f.id === workspace)) return res.status(400).json({ ok: false, error: 'unknown workspace' });
+    const { tokenForAccount } = await import('./src/gologin-accounts.js');
+    const token = tokenForAccount(workspace);
+    if (!token) return res.status(400).json({ ok: false, error: 'no token saved for this workspace' });
+    res.json(await pushGologinTokenToEngine(workspace, token, !!confirmReplaceLive, viewerEmail(req)));
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post('/api/credentials', async (req, res) => {
   try {
     const { saveCredentials, credentialStatus } = await import('./src/gologin-credentials.js');
@@ -8748,7 +8862,22 @@ app.post('/api/credentials', async (req, res) => {
     }
     saveCredentials(input);
     clearProfileCache();
-    res.json({ ok: true, credentials: credentialStatus(), changedAccounts: credentialFields().filter(f => input[f.env]).map(f => f.id) });
+    // Pushing a token to the engine changes the SHARED token every operator's
+    // cloud runs use, so it is ADMIN-ONLY. Everyone can still save a token
+    // LOCALLY (above); only admins rotate the engine. Custom _others are never
+    // pushed. The engine validates (works + right account) and returns
+    // needs_confirm when a LIVE token is being replaced.
+    let enginePush = { adminOnly: true };
+    if (viewerIsAdmin(req)) {
+      enginePush = { environment: resolveEngine().environment, results: {} };
+      const _op = viewerEmail(req);
+      for (const f of credentialFields()) {
+        const tok = String(input[f.env] || '').trim();
+        if (!tok) continue;
+        enginePush.results[f.id] = await pushGologinTokenToEngine(f.id, tok, false, _op);
+      }
+    }
+    res.json({ ok: true, credentials: credentialStatus(), changedAccounts: credentialFields().filter(f => input[f.env]).map(f => f.id), enginePush });
   } catch (err) {
     console.error('[credentials] save failed:', err);
     res.status(500).json({ ok: false, error: err.message });

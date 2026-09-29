@@ -14,6 +14,11 @@
 // them for local development.
 export const SCRAPER_ENGINE_URL = 'https://scraper.ortusclub.com';
 
+// The DEV engine (salesnav-dev on GKE, its own ingress + managed TLS cert). A
+// fixed public URL like prod, so the in-app Engine toggle can switch to it with
+// one click — nothing to type. Same shared token as prod.
+export const DEV_ENGINE_URL = 'https://dev-scraper.ortusclub.com';
+
 // Shared service token the app sends as a Bearer to the engine (matches the
 // engine's ENGINE_SHARED_TOKEN, which defaults to its APP_PASSWORD). Embedded
 // so the bundled app authenticates with the cloud engine without any setup.
