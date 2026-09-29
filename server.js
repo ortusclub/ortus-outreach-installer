@@ -8862,22 +8862,11 @@ app.post('/api/credentials', async (req, res) => {
     }
     saveCredentials(input);
     clearProfileCache();
-    // Pushing a token to the engine changes the SHARED token every operator's
-    // cloud runs use, so it is ADMIN-ONLY. Everyone can still save a token
-    // LOCALLY (above); only admins rotate the engine. Custom _others are never
-    // pushed. The engine validates (works + right account) and returns
-    // needs_confirm when a LIVE token is being replaced.
-    let enginePush = { adminOnly: true };
-    if (viewerIsAdmin(req)) {
-      enginePush = { environment: resolveEngine().environment, results: {} };
-      const _op = viewerEmail(req);
-      for (const f of credentialFields()) {
-        const tok = String(input[f.env] || '').trim();
-        if (!tok) continue;
-        enginePush.results[f.id] = await pushGologinTokenToEngine(f.id, tok, false, _op);
-      }
-    }
-    res.json({ ok: true, credentials: credentialStatus(), changedAccounts: credentialFields().filter(f => input[f.env]).map(f => f.id), enginePush });
+    // Saving a token is LOCAL only — it changes this operator's own roster and
+    // nothing else. Rotating the SHARED engine token is a separate, explicit,
+    // admin-only action (the "Push to engine" button → POST /api/gologin-token),
+    // so an admin can hold a local-only token without touching everyone's runs.
+    res.json({ ok: true, credentials: credentialStatus(), changedAccounts: credentialFields().filter(f => input[f.env]).map(f => f.id) });
   } catch (err) {
     console.error('[credentials] save failed:', err);
     res.status(500).json({ ok: false, error: err.message });

@@ -8792,6 +8792,9 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 }
 #credentials-modal .cred-other-del:hover { color: var(--red, #f85149); }
 #credentials-modal .cred-remove { margin-left: 10px; }
+/* Push to engine is a deliberate, non-destructive action — don't hover red. */
+#credentials-modal .cred-push { margin-left: 10px; color: var(--fg, #c9d1d9); }
+#credentials-modal .cred-push:hover { color: var(--gold, #d4af37); }
 
 /* Name | token | Add on one 34px line — the three used to be different heights. */
 #credentials-modal .cred-other-add {
