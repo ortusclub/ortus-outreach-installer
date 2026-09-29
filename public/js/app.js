@@ -35257,8 +35257,13 @@ async function renderCredentialsModal() {
     const removeBtn = c.set
       ? `<button type="button" class="cred-other-del cred-remove" title="Remove the saved ${escHtml(c.label)} token" onclick="removeCredToken('${escHtml(c.env)}', '${escHtml(c.label)}')">Remove</button>`
       : '';
+    // Rotating the SHARED engine token is admin-only and explicit — never a side
+    // effect of saving. Offer it only for a token that is actually saved.
+    const pushBtn = (_viewerIsAdmin && c.set)
+      ? `<button type="button" class="cred-other-del cred-push" title="Push the saved ${escHtml(c.label)} token to the current engine (shared by everyone's cloud runs)" onclick="pushCredToEngine('${escHtml(c.id)}', '${escHtml(c.label)}')">Push to engine</button>`
+      : '';
     return `<div class="cred-row">
-      <label class="cred-label" for="cred-${escHtml(c.id)}">${escHtml(c.label)} ${state} ${removeBtn}</label>
+      <label class="cred-label" for="cred-${escHtml(c.id)}">${escHtml(c.label)} ${state} ${pushBtn} ${removeBtn}</label>
       <input type="password" class="cred-input" id="cred-${escHtml(c.id)}"
              data-env="${escHtml(c.env)}" autocomplete="off" spellcheck="false"
              placeholder="${c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
@@ -35321,48 +35326,41 @@ async function credentialRequest(path, body) {
     throw error;
   }
 }
-let _lastEnginePush = null; // result of the auto-push to the current engine on the last save
-
-// After a token save, surface where it went on the current engine, and if the
-// engine wants confirmation to replace a LIVE token, offer an explicit button.
-function renderEnginePush(push) {
+// Explicit, admin-only "Push to engine": rotates the SHARED engine token for the
+// given workspace to whatever is saved locally. Deliberate action, never a side
+// effect of Save — an admin can hold a local-only token without touching runs.
+// The engine validates (live · right account · no-op · confirm-before-replacing
+// -a-live-token); a needs_confirm reply offers an explicit Replace button.
+async function pushCredToEngine(workspace, label, confirmReplaceLive = false) {
   const msg = document.getElementById('cred-msg');
   const old = document.getElementById('engine-push-confirm'); if (old) old.remove();
-  if (!msg || !push) return;
-  // Non-admins can save a token locally but never rotate the shared engine token.
-  if (push.adminOnly) { msg.textContent = `${msg.textContent}  ·  saved locally — updating the engine token is admin-only`; return; }
-  if (!push.results) return;
-  const env = (push.environment === 'development') ? 'DEV' : 'PROD';
-  const lines = []; const needConfirm = [];
-  for (const [ws, r] of Object.entries(push.results)) {
-    if (r && r.ok && r.changed) lines.push(`${ws} → ${env} engine ✓`);
-    else if (r && r.ok && r.changed === false) lines.push(`${ws} → ${env} already up to date`);
-    else if (r && r.reason === 'needs_confirm') needConfirm.push(ws);
-    else if (r && r.reason === 'wrong account') lines.push(`${ws} → not pushed (token is a different GoLogin account)`);
-    else if (r && r.reason === 'dead token') lines.push(`${ws} → not pushed (token is dead)`);
-    else if (r) lines.push(`${ws} → ${env} push failed: ${r.reason || r.error || 'unknown'}`);
-  }
-  if (lines.length) msg.textContent = `${msg.textContent}  ·  ${lines.join('  ·  ')}`;
-  if (needConfirm.length) {
+  if (msg) { msg.hidden = false; msg.className = 'cred-msg'; msg.textContent = `Pushing ${label} to the engine…`; }
+  let r;
+  try {
+    r = await (await fetch('/api/gologin-token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace, confirmReplaceLive }),
+    })).json().catch(() => ({}));
+  } catch (e) { r = { ok: false, error: e.message }; }
+  const env = (r.environment === 'development') ? 'DEV' : 'PROD';
+  if (!msg) return;
+  if (r.ok && r.changed) { msg.className = 'cred-msg is-ok'; msg.textContent = `${label} → ${env} engine ✓ pushed`; return; }
+  if (r.ok && r.changed === false) { msg.className = 'cred-msg is-ok'; msg.textContent = `${label} → ${env} engine already up to date`; return; }
+  if (r.reason === 'needs_confirm') {
+    msg.className = 'cred-msg'; msg.textContent = `${label}: a LIVE token is already on the ${env} engine.`;
     const box = document.createElement('div');
     box.id = 'engine-push-confirm'; box.className = 'cred-note';
-    box.innerHTML = `Replacing a <strong>LIVE</strong> token on the <strong>${env}</strong> engine (${needConfirm.join(', ')}) needs confirmation. ` +
+    box.innerHTML = `Replacing a <strong>LIVE</strong> token on the <strong>${env}</strong> engine — this changes every operator's cloud runs. ` +
       `<button type="button" class="btn btn-secondary" id="engine-push-confirm-btn">Replace on ${env} engine</button>`;
     msg.parentNode.insertBefore(box, msg.nextSibling);
-    document.getElementById('engine-push-confirm-btn').onclick = () => confirmEnginePush(needConfirm, env, box);
+    document.getElementById('engine-push-confirm-btn').onclick = () => { box.remove(); pushCredToEngine(workspace, label, true); };
+    return;
   }
-}
-async function confirmEnginePush(workspaces, env, box) {
-  box.innerHTML = `Replacing on ${env} engine…`;
-  const done = [];
-  for (const ws of workspaces) {
-    try {
-      const r = await fetch('/api/gologin-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: ws, confirmReplaceLive: true }) });
-      const j = await r.json().catch(() => ({}));
-      done.push(`${ws}: ${(j.ok && j.changed) ? 'replaced ✓' : (j.error || j.reason || 'failed')}`);
-    } catch (e) { done.push(`${ws}: ${e.message}`); }
-  }
-  box.textContent = `${env} engine — ${done.join('  ·  ')}`;
+  msg.className = 'cred-msg is-bad';
+  if (r.reason === 'wrong account') msg.textContent = `${label} → not pushed (the saved token is a different GoLogin account)`;
+  else if (r.reason === 'dead token') msg.textContent = `${label} → not pushed (the saved token is dead)`;
+  else if (r.reason === 'no token saved for this workspace') msg.textContent = `${label} → save a token first, then push`;
+  else msg.textContent = `${label} → ${env} push failed: ${r.error || r.reason || 'unknown'}`;
 }
 
 async function updateCredentials(body, savedMessage = 'Saved.') {
@@ -35374,7 +35372,7 @@ async function updateCredentials(body, savedMessage = 'Saved.') {
       save: async () => {
         const data = await credentialRequest('/api/credentials', body);
         if (!data.ok) throw new Error(data.error || 'The token was not saved.');
-        _lastEnginePush = data.enginePush || null; // auto-push result → surfaced after the save settles
+        // Save is local only — pushing to the engine is a separate admin action.
         // Clear submitted secrets as soon as the server confirms storage.
         document.querySelectorAll('#cred-fields input[type="password"]').forEach(input => { input.value = ''; });
         try { await renderCredentialsModal(); } catch { /* verification below remains authoritative */ }
@@ -35423,9 +35421,7 @@ async function saveCredentialsFromModal() {
     if (value) body[el.dataset.env] = value;
   });
   if (!Object.keys(body).length) return showCredentialResult('Nothing to save — paste a token, or use Check connection to test the saved tokens.', true);
-  _lastEnginePush = null;
   await updateCredentials(body);
-  renderEnginePush(_lastEnginePush); // show where the token landed on the current engine + any confirm
 }
 async function checkSavedCredentials() {
   if (_credentialsBusy) return;
@@ -35456,6 +35452,7 @@ if (typeof window !== 'undefined') {
   window.addCredOther = addCredOther;
   window.removeCredOther = removeCredOther;
   window.removeCredToken = removeCredToken;
+  window.pushCredToEngine = pushCredToEngine;
 
   // A fresh install has no tokens and an empty picker explains nothing — open
   // Settings once, unprompted, so the first thing seen is the thing to do.
