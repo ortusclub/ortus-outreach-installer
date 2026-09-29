@@ -5324,6 +5324,10 @@ body.route-salesnav .sidebar-nav { display: none; }
   align-items: center;
   justify-content: space-between;
   gap: 24px;
+  /* Wrap instead of overflowing to the right when the row is wide (e.g. an admin
+     with the extra Conductor filter) — otherwise the "+ New campaign" button
+     slides under the fixed CONSOLE lip and gets clipped. */
+  flex-wrap: wrap;
 }
 .dashboard-new-btn { font-size: 0.7rem; padding: 8px 18px; }
 .dashboard-title {
@@ -7148,7 +7152,7 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
  * button). Wrapper is position:relative so the badge anchors to the
  * button's top-right corner. Click the badge → resume; click the button
  * itself → fresh campaign. ───────────────────────────────────────────── */
-.dashboard-new-wrap { position: relative; display: inline-flex; align-items: center; gap: 10px; }
+.dashboard-new-wrap { position: relative; display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .resume-draft-badge {
   position: absolute;
   top: -6px;
@@ -8897,3 +8901,22 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .mg-csv-status.is-err { color: var(--red); }
 /* Shown in place of "Collect connections" when the selection is CSV-only. */
 .mg-csv-skip { font-size: 12px; line-height: 1.5; opacity: 0.75; align-self: center; }
+
+/* ── Cloud engine toggle (Settings → Engine) ──────────────────────────────── */
+#engine-chip.is-dev strong { color: var(--gold, #d4a24c); }
+.engine-badge-row { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; flex-wrap: wrap; }
+.engine-badge {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 9999px; white-space: nowrap;
+}
+.engine-badge.is-prod { color: #3fb950; border: 1px solid #3fb950; }
+.engine-badge.is-dev  { color: var(--gold, #d4a24c); border: 1px solid var(--gold, #d4a24c); }
+.engine-badge-url { font-family: var(--mono); font-size: 11px; color: var(--gray); overflow-wrap: anywhere; }
+.engine-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; overflow: hidden; margin: 4px 0 12px; }
+.engine-seg-btn {
+  border: none; background: transparent; padding: 7px 18px; cursor: pointer;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--gray);
+}
+.engine-seg-btn.is-active { background: var(--ink); color: var(--surface, #fff); }
+.engine-seg-btn:disabled { opacity: .5; cursor: default; }
+#engine-modal .cred-row { margin-top: 12px; }

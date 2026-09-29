@@ -7555,6 +7555,78 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 document.addEventListener('DOMContentLoaded', () => { refreshEngineConfigured(); });
 
+// ── Cloud engine toggle (Prod / Dev) ────────────────────────────────────────
+// Points scrapes + campaigns at prod or a dev engine (src/engine-target.js).
+let _engineChoice = 'prod';
+async function loadEngineState() {
+  try {
+    const r = await fetch('/api/engine-target');
+    const s = await r.json();
+    if (!s || !s.ok) return;
+    _engineChoice = s.engine;
+    const isDev = s.active === 'development';
+    const chip = document.getElementById('engine-chip-state');
+    if (chip) chip.textContent = isDev ? 'DEVELOPMENT' : 'PRODUCTION';
+    document.getElementById('engine-chip')?.classList.toggle('is-dev', isDev);
+    renderEngineModal(s);
+  } catch (_) { /* transient — leave chip as-is */ }
+}
+function renderEngineModal(s) {
+  const isDev = s.active === 'development';
+  const badge = document.getElementById('engine-badge');
+  if (badge) { badge.textContent = isDev ? 'DEVELOPMENT' : 'PRODUCTION'; badge.className = 'engine-badge ' + (isDev ? 'is-dev' : 'is-prod'); }
+  const url = document.getElementById('engine-badge-url'); if (url) url.textContent = s.activeUrl || '';
+  const devText = document.getElementById('engine-dev-url-text'); if (devText) devText.textContent = s.devUrl || '';
+  selectEngineUI(s.engine);
+  // Env lock disables the whole toggle; otherwise gate ONLY the Dev option by canDev.
+  const envLocked = !!s.lockedByEnv;
+  const prodBtn = document.getElementById('engine-seg-prod'); if (prodBtn) prodBtn.disabled = envLocked;
+  const devBtn = document.getElementById('engine-seg-dev'); if (devBtn) devBtn.disabled = envLocked || !s.canDev;
+  const saveBtn = document.getElementById('engine-save'); if (saveBtn) saveBtn.disabled = envLocked;
+  const locked = document.getElementById('engine-locked-note');
+  if (locked) {
+    if (envLocked) { locked.hidden = false; locked.textContent = 'A SCRAPER_ENGINE_URL env var is pinning the engine — unset it to use this toggle.'; }
+    else if (!s.canDev) { locked.hidden = false; locked.textContent = 'Only allow-listed accounts can switch to the dev engine.'; }
+    else { locked.hidden = true; }
+  }
+}
+function selectEngineUI(which) {
+  document.getElementById('engine-seg-prod')?.classList.toggle('is-active', which === 'prod');
+  document.getElementById('engine-seg-dev')?.classList.toggle('is-active', which === 'dev');
+  const f = document.getElementById('engine-dev-fields'); if (f) f.hidden = which !== 'dev';
+}
+function selectEngine(which) { _engineChoice = (which === 'dev') ? 'dev' : 'prod'; selectEngineUI(_engineChoice); }
+function openEngineModal() { loadEngineState(); document.getElementById('engine-modal')?.classList.remove('hidden'); }
+function closeEngineModal() { document.getElementById('engine-modal')?.classList.add('hidden'); const m = document.getElementById('engine-msg'); if (m) m.hidden = true; }
+async function saveEngineFromModal() {
+  const msg = document.getElementById('engine-msg');
+  const btn = document.getElementById('engine-save');
+  const body = { engine: _engineChoice };
+  if (msg) { msg.hidden = false; msg.className = 'cred-msg'; msg.textContent = _engineChoice === 'dev' ? 'Testing dev engine…' : 'Switching to production…'; }
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/engine-target', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) { if (msg) { msg.className = 'cred-msg is-bad'; msg.textContent = j.error || 'Could not switch engine.'; } }
+    else {
+      if (msg) { msg.className = 'cred-msg is-ok'; msg.textContent = (j.environment === 'development' ? 'Now on DEV' : 'Now on PRODUCTION') + ' — reloading to align every view…'; }
+      // A full reload so EVERY view (scrape board, campaigns, roster, banner)
+      // re-fetches from the newly selected engine — nothing left showing the old
+      // engine's data. Brief pause so the confirmation is visible first.
+      setTimeout(() => { try { location.reload(); } catch (_) { closeEngineModal(); } }, 800);
+    }
+  } catch (e) {
+    if (msg) { msg.className = 'cred-msg is-bad'; msg.textContent = 'Request failed: ' + (e && e.message); }
+  } finally { if (btn) btn.disabled = false; }
+}
+// app.js is an ES module, so inline onclick= handlers resolve against window,
+// not module scope — expose the toggle's entry points like the other modals do.
+window.openEngineModal = openEngineModal;
+window.closeEngineModal = closeEngineModal;
+window.selectEngine = selectEngine;
+window.saveEngineFromModal = saveEngineFromModal;
+document.addEventListener('DOMContentLoaded', () => { loadEngineState(); });
+
 // ─── Cloud Campaigns panel ──────────────────────────────────────────────────
 let _cloudPollTimer = null;
 
@@ -35249,6 +35321,50 @@ async function credentialRequest(path, body) {
     throw error;
   }
 }
+let _lastEnginePush = null; // result of the auto-push to the current engine on the last save
+
+// After a token save, surface where it went on the current engine, and if the
+// engine wants confirmation to replace a LIVE token, offer an explicit button.
+function renderEnginePush(push) {
+  const msg = document.getElementById('cred-msg');
+  const old = document.getElementById('engine-push-confirm'); if (old) old.remove();
+  if (!msg || !push) return;
+  // Non-admins can save a token locally but never rotate the shared engine token.
+  if (push.adminOnly) { msg.textContent = `${msg.textContent}  ·  saved locally — updating the engine token is admin-only`; return; }
+  if (!push.results) return;
+  const env = (push.environment === 'development') ? 'DEV' : 'PROD';
+  const lines = []; const needConfirm = [];
+  for (const [ws, r] of Object.entries(push.results)) {
+    if (r && r.ok && r.changed) lines.push(`${ws} → ${env} engine ✓`);
+    else if (r && r.ok && r.changed === false) lines.push(`${ws} → ${env} already up to date`);
+    else if (r && r.reason === 'needs_confirm') needConfirm.push(ws);
+    else if (r && r.reason === 'wrong account') lines.push(`${ws} → not pushed (token is a different GoLogin account)`);
+    else if (r && r.reason === 'dead token') lines.push(`${ws} → not pushed (token is dead)`);
+    else if (r) lines.push(`${ws} → ${env} push failed: ${r.reason || r.error || 'unknown'}`);
+  }
+  if (lines.length) msg.textContent = `${msg.textContent}  ·  ${lines.join('  ·  ')}`;
+  if (needConfirm.length) {
+    const box = document.createElement('div');
+    box.id = 'engine-push-confirm'; box.className = 'cred-note';
+    box.innerHTML = `Replacing a <strong>LIVE</strong> token on the <strong>${env}</strong> engine (${needConfirm.join(', ')}) needs confirmation. ` +
+      `<button type="button" class="btn btn-secondary" id="engine-push-confirm-btn">Replace on ${env} engine</button>`;
+    msg.parentNode.insertBefore(box, msg.nextSibling);
+    document.getElementById('engine-push-confirm-btn').onclick = () => confirmEnginePush(needConfirm, env, box);
+  }
+}
+async function confirmEnginePush(workspaces, env, box) {
+  box.innerHTML = `Replacing on ${env} engine…`;
+  const done = [];
+  for (const ws of workspaces) {
+    try {
+      const r = await fetch('/api/gologin-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: ws, confirmReplaceLive: true }) });
+      const j = await r.json().catch(() => ({}));
+      done.push(`${ws}: ${(j.ok && j.changed) ? 'replaced ✓' : (j.error || j.reason || 'failed')}`);
+    } catch (e) { done.push(`${ws}: ${e.message}`); }
+  }
+  box.textContent = `${env} engine — ${done.join('  ·  ')}`;
+}
+
 async function updateCredentials(body, savedMessage = 'Saved.') {
   if (_credentialsBusy) return;
   setCredentialBusy(true);
@@ -35258,6 +35374,7 @@ async function updateCredentials(body, savedMessage = 'Saved.') {
       save: async () => {
         const data = await credentialRequest('/api/credentials', body);
         if (!data.ok) throw new Error(data.error || 'The token was not saved.');
+        _lastEnginePush = data.enginePush || null; // auto-push result → surfaced after the save settles
         // Clear submitted secrets as soon as the server confirms storage.
         document.querySelectorAll('#cred-fields input[type="password"]').forEach(input => { input.value = ''; });
         try { await renderCredentialsModal(); } catch { /* verification below remains authoritative */ }
@@ -35306,7 +35423,9 @@ async function saveCredentialsFromModal() {
     if (value) body[el.dataset.env] = value;
   });
   if (!Object.keys(body).length) return showCredentialResult('Nothing to save — paste a token, or use Check connection to test the saved tokens.', true);
-  return updateCredentials(body);
+  _lastEnginePush = null;
+  await updateCredentials(body);
+  renderEnginePush(_lastEnginePush); // show where the token landed on the current engine + any confirm
 }
 async function checkSavedCredentials() {
   if (_credentialsBusy) return;

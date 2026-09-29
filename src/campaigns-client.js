@@ -27,9 +27,13 @@
 
 import { withWriteRetry } from './sheets-writer.js';
 import { SCRAPER_ENGINE_URL, SCRAPER_ENGINE_TOKEN } from './scraper-engine-url.js';
+import { resolvedEngineUrl, resolvedEngineToken } from './engine-target.js';
 
-const engineUrl = () => (process.env.SCRAPER_ENGINE_URL || SCRAPER_ENGINE_URL).replace(/\/+$/, '');
-const engineToken = () => process.env.SCRAPER_ENGINE_TOKEN || SCRAPER_ENGINE_TOKEN;
+// Resolved live by engine-target.js (same source of truth as scraper-client), so
+// scraper + campaigns never split brains: SCRAPER_ENGINE_URL env > stored
+// Prod/Dev toggle > prod default. A Settings switch applies on the next call.
+const engineUrl = () => resolvedEngineUrl();
+const engineToken = () => resolvedEngineToken();
 
 // Control round-trips are quick; the engine runs the campaign async and the UI
 // polls /api/campaign/:id for progress. 20s is generous.

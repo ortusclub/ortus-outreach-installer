@@ -138,6 +138,7 @@
 
       <div class="sidebar-footer">
         <button type="button" class="operator-chip settings-chip" onclick="openCredentialsModal()"><span class="operator-chip-label">Settings</span><strong id="settings-chip-state">GoLogin tokens</strong></button>
+        <button type="button" class="operator-chip engine-chip" id="engine-chip" onclick="openEngineModal()" title="Point this app's scrapes and campaigns at the production or a dev engine."><span class="operator-chip-label">Engine</span><strong id="engine-chip-state">—</strong></button>
         <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
              in the SoO 'CC User App' column; click to set/change. Highlighted
              gold until set (it's mandatory before a campaign can start). -->
@@ -4469,35 +4470,40 @@
     if (new URLSearchParams(location.search).has('uipreview')) import('/js/ui-preview.mjs');
   </script>
   <script>
-    fetch('/api/health').then(r => r.json()).then(d => {
-      if (d && d.version) {
-        const v = 'v' + d.version;
-        const main = document.getElementById('app-version');
-        const side = document.getElementById('app-version-sidebar');
-        if (main) main.textContent = v;
-        if (side) side.textContent = v;
-      }
-      const banner = document.getElementById('engine-version-banner');
-      if (banner && d) {
-        const isDev = d.scraperEngineEnvironment === 'development';
-        banner.classList.remove('is-loading', 'is-development', 'is-production', 'is-error');
-        banner.classList.add(isDev ? 'is-development' : 'is-production');
-        document.getElementById('engine-version-environment').textContent = isDev ? 'DEVELOPMENT ENGINE' : 'LIVE PRODUCTION';
-        document.getElementById('engine-version-current').textContent = d.scraperEngineVersion || 'unverified';
-        document.getElementById('engine-version-live').textContent = d.productionEngineVersion || 'unverified';
-        document.getElementById('engine-version-url').textContent = d.scraperEngineUrl || 'Not configured';
-        document.getElementById('engine-version-explanation').textContent = isDev
-          ? 'Isolated test environment. Your colleagues remain on the live engine shown here.'
-          : 'This app and your colleagues are using the same live production engine.';
-      }
-    }).catch(() => {
-      const banner = document.getElementById('engine-version-banner');
-      if (!banner) return;
-      banner.classList.remove('is-loading');
-      banner.classList.add('is-error');
-      document.getElementById('engine-version-environment').textContent = 'ENGINE UNKNOWN';
-      document.getElementById('engine-version-explanation').textContent = 'Could not verify the engine target. Do not launch a campaign until this is resolved.';
-    });
+    // Renders the engine banner from /api/health. Exposed globally so the Engine
+    // toggle (app.js) can re-render it after a Prod/Dev switch without a reload.
+    window.refreshEngineBanner = function () {
+      return fetch('/api/health').then(r => r.json()).then(d => {
+        if (d && d.version) {
+          const v = 'v' + d.version;
+          const main = document.getElementById('app-version');
+          const side = document.getElementById('app-version-sidebar');
+          if (main) main.textContent = v;
+          if (side) side.textContent = v;
+        }
+        const banner = document.getElementById('engine-version-banner');
+        if (banner && d) {
+          const isDev = d.scraperEngineEnvironment === 'development';
+          banner.classList.remove('is-loading', 'is-development', 'is-production', 'is-error');
+          banner.classList.add(isDev ? 'is-development' : 'is-production');
+          document.getElementById('engine-version-environment').textContent = isDev ? 'DEVELOPMENT ENGINE' : 'LIVE PRODUCTION';
+          document.getElementById('engine-version-current').textContent = d.scraperEngineVersion || 'unverified';
+          document.getElementById('engine-version-live').textContent = d.productionEngineVersion || 'unverified';
+          document.getElementById('engine-version-url').textContent = d.scraperEngineUrl || 'Not configured';
+          document.getElementById('engine-version-explanation').textContent = isDev
+            ? 'Isolated test environment. Your colleagues remain on the live engine shown here.'
+            : 'This app and your colleagues are using the same live production engine.';
+        }
+      }).catch(() => {
+        const banner = document.getElementById('engine-version-banner');
+        if (!banner) return;
+        banner.classList.remove('is-loading');
+        banner.classList.add('is-error');
+        document.getElementById('engine-version-environment').textContent = 'ENGINE UNKNOWN';
+        document.getElementById('engine-version-explanation').textContent = 'Could not verify the engine target. Do not launch a campaign until this is resolved.';
+      });
+    };
+    window.refreshEngineBanner();
   </script>
 
   <!-- Floating live console. Hidden by default. Visibility + content driven by
@@ -4692,6 +4698,41 @@
         <button type="button" class="btn btn-secondary" onclick="closeCredentialsModal()">Cancel</button>
         <button type="button" class="btn btn-secondary" id="cred-check" onclick="checkSavedCredentials()">Check connection</button>
         <button type="button" class="btn" id="cred-save" onclick="saveCredentialsFromModal()">Save tokens</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Cloud engine toggle (Prod / Dev) ─────────────────────────────────────
+       Points this app's scrapes AND campaigns at prod or a dev engine. Local,
+       per-operator. Switching to dev is health-checked first. See
+       docs/superpowers/specs/2026-09-29-engine-toggle-design.md. -->
+  <div id="engine-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeEngineModal()">
+    <div class="modal-card cred-card" role="dialog" aria-modal="true" aria-labelledby="engine-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeEngineModal()">&times;</button>
+      <div class="stop-choice-eyebrow">Settings</div>
+      <h3 id="engine-title" class="modal-title">Cloud engine</h3>
+      <p class="stop-choice-sub">Point this app's scrapes and campaigns at the <strong>production</strong> engine or a <strong>dev</strong> engine. Saved on this computer; applies to new runs.</p>
+
+      <div class="engine-badge-row">
+        <span id="engine-badge" class="engine-badge">—</span>
+        <span id="engine-badge-url" class="engine-badge-url"></span>
+      </div>
+
+      <div class="engine-seg" role="radiogroup" aria-label="Engine">
+        <button type="button" class="engine-seg-btn" id="engine-seg-prod" onclick="selectEngine('prod')">Production</button>
+        <button type="button" class="engine-seg-btn" id="engine-seg-dev" onclick="selectEngine('dev')">Dev</button>
+      </div>
+
+      <div id="engine-dev-fields" hidden>
+        <p class="cred-note">Dev engine: <strong id="engine-dev-url-text">—</strong> · applied on the next scrape/campaign. The dev engine must be up (it can be scaled to zero to save cost).</p>
+      </div>
+
+      <div id="engine-msg" class="cred-msg" role="status" aria-live="polite" hidden></div>
+      <div id="engine-locked-note" class="cred-note" hidden></div>
+
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="btn btn-secondary" onclick="closeEngineModal()">Cancel</button>
+        <button type="button" class="btn" id="engine-save" onclick="saveEngineFromModal()">Apply</button>
       </div>
     </div>
   </div>
