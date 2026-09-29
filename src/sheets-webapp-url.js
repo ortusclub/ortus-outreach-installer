@@ -14,16 +14,14 @@
  * Operational requirement:
  *   - Every Google Sheet referenced from the app must be shared
  *     "anyone with the link can edit" so the Apps Script (running as the
- *     deployer, Antonio) can read/write it.
+ *     deployer, mickey@ortusclub.com) can read/write it.
  */
 
 // Apps Script web app deployment — the single endpoint every operator's app
-// POSTs to for sheet reads/writes. Deployed under Antonio's Google account.
-// NOTE: v2.72 adds a `writeRecentMessages` action (Recent Messages tab). For
-// that tab to populate in production, Antonio must redeploy the updated
-// google-apps-script.js on this centralized deployment. Connections and all
-// existing sheet writes work regardless.
-export const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwZu0ormMlS2IfC7yarIZDBz0XJj_FbOcp5omJTWQPCGsQ8YO3_npqGUQojNc1fmHyXCg/exec';
+// POSTs to for sheet reads/writes. Deployed under mickey@ortusclub.com.
+// Container-bound to: "ORTUS OUTREACH - DO NOT DELETE"
+//   https://docs.google.com/spreadsheets/d/1YL-sa8OnMs-VwNKcIe75TrUdzFTvYKeezxX-RUuAeBM
+export const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwwWhFXBLKke7HBJfwr-9e3Cv2Rv9oZh8BePxgCJSgKRGFm6Bu3e4hGLtOQeyjcLIPPnA/exec';
 
 // State of Operations sheet — the team-wide dashboard of which LinkedIn
 // account is in use / cooling off / banned. Drives the SoO panel in the app
@@ -37,11 +35,15 @@ export const SOO_SHEET_GID = '992076199';
 // won't have set). Without these centralized, log-writer.js silently
 // no-op'd for everyone except Antonio.
 //
-// Both are Antonio-deployed Apps Script web apps. The target Google Sheets
+// Both deployed under mickey@ortusclub.com. The target Google Sheets
 // must be shared "anyone with the link can edit" so the Apps Script
-// (running as Antonio) can append rows on every operator's behalf.
-export const OPS_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwWCNWNLTN0z9fWfvUZUwGICzXlg0CG0oBBwASZxqbFzzEnctBBJZRsHmn1dD0F-ANu/exec';
-export const CAMPAIGN_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzvwiF8QpfQmV8Lk_z0PQz4mOJQZUtRNhs8Y7Sq2q_z4XELsbKIfBhXaAvvmgJZuJ2Ucw/exec';
+// can append rows on every operator's behalf.
+// Container-bound to: "OPS AND LOGS - ORTUS OUTREACH - DO NOT DELETE"
+//   https://docs.google.com/spreadsheets/d/1AC0xM8EfjHNApa_PnedrC1t5hw6UWMnuUI1Ox2edmzI
+export const OPS_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxslZ__sz1PpWnFlQNhN9J2islicSU7vhM3Hu-AfdDvd-FfuFM_hiAFIZCBpo-s3uef/exec';
+// Container-bound to: "CAMPAIGN ACTIVITY - ORTUS OUTREACH - DO NOT DELETE"
+//   https://docs.google.com/spreadsheets/d/1NZtZdhwqoYMHzk0nC5sQWlsOg3ij0sZpWYUZMO79dOQ
+export const CAMPAIGN_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxkxZIUZvddWp_Z5bKj5ryt968VlDdzv7UyGjnqKfBh2b7QfEfeWD7FG3g9z3p_AQlpCA/exec';
 
 // v2.57.x — Domains allowed to sign up to the Ortus Outreach app (operator
 // login). Replaces the previous "must be in the SoO sheet" check, which was
@@ -63,14 +65,15 @@ export const SIGNUP_ALLOWED_EMAILS = ['milee@linkedvelocity.com', 'jhan@apexstra
 // here. Until then the app surfaces a friendly "not configured" error.
 // A local FG_WEBAPP_URL env var overrides this (for testing against your own
 // deployed copy without editing the committed default) — mirrors SCRAPER_ENGINE_URL.
-export const FG_WEBAPP_URL = process.env.FG_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbzWRtACiWoRrB5mweILTI-eKsLM3p7QBPSTKC7COdkIBwl-AwddMHoO89HMCmnjA4xTyg/exec';
+export const FG_WEBAPP_URL = process.env.FG_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbz1PgDi1I2n9iDdOO2v968GiI_bhHOaKuAqwoHyJT2azxzgDKCueywjUGuLbbTZhhEekQ/exec';
 
 // Operation Magellan. A THIRD Apps Script deployment, bound to its own
 // "Operation Magellan" sheet — deliberately not the outreach sheet and not the
-// FG one (the FG jobs hold that script's lock for minutes at a time). Paste
-// magellan-apps-script.js into a NEW Apps Script project, deploy as a web app
-// ("execute as me", "anyone with the link"), and put its /exec URL here.
-// Until then Magellan still runs; only the sheet write is skipped.
+// FG one (the FG jobs hold that script's lock for minutes at a time).
+// Container-bound to: "Operation Magellan"
+//   https://docs.google.com/spreadsheets/d/1bAWvQ7xq6Iuke3tEpcCOMM_cNcCLMAbzcc5wUESBhls
+// Deployed under antoniov@ortusclub.com (still working as of 2026-09-28).
+// Newer deployment (Sep 25): https://script.google.com/macros/s/AKfycbzV4Aaf5rPK42R3B0RCplpW1ZSZ9LNdQo0-Lyjp3TdjNpbXj0wztD4_mDzQaL9LrtWR/exec
 export const MAGELLAN_WEBAPP_URL = process.env.MAGELLAN_WEBAPP_URL || 'https://script.google.com/macros/s/AKfycbyxj7ySr0MxECDf8PQHWVi8ks93WxPCqWsEe4YZo02Ie3zuo0mSL5p3gU0n9JYM4Ypr/exec';
 
 // Follower Growth Phase 2 — the Ortus Club page "Invite to follow" modal URL.
