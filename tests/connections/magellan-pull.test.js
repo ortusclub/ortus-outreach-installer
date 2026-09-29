@@ -109,9 +109,16 @@ test('readForPlan handles a Drive-synced file with no Member ID column', () => {
   const dir = tmpdir();
   fs.writeFileSync(path.join(dir, 'old@ortus.solutions.csv'), ARCHIVE);
   const rows = readForPlan('old@ortus.solutions', { dir });
-  assert.equal(rows.length, 1);
+  // Alessandra (has a URL) + the blank "Connected On"-only row. The blank row is
+  // a "Hidden by LinkedIn" connection (deactivated/restricted — no name, no link,
+  // no id); it's now KEPT as a hidden placeholder so Check counts it instead of
+  // silently dropping it — which had Check report 0 hidden while Collect saw it.
+  assert.equal(rows.length, 2);
   assert.equal(rows[0].memberId, '');
   assert.equal(rows[0].company, 'NTT DATA');
+  // The placeholder has no slug and no member id — planAccount's isHidden(c).
+  assert.equal(rows[1].slug, '');
+  assert.equal(rows[1].memberId, '');
 });
 
 // A 7,000-connection account is ~175 pages inside one page.evaluate(). Without
@@ -268,4 +275,26 @@ test('live location wins over the disk copy, disk is the fallback', () => {
   // No live location → fall back to disk.
   const rows2 = mergeRows([{ publicId: 'jane-d', firstName: 'Jane', memberNumber: '111' }], prev);
   assert.equal(rows2[0].location, 'Old City');
+});
+
+test('live company + title (from enrichment) round-trip through CSV into the plan', () => {
+  const live = [{ publicId: 'jane-d', firstName: 'Jane', lastName: 'Doe', memberNumber: '111', company: 'Sophos', title: 'DevOps Engineer' }];
+  const rows = mergeRows(live, new Map());
+  assert.equal(rows[0].company, 'Sophos');
+  assert.equal(rows[0].position, 'DevOps Engineer');
+  const dir = tmpdir();
+  writeAccountCsv('a@o.com', rows, { dir });
+  const plan = readForPlan('a@o.com', { dir }).find((p) => p.slug === 'jane-d');
+  assert.equal(plan.company, 'Sophos');
+  assert.equal(plan.jobTitle, 'DevOps Engineer');
+});
+
+test('live company/title win over the disk copy; disk is the fallback when enrichment is blank', () => {
+  const prev = new Map([['jane-d', { company: 'OldCo', position: 'OldRole' }]]);
+  const won = mergeRows([{ publicId: 'jane-d', firstName: 'Jane', memberNumber: '111', company: 'NewCo', title: 'NewRole' }], prev);
+  assert.equal(won[0].company, 'NewCo');
+  assert.equal(won[0].position, 'NewRole');
+  const fell = mergeRows([{ publicId: 'jane-d', firstName: 'Jane', memberNumber: '111' }], prev);
+  assert.equal(fell[0].company, 'OldCo');
+  assert.equal(fell[0].position, 'OldRole');
 });

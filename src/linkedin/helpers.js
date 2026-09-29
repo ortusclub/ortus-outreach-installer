@@ -512,16 +512,21 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2, on
               firstName: c.firstName || e.firstName || '',
               lastName: c.lastName || e.lastName || '',
               memberNumber: c.memberNumber || e.memberNumber || '',
-              // Location lives ONLY on the enriched profile — the slim
-              // connections payload never carries it (Operation Magellan 2026-08).
+              // Location + current company/title live ONLY on the enriched
+              // profile — the slim connections payload never carries them
+              // (Operation Magellan 2026-08 / 2026-09).
               location: c.location || e.location || '',
+              company: c.company || e.company || '',
+              title: c.title || e.title || '',
             };
           });
           const filledSlugs = conns.filter((c) => c.publicId).length;
           const filledNames = conns.filter((c) => c.firstName || c.lastName).length;
           const filledNums = conns.filter((c) => c.memberNumber).length;
           const filledLocs = conns.filter((c) => c.location).length;
-          console.log(`[helpers] Profile enrichment: ${filledSlugs} slugs, ${filledNames} names, ${filledNums} member-numbers, ${filledLocs} locations filled (of ${conns.length})`);
+          const filledCos = conns.filter((c) => c.company).length;
+          const filledTitles = conns.filter((c) => c.title).length;
+          console.log(`[helpers] Profile enrichment: ${filledSlugs} slugs, ${filledNames} names, ${filledNums} member-numbers, ${filledLocs} locations, ${filledCos} companies, ${filledTitles} titles filled (of ${conns.length})`);
         }
       } catch (err) {
         console.log(`[helpers] Profile enrichment threw: ${err.message}`);
@@ -597,14 +602,19 @@ async function _enrichProfilesByUrn(page, urns, onProgress = null) {
         // A DECORATION is what makes LinkedIn resolve each profile's geoLocation
         // into a named Geo entity inside `included` (e.g. "New York, New York,
         // United States"). The plain call returns only an unresolvable geo URN.
-        // The -NN version rotates and a stale one 400s, so try a couple of
-        // known-good full-profile decorations, then fall back to the plain call —
-        // identity (name / publicId / member id) still works there, just without
-        // location. Full-profile decorations carry objectUrn, so the member id
-        // the sheet matches on is preserved.
+        // The -NN version rotates and a stale one 400s, so try known-good
+        // decorations in order, then fall back to the plain call — identity
+        // (name / publicId / member id) still works there, just without the
+        // extras. Full-profile decorations carry objectUrn, so the member id the
+        // sheet matches on is preserved.
+        //   • WithEntities FIRST: it's the only one that carries Position
+        //     entities (current company + job title) AND resolves geo.
+        //   • FullProfile-58: identity + geo but NO positions (company/title
+        //     blank) — a lighter fallback if the WithEntities version rotates.
+        //   • plain: identity only.
         const attempts = [
-          `${base}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.FullProfile-58`,
           `${base}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.FullProfileWithEntities-66`,
+          `${base}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.FullProfile-58`,
           base,
         ];
         let data = null;
@@ -653,18 +663,45 @@ async function _enrichProfilesByUrn(page, urns, onProgress = null) {
           return '';
         };
 
+        // Current company + job title from the profile's Position entities
+        // (present only under the WithEntities decoration). Each Position's
+        // entityUrn embeds the profile's member token —
+        //   urn:li:fsd_profilePosition:(ACoAA…,<posId>)
+        // — so positions can be grouped back to their person in a batched call.
+        // "Current" = the position with no end date; if none is open, the one
+        // with the latest start. companyName + title sit right on the Position.
+        const positionsList = (Array.isArray(data?.included) ? data.included : [])
+          .filter((x) => x && /\.Position$/i.test(String(x.$type || '')));
+        const currentPositionOf = (profileUrn) => {
+          const tok = (String(profileUrn || '').match(/AC[a-zA-Z0-9_-]+/) || [])[0];
+          if (!tok) return { company: '', title: '' };
+          const mine = positionsList.filter((p) => String(p.entityUrn || '').includes(`(${tok},`));
+          if (!mine.length) return { company: '', title: '' };
+          const startKey = (p) => {
+            const s = p.dateRange && p.dateRange.start;
+            return s ? (Number(s.year || 0) * 100 + Number(s.month || 0)) : 0;
+          };
+          // Prefer an open (no-end) position; else the most recently started.
+          const open = mine.filter((p) => !(p.dateRange && p.dateRange.end));
+          const pool = open.length ? open : mine;
+          pool.sort((a, b) => startKey(b) - startKey(a));
+          const cur = pool[0] || {};
+          return { company: (cur.companyName || '').trim(), title: (cur.title || '').trim() };
+        };
+
         // Walk both `results` (newer) and `included` (normalized) for profile
         // entities — different decorations land them in different places.
         const profiles = [];
         if (data?.results && typeof data.results === 'object') {
           for (const u of urnBatch) {
             const p = data.results[u];
-            if (p) profiles.push({ urn: u, ...p, location: locationOf(p) });
+            if (p) profiles.push({ urn: u, ...p, location: locationOf(p), ...currentPositionOf(u) });
           }
         }
         if (Array.isArray(data?.included)) {
           for (const item of data.included) {
             if (item && item.entityUrn && (item.publicIdentifier || item.firstName)) {
+              const pos = currentPositionOf(item.entityUrn);
               profiles.push({
                 urn: item.entityUrn,
                 publicId: item.publicIdentifier || '',
@@ -675,6 +712,8 @@ async function _enrichProfilesByUrn(page, urns, onProgress = null) {
                 memberNumber: (typeof item.objectUrn === 'string'
                   && (item.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
                 location: locationOf(item),
+                company: pos.company,
+                title: pos.title,
               });
             }
           }
@@ -701,6 +740,8 @@ async function _enrichProfilesByUrn(page, urns, onProgress = null) {
           || (typeof p.objectUrn === 'string' && (p.objectUrn.match(/urn:li:member:(\d+)/) || [])[1])
           || '',
         location: p.location || '',
+        company: p.company || '',
+        title: p.title || '',
       });
     }
   }
