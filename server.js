@@ -454,25 +454,46 @@ console.error = (...args) => { captureLog('ERR', args); origError.apply(console,
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
+// Cache each engine's reported version for 60s so the frequently-polled banner
+// doesn't hammer the engine's /api/health; fall back to the last-known value on
+// a transient failure rather than flipping to "unverified".
+const _engineVersionCache = new Map(); // url -> { v, at }
+async function fetchEngineVersionCached(url, token) {
+  const key = String(url || '').replace(/\/+$/, '');
+  const cached = _engineVersionCache.get(key);
+  if (cached && Date.now() - cached.at < 60000) return cached.v;
+  try {
+    const r = await fetch(`${key}/api/health`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(4000),
+    });
+    const h = await r.json().catch(() => ({}));
+    const v = h && h.version ? h.version : null;
+    if (v) _engineVersionCache.set(key, { v, at: Date.now() });
+    return v || (cached ? cached.v : null);
+  } catch {
+    return cached ? cached.v : null;
+  }
+}
+
 app.get('/api/health', async (_req, res) => {
   // Make the runtime target visible in the app. A development Electron build
   // can point at a frozen engine image without moving the team's live engine.
   const scraperEngineUrl = getScrapeEngineUrl();
   const productionEngineUrl = 'https://scraper.ortusclub.com';
   const isProductionEngine = scraperEngineUrl.replace(/\/+$/, '') === productionEngineUrl;
-  const productionEngineVersion = process.env.PRODUCTION_ENGINE_VERSION || 'v139';
+  // Read the REAL version each engine reports via /api/health (it stamps
+  // ENGINE_VERSION, e.g. "v140" for prod, "dev-v140" for dev), so the banner is
+  // never stale after a promote — no hard-coded version to bump by hand. The
+  // env overrides win when set; a last-known constant is the final fallback.
+  const eng = resolveEngine();
+  const productionEngineVersion = process.env.PRODUCTION_ENGINE_VERSION
+    || await fetchEngineVersionCached(productionEngineUrl, eng.token)
+    || 'v140';
   let scraperEngineVersion = process.env.SCRAPER_ENGINE_VERSION
-    || (isProductionEngine ? productionEngineVersion : null);
-  if (!scraperEngineVersion) {
-    // Non-prod (dev) engine: ask it which build it's on (ENGINE_VERSION) so the
-    // banner shows dev-N instead of "unverified". Best-effort, short timeout.
-    try {
-      const eng = resolveEngine();
-      const r = await fetch(`${eng.url}/api/health`, { headers: { Authorization: `Bearer ${eng.token}` }, signal: AbortSignal.timeout(4000) });
-      const h = await r.json().catch(() => ({}));
-      scraperEngineVersion = h.version || 'unverified';
-    } catch { scraperEngineVersion = 'unverified'; }
-  }
+    || (isProductionEngine
+      ? productionEngineVersion
+      : (await fetchEngineVersionCached(eng.url, eng.token) || 'unverified'));
   res.json({
     ok: true,
     time: new Date().toISOString(),
