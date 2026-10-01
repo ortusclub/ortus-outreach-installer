@@ -190,8 +190,22 @@ export function accountColumns(status) {
     email: a.email || '',
     state: a.state || '',
     live: !!a.live,
+    // Explicit, from the engine. The card used to infer both by regexing this
+    // row's prose, which missed the weekly line entirely — that inference stays
+    // as the fallback so a page loaded against an engine that predates the
+    // flags is no worse off than it was.
+    weeklyCap: a.weeklyCap != null
+      ? !!a.weeklyCap
+      : /weekly/.test(`${a.state || ''} ${a.sub || ''}`.toLowerCase()),
+    needsLogin: a.needsLogin != null
+      ? !!a.needsLogin
+      : (/needs-login|logged-out|stopped/.test(String(a.state || '').toLowerCase())
+        && /login|logged/.test(`${a.state || ''} ${a.sub || ''}`.toLowerCase())),
     // Two numbers that must never be read as one. batchDone/batchSize is this
     // account's position in ONE turn; sentToday/dailyLimit is its whole day.
+    batchSent: a.batchSent,
+    dailyResetAt: a.dailyResetAt,
+    salesNavAccess: a.salesNavAccess,
     batchDone: Number(a.batchDone) || 0,
     // A mode that drains every row in one go has no turn size at all, so an
     // absent size stays absent instead of borrowing the eight.

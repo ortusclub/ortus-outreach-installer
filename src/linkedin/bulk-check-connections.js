@@ -22,7 +22,7 @@
 
 import { getRecentConnections } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
-import { batchUpdateSheet, writeRecentConnectionsTab } from '../sheets-writer.js';
+import { batchUpdateSheet, writeRecentConnectionsTab, lastRecentConnectionsError } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign } from '../campaign.js';
 import { readSourceMemberId } from '../profile-identity.js';
 import { isIntroSlotOpen } from './intro-constants.js';
@@ -44,6 +44,29 @@ function memberIdFromAny(value) {
   return m ? m[1] : '';
 }
 
+// The numeric member id that BOTH token forms carry. An ACwAA… token (the
+// /in/ACwAA… URL form HubSpot exports use) and the ACoAA… URN the connections
+// API returns are different encodings of the same person: base64url, byte 1
+// is the container tag (0x2c vs 0x2a), bytes 4–7 are the member id as a
+// big-endian uint32, and the tail is a per-container hash. Comparing the raw
+// tokens therefore never matches across forms — on 2026-09-25 a campaign tab
+// of 2,419 ACwAA rows with no numeric id column reported 0 Connected while 73
+// of the fetched connections were its own leads. Decoding the number makes
+// the two forms comparable. Returns '' for anything that isn't such a token.
+export function memberNumberFromToken(value) {
+  const token = memberIdFromAny(value);
+  if (!token) return '';
+  try {
+    const b64 = token.replace(/-/g, '+').replace(/_/g, '/');
+    const bytes = Buffer.from(b64 + '='.repeat((4 - (b64.length % 4)) % 4), 'base64');
+    if (bytes.length < 8 || bytes[0] !== 0x00) return '';
+    const n = bytes.readUInt32BE(4);
+    return n > 0 ? String(n) : '';
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Strong-identity keys for a lead row — the SAME signals bulk-check already
  * matches connections on (vanity slug + ACwAA member token + numeric
@@ -55,6 +78,10 @@ function memberIdFromAny(value) {
  * collide with a member number. Exported so the auto-intro pass can apply the
  * identical dedup to its work-list (defense in depth).
  */
+// Stamped into Connection Request Status when a row has a Sender but no
+// recorded request: the app assumes the request was made and checks it.
+export const ASSUMED_REQUEST_STATUS = 'Assumed connection request made';
+
 export function leadIdentityKeys(url, row) {
   const keys = [];
   const slug = publicIdFromUrl(url);
@@ -64,6 +91,8 @@ export function leadIdentityKeys(url, row) {
   if (mid) keys.push('mid:' + mid);
   const num = readSourceMemberId(row || {});
   if (num) keys.push('num:' + num);
+  const decoded = memberNumberFromToken(mid);
+  if (decoded && decoded !== num) keys.push('num:' + decoded);
   return keys;
 }
 
@@ -140,6 +169,8 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     if (nameKey && nameKey !== ' ') _addAcct(nameToAccounts, nameKey, acct);
     const memberNumber = String(c.memberNumber == null ? '' : c.memberNumber).replace(/\D/g, '');
     if (memberNumber) _addAcct(memberNumberToAccounts, memberNumber, acct);
+    const decodedNumber = memberNumberFromToken(mid);
+    if (decodedNumber) _addAcct(memberNumberToAccounts, decodedNumber, acct);
   }
 
   // Snapshot a few extracted IDs for the diag eyeball-compare.
@@ -156,6 +187,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   let dbgDuplicateCollapsed = 0;
   let dbgAlreadyDmd = 0;
   let dbgRequestHealed = 0;
+  let dbgAssumedRequest = 0;
   let dbgAlreadyUnverified = 0;
   let dbgComposeCapped = 0;
   let dbgCrossSender = 0;
@@ -305,6 +337,10 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     // memberNumberToAccounts holds the connections' numeric ids.
     const rowMemberNumber = readSourceMemberId(row);
     if (rowMemberNumber) for (const a of (memberNumberToAccounts.get(rowMemberNumber) || [])) _matchedAccounts.add(a);
+    // The number decoded from the row's own AC**AA token — the only strong key
+    // a sheet of /in/ACwAA… URLs with no numeric id column has.
+    const rowDecodedNumber = memberNumberFromToken(memberId);
+    if (rowDecodedNumber) for (const a of (memberNumberToAccounts.get(rowDecodedNumber) || [])) _matchedAccounts.add(a);
     const isMatch = _matchedAccounts.size > 0;
 
     // Is the row's ASSIGNED sender among the accounts connected to this lead?
@@ -351,7 +387,20 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       updates.push({ linkedinUrl: url, connectionStatus: 'Connection Request Sent' });
       dbgRequestHealed++;
     }
-    const wasInvited = requestStatus === 'Connection Request Sent' || needsRequestHeal;
+    // A row whose Sender is filled in but whose Connection Request Status is
+    // blank was worked outside the app (or before the columns existed). The
+    // operator's rule (2026-09-25): a filled Sender means an attempt was made,
+    // so say so and check it like any other invitation — Connected on a match,
+    // Still Pending otherwise — instead of leaving the row blank or calling a
+    // match "Already connected". Only the assigned sender's own sweep assumes,
+    // and never over a row that already carries an acceptance result.
+    const assumedInvite = !requestStatus && !!rowSenderNorm && !rowSenderMismatch && !cs;
+    if (assumedInvite) {
+      updates.push({ linkedinUrl: url, connectionStatus: ASSUMED_REQUEST_STATUS });
+      dbgAssumedRequest++;
+    }
+    const wasInvited = requestStatus === 'Connection Request Sent' || requestStatus === ASSUMED_REQUEST_STATUS
+      || needsRequestHeal || assumedInvite;
 
     if (isMatch) {
       dbgPidMatched++;
@@ -552,7 +601,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       continue;
     }
 
-    if (requestStatus !== 'Connection Request Sent') continue;
+    if (!wasInvited) continue;
     // v2.62: don't let other accounts' bulk-checks downgrade a row to
     // Still Pending. Only the assigned Sender should refresh its own
     // pending timestamp.
@@ -608,6 +657,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       duplicateCollapsed: dbgDuplicateCollapsed,
       alreadyDmd: dbgAlreadyDmd,
       requestHealed: dbgRequestHealed,
+      assumedRequest: dbgAssumedRequest,
       alreadyUnverified: dbgAlreadyUnverified,
       composeCapped: dbgComposeCapped,
       pidMatched: dbgPidMatched,
@@ -785,6 +835,8 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   // if the round-trip fails, fall back to the live fetch attributed to this
   // sweeping profile so a sweep is never worse than the pre-tab behavior.
   let matchSet = null;
+  let sidecarConfirmed = false;
+  let _sidecarWhy = '';
   try {
     const sidecarRows = conns.map((c) => ({
       firstName: c.firstName || '',
@@ -796,6 +848,10 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
       profileSentBy: pName || '',
     }));
     matchSet = await writeRecentConnectionsTab(sheetUrl, pName, sidecarRows, activeSendersList);
+    sidecarConfirmed = Array.isArray(matchSet);
+    if (!sidecarConfirmed) {
+      _sidecarWhy = lastRecentConnectionsError || '';
+    }
   } catch (err) {
     console.warn(`[bulk-check] sidecar tab write failed: ${err.message}`);
   }
@@ -881,7 +937,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     if (diag.rowsScanned > 0 && diag.withUrl === 0) {
       return `${base} Something looks wrong: not one of those rows had a LinkedIn address on it, so nobody could be matched. Check that the right column is chosen for this sheet.`;
     }
-    return base;
+    return sidecarConfirmed ? base : `${base} Warning: the Recent Connections tab could not be confirmed saved${_sidecarWhy ? ` (${_sidecarWhy})` : ''}.`;
   };
 
   if (updates.length === 0) {
@@ -891,7 +947,8 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   // Batch-update via the existing Apps Script bridge. cc → 'Connected
   // Status' column on the new schema; FIELD_MAP handles the column mapping.
   try {
-    await batchUpdateSheet(sheetUrl, updates);
+    const saved = await batchUpdateSheet(sheetUrl, updates, { requireConfirmation: true });
+    if (!saved) throw new Error('Sheet updates were not confirmed saved');
   } catch (err) {
     // Write failed — nothing is confirmed persisted, so freshConnected is 0
     // too, same reasoning as matched:0 below: an unconfirmed acceptance must

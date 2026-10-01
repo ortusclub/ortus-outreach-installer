@@ -18,12 +18,14 @@
 
 import { withWriteRetry } from './sheets-writer.js';
 import { SCRAPER_ENGINE_URL, SCRAPER_ENGINE_TOKEN } from './scraper-engine-url.js';
+import { resolvedEngineUrl, resolvedEngineToken } from './engine-target.js';
 import { getOperatorId } from './operator-id.js';
 
-// Cloud engine is the centralized default (scraper-engine-url.js); a local
-// SCRAPER_ENGINE_URL / SCRAPER_ENGINE_TOKEN env var overrides it for dev.
-const engineUrl = () => (process.env.SCRAPER_ENGINE_URL || SCRAPER_ENGINE_URL).replace(/\/+$/, '');
-const engineToken = () => process.env.SCRAPER_ENGINE_TOKEN || SCRAPER_ENGINE_TOKEN;
+// Which engine this call goes to is resolved live by engine-target.js:
+//   SCRAPER_ENGINE_URL env override > stored Prod/Dev toggle > prod default.
+// Switching engines in Settings takes effect on the next call, no restart.
+const engineUrl = () => resolvedEngineUrl();
+const engineToken = () => resolvedEngineToken();
 
 // Scrape control calls are quick; the engine does the long-running work async
 // and we poll /api/jobs for progress. 20s is generous for a control round-trip.

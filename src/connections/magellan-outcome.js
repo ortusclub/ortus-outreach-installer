@@ -72,12 +72,26 @@ export function buildOutcome(state = {}) {
     // they read as a contradiction — "34 people are in HubSpot more than once"
     // directly above "30 × This person is in HubSpot twice". Once an import has
     // run, its line carries the same fact AND the fix, so this one stands down.
-    const dupes = (pv.duplicates || []).length;
+    // duplicatesTotal is the true count; pv.duplicates is only a capped sample
+    // now (the full list lives in magellan-run's _duplicates). Fall back to the
+    // array length for any caller/test that still hands the whole list.
+    const dupes = pv.duplicatesTotal != null ? pv.duplicatesTotal : (pv.duplicates || []).length;
     const importSaidIt = ((s.imported && s.imported.problems) || [])
       .some((p) => p.code === 'duplicate_contact');
     if (dupes && !importSaidIt) {
       problems.push(`${n(dupes)} ${dupes === 1 ? 'person is' : 'people are'} in HubSpot more than once — `
         + 'their connection was recorded on the record with a real email address, so nothing was missed');
+    }
+    // Connections LinkedIn returned with no member id at all — deactivated,
+    // restricted or private accounts that still count toward the connection
+    // total but come back with no name and no profile, just a date. There's
+    // nothing to key on, so they can't be imported — but nothing was missed
+    // either (there was never anything to import for them). This is the number
+    // that explains the gap between "806 connections" and "786 checked".
+    const hidden = (pv.totals && pv.totals.hidden) || 0;
+    if (hidden) {
+      problems.push(`${n(hidden)} ${hidden === 1 ? 'person is' : 'people are'} hidden by LinkedIn — `
+        + 'no name or profile, just a date (a deactivated or restricted account), so nothing could be imported for them — and nothing was missed');
     }
     const blocked = pv.blocked || [];
     if (blocked.length) {

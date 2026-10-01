@@ -92,10 +92,10 @@ var LEGACY_COLUMNS_TO_HIDE_V2 = [
 var MODE_COLUMNS_V2 = {
   connect_only:      ['Connection Request Status'],
   check_status:      ['Connection Accepted Status'],
-  message_only:      ['DM Status', 'Connection Accepted Status'],
+  message_only:      ['Sent via', 'DM Status', 'Connection Accepted Status'],
   introduce_back:    ['Intro Status', 'Connection Accepted Status'],
-  open_profile_only: ['OP Status', 'Open Profile'],
-  inmail_only:       ['InM Status'],
+  open_profile_only: ['Sent via', 'OP Status', 'Open Profile'],
+  inmail_only:       ['Sent via', 'InM Status'],
   // Connect + Introduce Back: full cold-lead flow with three mode columns.
   // Auto-intro fires when bulk-check detects acceptance — Introduction
   // Status becomes the single source of truth for those rows (Connection
@@ -127,7 +127,7 @@ var MODE_COLUMNS_V2 = {
 var ALL_MODE_COLUMNS_V2 = [
   'Connection Request Status', 'DM Status', 'OP Status',
   'InM Status', 'Intro Status', 'Connection Accepted Status',
-  'Open Profile', 'Introduction Status',
+  'Open Profile', 'Introduction Status', 'Sent via',
   'FG Status', 'FG Invited At', 'FG Note', 'FG Member ID', 'FG Invited By'
 ];
 
@@ -269,9 +269,9 @@ var MODE_TRACKING_COLUMNS = {
   // v2.62: CC+DM uses the same tracking column set as CC+IC — it's the
   // same connect-then-followup flow, just with a 1:1 DM in phase 2.
   connect_and_message:       ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
-  message_only:              ['Connection Request Status', 'Message',  'Account Used', 'Date of Last Action', 'Time of Last Action'],
-  inmail_only:               ['Connection Request Status', 'InMail',   'Account Used', 'Date of Last Action', 'Time of Last Action'],
-  open_profile_only:         ['Connection Request Status', 'OP',       'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  message_only:              ['Sent via', 'Connection Request Status', 'Message',  'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  inmail_only:               ['Sent via', 'Connection Request Status', 'InMail',   'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  open_profile_only:         ['Sent via', 'Connection Request Status', 'OP',       'Account Used', 'Date of Last Action', 'Time of Last Action'],
   check_status:              ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action'],
   check_dms:                 ['Reply', 'Reply At', 'Reply Preview'],
 };
@@ -315,6 +315,7 @@ var FIELD_MAP = {
   message:         'Message',
   inmail:          'InMail',
   accountUsed:     'Account Used',
+  sentVia:         'Sent via',
   linkedinUrn:     'LinkedIn URN',
   linkedinMemberId:'LinkedIn Membership ID',
   openProfile:     'Open Profile',
@@ -1548,6 +1549,16 @@ function findRowsByUrl(sheet, urlColIndex, searchUrl, urlsCache) {
 // write all rows but append the audit-log entry only once for the action.
 function writeFields(sheet, headers, row, data, skipAudit) {
   var updated = [];
+  // Runs already in progress may predate prepareSheet's new column.
+  // Append only this field; preserve all existing columns and historical rows.
+  if ((data.sentVia === 'LinkedIn' || data.sentVia === 'Sales Navigator')
+      && headers.indexOf('Sent via') === -1) {
+    var nextCol = headers.length + 1;
+    if (nextCol > sheet.getMaxColumns()) sheet.insertColumnAfter(sheet.getMaxColumns());
+    sheet.getRange(1, nextCol).setValue('Sent via').setFontWeight('bold');
+    headers.push('Sent via');
+  }
+
 
   // ── READ FIRST (only if there are action columns to dash-fill) ──
   // The only read that previously interleaved with writes was the dash-fill's
@@ -2090,6 +2101,24 @@ var RECENT_TAB_NAME = 'Recent Connections';
 var RECENT_HEADERS = ['Account', 'First Name', 'Last Name', 'Public ID', 'LinkedIn URN', 'Member ID', 'Connected At', 'Fetched At'];
 
 function handleWriteRecentConnections(spreadsheet, data) {
+  // Serialize sidecar writes. A client that times out and retries, or two
+  // sweeps on one workbook, used to run this concurrently: each execution
+  // read the tab, cleared it and rewrote it from its own stale copy, so one
+  // account's rows vanished (2026-09-25 09:01, GGLxDEVO workbook).
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(45000);
+  } catch (lockErr) {
+    return jsonResponse({ error: 'Recent Connections tab is busy with another write; retry' });
+  }
+  try {
+    return _writeRecentConnectionsLocked(spreadsheet, data);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _writeRecentConnectionsLocked(spreadsheet, data) {
   var connections = Array.isArray(data.connections) ? data.connections : [];
   var sender = (data.sender || '').toString().trim();
   // v2.62: client passes the set of accounts assigned to this campaign's
@@ -2143,13 +2172,16 @@ function handleWriteRecentConnections(spreadsheet, data) {
     return acct + '|name:' + n;
   }
 
-  // Keep rows from other campaign accounts (drop non-campaign accounts), and
-  // keep THIS sender's existing rows too — we only ADD new people, never wipe.
+  // Keep EVERY existing row, whatever account it belongs to. The tab is one
+  // per workbook and a workbook holds many campaign tabs, each with its own
+  // senders; dropping rows for accounts that are not senders on the tab being
+  // checked meant a check on tab B threw away tab A's accumulated record
+  // (2026-09-25: the CCI rows vanished after checks on two smaller tabs). The
+  // sender scope now only decides which rows go BACK to the caller, below.
   var keptRows = [];
   var seenKeys = {};
   for (var r = 0; r < existing.length; r++) {
     var rowSender = (existing[r][0] || '').toString().trim();
-    if (hasActiveSenderScope && !activeSendersLower[rowSender.toLowerCase()]) continue;
     keptRows.push(existing[r]);
     // existing columns: [Account, First, Last, PublicId, URN, MemberId, ...]
     seenKeys[_identityKey(rowSender, existing[r][4], existing[r][3], existing[r][1], existing[r][2])] = true;
@@ -2181,22 +2213,37 @@ function handleWriteRecentConnections(spreadsheet, data) {
     appended++;
   }
 
-  // Rewrite the data area with the combined (kept + newly-appended) set.
-  if (lastRow >= 2) {
-    sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).clearContent();
-  }
-  if (keptRows.length > 0) {
-    sheet.getRange(2, 1, keptRows.length, RECENT_HEADERS.length).setValues(keptRows);
+  // Rewrite the data area with the combined (kept + newly-appended) set in ONE
+  // setValues call, padding with blank rows to cover whatever was there before.
+  // The old clearContent-then-setValues pair left a window in which the tab was
+  // empty, and any error between the two (Sheets service hiccup, timeout) left
+  // it empty for good — a reader mid-write saw one account's rows missing and
+  // the next sweep started from nothing.
+  var oldDataRows = lastRow >= 2 ? lastRow - 1 : 0;
+  var writeRows = Math.max(oldDataRows, keptRows.length);
+  if (writeRows > 0) {
+    var blank = [];
+    for (var bi = 0; bi < RECENT_HEADERS.length; bi++) blank.push('');
+    var grid = keptRows.slice();
+    while (grid.length < writeRows) grid.push(blank.slice());
+    if (sheet.getMaxRows() < writeRows + 1) sheet.insertRowsAfter(sheet.getMaxRows(), writeRows + 1 - sheet.getMaxRows());
+    sheet.getRange(2, 1, writeRows, RECENT_HEADERS.length).setValues(grid);
   }
 
-  // Return the full accumulated set so the bot matches against the tab, not
-  // the live 80-fetch. Shape mirrors the Node `conns` objects + `account`.
-  var accumulated = keptRows.map(function (row) {
-    return {
+  // Return the accumulated set the bot matches against, not the live 80-fetch —
+  // scoped to this tab's senders (plus the caller) when a scope was given, so a
+  // foreign account's connections never stamp a row on this tab.
+  var senderLower = sender.toLowerCase();
+  var accumulated = [];
+  for (var ai2 = 0; ai2 < keptRows.length; ai2++) {
+    var row = keptRows[ai2];
+    var acctLower = (row[0] || '').toString().trim().toLowerCase();
+    if (hasActiveSenderScope && !activeSendersLower[acctLower] && acctLower !== senderLower) continue;
+    accumulated.push({
       account: row[0], firstName: row[1], lastName: row[2],
       publicId: row[3], urn: row[4], memberNumber: row[5],
-    };
-  });
+    });
+  }
 
   return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, rows: appended, accumulated: accumulated });
 }
@@ -2209,11 +2256,29 @@ function handleClearRecentConnections(spreadsheet, data) {
     return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: 0 });
   }
   var lastRow = sheet.getLastRow();
-  var cleared = 0;
-  if (lastRow >= 2) {
-    cleared = lastRow - 1;
+  if (lastRow < 2) return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: 0 });
+  // `accounts` (optional): clear only THESE accounts' rows. A campaign starting
+  // on one tab must not wipe the record other tabs in the workbook rely on.
+  // Absent (older clients) → the whole tab, as before.
+  var only = Array.isArray(data.accounts) ? data.accounts : null;
+  if (!only) {
     sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).clearContent();
+    return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: lastRow - 1 });
   }
+  var onlyLower = {};
+  for (var i = 0; i < only.length; i++) { var v = (only[i] || '').toString().trim().toLowerCase(); if (v) onlyLower[v] = true; }
+  var rows = sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).getValues();
+  var keep = [];
+  var cleared = 0;
+  for (var r = 0; r < rows.length; r++) {
+    var acct = (rows[r][0] || '').toString().trim().toLowerCase();
+    if (onlyLower[acct]) { cleared++; continue; }
+    keep.push(rows[r]);
+  }
+  var blank = [];
+  for (var b = 0; b < RECENT_HEADERS.length; b++) blank.push('');
+  while (keep.length < rows.length) keep.push(blank.slice());
+  sheet.getRange(2, 1, rows.length, RECENT_HEADERS.length).setValues(keep);
   return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: cleared });
 }
 

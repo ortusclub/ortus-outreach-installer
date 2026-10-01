@@ -4,7 +4,7 @@ import { buildManifestReadback } from '../public/js/manifest-readback.mjs';
 
 const BASE = {
   mode: 'connect_and_introduce', primaryName: 'Antonio Varlese',
-  primarySource: 'local-browser', autoAcceptPrimary: true, autoAcceptAllPending: false,
+  primarySource: '', autoAcceptPrimary: true, autoAcceptAllPending: false,
   primaryCheckTiming: 'after_connections', checkCadenceMinutes: 60, autoChecksEnabled: true,
   followUpEnabled: true, followUpDelayMinutes: 10, runTarget: 'local',
 };
@@ -15,7 +15,7 @@ test('standard CC+IC renders three ✓ lines and STANDARD state', () => {
   assert.equal(r.lines.length, 3);
   assert.ok(r.lines.every((l) => l.on));
   assert.match(r.lines[0].html, /Antonio Varlese/);
-  assert.match(r.lines[0].html, /local browser/i);
+  assert.match(r.lines[0].html, /GoLogin profile/i);
   assert.equal(r.cloudNotice, null);
 });
 
@@ -37,8 +37,8 @@ test('cloud + local primary → follow-up replaced by handshake line + cloudNoti
   const r = buildManifestReadback({ ...BASE, runTarget: 'cloud' });
   const fu = r.lines.find((l) => l.key === 'followup');
   assert.equal(fu.on, false);
-  assert.match(fu.html, /Your Mac accepts once/i);
-  assert.ok(r.cloudNotice && /follow-up is off/i.test(r.cloudNotice));
+  assert.match(fu.html, /Choose.*GoLogin profile/i);
+  assert.ok(r.cloudNotice && /Choose a GoLogin profile/i.test(r.cloudNotice));
 });
 
 test('cloud + GoLogin primary → no handshake downgrade, follow-up stays', () => {
@@ -77,9 +77,9 @@ test('string-typed cadence "60" is still STANDARD (DOM <select>.value is a strin
 });
 
 test('cloud + local primary on a mode with no follow-up line → no cloudNotice', () => {
-  const ccdm = buildManifestReadback({ mode: 'connect_and_message', runTarget: 'cloud', primarySource: 'local-browser' });
+  const ccdm = buildManifestReadback({ mode: 'connect_and_message', runTarget: 'cloud', primarySource: '' });
   assert.equal(ccdm.cloudNotice, null);
   assert.equal(ccdm.lines.length, 1);
-  const icb = buildManifestReadback({ mode: 'introduce_back', runTarget: 'cloud', primarySource: 'local-browser' });
+  const icb = buildManifestReadback({ mode: 'introduce_back', runTarget: 'cloud', primarySource: '' });
   assert.equal(icb.cloudNotice, null);
 });

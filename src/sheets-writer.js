@@ -12,7 +12,7 @@ import { extractSheetId, extractSheetGid } from './utils.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { onWebappLane } from './webapp-lane.js';
 
-// v2.52.0: hard-coded constant from sheets-webapp-url.js wins over .env.
+// Shared default or independently owned bridge from sheets-webapp-url.js.
 // Function form preserved so the existing call sites don't have to change.
 const getWebAppUrl = () => SHEETS_WEBAPP_URL;
 
@@ -108,6 +108,12 @@ async function _postOnce(url, body) {
     }
 
     const text = await res.text();
+    if (res.status === 401 || res.status === 403) {
+      return { error: `Sheets service access denied (HTTP ${res.status}). Restore the deployment's access or configure your own Sheets bridge.` };
+    }
+    if (res.status >= 400) {
+      return { error: `Sheets service returned HTTP ${res.status}` };
+    }
     try {
       return JSON.parse(text);
     } catch {
@@ -116,7 +122,7 @@ async function _postOnce(url, body) {
         console.warn('[sheets-writer] Apps Script returned login page — redeployment may be needed');
         return { error: 'Authentication error — redeploy the Apps Script' };
       }
-      return { raw: text };
+      return { error: `Sheets service returned a non-JSON response (HTTP ${res.status}); check the deployment and its access settings.` };
     }
   } catch (err) {
     return { error: err.message };
@@ -227,10 +233,13 @@ export async function prepareSheet(sheetUrl, mode) {
     return { ok: true, added: result.added || [], hidden: result.hidden || [], shown: result.shown || [] };
   }
 
-  if (result?.error) {
-    console.warn(`[sheets-writer] prepareSheet failed: ${result.error}`);
-  }
-  return { ok: false, added: [], hidden: [], shown: [] };
+  // Say WHY it didn't confirm — a non-JSON reply (Google error page) used to be
+  // dropped silently, leaving only "didn't confirm" in the campaign log.
+  const reason = result?.error
+    || (result?.raw !== undefined ? `non-JSON reply (HTTP ${result.status}): ${String(result.raw).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)}` : '')
+    || (result ? `unexpected reply: ${JSON.stringify(result).slice(0, 200)}` : 'no reply');
+  console.warn(`[sheets-writer] prepareSheet failed: ${reason}`);
+  return { ok: false, added: [], hidden: [], shown: [], reason };
 }
 
 /**
@@ -573,8 +582,13 @@ export async function appendReplyRow(sheetUrl, reply) {
  * accounts assigned in the sheet's Sender column survive a refresh.
  * Omit (legacy callers) → no filtering, current behavior preserved.
  */
+// Why the last Recent Connections write was not confirmed, for the sweep log.
+// The operator only sees campaign.log, never this process's stdout.
+export let lastRecentConnectionsError = '';
+
 export async function writeRecentConnectionsTab(sheetUrl, sender, connections, activeSenders) {
-  if (!getWebAppUrl()) return null;
+  lastRecentConnectionsError = '';
+  if (!getWebAppUrl()) { lastRecentConnectionsError = 'no Sheets service configured'; return null; }
   const sheetId = extractSheetId(sheetUrl);
   try {
     const result = await postToWebApp({
@@ -586,11 +600,14 @@ export async function writeRecentConnectionsTab(sheetUrl, sender, connections, a
     });
     if (result?.ok) {
       console.log(`[sheets-writer] ✓ Wrote ${result.rows} row(s) to "${result.tab}" (accumulated: ${Array.isArray(result.accumulated) ? result.accumulated.length : 0})`);
-      return Array.isArray(result.accumulated) ? result.accumulated : [];
+      if (!Array.isArray(result.accumulated)) lastRecentConnectionsError = 'the Sheets service did not return the accumulated rows';
+      return Array.isArray(result.accumulated) ? result.accumulated : null;
     }
+    lastRecentConnectionsError = (result && result.error) ? String(result.error) : 'no confirmation from the Sheets service';
     if (result?.error) console.warn(`[sheets-writer] writeRecentConnections failed: ${result.error}`);
     return null;
   } catch (err) {
+    lastRecentConnectionsError = err.message;
     console.warn(`[sheets-writer] writeRecentConnections threw: ${err.message}`);
     return null;
   }
@@ -602,11 +619,15 @@ export async function writeRecentConnectionsTab(sheetUrl, sender, connections, a
  * returns false on any failure; a stale tab is non-fatal (active-sender
  * scoping still prevents foreign-account false positives).
  */
-export async function clearRecentConnectionsTab(sheetUrl) {
+export async function clearRecentConnectionsTab(sheetUrl, accounts = null) {
   if (!getWebAppUrl()) return false;
   const sheetId = extractSheetId(sheetUrl);
   try {
-    const result = await postToWebApp({ action: 'clearRecentConnections', sheetId });
+    // `accounts`: clear only these accounts' rows. The tab is shared by every
+    // campaign tab in the workbook, so a campaign starting on one tab must not
+    // wipe the record the others accumulated.
+    const result = await postToWebApp({ action: 'clearRecentConnections', sheetId,
+      ...(Array.isArray(accounts) && accounts.length ? { accounts } : {}) });
     if (result?.ok) {
       console.log('[sheets-writer] ✓ Cleared "Recent Connections" tab');
       return true;
@@ -650,7 +671,7 @@ export async function writeRecentMessagesTab(sheetUrl, sender, messages, activeS
   }
 }
 
-export async function batchUpdateSheet(sheetUrl, updates) {
+export async function batchUpdateSheet(sheetUrl, updates, { requireConfirmation = false } = {}) {
   if (!getWebAppUrl() || !updates.length) return false;
 
   const sheetId = extractSheetId(sheetUrl);
@@ -662,6 +683,7 @@ export async function batchUpdateSheet(sheetUrl, updates) {
   // that had to finish inside one Apps Script execution or lose the lot.
   let processed = 0;
   let allOk = true;
+  let failureReason = '';
   for (let i = 0; i < updates.length; i += BULK_CHUNK) {
     const chunk = updates.slice(i, i + BULK_CHUNK);
     const result = await postToWebApp({
@@ -671,15 +693,29 @@ export async function batchUpdateSheet(sheetUrl, updates) {
       updates: chunk,
     });
     if (result?.success) {
+      const failedRows = Array.isArray(result.results) ? result.results.filter((row) => row.error) : [];
+      // A row the script matched but wrote nothing to means every requested
+      // field lacked a column on this tab. The script still calls that a
+      // success, so say it here or the loss is invisible.
+      const silentRows = Array.isArray(result.results) ? result.results.filter((row) => !row.error && Array.isArray(row.updated) && row.updated.length === 0) : [];
+      if (silentRows.length) console.warn(`[sheets-writer] ⚠ ${silentRows.length} matched row(s) had no column to receive the update on sheet ${sheetId} — are the tracking columns provisioned?`);
+      if (requireConfirmation && failedRows.length) {
+        allOk = false;
+        failureReason = `${failedRows.length} row(s) failed: ${failedRows[0].error}`;
+      }
       processed += typeof result.processed === 'number' ? result.processed : chunk.length;
       continue;
     }
     allOk = false;
+    failureReason = result?.error || 'no success flag';
     console.warn(`[sheets-writer] ✗ LOST batch rows ${i + 1}–${i + chunk.length} for sheet ${sheetId}: ${result?.error || 'no success flag'}`);
   }
 
   if (processed) {
     console.log(`[sheets-writer] ✓ Batch updated ${processed} rows in sheet ${sheetId}`);
+  }
+  if (!allOk && requireConfirmation) {
+    throw new Error(`Sheet updates were not all confirmed: ${failureReason}`);
   }
   return allOk;
 }

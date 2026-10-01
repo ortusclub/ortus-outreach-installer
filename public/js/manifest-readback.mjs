@@ -19,14 +19,13 @@ const DELAY_LABEL = {
 
 function actorLabel(primarySource, primaryName) {
   if (primarySource && primarySource !== 'local-browser') return 'a GoLogin profile';
-  const first = String(primaryName || '').trim().split(/\s+/)[0];
-  return first ? `${esc(first)}'s local browser` : 'your local browser';
+  return 'a GoLogin profile (choose an account)';
 }
 
 // The default profile every operator sees on a fresh CC+IC wizard. Deviations
 // flip STANDARD → CUSTOMIZED. Mirrors the HTML defaults.
 const STANDARD = {
-  autoAcceptPrimary: true, autoAcceptAllPending: false, primarySource: 'local-browser',
+  autoAcceptPrimary: true, autoAcceptAllPending: false, primarySource: '',
   primaryCheckTiming: 'after_connections', checkCadenceMinutes: 60,
   autoChecksEnabled: true, followUpEnabled: true, followUpDelayMinutes: 10,
 };
@@ -38,7 +37,7 @@ export function buildManifestReadback(sIn = {}) {
   const s = {
     mode: sIn.mode || 'connect_and_introduce',
     primaryName: sIn.primaryName,
-    primarySource: sIn.primarySource || 'local-browser',
+    primarySource: sIn.primarySource === 'local-browser' ? '' : (sIn.primarySource || ''),
     autoAcceptPrimary: sIn.autoAcceptPrimary === undefined ? STANDARD.autoAcceptPrimary : !!sIn.autoAcceptPrimary,
     autoAcceptAllPending: sIn.autoAcceptAllPending === undefined ? STANDARD.autoAcceptAllPending : !!sIn.autoAcceptAllPending,
     primaryCheckTiming: sIn.primaryCheckTiming || STANDARD.primaryCheckTiming,
@@ -84,7 +83,7 @@ export function buildManifestReadback(sIn = {}) {
     if (cloudLocalPrimary) {
       lines.push({
         key: 'followup', on: false,
-        html: `☁︎ <b>Your Mac accepts once</b> (locked first step), then everything runs on the VM — follow-up off for this run`,
+        html: `Choose the primary’s GoLogin profile before enabling automatic follow-ups`,
       });
     } else {
       const delay = DELAY_LABEL[s.followUpDelayMinutes] || `${esc(s.followUpDelayMinutes)} min`;
@@ -108,8 +107,7 @@ export function buildManifestReadback(sIn = {}) {
   }
 
   const cloudNotice = (isCCIC && cloudLocalPrimary)
-    ? `Running in the cloud: your Mac accepts the senders' invites once (locked first step), then everything runs on the VM. Follow-up is off for this run.`
-    : null;
+    ? 'Choose a GoLogin profile for the primary before launching this cloud campaign.' : null;
 
   return { lines, state, cloudNotice };
 }

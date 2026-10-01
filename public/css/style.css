@@ -1810,6 +1810,11 @@ select {
   text-transform: uppercase;
 }
 .campaign-name-row > input:focus { border-bottom-color: var(--ink); }
+.campaign-name-row > input.has-warning { border-bottom-color: var(--red); }
+.campaign-name-warn {
+  font-family: var(--mono); font-size: 0.62rem; color: var(--red);
+  letter-spacing: 0.06em; margin-top: 4px;
+}
 .campaign-name-row > .btn { margin-bottom: 4px; white-space: nowrap; }
 
 /* Start CTA — transparent pill with 1px white border + GOLD label (the only gold in the UI) */
@@ -5319,6 +5324,10 @@ body.route-salesnav .sidebar-nav { display: none; }
   align-items: center;
   justify-content: space-between;
   gap: 24px;
+  /* Wrap instead of overflowing to the right when the row is wide (e.g. an admin
+     with the extra Conductor filter) — otherwise the "+ New campaign" button
+     slides under the fixed CONSOLE lip and gets clipped. */
+  flex-wrap: wrap;
 }
 .dashboard-new-btn { font-size: 0.7rem; padding: 8px 18px; }
 .dashboard-title {
@@ -7143,7 +7152,7 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
  * button). Wrapper is position:relative so the badge anchors to the
  * button's top-right corner. Click the badge → resume; click the button
  * itself → fresh campaign. ───────────────────────────────────────────── */
-.dashboard-new-wrap { position: relative; display: inline-flex; align-items: center; gap: 10px; }
+.dashboard-new-wrap { position: relative; display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .resume-draft-badge {
   position: absolute;
   top: -6px;
@@ -8199,7 +8208,7 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .pf-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.6; margin-bottom: 8px; }
 .pf-sub b { color: var(--ink); font-weight: 500; }
 .pf-tally { display: flex; gap: 10px; margin: 18px 0 26px; flex-wrap: wrap; }
-.pf-tally span { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.06em;
+.pf-tally > span { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.06em;
   border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; color: var(--gray); }
 .pf-tally .t-block { color: var(--red); border-color: var(--red); }
 .pf-tally .t-warn { color: var(--gold); border-color: var(--gold); }
@@ -8709,3 +8718,208 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
   line-height: 1.6;
 }
 .hs-wiz-log-line + .hs-wiz-log-line { margin-top: 3px; }
+/* Ortus Basics 1.0 — Settings: GoLogin workspace tokens.
+   Scoped to #credentials-modal and written at high specificity on purpose: the
+   app's global input styling (borderless, underlined, ~1rem) was winning for
+   input[type=text], which is why the Name field rendered as a big underlined
+   line next to a boxed token field. */
+.settings-chip { margin-bottom: 8px; }
+
+#credentials-modal .modal-card.cred-card { max-width: 520px; text-align: left; }
+#credentials-modal .stop-choice-sub { margin-bottom: 4px; }
+
+#credentials-modal .cred-row { margin-top: 14px; }
+#credentials-modal .cred-label {
+  display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--gray);
+}
+#credentials-modal input.cred-input {
+  width: 100%; box-sizing: border-box; height: 34px; padding: 0 10px; margin: 0;
+  border: 1px solid var(--hairline) !important; border-radius: 7px !important;
+  background: var(--surface, #fff) !important; color: var(--ink) !important;
+  font-family: var(--mono) !important; font-size: 12px !important;
+  line-height: 34px !important; letter-spacing: 0 !important;
+  text-transform: none !important; outline: none; box-shadow: none !important;
+}
+#credentials-modal input.cred-input::placeholder {
+  font-family: var(--mono); font-size: 11px; color: var(--gray);
+  letter-spacing: 0; text-transform: none;
+}
+#credentials-modal input.cred-input:focus { border-color: var(--gold, #d4a24c) !important; }
+
+#credentials-modal .cred-state {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+}
+#credentials-modal .cred-state.is-set { color: #3fb950; }
+#credentials-modal .cred-state.is-unset { color: var(--gray); }
+#credentials-modal .cred-note { margin-top: 5px; font-size: 10.5px; color: var(--gray); }
+
+#credentials-modal .cred-msg { margin-top: 14px; font-size: 12px; }
+#credentials-modal .cred-msg.is-ok { color: #3fb950; }
+#credentials-modal .cred-msg.is-bad { color: var(--red, #f85149); }
+
+/* ── Other workspaces ─────────────────────────────────────────────────── */
+#credentials-modal .cred-other {
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hairline);
+}
+#credentials-modal .cred-other-head {
+  margin: 0 0 4px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink);
+}
+#credentials-modal .cred-other-sub {
+  margin: 0 0 10px; font-size: 11.5px; line-height: 1.45; color: var(--gray);
+}
+#credentials-modal .cred-other-empty {
+  margin: 0 0 10px; padding: 9px 10px;
+  border: 1px dashed var(--hairline); border-radius: 7px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--gray);
+}
+#credentials-modal .cred-other-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+  padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 7px;
+}
+#credentials-modal .cred-other-name {
+  flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#credentials-modal .cred-other-del {
+  flex: 0 0 auto; border: none; background: transparent; cursor: pointer; padding: 0;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--gray);
+}
+#credentials-modal .cred-other-del:hover { color: var(--red, #f85149); }
+#credentials-modal .cred-remove { margin-left: 10px; }
+/* Push to engine is a deliberate, non-destructive action — don't hover red. */
+#credentials-modal .cred-push { margin-left: 10px; color: var(--fg, #c9d1d9); }
+#credentials-modal .cred-push:hover { color: var(--gold, #d4af37); }
+
+/* Name | token | Add on one 34px line — the three used to be different heights. */
+#credentials-modal .cred-other-add {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto;
+  gap: 8px; align-items: center; margin-top: 4px;
+}
+#credentials-modal .cred-other-add button {
+  height: 34px; padding: 0 16px; margin: 0; border-radius: 7px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; line-height: 1; white-space: nowrap;
+}
+#credentials-modal .stop-choice-cancel-row {
+  margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;
+}
+#credentials-modal .stop-choice-cancel-row button {
+  height: 36px; padding: 0 18px; border-radius: 7px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+}
+
+.account-paste { margin: 12px 0 16px; padding: 14px; border: 1px solid var(--hairline, #ccc); border-radius: 10px; }
+.account-paste summary { cursor: pointer; font-weight: 600; }
+.account-paste label { display: block; margin-top: 14px; }
+.account-paste p { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.account-paste textarea { display: block; box-sizing: border-box; width: 100%; margin: 10px 0; padding: 10px; resize: vertical; font: inherit; background: transparent; color: inherit; border: 1px solid var(--hairline, #ccc); border-radius: 6px; }
+
+/* Resume confirmation: give the full action label its own row. */
+.resume-confirm-card .modal-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.resume-confirm-card .ac-ok {
+  order: -1;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  font-size: 13px;
+  letter-spacing: .12em;
+  padding: 14px 18px;
+}
+.resume-confirm-card .ac-cancel {
+  align-self: center;
+  padding: 10px 18px;
+  font-size: 12px;
+  letter-spacing: .12em;
+}
+
+/* Keep pre-flight decisions visible while expanded findings scroll. */
+#pf-scrim { box-sizing: border-box; padding: 24px; }
+#pf-scrim .pf-panel { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); }
+.pf-findings { overflow-y: auto; min-height: 80px; flex: 1 1 auto; }
+#pf-scrim .pf-actions { flex: 0 0 auto; background: var(--bg, #fff); }
+#pf-scrim .pf-actions > .btn { white-space: normal; max-width: 100%; }
+#pf-scrim .pf-group { padding: 14px 0; }
+#pf-scrim summary.pf-group-head { cursor: pointer; list-style: none; margin: 0; align-items: center; }
+#pf-scrim summary.pf-group-head::-webkit-details-marker { display: none; }
+.pf-expand-label { margin-left: auto; color: var(--gray); font-size: 11px; white-space: nowrap; }
+.pf-expand-label::after { content: 'Expand ▾'; }
+.pf-group[open] > summary .pf-expand-label::after { content: 'Collapse ▴'; }
+#pf-scrim .pf-rows { margin-top: 12px; }
+@media (max-height: 700px), (max-width: 600px) {
+  #pf-scrim { padding: 12px; }
+  #pf-scrim .pf-panel { max-height: calc(100dvh - 24px); padding: 20px; }
+  #pf-scrim .pf-tally { margin: 12px 0; }
+  #pf-scrim .pf-actions { gap: 8px; padding-top: 12px; }
+  #pf-scrim .pf-count-note { font-size: 11px; margin-top: 4px; }
+  #pf-scrim .pf-row { grid-template-columns: 50px 1fr; }
+  #pf-scrim .pf-row .reason { grid-column: 1 / -1; }
+}
+
+
+.campaign-identifier { display: block; color: var(--gray); font: 11px var(--mono); overflow-wrap: anywhere; margin-top: 8px; user-select: text; }
+.campaign-identifier[hidden] { display: none; }
+
+#credentials-modal .cred-state.is-error, #credentials-modal .cred-error { color: var(--red, #c83030); }
+#credentials-modal .cred-other-row { flex-wrap: wrap; }
+#credentials-modal .cred-other-row .cred-error { flex-basis: 100%; }
+
+/* Magellan import confirm — highlight the key action phrase ("adds you to their
+   connection list"). Neutral fill (not gold — gold stays on the Start CTA). */
+.mg-hl { background: var(--hairline); padding: 1px 5px; font-weight: 700; }
+
+/* OP Magellan — "Import from CSV" panel (accounts not in GoLogin). */
+.mg-csv { margin-top: 14px; border: 1px solid var(--hairline); background: var(--bg-soft); }
+.mg-csv-summary {
+  cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 600;
+  color: var(--ink); list-style: none; user-select: none;
+}
+.mg-csv-summary::-webkit-details-marker { display: none; }
+.mg-csv-summary::before { content: '＋ '; color: var(--gold); font-weight: 700; }
+.mg-csv[open] .mg-csv-summary::before { content: '－ '; }
+.mg-csv-body { padding: 0 14px 14px; }
+.mg-csv-hint { font-size: 12px; line-height: 1.5; opacity: 0.7; margin: 0 0 10px; }
+.mg-csv-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mg-csv-input {
+  flex: 1 1 260px; min-width: 200px; padding: 8px 10px; font-size: 13px;
+  color: var(--ink); background: var(--bg); border: 1px solid var(--hairline); border-radius: 0;
+}
+.mg-csv-input:focus { outline: none; border-color: var(--gold); }
+.mg-csv-file { flex: 1 1 200px; font-size: 12px; color: var(--ink); opacity: 0.85; }
+.mg-csv-btn { flex: 0 0 auto; }
+.mg-csv-btn:disabled { opacity: 0.5; cursor: default; }
+.mg-csv-status { font-size: 12px; margin: 10px 0 0; line-height: 1.5; }
+.mg-csv-status.is-err { color: var(--red); }
+/* Shown in place of "Collect connections" when the selection is CSV-only. */
+.mg-csv-skip { font-size: 12px; line-height: 1.5; opacity: 0.75; align-self: center; }
+
+/* ── Cloud engine toggle (Settings → Engine) ──────────────────────────────── */
+#engine-chip.is-dev strong { color: var(--gold, #d4a24c); }
+.engine-badge-row { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; flex-wrap: wrap; }
+.engine-badge {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 9999px; white-space: nowrap;
+}
+.engine-badge.is-prod { color: #3fb950; border: 1px solid #3fb950; }
+.engine-badge.is-dev  { color: var(--gold, #d4a24c); border: 1px solid var(--gold, #d4a24c); }
+.engine-badge-url { font-family: var(--mono); font-size: 11px; color: var(--gray); overflow-wrap: anywhere; }
+.engine-seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; overflow: hidden; margin: 4px 0 12px; }
+.engine-seg-btn {
+  border: none; background: transparent; padding: 7px 18px; cursor: pointer;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--gray);
+}
+.engine-seg-btn.is-active { background: var(--ink); color: var(--surface, #fff); }
+.engine-seg-btn:disabled { opacity: .5; cursor: default; }
+#engine-modal .cred-row { margin-top: 12px; }

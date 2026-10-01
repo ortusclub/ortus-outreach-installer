@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  startCollect, stopCollect, buildPreview, runImport, mergeDuplicates, getState, getPlans, reset,
+  startCollect, stopCollect, startPreview, buildPreview, runImport, mergeDuplicates, getState, getPlans, reset,
 } from '../../src/connections/magellan-run.js';
+import { CONNECTIONS_PROP } from '../../src/connections/magellan.js';
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
@@ -120,6 +121,56 @@ test('preview totals up new vs existing across accounts, writing nothing', async
   assert.equal(totals.extraEmails, 1, 'existing contact gets the key as an extra address');
 });
 
+test('startPreview returns immediately (started:true); the result arrives by polling', async () => {
+  reset();
+  let releaseLookup;
+  const held = new Promise((r) => { releaseLookup = r; });
+  const r = startPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => [{ slug: 's1', memberId: '1', firstName: 'A' }],
+    lookup: async () => { await held; return new Map(); },
+    sheet: noSheet,
+  });
+  // The route returns instantly, while the check is still running — never the
+  // 30s-blocking response that made a big account read "The app did not answer".
+  assert.deepEqual(r, { started: true });
+  assert.equal(getState().running, true);
+  assert.equal(getState().phase, 'checking');
+  assert.equal(getState().preview, null);
+  releaseLookup();
+  await settle();
+  // The finished preview is now in state, for the poller to render.
+  assert.equal(getState().running, false);
+  assert.equal(getState().phase, 'done');
+  assert.equal(getState().preview.totals.created, 1);
+});
+
+test('a Check with many duplicates keeps only a capped sample in state; the full list still merges', async () => {
+  reset();
+  const dupes = [...Array(30)].map((_, i) => ({
+    memberId: String(i), keptId: String(1000 + i), otherIds: [String(2000 + i)], name: `D${i}`, nameMatch: true,
+  }));
+  await buildPreview(['a@o.com'], {
+    checkProps: async () => ({ ok: true, missing: [] }),
+    options: async () => new Set(['a@o.com']),
+    read: () => dupes.map((d) => ({ slug: `s${d.memberId}`, memberId: d.memberId, firstName: d.name })),
+    lookup: async () => Object.assign(new Map(), { duplicates: dupes }),
+    sheet: noSheet,
+  });
+  // State carries a bounded sample plus the true count — not the whole list, so
+  // getState() stays small on every poll no matter how large the account is.
+  assert.equal(getState().preview.duplicates.length, 25);
+  assert.equal(getState().preview.duplicatesTotal, 30);
+  // The outcome counts all 30, not the 25-row sample.
+  assert.ok(getState().outcome.problems.some((p) => p.includes('30') && p.includes('more than once')));
+  // mergeDuplicates reads the FULL list (from the module holder), not the sample.
+  let merged = 0;
+  const res = await mergeDuplicates(null, { merge: async () => { merged += 1; }, sheet: noSheet });
+  assert.equal(res.ok, true);
+  assert.equal(merged, 30);
+});
+
 test('Check auto-adds a selected account missing from the connections property, then imports it', async () => {
   reset();
   const optionSet = new Set(['a@o.com']);          // b@o.com is NOT on the list yet
@@ -174,6 +225,33 @@ test('import reports per-stage errors instead of throwing them away', async () =
   assert.equal(r.updated, 1);
   assert.equal(r.extraEmails, 0);
   assert.deepEqual(r.errors.map((e) => e.stage), ['update', 'email']);
+});
+
+test('a create that collided with an existing record is recovered, not left "not written"', async () => {
+  reset();
+  // Viggo's class: the create collides with a record the lookup never saw
+  // (search-invisible / quarantined). batchCreate hands back the existing id;
+  // runImport reads THAT record and records the connection on it.
+  const conn = { memberId: '881836459', firstName: 'Viggo', lastName: 'S' };
+  const plans = [{ account: 'nicolled@ortus.solutions',
+    plan: { creates: [{ connection: conn, properties: {} }], updates: [], additionalEmails: [] } }];
+  let recovered = null;
+  const r = await runImport(plans, {
+    create: async () => ({ created: 0, errors: [], ids: new Map(),
+      conflicts: [{ input: { connection: conn }, existingId: '999' }] }),
+    // The colliding record already carries ANOTHER operator's tag — it must survive.
+    readByIds: async () => new Map([['999', { firstname: '', lastname: '', [CONNECTIONS_PROP]: ';someone@else.com' }]]),
+    update: async (rows) => { if (rows.length) recovered = rows; return { updated: rows.length, errors: [] }; },
+    attach: async () => {},
+    sheet: noSheet,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.created, 0);
+  assert.equal(r.updated, 1, 'the collision was recovered as an update');
+  assert.equal(r.notWritten, 0, 'nobody is left not-written');
+  assert.equal(recovered[0].id, '999', 'the EXISTING record was updated');
+  assert.ok(recovered[0].properties[CONNECTIONS_PROP].includes('nicolled@ortus.solutions'), 'connection recorded');
+  assert.ok(recovered[0].properties[CONNECTIONS_PROP].includes('someone@else.com'), 'other operator tag survives');
 });
 
 test('the import narrates itself — progress, per account, and why a problem happened', async () => {
@@ -720,14 +798,15 @@ test('a Check refuses to start on top of a live collect', async () => {
   await settle();
   assert.equal(getState().running, true);
 
-  await assert.rejects(
-    () => buildPreview(['a@o.com'], {
-      checkProps: async () => { throw new Error('must not be reached'); },
-      options: async () => { throw new Error('must not be reached'); },
-      sheet: noSheet,
-    }),
-    /already running/i,
-  );
+  // The guard lives in startPreview now (it returns a reason rather than
+  // throwing, because the route hands the reason straight to the page).
+  const refused = startPreview(['a@o.com'], {
+    checkProps: async () => { throw new Error('must not be reached'); },
+    options: async () => { throw new Error('must not be reached'); },
+    sheet: noSheet,
+  });
+  assert.equal(refused.started, false);
+  assert.match(refused.reason, /already running/i);
   // The collect's own run is untouched by the refusal.
   assert.equal(getState().phase, 'collecting');
   release();

@@ -3,6 +3,16 @@
 // "FG Funnel". Deploy: new Apps Script project → paste → Deploy as Web app,
 // execute as me, access "Anyone with the link". Put the /exec URL in
 // src/sheets-webapp-url.js (FG_WEBAPP_URL).
+//
+// Container-bound to the spreadsheet:
+//   "OP FUNNEL NEW - ORTUS APP"
+//   https://docs.google.com/spreadsheets/d/1NeFwHclpB1bkGXKu4f4LjOG0KVIbivQgrnVCjj2tL8U
+//
+// Apps Script project:
+//   https://script.google.com/u/0/home/projects/1J_MK-yXVFStLp_hyRYSuQkc4fcsugRG3VEuQCtgGcMAuL8VObAkCMmsr/edit
+//
+// Current deployment (mickey@ortusclub.com, 2026-09-28):
+//   https://script.google.com/macros/s/AKfycbz1PgDi1I2n9iDdOO2v968GiI_bhHOaKuAqwoHyJT2azxzgDKCueywjUGuLbbTZhhEekQ/exec
 
 var FG_HEADER = [
   'Target Name', 'LinkedIn URL', 'Member ID', 'Company', 'Job Title',
