@@ -94,7 +94,7 @@ const ENGINE_ERROR_CASES = [
   ['Request was throttled',                                          'Skipped: Rate limited'],
   ['Note too long for a non-premium account (200 char limit)',       'Skipped: Profile not premium, custom notes limit'],
   ['Weekly invitation limit reached',                                'Skipped: Weekly limit reached'],
-  ['InMail credits exhausted',                                       'Skipped: InMail credits exhausted'],
+  ['InMail credits exhausted',                                       "Skipped: account out of InMail credits — can't message this lead (Open Profile needs a credit too). Retry from an account that has credits."],
   ['Lead timed out (watchdog)',                                      'Skipped: Lead timed out'],
   ['Connect modal did not appear',                                   'Skipped: Connect modal did not appear'],
   ['LinkedIn error toast shown',                                     'Skipped: LinkedIn error toast'],
