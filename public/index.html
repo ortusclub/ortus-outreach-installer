@@ -3253,8 +3253,9 @@
       <h2><span data-edit="h2-op">Open Profile Message Template</span> <span style="font-weight:400; font-size:0.75em; color:#8b949e">(free — no credits used)</span></h2>
       <label for="tpl-op-subject">Subject <span style="font-weight:400; font-size:0.75em; color:#8b949e">(optional)</span></label>
       <input type="text" id="tpl-op-subject" placeholder="Invite for exclusive Dinner Roundtable for Executive Leaders" />
-      <label for="tpl-op-body">Body</label>
-      <textarea id="tpl-op-body" rows="4" placeholder="Hi {firstName}, I came across your profile and wanted to connect because…"></textarea>
+      <label for="tpl-op-body">Body <small>(max 1900 chars)</small></label>
+      <textarea id="tpl-op-body" maxlength="1900" rows="4" placeholder="Hi {firstName}, I came across your profile and wanted to connect because…" oninput="updateTplOpBodyCount()"></textarea>
+      <div id="tpl-op-body-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 1900</div>
       <div class="placeholder-tags" data-target="tpl-op-body"></div>
 
       <!-- v2.72: Open Profile send channel + InMail fallback -->

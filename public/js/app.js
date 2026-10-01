@@ -3126,6 +3126,21 @@ window.updateTplNoteCount = updateTplNoteCount;
 document.addEventListener('DOMContentLoaded', updateTplNoteCount);
 if (document.readyState !== 'loading') updateTplNoteCount();
 
+// Message Campaign (Open Profile) body — LinkedIn caps these messages at 1900
+// chars, so the textarea has maxlength=1900 and this mirrors the connect-note
+// counter so the operator sees how close they are.
+function updateTplOpBodyCount() {
+  const ta = document.getElementById('tpl-op-body');
+  const out = document.getElementById('tpl-op-body-count');
+  if (!ta || !out) return;
+  const n = (ta.value || '').length;
+  out.textContent = `${n} / 1900`;
+  out.style.color = n >= 1850 ? '#dc2626' : 'var(--gray)';
+}
+window.updateTplOpBodyCount = updateTplOpBodyCount;
+document.addEventListener('DOMContentLoaded', updateTplOpBodyCount);
+if (document.readyState !== 'loading') updateTplOpBodyCount();
+
 function applyTemplateUIVisibility(_mode, _addNoteOn) {
   // v2.59: template-bar (Select/Save/Create New/Delete) stays hidden — the
   // reusable-template save/load system isn't needed for the current
