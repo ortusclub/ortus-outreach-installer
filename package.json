@@ -1,7 +1,7 @@
 {
   "name": "ortus-outreach",
   "productName": "The Ortus Outreach",
-  "version": "3.1.64",
+  "version": "3.1.65",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
   "main": "electron/main.js",
