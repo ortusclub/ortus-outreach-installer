@@ -58,7 +58,7 @@ test('active markup preserves stable Pause and Stop ids and renders Auto checks'
 });
 
 test('legacy Pause fallback also routes from the card campaign id', () => {
-  const start = APP.indexOf('window.dashPauseActive = async function()');
+  const start = APP.indexOf('window.dashPauseActive = async function(');
   const end = APP.indexOf('// Resume is deliberately a decision', start);
   const pause = APP.slice(start, end);
   assert.match(pause, /const cloudId = _activeCardCloudId\(\)/);

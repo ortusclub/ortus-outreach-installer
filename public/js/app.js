@@ -10100,7 +10100,7 @@ function _seedCloudLiveName(name) {
 async function openCloudLive(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
-  showBusy('Opening…');
+  if (typeof showBusy === 'function') showBusy('Opening…');
   _viewingCloudId = id;
   liveStatusForcedOpen = true;
   // NAVIGATE FIRST, load the card AFTER. _refreshCloudActiveStatus does several
@@ -10113,7 +10113,7 @@ async function openCloudLive(id) {
   try {
     await _refreshCloudActiveStatus(id);  // fill the card (can take a beat on a cold open)
   } catch (e) {
-    hideBusy();
+    if (typeof hideBusy === 'function') hideBusy();
     try { if (typeof showCampaignToast === 'function') showCampaignToast('Could not load this campaign — ' + (e && e.message || e), 4000); } catch (_) { /* */ }
     return;
   }
@@ -10126,7 +10126,7 @@ async function openCloudLive(id) {
     try { placeLiveCard(); } catch (_) { /* */ }
     const sec = document.getElementById('nav-status');
     if (sec) { try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ } }
-    hideBusy();                           // card is placed + visible now
+    if (typeof hideBusy === 'function') hideBusy();   // card is placed + visible now
   }, 180);
   _startCloudCardPoll();
 }
@@ -14046,7 +14046,7 @@ function localCampaignViewStatus(incoming) {
 async function openRunningCampaignReadOnly(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
-  showBusy('Opening…');                   // instant feedback for the config fetch below
+  if (typeof showBusy === 'function') showBusy('Opening…');                   // instant feedback for the config fetch below
   let d = null;
   try {
     const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
@@ -14085,7 +14085,7 @@ async function openRunningCampaignReadOnly(id) {
   // again after those deferred events have run. The 5s cloud-card poll + wizard
   // route entry also re-assert (see _startCloudCardPoll, applyRoute).
   _enforceCloudReadOnlyView();
-  hideBusy();                             // wizard is revealed + bound now
+  if (typeof hideBusy === 'function') hideBusy();                             // wizard is revealed + bound now
   [120, 600, 1500].forEach((ms) => setTimeout(() => { try { _enforceCloudReadOnlyView(); } catch (_) { /* */ } }, ms));
 }
 window.openRunningCampaignReadOnly = openRunningCampaignReadOnly;
@@ -14136,7 +14136,7 @@ function _wireReadOnlyEditGuard() {
 // Campaigns launched before the launch-config snapshot existed fall back to the
 // live view.
 async function openCampaignForEditCloud(id) {
-  showBusy('Opening…');                   // instant feedback for the config fetch below
+  if (typeof showBusy === 'function') showBusy('Opening…');                   // instant feedback for the config fetch below
   let d = null;
   try {
     const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
@@ -14196,7 +14196,7 @@ async function openCampaignForEditCloud(id) {
   // v2.160.46: bind the LIVE STATUS panel to THIS campaign so it shows the one
   // just opened (not a previously-viewed campaign leaking in from below).
   _bindLiveStatusToCampaign(id);
-  hideBusy();                             // wizard is prefilled + revealed now
+  if (typeof hideBusy === 'function') hideBusy();                             // wizard is prefilled + revealed now
 }
 
 async function openCampaignForEdit(id) {
@@ -14383,8 +14383,9 @@ async function restartLocalFromItem(id, fromStart, reviewed = null) {
   // Unlike a fresh Start (which shows the launch animation), this resume/rerun
   // path reads saved config + the Google Sheet + starts (3 round-trips) silently.
   // Give instant feedback. hideBusy() in finally covers every exit incl. the
-  // preflight-review return (the panel becomes the UI then).
-  showBusy(fromStart ? 'Restarting…' : 'Starting…');
+  // preflight-review return (the panel becomes the UI then). Guarded so the
+  // function never hard-depends on the UI helper being in scope.
+  if (typeof showBusy === 'function') showBusy(fromStart ? 'Restarting…' : 'Starting…');
   try {
     const selected = _viewingLocalCampaign?.id === id ? _viewingLocalCampaign : null;
     const it = _boardItemsById.get(id) || _snItemsById.get(id) || selected;
@@ -14459,7 +14460,7 @@ async function restartLocalFromItem(id, fromStart, reviewed = null) {
     return false;
   } finally {
     _localRestartsPending.delete(id);
-    hideBusy();
+    if (typeof hideBusy === 'function') hideBusy();
   }
 }
 window.restartLocalFromItem = restartLocalFromItem;
@@ -31815,7 +31816,7 @@ window.dashCopyLog = async function(btn) {
 // v2.112: resume-with-live-state client. Renders ONLY from the server's resumeChanges
 // object — never computes counts locally (no invented data).
 async function reloadSheetWhilePaused(btn) {
-  const restore = busyButton(btn, 'Reloading sheet…'); // reads the Google Sheet (can take a few seconds)
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Reloading sheet…'); // reads the Google Sheet (can take a few seconds)
   try {
     const r = await fetch('/api/campaign/resume/reload-sheet', { method: 'POST' })
       .then(x => x.json()).catch(() => null);
@@ -32053,7 +32054,7 @@ window.dashPauseActive = async function(btn) {
   const cloudId = _activeCardCloudId();
   if (cloudId) {
     const paused = !!(window.__cloudActiveStatus && window.__cloudActiveStatus.paused);
-    const restore = busyButton(btn, paused ? 'Resuming…' : 'Pausing…'); // cloud mutation can retry ~1 min
+    const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, paused ? 'Resuming…' : 'Pausing…'); // cloud mutation can retry ~1 min
     try { if (typeof pauseCloudCampaignUI === 'function') await pauseCloudCampaignUI(cloudId, paused); }
     finally { restore(); }
     return;
@@ -32069,7 +32070,7 @@ window.dashPauseActive = async function(btn) {
       // No busy spinner — it may open an interactive review panel, not a pure wait.
       await onResumeClicked();
     } else {
-      const restore = busyButton(btn, 'Pausing…');
+      const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Pausing…');
       try {
         const r = await fetch('/api/campaign/pause', { method: 'POST' });
         if (r.ok) {
@@ -32303,7 +32304,7 @@ window.dashStopActive = async function() {
 window.dashRestartActive = async function(btn) {
   if (_activeCardCloudId()) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return; }
   if (!confirm('Restart this campaign from the beginning? Progress will reset.')) return;
-  const restore = busyButton(btn, 'Restarting…');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Restarting…');
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
@@ -32335,7 +32336,7 @@ window.dashRestartActive = async function(btn) {
 };
 
 window.dashCopyActiveToQueue = async function(btn) {
-  const restore = busyButton(btn, 'Copying…');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Copying…');
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
@@ -32616,7 +32617,7 @@ window.toggleMonitorDetails = function(btn) {
 
 window.dashStopMonitoring = async function(btn) {
   if (!confirm('Stop monitoring? Remaining unaccepted leads will be stamped Closed.')) return;
-  const restore = busyButton(btn, 'Stopping…');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Stopping…');
   try {
     const r = await fetch('/api/monitoring/stop', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -32631,7 +32632,7 @@ window.dashStopMonitoring = async function(btn) {
 };
 
 window.dashForceSweep = async function(btn) {
-  const restore = busyButton(btn, 'Starting…');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Starting…');
   try {
     const r = await fetch('/api/monitoring/check-now', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -32646,7 +32647,7 @@ window.dashForceSweep = async function(btn) {
 };
 
 window.dashCopyMonitorToQueue = async function(btn) {
-  const restore = busyButton(btn, 'Copying…');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Copying…');
   try {
     const r = await fetch('/api/monitoring/state');
     const m = await r.json();
@@ -33456,7 +33457,7 @@ window.saveEditsAndResume = async function() {
 };
 
 window.dashRerunPast = async function(originalIdx, btn) {
-  const restore = busyButton(btn, 'Rerunning…');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Rerunning…');
   try {
     const r = await fetch('/api/history/' + originalIdx + '/relaunch', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -33667,7 +33668,7 @@ window.dashClearQueue = async function(btn) {
   } catch (err) { console.warn('[v3] dashClearQueue fetch', err); }
   if (items.length === 0) return;
   if (!confirm(`Clear all ${items.length} queued campaign${items.length === 1 ? '' : 's'}?`)) return;
-  const restore = busyButton(btn, 'Clearing…');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Clearing…');
   try {
     for (const q of items) {
       if (!q || !q.id) continue;
