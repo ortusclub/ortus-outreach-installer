@@ -9952,6 +9952,27 @@ function hideBusy() {
 }
 if (typeof window !== 'undefined') { window.showBusy = showBusy; window.hideBusy = hideBusy; }
 
+// In-place button busy state for dock / action buttons that do 1–3 engine calls
+// then toast on completion — the click now shows a spinner immediately. Icon-only
+// buttons (.dock-btn) get just a spinner; text buttons get a spinner + label.
+// Returns a restore() to call in a finally. Re-entry (double-click) is a no-op.
+function busyButton(el, label) {
+  if (!el || !el.tagName || el.dataset._busy) return () => {};
+  el.dataset._busy = '1';
+  const prevHTML = el.innerHTML;
+  const prevDisabled = el.disabled;
+  const iconOnly = el.classList.contains('dock-btn');
+  el.disabled = true;
+  el.classList.add('is-busy');
+  el.innerHTML = `<span class="btn-sp" aria-hidden="true"></span>${(label && !iconOnly) ? `<span class="btn-sp-lbl">${escHtml(label)}</span>` : ''}`;
+  let done = false;
+  return () => {
+    if (done) return; done = true;
+    try { el.innerHTML = prevHTML; el.disabled = prevDisabled; el.classList.remove('is-busy'); delete el.dataset._busy; } catch (_) { /* */ }
+  };
+}
+if (typeof window !== 'undefined') window.busyButton = busyButton;
+
 async function openCloudLive(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
@@ -14226,6 +14247,11 @@ const _localRestartsPending = new Set();
 async function restartLocalFromItem(id, fromStart, reviewed = null) {
   if (_localRestartsPending.has(id)) return false;
   _localRestartsPending.add(id);
+  // Unlike a fresh Start (which shows the launch animation), this resume/rerun
+  // path reads saved config + the Google Sheet + starts (3 round-trips) silently.
+  // Give instant feedback. hideBusy() in finally covers every exit incl. the
+  // preflight-review return (the panel becomes the UI then).
+  showBusy(fromStart ? 'Restarting…' : 'Starting…');
   try {
     const selected = _viewingLocalCampaign?.id === id ? _viewingLocalCampaign : null;
     const it = _boardItemsById.get(id) || _snItemsById.get(id) || selected;
@@ -14300,6 +14326,7 @@ async function restartLocalFromItem(id, fromStart, reviewed = null) {
     return false;
   } finally {
     _localRestartsPending.delete(id);
+    hideBusy();
   }
 }
 window.restartLocalFromItem = restartLocalFromItem;
@@ -31654,11 +31681,14 @@ window.dashCopyLog = async function(btn) {
 
 // v2.112: resume-with-live-state client. Renders ONLY from the server's resumeChanges
 // object — never computes counts locally (no invented data).
-async function reloadSheetWhilePaused() {
-  const r = await fetch('/api/campaign/resume/reload-sheet', { method: 'POST' })
-    .then(x => x.json()).catch(() => null);
-  if (!r || !r.ok) { showCampaignToast(`Reload failed: ${r?.error || 'unknown'}`, 4000); return; }
-  showCampaignToast(`Sheet reloaded — review on Resume.`, 2500);
+async function reloadSheetWhilePaused(btn) {
+  const restore = busyButton(btn, 'Reloading sheet…'); // reads the Google Sheet (can take a few seconds)
+  try {
+    const r = await fetch('/api/campaign/resume/reload-sheet', { method: 'POST' })
+      .then(x => x.json()).catch(() => null);
+    if (!r || !r.ok) { showCampaignToast(`Reload failed: ${r?.error || 'unknown'}`, 4000); return; }
+    showCampaignToast(`Sheet reloaded — review on Resume.`, 2500);
+  } finally { restore(); }
 }
 
 function renderResumeReview(rc) {
@@ -31884,13 +31914,15 @@ async function renderPauseAccountAdd() {
 }
 window.renderPauseAccountAdd = renderPauseAccountAdd;
 
-window.dashPauseActive = async function() {
+window.dashPauseActive = async function(btn) {
   // Route from the card's data, not the navigation flag. A fresh app process can
   // restore a DEV/VM campaign card without ever setting _viewingCloudId.
   const cloudId = _activeCardCloudId();
   if (cloudId) {
     const paused = !!(window.__cloudActiveStatus && window.__cloudActiveStatus.paused);
-    if (typeof pauseCloudCampaignUI === 'function') await pauseCloudCampaignUI(cloudId, paused);
+    const restore = busyButton(btn, paused ? 'Resuming…' : 'Pausing…'); // cloud mutation can retry ~1 min
+    try { if (typeof pauseCloudCampaignUI === 'function') await pauseCloudCampaignUI(cloudId, paused); }
+    finally { restore(); }
     return;
   }
   try {
@@ -31901,16 +31933,19 @@ window.dashPauseActive = async function() {
       // onResumeClicked either resumes immediately (confirmResume → toast + pollStatus) or
       // opens the review panel (whose Confirm button does the same). No poll here: when the
       // panel is shown nothing has changed yet, and confirmResume owns the post-resume refresh.
+      // No busy spinner — it may open an interactive review panel, not a pure wait.
       await onResumeClicked();
     } else {
-      const endpoint = '/api/campaign/pause';
-      const r = await fetch(endpoint, { method: 'POST' });
-      if (r.ok) {
-        if (typeof showCampaignToast === 'function') showCampaignToast('Pausing…');
-        if (typeof pollStatus === 'function') pollStatus();
-      } else {
-        if (typeof showCampaignToast === 'function') showCampaignToast('Pause/resume failed');
-      }
+      const restore = busyButton(btn, 'Pausing…');
+      try {
+        const r = await fetch('/api/campaign/pause', { method: 'POST' });
+        if (r.ok) {
+          if (typeof showCampaignToast === 'function') showCampaignToast('Pausing…');
+          if (typeof pollStatus === 'function') pollStatus();
+        } else {
+          if (typeof showCampaignToast === 'function') showCampaignToast('Pause/resume failed');
+        }
+      } finally { restore(); }
     }
   } catch (err) { console.error('[v3] dashPauseActive:', err); }
 };
@@ -32132,9 +32167,10 @@ window.dashStopActive = async function() {
   }
 };
 
-window.dashRestartActive = async function() {
+window.dashRestartActive = async function(btn) {
   if (_activeCardCloudId()) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return; }
   if (!confirm('Restart this campaign from the beginning? Progress will reset.')) return;
+  const restore = busyButton(btn, 'Restarting…');
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
@@ -32162,9 +32198,11 @@ window.dashRestartActive = async function() {
     if (typeof pollStatus === 'function') pollStatus();
     if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
   } catch (err) { console.error('[v3] dashRestartActive:', err); }
+  finally { restore(); }
 };
 
-window.dashCopyActiveToQueue = async function() {
+window.dashCopyActiveToQueue = async function(btn) {
+  const restore = busyButton(btn, 'Copying…');
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
@@ -32188,6 +32226,7 @@ window.dashCopyActiveToQueue = async function() {
     if (typeof showCampaignToast === 'function') showCampaignToast('Copied "' + (s.name || '') + '" to queue');
     if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
   } catch (err) { console.error('[v3] dashCopyActiveToQueue:', err); }
+  finally { restore(); }
 };
 
 // v2.78: Run check now → ask scope (this campaign's accounts vs all senders in
@@ -32442,8 +32481,9 @@ window.toggleMonitorDetails = function(btn) {
   if (btn) btn.setAttribute('data-tip', opening ? 'Hide details' : 'Show details');
 };
 
-window.dashStopMonitoring = async function() {
+window.dashStopMonitoring = async function(btn) {
   if (!confirm('Stop monitoring? Remaining unaccepted leads will be stamped Closed.')) return;
+  const restore = busyButton(btn, 'Stopping…');
   try {
     const r = await fetch('/api/monitoring/stop', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -32454,9 +32494,11 @@ window.dashStopMonitoring = async function() {
     }
     if (typeof pollStatus === 'function') pollStatus();
   } catch (err) { console.error('[v3] dashStopMonitoring:', err); }
+  finally { restore(); }
 };
 
-window.dashForceSweep = async function() {
+window.dashForceSweep = async function(btn) {
+  const restore = busyButton(btn, 'Starting…');
   try {
     const r = await fetch('/api/monitoring/check-now', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -32467,9 +32509,11 @@ window.dashForceSweep = async function() {
     }
     if (typeof pollStatus === 'function') pollStatus();
   } catch (err) { console.error('[v3] dashForceSweep:', err); }
+  finally { restore(); }
 };
 
-window.dashCopyMonitorToQueue = async function() {
+window.dashCopyMonitorToQueue = async function(btn) {
+  const restore = busyButton(btn, 'Copying…');
   try {
     const r = await fetch('/api/monitoring/state');
     const m = await r.json();
@@ -32493,6 +32537,7 @@ window.dashCopyMonitorToQueue = async function() {
     if (typeof showCampaignToast === 'function') showCampaignToast('Copied to queue');
     if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
   } catch (err) { console.error('[v3] dashCopyMonitorToQueue:', err); }
+  finally { restore(); }
 };
 
 /* ── Up Next deck ───────────────────────────────────────────────────────── */
@@ -33168,7 +33213,7 @@ function v3RenderPastRow(p, displayIdx, safe) {
       ${monitoringChipHtml(oIdx, p)}
       <div class="dock" id="${dockId}" role="toolbar" aria-label="${safe(p.name || '')} actions">
         ${isStopped && p.settings ? `<button class="dock-btn" data-tip="Resume" aria-label="Resume" onclick="window.dashResumePast(${oIdx})">${V3_SVG_PLAY}</button>` : ''}
-        <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx})">${V3_SVG_RESTART}</button>
+        <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx}, this)">${V3_SVG_RESTART}</button>
         <div class="dock-actions">
           <button class="dock-btn" data-tip="Open log" aria-label="Open log" onclick="window.dashOpenPastLog(${oIdx})">${V3_SVG_DOC}</button>
           ${isStopped && p.settings ? `<button class="dock-btn" data-tip="Edit &amp; resume" aria-label="Edit and resume" onclick="window.dashEditResumePast(${oIdx})">${V3_SVG_PENCIL}</button>` : ''}
@@ -33277,7 +33322,8 @@ window.saveEditsAndResume = async function() {
   }
 };
 
-window.dashRerunPast = async function(originalIdx) {
+window.dashRerunPast = async function(originalIdx, btn) {
+  const restore = busyButton(btn, 'Rerunning…');
   try {
     const r = await fetch('/api/history/' + originalIdx + '/relaunch', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -33298,6 +33344,7 @@ window.dashRerunPast = async function(originalIdx) {
       if (typeof showCampaignToast === 'function') showCampaignToast('Rerun failed: ' + (body.error || r.statusText));
     }
   } catch (err) { console.error('[v3] dashRerunPast:', err); }
+  finally { restore(); }
 };
 
 window.dashOpenPastLog = async function(originalIdx) {
@@ -33478,7 +33525,7 @@ window.deleteAllPast = async function() {
 };
 
 // Bug 13: clear the whole queue (per-item Remove already exists on each card).
-window.dashClearQueue = async function() {
+window.dashClearQueue = async function(btn) {
   let items = [];
   try {
     const r = await fetch('/api/queue');
@@ -33487,13 +33534,16 @@ window.dashClearQueue = async function() {
   } catch (err) { console.warn('[v3] dashClearQueue fetch', err); }
   if (items.length === 0) return;
   if (!confirm(`Clear all ${items.length} queued campaign${items.length === 1 ? '' : 's'}?`)) return;
-  for (const q of items) {
-    if (!q || !q.id) continue;
-    try { await fetch('/api/queue/' + encodeURIComponent(q.id), { method: 'DELETE' }); }
-    catch (err) { console.warn('[v3] dashClearQueue delete', q.id, err); }
-  }
-  if (typeof showCampaignToast === 'function') showCampaignToast('Queue cleared');
-  if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  const restore = busyButton(btn, 'Clearing…');
+  try {
+    for (const q of items) {
+      if (!q || !q.id) continue;
+      try { await fetch('/api/queue/' + encodeURIComponent(q.id), { method: 'DELETE' }); }
+      catch (err) { console.warn('[v3] dashClearQueue delete', q.id, err); }
+    }
+    if (typeof showCampaignToast === 'function') showCampaignToast('Queue cleared');
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } finally { restore(); }
 };
 
 // toggleDock — shared dock open/close + click-outside dismissal. Used by Active,

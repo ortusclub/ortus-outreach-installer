@@ -437,14 +437,14 @@
                exactly where the dock icon used to be. -->
           <button class="btn-pill stop" id="btn-active-stop" onclick="window.dashStopActive()">Stop campaign</button>
           <div class="dock" id="dock-active" role="toolbar" aria-label="Active campaign actions">
-            <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="window.dashPauseActive()">
+            <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="window.dashPauseActive(this)">
               <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
             </button>
             <div class="dock-actions">
-              <button class="dock-btn" data-tip="Restart" aria-label="Restart" onclick="window.dashRestartActive()">
+              <button class="dock-btn" data-tip="Restart" aria-label="Restart" onclick="window.dashRestartActive(this)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
               </button>
-              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyActiveToQueue()">
+              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyActiveToQueue(this)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               </button>
             </div>
@@ -558,13 +558,13 @@
           </button>
           <div class="dock" id="dock-monitor" role="toolbar" aria-label="Monitoring campaign actions">
             <div class="dock-actions">
-              <button class="dock-btn danger" data-tip="Stop watch" aria-label="Stop watch" onclick="window.dashStopMonitoring()">
+              <button class="dock-btn danger" data-tip="Stop watch" aria-label="Stop watch" onclick="window.dashStopMonitoring(this)">
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
               </button>
-              <button class="dock-btn" data-tip="Force sweep now" aria-label="Force sweep now" onclick="window.dashForceSweep()">
+              <button class="dock-btn" data-tip="Force sweep now" aria-label="Force sweep now" onclick="window.dashForceSweep(this)">
                 <svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
               </button>
-              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyMonitorToQueue()">
+              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyMonitorToQueue(this)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               </button>
             </div>
@@ -579,7 +579,7 @@
           <div class="vj-bulk">
             <div class="vj-details-head">Bulk check connection</div>
             <div class="vj-bulk-status">Last sweep · <b id="monitorBulkLast">—</b> · <span id="monitorBulkNew">0</span> newly accepted</div>
-            <button class="vj-bulk-btn" onclick="window.dashForceSweep()">
+            <button class="vj-bulk-btn" onclick="window.dashForceSweep(this)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
               Force sweep now
             </button>
@@ -593,7 +593,7 @@
         <div class="section-rail">
           <h2 id="sect-queue">Up Next <small><span id="queueCount">0</span> waiting</small></h2>
           <div class="section-rail-line"></div>
-          <button class="section-rail-action" id="queue-clear-btn" onclick="window.dashClearQueue()" hidden>Clear all</button>
+          <button class="section-rail-action" id="queue-clear-btn" onclick="window.dashClearQueue(this)" hidden>Clear all</button>
           <button class="section-rail-action" onclick="window.startNewCampaign()">+ Add to queue</button>
         </div>
         <div role="grid" aria-labelledby="sect-queue" id="queueList"><!-- Phase 4 fills --></div>
@@ -2231,6 +2231,10 @@
   #app-busy .ab-card{display:flex;align-items:center;gap:13px;background:var(--card-bg);border:1px solid var(--hairline);border-radius:9999px;padding:13px 22px 13px 18px;box-shadow:0 8px 30px rgba(0,0,0,0.12);}
   #app-busy .ab-sp{width:17px;height:17px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
   #app-busy .ab-txt{font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:12px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink);}
+  /* In-place button busy state (busyButton helper) — spinner inside the button */
+  .btn-sp{display:inline-block;width:13px;height:13px;border:2px solid currentColor;border-top-color:transparent;border-radius:9999px;animation:sn-spin .7s linear infinite;vertical-align:middle;opacity:.65;flex:0 0 auto;}
+  .btn-sp-lbl{margin-left:7px;vertical-align:middle;}
+  .is-busy{opacity:.75;cursor:default;pointer-events:none;display:inline-flex;align-items:center;justify-content:center;}
   @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) #app-busy{background:rgba(0,0,0,0.45);} }
   :root[data-theme="dark"] #app-busy{background:rgba(0,0,0,0.45);}
   .snm-card{box-sizing:border-box;background:var(--card-bg);border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
@@ -3663,7 +3667,7 @@
           <textarea id="pe-template-body" rows="5"></textarea>
         </div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px">
-          <button type="button" class="btn btn-secondary btn-sm" id="resume-reload-sheet" onclick="reloadSheetWhilePaused()">&#x27F3; Reload from sheet</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="resume-reload-sheet" onclick="reloadSheetWhilePaused(this)">&#x27F3; Reload from sheet</button>
           <button type="button" id="pe-apply" class="btn btn-secondary btn-sm">Apply changes</button>
         </div>
       </div>
