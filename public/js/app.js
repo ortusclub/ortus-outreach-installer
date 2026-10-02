@@ -4896,6 +4896,26 @@ async function pollScrapeJobs() {
 // Render the launch console (Jobs pane + progress card + Queue tab + dock) from
 // a job list. Shared by the session-scoped poll above and the opened-scrape view,
 // so an opened running scrape shows the same live numbers as its board strip.
+// Split a scrape's jobs into separate RUNS so a re-scrape reads as "Run 1 / Run 2"
+// instead of one mixed list. Jobs sharing a run_ id are one run (a launch stamps
+// all its jobs with the same id); older jobs — each with its own id — are split by
+// a gap in creation time (one launch fires its searches together, seconds apart).
+function _groupScrapeRuns(jobs) {
+  const list = (jobs || []).slice().sort((a, b) => (Number(a && a.createdAt) || 0) - (Number(b && b.createdAt) || 0));
+  const GAP = 5 * 60 * 1000;
+  const runs = [];
+  for (const j of list) {
+    const rid = String((j && j.runId) || '');
+    const shared = /^run_/.test(rid);
+    const g = runs[runs.length - 1];
+    const same = g && (shared ? g.runId === rid : (!g.runId && ((Number(j.createdAt) || 0) - g.lastAt) <= GAP));
+    if (!same) runs.push({ runId: shared ? rid : null, jobs: [j], firstAt: Number(j && j.createdAt) || 0, lastAt: Number(j && j.createdAt) || 0 });
+    else { g.jobs.push(j); g.lastAt = Number(j.createdAt) || g.lastAt; }
+  }
+  return runs;
+}
+if (typeof window !== 'undefined') window._groupScrapeRuns = _groupScrapeRuns;
+
 function _renderScrapeConsole(jobs, el) {
   el = el || document.getElementById('scrape-jobs');
   if (!el) return;
@@ -4911,7 +4931,7 @@ function _renderScrapeConsole(jobs, el) {
   {
     const statClass = (s) => (s === 'error' || s === 'cancelled') ? 'err'
       : (s === 'done' ? 'done' : (s === 'running' ? 'running' : ''));
-    el.innerHTML = jobs.map((j) => {
+    const rowHtml = (j) => {
       const leads = j.profiles || 0;
       const leadsHtml = leads > 0 ? `<span class="leads">${leads} lead${leads === 1 ? '' : 's'}</span>` : `${leads} leads`;
       const label = (j.tabName || j.searchLabel || j.searchUrl || j.id || 'job');
@@ -4932,7 +4952,23 @@ function _renderScrapeConsole(jobs, el) {
           <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(stateLabel)} · ${j.pages || 0}p · ${leadsHtml}</span>
           ${viewBtn}
         </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
-    }).join('');
+    };
+    // When a scrape was re-run, separate the runs with a header so "1st scrape" and
+    // "2nd scrape" are clearly distinct instead of one lumped-together list. A
+    // single-run scrape renders exactly as before (no header).
+    const runs = _groupScrapeRuns(jobs);
+    if (runs.length > 1) {
+      el.innerHTML = runs.map((run, i) => {
+        const rLeads = run.jobs.reduce((a, j) => a + (j.profiles || 0), 0);
+        const n = run.jobs.length;
+        let when = '';
+        try { when = run.firstAt ? new Date(run.firstAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''; } catch (_) { /* */ }
+        const head = `<div class="scrape-run-head"><span class="scrape-run-no">Run ${i + 1}</span>${when ? `<span class="scrape-run-when">${escHtml(when)}</span>` : ''}<span class="scrape-run-meta">${rLeads.toLocaleString()} lead${rLeads === 1 ? '' : 's'} · ${n} search${n === 1 ? '' : 'es'}</span></div>`;
+        return head + run.jobs.map(rowHtml).join('');
+      }).join('');
+    } else {
+      el.innerHTML = jobs.map(rowHtml).join('');
+    }
     const totalLeads = jobs.reduce((a, j) => a + (j.profiles || 0), 0);
     const totalPages = jobs.reduce((a, j) => a + (j.pages || 0), 0);
     const accounts = new Set(jobs.map((j) => j.profileId).filter(Boolean)).size;

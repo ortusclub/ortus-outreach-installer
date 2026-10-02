@@ -3355,6 +3355,12 @@
         .scrape-job-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 16px; border-bottom:1px solid var(--hairline-soft); font-size:13px; }
         .scrape-job-row:last-child { border-bottom:0; }
         .scrape-job-name { font-weight:500; color:var(--ink); }
+        /* Run separator — shown only when a scrape was re-run (Run 1 / Run 2 …) */
+        .scrape-run-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:11px 16px 7px; border-top:1px solid var(--hairline-soft); background:rgba(0,0,0,0.015); }
+        .scrape-run-head:first-child { border-top:0; }
+        .scrape-run-no { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:700; color:var(--ink); }
+        .scrape-run-when { font-size:11px; color:var(--gray); }
+        .scrape-run-meta { margin-left:auto; font-size:11px; color:var(--gray); }
         .scrape-job-acct { display:inline-block; margin-left:8px; font-weight:400; font-size:11px; color:var(--gray); }
         .scrape-job-acct::before { content:"· "; }
         .scrape-job-stat { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:12px; color:var(--gray); white-space:nowrap; }
