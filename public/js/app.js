@@ -9973,6 +9973,37 @@ function busyButton(el, label) {
 }
 if (typeof window !== 'undefined') window.busyButton = busyButton;
 
+// Build a wizard config from the engine's campaign record so an opened campaign
+// shows its real Sheet, accounts and templates — not blank. The DB record keeps
+// the full config even when the launch-config snapshot is gone (GGL had none),
+// but FLAT; applyPresetConfig wants sheet/accounts/mode/delays at the top level
+// and the message fields nested under `templates`. Place every config field in
+// BOTH locations so whichever one applyPresetConfig reads finds the value.
+function _wizardConfigFromCloudCampaign(cc) {
+  if (!cc) return null;
+  const raw = (cc.config && typeof cc.config === 'object') ? cc.config : {};
+  return {
+    ...raw,
+    templates: { ...raw, ...(raw.templates || {}) },
+    mode: cc.mode || raw.mode || '',
+    sheetUrl: cc.sheet_url || raw.sheetUrl || '',
+    profileIds: Array.isArray(cc.profile_ids) ? cc.profile_ids : (raw.profileIds || []),
+    dailyLimit: (cc.daily_limit != null) ? cc.daily_limit : raw.dailyLimit,
+    checkIntervalMinutes: cc.check_interval_minutes || raw.checkIntervalMinutes,
+  };
+}
+
+// Prefill the wizard from the opened cloud campaign's detail (cached by
+// _refreshCloudActiveStatus). Best-effort: a blank wizard is the fallback.
+function _prefillCloudCampaignWizard(id) {
+  try {
+    const det = (typeof _cloudDetailCache !== 'undefined' && _cloudDetailCache.get(id)) || null;
+    const cfg = _wizardConfigFromCloudCampaign(det && det.campaign);
+    if (cfg && typeof applyPresetConfig === 'function') { applyPresetConfig(cfg); return true; }
+  } catch (_) { /* leave the wizard blank rather than break the open */ }
+  return false;
+}
+
 // Seed the wizard's name field to the campaign being viewed (openCloudLive reuses
 // the #/new page, whose name field otherwise keeps the PREVIOUSLY-opened name —
 // operator saw "APHI…" while opening "GGL…"). The one-shot override also stops
@@ -10006,6 +10037,8 @@ async function openCloudLive(id) {
     return;
   }
   _seedCloudLiveName((window.__cloudActiveStatus && window.__cloudActiveStatus.name) || '');  // refine from the detail
+  _prefillCloudCampaignWizard(id);        // fill Sheet / accounts / templates (was blank)
+  _seedCloudLiveName((window.__cloudActiveStatus && window.__cloudActiveStatus.name) || '');  // re-assert after applyPresetConfig
   setTimeout(() => {
     try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
     try { syncLiveStatusVisibility(); } catch (_) { /* */ }
