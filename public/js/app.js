@@ -996,6 +996,10 @@ async function rerunScrape(cid, btn) {
       return;
     }
     toast(`Re-running “${campaignName}” — ${urls.length} job${urls.length === 1 ? '' : 's'} on ${accts.length} account${accts.length === 1 ? '' : 's'}…`);
+    // Shared runId + full account pool so the engine can fail a dead account's
+    // URLs over to a surviving selected account (see startScrapeJob).
+    const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const accountPool = [...accts];
     let started = 0; const errors = [];
     for (let i = 0; i < urls.length; i++) {
       const profileId = accts[i % accts.length];              // round-robin URL→account, like startScrapeJob
@@ -1005,7 +1009,7 @@ async function rerunScrape(cid, btn) {
       try {
         const rr = await fetch('/api/scrape/start', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode: false, campaignName, accountName }),
+          body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode: false, campaignName, accountName, runId, accountPool }),
         });
         const res = await rr.json();
         if (res && res.error) errors.push(res.error); else started++;
@@ -4305,6 +4309,12 @@ async function startScrapeJob() {
   // Pair each URL with an account (round-robin when counts differ); each pair
   // is its own single-URL job so the engine runs them concurrently — one
   // browser per profile.
+  // One shared runId groups this launch's per-URL jobs, and accountPool is the
+  // FULL set of selected accounts — so if one account turns out to have no Sales
+  // Nav seat / is logged out, the engine can fail its URLs over to a surviving
+  // selected account instead of dropping them.
+  const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const accountPool = [...accts];
   let started = 0;
   const errors = [];
   for (let i = 0; i < urls.length; i++) {
@@ -4318,7 +4328,7 @@ async function startScrapeJob() {
       const r = await fetch('/api/scrape/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode, campaignName, accountName }),
+        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode, campaignName, accountName, runId, accountPool }),
       });
       const res = await r.json();
       if (res && res.error) errors.push(`URL ${i + 1}: ${res.error}`);

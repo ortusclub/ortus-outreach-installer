@@ -5884,7 +5884,7 @@ function boardIdForLaunch({ sheetUrl, tabName, campaignName }) {
 }
 
 app.post('/api/scrape/start', async (req, res) => {
-  const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName, accountName } = req.body || {};
+  const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName, accountName, runId, accountPool } = req.body || {};
   // Blocklisted people the engine must skip mid-scrape. Only URN-form entries
   // can be matched against a search result (which carries a memberUrn, not a
   // vanity slug); vanity-only entries still block at send-out via pre-flight.
@@ -5908,6 +5908,11 @@ app.post('/api/scrape/start', async (req, res) => {
     ownerEmail: getOperatorEmail() || '', campaignName: campaignName || '',
     excludeUrns, excludeCompanies,
     accountName: accountName || '',
+    // runId groups a launch's per-URL submissions; accountPool is the full
+    // selected-account set, so the engine can fail a dead account's work over to
+    // a surviving one instead of stopping it.
+    runId: runId || '',
+    accountPool: Array.isArray(accountPool) ? accountPool : [],
   });
   // Dispatch was the single biggest blind spot: WHAT was asked for (search URL,
   // GoLogin profile, destination sheet + tab) was never written down anywhere,
