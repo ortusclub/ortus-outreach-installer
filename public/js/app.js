@@ -560,6 +560,7 @@ function renderStrip(c) {
     const st = j.state === 'running' ? `<span class="dot run"></span> Running · ${j.profiles || 0} rows`
       : j.state === 'done' ? `<span class="dot mon"></span> Done · ${j.profiles || 0} rows`
       : j.state === 'error' ? `<span class="dot red"></span> Error`
+      : j.state === 'rerouted' ? `<span class="dot mon"></span> Moved to another account`
       : `<span class="dot q"></span> Queued`;
     return `<div class="job"><div><div class="jt">${escHtml(label)}</div></div><div class="jstat">${st}</div></div>`;
   }).join('') || '<div class="sn-empty">No jobs.</div>';
@@ -4755,9 +4756,12 @@ async function pollScrapeJobs() {
       const viewBtn = j.state === 'running'
         ? `<button class="btn btn-ghost btn-sm scrape-job-view" onclick="openScrapeJobView('${escHtml(j.id)}','${jLabel}')" title="Watch this account's browser live">👁 View</button>`
         : '';
+      // "rerouted" = this search was moved off a dead account (no seat / logged
+      // out) onto a surviving selected account; show it as "moved", not the raw state.
+      const stateLabel = j.state === 'rerouted' ? 'moved to another account' : (j.state || '');
       return `<div class="scrape-job-row">
           <span class="scrape-job-name">${escHtml(label)}</span>
-          <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(j.state || '')} · ${j.pages || 0}p · ${leadsHtml}</span>
+          <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(stateLabel)} · ${j.pages || 0}p · ${leadsHtml}</span>
           ${viewBtn}
         </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
     }).join('');
