@@ -4635,6 +4635,16 @@ function _scrapeEtaText(ms) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
+// One ladder row. `label` is pre-escaped by the caller (it may be a tab name);
+// `pos`/`sub`/`eta` are escaped here. `play` renders a ▶ node instead of a number.
+const _Q_PLAY = '<svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"><path d="M2 1.3l6 3.7-6 3.7z" fill="currentColor"/></svg>';
+function _qSlotHtml({ cls = '', pos = '', play = false, label = '', sub = '', eta = '' }) {
+  const node = `<span class="q-pos">${play ? _Q_PLAY : escHtml(String(pos))}</span>`;
+  const subHtml = sub ? `<span class="q-sub">${escHtml(sub)}</span>` : '';
+  const etaHtml = eta ? `<span class="q-eta">${escHtml(eta)}</span>` : '';
+  return `<div class="q-slot${cls ? ' ' + cls : ''}">${node}<span class="q-label"><span>${label}</span>${subHtml}</span>${etaHtml}</div>`;
+}
+
 // Build the ladder for one queued job: running → (collapsed middle) → the slot
 // directly ahead → you. Never exceeds 4 rows.
 function _scrapeLadderHtml(j) {
@@ -4643,6 +4653,7 @@ function _scrapeLadderHtml(j) {
   const youLabel = escHtml(String(j.tabName || j.searchUrl || 'Your job'));
   const eta = _scrapeEtaText(j.etaMs);
   const rows = [];
+  const midRow = (n) => `<div class="q-slot is-mid">${n} more account${n === 1 ? '' : 's'} ahead</div>`;
 
   // Named path: when the engine supplies `ahead` (ordered front→you, index 0 =
   // the account scraping now), render real account names. Collapses the middle
@@ -4653,36 +4664,40 @@ function _scrapeLadderHtml(j) {
       const running = a.state === 'running' || idx === 0;
       const name = escHtml(String(a.label || a.account || a.operator || 'Account'));
       const e = _scrapeEtaText(a.etaMs);
-      return `<div class="q-slot${running ? ' is-running' : ''}"><span class="q-pos">${running ? '▶' : '#' + (idx + 1)}</span> ${name}${running ? ' — scraping now' : ' — ahead of you'} <span class="q-eta">${running ? 'running' : (e ? '~' + e : '')}</span></div>`;
+      return _qSlotHtml({
+        cls: running ? 'is-running' : '', pos: '#' + (idx + 1), play: running,
+        label: name, sub: running ? 'scraping now' : 'ahead of you',
+        eta: running ? 'running' : (e ? '~' + e : ''),
+      });
     };
     if (list.length <= 3) {
       list.forEach((a, idx) => rows.push(slot(a, idx)));
     } else {
       rows.push(slot(list[0], 0));
-      rows.push(`<div class="q-slot is-mid">${list.length - 2} more account${list.length - 2 === 1 ? '' : 's'} ahead</div>`);
+      rows.push(midRow(list.length - 2));
       rows.push(slot(list[list.length - 1], list.length - 1));
     }
-    rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos || (list.length + 1)}</span> ${youLabel} — your job <span class="q-eta">${eta ? 'est. ~' + eta : ''}</span></div>`);
+    rows.push(_qSlotHtml({ cls: 'is-you', pos: '#' + (pos || (list.length + 1)), label: youLabel, sub: 'your job', eta: eta ? 'est. ~' + eta : '' }));
     return `<div class="q-ladder">${rows.join('')}</div>`;
   }
 
   if (ahead <= 0) {
-    rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos || 1}</span> ${youLabel} — your job <span class="q-eta">you're next ↑</span></div>`);
+    rows.push(_qSlotHtml({ cls: 'is-you', pos: '#' + (pos || 1), label: youLabel, sub: 'your job', eta: "you're next" }));
     return `<div class="q-ladder">${rows.join('')}</div>`;
   }
-  rows.push(`<div class="q-slot is-running"><span class="q-pos">▶</span> An account is scraping now <span class="q-eta">running</span></div>`);
+  rows.push(_qSlotHtml({ cls: 'is-running', play: true, label: 'An account is scraping now', eta: 'running' }));
   const waiting = ahead - 1; // ahead of you, excluding the one running now
   if (waiting > 2) {
-    rows.push(`<div class="q-slot is-mid">${waiting - 1} more account${waiting - 1 === 1 ? '' : 's'} ahead</div>`);
-    rows.push(`<div class="q-slot"><span class="q-pos">#${pos - 1}</span> Account ahead of you <span class="q-eta">${eta ? '~' + eta : ''}</span></div>`);
+    rows.push(midRow(waiting - 1));
+    rows.push(_qSlotHtml({ pos: '#' + (pos - 1), label: 'Account ahead of you', eta: eta ? '~' + eta : '' }));
   } else {
     for (let k = 0; k < waiting; k++) {
       const slotPos = pos - waiting + k;
       const isLast = k === waiting - 1;
-      rows.push(`<div class="q-slot"><span class="q-pos">#${slotPos}</span> Account ahead of you <span class="q-eta">${isLast && eta ? '~' + eta : ''}</span></div>`);
+      rows.push(_qSlotHtml({ pos: '#' + slotPos, label: 'Account ahead of you', eta: isLast && eta ? '~' + eta : '' }));
     }
   }
-  rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos}</span> ${youLabel} — your job <span class="q-eta">${eta ? 'est. ~' + eta : ''}</span></div>`);
+  rows.push(_qSlotHtml({ cls: 'is-you', pos: '#' + pos, label: youLabel, sub: 'your job', eta: eta ? 'est. ~' + eta : '' }));
   return `<div class="q-ladder">${rows.join('')}</div>`;
 }
 
