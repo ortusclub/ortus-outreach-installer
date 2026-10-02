@@ -4845,6 +4845,22 @@ window.toggleDashScrapeStrip = (elStrip) => {
 // current run, not older runs grouped under the same scrape name/sheet/tab
 // (re-running "TEST" used to show last run's failed accounts alongside the new one).
 let _scrapeViewRunId = null;
+// Collapsible run groups in the Jobs pane. _scrapeRunSeen = run keys we've applied
+// the default (past runs closed) to once; _scrapeRunCollapsed = keys currently
+// collapsed (default + the operator's toggles), persisted across re-renders.
+const _scrapeRunSeen = new Set();
+const _scrapeRunCollapsed = new Set();
+function _toggleScrapeRun(key) {
+  const nowCollapsed = !_scrapeRunCollapsed.has(key);
+  if (nowCollapsed) _scrapeRunCollapsed.add(key); else _scrapeRunCollapsed.delete(key);
+  // Flip the DOM immediately (the next poll re-renders from the set anyway).
+  try {
+    const sel = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(key) : key.replace(/"/g, '\\"');
+    document.querySelectorAll(`.scrape-run-head[data-runkey="${sel}"]`).forEach((h) => h.classList.toggle('is-collapsed', nowCollapsed));
+    document.querySelectorAll(`.scrape-run-jobs[data-runkey="${sel}"]`).forEach((b) => { b.hidden = nowCollapsed; });
+  } catch (_) { /* */ }
+}
+if (typeof window !== 'undefined') window._toggleScrapeRun = _toggleScrapeRun;
 // Scope a job list to ONE launch — but only when we're watching that launch
 // (Start / Re-run set _scrapeViewRunId). Opening an existing scrape passes no
 // runId and shows ALL its runs, so the pane matches the board card's totals:
@@ -4958,13 +4974,28 @@ function _renderScrapeConsole(jobs, el) {
     // single-run scrape renders exactly as before (no header).
     const runs = _groupScrapeRuns(jobs);
     if (runs.length > 1) {
+      // Each run is a collapsible dropdown. Default: earlier runs closed, only the
+      // CURRENT (latest) run open — so a re-scrape doesn't bury the live run under
+      // old ones. Seed that default once per run key; the operator's own toggles
+      // persist across the 2.5s re-render via _scrapeRunCollapsed.
+      runs.forEach((run, i) => {
+        const k = run.runId || ('ts:' + run.firstAt);
+        if (!_scrapeRunSeen.has(k)) { _scrapeRunSeen.add(k); if (i < runs.length - 1) _scrapeRunCollapsed.add(k); }
+      });
       el.innerHTML = runs.map((run, i) => {
+        const k = run.runId || ('ts:' + run.firstAt);
+        const collapsed = _scrapeRunCollapsed.has(k);
         const rLeads = run.jobs.reduce((a, j) => a + (j.profiles || 0), 0);
         const n = run.jobs.length;
         let when = '';
         try { when = run.firstAt ? new Date(run.firstAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''; } catch (_) { /* */ }
-        const head = `<div class="scrape-run-head"><span class="scrape-run-no">Run ${i + 1}</span>${when ? `<span class="scrape-run-when">${escHtml(when)}</span>` : ''}<span class="scrape-run-meta">${rLeads.toLocaleString()} lead${rLeads === 1 ? '' : 's'} · ${n} search${n === 1 ? '' : 'es'}</span></div>`;
-        return head + run.jobs.map(rowHtml).join('');
+        const ek = String(k).replace(/'/g, '&#39;');
+        const head = `<div class="scrape-run-head${collapsed ? ' is-collapsed' : ''}" data-runkey="${escHtml(k)}" onclick="_toggleScrapeRun('${ek}')">`
+          + `<svg class="scrape-run-caret" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></svg>`
+          + `<span class="scrape-run-no">Run ${i + 1}</span>${when ? `<span class="scrape-run-when">${escHtml(when)}</span>` : ''}`
+          + `<span class="scrape-run-meta">${rLeads.toLocaleString()} lead${rLeads === 1 ? '' : 's'} · ${n} search${n === 1 ? '' : 'es'}</span></div>`;
+        const body = `<div class="scrape-run-jobs" data-runkey="${escHtml(k)}"${collapsed ? ' hidden' : ''}>${run.jobs.map(rowHtml).join('')}</div>`;
+        return head + body;
       }).join('');
     } else {
       el.innerHTML = jobs.map(rowHtml).join('');
@@ -5003,6 +5034,7 @@ function _renderScrapeConsole(jobs, el) {
     _syncScrapeDock(jobs);
   }
 }
+if (typeof window !== 'undefined') window._renderScrapeConsole = _renderScrapeConsole;
 
 // Adapt the launch-console dock to the live state: when a job is already
 // running/queued, HIDE "Start Scrape" (starting again would launch a duplicate)
