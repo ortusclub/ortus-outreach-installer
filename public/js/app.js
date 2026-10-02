@@ -264,11 +264,55 @@ function _snShowScrapeRollover(campaigns, stopped, started) {
 // by ownership (strips are engine-derived; there's no local record to look up).
 const _snStrips = new Map();
 
+// ── Sheet-not-shared alert ──────────────────────────────────────────────────
+// When a scrape can't write because its destination Google Sheet isn't shared
+// with the Scraper service account, the engine stops the whole scrape and stamps
+// the jobs with an actionable error. Operators shouldn't have to dig through the
+// Logs tab for it — surface it as a one-time popup + a persistent card note.
+const SCRAPER_SA_EMAIL = 'scraper@salesnav-scraper-prod.iam.gserviceaccount.com';
+function _isSheetPermError(err) {
+  return /not shared with the (?:scraper )?service account|sheet permission denied|isn.?t shared with the service account/i.test(String(err || ''));
+}
+const _sheetPermAlerted = new Set(); // cids already popped this session (don't nag every 2.5s poll)
+function _snDetectSheetPermError(campaigns) {
+  for (const c of (campaigns || [])) {
+    if (!c || !c.mine) continue;                 // only MY scrapes — not other operators'
+    if (_sheetPermAlerted.has(c.id)) continue;
+    if (!(c.jobs || []).some((j) => _isSheetPermError(j && j.error))) continue;
+    _sheetPermAlerted.add(c.id);
+    try { showSheetPermModal(c); } catch (_) { /* */ }
+  }
+}
+function _copySvcAccount(btn) {
+  try { navigator.clipboard.writeText(SCRAPER_SA_EMAIL); } catch (_) { /* */ }
+  if (btn) { const t = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => { try { btn.textContent = t; } catch (_) { /* */ } }, 1600); }
+}
+window._copySvcAccount = _copySvcAccount;
+function _closeSheetPermModal() { const el = document.getElementById('sheet-perm-modal'); if (el) el.classList.remove('open'); }
+window._closeSheetPermModal = _closeSheetPermModal;
+function showSheetPermModal(c) {
+  let el = document.getElementById('sheet-perm-modal');
+  if (!el) { el = document.createElement('div'); el.id = 'sheet-perm-modal'; document.body.appendChild(el); }
+  const tab = (c && c.tabName) ? ` · tab "${escHtml(c.tabName)}"` : '';
+  const nm = escHtml((c && (c.name || c.tabName)) || 'This scrape');
+  el.innerHTML = `
+    <div class="spm-card" role="alertdialog" aria-labelledby="spm-t">
+      <div class="spm-title" id="spm-t">Can't write to your sheet</div>
+      <div class="spm-text"><b>${nm}</b>${tab} was stopped — its Google Sheet isn't shared with the Scraper service account, so nothing could be saved.</div>
+      <div class="spm-step">Share the sheet as <b>Editor</b> with this address, then run the scrape again:</div>
+      <div class="spm-email"><code>${SCRAPER_SA_EMAIL}</code><button type="button" class="spm-copy" onclick="_copySvcAccount(this)">Copy</button></div>
+      <div class="spm-row"><button type="button" class="spm-btn solid" onclick="_closeSheetPermModal()">Got it</button></div>
+    </div>`;
+  el.classList.add('open');
+}
+window.showSheetPermModal = showSheetPermModal;
+
 let _snLastCampaigns = null; // last rendered board data — for optimistic re-renders
 function renderSalesNavBoard(campaigns) {
   campaigns = (campaigns || []).map(_snEnrich); // backfill name/owner/profiles the engine dropped
   campaigns = (campaigns || []).map(_snEnrich).filter(c => _viewerIsAdmin || c.mine);
   _snLastCampaigns = campaigns;
+  try { _snDetectSheetPermError(campaigns); } catch (_) { /* best-effort — never block the board */ }
   _snStampFinished(campaigns);
   _snStrips.clear();
   for (const c of campaigns) _snStrips.set(c.id, { profileIds: c.profileIds || [], tabName: c.tabName || '', owner: c.owner || '', mine: !!c.mine });
@@ -602,6 +646,12 @@ function renderStrip(c) {
       ${_sMoved ? `<span class="sn-sum-warn">${_sMoved} moved to another account</span>` : ''}
       ${_sErr ? `<span class="sn-sum-err">${_sErr} error${_sErr === 1 ? '' : 's'}</span>` : ''}
     </div>`;
+  // Persistent "sheet not shared" note on the card — the actionable fix, so it
+  // stays visible after the one-time popup is dismissed.
+  const _sheetPerm = (c.jobs || []).some((j) => _isSheetPermError(j && j.error));
+  const sheetPermBanner = _sheetPerm
+    ? `<div class="sn-sheetperm">⚠️ <b>Sheet not shared</b> — stopped because the destination sheet isn't shared with the Scraper service account. Share it (Editor) with <code>${SCRAPER_SA_EMAIL}</code> <button type="button" class="sn-sheetperm-copy" onclick="event.stopPropagation();_copySvcAccount(this)">Copy</button>, then re-run.</div>`
+    : '';
   const canOpen = !isQueued || _snCanControl(c);
   // Open → the scrape's setup WIZARD (config populated) with its live Activity log
   // at the bottom — the analogue of a campaign's Open → wizard-with-log. Available
@@ -677,6 +727,7 @@ function renderStrip(c) {
       <span class="sn-status">${isPaused ? '<span class="dot paused"></span>' : isBad ? '<span class="dot red"></span>' : _snStatusDot(c.status)} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(c.name || '')}</div>
     <div class="sn-flow">${flow}</div>
+    ${sheetPermBanner}
     ${progLine}
     ${summaryBlock}
     ${switchBlock}
