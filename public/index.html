@@ -2224,6 +2224,15 @@
   /* confirm modal (namespaced) */
   #snm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:50;}
   #snm-scrim.open{display:flex;}
+  /* Global "working…" overlay — immediate feedback for actions with a fetch delay
+     (Open a cloud campaign, etc.) so a click never looks like nothing happened. */
+  #app-busy{position:fixed;inset:0;background:rgba(255,255,255,0.55);backdrop-filter:blur(1.5px);-webkit-backdrop-filter:blur(1.5px);display:none;align-items:center;justify-content:center;z-index:120;}
+  #app-busy.open{display:flex;}
+  #app-busy .ab-card{display:flex;align-items:center;gap:13px;background:var(--card-bg);border:1px solid var(--hairline);border-radius:9999px;padding:13px 22px 13px 18px;box-shadow:0 8px 30px rgba(0,0,0,0.12);}
+  #app-busy .ab-sp{width:17px;height:17px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
+  #app-busy .ab-txt{font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:12px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink);}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) #app-busy{background:rgba(0,0,0,0.45);} }
+  :root[data-theme="dark"] #app-busy{background:rgba(0,0,0,0.45);}
   .snm-card{box-sizing:border-box;background:var(--card-bg);border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
   .snm-title{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 12px;letter-spacing:.02em;line-height:1;}
   .snm-text{font-size:13px;color:var(--gray);line-height:1.55;margin:0 0 22px;}

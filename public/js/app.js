@@ -9924,12 +9924,47 @@ function _adaptActiveCardControls(card, status) {
 // Cloud "Open" — go to the campaign tab and show THIS campaign's live status
 // campaign card (card #2), then scroll down to it. Same as a local Open.
 // Legacy dashboard action retained for saved markup; this edition opens locally.
+// Global "working…" overlay. Gives INSTANT feedback for any action that awaits a
+// fetch before the UI visibly changes (Open a cloud campaign seeds its card from
+// 3–4 engine calls first) — a click that looks like nothing happened was the #1
+// complaint. Self-protecting: auto-hides after maxMs, so a missed hideBusy() can
+// never leave the overlay stuck over the app.
+let _busyTimer = null;
+function showBusy(text = 'Opening…', maxMs = 8000) {
+  let el = document.getElementById('app-busy');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-busy';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.innerHTML = '<div class="ab-card"><span class="ab-sp" aria-hidden="true"></span><span class="ab-txt"></span></div>';
+    document.body.appendChild(el);
+  }
+  const t = el.querySelector('.ab-txt'); if (t) t.textContent = text;
+  el.classList.add('open');
+  if (_busyTimer) clearTimeout(_busyTimer);
+  _busyTimer = setTimeout(() => { try { hideBusy(); } catch (_) { /* */ } }, maxMs);
+}
+function hideBusy() {
+  const el = document.getElementById('app-busy');
+  if (el) el.classList.remove('open');
+  if (_busyTimer) { clearTimeout(_busyTimer); _busyTimer = null; }
+}
+if (typeof window !== 'undefined') { window.showBusy = showBusy; window.hideBusy = hideBusy; }
+
 async function openCloudLive(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
+  showBusy('Opening…');                   // instant feedback — the seed below takes a beat
   _viewingCloudId = id;
   liveStatusForcedOpen = true;
-  await _refreshCloudActiveStatus(id);   // seed the card before we reveal it
+  try {
+    await _refreshCloudActiveStatus(id);  // seed the card before we reveal it
+  } catch (e) {
+    hideBusy();
+    try { if (typeof showCampaignToast === 'function') showCampaignToast('Could not open this campaign — ' + (e && e.message || e), 4000); } catch (_) { /* */ }
+    return;
+  }
   goCreateCampaign();                     // → the campaign tab (#/new)
   setTimeout(() => {
     try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
@@ -9937,6 +9972,7 @@ async function openCloudLive(id) {
     try { placeLiveCard(); } catch (_) { /* */ }
     const sec = document.getElementById('nav-status');
     if (sec) { try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ } }
+    hideBusy();                           // card is placed + visible now
   }, 180);
   _startCloudCardPoll();
 }
@@ -13856,6 +13892,7 @@ function localCampaignViewStatus(incoming) {
 async function openRunningCampaignReadOnly(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
+  showBusy('Opening…');                   // instant feedback for the config fetch below
   let d = null;
   try {
     const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
@@ -13894,6 +13931,7 @@ async function openRunningCampaignReadOnly(id) {
   // again after those deferred events have run. The 5s cloud-card poll + wizard
   // route entry also re-assert (see _startCloudCardPoll, applyRoute).
   _enforceCloudReadOnlyView();
+  hideBusy();                             // wizard is revealed + bound now
   [120, 600, 1500].forEach((ms) => setTimeout(() => { try { _enforceCloudReadOnlyView(); } catch (_) { /* */ } }, ms));
 }
 window.openRunningCampaignReadOnly = openRunningCampaignReadOnly;
@@ -13944,6 +13982,7 @@ function _wireReadOnlyEditGuard() {
 // Campaigns launched before the launch-config snapshot existed fall back to the
 // live view.
 async function openCampaignForEditCloud(id) {
+  showBusy('Opening…');                   // instant feedback for the config fetch below
   let d = null;
   try {
     const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
@@ -14003,6 +14042,7 @@ async function openCampaignForEditCloud(id) {
   // v2.160.46: bind the LIVE STATUS panel to THIS campaign so it shows the one
   // just opened (not a previously-viewed campaign leaking in from below).
   _bindLiveStatusToCampaign(id);
+  hideBusy();                             // wizard is prefilled + revealed now
 }
 
 async function openCampaignForEdit(id) {
