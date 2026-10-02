@@ -3340,7 +3340,7 @@
         .scrape-log .err { color:#f85149; }
         .scrape-log-empty { color:#6e7681; }
         /* Footer dock. */
-        .ssc-foot { display:flex; align-items:center; justify-content:space-between; margin-top:20px; padding-top:18px; border-top:1px solid var(--hairline-soft); }
+        .ssc-foot { display:flex; align-items:center; justify-content:flex-end; margin-top:20px; padding-top:18px; border-top:1px solid var(--hairline-soft); }
         .ssc-foot-big { font-family:var(--display); font-size:40px; line-height:0.9; }
         .ssc-foot-cap { font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--gray); margin-top:4px; }
         .ssc-dock { display:flex; gap:10px; align-items:center; }
@@ -3423,10 +3423,6 @@
           </div>
 
           <div class="ssc-foot">
-            <div>
-              <div class="ssc-foot-big" id="scrape-foot-leads">0</div>
-              <div class="ssc-foot-cap" id="scrape-foot-cap">leads scraped</div>
-            </div>
             <div class="ssc-dock">
               <button type="button" id="btn-scrape-view" class="btn btn-secondary" style="display:none" onclick="scrapeDockView()" title="Watch this scrape running on the VM">👁 View</button>
               <button type="button" id="btn-scrape-save" class="btn btn-secondary" style="display:none" onclick="saveScrapeConfig(this)" title="Save config changes so they're kept next time you open this scrape">Save config</button>
