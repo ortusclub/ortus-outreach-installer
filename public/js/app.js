@@ -17848,7 +17848,14 @@ function syncLiveStatusVisibility() {
   // regardless of the local __cockpit state (which is idle for a VM campaign) and
   // even if liveStatusForcedOpen was reset by an unrelated re-render.
   const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
-  const show = !inFollowerGrowth && onNew && !(editingDraft && _viewingLocalCampaign && !checkHere) && !unrelatedDraft
+  // Deliberately opening a cloud campaign (Open on a VM strip) MUST show its Live
+  // Status, even a finished one. Navigating there lands on #/new with an empty
+  // draft-name field, which makes `unrelatedDraft` true and the local-draft guard
+  // fire — both would hide the section and the operator sees a blank new-campaign
+  // form ("Open does nothing"). cloudView bypasses those draft suppressors; the
+  // trailing clause still requires an actual reason to show (cloudView is one).
+  const show = !inFollowerGrowth && onNew
+    && (cloudView || (!(editingDraft && _viewingLocalCampaign && !checkHere) && !unrelatedDraft))
     && (liveStatusForcedOpen || checkHere || _viewingLocalCampaign || cloudView || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   // A live ownership transition is operational status, not optional wizard
