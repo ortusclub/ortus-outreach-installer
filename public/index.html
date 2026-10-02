@@ -2060,6 +2060,12 @@
   .sn-board .dot.paused{background:var(--gold,#d4a24a);}
   .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
   .sn-progtxt b{color:var(--ink);font-weight:600;}
+  /* At-a-glance run summary on every card (so operators don't dig through Logs) */
+  .sn-summary{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--gray);margin:9px 0 0;}
+  .sn-summary b{color:var(--ink);font-weight:600;}
+  .sn-summary .sn-sum-warn{color:var(--gold,#c9a84a);font-weight:600;}
+  .sn-summary .sn-sum-err{color:var(--red);font-weight:600;}
+  .sn-strip.sn-collapsed .sn-summary{padding-top:11px;margin-top:13px;border-top:1px solid var(--hairline);}
   /* queued — tidy mini card (solid, smaller title) */
   .sn-strip.queued .sn-name{font-size:20px;}
   .sn-strip.queued{padding-top:14px;padding-bottom:14px;}
@@ -2206,8 +2212,11 @@
   .sn-logcopy.copied{background:#4ec36b;color:#06220f;}
   .sn-board .job{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hairline-soft);}
   .sn-board .job:last-child{border-bottom:0;}
+  .sn-board .job .jcol{flex:1 1 auto;min-width:0;}
   .sn-board .job .jt{font-size:12.5px;color:var(--ink);font-weight:600;}
   .sn-board .job .js{font-size:11px;color:var(--gray);margin-top:2px;}
+  .sn-board .job .sn-joberr{font-size:11px;color:var(--red);margin-top:4px;line-height:1.45;}
+  .sn-board .job .sn-jobmoved{font-size:11px;color:var(--gold,#c9a84a);margin-top:4px;line-height:1.45;}
   .sn-board .job .jstat{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px;flex:none;}
   .sn-logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:160px;overflow:auto;}
   .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}.sn-logbox .bl{color:#7fb2e6;}.sn-logbox .wr{color:#e0b060;}.sn-logbox .err{color:#e07a6a;}
@@ -3313,6 +3322,8 @@
         .scrape-job-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 16px; border-bottom:1px solid var(--hairline-soft); font-size:13px; }
         .scrape-job-row:last-child { border-bottom:0; }
         .scrape-job-name { font-weight:500; color:var(--ink); }
+        .scrape-job-acct { display:inline-block; margin-left:8px; font-weight:400; font-size:11px; color:var(--gray); }
+        .scrape-job-acct::before { content:"· "; }
         .scrape-job-stat { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:12px; color:var(--gray); white-space:nowrap; }
         .scrape-job-stat.running { color:var(--ink); }
         .scrape-job-stat.done { color:var(--green); }

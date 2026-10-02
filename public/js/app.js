@@ -555,15 +555,53 @@ function renderStrip(c) {
   const progLine = c.status === 'running'
     ? `<div class="sn-progtxt"><b>${(c.totalProfiles || 0).toLocaleString()}</b> rows so far · ${c.done}/${nJobs} jobs done${c.etaMs ? ` · ${fmtEta(c.etaMs)} left` : ''}</div>`
     : '';
+  // Per-search rows carry the WHOLE story so the operator never has to open the
+  // Logs tab: which account ran it, how many leads/pages it got, and — on an
+  // account error / failover — the reason, inline. Fields survive slimBoard().
+  const _acctLabel = (j) => {
+    const nm = j.accountName || (j.profileId && typeof profileLabel === 'function' ? profileLabel(j.profileId) : '');
+    return (nm && nm !== j.profileId) ? nm : (j.profileId ? 'account' : '');
+  };
   const jobsPane = (c.jobs || []).map((j) => {
     const label = j.searchLabel || (j.searchUrl ? j.searchUrl.slice(0, 60) : 'search');
-    const st = j.state === 'running' ? `<span class="dot run"></span> Running · ${j.profiles || 0} rows`
-      : j.state === 'done' ? `<span class="dot mon"></span> Done · ${j.profiles || 0} rows`
+    const metrics = [];
+    if (j.profiles) metrics.push(`${j.profiles} lead${j.profiles === 1 ? '' : 's'}`);
+    if (j.pages) metrics.push(`${j.pages} page${j.pages === 1 ? '' : 's'}`);
+    const sub = [_acctLabel(j), metrics.join(' · ')].filter(Boolean).join(' · ');
+    const st = j.state === 'running' ? `<span class="dot run"></span> Running`
+      : j.state === 'done' ? `<span class="dot done"></span> Done`
       : j.state === 'error' ? `<span class="dot red"></span> Error`
-      : j.state === 'rerouted' ? `<span class="dot mon"></span> Moved to another account`
+      : j.state === 'rerouted' ? `<span class="dot mon"></span> Moved`
+      : j.state === 'cancelled' ? `<span class="dot cancel"></span> Cancelled`
       : `<span class="dot q"></span> Queued`;
-    return `<div class="job"><div><div class="jt">${escHtml(label)}</div></div><div class="jstat">${st}</div></div>`;
+    // Account error / failover reason, inline — the thing operators were hunting
+    // for in the piling-up Logs tab.
+    const note = j.error
+      ? `<div class="sn-joberr">${escHtml(j.error)}</div>`
+      : (j.state === 'rerouted'
+          ? `<div class="sn-jobmoved">Account had no Sales Nav seat / was logged out — this search was moved to a working account.</div>`
+          : '');
+    return `<div class="job"><div class="jcol"><div class="jt">${escHtml(label)}</div>${sub ? `<div class="js">${escHtml(sub)}</div>` : ''}${note}</div><div class="jstat">${st}</div></div>`;
   }).join('') || '<div class="sn-empty">No jobs.</div>';
+  // One-line roll-up so the card answers "what happened" without expanding: how
+  // many searches finished, total leads/pages, accounts used, and any that
+  // errored or were moved by failover. Shown for every non-queued strip.
+  const _sj = c.jobs || [];
+  const _sTotal = _sj.length || nSearches;
+  const _sDone = _sj.filter((j) => j.state === 'done').length;
+  const _sErr = _sj.filter((j) => j.state === 'error').length;
+  const _sMoved = _sj.filter((j) => j.state === 'rerouted').length;
+  const _sLeads = _sj.reduce((n, j) => n + (j.profiles || 0), 0);
+  const _sPages = _sj.reduce((n, j) => n + (j.pages || 0), 0);
+  const _sAccts = new Set(_sj.map((j) => j.profileId).filter(Boolean)).size;
+  const summaryBlock = isQueued ? '' : `<div class="sn-summary">
+      <span><b>${_sDone}/${_sTotal}</b> searches done</span>
+      <span><b>${_sLeads.toLocaleString()}</b> leads</span>
+      <span><b>${_sPages.toLocaleString()}</b> pages</span>
+      <span><b>${_sAccts}</b> account${_sAccts === 1 ? '' : 's'}</span>
+      ${_sMoved ? `<span class="sn-sum-warn">${_sMoved} moved to another account</span>` : ''}
+      ${_sErr ? `<span class="sn-sum-err">${_sErr} error${_sErr === 1 ? '' : 's'}</span>` : ''}
+    </div>`;
   const canOpen = !isQueued || _snCanControl(c);
   // Open → the scrape's setup WIZARD (config populated) with its live Activity log
   // at the bottom — the analogue of a campaign's Open → wizard-with-log. Available
@@ -640,6 +678,7 @@ function renderStrip(c) {
     <div class="sn-name">${escHtml(c.name || '')}</div>
     <div class="sn-flow">${flow}</div>
     ${progLine}
+    ${summaryBlock}
     ${switchBlock}
     </div>
     ${richCard}
@@ -4739,7 +4778,7 @@ async function pollScrapeJobs() {
       jobs = jobs.filter((j) => { const k = _scrapeJobKey(j); return !(k && scrapeBaselineJobIds.has(k)); });
     }
     if (!jobs.length) {
-      el.innerHTML = '<div class="scrape-job-empty">No scrape jobs yet.</div>';
+      el.innerHTML = '<div class="scrape-job-empty">No active scrape jobs. Finished scrapes stay on the board below with their full status.</div>';
       _setScrapeFoot(0, 0, 0);
       _setScrapeVjCard({ leads: 0, pages: 0, accounts: 0, done: 0, total: 0, status: 'idle', tabs: [] });
       renderScrapeQueueTab([]);
@@ -4759,8 +4798,12 @@ async function pollScrapeJobs() {
       // "rerouted" = this search was moved off a dead account (no seat / logged
       // out) onto a surviving selected account; show it as "moved", not the raw state.
       const stateLabel = j.state === 'rerouted' ? 'moved to another account' : (j.state || '');
+      // Name the account that ran this search, so the row stands on its own.
+      const _nm = j.accountName || (j.profileId && typeof profileLabel === 'function' ? profileLabel(j.profileId) : '');
+      const acct = (_nm && _nm !== j.profileId) ? _nm : '';
+      const acctHtml = acct ? `<span class="scrape-job-acct">${escHtml(acct)}</span>` : '';
       return `<div class="scrape-job-row">
-          <span class="scrape-job-name">${escHtml(label)}</span>
+          <span class="scrape-job-name">${escHtml(label)}${acctHtml}</span>
           <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(stateLabel)} · ${j.pages || 0}p · ${leadsHtml}</span>
           ${viewBtn}
         </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
