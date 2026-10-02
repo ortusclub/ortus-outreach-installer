@@ -170,6 +170,9 @@ export function diffBoardEvents(prevCampaigns, nextCampaigns) {
         case 'cancelled':
           push(`⏹  Cancelled — ${acct} · ${j.profiles || 0} lead(s) collected`, 'warn');
           break;
+        case 'rerouted':
+          push(`↪  Moved to another account — ${acct} has no Sales Nav seat / is logged out`, 'warn');
+          break;
         default:
           push(`${acct} — ${p.state || '?'} → ${j.state}`);
       }

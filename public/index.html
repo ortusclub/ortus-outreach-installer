@@ -437,14 +437,14 @@
                exactly where the dock icon used to be. -->
           <button class="btn-pill stop" id="btn-active-stop" onclick="window.dashStopActive()">Stop campaign</button>
           <div class="dock" id="dock-active" role="toolbar" aria-label="Active campaign actions">
-            <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="window.dashPauseActive()">
+            <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="window.dashPauseActive(this)">
               <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
             </button>
             <div class="dock-actions">
-              <button class="dock-btn" data-tip="Restart" aria-label="Restart" onclick="window.dashRestartActive()">
+              <button class="dock-btn" data-tip="Restart" aria-label="Restart" onclick="window.dashRestartActive(this)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
               </button>
-              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyActiveToQueue()">
+              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyActiveToQueue(this)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               </button>
             </div>
@@ -558,13 +558,13 @@
           </button>
           <div class="dock" id="dock-monitor" role="toolbar" aria-label="Monitoring campaign actions">
             <div class="dock-actions">
-              <button class="dock-btn danger" data-tip="Stop watch" aria-label="Stop watch" onclick="window.dashStopMonitoring()">
+              <button class="dock-btn danger" data-tip="Stop watch" aria-label="Stop watch" onclick="window.dashStopMonitoring(this)">
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
               </button>
-              <button class="dock-btn" data-tip="Force sweep now" aria-label="Force sweep now" onclick="window.dashForceSweep()">
+              <button class="dock-btn" data-tip="Force sweep now" aria-label="Force sweep now" onclick="window.dashForceSweep(this)">
                 <svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
               </button>
-              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyMonitorToQueue()">
+              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyMonitorToQueue(this)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               </button>
             </div>
@@ -579,7 +579,7 @@
           <div class="vj-bulk">
             <div class="vj-details-head">Bulk check connection</div>
             <div class="vj-bulk-status">Last sweep · <b id="monitorBulkLast">—</b> · <span id="monitorBulkNew">0</span> newly accepted</div>
-            <button class="vj-bulk-btn" onclick="window.dashForceSweep()">
+            <button class="vj-bulk-btn" onclick="window.dashForceSweep(this)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
               Force sweep now
             </button>
@@ -593,7 +593,7 @@
         <div class="section-rail">
           <h2 id="sect-queue">Up Next <small><span id="queueCount">0</span> waiting</small></h2>
           <div class="section-rail-line"></div>
-          <button class="section-rail-action" id="queue-clear-btn" onclick="window.dashClearQueue()" hidden>Clear all</button>
+          <button class="section-rail-action" id="queue-clear-btn" onclick="window.dashClearQueue(this)" hidden>Clear all</button>
           <button class="section-rail-action" onclick="window.startNewCampaign()">+ Add to queue</button>
         </div>
         <div role="grid" aria-labelledby="sect-queue" id="queueList"><!-- Phase 4 fills --></div>
@@ -2060,6 +2060,12 @@
   .sn-board .dot.paused{background:var(--gold,#d4a24a);}
   .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
   .sn-progtxt b{color:var(--ink);font-weight:600;}
+  /* At-a-glance run summary on every card (so operators don't dig through Logs) */
+  .sn-summary{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--gray);margin:9px 0 0;}
+  .sn-summary b{color:var(--ink);font-weight:600;}
+  .sn-summary .sn-sum-warn{color:var(--gold,#c9a84a);font-weight:600;}
+  .sn-summary .sn-sum-err{color:var(--red);font-weight:600;}
+  .sn-strip.sn-collapsed .sn-summary{padding-top:11px;margin-top:13px;border-top:1px solid var(--hairline);}
   /* queued — tidy mini card (solid, smaller title) */
   .sn-strip.queued .sn-name{font-size:20px;}
   .sn-strip.queued{padding-top:14px;padding-bottom:14px;}
@@ -2206,8 +2212,11 @@
   .sn-logcopy.copied{background:#4ec36b;color:#06220f;}
   .sn-board .job{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hairline-soft);}
   .sn-board .job:last-child{border-bottom:0;}
+  .sn-board .job .jcol{flex:1 1 auto;min-width:0;}
   .sn-board .job .jt{font-size:12.5px;color:var(--ink);font-weight:600;}
   .sn-board .job .js{font-size:11px;color:var(--gray);margin-top:2px;}
+  .sn-board .job .sn-joberr{font-size:11px;color:var(--red);margin-top:4px;line-height:1.45;}
+  .sn-board .job .sn-jobmoved{font-size:11px;color:var(--gold,#c9a84a);margin-top:4px;line-height:1.45;}
   .sn-board .job .jstat{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px;flex:none;}
   .sn-logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:160px;overflow:auto;}
   .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}.sn-logbox .bl{color:#7fb2e6;}.sn-logbox .wr{color:#e0b060;}.sn-logbox .err{color:#e07a6a;}
@@ -2215,6 +2224,39 @@
   /* confirm modal (namespaced) */
   #snm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:50;}
   #snm-scrim.open{display:flex;}
+  /* Global "working…" overlay — immediate feedback for actions with a fetch delay
+     (Open a cloud campaign, etc.) so a click never looks like nothing happened. */
+  #app-busy{position:fixed;inset:0;background:rgba(255,255,255,0.55);backdrop-filter:blur(1.5px);-webkit-backdrop-filter:blur(1.5px);display:none;align-items:center;justify-content:center;z-index:120;}
+  #app-busy.open{display:flex;}
+  #app-busy .ab-card{display:flex;align-items:center;gap:13px;background:var(--card-bg);border:1px solid var(--hairline);border-radius:9999px;padding:13px 22px 13px 18px;box-shadow:0 8px 30px rgba(0,0,0,0.12);}
+  #app-busy .ab-sp{width:17px;height:17px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
+  #app-busy .ab-txt{font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:12px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink);}
+  /* Sheet-not-shared popup + card banner */
+  #sheet-perm-modal{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:none;align-items:center;justify-content:center;z-index:130;padding:16px;}
+  #sheet-perm-modal.open{display:flex;}
+  #sheet-perm-modal .spm-card{box-sizing:border-box;background:var(--card-bg);border:1px solid var(--hairline);border-radius:16px;max-width:460px;width:100%;padding:26px;box-shadow:0 16px 50px rgba(0,0,0,0.18);}
+  #sheet-perm-modal .spm-title{font-family:var(--display);font-weight:400;font-size:24px;letter-spacing:.01em;margin:0 0 12px;color:var(--ink);}
+  #sheet-perm-modal .spm-text{font-size:13.5px;line-height:1.55;color:var(--gray);margin:0 0 16px;}
+  #sheet-perm-modal .spm-text b{color:var(--ink);font-weight:600;}
+  #sheet-perm-modal .spm-step{font-size:13px;line-height:1.5;color:var(--ink);margin:0 0 10px;}
+  #sheet-perm-modal .spm-step b{font-weight:600;}
+  #sheet-perm-modal .spm-email{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,0.035);border:1px solid var(--hairline);border-radius:10px;padding:10px 12px;margin:0 0 20px;}
+  #sheet-perm-modal .spm-email code{font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:12px;color:var(--ink);word-break:break-all;flex:1 1 auto;}
+  #sheet-perm-modal .spm-copy{flex:0 0 auto;font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:10px;letter-spacing:.07em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  #sheet-perm-modal .spm-copy:hover{border-color:var(--ink);}
+  #sheet-perm-modal .spm-row{display:flex;justify-content:flex-end;}
+  #sheet-perm-modal .spm-btn.solid{background:var(--ink);color:var(--card-bg);border:1px solid var(--ink);border-radius:9999px;padding:9px 22px;font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;}
+  .sn-sheetperm{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;font-size:12px;line-height:1.5;color:var(--red);background:rgba(224,122,106,.08);border:1px solid rgba(224,122,106,.32);border-radius:10px;padding:9px 12px;margin:10px 0 0;}
+  .sn-sheetperm b{color:var(--red);font-weight:700;}
+  .sn-sheetperm code{font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:11px;color:var(--ink);word-break:break-all;}
+  .sn-sheetperm-copy{font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:9999px;border:1px solid rgba(224,122,106,.5);background:transparent;color:var(--red);cursor:pointer;}
+  .sn-sheetperm-copy:hover{background:rgba(224,122,106,.14);}
+  /* In-place button busy state (busyButton helper) — spinner inside the button */
+  .btn-sp{display:inline-block;width:13px;height:13px;border:2px solid currentColor;border-top-color:transparent;border-radius:9999px;animation:sn-spin .7s linear infinite;vertical-align:middle;opacity:.65;flex:0 0 auto;}
+  .btn-sp-lbl{margin-left:7px;vertical-align:middle;}
+  .is-busy{opacity:.75;cursor:default;pointer-events:none;display:inline-flex;align-items:center;justify-content:center;}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) #app-busy{background:rgba(0,0,0,0.45);} }
+  :root[data-theme="dark"] #app-busy{background:rgba(0,0,0,0.45);}
   .snm-card{box-sizing:border-box;background:var(--card-bg);border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
   .snm-title{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 12px;letter-spacing:.02em;line-height:1;}
   .snm-text{font-size:13px;color:var(--gray);line-height:1.55;margin:0 0 22px;}
@@ -3313,6 +3355,18 @@
         .scrape-job-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 16px; border-bottom:1px solid var(--hairline-soft); font-size:13px; }
         .scrape-job-row:last-child { border-bottom:0; }
         .scrape-job-name { font-weight:500; color:var(--ink); }
+        /* Run separator — collapsible, shown only when a scrape was re-run */
+        .scrape-run-head { display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:11px 16px; border-top:1px solid var(--hairline-soft); background:rgba(0,0,0,0.02); cursor:pointer; user-select:none; }
+        .scrape-run-head:first-child { border-top:0; }
+        .scrape-run-head:hover { background:rgba(0,0,0,0.04); }
+        .scrape-run-caret { flex:0 0 auto; color:var(--gray); transform:rotate(90deg); transition:transform .15s ease; }
+        .scrape-run-head.is-collapsed .scrape-run-caret { transform:rotate(0deg); }
+        .scrape-run-no { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:700; color:var(--ink); }
+        .scrape-run-when { font-size:11px; color:var(--gray); }
+        .scrape-run-meta { margin-left:auto; font-size:11px; color:var(--gray); }
+        .scrape-run-jobs[hidden] { display:none; }
+        .scrape-job-acct { display:inline-block; margin-left:8px; font-weight:400; font-size:11px; color:var(--gray); }
+        .scrape-job-acct::before { content:"· "; }
         .scrape-job-stat { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:12px; color:var(--gray); white-space:nowrap; }
         .scrape-job-stat.running { color:var(--ink); }
         .scrape-job-stat.done { color:var(--green); }
@@ -3329,23 +3383,32 @@
         .scrape-log .err { color:#f85149; }
         .scrape-log-empty { color:#6e7681; }
         /* Footer dock. */
-        .ssc-foot { display:flex; align-items:center; justify-content:space-between; margin-top:20px; padding-top:18px; border-top:1px solid var(--hairline-soft); }
+        .ssc-foot { display:flex; align-items:center; justify-content:flex-end; margin-top:20px; padding-top:18px; border-top:1px solid var(--hairline-soft); }
         .ssc-foot-big { font-family:var(--display); font-size:40px; line-height:0.9; }
         .ssc-foot-cap { font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--gray); margin-top:4px; }
         .ssc-dock { display:flex; gap:10px; align-items:center; }
         /* ── Queue: B1 ladder (shared by the campaign Queue tab + dashboard strip) ── */
-        .sjq { padding:12px 16px; }
-        .sjq + .sjq { border-top:1px solid var(--hairline-soft); }
-        .sjq-cap { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:11px; letter-spacing:0.04em; color:#b8860b; margin:0 0 8px; }
-        .q-ladder { display:flex; flex-direction:column; gap:6px; }
-        .q-slot { display:flex; align-items:center; gap:12px; padding:9px 12px; border:1px solid var(--hairline); border-radius:9px; font-size:13px; color:var(--gray); background:var(--card-bg); }
-        .q-slot .q-pos { font-family:var(--display); font-size:18px; min-width:30px; }
-        .q-slot.is-running { border-color:var(--green); background:rgba(45,160,90,.06); color:var(--ink); }
-        .q-slot.is-running .q-pos { color:var(--green); }
-        .q-slot.is-you { border:2px solid #C5A255; background:rgba(247,190,104,.12); color:var(--ink); font-weight:600; }
-        .q-slot.is-you .q-pos { color:#b8860b; }
-        .q-slot .q-eta { margin-left:auto; font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:12px; color:var(--gray); }
-        .q-slot.is-mid { border-style:dashed; justify-content:center; color:var(--gray); font-size:12px; background:transparent; }
+        .sjq { padding:14px 16px 16px; }
+        .sjq + .sjq { border-top:1px solid var(--hairline-soft); margin-top:2px; }
+        .sjq-cap { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:10.5px; letter-spacing:0.11em; text-transform:uppercase; color:var(--gold,#c9a84a); margin:0 0 12px; }
+        /* A connected timeline: a hairline rail runs through the position nodes. */
+        .q-ladder { position:relative; display:flex; flex-direction:column; }
+        .q-ladder::before { content:''; position:absolute; left:19px; top:16px; bottom:16px; width:1px; background:var(--hairline); z-index:0; }
+        .q-slot { position:relative; z-index:1; display:flex; align-items:center; gap:13px; padding:7px 12px 7px 6px; border-radius:10px; font-size:13px; color:var(--gray); }
+        .q-slot + .q-slot { margin-top:3px; }
+        .q-slot .q-pos { flex:none; width:26px; height:26px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:10.5px; font-weight:600; background:var(--card-bg); border:1px solid var(--hairline); color:var(--gray); }
+        .q-slot .q-pos svg { display:block; }
+        .q-slot .q-label { flex:1 1 auto; min-width:0; color:inherit; display:flex; align-items:baseline; gap:9px; overflow:hidden; }
+        .q-slot .q-label > :first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .q-slot .q-sub { flex:none; font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:9.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); font-weight:400; }
+        .q-slot .q-eta { margin-left:auto; flex:none; padding-left:10px; font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:11px; letter-spacing:0.03em; color:var(--gray); }
+        .q-slot.is-running { background:rgba(45,160,90,.07); color:var(--ink); }
+        .q-slot.is-running .q-pos { background:var(--green); border-color:var(--green); color:#fff; }
+        .q-slot.is-running .q-eta { color:var(--green); }
+        .q-slot.is-you { background:rgba(247,190,104,.13); color:var(--ink); font-weight:600; }
+        .q-slot.is-you .q-pos { border:1.5px solid var(--gold,#C5A255); color:#b8860b; }
+        .q-slot.is-you .q-sub { color:#b8860b; }
+        .q-slot.is-mid { padding-left:46px; color:var(--gray); font-size:11.5px; }
         /* ── Dashboard strip (A2) — collapsed one-liner that expands the ladder ── */
         .scrape-strip { display:flex; align-items:center; gap:14px; padding:12px 18px; border:1px solid var(--card-border); border-left:4px solid var(--green); border-radius:14px; background:var(--card-bg); box-shadow:var(--card-shadow); cursor:pointer; user-select:none; }
         .scrape-strip + .scrape-strip { margin-top:8px; }
@@ -3403,10 +3466,6 @@
           </div>
 
           <div class="ssc-foot">
-            <div>
-              <div class="ssc-foot-big" id="scrape-foot-leads">0</div>
-              <div class="ssc-foot-cap" id="scrape-foot-cap">leads scraped</div>
-            </div>
             <div class="ssc-dock">
               <button type="button" id="btn-scrape-view" class="btn btn-secondary" style="display:none" onclick="scrapeDockView()" title="Watch this scrape running on the VM">👁 View</button>
               <button type="button" id="btn-scrape-save" class="btn btn-secondary" style="display:none" onclick="saveScrapeConfig(this)" title="Save config changes so they're kept next time you open this scrape">Save config</button>
@@ -3638,7 +3697,7 @@
           <textarea id="pe-template-body" rows="5"></textarea>
         </div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px">
-          <button type="button" class="btn btn-secondary btn-sm" id="resume-reload-sheet" onclick="reloadSheetWhilePaused()">&#x27F3; Reload from sheet</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="resume-reload-sheet" onclick="reloadSheetWhilePaused(this)">&#x27F3; Reload from sheet</button>
           <button type="button" id="pe-apply" class="btn btn-secondary btn-sm">Apply changes</button>
         </div>
       </div>

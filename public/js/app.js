@@ -264,11 +264,55 @@ function _snShowScrapeRollover(campaigns, stopped, started) {
 // by ownership (strips are engine-derived; there's no local record to look up).
 const _snStrips = new Map();
 
+// ── Sheet-not-shared alert ──────────────────────────────────────────────────
+// When a scrape can't write because its destination Google Sheet isn't shared
+// with the Scraper service account, the engine stops the whole scrape and stamps
+// the jobs with an actionable error. Operators shouldn't have to dig through the
+// Logs tab for it — surface it as a one-time popup + a persistent card note.
+const SCRAPER_SA_EMAIL = 'scraper@salesnav-scraper-prod.iam.gserviceaccount.com';
+function _isSheetPermError(err) {
+  return /not shared with the (?:scraper )?service account|sheet permission denied|isn.?t shared with the service account/i.test(String(err || ''));
+}
+const _sheetPermAlerted = new Set(); // cids already popped this session (don't nag every 2.5s poll)
+function _snDetectSheetPermError(campaigns) {
+  for (const c of (campaigns || [])) {
+    if (!c || !c.mine) continue;                 // only MY scrapes — not other operators'
+    if (_sheetPermAlerted.has(c.id)) continue;
+    if (!(c.jobs || []).some((j) => _isSheetPermError(j && j.error))) continue;
+    _sheetPermAlerted.add(c.id);
+    try { showSheetPermModal(c); } catch (_) { /* */ }
+  }
+}
+function _copySvcAccount(btn) {
+  try { navigator.clipboard.writeText(SCRAPER_SA_EMAIL); } catch (_) { /* */ }
+  if (btn) { const t = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => { try { btn.textContent = t; } catch (_) { /* */ } }, 1600); }
+}
+window._copySvcAccount = _copySvcAccount;
+function _closeSheetPermModal() { const el = document.getElementById('sheet-perm-modal'); if (el) el.classList.remove('open'); }
+window._closeSheetPermModal = _closeSheetPermModal;
+function showSheetPermModal(c) {
+  let el = document.getElementById('sheet-perm-modal');
+  if (!el) { el = document.createElement('div'); el.id = 'sheet-perm-modal'; document.body.appendChild(el); }
+  const tab = (c && c.tabName) ? ` · tab "${escHtml(c.tabName)}"` : '';
+  const nm = escHtml((c && (c.name || c.tabName)) || 'This scrape');
+  el.innerHTML = `
+    <div class="spm-card" role="alertdialog" aria-labelledby="spm-t">
+      <div class="spm-title" id="spm-t">Can't write to your sheet</div>
+      <div class="spm-text"><b>${nm}</b>${tab} was stopped — its Google Sheet isn't shared with the Scraper service account, so nothing could be saved.</div>
+      <div class="spm-step">Share the sheet as <b>Editor</b> with this address, then run the scrape again:</div>
+      <div class="spm-email"><code>${SCRAPER_SA_EMAIL}</code><button type="button" class="spm-copy" onclick="_copySvcAccount(this)">Copy</button></div>
+      <div class="spm-row"><button type="button" class="spm-btn solid" onclick="_closeSheetPermModal()">Got it</button></div>
+    </div>`;
+  el.classList.add('open');
+}
+window.showSheetPermModal = showSheetPermModal;
+
 let _snLastCampaigns = null; // last rendered board data — for optimistic re-renders
 function renderSalesNavBoard(campaigns) {
   campaigns = (campaigns || []).map(_snEnrich); // backfill name/owner/profiles the engine dropped
   campaigns = (campaigns || []).map(_snEnrich).filter(c => _viewerIsAdmin || c.mine);
   _snLastCampaigns = campaigns;
+  try { _snDetectSheetPermError(campaigns); } catch (_) { /* best-effort — never block the board */ }
   _snStampFinished(campaigns);
   _snStrips.clear();
   for (const c of campaigns) _snStrips.set(c.id, { profileIds: c.profileIds || [], tabName: c.tabName || '', owner: c.owner || '', mine: !!c.mine });
@@ -555,14 +599,59 @@ function renderStrip(c) {
   const progLine = c.status === 'running'
     ? `<div class="sn-progtxt"><b>${(c.totalProfiles || 0).toLocaleString()}</b> rows so far · ${c.done}/${nJobs} jobs done${c.etaMs ? ` · ${fmtEta(c.etaMs)} left` : ''}</div>`
     : '';
+  // Per-search rows carry the WHOLE story so the operator never has to open the
+  // Logs tab: which account ran it, how many leads/pages it got, and — on an
+  // account error / failover — the reason, inline. Fields survive slimBoard().
+  const _acctLabel = (j) => {
+    const nm = j.accountName || (j.profileId && typeof profileLabel === 'function' ? profileLabel(j.profileId) : '');
+    return (nm && nm !== j.profileId) ? nm : (j.profileId ? 'account' : '');
+  };
   const jobsPane = (c.jobs || []).map((j) => {
     const label = j.searchLabel || (j.searchUrl ? j.searchUrl.slice(0, 60) : 'search');
-    const st = j.state === 'running' ? `<span class="dot run"></span> Running · ${j.profiles || 0} rows`
-      : j.state === 'done' ? `<span class="dot mon"></span> Done · ${j.profiles || 0} rows`
+    const metrics = [];
+    if (j.profiles) metrics.push(`${j.profiles} lead${j.profiles === 1 ? '' : 's'}`);
+    if (j.pages) metrics.push(`${j.pages} page${j.pages === 1 ? '' : 's'}`);
+    const sub = [_acctLabel(j), metrics.join(' · ')].filter(Boolean).join(' · ');
+    const st = j.state === 'running' ? `<span class="dot run"></span> Running`
+      : j.state === 'done' ? `<span class="dot done"></span> Done`
       : j.state === 'error' ? `<span class="dot red"></span> Error`
+      : j.state === 'rerouted' ? `<span class="dot mon"></span> Moved`
+      : j.state === 'cancelled' ? `<span class="dot cancel"></span> Cancelled`
       : `<span class="dot q"></span> Queued`;
-    return `<div class="job"><div><div class="jt">${escHtml(label)}</div></div><div class="jstat">${st}</div></div>`;
+    // Account error / failover reason, inline — the thing operators were hunting
+    // for in the piling-up Logs tab.
+    const note = j.error
+      ? `<div class="sn-joberr">${escHtml(j.error)}</div>`
+      : (j.state === 'rerouted'
+          ? `<div class="sn-jobmoved">Account had no Sales Nav seat / was logged out — this search was moved to a working account.</div>`
+          : '');
+    return `<div class="job"><div class="jcol"><div class="jt">${escHtml(label)}</div>${sub ? `<div class="js">${escHtml(sub)}</div>` : ''}${note}</div><div class="jstat">${st}</div></div>`;
   }).join('') || '<div class="sn-empty">No jobs.</div>';
+  // One-line roll-up so the card answers "what happened" without expanding: how
+  // many searches finished, total leads/pages, accounts used, and any that
+  // errored or were moved by failover. Shown for every non-queued strip.
+  const _sj = c.jobs || [];
+  const _sTotal = _sj.length || nSearches;
+  const _sDone = _sj.filter((j) => j.state === 'done').length;
+  const _sErr = _sj.filter((j) => j.state === 'error').length;
+  const _sMoved = _sj.filter((j) => j.state === 'rerouted').length;
+  const _sLeads = _sj.reduce((n, j) => n + (j.profiles || 0), 0);
+  const _sPages = _sj.reduce((n, j) => n + (j.pages || 0), 0);
+  const _sAccts = new Set(_sj.map((j) => j.profileId).filter(Boolean)).size;
+  const summaryBlock = isQueued ? '' : `<div class="sn-summary">
+      <span><b>${_sDone}/${_sTotal}</b> searches done</span>
+      <span><b>${_sLeads.toLocaleString()}</b> leads</span>
+      <span><b>${_sPages.toLocaleString()}</b> pages</span>
+      <span><b>${_sAccts}</b> account${_sAccts === 1 ? '' : 's'}</span>
+      ${_sMoved ? `<span class="sn-sum-warn">${_sMoved} moved to another account</span>` : ''}
+      ${_sErr ? `<span class="sn-sum-err">${_sErr} error${_sErr === 1 ? '' : 's'}</span>` : ''}
+    </div>`;
+  // Persistent "sheet not shared" note on the card — the actionable fix, so it
+  // stays visible after the one-time popup is dismissed.
+  const _sheetPerm = (c.jobs || []).some((j) => _isSheetPermError(j && j.error));
+  const sheetPermBanner = _sheetPerm
+    ? `<div class="sn-sheetperm">⚠️ <b>Sheet not shared</b> — stopped because the destination sheet isn't shared with the Scraper service account. Share it (Editor) with <code>${SCRAPER_SA_EMAIL}</code> <button type="button" class="sn-sheetperm-copy" onclick="event.stopPropagation();_copySvcAccount(this)">Copy</button>, then re-run.</div>`
+    : '';
   const canOpen = !isQueued || _snCanControl(c);
   // Open → the scrape's setup WIZARD (config populated) with its live Activity log
   // at the bottom — the analogue of a campaign's Open → wizard-with-log. Available
@@ -638,7 +727,9 @@ function renderStrip(c) {
       <span class="sn-status">${isPaused ? '<span class="dot paused"></span>' : isBad ? '<span class="dot red"></span>' : _snStatusDot(c.status)} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(c.name || '')}</div>
     <div class="sn-flow">${flow}</div>
+    ${sheetPermBanner}
     ${progLine}
+    ${summaryBlock}
     ${switchBlock}
     </div>
     ${richCard}
@@ -922,6 +1013,7 @@ async function openScrapeSetupFor(cid) {
     // Track the opened scrape so pollScrapeLogs shows ITS log (scrape-specific,
     // cross-session) instead of this session's global feed. Clear the console now.
     _snOpenedScrape = { cid, tabName: '' };
+    _scrapeViewRunId = null;   // opening an existing scrape → show its LATEST run (time-window), not a stale launch id
     try { scrapeLogLines = []; scrapeLogSince = 0; if (typeof renderScrapeLogPanel === 'function') renderScrapeLogPanel(); } catch (_) { /* */ }
     try {
       // Single record, not the whole board — the list response is ~22MB.
@@ -953,8 +1045,13 @@ async function openScrapeSetupFor(cid) {
       }
     } catch (_) { _setScrapeSetupTitle('Scrape'); }
     try { if (typeof pollScrapeLogs === 'function') pollScrapeLogs(); } catch (_) { /* */ }
+    // Refresh the console now so an opened RUNNING scrape shows its live jobs
+    // immediately (scoped to this cid), instead of the session's idle state
+    // until the next 4s poll tick.
+    try { if (typeof pollScrapeJobs === 'function') pollScrapeJobs(); } catch (_) { /* */ }
   } else {
     _snOpenedScrape = null; // a genuinely new scrape — global session log applies
+    _scrapeViewRunId = null;
     _setScrapeSetupTitle('New scrape');
     _setScrapeSaveVisible(false); // nothing to save-onto yet for a brand-new scrape
   }
@@ -996,6 +1093,11 @@ async function rerunScrape(cid, btn) {
       return;
     }
     toast(`Re-running “${campaignName}” — ${urls.length} job${urls.length === 1 ? '' : 's'} on ${accts.length} account${accts.length === 1 ? '' : 's'}…`);
+    // Shared runId + full account pool so the engine can fail a dead account's
+    // URLs over to a surviving selected account (see startScrapeJob).
+    const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    _scrapeViewRunId = runId;   // scope the Jobs pane to THIS re-run only
+    const accountPool = [...accts];
     let started = 0; const errors = [];
     for (let i = 0; i < urls.length; i++) {
       const profileId = accts[i % accts.length];              // round-robin URL→account, like startScrapeJob
@@ -1005,7 +1107,7 @@ async function rerunScrape(cid, btn) {
       try {
         const rr = await fetch('/api/scrape/start', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode: false, campaignName, accountName }),
+          body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode: false, campaignName, accountName, runId, accountPool }),
         });
         const res = await rr.json();
         if (res && res.error) errors.push(res.error); else started++;
@@ -1069,6 +1171,7 @@ function _setScrapeSaveVisible(show) {
 
 function startNewScrapeSetup() {
   _snOpenedScrape = null; // fresh scrape — not viewing an existing one's log
+  _scrapeViewRunId = null;
   const urls = document.getElementById('scrape-urls'); if (urls) urls.value = '';
   const nm = document.getElementById('scrape-name'); if (nm) nm.value = '';
   openScrapeSetupFor('');
@@ -1088,6 +1191,7 @@ function closeScrapeSetup() {
   _snRestoreSetup();
   _snSetupOpen = false;
   _snOpenedScrape = null; // back to the board — stop showing an opened scrape's log
+  _scrapeViewRunId = null;
   _setScrapeSaveVisible(false);
   // Hand the wizard back the mode it had. Restoring the select alone isn't
   // enough — onModeChange() is what re-shows Throughput/Templates/Sheet/Launch
@@ -4305,6 +4409,13 @@ async function startScrapeJob() {
   // Pair each URL with an account (round-robin when counts differ); each pair
   // is its own single-URL job so the engine runs them concurrently — one
   // browser per profile.
+  // One shared runId groups this launch's per-URL jobs, and accountPool is the
+  // FULL set of selected accounts — so if one account turns out to have no Sales
+  // Nav seat / is logged out, the engine can fail its URLs over to a surviving
+  // selected account instead of dropping them.
+  const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  _scrapeViewRunId = runId;   // scope the Jobs pane to THIS launch only
+  const accountPool = [...accts];
   let started = 0;
   const errors = [];
   for (let i = 0; i < urls.length; i++) {
@@ -4318,7 +4429,7 @@ async function startScrapeJob() {
       const r = await fetch('/api/scrape/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode, campaignName, accountName }),
+        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode, campaignName, accountName, runId, accountPool }),
       });
       const res = await r.json();
       if (res && res.error) errors.push(`URL ${i + 1}: ${res.error}`);
@@ -4377,14 +4488,20 @@ function _applyScrapePauseButton() {
 }
 
 async function stopScrapeJob() {
-  await _scrapeControlAll('/api/scrape/stop');
-  _scrapePausedLocal = false;
-  _applyScrapePauseButton();
-  // Keep polling briefly so the card reflects the STOP — jobs flip to cancelled/
-  // done with their final lead counts — instead of freezing on the last "running"
-  // frame. Poll now + once more after the engine has cancelled, then stop the loop.
-  try { await pollScrapeJobs(); } catch (_) { /* */ }
-  setTimeout(async () => { try { await pollScrapeJobs(); } catch (_) { /* */ } stopScrapePolling(); }, 5000);
+  // Stop fans a POST out to every running/queued account, so it takes a beat —
+  // show the button working instead of looking dead.
+  const _btn = document.getElementById('btn-scrape-stop');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(_btn, 'Stopping…');
+  try {
+    await _scrapeControlAll('/api/scrape/stop');
+    _scrapePausedLocal = false;
+    _applyScrapePauseButton();
+    // Keep polling briefly so the card reflects the STOP — jobs flip to cancelled/
+    // done with their final lead counts — instead of freezing on the last "running"
+    // frame. Poll now + once more after the engine has cancelled, then stop the loop.
+    try { await pollScrapeJobs(); } catch (_) { /* */ }
+    setTimeout(async () => { try { await pollScrapeJobs(); } catch (_) { /* */ } stopScrapePolling(); }, 5000);
+  } finally { restore(); }
 }
 
 // Apply a control action (pause/stop) keyed by profileId on the engine.
@@ -4581,6 +4698,16 @@ function _scrapeEtaText(ms) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
+// One ladder row. `label` is pre-escaped by the caller (it may be a tab name);
+// `pos`/`sub`/`eta` are escaped here. `play` renders a ▶ node instead of a number.
+const _Q_PLAY = '<svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"><path d="M2 1.3l6 3.7-6 3.7z" fill="currentColor"/></svg>';
+function _qSlotHtml({ cls = '', pos = '', play = false, label = '', sub = '', eta = '' }) {
+  const node = `<span class="q-pos">${play ? _Q_PLAY : escHtml(String(pos))}</span>`;
+  const subHtml = sub ? `<span class="q-sub">${escHtml(sub)}</span>` : '';
+  const etaHtml = eta ? `<span class="q-eta">${escHtml(eta)}</span>` : '';
+  return `<div class="q-slot${cls ? ' ' + cls : ''}">${node}<span class="q-label"><span>${label}</span>${subHtml}</span>${etaHtml}</div>`;
+}
+
 // Build the ladder for one queued job: running → (collapsed middle) → the slot
 // directly ahead → you. Never exceeds 4 rows.
 function _scrapeLadderHtml(j) {
@@ -4589,6 +4716,7 @@ function _scrapeLadderHtml(j) {
   const youLabel = escHtml(String(j.tabName || j.searchUrl || 'Your job'));
   const eta = _scrapeEtaText(j.etaMs);
   const rows = [];
+  const midRow = (n) => `<div class="q-slot is-mid">${n} more account${n === 1 ? '' : 's'} ahead</div>`;
 
   // Named path: when the engine supplies `ahead` (ordered front→you, index 0 =
   // the account scraping now), render real account names. Collapses the middle
@@ -4599,36 +4727,40 @@ function _scrapeLadderHtml(j) {
       const running = a.state === 'running' || idx === 0;
       const name = escHtml(String(a.label || a.account || a.operator || 'Account'));
       const e = _scrapeEtaText(a.etaMs);
-      return `<div class="q-slot${running ? ' is-running' : ''}"><span class="q-pos">${running ? '▶' : '#' + (idx + 1)}</span> ${name}${running ? ' — scraping now' : ' — ahead of you'} <span class="q-eta">${running ? 'running' : (e ? '~' + e : '')}</span></div>`;
+      return _qSlotHtml({
+        cls: running ? 'is-running' : '', pos: '#' + (idx + 1), play: running,
+        label: name, sub: running ? 'scraping now' : 'ahead of you',
+        eta: running ? 'running' : (e ? '~' + e : ''),
+      });
     };
     if (list.length <= 3) {
       list.forEach((a, idx) => rows.push(slot(a, idx)));
     } else {
       rows.push(slot(list[0], 0));
-      rows.push(`<div class="q-slot is-mid">${list.length - 2} more account${list.length - 2 === 1 ? '' : 's'} ahead</div>`);
+      rows.push(midRow(list.length - 2));
       rows.push(slot(list[list.length - 1], list.length - 1));
     }
-    rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos || (list.length + 1)}</span> ${youLabel} — your job <span class="q-eta">${eta ? 'est. ~' + eta : ''}</span></div>`);
+    rows.push(_qSlotHtml({ cls: 'is-you', pos: '#' + (pos || (list.length + 1)), label: youLabel, sub: 'your job', eta: eta ? 'est. ~' + eta : '' }));
     return `<div class="q-ladder">${rows.join('')}</div>`;
   }
 
   if (ahead <= 0) {
-    rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos || 1}</span> ${youLabel} — your job <span class="q-eta">you're next ↑</span></div>`);
+    rows.push(_qSlotHtml({ cls: 'is-you', pos: '#' + (pos || 1), label: youLabel, sub: 'your job', eta: "you're next" }));
     return `<div class="q-ladder">${rows.join('')}</div>`;
   }
-  rows.push(`<div class="q-slot is-running"><span class="q-pos">▶</span> An account is scraping now <span class="q-eta">running</span></div>`);
+  rows.push(_qSlotHtml({ cls: 'is-running', play: true, label: 'An account is scraping now', eta: 'running' }));
   const waiting = ahead - 1; // ahead of you, excluding the one running now
   if (waiting > 2) {
-    rows.push(`<div class="q-slot is-mid">${waiting - 1} more account${waiting - 1 === 1 ? '' : 's'} ahead</div>`);
-    rows.push(`<div class="q-slot"><span class="q-pos">#${pos - 1}</span> Account ahead of you <span class="q-eta">${eta ? '~' + eta : ''}</span></div>`);
+    rows.push(midRow(waiting - 1));
+    rows.push(_qSlotHtml({ pos: '#' + (pos - 1), label: 'Account ahead of you', eta: eta ? '~' + eta : '' }));
   } else {
     for (let k = 0; k < waiting; k++) {
       const slotPos = pos - waiting + k;
       const isLast = k === waiting - 1;
-      rows.push(`<div class="q-slot"><span class="q-pos">#${slotPos}</span> Account ahead of you <span class="q-eta">${isLast && eta ? '~' + eta : ''}</span></div>`);
+      rows.push(_qSlotHtml({ pos: '#' + slotPos, label: 'Account ahead of you', eta: isLast && eta ? '~' + eta : '' }));
     }
   }
-  rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos}</span> ${youLabel} — your job <span class="q-eta">${eta ? 'est. ~' + eta : ''}</span></div>`);
+  rows.push(_qSlotHtml({ cls: 'is-you', pos: '#' + pos, label: youLabel, sub: 'your job', eta: eta ? 'est. ~' + eta : '' }));
   return `<div class="q-ladder">${rows.join('')}</div>`;
 }
 
@@ -4708,9 +4840,55 @@ window.toggleDashScrapeStrip = (elStrip) => {
   _dashScrapeOpen = wrap.classList.contains('open');
 };
 
+// The runId of the launch the Jobs pane should show — set on Start / Re-run, and
+// cleared (null) when opening an existing scrape. Lets the console show ONLY the
+// current run, not older runs grouped under the same scrape name/sheet/tab
+// (re-running "TEST" used to show last run's failed accounts alongside the new one).
+let _scrapeViewRunId = null;
+// Collapsible run groups in the Jobs pane. _scrapeRunSeen = run keys we've applied
+// the default (past runs closed) to once; _scrapeRunCollapsed = keys currently
+// collapsed (default + the operator's toggles), persisted across re-renders.
+const _scrapeRunSeen = new Set();
+const _scrapeRunCollapsed = new Set();
+function _toggleScrapeRun(key) {
+  const nowCollapsed = !_scrapeRunCollapsed.has(key);
+  if (nowCollapsed) _scrapeRunCollapsed.add(key); else _scrapeRunCollapsed.delete(key);
+  // Flip the DOM immediately (the next poll re-renders from the set anyway).
+  try {
+    const sel = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(key) : key.replace(/"/g, '\\"');
+    document.querySelectorAll(`.scrape-run-head[data-runkey="${sel}"]`).forEach((h) => h.classList.toggle('is-collapsed', nowCollapsed));
+    document.querySelectorAll(`.scrape-run-jobs[data-runkey="${sel}"]`).forEach((b) => { b.hidden = nowCollapsed; });
+  } catch (_) { /* */ }
+}
+if (typeof window !== 'undefined') window._toggleScrapeRun = _toggleScrapeRun;
+// Scope a job list to ONE launch — but only when we're watching that launch
+// (Start / Re-run set _scrapeViewRunId). Opening an existing scrape passes no
+// runId and shows ALL its runs, so the pane matches the board card's totals:
+// a scrape that collected 24k leads then hit a rate-limited re-run must not read
+// "0 leads" when opened just because the latest run failed. A fresh launch still
+// filters to its own run_ id so a re-run of the same name doesn't show the prior
+// run's jobs (if the engine didn't stamp the shared id, fall back to showing all).
+function _currentRunJobs(jobs, viewRunId) {
+  const list = Array.isArray(jobs) ? jobs : [];
+  if (!viewRunId || list.length < 2) return list;
+  const byRun = list.filter((j) => j && j.runId === viewRunId);
+  return byRun.length ? byRun : list;
+}
+if (typeof window !== 'undefined') window._currentRunJobs = _currentRunJobs;
+
 async function pollScrapeJobs() {
   const el = document.getElementById('scrape-jobs');
   if (!el) return;
+  // VIEWING an opened existing scrape → scope the console (Jobs pane + progress
+  // card + Queue) to THAT scrape's jobs, taken from the board poll (refreshed
+  // every 2.5s), exactly like the live log is already scoped via _snOpenedScrape.
+  // Without this the console reflects THIS SESSION's state, so a running scrape
+  // you opened but didn't launch yourself wrongly reads as "NO SCRAPE RUNNING".
+  const openedCid = _snOpenedScrape && _snOpenedScrape.cid;
+  if (openedCid && Array.isArray(_snLastCampaigns)) {
+    const oc = _snLastCampaigns.find((c) => c.id === openedCid);
+    if (oc && Array.isArray(oc.jobs)) { _renderScrapeConsole(_currentRunJobs(oc.jobs, _scrapeViewRunId), el); return; }
+  }
   try {
     const r = await fetch('/api/scrape/jobs');
     const res = await r.json();
@@ -4727,30 +4905,101 @@ async function pollScrapeJobs() {
     if (scrapeBaselineJobIds.size) {
       jobs = jobs.filter((j) => { const k = _scrapeJobKey(j); return !(k && scrapeBaselineJobIds.has(k)); });
     }
-    if (!jobs.length) {
-      el.innerHTML = '<div class="scrape-job-empty">No scrape jobs yet.</div>';
-      _setScrapeFoot(0, 0, 0);
-      _setScrapeVjCard({ leads: 0, pages: 0, accounts: 0, done: 0, total: 0, status: 'idle', tabs: [] });
-      renderScrapeQueueTab([]);
-      return;
-    }
+    _renderScrapeConsole(_currentRunJobs(jobs, _scrapeViewRunId), el);
+  } catch (_) { /* keep last render */ }
+}
+
+// Render the launch console (Jobs pane + progress card + Queue tab + dock) from
+// a job list. Shared by the session-scoped poll above and the opened-scrape view,
+// so an opened running scrape shows the same live numbers as its board strip.
+// Split a scrape's jobs into separate RUNS so a re-scrape reads as "Run 1 / Run 2"
+// instead of one mixed list. Jobs sharing a run_ id are one run (a launch stamps
+// all its jobs with the same id); older jobs — each with its own id — are split by
+// a gap in creation time (one launch fires its searches together, seconds apart).
+function _groupScrapeRuns(jobs) {
+  const list = (jobs || []).slice().sort((a, b) => (Number(a && a.createdAt) || 0) - (Number(b && b.createdAt) || 0));
+  const GAP = 5 * 60 * 1000;
+  const runs = [];
+  for (const j of list) {
+    const rid = String((j && j.runId) || '');
+    const shared = /^run_/.test(rid);
+    const g = runs[runs.length - 1];
+    const same = g && (shared ? g.runId === rid : (!g.runId && ((Number(j.createdAt) || 0) - g.lastAt) <= GAP));
+    if (!same) runs.push({ runId: shared ? rid : null, jobs: [j], firstAt: Number(j && j.createdAt) || 0, lastAt: Number(j && j.createdAt) || 0 });
+    else { g.jobs.push(j); g.lastAt = Number(j.createdAt) || g.lastAt; }
+  }
+  return runs;
+}
+if (typeof window !== 'undefined') window._groupScrapeRuns = _groupScrapeRuns;
+
+function _renderScrapeConsole(jobs, el) {
+  el = el || document.getElementById('scrape-jobs');
+  if (!el) return;
+  jobs = jobs || [];
+  if (!jobs.length) {
+    el.innerHTML = '<div class="scrape-job-empty">No active scrape jobs. Finished scrapes stay on the board below with their full status.</div>';
+    _setScrapeFoot(0, 0, 0);
+    _setScrapeVjCard({ leads: 0, pages: 0, accounts: 0, done: 0, total: 0, status: 'idle', tabs: [] });
+    renderScrapeQueueTab([]);
+    _syncScrapeDock([]);
+    return;
+  }
+  {
     const statClass = (s) => (s === 'error' || s === 'cancelled') ? 'err'
       : (s === 'done' ? 'done' : (s === 'running' ? 'running' : ''));
-    el.innerHTML = jobs.map((j) => {
+    const rowHtml = (j) => {
       const leads = j.profiles || 0;
       const leadsHtml = leads > 0 ? `<span class="leads">${leads} lead${leads === 1 ? '' : 's'}</span>` : `${leads} leads`;
-      const label = (j.tabName || j.searchUrl || j.id || 'job');
+      const label = (j.tabName || j.searchLabel || j.searchUrl || j.id || 'job');
       const jLabel = String(label).replace(/'/g, '&#39;');
       // Per-job live View — only while running (no live page otherwise).
       const viewBtn = j.state === 'running'
         ? `<button class="btn btn-ghost btn-sm scrape-job-view" onclick="openScrapeJobView('${escHtml(j.id)}','${jLabel}')" title="Watch this account's browser live">👁 View</button>`
         : '';
+      // "rerouted" = this search was moved off a dead account (no seat / logged
+      // out) onto a surviving selected account; show it as "moved", not the raw state.
+      const stateLabel = j.state === 'rerouted' ? 'moved to another account' : (j.state || '');
+      // Name the account that ran this search, so the row stands on its own.
+      const _nm = j.accountName || (j.profileId && typeof profileLabel === 'function' ? profileLabel(j.profileId) : '');
+      const acct = (_nm && _nm !== j.profileId) ? _nm : '';
+      const acctHtml = acct ? `<span class="scrape-job-acct">${escHtml(acct)}</span>` : '';
       return `<div class="scrape-job-row">
-          <span class="scrape-job-name">${escHtml(label)}</span>
-          <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(j.state || '')} · ${j.pages || 0}p · ${leadsHtml}</span>
+          <span class="scrape-job-name">${escHtml(label)}${acctHtml}</span>
+          <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(stateLabel)} · ${j.pages || 0}p · ${leadsHtml}</span>
           ${viewBtn}
         </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
-    }).join('');
+    };
+    // When a scrape was re-run, separate the runs with a header so "1st scrape" and
+    // "2nd scrape" are clearly distinct instead of one lumped-together list. A
+    // single-run scrape renders exactly as before (no header).
+    const runs = _groupScrapeRuns(jobs);
+    if (runs.length > 1) {
+      // Each run is a collapsible dropdown. Default: earlier runs closed, only the
+      // CURRENT (latest) run open — so a re-scrape doesn't bury the live run under
+      // old ones. Seed that default once per run key; the operator's own toggles
+      // persist across the 2.5s re-render via _scrapeRunCollapsed.
+      runs.forEach((run, i) => {
+        const k = run.runId || ('ts:' + run.firstAt);
+        if (!_scrapeRunSeen.has(k)) { _scrapeRunSeen.add(k); if (i < runs.length - 1) _scrapeRunCollapsed.add(k); }
+      });
+      el.innerHTML = runs.map((run, i) => {
+        const k = run.runId || ('ts:' + run.firstAt);
+        const collapsed = _scrapeRunCollapsed.has(k);
+        const rLeads = run.jobs.reduce((a, j) => a + (j.profiles || 0), 0);
+        const n = run.jobs.length;
+        let when = '';
+        try { when = run.firstAt ? new Date(run.firstAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''; } catch (_) { /* */ }
+        const ek = String(k).replace(/'/g, '&#39;');
+        const head = `<div class="scrape-run-head${collapsed ? ' is-collapsed' : ''}" data-runkey="${escHtml(k)}" onclick="_toggleScrapeRun('${ek}')">`
+          + `<svg class="scrape-run-caret" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></svg>`
+          + `<span class="scrape-run-no">Run ${i + 1}</span>${when ? `<span class="scrape-run-when">${escHtml(when)}</span>` : ''}`
+          + `<span class="scrape-run-meta">${rLeads.toLocaleString()} lead${rLeads === 1 ? '' : 's'} · ${n} search${n === 1 ? '' : 'es'}</span></div>`;
+        const body = `<div class="scrape-run-jobs" data-runkey="${escHtml(k)}"${collapsed ? ' hidden' : ''}>${run.jobs.map(rowHtml).join('')}</div>`;
+        return head + body;
+      }).join('');
+    } else {
+      el.innerHTML = jobs.map(rowHtml).join('');
+    }
     const totalLeads = jobs.reduce((a, j) => a + (j.profiles || 0), 0);
     const totalPages = jobs.reduce((a, j) => a + (j.pages || 0), 0);
     const accounts = new Set(jobs.map((j) => j.profileId).filter(Boolean)).size;
@@ -4783,8 +5032,9 @@ async function pollScrapeJobs() {
     });
     renderScrapeQueueTab(jobs);
     _syncScrapeDock(jobs);
-  } catch (_) { /* keep last render */ }
+  }
 }
+if (typeof window !== 'undefined') window._renderScrapeConsole = _renderScrapeConsole;
 
 // Adapt the launch-console dock to the live state: when a job is already
 // running/queued, HIDE "Start Scrape" (starting again would launch a duplicate)
@@ -9825,19 +10075,128 @@ function _adaptActiveCardControls(card, status) {
 // Cloud "Open" — go to the campaign tab and show THIS campaign's live status
 // campaign card (card #2), then scroll down to it. Same as a local Open.
 // Legacy dashboard action retained for saved markup; this edition opens locally.
+// Global "working…" overlay. Gives INSTANT feedback for any action that awaits a
+// fetch before the UI visibly changes (Open a cloud campaign seeds its card from
+// 3–4 engine calls first) — a click that looks like nothing happened was the #1
+// complaint. Self-protecting: auto-hides after maxMs, so a missed hideBusy() can
+// never leave the overlay stuck over the app.
+let _busyTimer = null;
+function showBusy(text = 'Opening…', maxMs = 8000) {
+  let el = document.getElementById('app-busy');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-busy';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.innerHTML = '<div class="ab-card"><span class="ab-sp" aria-hidden="true"></span><span class="ab-txt"></span></div>';
+    document.body.appendChild(el);
+  }
+  const t = el.querySelector('.ab-txt'); if (t) t.textContent = text;
+  el.classList.add('open');
+  if (_busyTimer) clearTimeout(_busyTimer);
+  _busyTimer = setTimeout(() => { try { hideBusy(); } catch (_) { /* */ } }, maxMs);
+}
+function hideBusy() {
+  const el = document.getElementById('app-busy');
+  if (el) el.classList.remove('open');
+  if (_busyTimer) { clearTimeout(_busyTimer); _busyTimer = null; }
+}
+if (typeof window !== 'undefined') { window.showBusy = showBusy; window.hideBusy = hideBusy; }
+
+// In-place button busy state for dock / action buttons that do 1–3 engine calls
+// then toast on completion — the click now shows a spinner immediately. Icon-only
+// buttons (.dock-btn) get just a spinner; text buttons get a spinner + label.
+// Returns a restore() to call in a finally. Re-entry (double-click) is a no-op.
+function busyButton(el, label) {
+  if (!el || !el.tagName || el.dataset._busy) return () => {};
+  el.dataset._busy = '1';
+  const prevHTML = el.innerHTML;
+  const prevDisabled = el.disabled;
+  const iconOnly = el.classList.contains('dock-btn');
+  el.disabled = true;
+  el.classList.add('is-busy');
+  el.innerHTML = `<span class="btn-sp" aria-hidden="true"></span>${(label && !iconOnly) ? `<span class="btn-sp-lbl">${escHtml(label)}</span>` : ''}`;
+  let done = false;
+  return () => {
+    if (done) return; done = true;
+    try { el.innerHTML = prevHTML; el.disabled = prevDisabled; el.classList.remove('is-busy'); delete el.dataset._busy; } catch (_) { /* */ }
+  };
+}
+if (typeof window !== 'undefined') window.busyButton = busyButton;
+
+// Build a wizard config from the engine's campaign record so an opened campaign
+// shows its real Sheet, accounts and templates — not blank. The DB record keeps
+// the full config even when the launch-config snapshot is gone (GGL had none),
+// but FLAT; applyPresetConfig wants sheet/accounts/mode/delays at the top level
+// and the message fields nested under `templates`. Place every config field in
+// BOTH locations so whichever one applyPresetConfig reads finds the value.
+function _wizardConfigFromCloudCampaign(cc) {
+  if (!cc) return null;
+  const raw = (cc.config && typeof cc.config === 'object') ? cc.config : {};
+  return {
+    ...raw,
+    templates: { ...raw, ...(raw.templates || {}) },
+    mode: cc.mode || raw.mode || '',
+    sheetUrl: cc.sheet_url || raw.sheetUrl || '',
+    profileIds: Array.isArray(cc.profile_ids) ? cc.profile_ids : (raw.profileIds || []),
+    dailyLimit: (cc.daily_limit != null) ? cc.daily_limit : raw.dailyLimit,
+    checkIntervalMinutes: cc.check_interval_minutes || raw.checkIntervalMinutes,
+  };
+}
+
+// Prefill the wizard from the opened cloud campaign's detail (cached by
+// _refreshCloudActiveStatus). Best-effort: a blank wizard is the fallback.
+function _prefillCloudCampaignWizard(id) {
+  try {
+    const det = (typeof _cloudDetailCache !== 'undefined' && _cloudDetailCache.get(id)) || null;
+    const cfg = _wizardConfigFromCloudCampaign(det && det.campaign);
+    if (cfg && typeof applyPresetConfig === 'function') { applyPresetConfig(cfg); return true; }
+  } catch (_) { /* leave the wizard blank rather than break the open */ }
+  return false;
+}
+
+// Seed the wizard's name field to the campaign being viewed (openCloudLive reuses
+// the #/new page, whose name field otherwise keeps the PREVIOUSLY-opened name —
+// operator saw "APHI…" while opening "GGL…"). The one-shot override also stops
+// the route's deferred name-sync from re-clobbering it.
+function _seedCloudLiveName(name) {
+  if (!name) return;
+  window._openEditNameOverride = name;
+  const ni = document.getElementById('campaign-name-input');
+  if (ni) ni.value = name;
+  try { localStorage.setItem('campaignName', name); } catch (_) { /* */ }
+}
+
 async function openCloudLive(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
+  if (typeof showBusy === 'function') showBusy('Opening…');
   _viewingCloudId = id;
   liveStatusForcedOpen = true;
-  await _refreshCloudActiveStatus(id);   // seed the card before we reveal it
-  goCreateCampaign();                     // → the campaign tab (#/new)
+  // NAVIGATE FIRST, load the card AFTER. _refreshCloudActiveStatus does several
+  // sequential engine fetches and, on a cold open, is slow — awaiting it before
+  // navigating made the first click sit on the board under the overlay (it hit
+  // the 8s safety-hide), so operators clicked twice. Switching the view up front
+  // means the first click always lands on the campaign; the card then fills in.
+  _seedCloudLiveName((selectedItem && selectedItem.name) || '');  // instant name if we have it
+  goCreateCampaign();                     // → the campaign tab (#/new), immediately
+  try {
+    await _refreshCloudActiveStatus(id);  // fill the card (can take a beat on a cold open)
+  } catch (e) {
+    if (typeof hideBusy === 'function') hideBusy();
+    try { if (typeof showCampaignToast === 'function') showCampaignToast('Could not load this campaign — ' + (e && e.message || e), 4000); } catch (_) { /* */ }
+    return;
+  }
+  _seedCloudLiveName((window.__cloudActiveStatus && window.__cloudActiveStatus.name) || '');  // refine from the detail
+  _prefillCloudCampaignWizard(id);        // fill Sheet / accounts / templates (was blank)
+  _seedCloudLiveName((window.__cloudActiveStatus && window.__cloudActiveStatus.name) || '');  // re-assert after applyPresetConfig
   setTimeout(() => {
     try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
     try { syncLiveStatusVisibility(); } catch (_) { /* */ }
     try { placeLiveCard(); } catch (_) { /* */ }
     const sec = document.getElementById('nav-status');
     if (sec) { try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ } }
+    if (typeof hideBusy === 'function') hideBusy();   // card is placed + visible now
   }, 180);
   _startCloudCardPoll();
 }
@@ -11155,6 +11514,11 @@ function renderUnifiedStrip(it) {
   // lie as the "Working…" this card was built to kill. Bucket stays `running` on
   // purpose: the controls and the acceptance sweep both depend on it.
   const waiting = !!(it.currentAction && it.currentAction.phase === 'waiting');
+  // needs_review: the engine stopped this campaign on a problem and is NOT
+  // retrying — an operator must open the log and act. The bucket stays `running`
+  // on purpose (so it stays in NOW RUNNING with its controls), but a green
+  // "Running" chip here is a lie: nothing is sending. Report the truth.
+  const needsReview = !!(it.needsReview || String(it.engineStatus || '') === 'needs_review');
   const scheduled = queued && !!it.scheduledAt;
   const whenTxt = scheduled && typeof v3FormatScheduledAt === 'function' ? v3FormatScheduledAt(it.scheduledAt) : '';
   // One active campaign, one component. A previously-unexpanded live row used
@@ -11181,13 +11545,13 @@ function renderUnifiedStrip(it) {
   const _ownedLocal = it.where === 'local' || String(it.runsOn || '') === 'local';
   const stateCls = [
     _ownedLocal ? 'local' : '',
-    running && !monitoring && !waiting ? 'run' : '',
+    running && !monitoring && !waiting && !needsReview ? 'run' : '',
     (monitoring || waiting) ? 'monitoring' : '',
     queued ? 'queued' : '',
     scheduled ? 'sched' : '',
     done ? 'done' : '',
     'sn-collapsed',
-    errored ? 'stopped' : '',
+    (errored || needsReview) ? 'stopped' : '',
     cancelled ? 'cancelled' : '',
   ].filter(Boolean).join(' ');
 
@@ -11199,6 +11563,7 @@ function renderUnifiedStrip(it) {
   const whenPill = scheduled ? '<span class="sn-when-pill">⏰ Scheduled</span>' : '';
   const dot = errored ? '<span class="dot red"></span>'
     : it.bad ? '<span class="dot cancel"></span>'   // cancelled / stopped — gray, not red
+    : needsReview ? '<span class="dot red"></span>'  // needs operator action — not sending
     : (monitoring || waiting) ? '<span class="dot mon"></span>'
     // Pink dot follows the pink rail: where it RUNS, not where it came from.
     : running ? (_ownedLocal ? '<span class="dot runlocal"></span>' : '<span class="dot run"></span>')
@@ -11217,6 +11582,7 @@ function renderUnifiedStrip(it) {
     : queued ? 'Queued'
     : monitoring ? 'Monitoring'
     : waiting ? 'Waiting'
+    : needsReview ? 'Needs review'
     : running ? (it.paused && !locallyOwnedMonitoring ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
@@ -11931,8 +12297,13 @@ window.onOtherUserSearch = function (val) {
 //   subtitle    — small muted label after the title
 //   alwaysShow  — render the section header even when empty
 function _renderBoardSection(key, title, secItems, opts = {}) {
-  const running   = secItems.filter((x) => x.bucket === 'running' && !x.paused);
-  const paused    = secItems.filter((x) => x.bucket === 'running' && x.paused);
+  // needs_review stays in the active bucket (keeps its controls) but is NOT
+  // running — the engine stopped it on a problem and isn't retrying. Give it its
+  // own rail so the board never files a stalled campaign under "Running".
+  const _isNR = (x) => x.bucket === 'running' && (x.needsReview || String(x.engineStatus || '') === 'needs_review');
+  const review    = secItems.filter(_isNR);
+  const running   = secItems.filter((x) => x.bucket === 'running' && !x.paused && !_isNR(x));
+  const paused    = secItems.filter((x) => x.bucket === 'running' && x.paused && !_isNR(x));
   const idle      = secItems.filter((x) => x.bucket === 'queued');
   const done      = secItems.filter((x) => x.bucket === 'done' && !x.bad);
   const cancelled = secItems.filter((x) => x.bucket === 'done' && x.bad);
@@ -11973,7 +12344,8 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
 
   // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
   // groups (sections + Done/Cancelled) show a caret, so the affordance reads true.
-  const body = rail('Running', running)
+  const body = rail('Needs review', review)
+    + rail('Running', running)
     + rail('Paused', paused)
     + rail('Queued', idle)
     + (opts.scheduledHtml ? `<div class="sn-railhead">Scheduled <span class="sn-railcount">${opts.scheduledCount || ''}</span></div>` + opts.scheduledHtml : '')
@@ -13744,6 +14116,7 @@ function localCampaignViewStatus(incoming) {
 async function openRunningCampaignReadOnly(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
+  if (typeof showBusy === 'function') showBusy('Opening…');                   // instant feedback for the config fetch below
   let d = null;
   try {
     const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
@@ -13782,6 +14155,7 @@ async function openRunningCampaignReadOnly(id) {
   // again after those deferred events have run. The 5s cloud-card poll + wizard
   // route entry also re-assert (see _startCloudCardPoll, applyRoute).
   _enforceCloudReadOnlyView();
+  if (typeof hideBusy === 'function') hideBusy();                             // wizard is revealed + bound now
   [120, 600, 1500].forEach((ms) => setTimeout(() => { try { _enforceCloudReadOnlyView(); } catch (_) { /* */ } }, ms));
 }
 window.openRunningCampaignReadOnly = openRunningCampaignReadOnly;
@@ -13832,6 +14206,7 @@ function _wireReadOnlyEditGuard() {
 // Campaigns launched before the launch-config snapshot existed fall back to the
 // live view.
 async function openCampaignForEditCloud(id) {
+  if (typeof showBusy === 'function') showBusy('Opening…');                   // instant feedback for the config fetch below
   let d = null;
   try {
     const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
@@ -13891,6 +14266,7 @@ async function openCampaignForEditCloud(id) {
   // v2.160.46: bind the LIVE STATUS panel to THIS campaign so it shows the one
   // just opened (not a previously-viewed campaign leaking in from below).
   _bindLiveStatusToCampaign(id);
+  if (typeof hideBusy === 'function') hideBusy();                             // wizard is prefilled + revealed now
 }
 
 async function openCampaignForEdit(id) {
@@ -14074,6 +14450,12 @@ const _localRestartsPending = new Set();
 async function restartLocalFromItem(id, fromStart, reviewed = null) {
   if (_localRestartsPending.has(id)) return false;
   _localRestartsPending.add(id);
+  // Unlike a fresh Start (which shows the launch animation), this resume/rerun
+  // path reads saved config + the Google Sheet + starts (3 round-trips) silently.
+  // Give instant feedback. hideBusy() in finally covers every exit incl. the
+  // preflight-review return (the panel becomes the UI then). Guarded so the
+  // function never hard-depends on the UI helper being in scope.
+  if (typeof showBusy === 'function') showBusy(fromStart ? 'Restarting…' : 'Starting…');
   try {
     const selected = _viewingLocalCampaign?.id === id ? _viewingLocalCampaign : null;
     const it = _boardItemsById.get(id) || _snItemsById.get(id) || selected;
@@ -14148,6 +14530,7 @@ async function restartLocalFromItem(id, fromStart, reviewed = null) {
     return false;
   } finally {
     _localRestartsPending.delete(id);
+    if (typeof hideBusy === 'function') hideBusy();
   }
 }
 window.restartLocalFromItem = restartLocalFromItem;
@@ -17736,7 +18119,14 @@ function syncLiveStatusVisibility() {
   // regardless of the local __cockpit state (which is idle for a VM campaign) and
   // even if liveStatusForcedOpen was reset by an unrelated re-render.
   const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
-  const show = !inFollowerGrowth && onNew && !(editingDraft && _viewingLocalCampaign && !checkHere) && !unrelatedDraft
+  // Deliberately opening a cloud campaign (Open on a VM strip) MUST show its Live
+  // Status, even a finished one. Navigating there lands on #/new with an empty
+  // draft-name field, which makes `unrelatedDraft` true and the local-draft guard
+  // fire — both would hide the section and the operator sees a blank new-campaign
+  // form ("Open does nothing"). cloudView bypasses those draft suppressors; the
+  // trailing clause still requires an actual reason to show (cloudView is one).
+  const show = !inFollowerGrowth && onNew
+    && (cloudView || (!(editingDraft && _viewingLocalCampaign && !checkHere) && !unrelatedDraft))
     && (liveStatusForcedOpen || checkHere || _viewingLocalCampaign || cloudView || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   // A live ownership transition is operational status, not optional wizard
@@ -31495,11 +31885,14 @@ window.dashCopyLog = async function(btn) {
 
 // v2.112: resume-with-live-state client. Renders ONLY from the server's resumeChanges
 // object — never computes counts locally (no invented data).
-async function reloadSheetWhilePaused() {
-  const r = await fetch('/api/campaign/resume/reload-sheet', { method: 'POST' })
-    .then(x => x.json()).catch(() => null);
-  if (!r || !r.ok) { showCampaignToast(`Reload failed: ${r?.error || 'unknown'}`, 4000); return; }
-  showCampaignToast(`Sheet reloaded — review on Resume.`, 2500);
+async function reloadSheetWhilePaused(btn) {
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Reloading sheet…'); // reads the Google Sheet (can take a few seconds)
+  try {
+    const r = await fetch('/api/campaign/resume/reload-sheet', { method: 'POST' })
+      .then(x => x.json()).catch(() => null);
+    if (!r || !r.ok) { showCampaignToast(`Reload failed: ${r?.error || 'unknown'}`, 4000); return; }
+    showCampaignToast(`Sheet reloaded — review on Resume.`, 2500);
+  } finally { restore(); }
 }
 
 function renderResumeReview(rc) {
@@ -31725,13 +32118,15 @@ async function renderPauseAccountAdd() {
 }
 window.renderPauseAccountAdd = renderPauseAccountAdd;
 
-window.dashPauseActive = async function() {
+window.dashPauseActive = async function(btn) {
   // Route from the card's data, not the navigation flag. A fresh app process can
   // restore a DEV/VM campaign card without ever setting _viewingCloudId.
   const cloudId = _activeCardCloudId();
   if (cloudId) {
     const paused = !!(window.__cloudActiveStatus && window.__cloudActiveStatus.paused);
-    if (typeof pauseCloudCampaignUI === 'function') await pauseCloudCampaignUI(cloudId, paused);
+    const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, paused ? 'Resuming…' : 'Pausing…'); // cloud mutation can retry ~1 min
+    try { if (typeof pauseCloudCampaignUI === 'function') await pauseCloudCampaignUI(cloudId, paused); }
+    finally { restore(); }
     return;
   }
   try {
@@ -31742,16 +32137,19 @@ window.dashPauseActive = async function() {
       // onResumeClicked either resumes immediately (confirmResume → toast + pollStatus) or
       // opens the review panel (whose Confirm button does the same). No poll here: when the
       // panel is shown nothing has changed yet, and confirmResume owns the post-resume refresh.
+      // No busy spinner — it may open an interactive review panel, not a pure wait.
       await onResumeClicked();
     } else {
-      const endpoint = '/api/campaign/pause';
-      const r = await fetch(endpoint, { method: 'POST' });
-      if (r.ok) {
-        if (typeof showCampaignToast === 'function') showCampaignToast('Pausing…');
-        if (typeof pollStatus === 'function') pollStatus();
-      } else {
-        if (typeof showCampaignToast === 'function') showCampaignToast('Pause/resume failed');
-      }
+      const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Pausing…');
+      try {
+        const r = await fetch('/api/campaign/pause', { method: 'POST' });
+        if (r.ok) {
+          if (typeof showCampaignToast === 'function') showCampaignToast('Pausing…');
+          if (typeof pollStatus === 'function') pollStatus();
+        } else {
+          if (typeof showCampaignToast === 'function') showCampaignToast('Pause/resume failed');
+        }
+      } finally { restore(); }
     }
   } catch (err) { console.error('[v3] dashPauseActive:', err); }
 };
@@ -31973,9 +32371,10 @@ window.dashStopActive = async function() {
   }
 };
 
-window.dashRestartActive = async function() {
+window.dashRestartActive = async function(btn) {
   if (_activeCardCloudId()) { if (typeof showCampaignToast === 'function') showCampaignToast('Restart isn’t available for cloud campaigns.', 4000); return; }
   if (!confirm('Restart this campaign from the beginning? Progress will reset.')) return;
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Restarting…');
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
@@ -32003,9 +32402,11 @@ window.dashRestartActive = async function() {
     if (typeof pollStatus === 'function') pollStatus();
     if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
   } catch (err) { console.error('[v3] dashRestartActive:', err); }
+  finally { restore(); }
 };
 
-window.dashCopyActiveToQueue = async function() {
+window.dashCopyActiveToQueue = async function(btn) {
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Copying…');
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
@@ -32029,6 +32430,7 @@ window.dashCopyActiveToQueue = async function() {
     if (typeof showCampaignToast === 'function') showCampaignToast('Copied "' + (s.name || '') + '" to queue');
     if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
   } catch (err) { console.error('[v3] dashCopyActiveToQueue:', err); }
+  finally { restore(); }
 };
 
 // v2.78: Run check now → ask scope (this campaign's accounts vs all senders in
@@ -32283,8 +32685,9 @@ window.toggleMonitorDetails = function(btn) {
   if (btn) btn.setAttribute('data-tip', opening ? 'Hide details' : 'Show details');
 };
 
-window.dashStopMonitoring = async function() {
+window.dashStopMonitoring = async function(btn) {
   if (!confirm('Stop monitoring? Remaining unaccepted leads will be stamped Closed.')) return;
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Stopping…');
   try {
     const r = await fetch('/api/monitoring/stop', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -32295,9 +32698,11 @@ window.dashStopMonitoring = async function() {
     }
     if (typeof pollStatus === 'function') pollStatus();
   } catch (err) { console.error('[v3] dashStopMonitoring:', err); }
+  finally { restore(); }
 };
 
-window.dashForceSweep = async function() {
+window.dashForceSweep = async function(btn) {
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Starting…');
   try {
     const r = await fetch('/api/monitoring/check-now', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -32308,9 +32713,11 @@ window.dashForceSweep = async function() {
     }
     if (typeof pollStatus === 'function') pollStatus();
   } catch (err) { console.error('[v3] dashForceSweep:', err); }
+  finally { restore(); }
 };
 
-window.dashCopyMonitorToQueue = async function() {
+window.dashCopyMonitorToQueue = async function(btn) {
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Copying…');
   try {
     const r = await fetch('/api/monitoring/state');
     const m = await r.json();
@@ -32334,6 +32741,7 @@ window.dashCopyMonitorToQueue = async function() {
     if (typeof showCampaignToast === 'function') showCampaignToast('Copied to queue');
     if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
   } catch (err) { console.error('[v3] dashCopyMonitorToQueue:', err); }
+  finally { restore(); }
 };
 
 /* ── Up Next deck ───────────────────────────────────────────────────────── */
@@ -33009,7 +33417,7 @@ function v3RenderPastRow(p, displayIdx, safe) {
       ${monitoringChipHtml(oIdx, p)}
       <div class="dock" id="${dockId}" role="toolbar" aria-label="${safe(p.name || '')} actions">
         ${isStopped && p.settings ? `<button class="dock-btn" data-tip="Resume" aria-label="Resume" onclick="window.dashResumePast(${oIdx})">${V3_SVG_PLAY}</button>` : ''}
-        <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx})">${V3_SVG_RESTART}</button>
+        <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx}, this)">${V3_SVG_RESTART}</button>
         <div class="dock-actions">
           <button class="dock-btn" data-tip="Open log" aria-label="Open log" onclick="window.dashOpenPastLog(${oIdx})">${V3_SVG_DOC}</button>
           ${isStopped && p.settings ? `<button class="dock-btn" data-tip="Edit &amp; resume" aria-label="Edit and resume" onclick="window.dashEditResumePast(${oIdx})">${V3_SVG_PENCIL}</button>` : ''}
@@ -33118,7 +33526,8 @@ window.saveEditsAndResume = async function() {
   }
 };
 
-window.dashRerunPast = async function(originalIdx) {
+window.dashRerunPast = async function(originalIdx, btn) {
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Rerunning…');
   try {
     const r = await fetch('/api/history/' + originalIdx + '/relaunch', { method: 'POST' });
     const body = await r.json().catch(() => ({}));
@@ -33139,6 +33548,7 @@ window.dashRerunPast = async function(originalIdx) {
       if (typeof showCampaignToast === 'function') showCampaignToast('Rerun failed: ' + (body.error || r.statusText));
     }
   } catch (err) { console.error('[v3] dashRerunPast:', err); }
+  finally { restore(); }
 };
 
 window.dashOpenPastLog = async function(originalIdx) {
@@ -33319,7 +33729,7 @@ window.deleteAllPast = async function() {
 };
 
 // Bug 13: clear the whole queue (per-item Remove already exists on each card).
-window.dashClearQueue = async function() {
+window.dashClearQueue = async function(btn) {
   let items = [];
   try {
     const r = await fetch('/api/queue');
@@ -33328,13 +33738,16 @@ window.dashClearQueue = async function() {
   } catch (err) { console.warn('[v3] dashClearQueue fetch', err); }
   if (items.length === 0) return;
   if (!confirm(`Clear all ${items.length} queued campaign${items.length === 1 ? '' : 's'}?`)) return;
-  for (const q of items) {
-    if (!q || !q.id) continue;
-    try { await fetch('/api/queue/' + encodeURIComponent(q.id), { method: 'DELETE' }); }
-    catch (err) { console.warn('[v3] dashClearQueue delete', q.id, err); }
-  }
-  if (typeof showCampaignToast === 'function') showCampaignToast('Queue cleared');
-  if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(btn, 'Clearing…');
+  try {
+    for (const q of items) {
+      if (!q || !q.id) continue;
+      try { await fetch('/api/queue/' + encodeURIComponent(q.id), { method: 'DELETE' }); }
+      catch (err) { console.warn('[v3] dashClearQueue delete', q.id, err); }
+    }
+    if (typeof showCampaignToast === 'function') showCampaignToast('Queue cleared');
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } finally { restore(); }
 };
 
 // toggleDock — shared dock open/close + click-outside dismissal. Used by Active,
@@ -35536,7 +35949,7 @@ async function saveCampaignConfigByName(name) {
 /** Put a saved campaign's settings back into the wizard. */
 let _openedCampaignName = '';
 let _openedCampaignId = null;
-async function loadCampaignConfigByName(name, campaignId = null) {
+async function loadCampaignConfigByName(name, campaignId = null, opts = {}) {
   const n = String(name || '').trim();
   if (!n) return false;
   try {
@@ -35550,7 +35963,10 @@ async function loadCampaignConfigByName(name, campaignId = null) {
     if (nameEl) nameEl.value = _openedCampaignName;
     bindWizardTo(_openedCampaignName);
     if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
-    if (typeof showCampaignToast === 'function') showCampaignToast(`Loaded settings for "${_openedCampaignName}"`);
+    // Silent for the automatic startup restore — a "Loaded settings" toast firing
+    // on EVERY app load (for whatever name the last session left) is just noise.
+    // User-initiated loads (typing/blurring a known name) still confirm.
+    if (!opts.silent && typeof showCampaignToast === 'function') showCampaignToast(`Loaded settings for "${_openedCampaignName}"`);
     return true;
   } catch (_) { return false; }
 }
@@ -35638,7 +36054,10 @@ if (typeof window !== 'undefined') {
     const name = (document.getElementById('campaign-name-input')?.value || '').trim();
     if (!hasSheet && name) {
       _restoring = true;
-      Promise.resolve(loadCampaignConfigByName(name, config?.campaignId || _openedCampaignId))
+      // Silent: this is an INTERNAL fallback load (the snapshot had no sheet, so
+      // refill from the name's saved settings) — never a user action, so it must
+      // not fire its own "Loaded settings" toast (that's what leaked on startup).
+      Promise.resolve(loadCampaignConfigByName(name, config?.campaignId || _openedCampaignId, { silent: true }))
         .catch(() => {})
         .finally(() => { _restoring = false; });
     } else if (name) {
@@ -35653,19 +36072,20 @@ if (typeof window !== 'undefined') {
 // the only trigger was applyPresetConfig, which a fresh wizard never calls.
 if (typeof window !== 'undefined') {
   const _nameEl = document.getElementById('campaign-name-input');
-  const _maybeLoadByName = async () => {
+  const _maybeLoadByName = async (silent = false) => {
     const name = (_nameEl?.value || '').trim();
     if (!name) return;
     if (String(_openedCampaignName || '').trim().toLowerCase() === name.toLowerCase()) return;
     // Never overwrite work in progress — only fill a wizard with no sheet yet.
     const sheet = (document.getElementById('sheet-url')?.value || '').trim();
     if (sheet) return;
-    await loadCampaignConfigByName(name);
+    await loadCampaignConfigByName(name, null, { silent: silent === true });
   };
-  _nameEl?.addEventListener('change', _maybeLoadByName);
-  _nameEl?.addEventListener('blur', _maybeLoadByName);
-  // And once on load, for a name restored from a draft or the last session.
-  setTimeout(_maybeLoadByName, 2500);
+  _nameEl?.addEventListener('change', () => _maybeLoadByName(false));
+  _nameEl?.addEventListener('blur', () => _maybeLoadByName(false));
+  // And once on load, for a name restored from a draft or the last session —
+  // SILENT (no toast): the operator didn't ask for it, it's just a restore.
+  setTimeout(() => _maybeLoadByName(true), 2500);
 }
 
 async function retrySalesNavAccess(profileId, button) {

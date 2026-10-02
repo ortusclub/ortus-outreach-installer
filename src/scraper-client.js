@@ -196,7 +196,7 @@ function requestWithRetry(method, path, body) {
  * @param {string}   [opts.tabName]          destination tab (single scrape only)
  * @param {boolean}  [opts.slowMode]         larger inter-page delays
  */
-export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [], excludeCompanies = [], accountName = '' } = {}) {
+export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [], excludeCompanies = [], accountName = '', runId = '', accountPool = [] } = {}) {
   const urls = (Array.isArray(searchUrls) ? searchUrls : [searchUrls])
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
@@ -221,6 +221,15 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
     .map((v) => (typeof v === 'string' ? v.trim() : ''))
     .filter(Boolean);
 
+  // accountPool = the FULL selected-account set for this launch (every GoLogin
+  // profile the operator picked), so the engine can fail a dead account's work
+  // over to a surviving one instead of stopping it. runId groups the launch's
+  // per-URL jobs so the engine knows which jobs share this pool. Both best-effort:
+  // an older engine ignores them and falls back to stop-on-dead-account.
+  const accountPoolList = (Array.isArray(accountPool) ? accountPool : [])
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter(Boolean);
+
   // ownerEmail + campaignName ride along so the SHARED board can label each
   // job's owner/campaign on every operator's screen. Best-effort — if the
   // engine drops unknown fields, the board falls back to userId + tab name.
@@ -239,6 +248,8 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
       excludeUrns: excludeUrnList,
       excludeCompanies: excludeCompanyList,
       accountName,
+      ...(runId ? { runId } : {}),
+      ...(accountPoolList.length ? { accountPool: accountPoolList } : {}),
     });
   }
   return requestOnce('POST', '/api/scrape/batch', {
@@ -252,6 +263,8 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
     excludeUrns: excludeUrnList,
     excludeCompanies: excludeCompanyList,
     accountName,
+    ...(runId ? { runId } : {}),
+    ...(accountPoolList.length ? { accountPool: accountPoolList } : {}),
   });
 }
 
