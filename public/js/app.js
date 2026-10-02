@@ -9973,33 +9973,39 @@ function busyButton(el, label) {
 }
 if (typeof window !== 'undefined') window.busyButton = busyButton;
 
+// Seed the wizard's name field to the campaign being viewed (openCloudLive reuses
+// the #/new page, whose name field otherwise keeps the PREVIOUSLY-opened name —
+// operator saw "APHI…" while opening "GGL…"). The one-shot override also stops
+// the route's deferred name-sync from re-clobbering it.
+function _seedCloudLiveName(name) {
+  if (!name) return;
+  window._openEditNameOverride = name;
+  const ni = document.getElementById('campaign-name-input');
+  if (ni) ni.value = name;
+  try { localStorage.setItem('campaignName', name); } catch (_) { /* */ }
+}
+
 async function openCloudLive(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
-  showBusy('Opening…');                   // instant feedback — the seed below takes a beat
+  showBusy('Opening…');
   _viewingCloudId = id;
   liveStatusForcedOpen = true;
+  // NAVIGATE FIRST, load the card AFTER. _refreshCloudActiveStatus does several
+  // sequential engine fetches and, on a cold open, is slow — awaiting it before
+  // navigating made the first click sit on the board under the overlay (it hit
+  // the 8s safety-hide), so operators clicked twice. Switching the view up front
+  // means the first click always lands on the campaign; the card then fills in.
+  _seedCloudLiveName((selectedItem && selectedItem.name) || '');  // instant name if we have it
+  goCreateCampaign();                     // → the campaign tab (#/new), immediately
   try {
-    await _refreshCloudActiveStatus(id);  // seed the card before we reveal it
+    await _refreshCloudActiveStatus(id);  // fill the card (can take a beat on a cold open)
   } catch (e) {
     hideBusy();
-    try { if (typeof showCampaignToast === 'function') showCampaignToast('Could not open this campaign — ' + (e && e.message || e), 4000); } catch (_) { /* */ }
+    try { if (typeof showCampaignToast === 'function') showCampaignToast('Could not load this campaign — ' + (e && e.message || e), 4000); } catch (_) { /* */ }
     return;
   }
-  // Keep the wizard's name field consistent with the campaign being viewed.
-  // openCloudLive reuses the #/new page: the "Campaign ID" updates via
-  // _viewingCloudId, but the name field otherwise keeps the PREVIOUSLY-opened
-  // campaign's name (operator saw "APHI…" while opening "GGL…"). Seed it + the
-  // one-shot override so the route's deferred name-sync doesn't re-clobber it.
-  const _liveName = (window.__cloudActiveStatus && window.__cloudActiveStatus.name)
-    || (selectedItem && selectedItem.name) || '';
-  if (_liveName) {
-    window._openEditNameOverride = _liveName;
-    const _ni = document.getElementById('campaign-name-input');
-    if (_ni) _ni.value = _liveName;
-    try { localStorage.setItem('campaignName', _liveName); } catch (_) { /* */ }
-  }
-  goCreateCampaign();                     // → the campaign tab (#/new)
+  _seedCloudLiveName((window.__cloudActiveStatus && window.__cloudActiveStatus.name) || '');  // refine from the detail
   setTimeout(() => {
     try { renderActiveCard(window.__cloudActiveStatus); } catch (_) { /* */ }
     try { syncLiveStatusVisibility(); } catch (_) { /* */ }
