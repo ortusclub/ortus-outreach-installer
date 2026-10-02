@@ -11254,6 +11254,11 @@ function renderUnifiedStrip(it) {
   // lie as the "Working…" this card was built to kill. Bucket stays `running` on
   // purpose: the controls and the acceptance sweep both depend on it.
   const waiting = !!(it.currentAction && it.currentAction.phase === 'waiting');
+  // needs_review: the engine stopped this campaign on a problem and is NOT
+  // retrying — an operator must open the log and act. The bucket stays `running`
+  // on purpose (so it stays in NOW RUNNING with its controls), but a green
+  // "Running" chip here is a lie: nothing is sending. Report the truth.
+  const needsReview = !!(it.needsReview || String(it.engineStatus || '') === 'needs_review');
   const scheduled = queued && !!it.scheduledAt;
   const whenTxt = scheduled && typeof v3FormatScheduledAt === 'function' ? v3FormatScheduledAt(it.scheduledAt) : '';
   // One active campaign, one component. A previously-unexpanded live row used
@@ -11280,13 +11285,13 @@ function renderUnifiedStrip(it) {
   const _ownedLocal = it.where === 'local' || String(it.runsOn || '') === 'local';
   const stateCls = [
     _ownedLocal ? 'local' : '',
-    running && !monitoring && !waiting ? 'run' : '',
+    running && !monitoring && !waiting && !needsReview ? 'run' : '',
     (monitoring || waiting) ? 'monitoring' : '',
     queued ? 'queued' : '',
     scheduled ? 'sched' : '',
     done ? 'done' : '',
     'sn-collapsed',
-    errored ? 'stopped' : '',
+    (errored || needsReview) ? 'stopped' : '',
     cancelled ? 'cancelled' : '',
   ].filter(Boolean).join(' ');
 
@@ -11298,6 +11303,7 @@ function renderUnifiedStrip(it) {
   const whenPill = scheduled ? '<span class="sn-when-pill">⏰ Scheduled</span>' : '';
   const dot = errored ? '<span class="dot red"></span>'
     : it.bad ? '<span class="dot cancel"></span>'   // cancelled / stopped — gray, not red
+    : needsReview ? '<span class="dot red"></span>'  // needs operator action — not sending
     : (monitoring || waiting) ? '<span class="dot mon"></span>'
     // Pink dot follows the pink rail: where it RUNS, not where it came from.
     : running ? (_ownedLocal ? '<span class="dot runlocal"></span>' : '<span class="dot run"></span>')
@@ -11316,6 +11322,7 @@ function renderUnifiedStrip(it) {
     : queued ? 'Queued'
     : monitoring ? 'Monitoring'
     : waiting ? 'Waiting'
+    : needsReview ? 'Needs review'
     : running ? (it.paused && !locallyOwnedMonitoring ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
