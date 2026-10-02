@@ -35758,7 +35758,7 @@ async function saveCampaignConfigByName(name) {
 /** Put a saved campaign's settings back into the wizard. */
 let _openedCampaignName = '';
 let _openedCampaignId = null;
-async function loadCampaignConfigByName(name, campaignId = null) {
+async function loadCampaignConfigByName(name, campaignId = null, opts = {}) {
   const n = String(name || '').trim();
   if (!n) return false;
   try {
@@ -35772,7 +35772,10 @@ async function loadCampaignConfigByName(name, campaignId = null) {
     if (nameEl) nameEl.value = _openedCampaignName;
     bindWizardTo(_openedCampaignName);
     if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
-    if (typeof showCampaignToast === 'function') showCampaignToast(`Loaded settings for "${_openedCampaignName}"`);
+    // Silent for the automatic startup restore — a "Loaded settings" toast firing
+    // on EVERY app load (for whatever name the last session left) is just noise.
+    // User-initiated loads (typing/blurring a known name) still confirm.
+    if (!opts.silent && typeof showCampaignToast === 'function') showCampaignToast(`Loaded settings for "${_openedCampaignName}"`);
     return true;
   } catch (_) { return false; }
 }
@@ -35860,7 +35863,10 @@ if (typeof window !== 'undefined') {
     const name = (document.getElementById('campaign-name-input')?.value || '').trim();
     if (!hasSheet && name) {
       _restoring = true;
-      Promise.resolve(loadCampaignConfigByName(name, config?.campaignId || _openedCampaignId))
+      // Silent: this is an INTERNAL fallback load (the snapshot had no sheet, so
+      // refill from the name's saved settings) — never a user action, so it must
+      // not fire its own "Loaded settings" toast (that's what leaked on startup).
+      Promise.resolve(loadCampaignConfigByName(name, config?.campaignId || _openedCampaignId, { silent: true }))
         .catch(() => {})
         .finally(() => { _restoring = false; });
     } else if (name) {
@@ -35875,19 +35881,20 @@ if (typeof window !== 'undefined') {
 // the only trigger was applyPresetConfig, which a fresh wizard never calls.
 if (typeof window !== 'undefined') {
   const _nameEl = document.getElementById('campaign-name-input');
-  const _maybeLoadByName = async () => {
+  const _maybeLoadByName = async (silent = false) => {
     const name = (_nameEl?.value || '').trim();
     if (!name) return;
     if (String(_openedCampaignName || '').trim().toLowerCase() === name.toLowerCase()) return;
     // Never overwrite work in progress — only fill a wizard with no sheet yet.
     const sheet = (document.getElementById('sheet-url')?.value || '').trim();
     if (sheet) return;
-    await loadCampaignConfigByName(name);
+    await loadCampaignConfigByName(name, null, { silent: silent === true });
   };
-  _nameEl?.addEventListener('change', _maybeLoadByName);
-  _nameEl?.addEventListener('blur', _maybeLoadByName);
-  // And once on load, for a name restored from a draft or the last session.
-  setTimeout(_maybeLoadByName, 2500);
+  _nameEl?.addEventListener('change', () => _maybeLoadByName(false));
+  _nameEl?.addEventListener('blur', () => _maybeLoadByName(false));
+  // And once on load, for a name restored from a draft or the last session —
+  // SILENT (no toast): the operator didn't ask for it, it's just a restore.
+  setTimeout(() => _maybeLoadByName(true), 2500);
 }
 
 async function retrySalesNavAccess(profileId, button) {
