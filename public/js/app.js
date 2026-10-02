@@ -4839,22 +4839,18 @@ window.toggleDashScrapeStrip = (elStrip) => {
 // current run, not older runs grouped under the same scrape name/sheet/tab
 // (re-running "TEST" used to show last run's failed accounts alongside the new one).
 let _scrapeViewRunId = null;
-// Narrow a job list to the CURRENT run: by runId when we know it (a launch shares
-// one run_ id), else by the most-recent launch window (older jobs each carry their
-// own id, but one launch's jobs are created within seconds of each other).
+// Scope a job list to ONE launch — but only when we're watching that launch
+// (Start / Re-run set _scrapeViewRunId). Opening an existing scrape passes no
+// runId and shows ALL its runs, so the pane matches the board card's totals:
+// a scrape that collected 24k leads then hit a rate-limited re-run must not read
+// "0 leads" when opened just because the latest run failed. A fresh launch still
+// filters to its own run_ id so a re-run of the same name doesn't show the prior
+// run's jobs (if the engine didn't stamp the shared id, fall back to showing all).
 function _currentRunJobs(jobs, viewRunId) {
   const list = Array.isArray(jobs) ? jobs : [];
-  if (list.length < 2) return list;
-  if (viewRunId) {
-    const byRun = list.filter((j) => j && j.runId === viewRunId);
-    if (byRun.length) return byRun;                  // precise: the launch we started/opened
-  }
-  // Fallback: keep only the newest launch (jobs created within ~10 min of the
-  // newest), so yesterday's run under the same name doesn't bleed in.
-  const maxAt = Math.max(0, ...list.map((j) => Number(j && j.createdAt) || 0));
-  if (!maxAt) return list;
-  const WINDOW = 10 * 60 * 1000;
-  return list.filter((j) => (Number(j && j.createdAt) || 0) >= maxAt - WINDOW);
+  if (!viewRunId || list.length < 2) return list;
+  const byRun = list.filter((j) => j && j.runId === viewRunId);
+  return byRun.length ? byRun : list;
 }
 if (typeof window !== 'undefined') window._currentRunJobs = _currentRunJobs;
 
