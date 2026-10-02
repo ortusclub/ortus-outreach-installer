@@ -993,6 +993,10 @@ async function openScrapeSetupFor(cid) {
       }
     } catch (_) { _setScrapeSetupTitle('Scrape'); }
     try { if (typeof pollScrapeLogs === 'function') pollScrapeLogs(); } catch (_) { /* */ }
+    // Refresh the console now so an opened RUNNING scrape shows its live jobs
+    // immediately (scoped to this cid), instead of the session's idle state
+    // until the next 4s poll tick.
+    try { if (typeof pollScrapeJobs === 'function') pollScrapeJobs(); } catch (_) { /* */ }
   } else {
     _snOpenedScrape = null; // a genuinely new scrape — global session log applies
     _setScrapeSetupTitle('New scrape');
@@ -4761,6 +4765,16 @@ window.toggleDashScrapeStrip = (elStrip) => {
 async function pollScrapeJobs() {
   const el = document.getElementById('scrape-jobs');
   if (!el) return;
+  // VIEWING an opened existing scrape → scope the console (Jobs pane + progress
+  // card + Queue) to THAT scrape's jobs, taken from the board poll (refreshed
+  // every 2.5s), exactly like the live log is already scoped via _snOpenedScrape.
+  // Without this the console reflects THIS SESSION's state, so a running scrape
+  // you opened but didn't launch yourself wrongly reads as "NO SCRAPE RUNNING".
+  const openedCid = _snOpenedScrape && _snOpenedScrape.cid;
+  if (openedCid && Array.isArray(_snLastCampaigns)) {
+    const oc = _snLastCampaigns.find((c) => c.id === openedCid);
+    if (oc && Array.isArray(oc.jobs)) { _renderScrapeConsole(oc.jobs, el); return; }
+  }
   try {
     const r = await fetch('/api/scrape/jobs');
     const res = await r.json();
@@ -4777,19 +4791,32 @@ async function pollScrapeJobs() {
     if (scrapeBaselineJobIds.size) {
       jobs = jobs.filter((j) => { const k = _scrapeJobKey(j); return !(k && scrapeBaselineJobIds.has(k)); });
     }
-    if (!jobs.length) {
-      el.innerHTML = '<div class="scrape-job-empty">No active scrape jobs. Finished scrapes stay on the board below with their full status.</div>';
-      _setScrapeFoot(0, 0, 0);
-      _setScrapeVjCard({ leads: 0, pages: 0, accounts: 0, done: 0, total: 0, status: 'idle', tabs: [] });
-      renderScrapeQueueTab([]);
-      return;
-    }
+    _renderScrapeConsole(jobs, el);
+  } catch (_) { /* keep last render */ }
+}
+
+// Render the launch console (Jobs pane + progress card + Queue tab + dock) from
+// a job list. Shared by the session-scoped poll above and the opened-scrape view,
+// so an opened running scrape shows the same live numbers as its board strip.
+function _renderScrapeConsole(jobs, el) {
+  el = el || document.getElementById('scrape-jobs');
+  if (!el) return;
+  jobs = jobs || [];
+  if (!jobs.length) {
+    el.innerHTML = '<div class="scrape-job-empty">No active scrape jobs. Finished scrapes stay on the board below with their full status.</div>';
+    _setScrapeFoot(0, 0, 0);
+    _setScrapeVjCard({ leads: 0, pages: 0, accounts: 0, done: 0, total: 0, status: 'idle', tabs: [] });
+    renderScrapeQueueTab([]);
+    _syncScrapeDock([]);
+    return;
+  }
+  {
     const statClass = (s) => (s === 'error' || s === 'cancelled') ? 'err'
       : (s === 'done' ? 'done' : (s === 'running' ? 'running' : ''));
     el.innerHTML = jobs.map((j) => {
       const leads = j.profiles || 0;
       const leadsHtml = leads > 0 ? `<span class="leads">${leads} lead${leads === 1 ? '' : 's'}</span>` : `${leads} leads`;
-      const label = (j.tabName || j.searchUrl || j.id || 'job');
+      const label = (j.tabName || j.searchLabel || j.searchUrl || j.id || 'job');
       const jLabel = String(label).replace(/'/g, '&#39;');
       // Per-job live View — only while running (no live page otherwise).
       const viewBtn = j.state === 'running'
@@ -4840,7 +4867,7 @@ async function pollScrapeJobs() {
     });
     renderScrapeQueueTab(jobs);
     _syncScrapeDock(jobs);
-  } catch (_) { /* keep last render */ }
+  }
 }
 
 // Adapt the launch-console dock to the live state: when a job is already
