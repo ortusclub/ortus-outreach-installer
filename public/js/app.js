@@ -1013,6 +1013,7 @@ async function openScrapeSetupFor(cid) {
     // Track the opened scrape so pollScrapeLogs shows ITS log (scrape-specific,
     // cross-session) instead of this session's global feed. Clear the console now.
     _snOpenedScrape = { cid, tabName: '' };
+    _scrapeViewRunId = null;   // opening an existing scrape → show its LATEST run (time-window), not a stale launch id
     try { scrapeLogLines = []; scrapeLogSince = 0; if (typeof renderScrapeLogPanel === 'function') renderScrapeLogPanel(); } catch (_) { /* */ }
     try {
       // Single record, not the whole board — the list response is ~22MB.
@@ -1050,6 +1051,7 @@ async function openScrapeSetupFor(cid) {
     try { if (typeof pollScrapeJobs === 'function') pollScrapeJobs(); } catch (_) { /* */ }
   } else {
     _snOpenedScrape = null; // a genuinely new scrape — global session log applies
+    _scrapeViewRunId = null;
     _setScrapeSetupTitle('New scrape');
     _setScrapeSaveVisible(false); // nothing to save-onto yet for a brand-new scrape
   }
@@ -1094,6 +1096,7 @@ async function rerunScrape(cid, btn) {
     // Shared runId + full account pool so the engine can fail a dead account's
     // URLs over to a surviving selected account (see startScrapeJob).
     const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    _scrapeViewRunId = runId;   // scope the Jobs pane to THIS re-run only
     const accountPool = [...accts];
     let started = 0; const errors = [];
     for (let i = 0; i < urls.length; i++) {
@@ -1168,6 +1171,7 @@ function _setScrapeSaveVisible(show) {
 
 function startNewScrapeSetup() {
   _snOpenedScrape = null; // fresh scrape — not viewing an existing one's log
+  _scrapeViewRunId = null;
   const urls = document.getElementById('scrape-urls'); if (urls) urls.value = '';
   const nm = document.getElementById('scrape-name'); if (nm) nm.value = '';
   openScrapeSetupFor('');
@@ -1187,6 +1191,7 @@ function closeScrapeSetup() {
   _snRestoreSetup();
   _snSetupOpen = false;
   _snOpenedScrape = null; // back to the board — stop showing an opened scrape's log
+  _scrapeViewRunId = null;
   _setScrapeSaveVisible(false);
   // Hand the wizard back the mode it had. Restoring the select alone isn't
   // enough — onModeChange() is what re-shows Throughput/Templates/Sheet/Launch
@@ -4409,6 +4414,7 @@ async function startScrapeJob() {
   // Nav seat / is logged out, the engine can fail its URLs over to a surviving
   // selected account instead of dropping them.
   const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  _scrapeViewRunId = runId;   // scope the Jobs pane to THIS launch only
   const accountPool = [...accts];
   let started = 0;
   const errors = [];
@@ -4828,6 +4834,30 @@ window.toggleDashScrapeStrip = (elStrip) => {
   _dashScrapeOpen = wrap.classList.contains('open');
 };
 
+// The runId of the launch the Jobs pane should show — set on Start / Re-run, and
+// cleared (null) when opening an existing scrape. Lets the console show ONLY the
+// current run, not older runs grouped under the same scrape name/sheet/tab
+// (re-running "TEST" used to show last run's failed accounts alongside the new one).
+let _scrapeViewRunId = null;
+// Narrow a job list to the CURRENT run: by runId when we know it (a launch shares
+// one run_ id), else by the most-recent launch window (older jobs each carry their
+// own id, but one launch's jobs are created within seconds of each other).
+function _currentRunJobs(jobs, viewRunId) {
+  const list = Array.isArray(jobs) ? jobs : [];
+  if (list.length < 2) return list;
+  if (viewRunId) {
+    const byRun = list.filter((j) => j && j.runId === viewRunId);
+    if (byRun.length) return byRun;                  // precise: the launch we started/opened
+  }
+  // Fallback: keep only the newest launch (jobs created within ~10 min of the
+  // newest), so yesterday's run under the same name doesn't bleed in.
+  const maxAt = Math.max(0, ...list.map((j) => Number(j && j.createdAt) || 0));
+  if (!maxAt) return list;
+  const WINDOW = 10 * 60 * 1000;
+  return list.filter((j) => (Number(j && j.createdAt) || 0) >= maxAt - WINDOW);
+}
+if (typeof window !== 'undefined') window._currentRunJobs = _currentRunJobs;
+
 async function pollScrapeJobs() {
   const el = document.getElementById('scrape-jobs');
   if (!el) return;
@@ -4839,7 +4869,7 @@ async function pollScrapeJobs() {
   const openedCid = _snOpenedScrape && _snOpenedScrape.cid;
   if (openedCid && Array.isArray(_snLastCampaigns)) {
     const oc = _snLastCampaigns.find((c) => c.id === openedCid);
-    if (oc && Array.isArray(oc.jobs)) { _renderScrapeConsole(oc.jobs, el); return; }
+    if (oc && Array.isArray(oc.jobs)) { _renderScrapeConsole(_currentRunJobs(oc.jobs, _scrapeViewRunId), el); return; }
   }
   try {
     const r = await fetch('/api/scrape/jobs');
@@ -4857,7 +4887,7 @@ async function pollScrapeJobs() {
     if (scrapeBaselineJobIds.size) {
       jobs = jobs.filter((j) => { const k = _scrapeJobKey(j); return !(k && scrapeBaselineJobIds.has(k)); });
     }
-    _renderScrapeConsole(jobs, el);
+    _renderScrapeConsole(_currentRunJobs(jobs, _scrapeViewRunId), el);
   } catch (_) { /* keep last render */ }
 }
 
