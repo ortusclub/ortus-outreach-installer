@@ -4488,14 +4488,20 @@ function _applyScrapePauseButton() {
 }
 
 async function stopScrapeJob() {
-  await _scrapeControlAll('/api/scrape/stop');
-  _scrapePausedLocal = false;
-  _applyScrapePauseButton();
-  // Keep polling briefly so the card reflects the STOP — jobs flip to cancelled/
-  // done with their final lead counts — instead of freezing on the last "running"
-  // frame. Poll now + once more after the engine has cancelled, then stop the loop.
-  try { await pollScrapeJobs(); } catch (_) { /* */ }
-  setTimeout(async () => { try { await pollScrapeJobs(); } catch (_) { /* */ } stopScrapePolling(); }, 5000);
+  // Stop fans a POST out to every running/queued account, so it takes a beat —
+  // show the button working instead of looking dead.
+  const _btn = document.getElementById('btn-scrape-stop');
+  const restore = (typeof busyButton === 'function' ? busyButton : () => () => {})(_btn, 'Stopping…');
+  try {
+    await _scrapeControlAll('/api/scrape/stop');
+    _scrapePausedLocal = false;
+    _applyScrapePauseButton();
+    // Keep polling briefly so the card reflects the STOP — jobs flip to cancelled/
+    // done with their final lead counts — instead of freezing on the last "running"
+    // frame. Poll now + once more after the engine has cancelled, then stop the loop.
+    try { await pollScrapeJobs(); } catch (_) { /* */ }
+    setTimeout(async () => { try { await pollScrapeJobs(); } catch (_) { /* */ } stopScrapePolling(); }, 5000);
+  } finally { restore(); }
 }
 
 // Apply a control action (pause/stop) keyed by profileId on the engine.
