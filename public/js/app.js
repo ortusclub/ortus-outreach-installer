@@ -12037,8 +12037,13 @@ window.onOtherUserSearch = function (val) {
 //   subtitle    — small muted label after the title
 //   alwaysShow  — render the section header even when empty
 function _renderBoardSection(key, title, secItems, opts = {}) {
-  const running   = secItems.filter((x) => x.bucket === 'running' && !x.paused);
-  const paused    = secItems.filter((x) => x.bucket === 'running' && x.paused);
+  // needs_review stays in the active bucket (keeps its controls) but is NOT
+  // running — the engine stopped it on a problem and isn't retrying. Give it its
+  // own rail so the board never files a stalled campaign under "Running".
+  const _isNR = (x) => x.bucket === 'running' && (x.needsReview || String(x.engineStatus || '') === 'needs_review');
+  const review    = secItems.filter(_isNR);
+  const running   = secItems.filter((x) => x.bucket === 'running' && !x.paused && !_isNR(x));
+  const paused    = secItems.filter((x) => x.bucket === 'running' && x.paused && !_isNR(x));
   const idle      = secItems.filter((x) => x.bucket === 'queued');
   const done      = secItems.filter((x) => x.bucket === 'done' && !x.bad);
   const cancelled = secItems.filter((x) => x.bucket === 'done' && x.bad);
@@ -12079,7 +12084,8 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
 
   // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
   // groups (sections + Done/Cancelled) show a caret, so the affordance reads true.
-  const body = rail('Running', running)
+  const body = rail('Needs review', review)
+    + rail('Running', running)
     + rail('Paused', paused)
     + rail('Queued', idle)
     + (opts.scheduledHtml ? `<div class="sn-railhead">Scheduled <span class="sn-railcount">${opts.scheduledCount || ''}</span></div>` + opts.scheduledHtml : '')
