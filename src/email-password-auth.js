@@ -17,7 +17,7 @@ export function installEmailPasswordAuth(app,{isAllowed,userExists,createUser,se
    if(!['signup','reset'].includes(purpose))return res.status(400).json({error:'Choose signup or password reset.'});
    if(!await isAllowed(email))return res.status(403).json({error:'This email is not authorized for an app account.'});
    if(purpose==='signup'&&await userExists(email))return res.status(409).json({error:'An account already exists. Use Sign in or Forgot password.'});
-   const result=await remote('start',{email,purpose});
+   const result=await remote('start',{email,purpose,product:'Ortus Outreach'}); // so the code email names this app, not Basics
    if(!/^[a-f0-9]{64}$/.test(result.id||''))throw Error('Invalid verification response.');
    const id=randomBytes(32).toString('hex');
    if(req.cookies?.[cookie])pending.delete(req.cookies[cookie]);
