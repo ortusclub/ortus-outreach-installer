@@ -44,8 +44,20 @@ export async function getQueue() {
   });
 }
 
-export async function addToQueue(config, owner, { scheduledAt = null } = {}) {
+let admission = Promise.resolve();
+export function addToQueue(config, owner, options = {}) {
+  const next = admission.then(() => addQueueEntry(config, owner, options));
+  admission = next.catch(() => {});
+  return next;
+}
+async function addQueueEntry(config, owner, { scheduledAt = null } = {}) {
   await load();
+  const key = String(owner || '').trim().toLowerCase();
+  if (cache.filter(entry => String(entry.owner || '').trim().toLowerCase() === key).length >= 5) {
+    const error = new Error('You already have 5 campaigns queued. Save this campaign as a draft and run it later, once a queue slot is free.');
+    Object.assign(error, { status: 409, code: 'CAMPAIGN_QUEUE_FULL', limit: 5 });
+    throw error;
+  }
   const identity = ensureCampaignIdentity({ campaignId: config?.campaignId, name: config?.name, config });
   config = { ...config, ...identity };
   const entry = {

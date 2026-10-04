@@ -99,7 +99,7 @@ async function requestOnce(method, path, body) {
       // 'not_resumable' }), and the caller has to tell those apart to say
       // anything honest to the operator.
       const reason = parsed && parsed.reason ? { reason: parsed.reason } : {};
-      return { error: `HTTP ${res.status}${detail}`, status: res.status, ...reason };
+      return { error: `HTTP ${res.status}${detail}`, status: res.status, code: parsed?.code, limit: parsed?.limit, ...reason };
     }
     return parsed;
   } catch (err) {

@@ -233,9 +233,10 @@
     <!-- ── Dashboard view (default route #/) ── -->
     <div id="dashboard-view" class="route-view">
       <div class="dashboard-header">
-        <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
+        <div class="route-seg" role="tablist" aria-label="Main sections">
           <button type="button" class="route-seg-btn is-active" onclick="goDashboard()">Campaigns</button>
           <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav Scraper</button>
+          <button type="button" class="route-seg-btn" onclick="goConnections()">Connection DB</button>
         </div>
         <!-- 2026-05-27 (drafts-isolation v2): resume-draft surfaces as a small
              gold count-badge on the New-campaign button. Click the button →
@@ -248,7 +249,6 @@
           <div class="fdrop" id="campaigns-typefilter"></div>
           <!-- v2.131: admin-only Conductor filter (hidden for normal accounts). -->
           <div class="fdrop" id="campaigns-conductorfilter" style="display:none"></div>
-          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connection DB</button>
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
           <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
                indicator (drafts remain reachable via the Drafts & Stops section).
@@ -260,13 +260,6 @@
            is queued/running. Click to expand the B1 ladder. Rendered by
            renderDashScrapeStrip() from the /api/scrape/jobs poll. ───────── -->
       <div id="dash-scrape-strip" hidden></div>
-
-      <!-- ── Follow-ups that never sent, from campaigns no longer on the board.
-           A follow-up whose campaign is still listed belongs to that campaign's
-           card; one whose campaign has gone had nowhere to appear at all. Filled
-           by renderStaleFollowups() at the end of the board render, so the two
-           can never claim the same follow-up. ────────────────────────────── -->
-      <div id="stale-followups"></div>
 
       <!-- ── UNIFIED CAMPAIGNS BOARD (v2.129) ────────────────────────
            Every campaign as an sn-strip, color-coded: GREEN rail = running on
@@ -652,8 +645,10 @@
          export preview), monochrome (no gold — Bugatti). Client logic in
          app.js (Connections section). -->
     <div id="connections-view" class="route-view">
-      <div class="wizard-back-row">
-        <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
+      <div class="route-seg" role="tablist" aria-label="Main sections">
+        <button type="button" class="route-seg-btn" onclick="goDashboard()">Campaigns</button>
+        <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav Scraper</button>
+        <button type="button" class="route-seg-btn is-active" onclick="goConnections()">Connection DB</button>
       </div>
 
       <div class="dashboard-header">
@@ -1041,9 +1036,10 @@
 
     <!-- ── Sales Nav board view (route #/salesnav) — top-level queue board. ── -->
     <div id="salesnav-view" class="route-view">
-      <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
+      <div class="route-seg" role="tablist" aria-label="Main sections">
         <button type="button" class="route-seg-btn" onclick="goDashboard()">Campaigns</button>
         <button type="button" class="route-seg-btn is-active" onclick="goSalesNav()">Sales Nav Scraper</button>
+        <button type="button" class="route-seg-btn" onclick="goConnections()">Connection DB</button>
       </div>
       <div class="sn-fallback-note" role="note">
         <strong>Scraper not working for you?</strong>
@@ -1595,6 +1591,17 @@
                 <div class="tr-text">
                   <div class="tr-label">Add a connection note</div>
                   <div class="tr-help" id="add-note-help"></div>
+                </div>
+              </div>
+
+              <div class="throttle-row" id="message-inmail-row" style="display:none">
+                <label class="alpha-toggle" title="Send InMail when the lead is not an Open Profile member">
+                  <input type="checkbox" id="pace-op-spend-inmail" aria-label="Send InMail" oninput="syncMessageInMail(this.checked)" />
+                  <span class="alpha-toggle-track"></span>
+                </label>
+                <div class="tr-text">
+                  <div class="tr-label">Send InMail</div>
+                  <div class="tr-help">Spend an InMail credit if the lead is not an Open Profile member. This is the same setting shown below the message.</div>
                 </div>
               </div>
 
@@ -3228,6 +3235,7 @@
          connectionNote: "" whatever is typed here. -->
     <div class="section tpl-section" id="tpl-connect-section" style="display:none">
       <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'connectionNote')">Preview for first lead</button>
       <div id="tpl-note-salesnav-warn" class="note-hint note-hint-callout"><span class="nh-ic">!</span><span class="nh-tx"><b>Needs Sales Navigator.</b> If the sending account doesn't have Sales Navigator, the connection note will not work — the request still goes out, but without the note.</span></div>
       <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount(); wizardDirtyOnInput()"></textarea>
       <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
@@ -3238,6 +3246,7 @@
     <!-- ── Direct message (message_only) — introduce_back keeps this hidden ── -->
     <div class="section tpl-section" id="tpl-message-section" style="display:none">
       <h2><span data-edit="h2-followup">Direct message</span> <small>sent to each connected lead</small></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'followUpMessage')">Preview for first lead</button>
       <textarea id="tpl-followup" rows="3" placeholder="Thanks for connecting, {firstName}! I wanted to reach out because…"></textarea>
       <div class="placeholder-tags" data-target="tpl-followup"></div>
     </div>
@@ -3245,6 +3254,7 @@
     <!-- ── InMail (inmail_only, auto) ── -->
     <div class="section tpl-section" id="tpl-inmail-section" style="display:none">
       <h2 data-edit="h2-inmail">InMail Template</h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'inmailSubject,inmailBody')">Preview for first lead</button>
       <label for="tpl-inmail-subject">Subject</label>
       <input type="text" id="tpl-inmail-subject" placeholder="Invite for exclusive Dinner Roundtable for Executive Leaders" />
       <label for="tpl-inmail-body">Body</label>
@@ -3258,6 +3268,7 @@
          driven by applyTemplateVisibility (mode-aware). -->
     <div id="intro-title-block" class="section tpl-section" style="display:none">
       <h2 data-edit="h2-intro-title">Group Conversation Title</h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'introTitle,primaryIntroBody')">Preview for first lead</button>
       <input type="text" id="intro-title" value="Introduction: {firstName} <> {primaryFirstName}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
       <div class="placeholder-tags" data-target="intro-title" style="margin-top:10px"></div>
       <div style="font-size:11px; color:var(--gray); margin-top:4px">Click a chip to insert at the cursor. Available: <code>{firstName}</code>, <code>{primaryFirstName}</code>, <code>{primaryLastName}</code>, <code>{primaryFullName}</code>, plus any sheet column.</div>
@@ -3266,6 +3277,7 @@
     <!-- ── Intro DM Body (connect_and_introduce) ── -->
     <div class="section tpl-section" id="tpl-intro-section" style="display:none">
       <h2 data-edit="h2-intro-dm">Group Conversation Body</h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'introTitle,primaryIntroBody')">Preview for first lead</button>
       <!-- v2.102: set expectations — this is the opener, not the whole pitch. -->
       <div style="font-size:11px; color:var(--gray); margin-top:-4px; margin-bottom:8px">Keep it short — this is just the opener that creates the group. The bulk of the message goes in the <b>First Follow-up</b> below.</div>
       <textarea id="primary-intro-body" rows="5" placeholder="Hey {firstName}, thanks for connecting! I'd love to introduce you to {primaryFirstName} — they're..." oninput="savePrimaryPersonFields()"></textarea>
@@ -3277,6 +3289,7 @@
          (driven by onModeChange + toggleFollowUpFields). -->
     <div class="section tpl-section" id="tpl-followup-section" style="display:none">
       <h2 data-edit="h2-followup">First Follow-up Message <small>sent in the group thread — all queued follow-ups go together, after the last intro</small></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'followUpBody')">Preview for first lead</button>
       <textarea id="follow-up-body" rows="4" placeholder="Hi {firstName}, great to be connected…" oninput="savePrimaryPersonFields()"></textarea>
       <div class="placeholder-tags" data-target="follow-up-body"></div>
     </div>
@@ -3286,12 +3299,14 @@
          by onModeChange to mode === 'connect_and_message'. -->
     <div class="section tpl-section" id="tpl-cc-dm-section" style="display:none">
       <h2><span data-edit="h2-cc-dm">Direct message</span> <small>sent after they accept</small></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'ccDmBody')">Preview for first lead</button>
       <textarea id="tpl-cc-dm-body" rows="5" placeholder="Hi {firstName}, thanks for connecting! I wanted to reach out because…" oninput="saveCcDmFields()"></textarea>
       <div class="placeholder-tags" data-target="tpl-cc-dm-body"></div>
     </div>
 
     <!-- ── Open Profile (open_profile_only) ── -->
     <div class="section tpl-section" id="tpl-op-section" style="display:none">
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'opProfileSubject,opProfileBody')">Preview for first lead</button>
       <h2><span data-edit="h2-op">Open Profile Message Template</span> <span style="font-weight:400; font-size:0.75em; color:#8b949e">(free — no credits used)</span></h2>
       <label for="tpl-op-subject">Subject <span style="font-weight:400; font-size:0.75em; color:#8b949e">(optional)</span></label>
       <input type="text" id="tpl-op-subject" placeholder="Invite for exclusive Dinner Roundtable for Executive Leaders" />
@@ -3312,8 +3327,8 @@
         Plain profile links (linkedin.com/in/name) are resolved automatically — the bot opens the profile, then opens Sales Navigator before sending.
       </div>
       <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:400; cursor:pointer">
-        <input type="checkbox" id="tpl-op-spend-inmail" style="width:auto; margin:0" />
-        <span>Spend an InMail credit if the lead is <strong>not</strong> an Open Profile member</span>
+        <input type="checkbox" id="tpl-op-spend-inmail" style="width:auto; margin:0" oninput="syncMessageInMail(this.checked)" />
+        <span>Send InMail — spend an InMail credit if the lead is <strong>not</strong> an Open Profile member</span>
       </label>
     </div>
       </div><!-- /.collapsible-body (templates) -->
@@ -3568,7 +3583,13 @@
                  Back only — it is the mode whose intros depend on acceptances.
                  Shown/hidden by onModeChange via refreshLaunchCheckBtn(). -->
             <button type="button" id="btn-launch-check" class="btn btn-secondary" onclick="window.launchCheckNow()" title="Open each selected account and check who accepted — fires any due introductions. Does not start the campaign." hidden>⚡ Run check now</button>
+            <!-- Message Campaign only: one manual pass over each sender's inbox
+                 (regular + Sales Nav) that marks leads who wrote back as Replied.
+                 Runs ONLY when clicked — never on a schedule. Shown/hidden by
+                 refreshLaunchReplyBtn(). -->
+            <button type="button" id="btn-launch-replies" class="btn btn-secondary" onclick="window.launchReplyCheck()" title="Open each sender's inbox (LinkedIn + Sales Navigator) and mark everyone on this tab who replied. Does not start the campaign or send anything." hidden>Check for replies</button>
           </div>
+          <div id="launch-reply-note" class="launch-run-note" hidden></div>
           <div id="launch-run-note" class="launch-run-note"></div>
           <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
                the GKE engine instead of running locally — the campaign keeps
@@ -3611,7 +3632,7 @@
     </div>
 
     <!-- ── Live Status ── -->
-    <div class="section collapsible collapsed" id="nav-status">
+    <div class="section collapsible collapsed" id="nav-status" style="display:none">
       <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">7. Live Status</span></h2>
       <div class="collapsible-body">
       <!-- v2.59.22: when a campaign is running/monitoring the SAME dashboard
@@ -4565,57 +4586,6 @@
     };
     window.refreshEngineBanner();
   </script>
-
-  <!-- Floating live console. Hidden by default. Visibility + content driven by
-       renderLiveConsole(s) in public/js/app.js, which uses pure helpers from
-       /js/live-console.mjs. Hidden when no campaign is running OR when the
-       operator is on the dashboard route (#/). -->
-  <!-- v2.59.26: console redesign. Lip shows pulsing colored status dot +
-       status + live number (countdown when monitoring / progress when sending)
-       + CONSOLE. Drawer is a mini dashboard card (live line + countdown +
-       stats + log), wider, and slides in smoothly (transform, not display). -->
-  <div id="live-console" class="live-console is-collapsed" hidden>
-    <!-- Right-edge lip (collapsed): blinking light (colored by state) + CONSOLE -->
-    <button type="button" class="live-console__lip" data-lc="pill" title="Open live console">
-      <span class="live-console__dot" data-lc="dot"></span>
-      <span class="live-console__lip-lbl">Console</span>
-    </button>
-
-    <!-- Drawer (expanded) — mini dashboard card -->
-    <div class="live-console__drawer" data-lc="card">
-      <div class="live-console__head">
-        <span class="live-console__hdot" data-lc="hdot"></span>
-        <div class="live-console__head-text">
-          <div class="live-console__status" data-lc="hstatus">—</div>
-          <div class="live-console__title" data-lc="title">—</div>
-        </div>
-        <span class="live-console__badge" data-lc="badge">—</span>
-        <button type="button" class="live-console__ctl" data-lc="collapse" title="Close" aria-label="Close console">×</button>
-      </div>
-      <div class="live-console__body">
-        <div class="live-console__mini" data-lc="mini">
-          <div class="live-console__live">
-            <span class="live-console__live-ico" data-lc="live-ico"></span>
-            <span class="live-console__live-txt">
-              <span class="live-console__live-l1" data-lc="live-l1">—</span>
-              <span class="live-console__live-l2" data-lc="live-l2">—</span>
-            </span>
-            <span class="live-console__live-big">
-              <span class="live-console__live-n" data-lc="live-n">—</span>
-              <span class="live-console__live-u" data-lc="live-u"></span>
-            </span>
-          </div>
-          <div class="live-console__mini-stats" data-lc="mini-stats">—</div>
-        </div>
-        <div class="live-console__log-label">Recent activity</div>
-        <div class="live-console__log" data-lc="log"></div>
-      </div>
-      <div class="live-console__foot">
-        <span class="live-console__state" data-lc="state">state · —</span>
-        <a href="#/" class="live-console__dashboard-link" data-lc="dash">Go to dashboard ›</a>
-      </div>
-    </div>
-  </div>
 
   <!-- Onboarding tour overlay. Hidden by default. Lifecycle controlled by
        public/js/tour.mjs (startTour / endTour). Spotlight uses clip-path to

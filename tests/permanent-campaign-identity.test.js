@@ -71,3 +71,12 @@ test('corrupt settings fail without overwriting the original file', () => {
     assert.equal(readFileSync(path, 'utf8'), '{broken');
   } finally { writeFileSync(path, good); }
 });
+
+ test('explicit Save overwrites a matching name without creating another identity', () => {
+  const original = registry.saveConfig('Single saved campaign', { profileIds:['account-a'], runTarget:'cloud' }, { create:true });
+  const updated = registry.saveNamedCampaign(' SINGLE SAVED CAMPAIGN ', { profileIds:['account-b'], runTarget:'local' });
+  assert.equal(updated.campaignId, original.campaignId);
+  assert.deepEqual(registry.getConfigById(original.campaignId).config.profileIds, ['account-b']);
+  assert.equal(registry.listConfigs().filter(c=>c.campaignId===original.campaignId).length,1);
+  assert.throws(()=>registry.saveConfig('single saved campaign',{}, {create:true}), /already exists/);
+ });

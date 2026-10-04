@@ -1,3 +1,8 @@
+import { getCampaignDeletions, deleteCampaignFromBoard } from './src/campaign-board-deletions.js';
+import { withCampaignLaunch, findActiveCampaign } from './src/cloud-campaign-identity.js';
+import { messageSubjectError } from './public/js/message-subject-validation.mjs';
+import { configureSharedGoLogin, ensureSharedGoLogin } from './src/shared-gologin.js';
+import { SHEETS_GATEWAY_URL as SHARED_GOLOGIN_GATEWAY } from './src/sheets-webapp-url.js';
 import { hasLocalBrowserSelection, GOLOGIN_REQUIRED } from './src/gologin-only.js';
 import { cloudOptionError } from './public/js/cloud-option-compatibility.mjs';
 import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
@@ -53,10 +58,12 @@ import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
-import { personalizeTemplate } from './src/linkedin/helpers.js';
+import { personalizeTemplate, findUnresolvedPlaceholders } from './src/linkedin/helpers.js';
 import { primaryKeyFromUrl, loadPrimaryStatus, seedConnectedIds } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
-import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
+import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations, replyCheckResultsForRows } from './src/linkedin/inbox-sweep.js';
+import { writeReplyCheckResults } from './src/sheets-writer.js';
+import { replyWatermarkForRows, detectLinkedinColumn } from './src/reply-check-window.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
@@ -75,7 +82,7 @@ import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
 import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
-import { getFailures, retryFailures } from './src/sheet-write-tracker.js';
+import { getPendingSheetWrites as getFailures, retryPendingSheetWrites, startSheetSync } from './src/sheet-sync.js';
 import { getSkips } from './src/skip-ledger.js';
 import { createStopWatchdog } from './src/stop-watchdog.js';
 import { clearRuntimeInterruption, readRuntimeInterruption } from './src/runtime-interruption.js';
@@ -205,6 +212,7 @@ app.post('/api/auth/login', async (req, res) => {
 // a Google consent URL (opened in the system browser; Electron's
 // setWindowOpenHandler routes window.open there), then polls /complete until
 // the loopback callback has verified the identity through the Ortus gateway.
+configureSharedGoLogin({ connection: appGoogle, url: new URL('/gologin/shared', SHARED_GOLOGIN_GATEWAY).href, onChange: () => clearProfileCache() });
 installGoogleAppLogin(app, {connection:appGoogle, issueSession:issueSessionCookie, setOperator:setOperatorEmail});
 
 // Email-code signup and password reset (ported from Ortus Basics):
@@ -908,7 +916,6 @@ app.get('/api/check-status/preview', async (req, res) => {
         try {
           const { getProfiles } = await import('./src/gologin-launcher.js');
           const token = process.env.GOLOGIN_API_TOKEN;
-          if (!token) return [];
           return await getProfiles(token);
         } catch { return []; }
       })(),
@@ -976,6 +983,9 @@ app.post('/api/templates/preview', async (req, res) => {
     const {
       sheetUrl,
       linkedinColumn = '',
+      sheetGid = '',
+      previewLimit = 3,
+      previewFields,
       templates = {},
       profileIds = [],
       senderFirstNames = {},
@@ -1027,6 +1037,9 @@ app.post('/api/templates/preview', async (req, res) => {
     const introFirst = introMode ? (introTokens[0] || '') : '';
     const introLast  = introMode ? (introTokens.slice(1).join(' ')) : '';
 
+    if (Array.isArray(previewFields)) {
+      for (const key of Object.keys(tpl)) if (!previewFields.includes(key)) tpl[key] = '';
+    }
     const anyFilled = Object.values(tpl).some(v => v && v.trim());
     if (!anyFilled) {
       return res.status(400).json({ error: 'At least one template field must be provided' });
@@ -1036,7 +1049,7 @@ app.post('/api/templates/preview', async (req, res) => {
     // show it without parsing error codes (mirrors the general pattern).
     let rows;
     try {
-      rows = await fetchSheet(sheetUrl);
+      rows = await fetchSheet(withGid(sheetUrl, String(sheetGid || '').replace(/\D/g, '')));
     } catch (err) {
       console.error('Templates preview — sheet fetch error:', err.message);
       return res.json({ previews: [], error: err.message });
@@ -1045,7 +1058,7 @@ app.post('/api/templates/preview', async (req, res) => {
     // Pick the first 3 rows with an extractable LinkedIn URL.
     const picked = [];
     for (const row of rows) {
-      if (picked.length >= 3) break;
+      if (picked.length >= (Number(previewLimit) === 1 ? 1 : 3)) break;
       const url = extractLinkedInUrl(row, linkedinColumn);
       if (url) picked.push({ row, url });
     }
@@ -1110,15 +1123,17 @@ app.post('/api/templates/preview', async (req, res) => {
         ? (_soOFirstByName[_perRowSender.toLowerCase()] || '')
         : '';
 
-      data.senderName = _perRowSender || pName || '';
-      const resolvedFirst = _perRowFirst || senderFirstNames[profileId];
+      const resolvedFirst = (_perRowFirst || (senderFirstNames[profileId] || '')).trim();
       // v2.11.14: friendlier fallback for local-browser — if the operator
       // hasn't set a localBrowserFirstName yet, prefer "You" over the raw
       // profile id string so the preview reads naturally.
       const fallbackFirst = (profileId === 'local-browser')
         ? 'You'
         : ((pName || '').split(/\s+/)[0] || '');
-      data.senderFirstName = (resolvedFirst && resolvedFirst.trim()) || fallbackFirst;
+      data.senderFirstName = resolvedFirst || fallbackFirst;
+      // senderName: use the resolved first name when available so
+      // {senderName} never resolves to a raw email like "rj@ortusclub.com".
+      data.senderName = resolvedFirst || _perRowSender || pName || '';
 
       // v2.11.14: when intro mode is on, mirror outreach.js:462's introData
       // injection so {intro name} / {intro first name} / {intro last name}
@@ -1176,13 +1191,7 @@ app.post('/api/templates/preview', async (req, res) => {
       };
       for (const [key, raw] of Object.entries(tpl)) {
         if (!raw) { rendered[key] = ''; continue; }
-        const placeholderMatches = raw.match(/\{([a-zA-Z0-9_ ]+)\}/g) || [];
-        const unresolved = placeholderMatches
-          .map(m => m.slice(1, -1))
-          .filter(name => {
-            const val = data[name];
-            return val === undefined || val === null || val === '';
-          });
+        const unresolved = findUnresolvedPlaceholders(raw, data);
         for (const name of unresolved) {
           warnings.push(`{${name}} not resolved for ${fieldLabels[key]}`);
         }
@@ -1453,6 +1462,24 @@ function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 // Named so /api/campaign/cloud/:id/edit-redispatch can re-enter the same
 // pipeline after stopping the original campaign (excludeLeadUrls set).
 async function handleStartCloud(req, res) {
+  try {
+    if (rejectIfNoOperatorEmail(res)) return;
+    const identity = ensureCampaignIdentity({ campaignId: req.body?.campaignId, name: req.body?.name, config: req.body });
+    req.body = { ...req.body, ...identity };
+    return await withCampaignLaunch(identity.campaignId, async () => {
+      const owner = getOperatorEmail() || req.user || '';
+      const list = await listCloudCampaigns(owner);
+      if (list.error || !Array.isArray(list.campaigns)) return res.status(502).json({ error: 'Could not verify existing cloud runs. Retry once the engine is reachable.' });
+      const active = await findActiveCampaign(list.campaigns, identity, owner, getCloudLaunchConfig);
+      if (active) return res.status(409).json({ code: 'CAMPAIGN_ALREADY_ACTIVE', campaignId: identity.campaignId, activeRunId: active.id,
+        error: `“${identity.name}” already has an active cloud run. Open that campaign to continue or stop it before starting again.` });
+      return handleStartCloudOnce(req, res);
+    });
+  } catch (error) { return res.status(error.status || 500).json({ error: error.message, code: error.code }); }
+}
+async function handleStartCloudOnce(req, res) {
+  const subjectError = messageSubjectError(req.body);
+  if (subjectError) return res.status(400).json({ error: subjectError, launchRejected: true });
   const unsupported = cloudOptionError(req.body);
   if (unsupported) return res.status(400).json({ error: unsupported });
   try {
@@ -1638,6 +1665,7 @@ async function handleStartCloud(req, res) {
     const t = templates || {};
     const config = {
       ...t,
+      campaignId: body.campaignId,
       message: t.message || t.followUp1 || '',            // message_only DM body
       followUpMessage: t.followUpMessage || t.followUp1 || '',
       senderFirstNames: body.senderFirstNames || t.senderFirstNames || {},
@@ -1732,11 +1760,11 @@ async function handleStartCloud(req, res) {
       primaryConn,
       startAt: startAt || undefined,
     });
-    if (result.error) return res.status(502).json({ error: result.error, cloud: true });
+    if (result.error) return res.status(result.status || 502).json({ error: result.error, code: result.code, limit: result.limit, cloud: true });
     cloudLog(`[cloud] campaign ${result.id} (${mode}) ${result.scheduled ? `SCHEDULED for ${result.startAt}` : 'dispatched'} to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
     // Snapshot the wizard config so the campaign can be duplicated later (the
     // engine doesn't return templates/delays). Best-effort — never blocks dispatch.
-    saveCloudLaunchConfig(result.id, name || '', body).catch((e) => cloudLog(`[cloud] launch-config save failed: ${e.message}`));
+    await saveCloudLaunchConfig(result.id, name || '', body).catch((e) => cloudLog(`[cloud] launch-config save failed: ${e.message}`));
     res.json({ ok: true, cloud: true, ...result });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2386,7 +2414,9 @@ app.get('/api/primary-people', async (_req, res) => {
 app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   const rec = await getCloudLaunchConfig(req.params.id);
   if (!rec) return res.status(404).json({ error: 'No saved launch config for this campaign.' });
-  res.json({ name: rec.name || '', config: rec.config || {} });
+  const identity = ensureCampaignIdentity({ campaignId: rec.config?.campaignId, name: rec.name, config: rec.config });
+  const saved = getConfigById(identity.campaignId);
+  res.json({ name: saved.name, campaignId: identity.campaignId, config: { ...saved.config, campaignId: identity.campaignId } });
 });
 // v2.160.44: persist edits made in the OPEN-to-edit wizard back onto the
 // campaign's own launch-config snapshot (creating one for older campaigns that
@@ -2399,7 +2429,12 @@ app.post('/api/campaign/cloud/:id/launch-config', async (req, res) => {
     return res.status(400).json({ error: 'Missing config.' });
   }
   try {
-    await saveCloudLaunchConfig(req.params.id, body.name || '', config);
+    const previous = await getCloudLaunchConfig(req.params.id);
+    const identity = ensureCampaignIdentity({ campaignId: previous?.config?.campaignId || config.campaignId, name: previous?.name || body.name, config });
+    if (config.campaignId && config.campaignId !== identity.campaignId) return res.status(409).json({ error: 'These settings belong to another campaign.' });
+    const { saveConfig } = await import('./src/campaign-configs.js');
+    const saved = saveConfig(body.name || identity.name, config, { campaignId: identity.campaignId });
+    await saveCloudLaunchConfig(req.params.id, saved.name, saved.config);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Failed to save launch config.' });
@@ -3146,6 +3181,8 @@ app.post('/api/preflight/stamp', async (req, res) => {
 
 app.post('/api/campaign/start', async (req, res) => {
   try {
+    const subjectError = messageSubjectError(req.body);
+    if (subjectError) return res.status(400).json({error:subjectError,launchRejected:true});
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
     if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is running — stop it first' });
@@ -3194,13 +3231,13 @@ app.post('/api/campaign/start', async (req, res) => {
     // Clear the wizard draft name on launch so the next "+ Start new
     // campaign" click opens an empty wizard rather than re-prompting
     // about a now-stale draft with the same name.
-    try { await writeDraftName(''); } catch { /* non-fatal */ }
 
     // If a campaign is already running, queue this one instead of erroring.
     // The queue chain in launchCampaign's finally{} will pick it up when
     // the current campaign finishes.
     if (campaign.running) {
       const entry = await addToQueue(config, owner);
+      try { await writeDraftName(''); } catch { /* non-fatal */ }
       const runningName = campaign.name || '(unnamed)';
       return res.json({
         ok: true,
@@ -3215,6 +3252,7 @@ app.post('/api/campaign/start', async (req, res) => {
     const existingQueue = await getQueue();
     if (existingQueue.length > 0) {
       const entry = await addToQueue(config, owner);
+      try { await writeDraftName(''); } catch { /* non-fatal */ }
       // Now drain the head of the queue (which will be the previously-first
       // entry, not this newcomer).
       runNextFromQueue().catch(err => console.error('Drain failed:', err.message));
@@ -3278,7 +3316,7 @@ app.post('/api/campaign/start', async (req, res) => {
     res.json({ ok: true, message: 'Campaign started' });
   } catch (err) {
     console.error('Campaign start error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message, code: err.code, limit: err.limit });
   }
 });
 
@@ -3294,7 +3332,7 @@ app.post('/api/campaign/preflight-ic-senders', async (req, res) => {
 
     const rows = await fetchSheet(sheetUrl);
     const token = process.env.GOLOGIN_API_TOKEN;
-    const profiles = token ? await getProfiles(token) : [];
+    const profiles = await getProfiles(token);
     const nameToId = {};
     for (const p of profiles) nameToId[p.name] = p.id;
     nameToId['You'] = 'local-browser';
@@ -3434,7 +3472,7 @@ app.patch('/api/queue/:id', async (req, res) => {
     if (!updated) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, entry: updated });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message, ...(err.code === 'CAMPAIGN_QUEUE_FULL' ? {code:err.code,limit:5} : {}) });
   }
 });
 
@@ -3755,7 +3793,7 @@ app.post('/api/magellan/import-csv', express.text({ type: '*/*', limit: '60mb' }
     console.log(`[magellan] import-csv staged ${out.staged} connection(s) for ${out.account} (skipped ${out.skippedNoMemberId} with no member id, of ${out.total})`);
     res.json(out);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message, ...(err.code === 'CAMPAIGN_QUEUE_FULL' ? {code:err.code,limit:5} : {}) });
   }
 });
 
@@ -3843,7 +3881,7 @@ app.post('/api/connections/search', async (req, res) => {
     const b = req.body || {};
     res.json(await dbCall('searchConnections', [connectionsCriteria(b), { limit: b.limit || 1000 }]));
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message, ...(err.code === 'CAMPAIGN_QUEUE_FULL' ? {code:err.code,limit:5} : {}) });
   }
 });
 
@@ -3853,7 +3891,7 @@ app.post('/api/connections/export', async (req, res) => {
     const urls = Array.isArray(b.urls) ? b.urls : undefined;
     res.json(await dbCall('exportConnections', [connectionsCriteria(b), { urls }]));
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message, ...(err.code === 'CAMPAIGN_QUEUE_FULL' ? {code:err.code,limit:5} : {}) });
   }
 });
 
@@ -3951,7 +3989,7 @@ app.post('/api/fg/build', async (req, res) => {
     const out = buildFgTargets(fgCriteria(b), { operator: b.operator, operatorName: b.operatorName, account, month, alreadyInvited, budget });
     res.json({ ...out, account, month, budget });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message, ...(err.code === 'CAMPAIGN_QUEUE_FULL' ? {code:err.code,limit:5} : {}) });
   }
 });
 
@@ -3962,7 +4000,7 @@ app.post('/api/fg/queue', async (req, res) => {
     if (!rows || !rows.length) return res.status(400).json({ error: 'No rows to queue.' });
     res.json(await queueFgInvites(rows));
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message, ...(err.code === 'CAMPAIGN_QUEUE_FULL' ? {code:err.code,limit:5} : {}) });
   }
 });
 
@@ -3974,7 +4012,7 @@ app.post('/api/fg/mark-invited', async (req, res) => {
     if (!memberIds || !memberIds.length) return res.status(400).json({ error: 'memberIds required' });
     res.json(await markFgInvited({ memberIds, account: b.account, operator: b.operator, month: b.month || fgMonth() }));
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message, ...(err.code === 'CAMPAIGN_QUEUE_FULL' ? {code:err.code,limit:5} : {}) });
   }
 });
 
@@ -5132,8 +5170,17 @@ app.post('/api/reply-sweep/open-thread', async (req, res) => {
   }
 });
 
+let _replySweepStarting = false;
 app.post('/api/reply-sweep/start', async (req, res) => {
-  if (_replySweep.running) return res.status(409).json({ error: 'A reply sweep is already running.' });
+  // `running` is only set once the sheet has loaded, so a double click used to
+  // slip two sweeps in that then fought over the same browser. Claim the slot
+  // synchronously, before any await.
+  if (_replySweep.running || _replySweepStarting) return res.status(409).json({ error: 'A reply check is already running.' });
+  _replySweepStarting = true;
+  try { await _startReplySweep(req, res); } finally { _replySweepStarting = false; }
+});
+
+async function _startReplySweep(req, res) {
   const b = req.body || {};
   let { sheetUrl, linkedinColumn, profileIds } = b;
   const dryRun = b.dryRun !== false; // default ON (preview-only) unless explicitly false
@@ -5142,7 +5189,6 @@ app.post('/api/reply-sweep/start', async (req, res) => {
     linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
   }
   if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
-  linkedinColumn = linkedinColumn || 'Linkedin URL';
 
   // Load + group sent rows by sender (same grouping as /api/reply-check-now).
   const token = process.env.GOLOGIN_API_TOKEN;
@@ -5159,13 +5205,18 @@ app.post('/api/reply-sweep/start', async (req, res) => {
   } catch { /* fall back to id-as-name */ }
 
   const candidateRows = replyEligibleRows(rows);
+  // Tabs name the link column differently (OPI keeps it under "Linkedin Bio");
+  // matching + write-back both need the real one.
+  linkedinColumn = detectLinkedinColumn(candidateRows, linkedinColumn);
 
   const wanted = Array.isArray(profileIds) && profileIds.length ? profileIds.slice() : null;
   const leadsByProfile = new Map();
+  const unknownSenders = new Map();   // Sender values that aren't a GoLogin profile (e.g. a pasted LinkedIn link)
   for (const row of candidateRows) {
     const acct = String(row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').trim();
     if (!acct) continue;
-    const pid = nameToId[acct.toLowerCase()] || acct;
+    const pid = nameToId[acct.toLowerCase()] || (nameByProfileId.has(acct) || acct === 'local-browser' ? acct : null);
+    if (!pid) { unknownSenders.set(acct, (unknownSenders.get(acct) || 0) + 1); continue; }
     if (wanted && !wanted.includes(pid)) continue;
     if (!leadsByProfile.has(pid)) leadsByProfile.set(pid, []);
     leadsByProfile.get(pid).push(row);
@@ -5173,15 +5224,27 @@ app.post('/api/reply-sweep/start', async (req, res) => {
 
   const pids = [...leadsByProfile.keys()];
   const names = pids.map((pid) => nameByProfileId.get(pid) || pid);
-  res.json({ started: true, profiles: names.length });
+  res.json({ started: true, profiles: names.length, unknownSenders: [...unknownSenders.keys()] });
 
   _replySweep = makeInitialSweepStatus(names, dryRun);
   _replySweepAbort = false;
 
-  // Scan window: campaign first send-out − 12h, else 14 days back.
-  const startMs = campaign.startedAt ? Date.parse(campaign.startedAt) : NaN;
-  const watermark = (Number.isFinite(startMs) ? startMs : (Date.now() - 14 * 86400000)) - 12 * 60 * 60 * 1000;
+  // Scan window per account: back to that account's earliest send on this tab
+  // (read off the sheet — a finished campaign has no start time in memory).
+  const watermarkFor = (pid) => replyWatermarkForRows(leadsByProfile.get(pid));
   const stamp = (m) => { _replySweep.logs.push(`[${new Date().toISOString()}] ${m}`); if (_replySweep.logs.length > 200) _replySweep.logs.shift(); try { campaignLog(`[reply-sweep] ${m}`); } catch (_) {} };
+  const saveCheckResults = async (pid, slot, outcome) => {
+    const results = replyCheckResultsForRows(leadsByProfile.get(pid), linkedinColumn, outcome, new Date().toISOString(), _replySweepAbort);
+    slot.incomplete = results.some((r) => r.status !== 'Done');
+    if (dryRun) return;
+    try {
+      await writeReplyCheckResults(sheetUrl, linkedinColumn, results);
+      stamp(`✍ [${slot.profileName}] Reply-check status and time saved for ${results.length} lead(s)`);
+    } catch (err) {
+      slot.writeErrors = (slot.writeErrors || 0) + 1;
+      stamp(`⚠ [${slot.profileName}] Could not save reply-check results: ${err.message}`);
+    }
+  };
 
   (async () => {
     setBulkCheckInProgress(true);
@@ -5193,12 +5256,13 @@ app.post('/api/reply-sweep/start', async (req, res) => {
         const pid = pids[i];
         const slot = _replySweep.perProfile[i];
         const pName = names[i];
-        if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped`); continue; }
+        if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped — not checked`); continue; }
         _replySweep.currentProfile = pName;
         slot.status = 'running';
         const wasRunning = !!getProfilePid(pid);
         const isLocal = pid === 'local-browser';
         let launched = null, handle = null;
+        let checkOutcome = { error: 'Account could not be checked', campaignReplies: [] };
         try {
           stamp(`📬 [${pName}] Scanning inbox…`);
           launched = isLocal ? await launchLocalBrowser() : await launchProfile(pid, token);
@@ -5206,10 +5270,13 @@ app.post('/api/reply-sweep/start', async (req, res) => {
           handle = { close: async () => { try { await (isLocal ? closeLocalBrowser() : closeProfile(pid)); } catch (_) {} } };
           _replySweepHandle = handle;
 
+          const watermark = watermarkFor(pid);
+          stamp(`📅 [${pName}] Reading back to ${new Date(watermark).toISOString().slice(0, 10)} · ${leadsByProfile.get(pid).length} sent lead(s) · column "${linkedinColumn}"`);
           const out = await sweepProfileInbox({
             page: launched.page, sheetUrl, linkedinColumn,
             candidateRows: leadsByProfile.get(pid), watermark, log: stamp,
           });
+          checkOutcome = out;
           if (out.error) { slot.status = 'error'; slot.error = out.error; stamp(`⚠ [${pName}] ${out.error}`); }
           else {
             slot.replies = out.campaignReplies.length;
@@ -5222,6 +5289,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
             if (!dryRun && out.campaignReplies.length) {
               const wb = await applyReplyWriteBack({ sheetUrl, linkedinColumn, campaignReplies: out.campaignReplies });
               _replySweep.wrote += wb.wrote;
+              slot.writeErrors = wb.errors.length;
               stamp(`✍ [${pName}] wrote ${wb.wrote}, skipped ${wb.skipped}${wb.errors.length ? `, ${wb.errors.length} error(s)` : ''}`);
             }
           }
@@ -5229,6 +5297,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
           if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped`); }
           else { slot.status = 'error'; slot.error = err.message; stamp(`✗ [${pName}] ${err.message}`); }
         } finally {
+          await saveCheckResults(pid, slot, checkOutcome);
           _replySweepHandle = null;
           // Always close what WE opened (sweep only runs when no campaign is active,
           // so wasRunning should be false; we still respect an operator-opened browser).
@@ -5251,16 +5320,32 @@ app.post('/api/reply-sweep/start', async (req, res) => {
         if (getProfilePid(pid)) { stamp(`⏏ Safety close — ${nameByProfileId.get(pid) || pid}`); try { await closeProfile(pid); } catch (_) {} }
       }
       _replySweep.phase = 'done';
-      stamp(`■ Reply sweep complete — ${_replySweep.campaignReplies.length} reply(ies), ${_replySweep.unmatched.length} unmatched${dryRun ? '' : `, ${_replySweep.wrote} written`}`);
     } catch (err) {
-      _replySweep.phase = 'error'; _replySweep.error = err.message; stamp(`✗ Fatal — ${err.message}`);
+      _replySweep.phase = 'error'; _replySweep.error = err.message;
     } finally {
       _replySweep.running = false; _replySweep.currentProfile = null;
       setBulkCheckInProgress(false);
       try { allowSleep(); } catch (_) {}
+      const checked = _replySweep.perProfile.filter((p) => p.status === 'done').length;
+      const failed = _replySweep.perProfile.filter((p) => p.status === 'error').length;
+      const writeErrors = _replySweep.perProfile.reduce((n, p) => n + (p.writeErrors || 0), 0);
+      const incomplete = _replySweep.perProfile.filter((p) => p.incomplete).length;
+      const outcome = _replySweep.error ? '✗ REPLY CHECK FAILED'
+        : _replySweepAbort ? '■ REPLY CHECK STOPPED'
+        : failed || writeErrors || incomplete ? '⚠ REPLY CHECK FINISHED WITH ERRORS'
+        : '✓ REPLY CHECK COMPLETE';
+      _replySweep.summary = `${outcome} — ${checked}/${pids.length} accounts checked · ${_replySweep.campaignReplies.length} replies found · ${_replySweep.unmatched.length} unmatched`
+        + (dryRun ? ' · preview only; sheet unchanged' : ` · ${_replySweep.wrote} marked Replied in the sheet`)
+        + (failed ? ` · ${failed} account(s) failed` : '')
+        + (writeErrors ? ` · ${writeErrors} sheet write error(s)` : '')
+        + (incomplete ? ` · ${incomplete} account(s) with incomplete checks` : '')
+        + (_replySweep.error ? ` · ${_replySweep.error}` : '')
+        + (!pids.length ? ' · no eligible accounts to check' : '')
+        + ' · No reply check is running.';
+      stamp(_replySweep.summary);
     }
   })();
-});
+}
 
 // v2.59.x — Atomic full-order reorder for drag-and-drop in the dashboard.
 // Body: { ids: ["q_xxx", "q_yyy", ...] } in the desired new order. Validates
@@ -5292,6 +5377,8 @@ app.post('/api/queue/reorder', async (req, res) => {
 // or wait for the next launchCampaign() chain.
 app.post('/api/campaign/queue-only', async (req, res) => {
   try {
+    const subjectError = messageSubjectError(req.body);
+    if (subjectError) return res.status(400).json({error:subjectError,launchRejected:true});
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
     if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is running — stop it first' });
 
@@ -5329,9 +5416,9 @@ app.post('/api/campaign/queue-only', async (req, res) => {
     const config = buildCampaignConfig(body);
     const owner = req.user;
 
-    try { await writeDraftName(''); } catch { /* non-fatal */ }
 
     const entry = await addToQueue(config, owner);
+      try { await writeDraftName(''); } catch { /* non-fatal */ }
     const position = (await getQueue()).length;
     res.json({
       ok: true,
@@ -5343,7 +5430,7 @@ app.post('/api/campaign/queue-only', async (req, res) => {
     });
   } catch (err) {
     console.error('Queue-only error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message, code: err.code, limit: err.limit });
   }
 });
 
@@ -6328,18 +6415,7 @@ app.get('/api/campaign/sheet-write-failures', (_req, res) => {
 
 app.post('/api/campaign/sheet-write-failures/retry', async (_req, res) => {
   try {
-    const { updateSheetRow } = await import('./src/sheets-writer.js');
-    const result = await retryFailures(async (failure) => {
-      let payload;
-      try {
-        payload = JSON.parse(failure.payload);
-      } catch {
-        return { error: 'payload unrecoverable — cannot retry' };
-      }
-      const ok = await updateSheetRow(campaign.sheetUrl, failure.url, payload, failure.column || undefined);
-      if (!ok) return { error: 'sheet write failed' };
-      return {};
-    });
+    const result = await retryPendingSheetWrites();
     campaign.sheetWriteFailures = getFailures().length;
     res.json(result);
   } catch (err) {
@@ -7534,7 +7610,7 @@ app.post('/api/check-dms/start', async (req, res) => {
     let profiles = [];
     try {
       const token = process.env.GOLOGIN_API_TOKEN;
-      if (token) profiles = await getProfiles(token);
+      profiles = await getProfiles(token);
     } catch (err) {
       console.warn(`[check-dms] getProfiles failed: ${err.message}`);
     }
@@ -7704,7 +7780,6 @@ app.get('/api/check-dms/preview', async (req, res) => {
       (async () => {
         try {
           const token = process.env.GOLOGIN_API_TOKEN;
-          if (!token) return [];
           return await getProfiles(token);
         } catch { return []; }
       })(),
@@ -8229,6 +8304,8 @@ app.get('/api/schedules', async (_req, res) => {
 
 app.post('/api/schedules', async (req, res) => {
   try {
+    const subjectError = messageSubjectError(req.body);
+    if (subjectError) return res.status(400).json({error:subjectError});
     const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, dailyLimit, delayMin, delayMax, enabled } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
     if (!cronExpr || !cron.validate(cronExpr)) return res.status(400).json({ error: 'valid cron expression required' });
@@ -8669,6 +8746,20 @@ app.delete('/api/campaign-configs/:name', async (req, res) => {
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
+app.get('/api/campaign-board/deletions', (_req, res) => {
+  try { res.json({ deletions: getCampaignDeletions() }); }
+  catch(error) { res.status(500).json({ error: error.message }); }
+});
+app.post('/api/campaign-board/deletions', (req, res) => {
+  const body=req.body || {};
+  if (!Array.isArray(body.runIds) || !body.runIds.length) return res.status(400).json({error:'Campaign identity required'});
+  try {
+    const deletions=deleteCampaignFromBoard({ owner:String(body.owner || 'mine').trim().toLowerCase(), campaignId:body.campaignId || null,
+      runIds:body.runIds.filter(id=>typeof id==='string'), legacyName:String(body.name||'').trim().toLowerCase() });
+    res.json({ok:true,deletions});
+  } catch(error) { res.status(500).json({error:error.message}); }
+});
+
 app.get('/api/campaign-configs/by-id/:campaignId', (req, res) => {
   const entry = getConfigById(req.params.campaignId);
   if (!entry) return res.status(404).json({ ok: false, error: 'Campaign not found.' });
@@ -8760,12 +8851,12 @@ app.post('/api/campaign-configs/rename', async (req, res) => {
 
 app.post('/api/campaign-configs', async (req, res) => {
   try {
-    const { saveConfig } = await import('./src/campaign-configs.js');
+    const { saveNamedCampaign } = await import('./src/campaign-configs.js');
     const { name, config } = req.body || {};
     if (!String(name || '').trim()) {
       return res.status(400).json({ ok: false, error: 'A campaign needs a name before its settings can be saved.' });
     }
-    res.json({ ok: true, saved: saveConfig(name, config, { campaignId: req.body?.campaignId || config?.campaignId, listed: true }) });
+    res.json({ ok: true, saved: saveNamedCampaign(name, config, req.body?.campaignId || config?.campaignId) });
   } catch (err) {
     console.error('[campaign-configs] save failed:', err);
     res.status(err.status || 500).json({ ok: false, error: err.message });
@@ -8777,6 +8868,7 @@ app.post('/api/campaign-configs', async (req, res) => {
 // operator pastes the tokens they hold, and the workspaces those tokens unlock
 // become selectable. Nothing here ever echoes a token back.
 app.get('/api/credentials', async (_req, res) => {
+  await ensureSharedGoLogin();
   try {
     const { credentialStatus, readOthers } = await import('./src/gologin-credentials.js');
     res.json({ ok: true, credentials: credentialStatus(), others: readOthers() });
@@ -8873,6 +8965,7 @@ app.post('/api/credentials', async (req, res) => {
 migrateCampaignIdentities();
 
 app.listen(PORT, '127.0.0.1', async () => {
+  startSheetSync();
   console.log(`\n  ✦ Ortus Outreach v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   startAmbientSampling(getActiveBrowserPids);
@@ -9106,7 +9199,7 @@ app.post('/api/operator-identity', (req, res) => {
     const saved = setOperatorEmail(email);
     res.json({ ok: true, email: saved, set: !!saved });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status || 400).json({ error: err.message, ...(err.code === 'CAMPAIGN_QUEUE_FULL' ? {code:err.code,limit:5} : {}) });
   }
 });
 

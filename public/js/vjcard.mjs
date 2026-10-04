@@ -499,7 +499,8 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
   const pills = [];
   let blocked = true;
   let status;
-  if (a.needsLogin) { pills.push(['bad', 'Logged out']); status = 'Logged out — open the account and sign in to LinkedIn'; }
+  if (a.loginRechecking) { pills.push(['warn', 'Checking login…']); status = 'Login recheck queued — waiting for a worker turn'; }
+  else if (a.needsLogin) { pills.push(['bad', 'Logged out']); status = 'Logged out — open the account and sign in to LinkedIn'; }
   // Parked by 3 consecutive proxy 407s: the VM cannot open this profile's
   // browser at all. Distinct from a throttle, because waiting will not fix it.
   else if (a.parkReason === 'proxy') { pills.push(['bad', 'Proxy refused']); status = 'The VM cannot open this profile — fix its proxy in GoLogin, then try again'; }

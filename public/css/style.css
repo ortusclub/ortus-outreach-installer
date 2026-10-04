@@ -8923,3 +8923,30 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .engine-seg-btn.is-active { background: var(--ink); color: var(--surface, #fff); }
 .engine-seg-btn:disabled { opacity: .5; cursor: default; }
 #engine-modal .cred-row { margin-top: 12px; }
+
+/* Detailed campaign status belongs exclusively to the opened campaign. */
+body:not(.route-wizard) #nav-status,
+body:not(.route-wizard) #active-card { display: none !important; }
+.template-preview-button, .prelaunch-button { border: 1px solid var(--ink); border-radius: 999px; padding: 10px 18px; background: var(--paper, #fff); color: var(--ink, #111); cursor: pointer; }
+.prelaunch-button--confirm { background: #111; color: #fff; }
+.template-preview-button { margin-bottom: 12px; }
+#preview-modal-body { color: var(--ink, #111); }
+
+.campaign-run-history { margin: -8px 0 24px; padding: 12px 20px; border: 1px solid var(--hairline); border-radius: 12px; }
+.campaign-run-history summary { cursor: pointer; color: var(--gray); }
+.campaign-history-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; border-top:1px solid var(--hairline); }
+.campaign-history-warning { color:var(--gold); }
+
+.campaign-history-actions { display:flex; flex-wrap:wrap; gap:12px; }
+.campaign-history-delete { color:var(--red); }
+
+.campaign-run-history { font-size: 13px; }
+.campaign-history-row { padding: 8px 0; }
+.campaign-history-actions { gap: 8px; }
+.campaign-history-actions .btn {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 6px 12px;
+  min-height: 30px;
+  line-height: 1.2;
+}

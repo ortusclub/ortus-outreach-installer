@@ -1,3 +1,4 @@
+import { messageSubjectError } from '../public/js/message-subject-validation.mjs';
 import { assertGoLoginOnly } from './gologin-only.js';
 import { hasDailySendLimit, dailyQuotaCount, utcDayKey, nextDailyResetAt } from './campaign-limits.js';
 import { getSalesNavAccess } from './linkedin/sales-nav-access.js';
@@ -28,14 +29,14 @@ import { weeklyCutoffMs, nextWeeklyResetMs, monthlyCutoffMs, nextMonthlyResetMs 
 import { existsSync, mkdirSync, appendFileSync, statSync, renameSync } from 'fs';
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
-import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
+import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation, getProfileLoadWarnings } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
 import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
 import { INTRO_HELD_PRIMARY_NOT_CONNECTED, INTRO_HELD_NO_PRIMARY } from './linkedin/intro-constants.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
-import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
+import { queueSheetWrite, getPendingSheetWrites as getFailures, setSheetSyncReporter } from './sheet-sync.js';
 import { getPrefs as getOperatorPrefs, identityGateEnabled } from './operator-prefs.js';
 import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
@@ -66,7 +67,8 @@ import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.j
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
 import { decide429 } from './throttle-policy.js';
-import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
+import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
+import { createSoOLoginReporter } from './soo-login-reporter.js';
 import { fetchSoOData } from './soo.js';
 import { identityRestrictionLabel } from './soo-restrictions.js';
 import { getOperatorEmail } from './operator-identity.js';
@@ -75,7 +77,9 @@ import { readLastRun, writeLastRun } from './last-run-store.js';
 import { readBlocklist } from './blocklist.js';
 import { blocklistExcludedUrls } from './preflight-lint.js';
 import { CampaignRegistry } from './campaign-registry.js';
-import { checkDiskFree } from './disk-check.js';
+import { checkDiskFree, isDiskSpaceError } from './disk-check.js';
+import { createCampaignLoopGuard } from './campaign-loop-guard.js';
+import { rotationAccountFinished, rotationFinished } from './campaign-rotation.js';
 import { plainLine } from './log-voice.js';
 import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy, isInterruption, interruptionMatches } from './runtime-interruption.js';
 import { readJson, writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
@@ -411,7 +415,43 @@ function getSenderName(row, senderColumn) {
 // `needsLogin` to the column by HEADER NAME (writeFields), so it survives the
 // column moving position. Exported for unit testing; the campaign loop wraps
 // this with the network write + per-run dedup.
-export function buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedinColumn, value) {
+export const IC_NEEDS_LOGIN_STATUS = 'Needs login — account logged out';
+export const IC_NO_GOLOGIN_STATUS = 'Account not found in accessible GoLogin workspaces';
+export const IC_GOLOGIN_UNVERIFIED_STATUS = 'Could not verify GoLogin access — retry account check';
+export const IC_MISSING_SENDER_STATUS = 'Sender missing — cannot identify GoLogin account';
+export const IC_LAUNCH_FAILURE_PREFIX = 'Not sent — browser failed to open: ';
+export function canRetryIntroStatus(status) {
+  // Any recorded outcome is final until the operator clears the cell.
+  return String(status || '').trim() === '';
+}
+
+export function buildIcLaunchFailureUpdates(rows, accountName, senderColumn, linkedinColumn, error) {
+  const reason = String(error?.message || error?.code || error || 'Unknown launch error')
+    .replace(/[\r\n\t]+/g, ' ').trim().slice(0, 500);
+  const status = IC_LAUNCH_FAILURE_PREFIX + reason;
+  return buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedinColumn, 'Y', 'introduce_back')
+    .filter(update => update.introStatus)
+    .map(({ linkedinUrl }) => ({ linkedinUrl, stage: status, introStatus: status }));
+}
+
+export function buildUnavailableIcUpdates(rows, nameToId, senderColumn, linkedinColumn, lookupIncomplete = false) {
+  const updates = [];
+  for (const row of rows) {
+    const sender = getSenderName(row, senderColumn);
+    if (nameToId[sender.toLowerCase()]) continue;
+    const url = extractLinkedInUrl(row, linkedinColumn);
+    const intro = row['Intro Status'] || row['intro status'] || row['Intro status']
+      || row['Introduction Status'] || row['introduction status'] || row['Introduction status'] || row.introStatus || '';
+    if (!url || !canRetryIntroStatus(intro)
+      || ['IC Sent', 'Introduction Made', 'Replied', 'Done'].includes(String(row.Stage || '').trim())) continue;
+    const status = !sender ? IC_MISSING_SENDER_STATUS
+      : lookupIncomplete ? IC_GOLOGIN_UNVERIFIED_STATUS : IC_NO_GOLOGIN_STATUS;
+    updates.push({ linkedinUrl: url, stage: status, introStatus: status });
+  }
+  return updates;
+}
+
+export function buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedinColumn, value, mode = '') {
   const acctNorm = (accountName == null ? '' : accountName.toString().toLowerCase().trim());
   if (!acctNorm) return [];
   const updates = [];
@@ -420,7 +460,15 @@ export function buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedin
     if (rowAcct !== acctNorm) continue;
     const url = extractLinkedInUrl(r, linkedinColumn);
     if (!url) continue;
-    updates.push({ linkedinUrl: url, needsLogin: value });
+    const update = { linkedinUrl: url, needsLogin: value };
+    const introStatus = r['Intro Status'] || r['intro status'] || r['Intro status']
+      || r['Introduction Status'] || r['introduction status'] || r['Introduction status'] || r.introStatus || '';
+    if (mode === 'introduce_back' && value === 'Y' && canRetryIntroStatus(introStatus)
+      && !['IC Sent', 'Introduction Made', 'Replied', 'Done'].includes(String(r.Stage || '').trim())) {
+      update.stage = IC_NEEDS_LOGIN_STATUS;
+      update.introStatus = IC_NEEDS_LOGIN_STATUS;
+    }
+    updates.push(update);
   }
   return updates;
 }
@@ -1363,67 +1411,32 @@ async function appendWarningLog(entry) {
   }
 }
 
-// Wire sheet-write-tracker's warning logger so persistent write failures are
-// surfaced in the operator warning log as well as the in-memory ledger.
-configureSheetWriteTracker({
-  warningLogger: (entry) => appendWarningLog({ ts: new Date().toISOString(), kind: 'sheet_write_failed', ...entry }).catch(() => {}),
+// Background recovery reports into the same log the operator copies.
+setSheetSyncReporter((entry, result) => {
+  if (result?.storageError) { log(`  ⚠ Sheet recovery storage could not be read: ${result.error}. Check local storage before continuing.`); return; }
+  if (result?.ok) log(`  ✓ Sheet result saved for ${entry.leadName || entry.url}.`);
+  else {
+    log(`  ⚠ Sheet result waiting to sync for ${entry.leadName || entry.url}: ${result?.error || 'Write not confirmed'}. Saved locally; retrying automatically.`);
+    appendWarningLog({ ts: new Date().toISOString(), kind: 'sheet_write_failed', ...entry }).catch(() => {});
+  }
 });
 
-/**
- * Second-level safety net for sheet write-backs. updateSheetRow already
- * retries transient errors internally (sheets-writer withWriteRetry, 3×/1s);
- * this wrapper retries ONCE more after 30s and, if still failing, records
- * the failure to the sheet-write-tracker ledger so the operator can see and
- * manually retry it (dashboard warning + /api/campaign/sheet-write-failures).
- * Never throws — a failed write must not stop the campaign loop.
- */
-// Writes still in flight. The campaign no longer waits for a sheet write before
-// moving to the next lead — see trackedSheetWrite — so something has to hold the
-// promises until the end of the run.
+// Only waits for current attempts when ending a run; failed results stay on disk.
 const _pendingSheetWrites = new Set();
 
-// Ortus Basics 1.0: the campaign used to AWAIT every sheet write inline. With
-// Apps Script slow or failing, that cost minutes per lead: WEBAPP_TIMEOUT_MS is
-// 60s and applies to both legs of the redirect, and writeSheetWithRetry does
-// attempt → 30s sleep → attempt. A single failing row could stall the loop for
-// ~4.5 minutes while the browser sat idle.
-//
-// The write is now fired and left to run. The result still lands in the sheet
-// and a failure still reaches the ledger; the loop simply stops waiting on it.
-// Ordering is safe: sheets-writer coalesces by sheet+column and merges rows
-// written inside the same window, so concurrent writes for different leads
-// batch rather than race.
+// Persist the full result first. Network attempts run in the background, with
+// ordered retries for the same lead and recovery across app restarts.
 async function trackedSheetWrite(sheetUrl, url, leadName, sheetData, linkedinColumn) {
-  // updateSheetRow returns a boolean (true=ok, false=failed) — never throws.
-  // When no webapp is configured, false is a no-op (nothing to track or retry).
-  if (!SHEETS_WEBAPP_URL) return;
-
-  const p = writeSheetWithRetry(
-    () => updateSheetRow(sheetUrl, url, sheetData, linkedinColumn)
-        .then((ok) => (ok ? {} : { error: 'sheet write failed (updateSheetRow returned false)' })),
-    {
-      url,
-      leadName,
-      column: linkedinColumn || '',
-      payload: JSON.stringify(sheetData),
-    },
-  ).catch((err) => {
-    // writeSheetWithRetry records its own failures; this only stops an unhandled
-    // rejection now that nobody is awaiting the promise.
-    console.warn(`[sheets-writer] write for ${leadName || url} threw: ${err?.message || err}`);
+  const p = queueSheetWrite({
+    sheetUrl, url, leadName, column: linkedinColumn || '', payload: JSON.stringify(sheetData),
+  }).catch((err) => {
+    log(`  ⚠ Could not save sheet result for recovery (${leadName || url}): ${err.message}. Keep this app open and check storage.`);
   }).finally(() => {
     _pendingSheetWrites.delete(p);
     campaign.sheetWriteFailures = getFailures().length;
   });
-
   _pendingSheetWrites.add(p);
-
-  // A hard ceiling so a stalled Apps Script cannot accumulate hundreds of
-  // in-flight writes. Well above a turn's BATCH_SIZE, so it never bites during
-  // normal running.
-  if (_pendingSheetWrites.size >= 40) {
-    await Promise.race([..._pendingSheetWrites]).catch(() => {});
-  }
+  if (_pendingSheetWrites.size >= 40) await Promise.race([..._pendingSheetWrites]).catch(() => {});
 }
 
 /** Let every outstanding write finish. Called before a run reports itself done. */
@@ -1432,7 +1445,6 @@ async function drainSheetWrites() {
     await Promise.allSettled([..._pendingSheetWrites]);
   }
 }
-
 
 function pushError(err) {
   const entry = { at: new Date().toISOString(), message: err.message, profileName: campaign.currentProfile };
@@ -1740,7 +1752,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
   // dead and we should drop this profile from rotation entirely).
   if (health.sessionExpired && profileId !== 'local-browser') {
     // GoLogin cloud profiles can't be logged into interactively mid-run — drop.
-    log(`✗ ${pName}: session expired — parking profile for rest of run.`);
+    log(`✗ ${pName}: account logged out (session expired) — login required; parking profile for rest of run.`);
     return { page: null, ok: false, sessionExpired: true };
   }
   if (!health.healthy) {
@@ -1782,7 +1794,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
       if (!loggedIn) {
         log(`✗ Local Browser: login timed out after 120s. Skipping.`);
         await closeLocalBrowser();
-        return { page: null, ok: false };
+        return { page: null, ok: false, sessionExpired: true };
       }
       log(`✓ Local Browser: logged in! Moving window off-screen.`);
       try {
@@ -1814,7 +1826,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
       if (!loggedIn) {
         log(`✗ ${pName}: login timed out after 120s. Skipping.`);
         try { await launched.browser.close().catch(() => {}); await closeProfile(profileId); } catch { /* */ }
-        return { page: null, ok: false };
+        return { page: null, ok: false, sessionExpired: true };
       }
       log(`✓ ${pName}: logged in! Moving window off-screen.`);
       try {
@@ -2092,6 +2104,8 @@ export function setLiveTemplates(newTemplates = {}) {
   if (!campaign.running) return { ok: false, reason: 'not-running' };
   if (!campaign._paused) return { ok: false, reason: 'not-paused' };
   if (!campaign._liveTpl) return { ok: false, reason: 'no-templates' };
+  const subjectError = messageSubjectError({mode:campaign._liveMode,templates:{...campaign.templates,...newTemplates},messageOpenProfiles:campaign.messageOpenProfiles});
+  if (subjectError) return {ok:false,reason:subjectError};
   Object.assign(campaign._liveTpl, normalizeTemplates(newTemplates, campaign._liveMode));
   // Mutate the raw templates object IN PLACE (don't reassign). The send loop's
   // auto-intro / auto-DM call sites pass the closure `templates` object (=== the
@@ -2133,6 +2147,8 @@ export function setLiveCadence(min) {
 
 export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, stopBeforeWeeklyReset = false, stopBeforeMonthlyReset = false, skipIntroductions = false, excludedUrls = [] }) {
   assertGoLoginOnly({ profileIds, templates });
+  const subjectError = messageSubjectError({ mode, templates, messageOpenProfiles });
+  if (subjectError) throw new Error(subjectError);
   if (campaign.running) throw new Error('Campaign already running');
   const identity = ensureCampaignIdentity({ campaignId, name, config: { profileIds, sheetUrl, templates, mode } });
   campaignId = identity.campaignId;
@@ -2200,6 +2216,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     campaign.identityGateEnabled = identityGateEnabled(prefs);
   } catch { setOperatorTz(''); campaign.identityGateEnabled = identityGateEnabled(null); }
   campaign._abort = false;
+  campaign._resetLoopGuard = null;
   campaign._stoppedManually = false;
   campaign.stopReason = null;
   campaign._skipCleanup = false;
@@ -2275,11 +2292,11 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   if (!resumeContext) campaign.logs = [];
   campaign.tally = emptyTally(); // v2.93 — per-run funnel + leak counters
   campaign.parkedProfiles = [];
+  campaign._loginRechecking = new Set(profileIds || []);
   campaign._cooldown429 = new Map(); // profileId -> { until, pName, reason }
   campaign.softWarnings = [];
   campaign.profileEndReasons = [];
-  campaign.sheetWriteFailures = 0;
-  clearFailures();
+  campaign.sheetWriteFailures = getFailures().length;
   campaign.name = (typeof name === 'string' ? name : '').trim();
   // v2.13.14: stash the wizard inputs on the campaign object so the
   // monitoring path (runMonitoringCheck → runAutoIntros) can read them
@@ -2477,15 +2494,25 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         if (!acctNorm) return;
         if (flagged) {
           if (_needsLoginAccounts.has(acctNorm)) return;   // already flagged this run
-          _needsLoginAccounts.add(acctNorm);
         } else {
           if (!_needsLoginAccounts.has(acctNorm)) return;  // nothing to clear
-          _needsLoginAccounts.delete(acctNorm);
         }
-        const updates = buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedinColumn, flagged ? 'Y' : '');
+        const updates = buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedinColumn, flagged ? 'Y' : '', mode);
         if (updates.length) {
-          await batchUpdateSheet(sheetUrl, updates);
-          log(`  ${flagged ? '⚑' : '✓'} Needs Login ${flagged ? 'flagged' : 'cleared'} — ${accountName} (${updates.length} row(s)).`);
+          // Persist each status before attempting the network write, so a
+          // temporary Sheets outage cannot lose the account's login warning.
+          const results = await Promise.all(updates.map(({ linkedinUrl, ...fields }) => queueSheetWrite({
+            sheetUrl, url: linkedinUrl, leadName: `${accountName} — login status`,
+            column: linkedinColumn || '', payload: JSON.stringify(fields),
+          })));
+          if (flagged) _needsLoginAccounts.add(acctNorm);
+          else _needsLoginAccounts.delete(acctNorm);
+          const label = flagged && mode === 'introduce_back'
+            ? `Account logged out — "${IC_NEEDS_LOGIN_STATUS}" in Stage and Intro Status for pending IC leads`
+            : `Needs Login ${flagged ? 'flagged' : 'cleared'}`;
+          const sync = results.every(result => result?.ok)
+            ? 'saved to sheet' : 'saved locally; sheet sync pending and retrying automatically';
+          log(`  ${flagged ? '⚑' : '✓'} ${label} — ${accountName} (${updates.length} row(s)); ${sync}.`);
         }
       } catch (err) {
         log(`  ⚠ Needs Login ${flagged ? 'flag' : 'clear'} failed for ${accountName}: ${err.message}`);
@@ -2497,7 +2524,6 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // never throw into the loop. They write to the team SoO "LinkedIn Accounts"
     // board, matched by Email == the account's GoLogin profile name.
     const _sooFlipped = new Set();      // accountNorm already flipped to In Use this run
-    const _sooNeedsLogin = new Set();   // accountNorm already flagged Needs Login this run
     let _sooAccountsCache = null;
     let _sooFetchedAt = 0;
     const SOO_RESTRICTION_REFRESH_MS = 5 * 60 * 1000;
@@ -2654,19 +2680,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       }
     }
 
-    async function markSoONeedsLogin(accountName) {
-      try {
-        const acctNorm = (accountName || '').toString().toLowerCase().trim();
-        if (!acctNorm || _sooNeedsLogin.has(acctNorm)) return;
-        _sooNeedsLogin.add(acctNorm);
-        const res = await markAccountNeedsLoginSoO({ email: accountName });
-        if (res && res.ok && res.matched) {
-          log(`  ⚑ SoO: ${accountName} → Needs Login = Y.`);
-        }
-      } catch (err) {
-        log(`  ⚠ SoO Needs Login failed for ${accountName}: ${err.message}`);
-      }
-    }
+    const markSoONeedsLogin = createSoOLoginReporter({ mode, log });
 
     // v2 schema: prepareSheet provisions only this mode's columns and hides
     // every other mode's columns. Apps Script returns BAD_MODE only on
@@ -2769,7 +2783,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       if (!url) return false;
 
       if (icAllConnectedBypass) {
-        // v2.71: Intro Status is a one-shot column. ANY non-empty value
+        // Intro Status is one-shot. All non-empty values
         // is terminal — 'IC Sent', 'Introduction Made', 'Failed — …',
         // 'Skipped — …', operator notes, anything. Operator must clear
         // the cell manually to re-enable a retry. Both header aliases
@@ -2780,7 +2794,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
           row['Introduction Status'] || row['introduction status'] ||
           row['Introduction status'] || row['introStatus'] || ''
         ).toString().trim();
-        return introStatus === '';
+        return canRetryIntroStatus(introStatus);
       }
 
       if (dmAllConnectedBypass) {
@@ -2822,7 +2836,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         if (mode === 'introduce_back') {
           // v2.59: IC tabs are separate from connection tabs and don't
           // necessarily have a Stage column. Filter reads only from the
-          // Intro Status column — blank = process, anything else (IC Sent,
+          // Intro Status column — blank = process; all other values (IC Sent,
           // Failed — …, operator note, anything) = skip.
           // Header name per google-apps-script.js:319 is 'Intro Status';
           // long-form aliases kept for back-compat. Mirrored in the
@@ -2832,7 +2846,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             row['Introduction Status'] || row['introduction status'] ||
             row['Introduction status'] || row['introStatus'] || ''
           ).toString().trim();
-          return introStatus === '';
+          return canRetryIntroStatus(introStatus);
         }
         if (mode === 'message_only') {
           // v2.61: Workflow A — full IC symmetry. Renamed display
@@ -3003,24 +3017,27 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // Account Used. Using any other account silently fails Voyager checks.
     if (mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back') {
       // Refresh the cache to ensure newly-added profiles are visible.
-      if (token) {
+      let lookupIncomplete = false;
+      {
         try {
           const all = await getProfiles(token);
+          lookupIncomplete = getProfileLoadWarnings().length > 0;
           profileNameCache = {};
           for (const p of all) profileNameCache[p.id] = p.name;
         } catch (err) {
+          lookupIncomplete = true;
           log(`⚠ Could not refresh GoLogin profile list: ${err.message}`);
         }
       }
-      const nameToId = {};
-      Object.keys(profileNameCache).forEach(id => { nameToId[profileNameCache[id]] = id; });
+      const nameToId = Object.create(null);
+      Object.keys(profileNameCache).forEach(id => { nameToId[String(profileNameCache[id]).trim().toLowerCase()] = id; });
       // 2.8.29: Local browser is a valid pseudo-profile. Sheets store its
       // Account Used as variants like "local-browser", "local-browser - manual",
       // or "Local Browser" — all map to the single 'local-browser' pseudo-id.
       // 2.9.1: keep all historical display names mapped back to the canonical
       // 'local-browser' id so existing sheet rows still auto-route correctly.
-      nameToId['You']                    = 'local-browser';
-      nameToId['Local Browser']          = 'local-browser';
+      nameToId['you']                    = 'local-browser';
+      nameToId['local browser']          = 'local-browser';
       nameToId['local-browser']          = 'local-browser';
       nameToId['local-browser - manual'] = 'local-browser';
 
@@ -3032,9 +3049,9 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
           unmatchedSenders.set('(blank)', (unmatchedSenders.get('(blank)') || 0) + 1);
           continue;
         }
-        if (nameToId[acct]) {
+        if (nameToId[acct.toLowerCase()]) {
           // For local-browser variants, bucket under the canonical "You" label. (2.9.1)
-          const displayName = (nameToId[acct] === 'local-browser') ? 'You' : acct;
+          const displayName = (nameToId[acct.toLowerCase()] === 'local-browser') ? 'You' : acct;
           sendersInSheet.set(displayName, (sendersInSheet.get(displayName) || 0) + 1);
         } else {
           unmatchedSenders.set(acct, (unmatchedSenders.get(acct) || 0) + 1);
@@ -3043,7 +3060,8 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
 
       const derivedProfileIds = [];
       for (const name of sendersInSheet.keys()) {
-        derivedProfileIds.push(nameToId[name]);
+        const pid = nameToId[name.toLowerCase()];
+        if (!derivedProfileIds.includes(pid)) derivedProfileIds.push(pid);
       }
 
       const modeLabel = (mode === 'check_status') ? 'Check Status'
@@ -3055,6 +3073,17 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       if (unmatchedSenders.size > 0) {
         log(`⚠ Skipping ${[...unmatchedSenders.values()].reduce((a,b)=>a+b,0)} row(s) whose Sender is unknown:`);
         unmatchedSenders.forEach((count, name) => log(`  • ${name}: ${count} row(s) — no GoLogin profile matches`));
+        if (mode === 'introduce_back') {
+          const updates = buildUnavailableIcUpdates(targets, nameToId, senderColumn, linkedinColumn, lookupIncomplete);
+          if (updates.length) {
+            try {
+              await batchUpdateSheet(sheetUrl, updates, { requireConfirmation: true });
+              log(`⚠ IC: Stage and Intro Status updated for ${updates.length} lead(s) whose sender could not be accessed in GoLogin.`);
+            } catch (err) {
+              log(`✗ IC: could not save GoLogin access status to the sheet: ${err.message}`);
+            }
+          }
+        }
       }
 
       if (derivedProfileIds.length === 0) {
@@ -3081,7 +3110,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       for (const pid of derivedProfileIds) _checkStatusTargetsByProfile[pid] = [];
       for (const row of targets) {
         const acct = getSenderName(row, senderColumn);
-        const pid = nameToId[acct];
+        const pid = nameToId[acct.toLowerCase()];
         if (pid && _checkStatusTargetsByProfile[pid]) {
           _checkStatusTargetsByProfile[pid].push(row);
         }
@@ -3117,6 +3146,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
 
     // Campaign-scoped session cache, replaces activeSessions array.
     const sessions = new Map(); // profileId → { profileId, pName, browser, page, warmedUp }
+    const savedLaunchFailures = new Map();
 
     /**
      * Lazy launch + warmup + health check. Called on first batch per profile;
@@ -3179,7 +3209,9 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
           return null;
         }
 
+        log(`Checking login… ${pName}`);
         const { page, ok, sessionExpired } = await ensureProfileLoggedIn(launched, profileId, pName);
+        campaign._loginRechecking?.delete(profileId);
         if (sessionExpired) {
           // Phase 2.8.20 (W2-A2): drop this profile from the round-robin and
           // surface in the right pane via parkedProfiles (W1-B1's mechanism).
@@ -3197,7 +3229,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
           await setAccountNeedsLogin(pName, true);
           // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
           // (matched by Email == profile name) so the LinkedIn team re-logs it.
-          // Never auto-cleared. Best-effort — cannot affect the loop.
+          // Cleared only after confirmed login. Best-effort — cannot affect the loop.
           await markSoONeedsLogin(pName);
           // Close the now-unusable session immediately to free RAM
           try {
@@ -3219,6 +3251,8 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         // per profile launch. The cache-clear nav already loads LinkedIn home,
         // and the per-lead navigation has its own networkidle0 + DOM-settle
         // waits, so the additional dwell here was redundant.
+
+        await markSoONeedsLogin.confirmLoggedIn(pName,page);
 
         const session = { profileId, pName, browser: launched.browser, page, warmedUp: true };
         sessions.set(profileId, session);
@@ -3272,7 +3306,26 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
 
         return session;
       } catch (err) {
+        const diskPaused = pauseForDiskSpaceError(err);
         log(`✗ ${pName}: failed to open — ${err.message}`);
+        if (mode === 'introduce_back' && !campaign._abort) {
+          // A failed account gets one recorded outcome, never another send
+          // attempt just because its failure status is non-empty.
+          weeklyLimited.add(profileId);
+          const updates = buildIcLaunchFailureUpdates(targets, pName, senderColumn, linkedinColumn, err);
+          const signature = JSON.stringify(updates);
+          if (updates.length && savedLaunchFailures.get(profileId) !== signature) {
+            try {
+              const saved = await batchUpdateSheet(sheetUrl, updates, { requireConfirmation: true });
+              if (!saved) throw new Error('Sheet writer did not confirm the update');
+              savedLaunchFailures.set(profileId, signature);
+              log(`⚠ ${pName}: launch failure reason saved in Stage and Intro Status for ${updates.length} pending IC lead(s).`);
+            } catch (writeError) {
+              log(`✗ ${pName}: could not save launch failure reason to the sheet — ${writeError.message}`);
+            }
+          }
+        }
+        if (diskPaused) return null;
         pushError(err);
         return null;
       } finally {
@@ -3437,6 +3490,13 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // campaign ends when every derived profile has run out of its own rows.
     const _checkStatusCursorByProfile = {};
     const _checkStatusExhausted = new Set();
+    const loopGuard = createCampaignLoopGuard();
+    const visitedByProfile = new Map();
+    campaign._resetLoopGuard = () => loopGuard.reset();
+    const turnProgress = (pid) => JSON.stringify([
+      _checkStatusTargetsByProfile ? (_checkStatusCursorByProfile[pid] || 0) : (visitedByProfile.get(pid) || 0),
+      campaignCounts[pid] || 0, campaignSendCounts[pid] || 0, campaignMessageCounts[pid] || 0,
+    ]);
     const weeklyLimited = new Set(); // Profiles that hit weekly/credit limit
     // Phase 2.8.8: silent-failure guard — if a profile produces N
     // consecutive non-success outcomes, park it for the rest of the run.
@@ -3653,8 +3713,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         const candidate = profileQueue[i];
         if (profilesBeingRun.has(candidate)) continue;
         // v2.78: operator benched this account for the rest of the run.
-        if (campaign._skippedProfiles && campaign._skippedProfiles.has(candidate)) continue;
-        if (weeklyLimited.has(candidate)) continue;
+        if (rotationAccountFinished(candidate, rotationState())) continue;
         if (!skipsDailyLimit && getCampaignQuotaCount(candidate) >= campaign.dailyLimit) continue;
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
         // Clear stale _cooldown429 entry once the cooldown window has passed
@@ -3668,16 +3727,16 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       return null;
     }
 
+    function rotationState() {
+      return { exhausted: _checkStatusExhausted, unavailable: weeklyLimited, skipped: campaign._skippedProfiles };
+    }
+
     function noProfilesLeftEver() {
       // True only when nobody can ever run again: nobody mid-turn AND every
       // queued profile is permanently out (weekly-limited or daily-capped).
       // Cooldown alone doesn't count as "out" — that's a wait, not exhaustion.
-      if (profilesBeingRun.size > 0) return false;
-      if (profileQueue.length === 0) return true;
-      return profileQueue.every(id =>
-        weeklyLimited.has(id) ||
-        (!skipsDailyLimit && getCampaignQuotaCount(id) >= campaign.dailyLimit)
-      );
+      return rotationFinished(profileQueue, profilesBeingRun, rotationState(),
+        id => !skipsDailyLimit && getCampaignQuotaCount(id) >= campaign.dailyLimit);
     }
 
     /**
@@ -3686,10 +3745,29 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
      * weeklyLimited, consecutiveSkips, leadsExhausted).
      */
     async function runProfileTurn(profileId) {
+        await awaitUnpause(myGen);
         if (campaign._abort || isOrphan()) return;
         if (leadsExhausted) return;
 
-        const restriction = await restrictionForProfile(profileId);
+        const availabilityName = profileNameCache[profileId] || profileId;
+        const availabilityStarted = Date.now();
+        setAction('Checking account availability', {
+          account: availabilityName, phase: 'starting', step: 'checking_account_availability',
+          stepDetail: 'Reading account restrictions from the shared State of Operations sheet',
+        });
+        log(`Checking account availability for ${availabilityName} in the shared State of Operations sheet…`);
+        const availabilityTimer = setInterval(() => {
+          if (campaign._abort || isOrphan()) return;
+          log(`  ⏳ Still checking ${availabilityName} — ${Math.round((Date.now() - availabilityStarted) / 1000)}s waiting for the shared roster. The read may be queued or retrying.`);
+        }, 15000);
+        availabilityTimer.unref?.();
+        let restriction;
+        try { restriction = await restrictionForProfile(profileId); }
+        finally { clearInterval(availabilityTimer); }
+        if (campaign._abort || isOrphan()) return;
+        if (Date.now() - availabilityStarted >= 5000) {
+          log(`  ✓ Account availability check finished for ${availabilityName} after ${Math.round((Date.now() - availabilityStarted) / 1000)}s.`);
+        }
         if (restriction) {
           const name = profileNameCache[profileId] || profileId;
           const wasKnown = campaign._restrictedProfiles?.has(profileId);
@@ -3902,6 +3980,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             const candidate = targets[leadIndex];
             const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
             leadIndex++;
+            visitedByProfile.set(profileId, (visitedByProfile.get(profileId) || 0) + 1);
             if (!candidateUrl) {
               const _cName = `${candidate['First Name'] || candidate['firstName'] || ''} ${candidate['Last Name'] || candidate['lastName'] || ''}`.trim() || '(no name)';
               recordSkip({ url: '', leadName: _cName, reason: MALFORMED_URL, profileId, profileName: pName, detail: 'No LinkedIn URL found in row — skipping lead' });
@@ -4015,7 +4094,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         } else if (mode === 'introduce_back') {
           // v2.59: IC re-validation mirrors the pre-filter (~line 1442).
           // Read only from Intro Status — IC tabs may not have a Stage
-          // column at all. If anything is now in Intro Status (e.g. a
+          // column at all. If a non-retryable value is now in Intro Status (e.g. a
           // concurrent operator marked the row done, or a sibling worker
           // in the same run just stamped it), skip.
           const _introStatusNow = (
@@ -4023,7 +4102,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             row['Introduction Status'] || row['introduction status'] ||
             row['Introduction status'] || row['introStatus'] || ''
           ).toString().trim();
-          if (_introStatusNow !== '') {
+          if (!canRetryIntroStatus(_introStatusNow)) {
             recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: Intro Status already set to "${_introStatusNow}" — skipping` });
             delete state.processed[url]; continue;
           }
@@ -4074,11 +4153,13 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         data.lastName = row['Last Name'] || row['lastName'] || row['last_name'] || '';
         data.company = row['Company'] || row['company'] || '';
         data.title = row['Title'] || row['title'] || row['Job Title'] || '';
-        data.senderName = pName || '';
-        const resolvedFirst = senderFirstNames[profileId];
-        data.senderFirstName = (resolvedFirst && resolvedFirst.trim())
+        const resolvedFirst = (senderFirstNames[profileId] || '').trim();
+        data.senderFirstName = resolvedFirst
           || (pName || '').split(/\s+/)[0]
           || '';
+        // senderName: use the resolved first name when available so
+        // {senderName} never resolves to a raw email like "rj@ortusclub.com".
+        data.senderName = resolvedFirst || pName || '';
 
         let hint = getModeHint(mode, state.processed[url]?.action);
 
@@ -4570,11 +4651,15 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             // process' contribution; resetting the headline to it made the UI
             // briefly claim e.g. "1 of 200" after 20 leads were already done.
             campaign.totalProcessed = _resumeTotal + campaign.processedToday;
+            const _tSave = Date.now();
             await saveState(state);
+            if (Date.now() - _tSave > 3000) log(`  ⏱ saveState took ${((Date.now() - _tSave) / 1000).toFixed(0)}s`);
             // v2.95: SoO write-back — on the account's first credit-consuming
             // send (connection_sent / inmail_sent per mode), flip its SoO credit
             // cell to In Use + stamp the operator. No-op for every other action.
+            const _tSoo = Date.now();
             await flipSoOInUse(pName, result.action);
+            if (Date.now() - _tSoo > 3000) log(`  ⏱ SoO flip took ${((Date.now() - _tSoo) / 1000).toFixed(0)}s`);
             // v2.124: tick the per-account weekly connection tally in the SoO
             // (col AX). Fires on EVERY connect send, not just the first.
             await bumpSoOConnCount(pName, result.action);
@@ -4780,7 +4865,14 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             }
             // v2.84: a successful action proves this account is logged in again —
             // clear any Needs Login = Y flag it carried (no-op unless flagged).
+            // Keep the local row current so a later account logout cannot
+            // replace this run's completed introduction with a login warning.
+            if (mode === 'introduce_back' && result.action === 'message_sent') {
+              row['Intro Status'] = 'IC Sent';
+              row.Stage = 'IC Sent';
+            }
             await setAccountNeedsLogin(pName, false);
+            if (['connection_sent','message_sent','inmail_sent','op_message_sent'].includes(result.action)) await markSoONeedsLogin(pName,false);
 
             // Connect + Introduce Back / Connect + DM: piggy-back a bulk
             // acceptance sweep on this profile's turn, but with two gates:
@@ -5014,6 +5106,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
                 if (recovered) { page = recovery.page || page; session.page = page; }
               }
               if (recovered) {
+                await markSoONeedsLogin.confirmLoggedIn(pName,page);
                 log(`  ✓ ${pName}: re-logged in — staying in rotation.`);
               } else {
                 log(`  ⚠ ${pName}: session expired — parking account for rest of run (re-login required).`);
@@ -5031,7 +5124,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
                 await setAccountNeedsLogin(pName, true);
                 // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
                 // (matched by Email == profile name) so the LinkedIn team re-logs it.
-                // Never auto-cleared. Best-effort — cannot affect the loop.
+                // Cleared only after confirmed login. Best-effort — cannot affect the loop.
                 await markSoONeedsLogin(pName);
               }
             }
@@ -5477,6 +5570,8 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       let _idleCooldownCacheAt = 0;
 
       while (!campaign._abort && !leadsExhausted && !isOrphan()) {
+        await awaitUnpause(myGen);
+        if (campaign._abort || isOrphan()) break;
         if (weeklyCutoffReached()) break;
         // Adaptive RAM throttle: drop browser cap to 1 when throttle engages,
         // restore on release (Q1=(a) "drain to 1").
@@ -5543,6 +5638,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
           continue;
         }
 
+        const progressBefore = turnProgress(profileId);
         try {
           await runProfileTurn(profileId);
         } catch (err) {
@@ -5550,11 +5646,25 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
           pushError(err);
         } finally {
           profilesBeingRun.delete(profileId);
+          const guard = loopGuard.record(profileId, {
+            before: progressBefore, after: turnProgress(profileId),
+            retryable: !campaign._abort && !isOrphan() && !leadsExhausted
+              && !campaign._pauseRequested && !campaign._paused
+              && !weeklyLimited.has(profileId) && !_checkStatusExhausted.has(profileId)
+              && !campaign._skippedProfiles?.has(profileId)
+              && !(profileCooldownUntil.get(profileId) > Date.now()),
+          });
+          if (guard.pause) {
+            pauseCampaign();
+            log(`⏸ CAMPAIGN PAUSED — repeated retries without progress: ${profileNameCache[profileId] || profileId} completed ${guard.attempts} attempts without advancing a lead or sending a message. Check the preceding error, fix it, then press Resume.`);
+          } else if (guard.stalled) {
+            log(`⚠ ${profileNameCache[profileId] || profileId}: no progress (${guard.attempts}/3 attempts). Waiting at least ${guard.retryDelayMs / 1000}s before retrying this account.`);
+          }
           // Cooldown timestamp is set even on error, so a flapping profile
           // doesn't get re-picked instantly by another worker.
-          profileCooldownUntil.set(profileId, Date.now() + cooldownMs);
+          profileCooldownUntil.set(profileId, Date.now() + Math.max(cooldownMs, guard.retryDelayMs));
           // Re-enqueue at the back unless the profile got ejected mid-turn.
-          if (!weeklyLimited.has(profileId) && !campaign._abort && !leadsExhausted) {
+          if (!rotationAccountFinished(profileId, rotationState()) && !campaign._abort && !leadsExhausted) {
             profileQueue.push(profileId);
           }
         }
@@ -5815,7 +5925,13 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // Sheet writes are coalesced, so the last few can still be sitting in the
     // buffer when the loop ends. Land them before anything reports the run
     // finished — otherwise the final leads of every campaign go unwritten.
-    await drainSheetWrites();
+    // Writes are fired without waiting during the run, so drain them here before
+    // the campaign reports itself finished — otherwise the last few leads' rows
+    // would still be in flight when the summary is written.
+    if (_pendingSheetWrites.size) {
+      log(`  ⏳ Finishing ${_pendingSheetWrites.size} sheet write(s)…`);
+      await drainSheetWrites();
+    }
     await flushSheetWrites().catch((e) => log(`  ⚠ Final sheet flush failed: ${e.message}`));
 
     // v2.72: build a one-shot "why did it stop" notice the dashboard turns into
@@ -6153,8 +6269,13 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // 'Skipped — Stop pressed' (repro 2026-05-17T20:19:11: manual bulk
     // check called runAutoIntros, log shows 'Auto-introducing 3' then
     // 'Stop detected — marking remaining 3' in the SAME millisecond).
+    const wasStopped = campaign._abort;
     campaign._abort = false;
-    log('=== Campaign ended ===');
+    if (!wasStopped && endReason === 'completed' && !campaign.dailyResetNeeded) {
+      log('=== Campaign finished — no eligible accounts or pending leads remain in this run. ===');
+      if (mode === 'introduce_back') log('To retry an IC lead, clear its Intro Status in the sheet and start a new campaign.');
+      if (getFailures().length) log(`⚠ ${getFailures().length} sheet update(s) still waiting to sync; saved results will retry automatically.`);
+    } else log('=== Campaign ended ===');
     campaign.currentAction = null; // clear cockpit
     const journal = readRuntimeInterruption();
     if (!journal || journal.reason === 'active-run') clearRuntimeInterruption();
@@ -6182,6 +6303,9 @@ export function retryParkedProfile(profileId) {
   const pName = parkedEntry?.pName || (campaign.profileNames || []).find(
     (n) => n === profileId
   ) || profileId;
+  campaign._loginRechecking ||= new Set();
+  campaign._loginRechecking.add(profileId);
+  if (campaign.accountHealth) delete campaign.accountHealth[profileId];
   // Remove all gating that would skip this profile next rotation.
   campaign.parkedProfiles = campaign.parkedProfiles.filter((p) => p.profileId !== profileId);
   campaign.profileEndReasons = campaign.profileEndReasons.filter((p) => p.profileId !== profileId);
@@ -6351,6 +6475,15 @@ export async function stopCampaignBackgroundTracking() {
 // Pause sets a request flag — the loop checks at lead boundaries (top of the
 // inner BATCH_SIZE loop) and only then flips _paused = true. Browsers stay
 // open during pause; resume clears both flags and the awaitUnpause loop exits.
+export function pauseForDiskSpaceError(err) {
+  if (!isDiskSpaceError(err)) return false;
+  if (campaign.running && !campaign._pauseRequested && !campaign._paused) {
+    pauseCampaign();
+    log(`⏸ CAMPAIGN PAUSED — ${err.message || err} Free disk space, then press Resume. No further accounts will be opened while paused.`);
+  }
+  return true;
+}
+
 export function pauseCampaign() {
   if (!campaign.running) return { ok: false, reason: 'not-running' };
   if (campaign._paused || campaign._pauseRequested) {
@@ -6377,6 +6510,7 @@ export function resumeCampaign({ applyPending = false } = {}) {
     try { _applyPendingResume(); } catch (err) { log(`⚠ resume apply failed: ${err.message}`); }
   }
   campaign._pauseSnapshot = null;
+  campaign._resetLoopGuard?.();
   campaign._pauseRequested = false;
   campaign._paused = false; // awaitUnpause's while-loop will exit on next tick
   log('▶ Resume requested.');
@@ -6591,7 +6725,9 @@ function buildAccountPanel() {
 
     let state = 'idle';
     let sub = '';
-    if (campaign.awaitingLogin && campaign.awaitingLogin.profileId === pid) {
+    if (campaign._loginRechecking?.has(pid)) {
+      state = 'checking-login'; sub = 'Checking login… on the next account turn.';
+    } else if (campaign.awaitingLogin && campaign.awaitingLogin.profileId === pid) {
       state = 'needs-login'; sub = NEEDS_LOGIN_LINE;
     } else if (h) {
       state = h.state; sub = h.note;
@@ -6648,6 +6784,7 @@ function buildAccountPanel() {
       weeklySuspected: weeklyCap && /429|suspected/.test(_why),
       salesNavAccess: getSalesNavAccess(pid),
       needsLogin,
+      loginRechecking: campaign._loginRechecking?.has(pid) === true,
       batchDone: turn.done == null ? null : turn.done,
       batchSize: turn.size == null ? null : turn.size,
       sentToday: getCampaignQuotaCount(pid),
@@ -6856,7 +6993,7 @@ export function getCampaignStatus() {
     // Local-browser re-login recovery: drives the "log into LinkedIn" popup.
     awaitingLogin: campaign.awaitingLogin || null,
     softWarnings: campaign.softWarnings.slice(),
-    sheetWriteFailures: campaign.sheetWriteFailures || 0,
+    sheetWriteFailures: getFailures().length,
     profileEndReasons: campaign.profileEndReasons.slice(),
     // v2.137: 429 cooldown surfacing — profileId -> { until, pName, reason:'429' }.
     // Expired entries filtered so the UI never renders a stale countdown.

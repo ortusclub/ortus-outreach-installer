@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { sameCampaign } from '../public/js/campaign-lifecycle.mjs';
 
 const app = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
 const start = app.indexOf('let liveStatusForcedOpen = false;');
@@ -11,11 +12,11 @@ const source = app.slice(start, end) + '\nthis.sync = syncLiveStatusVisibility; 
 function harness({ typed, cockpit, editingDraft = true, viewingLocal = null }) {
   const sec = { style: {}, classList: { removed: [], remove(c) { this.removed.push(c); }, add() {} } };
   const els = { 'nav-status': sec, 'campaign-name-input': { value: typed }, 'campaign-mode': { value: 'connect_and_introduce' } };
-  const ctx = vm.createContext({
+  const ctx = vm.createContext({ sameCampaign,
     document: { getElementById: id => els[id] || null, querySelector: () => null },
     location: { hash: '#/new' }, window: {}, __cockpit: cockpit,
     isOnNewCampaignView: () => editingDraft, _viewingLocalCampaign: viewingLocal, _viewingCloudId: null, _whBusy: false,
-    placeLiveCard() {},
+    placeLiveCard() {}, _launchConsoleState: null, cloudLaunchStatus: () => null,
   });
   vm.runInContext(source, ctx);
   return { ctx, sec };
