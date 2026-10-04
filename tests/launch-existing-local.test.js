@@ -11,7 +11,7 @@ for (const success of [true, false]) {
     const ctx = vm.createContext({
       window: { location: { hash: '#/new' } }, _editingCampaignId: 'sam-id',
       _boardItemsById: new Map(), _snItemsById: new Map(),
-      _readOnlyBlocksLaunch: () => false, _closeLaunchMenu() {},
+      getRunTarget: () => "local", _readOnlyBlocksLaunch: () => false, _closeLaunchMenu() {},
       restartLocalFromItem: async (...args) => { calls.push(args); return success; },
       restartCloudCampaignUI() { throw new Error('Must never start in cloud'); },
       startCampaign() { throw new Error('Must not create another campaign'); },

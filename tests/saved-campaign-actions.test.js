@@ -13,15 +13,15 @@ test('saved campaigns offer Start, Delete, Duplicate and Open without resume or 
   assert.doesNotMatch(html,/resume|Debrief|Continue where/);
 });
 test('saved campaign deletion waits for server confirmation before removing the card', async () => {
-  const start=app.indexOf('async function deleteBoardCampaign(');
+  const start=app.indexOf('let _campaignDeletions = []');
   const events=[];
   const ctx=vm.createContext({
-    _boardItemsById:new Map([['saved-Sam',{bucket:'saved',name:'Sam'}]]), _snItemsById:new Map(),
-    confirm:()=>true, alert:m=>events.push(m),
+    _boardItemsById:new Map([['saved-Sam',{id:'saved-Sam',bucket:'saved',name:'Sam',mine:true}]]), _snItemsById:new Map(),
+    appConfirm:async()=>true, showCampaignToast:m=>events.push(m),
     fetch:async(url,opts)=> {events.push([url,opts.method]);return {ok:false,json:async()=>({error:'Still queued'})};},
     refreshKnownCampaignNames:async()=>events.push('refresh'),renderCampaignsBoard:()=>events.push('render'),
   });
   vm.runInContext(app.slice(start,app.indexOf('window.deleteBoardCampaign',start)),ctx);
   await ctx.deleteBoardCampaign('saved-Sam',{closest:()=>({remove:()=>events.push('remove')})});
-  assert.deepEqual(events,[['/api/campaign-configs/Sam','DELETE'],'Could not delete: Still queued']);
+  assert.deepEqual(events,[['/api/campaign-board/deletions','POST'],'Could not delete: Still queued']);
 });

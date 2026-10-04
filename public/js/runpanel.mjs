@@ -194,6 +194,7 @@ export function accountColumns(status) {
     // row's prose, which missed the weekly line entirely — that inference stays
     // as the fallback so a page loaded against an engine that predates the
     // flags is no worse off than it was.
+    ...(a.loginRechecking ? { loginRechecking: true } : {}),
     weeklyCap: a.weeklyCap != null
       ? !!a.weeklyCap
       : /weekly/.test(`${a.state || ''} ${a.sub || ''}`.toLowerCase()),

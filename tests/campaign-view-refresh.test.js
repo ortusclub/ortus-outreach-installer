@@ -1,0 +1,7 @@
+import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';
+const source=readFileSync(new URL('../public/js/app.js',import.meta.url),'utf8');
+const start=source.indexOf('async function restoreOpenedCampaignView()');const end=source.indexOf('\nsetTimeout(',start);
+function harness(){let selected=JSON.stringify({id:'cloud-a'}),opened;let finish;const location={hash:'#/new'};const context=vm.createContext({location,sessionStorage:{getItem:()=>selected},refreshDashboard:()=>new Promise(r=>finish=r),_boardItemsById:new Map([['cloud-a',{id:'cloud-a'}]]),openCampaignForEdit:async id=>opened=id});vm.runInContext(source.slice(start,end)+';this.restore=restoreOpenedCampaignView;',context);return{context,location,finish:()=>finish(),select:id=>selected=JSON.stringify({id}),opened:()=>opened};}
+test('refresh restores the opened campaign using its ID',async()=>{const h=harness();const pending=h.context.restore();h.finish();assert.equal(await pending,true);assert.equal(h.opened(),'cloud-a');});
+test('switching campaigns while refresh is loading prevents stale restore',async()=>{const h=harness();const pending=h.context.restore();h.select('cloud-b');h.finish();assert.equal(await pending,false);assert.equal(h.opened(),undefined);});
+test('returning to dashboard during refresh never opens a campaign',async()=>{const h=harness();const pending=h.context.restore();h.location.hash='#/dashboard';h.finish();assert.equal(await pending,false);});

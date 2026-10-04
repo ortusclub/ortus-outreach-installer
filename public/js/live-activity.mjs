@@ -460,7 +460,7 @@ export function launchMilestones({ phase = '', hasHandshake = false, leadsRead =
   ];
 }
 
-// One log line every 30 seconds while a cloud campaign waits for a worker.
+// One log line every 15 seconds while a cloud campaign waits for a worker.
 //
 // Workers scale to zero, so a launch normally spends up to two minutes queued —
 // and the log said nothing at all for the whole of it (measured 2026-08-28: one

@@ -1,3 +1,7 @@
+import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
+import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
+import { hasPreviewMessage } from '/js/preview-content.mjs';
+import { messageSubjectError } from '/js/message-subject-validation.mjs';
 import { cloudOptionError } from '/js/cloud-option-compatibility.mjs';
 import { completeCredentialUpdate } from '/js/credential-feedback.mjs';
 import { dailyCountText, batchCountText, dailyResetText } from '/js/campaign-counters.mjs';
@@ -1770,8 +1774,8 @@ function refreshPreviewButtonState() {
   btn.title = 'Render your templates against sample rows from the sheet';
 }
 
-async function handlePreviewClick() {
-  const btn = document.getElementById('btn-preview-messages');
+async function handlePreviewClick(button, fields = '') {
+  const btn = button?.tagName === 'BUTTON' ? button : document.getElementById('btn-preview-messages');
   if (!btn) return;
   // Always openable. Need a sheet to render against real rows — if it's missing,
   // open the modal with guidance instead of silently doing nothing.
@@ -1782,6 +1786,9 @@ async function handlePreviewClick() {
   }
 
   const state = gatherCampaignFormState();
+  state.previewLimit = 1;
+  state.sheetGid = window._chosenSheetGid || '';
+  if (fields) state.previewFields = fields.split(',');
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Loading…';
@@ -1802,6 +1809,7 @@ async function handlePreviewClick() {
     renderPreviewModal([], err.message || 'Network error');
   } finally {
     btn.textContent = originalText;
+    btn.disabled = false;
     refreshPreviewButtonState();
   }
 }
@@ -1876,6 +1884,87 @@ function renderPreviewModal(previews, error) {
   document.addEventListener('keydown', onKey);
 }
 
+// ── Pre-launch preview modal ─────────────────────────────────────────────────
+// Shows what the first message of the batch will look like with all tokens
+// resolved, so the operator can verify {senderFirstName} / {senderName} etc.
+// before anything is sent. Returns a Promise<boolean>: true = launch, false = cancel.
+function showPreLaunchPreview(preview, senderFirstNames, senderNames) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('preview-modal');
+    const body = document.getElementById('preview-modal-body');
+    const closeBtn = document.getElementById('preview-modal-close');
+    const backdrop = document.getElementById('preview-modal-backdrop');
+    if (!modal || !body) { resolve(true); return; }
+
+    const leadName = [preview.lead?.firstName, preview.lead?.lastName].filter(Boolean).join(' ') || '(no name)';
+
+    // Build the sender-variable summary so the operator sees the resolved values
+    const _firstId = selectedProfileIds[0];
+    const _resolvedFirst = (_firstId && senderFirstNames[_firstId]) || '';
+    const _resolvedName = (_firstId && senderNames[_firstId]) || '';
+    const _profileLabel = _firstId ? profileLabel(_firstId) : '';
+
+    let html = '';
+    html += `<div style="margin-bottom:12px;padding:10px 14px;border-radius:6px;background:var(--paper,#fff);border:1px solid var(--hairline,#ddd)">`;
+    html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--fg-3,#888);margin-bottom:6px">Sender Variables</div>`;
+    html += `<div style="display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;font-size:13px">`;
+    html += `<span style="color:var(--fg-3,#888)">{senderFirstName}</span><span style="color:var(--ink,#111)">${escapeHtml(_resolvedFirst || '(empty)')}</span>`;
+    html += `<span style="color:var(--fg-3,#888)">{senderName}</span><span style="color:var(--ink,#111)">${escapeHtml(_resolvedFirst || _resolvedName || '(empty)')}</span>`;
+    html += `<span style="color:var(--fg-3,#888)">Account</span><span style="color:var(--ink,#111)">${escapeHtml(_profileLabel || '(none)')}</span>`;
+    html += `</div></div>`;
+
+    html += `<div class="preview-card">`;
+    html += `<div class="preview-card__lead">`;
+    html += `<strong>${escapeHtml(leadName)}</strong>`;
+    if (preview.lead?.company) html += ` <span class="preview-card__company">— ${escapeHtml(preview.lead.company)}</span>`;
+    html += `</div>`;
+
+    for (const key of Object.keys(PREVIEW_FIELD_LABELS)) {
+      const text = preview.rendered?.[key];
+      if (!text) continue;
+      const limit = CHAR_LIMITS[key];
+      const len = text.length;
+      const over = limit !== undefined && len > limit;
+      const countLabel = limit !== undefined ? `${len} / ${limit} chars` : `${len} chars`;
+      html += `<div class="preview-card__field">`;
+      html += `<div class="preview-card__field-header">`;
+      html += `<span class="preview-card__field-name">${escapeHtml(PREVIEW_FIELD_LABELS[key])}</span>`;
+      html += `<span class="preview-card__count ${over ? 'preview-card__count--over' : ''}">${escapeHtml(countLabel)}</span>`;
+      html += `</div>`;
+      html += `<pre class="preview-card__text">${escapeHtml(text)}</pre>`;
+      html += `</div>`;
+    }
+
+    if (preview.warnings?.length) {
+      html += `<div class="preview-card__warnings">`;
+      html += `<div class="preview-card__warnings-title">Warnings</div>`;
+      html += `<ul>${preview.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    // Action buttons
+    html += `<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">`;
+    html += `<button type="button" id="prelaunch-cancel" class="prelaunch-button prelaunch-button--cancel">Cancel</button>`;
+    html += `<button type="button" id="prelaunch-confirm" class="prelaunch-button prelaunch-button--confirm">Launch Campaign</button>`;
+    html += `</div>`;
+
+    body.innerHTML = html;
+    modal.hidden = false;
+
+    const cleanup = () => {
+      modal.hidden = true;
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); cleanup(); resolve(false); } };
+    document.addEventListener('keydown', onKey);
+    closeBtn.addEventListener('click', () => { cleanup(); resolve(false); }, { once: true });
+    backdrop.addEventListener('click', () => { cleanup(); resolve(false); }, { once: true });
+    document.getElementById('prelaunch-cancel')?.addEventListener('click', () => { cleanup(); resolve(false); }, { once: true });
+    document.getElementById('prelaunch-confirm')?.addEventListener('click', () => { cleanup(); resolve(true); }, { once: true });
+  });
+}
+
 // Keep the Preview button state in sync as the user types / changes selections.
 document.addEventListener('DOMContentLoaded', () => {
   refreshPreviewButtonState();
@@ -1883,7 +1972,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'sheet-url',
     'tpl-note', 'tpl-followup',
     'tpl-inmail-subject', 'tpl-inmail-body',
-    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail',
+    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail', 'pace-op-spend-inmail',
     // v2.59.x — IC / CC+IC fields. Without these, typing into Intro DM Body
     // didn't update the Preview button state until something else (mode
     // change, etc.) re-ran refreshPreviewButtonState.
@@ -2621,15 +2710,12 @@ function renderProfiles(profiles) {
       ? false
       : (_sooUnknown || (_showBreakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked')));
     const _locked = _foreign || _wrongMode || _sooLock;
-    // Defensive: a restored preset/schedule must not keep a now-unusable account
-    // selected — drop it (before building the tile so `checked` reflects reality).
-    if (_locked && selectedProfileIds.includes(p.id)) {
-      selectedProfileIds = selectedProfileIds.filter(id => id !== p.id);
-      delete selectedProfileNames[p.id];
-    }
+    // Availability is runtime information, not an edit to the campaign's roster.
+    // Keep saved selections even while SoO loads or an account is unavailable.
+    // The operator can remove one explicitly; launch preflight enforces eligibility.
     if (selectedProfileIds.includes(p.id)) selectedProfileNames[p.id] = p.name;
     const _checked = selectedProfileIds.includes(p.id) ? 'checked' : '';
-    const _disabled = _locked ? 'disabled' : '';
+    const _disabled = _locked && !selectedProfileIds.includes(p.id) ? 'disabled' : '';
     const _dup = p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : '';
     // Name the owning workspace on foreign tiles only. On your own accounts the
     // pill would be noise — every tile would carry it.
@@ -2794,7 +2880,7 @@ function renderProfiles(profiles) {
       });
     }
     cb.addEventListener('change', () => {
-      if (_locked) { cb.checked = false; return; } // blocked / NA — never selectable
+      if (_locked && cb.checked && !selectedProfileIds.includes(p.id)) { cb.checked = false; return; } // cannot add an unavailable account
       try { if (_acctAdd) _acctAddTouched = true; } catch (_) { /* */ }
       if (cb.checked) {
         if (!selectedProfileIds.includes(p.id)) {
@@ -3531,6 +3617,8 @@ function pickRunTarget(t) {
     if (m && m.value === 'follower_growth') _fgRunTargetPinnedLocal = (t === 'local');
   } catch (_) { /* */ }
   if (typeof setRunTarget === 'function') setRunTarget(t);
+  wizardDirtyOnInput();
+  saveWizardState();
 }
 if (typeof window !== 'undefined') window.pickRunTarget = pickRunTarget;
 
@@ -3538,6 +3626,8 @@ function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const _icNote = document.getElementById('ic-beta-note');
   if (_icNote) _icNote.style.display = mode === 'introduce_back' ? '' : 'none';
+  syncMessageInMail();
+  { const _imr = document.getElementById('message-inmail-row'); if (_imr) _imr.style.display = mode === 'open_profile_only' ? '' : 'none'; }
   { const _mcr = document.getElementById('monthly-cutoff-row'); if (_mcr) _mcr.style.display = ['open_profile_only', 'inmail_only'].includes(mode) ? '' : 'none'; if (typeof syncMonthlyCutoffHelp === 'function') syncMonthlyCutoffHelp(); }
   { const _ffa = document.getElementById('free-for-all-note'); if (_ffa) _ffa.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncFreeForAllNote === 'function') syncFreeForAllNote(); }
   { const _wcr = document.getElementById('weekly-cutoff-row'); if (_wcr) _wcr.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncWeeklyCutoffHelp === 'function') syncWeeklyCutoffHelp(); }
@@ -6598,6 +6688,15 @@ function syncSkipIntrosHelp() {
 }
 window.syncSkipIntrosHelp = syncSkipIntrosHelp;
 
+// Both Message campaign controls edit the same serialized setting.
+function syncMessageInMail(value = document.getElementById('tpl-op-spend-inmail')?.checked === true) {
+  for (const id of ['tpl-op-spend-inmail', 'pace-op-spend-inmail']) {
+    const toggle = document.getElementById(id);
+    if (toggle) toggle.checked = !!value;
+  }
+}
+window.syncMessageInMail = syncMessageInMail;
+
 // "Free for all 25th": LinkedIn renews monthly message allowances on the 1st at
 // 00:00 UTC. Mirrors src/weekly-reset-cutoff.js (15 min before).
 function syncMonthlyCutoffHelp() {
@@ -7208,6 +7307,8 @@ async function startCampaign(opts = {}) {
   // both templates must be filled before the campaign can start.
   const _mode = document.getElementById('campaign-mode').value;
   const _opMsgOn = !!document.getElementById('open-profile-msg')?.checked;
+  const subjectError = messageSubjectError({mode:_mode, messageOpenProfiles:_opMsgOn, templates:{opChannel:document.getElementById('tpl-op-channel')?.value || 'sn_first', openProfileSubject:document.getElementById('tpl-op-subject')?.value || ''}});
+  if (subjectError) { alert(subjectError); document.getElementById('tpl-op-subject')?.focus(); return; }
   if (_mode === 'connect_only' && _opMsgOn) {
     const opBody = (document.getElementById('tpl-op-body')?.value || '').trim();
     if (!opBody) { alert('Open Profile body template is required when "Message Open Profiles Directly" is on.'); return; }
@@ -7363,6 +7464,35 @@ async function startCampaign(opts = {}) {
     const pName = profileLabel(id);
     senderFirstNames[id] = resolveSenderFirstName(id, pName);
     if (pName && pName !== id) senderNames[id] = pName;
+  }
+
+  // Block launch when any selected profile has no senderFirstName and the
+  // templates reference it — otherwise the message goes out signed with the
+  // raw email address (e.g. "Best, rj@ortusclub.com").
+  if (!opts._skipPreflight) {
+    const _missingFirst = selectedProfileIds.filter(id => !senderFirstNames[id]);
+    if (_missingFirst.length) {
+      const _allTemplates = [
+        document.getElementById('tpl-note')?.value,
+        document.getElementById('tpl-followup')?.value,
+        document.getElementById('follow-up-body')?.value,
+        document.getElementById('primary-intro-body')?.value,
+        document.getElementById('tpl-cc-dm-body')?.value,
+        document.getElementById('tpl-inmail-body')?.value,
+        document.getElementById('tpl-inmail-subject')?.value,
+        document.getElementById('tpl-op-subject')?.value,
+        document.getElementById('tpl-op-body')?.value,
+      ].filter(Boolean).join(' ');
+      if (/\{sender\s*first\s*name\}|\{senderFirstName\}/i.test(_allTemplates)) {
+        const names = _missingFirst.map(id => profileLabel(id) || id);
+        alert(
+          'Your templates use {senderFirstName}, but these accounts have no first name set:\n\n' +
+          names.map(n => `• ${n}`).join('\n') + '\n\n' +
+          'Set a first name for each account in the profile picker, or remove {senderFirstName} from your templates.'
+        );
+        return;
+      }
+    }
   }
 
   const mode = document.getElementById('campaign-mode').value;
@@ -7636,10 +7766,12 @@ async function startCampaign(opts = {}) {
       });
       _pfState = { findings: pf.findings, ack: pf.ack, payload: body, opts };
       if (pf.findings.blockers.length || pf.findings.warnings.length) {
+        launchConsoleLog('Pre-flight needs your review before the campaign can start.');
         endLaunching();        // ⑤: hide the launch popup — the pre-flight overlay takes over
         renderPreflight(pf);   // overlay takes over; its buttons re-enter with _skipPreflight
         return;
       }
+      launchConsoleLog(`Pre-flight passed — ${pf.findings.targetCount} target(s) ready.`);
       body.preflightAck = pf.ack; // clean run — attach ack and continue
       // A clean pre-flight used to launch silently, which reads as "the check
       // didn't run" — especially when rows stamped "Skipped: …" by an earlier
@@ -7652,6 +7784,7 @@ async function startCampaign(opts = {}) {
         _pfPrevN ? 9000 : 5000,
       );
     } catch (err) {
+      launchConsoleLog(`Pre-flight failed: ${err.message}`);
       endLaunching();          // ⑤: hide the launch popup on a pre-flight failure
       showCampaignToast(`Pre-flight failed: ${err.message}`, 7000);
       return;
@@ -7680,6 +7813,20 @@ async function startCampaign(opts = {}) {
     }
   }
 
+  if (!opts._skipPreLaunchPreview && !opts.queueOnly && !opts.startAt) {
+    const state = { ...gatherCampaignFormState(), previewLimit: 1, sheetGid: window._chosenSheetGid || '' };
+    if (hasPreviewMessage(state.templates)) {
+      launchConsoleLog('Preparing your first-lead message preview…');
+      try {
+        const response = await fetch('/api/templates/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) });
+        const preview = await response.json();
+        if (!response.ok || preview.error) throw new Error(preview.error || 'Could not load the preview');
+        if (preview.previews?.length && !await showPreLaunchPreview(preview.previews[0], senderFirstNames, senderNames)) { endLaunching(); return; }
+      } catch (error) { endLaunching(); showCampaignToast(`Preview failed: ${error.message}. Your campaign has not started.`, 7000); return; }
+    }
+  }
+
+  launchConsoleLog(opts.cloud ? 'Preparing to hand the campaign to the VM…' : 'Starting the local campaign…');
   const _outcome = await submitStartCampaign(body, opts);
   // ⑤+①: retire the launch popup. On an immediate LOCAL start the new run needs
   // a beat to flip `running` true — leave the popup up and let pollStatus dismiss
@@ -7828,7 +7975,7 @@ async function loadEngineState() {
     const r = await fetch('/api/engine-target');
     const s = await r.json();
     if (!s || !s.ok) return;
-    _engineChoice = s.engine;
+    _engineChoice = s.lockedByEnv ? (s.active === 'development' ? 'dev' : 'prod') : s.engine;
     const isDev = s.active === 'development';
     const chip = document.getElementById('engine-chip-state');
     if (chip) chip.textContent = isDev ? 'DEVELOPMENT' : 'PRODUCTION';
@@ -7842,7 +7989,7 @@ function renderEngineModal(s) {
   if (badge) { badge.textContent = isDev ? 'DEVELOPMENT' : 'PRODUCTION'; badge.className = 'engine-badge ' + (isDev ? 'is-dev' : 'is-prod'); }
   const url = document.getElementById('engine-badge-url'); if (url) url.textContent = s.activeUrl || '';
   const devText = document.getElementById('engine-dev-url-text'); if (devText) devText.textContent = s.devUrl || '';
-  selectEngineUI(s.engine);
+  selectEngineUI(s.lockedByEnv ? (s.active === 'development' ? 'dev' : 'prod') : s.engine);
   // Env lock disables the whole toggle; otherwise gate ONLY the Dev option by canDev.
   const envLocked = !!s.lockedByEnv;
   const prodBtn = document.getElementById('engine-seg-prod'); if (prodBtn) prodBtn.disabled = envLocked;
@@ -8292,25 +8439,32 @@ function _engineStepTime(at) {
 // and the banner, which reads the log's last row, then painted a monitoring
 // campaign as actively sending. The log was wrong first; the card just agreed
 // with it.
-// A tick in the log every 30 seconds while a campaign waits for a VM worker.
-//
-// Workers scale to zero, so the first launch after an idle spell waits ~2
-// minutes — and the log said nothing at all for the whole of it (operator
-// recording, 2026-08-28: one line at 11:59, the next at 12:01). An operator
-// cannot tell that silence apart from a dead engine, and reasonably reads it as
-// a campaign that never started. The wording lives in queueWaitLine.
+// Record a fresh engine observation every 15 seconds during queue/startup.
+// Called only after a successful poll, so a disconnected engine never gets a
+// fabricated "still waiting" update. Both board and detail share deduplication.
 const _queueTickBucket = new Map();
-function _tickQueueWait(id, campaign) {
-  const st = String((campaign && campaign.status) || '');
-  if (st !== 'queued' && st !== 'pending') { _queueTickBucket.delete(id); return; }
-  const startedAt = new Date((campaign && (campaign.created_at || campaign.createdAt)) || 0).getTime();
+function _tickQueueWait(id, campaign, detail = null) {
+  const st = String(campaign?.status || '');
+  const starting = st === 'running' && detail && _cloudCurrentAction(detail)?.phase === 'starting';
+  if (st !== 'queued' && st !== 'pending' && !starting) { _queueTickBucket.delete(id); return; }
+  const startedAt = new Date((starting ? campaign.updated_at : null) || campaign.created_at || campaign.createdAt || 0).getTime();
   if (!Number.isFinite(startedAt) || !startedAt) return;
-  const secs = Math.floor((Date.now() - startedAt) / 1000);
-  const bucket = Math.floor(secs / 30);
-  // Bucket 0 is the launch itself, which already has its own line.
-  if (bucket < 1 || _queueTickBucket.get(id) === bucket) return;
-  _queueTickBucket.set(id, bucket);
-  _pushCloudEvent(id, queueWaitLine(bucket * 30));
+  const secs = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  const bucket = Math.floor(secs / 15);
+  const key = `${st}:${bucket}`;
+  if ((!starting && bucket < 1) || _queueTickBucket.get(id) === key) return;
+  _queueTickBucket.set(id, key);
+  const pending = detail?.leadCounts?.pending;
+  const facts = [`engine status: ${st}`];
+  if (Number.isFinite(Number(pending)) && pending != null) facts.push(`${pending} leads pending`);
+  if (starting) {
+    const action = _cloudCurrentAction(detail);
+    _pushCloudEvent(id, `⚙ ${action.label} · ${secs}s since claimed · ${action.lead} · ${facts.join(' · ')}`);
+  } else {
+    const ahead = Array.isArray(_cloudCapacity.queue) ? _cloudCapacity.queue.indexOf(id) : -1;
+    if (ahead >= 0) facts.push(ahead ? `${ahead} campaign(s) ahead` : 'nothing ahead in the queue');
+    _pushCloudEvent(id, `${queueWaitLine(secs)} · ${facts.join(' · ')} · next: a worker claims the campaign, then opens the sender browser`);
+  }
 }
 
 function _pushCloudEvent(id, line, at) {
@@ -9397,7 +9551,7 @@ async function _refreshCloudActiveStatus(id) {
       try { _cloudCapacity = await (await fetch('/api/campaign/cloud-capacity')).json(); }
       catch (_) { /* queueState says nothing without a reading, which is correct */ }
     }
-    if (d && d.campaign) _tickQueueWait(id, d.campaign);
+    if (d && d.campaign) _tickQueueWait(id, d.campaign, d);
     // Engine's per-account check-sweep events (reliable — one line per account the
     // VM opens, e.g. "🖥️ Checking liza.advocate@ortus.solutions…"). Captured here
     // and merged into the log by _combineCloudEvents. Newest-first from Redis.
@@ -9554,6 +9708,7 @@ function _capDetailHtml(id, a, st, opts = {}) {
   const limit = Number(a.dailyLimit) || 0;
   facts.push(['Sent today', limit > 0 ? `${Number(a.dailyCount) || 0} of ${limit}` : `${Number(a.dailyCount) || 0}`]);
   facts.push(['Status', st.status]);
+  if (a.dailyResetAt) facts.push(['Daily reset', dailyResetText(a)]);
   const batch = _acctBatchTip(id, a);
   if (batch) facts.push(['Last batch', batch.replace(/ in (its last|this) batch$/, '')]);
   if (st.primary) {
@@ -9572,8 +9727,14 @@ function _capDetailHtml(id, a, st, opts = {}) {
   // A weekly cap gets no "try again": it is a window, not a cooldown. Offering
   // one while the live stage says "not before Monday" is the app arguing with
   // itself, and taking it spends rate-limit strikes for nothing.
-  if (st.blocked && !a.needsLogin && !st.weekly && a.parked) {
-    acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(id)}','${pid}',this)">Try sending now</button>`);
+  if (a.needsLogin || a.sweepAction) {
+    acts.push(`<button type="button" onclick="openProfileBrowser('${pid}')">Open GoLogin profile</button>`);
+  }
+  if ((a.needsLogin || a.sweepAction) && !a.loginRechecking) {
+    acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(id)}','${pid}',this)">Retry account — check login</button>`);
+  }
+  if (!a.needsLogin && !a.sweepAction && !st.weekly && a.parked) {
+    acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(id)}','${pid}',this)">Retry — clear the bench</button>`);
   }
   if (st.primary && st.primary !== 'connected') {
     acts.push(`<button type="button" onclick="recheckCloudPrimary('${escHtml(id)}','${pid}',this)">Check primary</button>`);
@@ -9945,7 +10106,7 @@ async function unbenchCloudAccount(campaignId, profileId, btn, quiet) {
       if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
       return;
     }
-    if (!quiet) showCampaignToast('▶ Account un-benched — it will try again on its next turn. Three fresh rate-limits re-bench it automatically.', 7000);
+    if (!quiet) showCampaignToast(d.loginRechecking ? 'Login recheck queued — the worker will test this account on its next turn.' : 'Account un-benched — it will try again on its next turn.', 7000);
     if (_viewingCloudId) { try { await _refreshCloudActiveStatus(_viewingCloudId); } catch (_) { /* */ } }
   } catch (e) {
     showCampaignToast('Could not reach the engine: ' + e.message, 6000);
@@ -10059,7 +10220,7 @@ function _startCloudCardPoll() {
   }, 5000);
 }
 // Leaving the wizard / starting something else stops the cloud-view takeover.
-function stopViewingCloudCampaign() { _viewingLocalCampaign = null; _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); const _ap = document.getElementById('cloud-accounts-panel'); if (_ap) { _ap.hidden = true; _ap.innerHTML = ''; } }
+function stopViewingCloudCampaign() { try { sessionStorage.removeItem('ortus-opened-campaign'); } catch {} _viewingLocalCampaign = null; _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); const _ap = document.getElementById('cloud-accounts-panel'); if (_ap) { _ap.hidden = true; _ap.innerHTML = ''; } }
 window.stopViewingCloudCampaign = stopViewingCloudCampaign;
 
 // The large Campaign-tab card delegates every action to the same renderer as
@@ -10172,6 +10333,7 @@ async function openCloudLive(id) {
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
   if (typeof showBusy === 'function') showBusy('Opening…');
   _viewingCloudId = id;
+  try { sessionStorage.setItem('ortus-opened-campaign', JSON.stringify({id,cloud:true})); } catch {}
   liveStatusForcedOpen = true;
   // NAVIGATE FIRST, load the card AFTER. _refreshCloudActiveStatus does several
   // sequential engine fetches and, on a cold open, is slow — awaiting it before
@@ -10266,51 +10428,53 @@ window.dismissLocalDone = dismissLocalDone;
 // Local campaigns are truly deleted from history.json; cloud campaigns have no
 // engine delete endpoint yet, so they're stopped (if somehow still active) and
 // removed from this dashboard durably. Always confirms first.
-async function deleteBoardCampaign(id, btn) {
-  const it = _boardItemsById.get(id) || (_snItemsById && _snItemsById.get(id));
-  const name = (it && it.name) || 'this campaign';
-  if (!confirm(`Delete "${name}"?\n\nThis removes it from your dashboard for good.`)) return;
-  try {
-    if (it?.bucket === 'saved') {
-      const response = await fetch('/api/campaign-configs/' + encodeURIComponent(it.name) + (it.campaignId ? '?campaignId=' + encodeURIComponent(it.campaignId) : ''), { method: 'DELETE' });
+let _campaignDeletions = [];
+async function persistBoardCampaignDeletion(it) {
+  const runs = [..._boardItemsById.values()].filter(row =>
+    (row.mine ? 'mine' : row.owner) === (it.mine ? 'mine' : it.owner) &&
+    ((it.campaignId && row.campaignId === it.campaignId) || row.id === it.id ||
+      (!row.campaignId && String(row.name || '').trim().toLowerCase() === String(it.name || '').trim().toLowerCase())));
+  for (const run of runs) {
+    if (run.where === 'cloud' && ['running','queued'].includes(run.bucket)) {
+      const response = await fetch(`/api/campaign/cloud/${encodeURIComponent(run.id)}/stop?immediate=1`, {method:'POST'});
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not delete saved campaign.');
-      await refreshKnownCampaignNames();
-    } else if (it && it.where === 'cloud') {
-      // Kill any live engine activity for this campaign FIRST — stop halts sending
-      // + monitoring and releases its account locks — THEN durably hide it from the
-      // board. Previously delete only hid it, so a running campaign kept sending on
-      // the VM (and held its accounts) after being "deleted". Best-effort: hide it
-      // even if the stop call fails.
-      try { await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop`, { method: 'POST' }); } catch (_) { /* still hide it below */ }
-      _cloudDismissed.add(id); _cloudSaveDismissed();
-    } else if (it && it.id === 'local-active' && it.interrupted) {
-      const r = await fetch('/api/campaign/interrupted', { method: 'DELETE' });
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}));
-        alert('Could not delete: ' + (e.error || r.status));
-        return;
-      }
-      _localDismissed.add(id);
-    } else if (it && it.histIdx != null) {
-      const r = await fetch('/api/history/' + encodeURIComponent(it.histIdx), { method: 'DELETE' });
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}));
-        alert('Could not delete: ' + (e.error || r.status));
-        return;
-      }
-    } else {
-      _localDismissed.add(id);
+      if (!response.ok || data.error) throw new Error(data.error || 'The VM did not confirm the stop. Campaign kept visible.');
     }
-  } catch (e) {
-    alert('Could not delete: ' + e.message);
-    return;
   }
-  const strip = btn && btn.closest ? btn.closest('.sn-strip') : null;
-  if (strip) strip.remove(); // instant feedback; next poll already filters it
-  renderCampaignsBoard();
+  const response = await fetch('/api/campaign-board/deletions', {method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({owner:it.mine?'mine':it.owner,campaignId:it.campaignId,name:it.name,runIds:[...new Set([it.id,...runs.map(r=>r.id)])]})});
+  const data=await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.error || 'Deletion could not be saved.');
+  _campaignDeletions=data.deletions;
+}
+async function deleteBoardCampaign(id, btn) {
+  const it = _boardItemsById.get(id) || _snItemsById?.get(id);
+  if (!it) return;
+  if (!await appConfirm(`Delete “${it.name || 'this campaign'}” and its previous runs from your dashboard?`, {title:'Delete campaign',okLabel:'Delete'})) return;
+  if (btn) btn.disabled=true;
+  try {
+    await persistBoardCampaignDeletion(it);
+    if (typeof renderCampaignsBoard === 'function') await renderCampaignsBoard();
+  } catch(error) { showCampaignToast('Could not delete: '+error.message,7000); if(btn)btn.disabled=false; }
 }
 window.deleteBoardCampaign = deleteBoardCampaign;
+async function deleteCampaignRun(id, button) {
+  const run = _boardItemsById.get(id) || _snItemsById.get(id);
+  if (!run) return;
+  if (['running','queued'].includes(run.bucket)) { showCampaignToast('Stop this run before deleting it.'); return; }
+  if (!await appConfirm('Delete this run from the history? The campaign settings and other runs will remain.', {title:'Delete run',okLabel:'Delete run'})) return;
+  button.disabled=true;
+  try {
+    const response=await fetch('/api/campaign-board/deletions',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({owner:run.mine?'mine':run.owner,runIds:[run.id]})});
+    const data=await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || 'Could not save deletion');
+    _campaignDeletions=data.deletions;
+    await renderCampaignsBoard();
+  } catch(error) { button.disabled=false;showCampaignToast('Could not delete run: '+error.message,6000); }
+}
+window.deleteCampaignRun=deleteCampaignRun;
+
 
 // Copy a campaign strip's log to the clipboard (⧉ button on the black log box).
 // Reads the rendered log's plain text (not HTML) so it pastes clean into a
@@ -11498,6 +11662,16 @@ window.openSavedCampaignStart = async function(id, action = 'start') {
 };
 
 function renderUnifiedStrip(it) {
+  const card = renderUnifiedRunStrip(it);
+  if (!it.previousRuns?.length) return card;
+  const activeWarning = it.activeRunCount > 1 ? `<p class="campaign-history-warning">${it.activeRunCount} existing runs are still active. Open the previous runs below to review or stop them.</p>` : '';
+  const rows = it.previousRuns.map(run => {
+    const active = ['running','queued'].includes(run.bucket);
+    return `<div class="campaign-history-row"><span>${escHtml(run.createdAt ? new Date(run.createdAt).toLocaleString() : 'Previous run')} · ${escHtml(run.engineStatus || run.bucket)}</span><div class="campaign-history-actions"><button type="button" class="btn btn-sm" title="View this run’s status, results and log" onclick="${run.where === 'cloud' ? 'openCloudLive' : 'openCampaignForEdit'}('${escHtml(run.id)}')">View run details</button><button type="button" class="btn btn-sm campaign-history-delete" ${active ? 'disabled title="Stop this run before deleting it"' : ''} onclick="deleteCampaignRun('${escHtml(run.id)}',this)">Delete run</button></div></div>`;
+  }).join('');
+  return card + `<details class="campaign-run-history"><summary>${it.previousRuns.length} previous run${it.previousRuns.length === 1 ? '' : 's'}</summary>${activeWarning}${rows}</details>`;
+}
+function renderUnifiedRunStrip(it) {
   if (it.bucket === 'saved') return renderSavedCampaignStrip(it);
   const cloud = it.where === 'cloud';
   const running = it.bucket === 'running';
@@ -12279,16 +12453,6 @@ function _cbCaretSvg(collapsed, big) {
     + ` aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
 }
 
-// Per-section user search (Other users' campaigns). Debounced re-render so the
-// input keeps focus while typing.
-let _otherUserSearch = '';
-let _otherSearchTimer = null;
-window.onOtherUserSearch = function (val) {
-  _otherUserSearch = val || '';
-  if (_otherSearchTimer) clearTimeout(_otherSearchTimer);
-  _otherSearchTimer = setTimeout(() => { renderCampaignsBoard(); }, 180);
-};
-
 // Render one top-level board section: header (caret + title + count) with the
 // four buckets inside. Running/Idle are always-visible rails; Done/Cancelled are
 // collapsible sub-groups (default collapsed). `opts`:
@@ -12499,6 +12663,7 @@ async function _refreshCloudItems() {
         catch { d = { campaign: c, leadCounts: {} }; }
       }
       _cloudDetailCache.set(c.id, d);
+      if (d?.campaign) _tickQueueWait(c.id, d.campaign, d);
       _cloudPolledAt.set(c.id, Date.now()); // feeds the live stage's heartbeat
       // A STALLED campaign needs its per-account states on the board, not just
       // in the opened campaign's panel — that's where the stage names which
@@ -12806,7 +12971,7 @@ async function _renderCampaignsBoardInner() {
       const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing' || c.status === 'waiting_daily_reset' || c.status === 'needs_review') ? 'running'
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
-        where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
+        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
         // When this campaign began. A LinkedIn account outlives the campaign
         // that used it, so a follow-up queued BEFORE this one started was never
         // its own — without this date the strip and the card both fall back to
@@ -13072,6 +13237,13 @@ async function _renderCampaignsBoardInner() {
       fetch('/api/campaign-configs').then(r => { if (!r.ok) throw new Error('Saved campaigns unavailable'); return r.json(); }),
       fetch('/api/drafts').then(r => { if (!r.ok) throw new Error('Drafts unavailable'); return r.json(); }),
     ]);
+    // Legacy cloud runs predate permanent IDs: link the owner's matching saved
+    // campaign by name once for display, without changing or deleting run history.
+    for (const item of items) {
+      if (!item.mine || item.campaignId) continue;
+      const saved = (savedData.configs || []).find(entry => String(entry.name || '').trim().toLowerCase() === String(item.name || '').trim().toLowerCase());
+      if (saved) item.campaignId = saved.campaignId;
+    }
     for (const saved of unlistedSavedCampaigns(savedData.configs || [], items, draftData.drafts || [])) {
       items.push({ id: 'saved-' + (saved.campaignId || encodeURIComponent(saved.name)), campaignId: saved.campaignId, name: saved.name,
         where: 'local', mine: true, bucket: 'saved', hasRun: false });
@@ -13085,11 +13257,16 @@ async function _renderCampaignsBoardInner() {
   // Type filter (Sam): a dropdown on the header narrows the board to one
   // campaign type. Counts on the menu reflect ALL items; the board shows only
   // the selected type. 'All' shows everything.
-  renderCampaignsTypeFilter(items);
+  try {
+    const response=await fetch('/api/campaign-board/deletions');
+    if(response.ok) _campaignDeletions=(await response.json()).deletions || [];
+  } catch (_) { /* retain last confirmed deletions during a connection interruption */ }
+  const visibleItems = groupCampaignRuns(items.filter((x) => (x.mine || (_viewerIsAdmin && x.isFG)) && !isDeletedCampaign(x,_campaignDeletions)));
+  renderCampaignsTypeFilter(visibleItems);
   // Conductor filter (admin only): narrow to one operator's campaigns.
-  renderCampaignsConductorFilter(items);
+  renderCampaignsConductorFilter(visibleItems);
   let shown = _campaignsTypeFilter === 'All'
-    ? items : items.filter((x) => x.bucket === 'saved' || _cloudBadge(x.mode) === _campaignsTypeFilter);
+    ? visibleItems : visibleItems.filter((x) => x.bucket === 'saved' || _cloudBadge(x.mode) === _campaignsTypeFilter);
   if (_viewerIsAdmin && _campaignsConductorFilter !== 'Everyone') {
     shown = shown.filter((x) => (x.owner || (x.mine ? _viewerEmail : '')) === _campaignsConductorFilter);
   }
@@ -13149,7 +13326,7 @@ async function _renderCampaignsBoardInner() {
   } catch (e) { try { console.warn('[board] scheduled rail:', e.message); } catch { /* */ } }
 
   // ── Board layout ──────────────────────────────────────────────────────────
-  // Admins get three minimisable sections (Your / Other users / Admin = Follower
+  // Admins get two minimisable sections (Your / Admin = Follower
   // Growth); each orders Running → Idle → Done → Cancelled, with Done and
   // Cancelled as collapsible sub-groups. Non-admins keep a single flat board
   // with the same bucket ordering. Cancelled strips are NOT greyed (see CSS
@@ -13158,23 +13335,8 @@ async function _renderCampaignsBoardInner() {
   let html;
   if (_viewerIsAdmin) {
     const mineItems  = shown.filter((x) => !x.isFG && x.mine);
-    const otherItems = shown.filter((x) => !x.isFG && !x.mine);
     const adminItems = shown.filter((x) => x.isFG); // Follower Growth (extensible)
-    // Other-users section: optional per-section user search.
-    const q = (_otherUserSearch || '').trim().toLowerCase();
-    const otherShown = q
-      ? otherItems.filter((x) => String(_ownerOf(x) || '').toLowerCase().includes(q))
-      : otherItems;
-    const searchBox = `<span class="cb-searchwrap" onclick="event.stopPropagation()">`
-      + `<svg class="cb-searchic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>`
-      + `<input type="search" class="cb-usersearch" placeholder="Search by user…" spellcheck="false" autocomplete="off" autocapitalize="off"`
-      + ` value="${escHtml(_otherUserSearch || '')}" oninput="onOtherUserSearch(this.value)">`
-      + `</span>`;
     html = _renderBoardSection('mine', 'Your campaigns', mineItems, { alwaysShow: true, ..._draftOpts })
-      + _renderBoardSection('other', 'Other users’ campaigns', otherShown, {
-        headExtra: searchBox, alwaysShow: true,
-        emptyMsg: q ? 'No campaigns match that user.' : 'There are no campaigns to show at the moment.',
-      })
       + _renderBoardSection('admin', 'Admin campaigns', adminItems, { subtitle: 'Follower Growth' });
   } else {
     html = _renderBoardSection('mine', '', shown, { flat: true, ..._draftOpts });
@@ -13194,16 +13356,7 @@ async function _renderCampaignsBoardInner() {
   if (board.dataset.rendered === '1' && final === _lastBoardHtml) return;
   _lastBoardHtml = final;
   board.dataset.rendered = '1';
-  // Keep the user-search caret alive across the re-render: note whether it held
-  // focus BEFORE we blow away innerHTML, then restore after.
-  const _searchHadFocus = document.activeElement
-    && document.activeElement.classList
-    && document.activeElement.classList.contains('cb-usersearch');
   board.innerHTML = final;
-  if (_searchHadFocus) {
-    const inp = board.querySelector('.cb-usersearch');
-    if (inp) { inp.focus(); const n = inp.value.length; try { inp.setSelectionRange(n, n); } catch { /* */ } }
-  }
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
@@ -13233,7 +13386,6 @@ function _fuWhen(ms) {
 let _staleFuLiveScope = [];
 async function renderStaleFollowups(items) {
   const mount = document.getElementById('stale-followups');
-  if (!mount) return;
   // EVERY campaign on the board, not only the one being viewed. Both live status
   // cards render per campaign, so each strip's card #2 needs its own follow-up
   // numbers — asking only for the viewed campaign would leave every other
@@ -13261,6 +13413,8 @@ async function renderStaleFollowups(items) {
     groups = r.groups || [];
     for (const [cid, h] of Object.entries(r.health || {})) _followupHealthById.set(String(cid), h);
   } catch (_) { return; } // the strip simply does not appear
+
+  if (!mount) return; // Dashboard banner removed; retain per-campaign health updates.
 
   if (!groups.length) { mount.replaceChildren(); _staleFuLastHtml = ''; return; }
 
@@ -13423,11 +13577,9 @@ function _fillHistLogBoxes(board) {
 // Bulk-dismiss every Done strip on the campaigns board (local → _localDismissed,
 // cloud → _cloudDismissed). Mirrors the Sales Nav "Clear done".
 let _lastCampaignsDone = [];
-function clearCampaignsDone() {
-  for (const it of _lastCampaignsDone) {
-    if (it.where === 'cloud') _cloudDismissed.add(it.id);
-    else _localDismissed.add(it.id);
-  }
+async function clearCampaignsDone() {
+  try { for (const it of _lastCampaignsDone) await persistBoardCampaignDeletion(it); }
+  catch(error) { showCampaignToast('Could not delete: '+error.message,7000); }
   renderCampaignsBoard();
 }
 window.clearCampaignsDone = clearCampaignsDone;
@@ -13468,12 +13620,9 @@ async function clearBoardCat(cat) {
   if (!targets.length) return;
   const word = cat === 'cancelled' ? 'stopped / cancelled' : 'finished';
   if (!(await appConfirm(`Clear all ${targets.length} ${word} campaign(s) from your board?`, { title: 'Clear campaigns', okLabel: 'Clear all' }))) return;
-  for (const it of targets) {
-    if (it.where === 'cloud') _cloudDismissed.add(it.id);
-    else if (it.where === 'email' && typeof dismissEmailDone === 'function') dismissEmailDone(it.id);
-    else _localDismissed.add(it.id);
-  }
-  try { _cloudSaveDismissed(); } catch { /* */ }
+  try {
+    for (const it of targets) await persistBoardCampaignDeletion(it);
+  } catch(error) { showCampaignToast('Could not delete: '+error.message,7000); }
   renderCampaignsBoard();
 }
 window.clearBoardCat = clearBoardCat;
@@ -14040,6 +14189,7 @@ window.clearCloudEditMode = clearCloudEditMode;
 function _bindLiveStatusToCampaignCloud(id, seed = null) {
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound yet */ }
   _viewingCloudId = id;
+  try { sessionStorage.setItem('ortus-opened-campaign', JSON.stringify({id,cloud:true})); } catch {}
   liveStatusForcedOpen = true;
   // Pin the requested campaign synchronously, before the route changes. The
   // shared #active-card still contains whatever the background local poll last
@@ -14083,6 +14233,7 @@ function _bindLiveStatusToCampaign(id, seed = null) {
       connectionUnknown: false },
   };
   liveStatusForcedOpen = true;
+  try { sessionStorage.setItem('ortus-opened-campaign', JSON.stringify({id,campaignId:_viewingLocalCampaign.campaignId})); } catch {}
   renderActiveCard(_viewingLocalCampaign.status);
   syncLiveStatusVisibility();
   startPolling();
@@ -15037,7 +15188,7 @@ function beginCloudLaunch({ name, profileIds, handshake = true } = {}) {
     // a handshake row (same filter the pf-list renderer applies).
     profileIds: (profileIds || []).filter((id) => id && id !== 'local-browser'),
     conn: {},
-    logs: [],
+    logs: (_launchConsoleState?.logs || []).slice(),
     leadsRead: null,
     startedAt: Date.now(),
   };
@@ -15212,6 +15363,8 @@ function cloudLaunchStatus() {
 // Repaint the card and the board immediately rather than waiting for their 2s /
 // 4s polls — during a launch those polls have nothing new to say anyway.
 function paintCloudLaunch() {
+  const launchStatus = cloudLaunchStatus();
+  if (launchStatus) renderLiveConsole(launchStatus);
   try { syncLiveStatusVisibility(); } catch (_) { /* */ }
   try { placeLiveCard(); } catch (_) { /* */ }
   try { if (typeof window.renderActiveCard === 'function') window.renderActiveCard(null); } catch (_) { /* */ }
@@ -17592,41 +17745,34 @@ async function tryAgainProfile(profileId) {
 window.tryAgainProfile = tryAgainProfile;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Launch feedback popup (Issues ⑤ + ①)
-// Instant "Launching…" modal shown the moment Start is pressed. It covers the
-// multi-second pre-flight + start-fetch dead-air (⑤) and, by staying up until
-// the new run actually boots, stops the PREVIOUS finished campaign from
-// lingering in the Live Status card during that window (①). Dismissed by:
-//   • startCampaign() when the launch resolves cloud / queued / failed,
-//   • pollStatus() the instant the new local run flips `running` true,
-//   • a 30s watchdog so it can never get stuck.
-// ─────────────────────────────────────────────────────────────────────────────
+// Launch feedback goes straight to the console so preparation is visible.
 let _launchWatchdog = null;
+let _launchConsoleState = null;
+function launchConsoleLog(line) {
+  if (!_launchConsoleState) return;
+  _launchConsoleState.logs.push(line);
+  _launchConsoleState.currentAction = { label: line };
+  window.renderActiveCard?.(_launchConsoleState);
+  syncLiveStatusVisibility();
+}
 function beginLaunching(label) {
   window.__launching = true;
-  window.__localLaunchName = label || "";
-  let scrim = document.getElementById('launch-scrim');
-  if (!scrim) {
-    scrim = document.createElement('div');
-    scrim.id = 'launch-scrim';
-    scrim.className = 'modal-scrim';
-    scrim.innerHTML =
-      '<div class="modal-card solid" role="status" aria-live="polite">'
-      + '<div class="modal-eyebrow">Launching</div>'
-      + '<div class="launch-spinner"></div>'
-      + '<div class="modal-title" id="launch-scrim-title">Starting campaign…</div>'
-      + '<div class="launch-sub">Preparing your accounts and lead sheet — this can take a few seconds.</div>'
-      + '</div>';
-    document.body.appendChild(scrim);
-  }
-  const t = document.getElementById('launch-scrim-title');
-  if (t) t.textContent = label ? `Starting “${label}”…` : 'Starting campaign…';
-  scrim.classList.add('open');
-  if (_launchWatchdog) clearTimeout(_launchWatchdog);
-  _launchWatchdog = setTimeout(() => { endLaunching(); }, 30000);
+  window.__localLaunchName = label || '';
+  _launchConsoleState = {
+    name: label || 'New campaign', running: true, state: 'preflight',
+    phase: 'preflight', profileNames: [], logs: [],
+    totalTargets: 0, totalProcessed: 0,
+  };
+  // Retire any popup left by an earlier launch in this window.
+  document.getElementById('launch-scrim')?.classList.remove('open');
+  _lcExpand();
+  syncLiveStatusVisibility();
+  scrollToSection('nav-status');
+  launchConsoleLog('Checking your accounts, campaign settings and lead sheet…');
 }
 function endLaunching() {
   window.__launching = false;
+  _launchConsoleState = null;
   if (_launchWatchdog) { clearTimeout(_launchWatchdog); _launchWatchdog = null; }
   const scrim = document.getElementById('launch-scrim');
   if (scrim) scrim.classList.remove('open');
@@ -17754,6 +17900,7 @@ function _decorateLocalLiveStatus(s) {
         dailyLimit: Number(a.dailyLimit) || 0,
         parked: ['benched', 'stopped', 'cannot-open', 'needs-login', 'identity-restricted'].includes(a.state),
         needsLogin,
+        loginRechecking: !!a.loginRechecking,
         weeklyCap,
         weeklySuspected: !!a.weeklySuspected,
         salesNavAccess: a.salesNavAccess || null,
@@ -18125,9 +18272,14 @@ function syncLiveStatusVisibility() {
   // fire — both would hide the section and the operator sees a blank new-campaign
   // form ("Open does nothing"). cloudView bypasses those draft suppressors; the
   // trailing clause still requires an actual reason to show (cloudView is one).
-  const show = !inFollowerGrowth && onNew
+  let openedId = null; try { openedId = _openedCampaignId; } catch {}
+  const selectedStatus = cloudView ? window.__cloudActiveStatus : (_viewingLocalCampaign?.status || __cockpit);
+  const ownsStatus = cloudView || sameCampaign(selectedStatus, { campaignId: openedId, name: draftName });
+  const hasActivity = !!(selectedStatus && (selectedStatus.running || selectedStatus.queued || selectedStatus.paused || selectedStatus.state === 'monitoring' || selectedStatus.hasRun || selectedStatus.endNotice || selectedStatus.hasLogs || selectedStatus.logs?.length));
+  const launchingHere = !!(_launchConsoleState || cloudLaunchStatus());
+  const show = !inFollowerGrowth && onNew && (launchingHere || ((checkHere || (ownsStatus && hasActivity))
     && (cloudView || (!(editingDraft && _viewingLocalCampaign && !checkHere) && !unrelatedDraft))
-    && (liveStatusForcedOpen || checkHere || _viewingLocalCampaign || cloudView || ((running || monitoring) && !editingDraft) || finished);
+    && (liveStatusForcedOpen || checkHere || _viewingLocalCampaign || cloudView || ((running || monitoring) && !editingDraft) || finished)));
   sec.style.display = show ? '' : 'none';
   // A live ownership transition is operational status, not optional wizard
   // content. Accordion defaults and renderer reloads used to collapse section 7
@@ -18136,7 +18288,7 @@ function syncLiveStatusVisibility() {
   // the operator may collapse it normally.
   const cloudStatus = window.__cloudActiveStatus || null;
   const cloudOperational = !!(cloudStatus && (cloudStatus.running || cloudStatus.queued || cloudStatus.state === 'monitoring'));
-  if (show && (liveStatusForcedOpen || running || monitoring || (checkHere && checking) || cloudOperational || _whBusy)) {
+  if (show && (launchingHere || liveStatusForcedOpen || running || monitoring || (checkHere && checking) || cloudOperational || _whBusy)) {
     sec.classList.remove('collapsed');
   }
   const navBtn = document.querySelector('[data-nav="nav-status"]');
@@ -18340,8 +18492,7 @@ async function loadSelectedTemplate() {
     // v2.72: restore Open Profile send channel + InMail fallback
     const opChannel = document.getElementById('tpl-op-channel');
     if (opChannel) opChannel.value = tpl.opChannel || 'sn_first';
-    const opSpendInMail = document.getElementById('tpl-op-spend-inmail');
-    if (opSpendInMail) opSpendInMail.checked = !!tpl.opSpendInMail;
+    syncMessageInMail(!!tpl.opSpendInMail);
     const introBody = document.getElementById('primary-intro-body');
     if (introBody) {
       introBody.value = tpl.primaryIntroBody || '';
@@ -19665,6 +19816,7 @@ function collectCurrentConfig() {
   };
   return {
     campaignId: _openedCampaignId,
+    runTarget: getRunTarget(),
     mode: getV('campaign-mode') || 'connect_only',
     sheetUrl: getV('sheet-url').trim(),
     profileIds: [...selectedProfileIds],
@@ -19728,6 +19880,10 @@ function collectCurrentConfig() {
 function applyPresetConfig(config) {
   if (!config || typeof config !== 'object') return;
   const setV = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  if (config.campaignId) {
+    _openedCampaignId = config.campaignId;
+    _openedCampaignName = (document.getElementById('campaign-name-input')?.value || '').trim();
+  }
 
   // v2.11.17: legacy presets had `mode: 'message_only'` + a separate
   // `templates.introMode: true` flag. The Introduce Back mode replaces
@@ -19745,6 +19901,7 @@ function applyPresetConfig(config) {
     setV('campaign-mode', config.mode || 'connect_only');
     if (typeof onModeChange === 'function') onModeChange();
   }
+  setRunTarget(config.runTarget === 'cloud' ? 'cloud' : 'local');
   setV('sheet-url', config.sheetUrl || '');
   // Ortus Basics 1.0: restore the picked GoLogin accounts. collectCurrentConfig()
   // has always SAVED profileIds, but nothing here read them back, so reopening a
@@ -19841,7 +19998,7 @@ function applyPresetConfig(config) {
   setV('tpl-inmail-body', t.inmailBody || '');
   setV('tpl-op-subject', t.openProfileSubject || '');
   { const _oc = document.getElementById('tpl-op-channel'); if (_oc) _oc.value = t.opChannel || 'sn_first';
-    const _osi = document.getElementById('tpl-op-spend-inmail'); if (_osi) _osi.checked = !!t.opSpendInMail; }
+    syncMessageInMail(!!t.opSpendInMail); }
   setV('tpl-op-body', t.openProfileBody || '');
 
   // v2.14.x: CC+IC fields. These live inside config.templates as
@@ -20985,7 +21142,8 @@ function setIntroMode() { /* deprecated in v2.11.17 — segment toggle removed *
 // ─────────────────────────────────────────────────────────────────────────
 function _wizScopedKey(base) {
   const n = (document.getElementById('campaign-name-input')?.value || '').trim();
-  return n ? `${base}::${n.toLowerCase()}` : base;
+  let id = null; try { id = _openedCampaignId; } catch {}
+  return id ? `${base}::id:${id}` : (n ? `${base}::${n.toLowerCase()}` : `${base}::new`);
 }
 function _wizLsSet(base, value) {
   try { localStorage.setItem(_wizScopedKey(base), value); } catch { /* storage blocked */ }
@@ -21994,6 +22152,7 @@ window.applyViewingActiveLock = applyViewingActiveLock;
 function applyRoute() {
   const hash = window.location.hash || '#/';
   const isWizard = hash.startsWith('#/new');
+  if (!isWizard) { const section = document.getElementById('nav-status'); if (section) section.style.display = 'none'; }
   // Leaving the wizard abandons any cloud-edit session (unlock + banner reset)
   // so a later fresh "+ New campaign" never inherits the lock.
   if (!isWizard && typeof clearCloudEditMode === 'function') clearCloudEditMode();
@@ -22111,7 +22270,8 @@ async function updateWizardQueueState() {
     const r = await fetch('/api/campaign/status');
     if (r.ok) {
       const status = await r.json();
-      isRunning = !!(status.running || status.paused);
+      isRunning = getRunTarget() === 'local' && !!(status.running || status.paused)
+        && !sameCampaign(status, { campaignId: _openedCampaignId, name: _currentWizardName() });
       runningName = status.name || '';
     }
   } catch {}
@@ -27954,7 +28114,7 @@ function initWizardDirtyTracking() {
     'campaign-name-input', 'sheet-url', 'daily-limit-input',
     'tpl-note', 'tpl-followup',
     'tpl-inmail-subject', 'tpl-inmail-body',
-    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail',
+    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail', 'pace-op-spend-inmail',
     'primary-intro-body', 'intro-title',
     'primary-person-url', 'primary-person-name',
   ];
@@ -28039,6 +28199,7 @@ async function _flushAutosave() {
     // draft it addresses still belongs to that campaign.
     body: JSON.stringify({ name, config, expectKey }),
   }).then(async (r) => {
+    if (getActiveDraftId() !== id) return;
     if (r.status === 409) {
       // The active draft belongs to a different campaign than the one on screen.
       // Detach rather than keep hammering someone else's record.
@@ -28265,8 +28426,13 @@ function _existingCampaignBlocksNewDispatch() {
 
 window.launchStartNow = async function() {
   if (_readOnlyBlocksLaunch()) return;
-  // Existing campaigns resume locally using their saved configuration.
-  if (_editingCampaignId) {
+  // Existing local campaigns may resume locally; the VM choice must always
+  // reach the normal cloud launch path, including its preflight and identity guard.
+  if (getRunTarget() === 'cloud' && !isCloudRunOn()) {
+    showCampaignToast('This campaign type cannot run on the VM. Choose This machine or a supported campaign type.', 6000);
+    return;
+  }
+  if (_editingCampaignId && getRunTarget() === 'local') {
     const id = _editingCampaignId;
     _closeLaunchMenu();
     const item = _boardItemsById.get(id) || _snItemsById.get(id);
@@ -29165,7 +29331,7 @@ function renderSheetWriteWarn(status) {
   el.innerHTML =
     `<div class="sw-warn-line">` +
       `<em class="sw-glyph">⚠</em>` +
-      `<span>${n} sheet write${n === 1 ? '' : 's'} failed —</span>` +
+      `<span>${n} sheet result${n === 1 ? '' : 's'} waiting to sync · saved locally, retrying automatically —</span>` +
       `<button class="sw-btn" id="sw-btn-view" type="button">${__swWarnExpanded ? 'hide' : 'view'}</button>` +
       `<button class="sw-btn" id="sw-btn-retry" type="button">retry</button>` +
     `</div>` +
@@ -29182,7 +29348,7 @@ function renderSheetWriteWarn(status) {
           ? '<div class="sw-item"><span>No details available.</span></div>'
           : items.map(function(f) {
               const nm = escHtml(f.leadName || f.url || '(unknown)');
-              const err = escHtml(f.errorMessage || '');
+              const err = escHtml(f.errorMessage || 'Waiting for Google Sheets');
               return `<div class="sw-item"><span>${nm}</span><span class="sw-item-err">${err}</span></div>`;
             }).join('');
         list.innerHTML = html;
@@ -29416,6 +29582,7 @@ function _stageAcctPill(a, isCurrent, counts) {
   if (a.sweepAction) { cls = 'bad'; text = 'Needs login'; tip = a.sweepAction; }
   else if (a.sweepChecked && Number(a.sweepAccepted) > 0) { cls = 'ok'; text = `${a.sweepAccepted} accepted`; tip = 'Checked successfully during the latest acceptance sweep.'; }
   else if (a.sweepChecked) { cls = ''; text = '0 accepted'; tip = 'Checked successfully during the latest acceptance sweep.'; }
+  else if (a.loginRechecking) { cls = 'warn'; text = 'Checking login…'; tipExact = true; tip = 'A fresh login check is queued for the next worker turn.'; }
   else if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; tipExact = true; tip = 'This account is signed out of LinkedIn. Log back in, then tell the campaign — it rejoins on the next round.'; }
   else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
   else if (a.weeklySuspected) { cls = 'bad'; text = 'Suspected weekly limit'; tipExact = true; tip = 'LinkedIn refused this account\'s invite, which is nearly always the weekly invitation limit. Open it and choose "Try again on the next round" to test.'; }
@@ -29500,7 +29667,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '', onCloud = tr
   // The other half of a logged-out account: the operator has signed back in and
   // nothing on this machine can tell. Without it the account sat out the rest of
   // the run for a problem that had already been fixed.
-  if (needsLogin && a.profileId) acts.push(`<button type="button" class="stg-relogin-btn" onclick="markLoggedBackIn('${escHtml(a.profileId)}',this)">I've logged back in</button>`);
+  if (needsLogin && a.profileId && !a.loginRechecking) acts.push(`<button type="button" class="stg-relogin-btn" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId)}',this)">Retry account — check login</button>`);
   // No Retry on a weekly cap. It's a window, not a cooldown — nothing changes
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
@@ -30369,6 +30536,7 @@ function renderLiveStage(root, status) {
     // weekly cap, whose sentence never contains the word "weekly", so a capped
     // account's pill read "Stopped" with the reason only in a tooltip.
     needsLogin: !!a.needsLogin,
+    loginRechecking: !!a.loginRechecking,
     weeklyCap: !!a.weeklyCap,
     weeklySuspected: !!a.weeklySuspected,
     parked: /stopped|benched|identity-restricted/.test(String(a.state || '').toLowerCase()),
@@ -30392,8 +30560,14 @@ function renderLiveStage(root, status) {
   const _engStatus = String(status.engineStatus || '');
   const _removeState = (!cid || cloudAccts.length < 2 || !_engStatus) ? ''
     : (['running', 'queued', 'pending'].includes(_engStatus) ? 'pause-first' : 'yes');
+  // The detailed cloud view has a dedicated Accounts section below the card.
+  const separateAccounts = !!status._cloud && status.mode !== 'follower_growth' && root.id === 'active-card';
+  for (const field of ['stageAccts', 'stageDrawer']) {
+    const element = _stgFld(root, field);
+    if (element) element.style.display = separateAccounts ? 'none' : '';
+  }
   const sel = _stageSel.get(cid) || '';
-  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.batchSent}/${a.batchDone}/${a.batchSize}/${a.dailyResetAt}/${a.salesNavAccess?.status}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}~${a.sweepChecked ? 'c' : ''}${a.sweepAccepted || 0}${a.sweepAction || ''}`).join(',')
+  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.batchSent}/${a.batchDone}/${a.batchSize}/${a.dailyResetAt}/${a.salesNavAccess?.status}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.loginRechecking ? 'r' : ''}${a.primaryConnected === true ? 'p' : ''}~${a.sweepChecked ? 'c' : ''}${a.sweepAccepted || 0}${a.sweepAction || ''}`).join(',')
     + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}|${_removeState}`
     + `|${(ca && ca.resumeAt) || ''}|${(ca && ca.resumeReason) || ''}`
     + `|${[...((cid && _cloudAcctCounts.get(cid)) || new Map()).entries()].map(([k, v]) => `${k}:${v.sent}/${v.total}`).join(',')}`;
@@ -31032,6 +31206,7 @@ window.renderActiveCard = function(status) {
     }
   }
   status = localCampaignViewStatus(status);
+  if (_launchConsoleState && !_launchStatus) status = { ..._launchConsoleState, campaignId: _openedCampaignId, hasRun: true };
   if (status.campaignId && !status._cloud) status = withCampaignLifecycle(status);
   if (!String(status.name || '').trim()) {
     status = { ...status, name: _viewingLocalCampaign?.name || window.__localLaunchName || '', _loadingIdentity: true };
@@ -33826,10 +34001,11 @@ if (!window.__v3TipWired) {
 function renderLiveConsole(s) {
   const root = document.getElementById('live-console');
   if (!root) return;
-  s = localCampaignViewStatus(s);
+  const launchStatus = cloudLaunchStatus() || _launchConsoleState;
+  s = launchStatus || localCampaignViewStatus(s);
   // A draft owns no runtime history until it starts. Keep the old campaign's
   // server state intact, but don't present it as this draft's activity.
-  if (isOnNewCampaignView() && !_launchCheckPending) {
+  if (!launchStatus && isOnNewCampaignView() && !_launchCheckPending) {
     const name = (document.getElementById('campaign-name-input')?.value || '').trim();
     if (!name || !sameCampaign(s, { campaignId: _openedCampaignId, name })) {
       s = { name, running: false, state: 'draft', logs: [], profileNames: [],
@@ -34142,6 +34318,7 @@ function rsweepRender(s) {
     eyebrow.style.display = (s.phase === 'done' || s.phase === 'error') ? '' : 'none';
     if (s.phase === 'done') eyebrow.textContent = `Done · ${camp.length} reply(ies), ${unm.length} unmatched${s.dryRun ? '' : ` · ${s.wrote || 0} written`}`;
     if (s.phase === 'error') eyebrow.textContent = `Error — ${rsweepEsc(s.error || '')}`;
+    if (s.summary) eyebrow.textContent = s.summary;
     if (runBtn) runBtn.disabled = false;
     if (stopBtn) stopBtn.style.display = 'none';
   }
@@ -34159,7 +34336,7 @@ function rsweepRender(s) {
   if (logHead) {
     logHead.textContent = s.running
       ? `Live log · scanning ${s.currentProfile || '…'} · ${s.doneProfiles || 0}/${s.totalProfiles || 0} accounts`
-      : (logs.length ? `Live log · last ${Math.min(logs.length, 30)} events (finished)` : 'Live log');
+      : (s.summary ? s.summary.split(' — ')[0] : (logs.length ? `Live log · last ${Math.min(logs.length, 30)} events (finished)` : 'Live log'));
   }
 
   // Per-account live status card (who's scanning / done / closed / errored).
@@ -35489,27 +35666,30 @@ if (typeof window !== 'undefined') {
 // never got a launch-config snapshot — saveCloudLaunchConfig() is only called
 // from the cloud dispatch path — so "open a campaign" had nothing to restore
 // from either. Keep our own copy, written on Save and on Start.
-const _WIZ_KEY = 'ortus-basics-wizard';
+const _WIZ_KEY = 'ortus-outreach-wizard-v2';
 
 function saveWizardState() {
   try {
     if (typeof collectCurrentConfig !== 'function') return;
-    localStorage.setItem(_WIZ_KEY, JSON.stringify({ at: Date.now(), config: collectCurrentConfig() }));
+    const config = collectCurrentConfig();
+    if (!config.campaignId) return;
+    localStorage.setItem(`${_WIZ_KEY}:${config.campaignId}`, JSON.stringify({ at: Date.now(), config }));
   } catch (_) { /* storage blocked — persistence is best-effort */ }
 }
 
 function restoreWizardState() {
   try {
-    const raw = localStorage.getItem(_WIZ_KEY);
+    if (!_openedCampaignId) return false;
+    const raw = localStorage.getItem(`${_WIZ_KEY}:${_openedCampaignId}`);
     if (!raw) return false;
     const saved = JSON.parse(raw);
-    if (!saved?.config) return false;
+    if (!saved?.config || saved.config.campaignId !== _openedCampaignId) return false;
     // Only fill what the operator has not already typed: a restore must never
     // overwrite a sheet URL or a selection made in this session.
     const urlEl = document.getElementById('sheet-url');
     const hasUrl = !!(urlEl && urlEl.value.trim());
     const hasAccounts = Array.isArray(selectedProfileIds) && selectedProfileIds.length > 0;
-    if (hasUrl && hasAccounts) return false;
+    if (hasUrl || hasAccounts || wizardDirty) return false;
     const cfg = { ...saved.config };
     if (hasUrl) delete cfg.sheetUrl;
     if (hasAccounts) { delete cfg.profileIds; delete cfg.profileNames; }
@@ -35648,14 +35828,99 @@ async function _launchCheckRun(scope) {
   }
 }
 
+// ── Launch panel: "Check for replies" (Message Campaign) ─────────────────────
+// One manual pass over each sender's inbox (regular + Sales Nav) via the reply
+// sweep, with write-back ON so repliers are marked Replied on the tab. Accounts
+// come from the tab's Sender column — replies land with whoever sent. Runs only
+// on click; while it runs the same button stops it.
+let _replyCheckTimer = null;
+function refreshLaunchReplyBtn() {
+  const btn = document.getElementById('btn-launch-replies');
+  if (!btn) return;
+  const mode = document.getElementById('campaign-mode')?.value || '';
+  btn.hidden = mode !== 'open_profile_only';
+}
+if (typeof window !== 'undefined') window.refreshLaunchReplyBtn = refreshLaunchReplyBtn;
+
+function _replyNote(text) {
+  const note = document.getElementById('launch-reply-note');
+  if (!note) return;
+  note.hidden = !text;
+  note.textContent = text || '';
+}
+
+window.launchReplyCheck = async function() {
+  const toast = (m, ms) => { if (typeof showCampaignToast === 'function') showCampaignToast(m, ms); };
+  const btn = document.getElementById('btn-launch-replies');
+  if (btn && btn.dataset.mode === 'stop') {
+    btn.disabled = true; btn.textContent = 'Stopping…';
+    try { await fetch('/api/reply-sweep/stop', { method: 'POST' }); } catch (_) { /* poll reports the end */ }
+    return;
+  }
+  const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
+  if (!sheetUrl) return toast('Paste the Google Sheet URL first.');
+  try {
+    const r = await fetch('/api/reply-sweep/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sheetUrl,
+        linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
+        dryRun: false,
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || `Could not start the reply check (HTTP ${r.status})`, 4000);
+    if (!d.profiles) {
+      _replyNote('No sent messages on this tab yet — nothing to check.');
+      await pollStatus();
+      return;
+    }
+    if (btn) { btn.dataset.mode = 'stop'; btn.textContent = '■ Stop reply check'; btn.disabled = false; }
+    _replyNote(`Checking ${d.profiles} account(s) for replies…`);
+    if (_replyCheckTimer) clearInterval(_replyCheckTimer);
+    _replyCheckTimer = setInterval(_pollLaunchReplyCheck, 1000);
+  } catch (e) {
+    toast('Reply check failed: ' + e.message, 4000);
+  }
+};
+
+async function _pollLaunchReplyCheck() {
+  let s;
+  try { s = await (await fetch('/api/reply-sweep/status')).json(); } catch (_) { return; }
+  const done = s.doneProfiles || 0;
+  const total = s.totalProfiles || 0;
+  const last = (s.logs || []).slice(-1)[0] || '';
+  if (s.running) {
+    _replyNote(`Checking ${Math.min(done + 1, total)} of ${total} · ${last.replace(/^\[[^\]]+\]\s*/, '')}`);
+    return;
+  }
+  clearInterval(_replyCheckTimer); _replyCheckTimer = null;
+  const btn = document.getElementById('btn-launch-replies');
+  if (btn) { btn.dataset.mode = ''; btn.textContent = 'Check for replies'; btn.disabled = false; }
+  const found = (s.campaignReplies || []).length;
+  const failed = (s.perProfile || []).filter((p) => p.status === 'error');
+  let msg = found
+    ? `${found} repl${found === 1 ? 'y' : 'ies'} found — ${s.wrote || 0} marked Replied in the sheet`
+    : 'No new replies found';
+  msg += ` · ${total} account(s) checked`;
+  if (failed.length) msg += ` · couldn't read: ${failed.map((p) => p.profileName).join(', ')}`;
+  msg = s.summary || msg;
+  _replyNote(msg);
+  if (typeof showCampaignToast === 'function') showCampaignToast(msg, 5000);
+  // A standalone reply check can finish while campaign polling is idle.
+  // Fetch its final campaign-log entry before leaving the check idle too.
+  await pollStatus();
+}
+
 // Keep it in step with the mode picker, and paint the right state on load.
 if (typeof window !== 'undefined') {
-  document.getElementById('campaign-mode')?.addEventListener('change', refreshLaunchCheckBtn);
-  setTimeout(refreshLaunchCheckBtn, 800);
+  const _refreshLaunchBtns = () => { refreshLaunchCheckBtn(); refreshLaunchReplyBtn(); };
+  document.getElementById('campaign-mode')?.addEventListener('change', _refreshLaunchBtns);
+  setTimeout(_refreshLaunchBtns, 800);
   // renderModeSelector() sets #campaign-mode.value programmatically, which fires
   // no change event, so a listener alone goes stale. Re-checking one select is
   // cheap — same approach as the sidebar campaign name.
-  setInterval(refreshLaunchCheckBtn, 700);
+  setInterval(_refreshLaunchBtns, 700);
 }
 
 // ── Settings: GoLogin workspace tokens (Ortus Basics 1.0) ──────────────────
@@ -35682,26 +35947,26 @@ async function renderCredentialsModal() {
     const check = c.verification;
     const state = check
       ? `<span class="cred-state ${check.ok ? 'is-set' : 'is-error'}">${check.ok ? `Connected · ${Number(check.profileCount) || 0} accounts` : 'Error'}</span><span class="cred-state is-unset">${escHtml(c.hint || '')}</span>`
-      : `<span class="cred-state is-unset">${c.set ? `Saved · not checked · ${escHtml(c.hint)}` : 'Not set'}</span>`;
+      : `<span class="cred-state is-unset">${c.shared ? 'Shared access through Google sign-in' : c.set ? `Saved · not checked · ${escHtml(c.hint)}` : 'Not set'}</span>`;
     const errorNote = check && !check.ok ? `<div class="cred-note cred-error" role="status">${escHtml(check.error || 'Connection check failed.')}</div>` : '';
     const envNote = c.fromEnvironment
       ? '<div class="cred-note">Currently supplied by the environment (dev launcher). Saving here overrides it.</div>'
       : '';
     // A saved token can be removed outright — the workspace then contributes
     // no accounts until a token is pasted again.
-    const removeBtn = c.set
+    const removeBtn = c.set && !c.shared
       ? `<button type="button" class="cred-other-del cred-remove" title="Remove the saved ${escHtml(c.label)} token" onclick="removeCredToken('${escHtml(c.env)}', '${escHtml(c.label)}')">Remove</button>`
       : '';
     // Rotating the SHARED engine token is admin-only and explicit — never a side
     // effect of saving. Offer it only for a token that is actually saved.
-    const pushBtn = (_viewerIsAdmin && c.set)
+    const pushBtn = (_viewerIsAdmin && c.set && !c.shared)
       ? `<button type="button" class="cred-other-del cred-push" title="Push the saved ${escHtml(c.label)} token to the current engine (shared by everyone's cloud runs)" onclick="pushCredToEngine('${escHtml(c.id)}', '${escHtml(c.label)}')">Push to engine</button>`
       : '';
     return `<div class="cred-row">
       <label class="cred-label" for="cred-${escHtml(c.id)}">${escHtml(c.label)} ${state} ${pushBtn} ${removeBtn}</label>
       <input type="password" class="cred-input" id="cred-${escHtml(c.id)}"
              data-env="${escHtml(c.env)}" autocomplete="off" spellcheck="false"
-             placeholder="${c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
+             placeholder="${c.shared ? 'Shared access active; optional personal token' : c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
       ${envNote}${errorNote}
     </div>`;
   }).join('');
@@ -35956,14 +36221,19 @@ async function saveCampaignConfigByName(name) {
 /** Put a saved campaign's settings back into the wizard. */
 let _openedCampaignName = '';
 let _openedCampaignId = null;
+let _configLoadVersion = 0;
 async function loadCampaignConfigByName(name, campaignId = null, opts = {}) {
   const n = String(name || '').trim();
   if (!n) return false;
   try {
+    const requestVersion = ++_configLoadVersion;
+    const previousId = _openedCampaignId;
+    const previousName = _currentWizardName();
     const r = await fetch(campaignId ? `/api/campaign-configs/by-id/${encodeURIComponent(campaignId)}` : `/api/campaign-configs/${encodeURIComponent(n)}`);
     if (!r.ok) return false;
     const d = await r.json();
     if (!d.ok || !d.config) return false;
+    if (requestVersion !== _configLoadVersion || _openedCampaignId !== previousId || _currentWizardName() !== previousName || (opts.silent && wizardDirty)) return false;
     _openedCampaignId = d.campaignId || d.config.campaignId || null;
     _openedCampaignName = d.name || n;
     const nameEl = document.getElementById('campaign-name-input');
@@ -35984,51 +36254,23 @@ if (typeof window !== 'undefined') {
   window.loadCampaignConfigByName = loadCampaignConfigByName;
   window.refreshKnownCampaignNames = refreshKnownCampaignNames;
 
-  // Gate every commit point: refuse a duplicate name, otherwise save the
-  // settings under it. Wrapping rather than editing each handler keeps this in
-  // one place, so a new launch path cannot quietly skip the check.
+  // Only an explicit Save replaces the saved configuration. Start/Queue use
+  // the current form without silently overwriting an existing campaign's settings.
   for (const fn of ['launchStartNow', 'launchQueueIt', 'launchScheduleIt', 'launchSaveAsDraft', 'launchSaveChanges', 'launchSaveButton']) {
     const orig = window[fn];
     if (typeof orig !== 'function') continue;
     window[fn] = async function(...args) {
       const name = (document.getElementById('campaign-name-input')?.value || '').trim();
-      // Renaming an OPEN campaign is a rename, not a new campaign. Because
-      // settings are keyed by name, saving under a new name used to write a
-      // second record and leave the first — so the campaign existed twice and
-      // the dashboard, which reads its name from the run history, kept showing
-      // the old one (operator, 2026-09-04). Move the campaign first, then save
-      // the form onto the name it now has.
-      const opened = String(_openedCampaignName || '').trim();
-      if (name && opened && opened.toLowerCase() !== name.toLowerCase()) {
-        try {
-          const rr = await fetch('/api/campaign-configs/rename', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: opened, to: name, campaignId: _openedCampaignId }),
-          });
-          if (rr.ok) {
-            _openedCampaignName = name;
-            if (typeof bindWizardTo === 'function') bindWizardTo(name);
-            await refreshKnownCampaignNames();
-          } else if (rr.status === 409) {
-            // Another campaign already owns that name. Say so and stop, rather
-            // than silently creating a duplicate under it.
-            const j = await rr.json().catch(() => ({}));
-            if (typeof showCampaignToast === 'function') {
-              showCampaignToast(j.error || `A campaign named "${name}" already exists.`, 6000);
-            }
-            return;
-          }
-        } catch (err) {
-          console.warn('[rename] failed:', err);
+      const explicitSave = fn.startsWith('launchSave');
+      if (!explicitSave) {
+        if (name && await _nameIsTaken(name)) {
+          showCampaignToast(`A campaign named “${name}” already exists. Open it to continue, or use a different name.`, 6000);
+          return;
         }
+        return orig.apply(this, args);
       }
-      // The name IS the campaign's identity, so saving or starting under an
-      // existing name UPDATES that campaign — which is what Save means.
       if (name) {
         if (!await saveCampaignConfigByName(name)) { showCampaignToast('Could not save this campaign. Please retry.'); return; }
-        // saveCampaignConfigByName adds the name to _knownCampaignNames.
-        // Mark as "editing own campaign" so the inline dedup check in the
-        // original function recognises this name as its own, not a clash.
         _editingExistingCampaign = true;
       }
       return orig.apply(this, args);
@@ -36116,3 +36358,30 @@ function toggleBenchProfile(id) {
   renderSelectedPanel();
 }
 window.toggleBenchProfile = toggleBenchProfile;
+
+// Reopen the same campaign after a renderer refresh. The pointer contains only
+// identity; authoritative settings and status are reloaded from their stores.
+async function restoreOpenedCampaignView() {
+  if (location.hash !== '#/new') return false;
+  let raw, saved;
+  try { raw = sessionStorage.getItem('ortus-opened-campaign'); saved = JSON.parse(raw); } catch { return false; }
+  if (!saved?.id) return false;
+  await refreshDashboard();
+  // A later selection or navigation always wins over this asynchronous restore.
+  if (location.hash !== '#/new' || sessionStorage.getItem('ortus-opened-campaign') !== raw) return false;
+  if (saved.cloud) {
+    const response = await fetch(`/api/campaign/cloud/${encodeURIComponent(saved.id)}`);
+    if (!response.ok) return false;
+    const detail = await response.json();
+    if (location.hash !== '#/new' || sessionStorage.getItem('ortus-opened-campaign') !== raw) return false;
+    if (!detail.campaign) return false;
+    if (['running', 'queued', 'pending', 'paused', 'monitoring'].includes(detail.campaign.status)) await openRunningCampaignReadOnly(saved.id);
+    else await openCampaignForEditCloud(saved.id);
+    return true;
+  }
+  const item = _boardItemsById.get(saved.id);
+  if (!item || (saved.campaignId && item.campaignId !== saved.campaignId)) return false;
+  await openCampaignForEdit(saved.id);
+  return true;
+}
+setTimeout(() => restoreOpenedCampaignView().catch(error => console.warn('[campaign-view] Restore failed:', error.message)), 1000);

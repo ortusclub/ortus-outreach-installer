@@ -50,6 +50,11 @@ export function saveConfig(name, config, { campaignId = config?.campaignId, crea
   writeAll(store);
   return store.campaigns[id];
 }
+/** Explicit Save replaces the named campaign while preserving its permanent ID. */
+export function saveNamedCampaign(name, config, campaignId = config?.campaignId) {
+  const existing = getConfig(name);
+  return saveConfig(name, config, { campaignId: existing?.campaignId || campaignId, listed: true });
+}
 /** Resolve identity without overwriting saved wizard settings. */
 export function ensureCampaignIdentity({ campaignId, name = '', config = {}, listed = true } = {}) {
   const entry = campaignId ? getConfigById(campaignId) : (normaliseName(name) ? getConfig(name) : null);

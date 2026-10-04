@@ -56,7 +56,7 @@ process.env.ORTUS_ELECTRON_MODE = '1';
 // "remember me" UI state actually sticks. The random-port fallback preserves
 // the original safety: if something else on the user's machine is using
 // 7847, we degrade gracefully instead of failing to launch.
-const PINNED_PORT = 7847; // "ORTU" mnemonic; arbitrary unprivileged free port
+const PINNED_PORT = 7848; // Outreach owns this port; Basics uses 7847. Keep browser storage stable when both are open.
 
 function _tryPort(port) {
   return new Promise((res, rej) => {

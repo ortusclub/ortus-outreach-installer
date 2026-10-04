@@ -34,11 +34,9 @@ test('follow-up health is keyed by campaign, never a single global', () => {
   assert.match(APP, /const _fh = _fuHealth\(cid\);/);
 });
 
-test('the strip has a mount point above the board rails', () => {
-  const strip = HTML.indexOf('id="stale-followups"');
-  const board = HTML.indexOf('id="campaigns-board"');
-  assert.ok(strip > 0 && board > 0);
-  assert.ok(strip < board, 'the strip must render above the campaign rails');
+test('the removed orphan follow-up banner has no dashboard mount', () => {
+  assert.equal(HTML.includes('id="stale-followups"'), false);
+  assert.ok(HTML.includes('id="campaigns-board"'));
 });
 
 test('a repaint reopens the messages the operator had open', () => {
