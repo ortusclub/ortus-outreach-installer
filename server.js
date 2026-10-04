@@ -103,10 +103,13 @@ import { ackFor, decidePreflightGate } from './src/preflight-gate.js';
 import { checkDiskFree } from './src/disk-check.js';
 import { LATEST_RELEASE_API, parseVersion, isBehind, archLabel, dmgAssetName, latestDownloadUrl, latestReleaseUrl } from './src/updater.js';
 import {
-  createUser, verifyCredentials, userExists,
+  createUser, verifyCredentials, userExists, setPassword,
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
-  isEmailAllowed, deleteUser,
+  isEmailAllowed,
 } from './src/auth.js';
+import { installGoogleAppLogin } from './src/google-app-login.js';
+import { appGoogle } from './src/google-auth.js';
+import { installEmailPasswordAuth } from './src/email-password-auth.js';
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam, listMasterRecords } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
@@ -176,7 +179,8 @@ app.use(cookieParser());
 const PUBLIC_PATHS = new Set([
   '/login.html', '/signup.html', '/electron-login.html',
   '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/electron-login',
-  '/api/auth/reset',
+  '/api/auth/reset', '/api/auth/reset/confirm', '/api/auth/email/start',
+  '/api/auth/google/start', '/api/auth/google/complete',
   '/api/health',
   // help.html is a static onboarding manual with zero sensitive content —
   // safe to expose without auth so Electron's target="_blank" link works
@@ -197,55 +201,19 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/signup', async (req, res) => {
-  try {
-    const { email, password } = req.body || {};
-    const normalized = (email || '').trim().toLowerCase();
-    if (!normalized || !password) return res.status(400).json({ error: 'Email and password required' });
-    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    if (await userExists(normalized)) return res.status(409).json({ error: 'An account already exists for this email' });
+// Google sign-in (ported from Ortus Basics). The browser POSTs /start to get
+// a Google consent URL (opened in the system browser; Electron's
+// setWindowOpenHandler routes window.open there), then polls /complete until
+// the loopback callback has verified the identity through the Ortus gateway.
+installGoogleAppLogin(app, {connection:appGoogle, issueSession:issueSessionCookie, setOperator:setOperatorEmail});
 
-    let allowed;
-    try {
-      allowed = await isEmailAllowed(normalized);
-    } catch (err) {
-      return res.status(503).json({ error: `Could not verify email: ${err.message}` });
-    }
-    if (!allowed) return res.status(403).json({ error: 'This email isn\'t authorized — operators must use an @ortusclub.com or @ortus.solutions email.' });
-
-    await createUser(normalized, password);
-    await issueSessionCookie(res, normalized);
-    res.json({ ok: true, email: normalized });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// v2.57.x — Forgot-password reset. Wipes the user's password record so
-// they can re-sign-up with a new one. Campaigns, sheets, presets, and
-// notification prefs are NOT touched — they live in separate files keyed
-// by email and survive the wipe. Email must still pass isEmailAllowed,
-// so this can't be abused to wipe arbitrary accounts.
-app.post('/api/auth/reset', async (req, res) => {
-  try {
-    const { email } = req.body || {};
-    const normalized = (email || '').trim().toLowerCase();
-    if (!normalized.includes('@')) return res.status(400).json({ error: 'Enter a valid email' });
-
-    let allowed;
-    try {
-      allowed = await isEmailAllowed(normalized);
-    } catch (err) {
-      return res.status(503).json({ error: `Could not verify email: ${err.message}` });
-    }
-    if (!allowed) return res.status(403).json({ error: 'This email isn\'t authorized — operators must use an @ortusclub.com or @ortus.solutions email.' });
-
-    await deleteUser(normalized);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// Email-code signup and password reset (ported from Ortus Basics):
+//   POST /api/auth/email/start   {email, purpose:'signup'|'reset'} -> gateway emails a 6-digit code
+//   POST /api/auth/reset         legacy alias -> request a reset code (no longer deletes the account)
+//   POST /api/auth/signup        {email, code, password} -> verify code, create user, sign in
+//   POST /api/auth/reset/confirm {email, code, password} -> verify code, set password, sign in
+// The allow-list (isEmailAllowed) still gates both purposes; the gateway holds SMTP.
+installEmailPasswordAuth(app, {isAllowed:isEmailAllowed, userExists, createUser, setPassword, issueSession:issueSessionCookie, setOperator:setOperatorEmail});
 
 app.post('/api/auth/logout', (_req, res) => {
   clearSessionCookie(res);

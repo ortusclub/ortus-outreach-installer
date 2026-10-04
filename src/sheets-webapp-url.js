@@ -23,6 +23,14 @@
 //   https://docs.google.com/spreadsheets/d/1YL-sa8OnMs-VwNKcIe75TrUdzFTvYKeezxX-RUuAeBM
 export const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwwWhFXBLKke7HBJfwr-9e3Cv2Rv9oZh8BePxgCJSgKRGFm6Bu3e4hGLtOQeyjcLIPPnA/exec';
 
+// Ortus gateway (Cloud Run) — shared with Ortus Basics. The app uses only its
+// ORIGIN: GET /auth/config (public Google OAuth client id for the desktop PKCE
+// flow), GET /auth/me (verifies a Google id_token and its Workspace domain),
+// and POST /auth/email/{start,verify} (one-time email codes for signup and
+// password reset; the gateway holds the SMTP credentials). Nothing here needs
+// a per-operator .env value.
+export const SHEETS_GATEWAY_URL = 'https://ortus-sheets-gateway-329664205285.asia-southeast1.run.app/bridge';
+
 // State of Operations sheet — the team-wide dashboard of which LinkedIn
 // account is in use / cooling off / banned. Drives the SoO panel in the app
 // and the signup allowlist. One sheet for everyone.
