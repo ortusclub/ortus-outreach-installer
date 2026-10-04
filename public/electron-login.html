@@ -53,6 +53,13 @@
           <div class="auth-form-sub">Enter your Ortus email — that's it.</div>
         </header>
 
+        <div class="auth-google">
+          <button type="button" class="btn btn-start" id="app-google-signin">Sign in with Google</button>
+          <p>Use your company Google account to sign in to Ortus Outreach.</p>
+          <p id="app-google-status" role="status" aria-live="polite"></p>
+          <a id="app-google-browser" target="_blank" rel="noopener" hidden>Open Google sign-in</a>
+        </div>
+        <div class="auth-google-divider">Or sign in with your Ortus email</div>
         <div class="auth-form-rule"></div>
 
         <div class="auth-field">
@@ -115,5 +122,6 @@
       }
     });
   </script>
+  <script type="module" src="/js/google-app-login.js"></script>
 </body>
 </html>

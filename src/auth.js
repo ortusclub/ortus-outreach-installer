@@ -10,7 +10,7 @@
 
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, chmod } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { fetchSoOData } from './soo.js';
@@ -50,34 +50,56 @@ async function loadUsers() {
   }
 }
 
+// Atomic, owner-only write: tmp file (0600) + rename, so a crash mid-write
+// never leaves a truncated users.json and other local users can't read hashes.
 async function saveUsers(users) {
   await mkdir(dirname(USERS_PATH), { recursive: true });
-  await writeFile(USERS_PATH, JSON.stringify(users, null, 2), 'utf-8');
+  await writeFile(USERS_PATH + '.tmp', JSON.stringify(users, null, 2), {encoding:'utf-8',mode:0o600});
+  await chmod(USERS_PATH + '.tmp', 0o600);
+  await rename(USERS_PATH + '.tmp', USERS_PATH);
+}
+
+// All read-modify-write operations on users.json go through one promise chain
+// so two concurrent signups/resets can't clobber each other's record.
+let usersMutation = Promise.resolve();
+function mutateUsers(change) {
+  const operation = usersMutation.then(async () => {
+    const users = await loadUsers();
+    const result = await change(users);
+    await saveUsers(users);
+    return result;
+  });
+  usersMutation = operation.catch(() => {});
+  return operation;
 }
 
 export async function createUser(email, password) {
   const normalized = email.trim().toLowerCase();
-  const users = await loadUsers();
-  if (users[normalized]) throw new Error('Account already exists for this email');
-  const passwordHash = await bcrypt.hash(password, 10);
-  users[normalized] = { passwordHash, createdAt: new Date().toISOString() };
-  await saveUsers(users);
-  return normalized;
+  return mutateUsers(async users => {
+    if (users[normalized]) throw new Error('Account already exists for this email');
+    users[normalized] = {passwordHash:await bcrypt.hash(password,10),createdAt:new Date().toISOString()};
+    return normalized;
+  });
 }
 
-// v2.57.x — Wipe a user's password record so they can re-sign-up. Used by
-// the /api/auth/reset endpoint as the "forgot password" recovery path.
+// Internal account-removal helper. Password recovery never deletes an account
+// any more (see setPassword) — kept for admin/maintenance callers.
 // Returns true if the user existed and was removed, false otherwise.
-// Only touches the password store — campaigns, sheets, presets, history,
-// notification prefs are all keyed elsewhere and stay intact.
 export async function deleteUser(email) {
   const normalized = (email || '').trim().toLowerCase();
   if (!normalized) return false;
-  const users = await loadUsers();
-  if (!users[normalized]) return false;
-  delete users[normalized];
-  await saveUsers(users);
-  return true;
+  return mutateUsers(users => { const existed=!!users[normalized];delete users[normalized];return existed; });
+}
+
+// Only called after the one-time email code has been verified server-side.
+// Rotates sessionRevision so every cookie issued before the change is revoked.
+export async function setPassword(email,password) {
+  const normalized=email.trim().toLowerCase();
+  return mutateUsers(async users => {
+    const previous=users[normalized]||{createdAt:new Date().toISOString()};
+    users[normalized]={...previous,passwordHash:await bcrypt.hash(password,10),sessionRevision:crypto.randomBytes(16).toString('hex')};
+    return normalized;
+  });
 }
 
 export async function verifyCredentials(email, password) {
@@ -87,8 +109,10 @@ export async function verifyCredentials(email, password) {
   const users = await loadUsers();
   const user = users[normalized];
   if (user && user.passwordHash) {
+    // A stored hash is authoritative: a wrong password must not fall through
+    // to the legacy env-var passwords below (they would resurrect an old one).
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (ok) return normalized;
+    return ok ? normalized : null;
   }
 
   // Fallback: DASHBOARD_USERS env var (legacy plaintext). Lets existing logins
@@ -132,7 +156,7 @@ async function verifyToken(token) {
   if (!body || !sig) return null;
   const secret = await getSecret();
   const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
-  if (sig.length !== expected.length) return null;
+  if (!/^[a-f0-9]{64}$/.test(sig)) return null;
   if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) return null;
   let payload;
   try { payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf-8')); } catch { return null; }
@@ -142,7 +166,8 @@ async function verifyToken(token) {
 }
 
 export async function issueSessionCookie(res, email) {
-  const token = await signToken({ email, exp: Date.now() + COOKIE_MAX_AGE_MS });
+  const users = await loadUsers();
+  const token = await signToken({ email, revision: users[email]?.sessionRevision || '', exp: Date.now() + COOKIE_MAX_AGE_MS });
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -159,7 +184,11 @@ export function clearSessionCookie(res) {
 export async function readSessionFromRequest(req) {
   const token = req.cookies?.[COOKIE_NAME];
   const payload = await verifyToken(token);
-  return payload?.email || null;
+  if (!payload?.email) return null;
+  // A password change rotates sessionRevision; cookies minted before it die.
+  const users = await loadUsers();
+  if ((payload.revision || '') !== (users[payload.email]?.sessionRevision || '')) return null;
+  return payload.email;
 }
 
 // ── SoO allowlist ──────────────────────────────────────────────────

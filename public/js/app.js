@@ -19185,7 +19185,7 @@ async function initUserChip() {
   if (emailEl) {
     try {
       const res = await fetch('/api/me');
-      if (res.status === 401) { window.location.href = '/login.html'; return; }
+      if (res.status === 401) { window.location.href = loginPageHref(); return; }
       const data = await res.json();
       if (data.email) {
         emailEl.textContent = data.email;
@@ -19256,9 +19256,16 @@ setInterval(() => { try { updateGreeting(); } catch (_) {} }, 30_000);
 setInterval(() => { try { renderDashScrapeStrip(); } catch (_) {} }, 5000);
 try { renderDashScrapeStrip(); } catch (_) {}
 
+// Which login page to land on after sign-out / a 401. Inside the Electron
+// shell the server gate redirects to /electron-login.html, so go there
+// directly instead of bouncing through /login.html; web mode keeps /login.html.
+function loginPageHref() {
+  return /\bElectron\b/.test(navigator.userAgent) ? '/electron-login.html' : '/login.html';
+}
+
 async function signOut() {
   try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
-  window.location.href = '/login.html';
+  window.location.href = loginPageHref();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
