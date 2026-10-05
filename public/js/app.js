@@ -11592,7 +11592,7 @@ function _maturingListHtml(items) {
       + `<span class="mature-row-state">${escHtml(g.state.label)}</span>`
       + `<span class="mature-row-detail">${counts}</span>`
       + `<button type="button" class="mini solid" onclick="openCloudLive('${escHtml(main.id)}')">Open</button>`
-      + `<button type="button" class="mini danger" title="Delete" aria-label="Delete ${escHtml(g.name)}" onclick="deleteMaturingAccount('${escHtml(ids)}', '${escHtml(g.name)}', this)">${typeof V3_SVG_TRASH === 'string' ? V3_SVG_TRASH : 'Delete'}</button>`
+      + `<button type="button" class="mature-del" title="Delete" aria-label="Delete ${escHtml(g.name)}" onclick="deleteMaturingAccount('${escHtml(ids)}', '${escHtml(g.name)}', this)">${V3_SVG_TRASH}</button>`
       + `</div>`;
   }).join('');
 }
