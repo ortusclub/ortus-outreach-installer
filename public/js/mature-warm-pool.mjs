@@ -20,7 +20,7 @@ export function lvProfileIdentity(profile, lvAccounts) {
     if (rows.length === 1) row = rows[0];
   }
   if (!row) return null;
-  return { name: String(row.name || '').trim(), linkedinUrl: LINKEDIN_PROFILE.test(row.linkedinUrl || '') ? row.linkedinUrl : '', restricted: !!row.restricted };
+  return { name: String(row.name || '').trim(), linkedinUrl: LINKEDIN_PROFILE.test(row.linkedinUrl || '') ? row.linkedinUrl : '', restricted: !!row.restricted, loginEmail: String(row.loginEmail || '').trim().toLowerCase() };
 }
 
 // The SoO only lists Ortus accounts, so a Linked Velocity profile is looked up

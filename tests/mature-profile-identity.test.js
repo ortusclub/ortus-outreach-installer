@@ -14,3 +14,11 @@ test('a maturing campaign is named after the login email that names the profile'
   assert.equal(matureCampaignName({ id: 'p1', name: 'Spare profile 7' }), 'Spare profile 7');
   assert.equal(matureCampaignName(null), '');
 });
+test('the sign-in email wins over a personal address', () => {
+  // The recorded login email is used even when the profile is named otherwise.
+  assert.equal(matureCampaignName({ id: 'p1', name: 'jane.doe@gmail.com' }, 'Jane.Doe@klabber.co'), 'jane.doe@klabber.co');
+  // With no recorded login email, a company mailbox beats Gmail/Yahoo in the name.
+  assert.equal(matureCampaignName({ id: 'p1', name: 'jane@yahoo.com / jane.doe@lotuspost.fyi' }), 'jane.doe@lotuspost.fyi');
+  // A personal address is still better than nothing.
+  assert.equal(matureCampaignName({ id: 'p1', name: 'jane@gmail.com' }), 'jane@gmail.com');
+});

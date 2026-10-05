@@ -103,7 +103,7 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { fetchLvAccounts } from './src/mature-warm.js';
-import { buildWarmPool, matureWarmSchedule, matureColdSchedule, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
+import { buildWarmPool, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
 import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
 import { matureCampaignName } from './public/js/mature-profile-identity.mjs';
 import { dataPath } from './src/paths.js';
@@ -4019,7 +4019,10 @@ app.post('/api/mature/start', async (req, res) => {
 
     const sources = await matureWarmSources();
     // Always named after the login email of the profile being matured.
-    const name = matureCampaignName(sources.profiles.find((p) => p.id === profileId) || { name: plan.accounts?.[profileId]?.profileLabel || '' });
+    // That is the address used to sign in today: Linked Velocity records it per
+    // account; otherwise it is the email that names the GoLogin profile.
+    const warmed = sources.profiles.find((p) => p.id === profileId) || { id: profileId, name: plan.accounts?.[profileId]?.profileLabel || '' };
+    const name = matureCampaignName(warmed, lvProfileIdentity(warmed, sources.lvAccounts)?.loginEmail);
     if (!name) return res.status(400).json({ error: 'Could not work out the login email of the profile to mature.' });
     const result = { ok: true };
 

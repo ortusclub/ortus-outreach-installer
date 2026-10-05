@@ -47,12 +47,12 @@ function selectField(label, id, value, choices, update) {
 }
 // The campaign is named after the profile being matured and cannot be renamed:
 // choosing the profile fills the name box, which stays locked in this mode.
-function nameCampaignAfter(profile) {
+function nameCampaignAfter(profile, loginEmail = '') {
   const input = document.getElementById('campaign-name-input');
   if (!input) return;
   input.readOnly = true;
   input.title = 'A maturing campaign is named after the login email of the profile being matured.';
-  const name = profile ? matureCampaignName(profile) : '';
+  const name = profile ? matureCampaignName(profile, loginEmail) : '';
   if (!name || input.value === name) return;
   input.value = name;
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -147,6 +147,8 @@ function profileSection() {
       card.append(title, grid, identityStatus, remove); rows.append(card);
       fetchMatureIdentity(profile || {name:details.profileLabel}).then(({source,identity})=>{
         if (!card.isConnected || !plan.targetProfileIds.includes(id)) return;
+        // The recorded login email is the campaign's name when there is one.
+        if (identity?.loginEmail && profile) nameCampaignAfter(profile, identity.loginEmail);
         if (!identity) {identityStatus.textContent=`No unique ${source} match found. Enter the LinkedIn details above.`;return;}
         let filled=false;
         for (const [key,field] of [['name',nameField],['linkedinUrl',urlField]]) {
