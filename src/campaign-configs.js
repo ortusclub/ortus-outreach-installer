@@ -50,6 +50,23 @@ export function saveConfig(name, config, { campaignId = config?.campaignId, crea
   writeAll(store);
   return store.campaigns[id];
 }
+/**
+ * A saved record whose permanent ID belongs to a campaign already running
+ * under another name (a maturing plan re-pointed at a different account) is
+ * split: the record keeps its settings under a NEW ID, and the old ID goes
+ * back to the running campaign's name.
+ */
+export function detachCampaignIdentity(campaignId, ownerName) {
+  const store = readAll();
+  const entry = store.campaigns[campaignId];
+  if (!entry) return null;
+  const id = randomUUID();
+  store.campaigns[id] = { ...entry, campaignId: id, savedAt: new Date().toISOString(), config: { ...entry.config, campaignId: id } };
+  if (byName({ campaigns: Object.fromEntries(Object.entries(store.campaigns).filter(([key]) => key !== campaignId && key !== id)) }, ownerName)) delete store.campaigns[campaignId];
+  else store.campaigns[campaignId] = { ...entry, name: String(ownerName || '').trim() };
+  writeAll(store);
+  return store.campaigns[id];
+}
 /** Explicit Save replaces the named campaign while preserving its permanent ID. */
 export function saveNamedCampaign(name, config, campaignId = config?.campaignId) {
   const existing = getConfig(name);

@@ -9,7 +9,7 @@ import { cloudOptionError } from './public/js/cloud-option-compatibility.mjs';
 import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
 import { canViewCampaign, visibleCampaigns } from './src/campaign-visibility.js';
 import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
-import { ensureCampaignIdentity, getConfigById } from './src/campaign-configs.js';
+import { ensureCampaignIdentity, getConfigById, getConfig as getSavedCampaign, detachCampaignIdentity } from './src/campaign-configs.js';
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
 import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
@@ -4085,6 +4085,18 @@ app.post('/api/mature/start', async (req, res) => {
     const warmed = sources.profiles.find((p) => p.id === profileId) || { id: profileId, name: plan.accounts?.[profileId]?.profileLabel || '' };
     const name = matureCampaignName(warmed, lvProfileIdentity(warmed, sources.lvAccounts)?.loginEmail);
     if (!name) return res.status(400).json({ error: 'Could not work out the login email of the profile to mature.' });
+    // A maturing campaign's permanent ID belongs to its account. The page can
+    // still be holding the ID of the plan that was open before (pick another
+    // profile and the name changes but the ID does not), which made a
+    // never-started account look like the other account's running campaign.
+    let campaignId = getSavedCampaign(name)?.campaignId || null;
+    if (campaignId) {
+      const owner = live.campaigns.find((c) => c.config?.campaignId === campaignId && c.config?.matureWarm && String(c.name || '').replace(/ · Cold$/, '') !== name);
+      if (owner) {
+        campaignId = detachCampaignIdentity(campaignId, String(owner.name || '').replace(/ · Cold$/, ''))?.campaignId || null;
+        console.log(`[mature] ${name}: its saved plan carried ${owner.name}'s campaign ID — given its own`);
+      }
+    }
     const result = { ok: true };
     // Whose invitation the receiving accounts accept (the editor's "Name as it
     // appears on LinkedIn" and "LinkedIn URL" for the matured profile).
@@ -4164,7 +4176,7 @@ app.post('/api/mature/start', async (req, res) => {
       step(`Sending warm connections to the cloud — ${warmAmounts[0]} today…`);
       console.log(`[mature] ${name}: ${pool.targets.length} warm target(s) in ${sheetUrl}; schedule ${warmAmounts.join(',')}`);
       result.warm = await launchMatureStage(req, {
-        campaignId: b.campaignId, launchId: b.launchId, name,
+        campaignId, launchId: b.launchId, name,
         mode: 'connect_only', profileIds: [profileId],
         sheetUrl, sheetGid, linkedinColumn: 'LinkedIn URL',
         ...(tab ? { leadFilter: { column: 'Type', value: 'Warm' } } : {}),

@@ -19951,7 +19951,9 @@ function collectCurrentConfig() {
 
 function applyPresetConfig(config) {
   if (!config || typeof config !== 'object') return;
-  loadMaturePlan(config.maturePlan ? { ...config.maturePlan, targetProfileIds: config.maturePlan.targetProfileIds || config.profileIds || [] } : null); stopMatureInlineLive();
+  loadMaturePlan(config.maturePlan ? { ...config.maturePlan, targetProfileIds: config.maturePlan.targetProfileIds || config.profileIds || [] } : null);
+  // Reloading the SAME running plan's settings (the name sync does that just after it opens) keeps its live log.
+  if (!(_matureLiveFor && config.mode === 'mature_profile' && (document.getElementById('campaign-name-input')?.value || '').trim() === _matureLiveFor)) stopMatureInlineLive();
   const setV = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
   if (config.campaignId) {
     _openedCampaignId = config.campaignId;
@@ -36544,6 +36546,13 @@ async function showMatureLiveStatus(id) {
 // A maturing campaign opens as its Mature Profile plan, never as the
 // Connection campaign the cloud runs it with. Every "open a cloud campaign"
 // path checks this first.
+// The account's warm and cold campaigns that are on the board (newest of each).
+function _matureSiblingIds(id, name) {
+  const items = [..._boardItemsById.values()].filter((x) => x.maturing && x.where === 'cloud' && String(x.name || '').replace(/ · Cold$/, '') === name);
+  const group = groupMaturingAccounts(items)[0];
+  const ids = group ? [group.warm, group.cold].filter(Boolean).map((x) => x.id) : [];
+  return ids.includes(id) ? ids : [id, ...ids.filter((x) => x !== id)].slice(0, 2);
+}
 function _isMaturingCampaign(id) {
   return !!(_boardItemsById.get(id) || _snItemsById.get(id))?.maturing;
 }
@@ -36566,6 +36575,14 @@ async function openMaturePlan(id) {
       recovered = !!plan;
     }
     const profileIds = Array.isArray(c.profile_ids) ? c.profile_ids : [];
+    // A saved record can have been reused for another account since this plan
+    // started. Only a plan for THIS campaign's profile is this campaign's plan.
+    const forThisProfile = (p) => !!p && Array.isArray(p.targetProfileIds) && profileIds.some((pid) => p.targetProfileIds.includes(pid));
+    if (plan && !cfg.maturePlan && !forThisProfile(plan)) {
+      const byName = await fetch(`/api/campaign-configs/${encodeURIComponent(name)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      plan = forThisProfile(byName?.config?.maturePlan) ? byName.config.maturePlan : null;
+      recovered = !!plan;
+    }
     if (!plan) plan = { targetProfileIds: profileIds, ...(cfg.warmPool ? { warmPool: cfg.warmPool } : {}) };
     try { clearCloudEditMode(); } catch (_) { /* not in running-edit lock mode */ }
     try { clearActiveDraft(); } catch (_) { /* a started plan, not a draft */ }
@@ -36573,7 +36590,11 @@ async function openMaturePlan(id) {
     try { localStorage.setItem('campaignName', name); } catch (_) { /* private mode */ }
     const nameInput = document.getElementById('campaign-name-input');
     if (nameInput) nameInput.value = name;
-    applyPresetConfig({ mode: 'mature_profile', runTarget: 'cloud', profileIds, maturePlan: plan, ...(cfg.campaignId ? { campaignId: cfg.campaignId } : {}) });
+    // A started plan is shown from the campaign itself. It is not tied to a
+    // saved record (sheetUrl present = no refill from saved settings), so
+    // viewing it can never load or overwrite another account's saved plan.
+    _openedCampaignId = null; _openedCampaignName = name;
+    applyPresetConfig({ mode: 'mature_profile', runTarget: 'cloud', profileIds, maturePlan: plan, sheetUrl: c.sheet_url || 'started-plan' });
     try { sessionStorage.setItem('ortus-opened-campaign', JSON.stringify({ id, cloud: true })); } catch { /* */ }
     goCreateCampaign();
     lockCampaignType('mature_profile');
@@ -36581,8 +36602,14 @@ async function openMaturePlan(id) {
     await new Promise((resolve) => setTimeout(resolve, 200));
     const linkBtn = document.getElementById('mature-results-link');
     if (linkBtn && cfg.matureWarm && c.sheet_url) { linkBtn.dataset.url = c.sheet_url; linkBtn.hidden = false; }
-    try { await showMatureLiveStatus(id); }
-    catch (_) { startMatureInlineLive([id]); }
+    // The same maturing log as the Profile Maturing tab — not the Connection
+    // campaign card, whose wording and counters do not fit a maturing plan.
+    try { stopViewingCloudCampaign(); } catch (_) { /* */ }
+    try { sessionStorage.setItem('ortus-opened-campaign', JSON.stringify({ id, cloud: true })); } catch { /* */ }
+    liveStatusForcedOpen = false;
+    try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+    _matureLiveFor = name;
+    startMatureInlineLive(_matureSiblingIds(id, name));
     if (!recovered) showCampaignToast('This campaign’s plan settings were not kept when it was started, so the page shows the default plan. Live status below is the real campaign.', 9000);
   } catch (error) {
     showCampaignToast('Could not open this maturing campaign: ' + (error && error.message || error), 6000);
@@ -36590,8 +36617,11 @@ async function openMaturePlan(id) {
 }
 window.openMaturePlan = openMaturePlan;
 let _matureLiveTimer = null;
+// Name of the running plan whose live log is on the page ('' when none).
+var _matureLiveFor = '';
 // A different plan is being opened: the previous plan's live status goes away.
 function stopMatureInlineLive() {
+  _matureLiveFor = '';
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
   for (const id of ['mature-live', 'mature-start-status', 'mature-results-link']) { const el = document.getElementById(id); if (el) el.hidden = true; }
 }
@@ -36600,39 +36630,49 @@ function startMatureInlineLive(ids) {
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
   if (!host || !body || !ids.length) return;
   host.hidden = false;
-  body.innerHTML = '<div class="sn-logbox">Loading live status…</div>';
-  const today = () => new Date().toISOString().slice(0, 10);
+  body.innerHTML = '<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-logbox">Loading the maturing log…</div></div></div>';
+  // The engine's campaign, in the shape the Profile Maturing tab's helpers read.
   async function one(id) {
-    const [d, ar] = await Promise.all([
-      fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json()),
-      fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/accounts`).then((r) => r.json()).catch(() => null),
-    ]);
+    const d = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json());
     if (!d || d.error) throw new Error((d && d.error) || 'no reply');
-    const c = d.campaign || {}, lc = d.leadCounts || {}, pre = Number(lc._preActioned || 0);
-    const sent = Math.max(0, Number(lc.sent || 0) - pre);
-    const total = Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - pre;
-    const account = ar && Array.isArray(ar.accounts) ? ar.accounts[0] : null;
-    const plan = maturingStatus({ kind: c.config?.matureKind, schedule: c.config?.dailySchedule, timeZone: c.config?.tz || '', today: today(),
-      sentToday: account ? Number(account.dailyCount) || 0 : null, sent, total });
-    const log = (Array.isArray(d.monitorLog) ? d.monitorLog : []).map((e) => String((e && e.line) || '')).filter(Boolean).slice(-10);
-    const ended = ['done', 'cancelled', 'error'].includes(String(c.status || ''));
-    const kind = c.config?.matureKind === 'cold' ? 'Cold connections' : 'Warm connections';
-    return { ended, html:
-      `<div class="mature-stage"><h3>${escHtml(kind)} · ${escHtml(MATURE_LIVE_STATUS[c.status] || c.status || 'Starting')}</h3>`
-      + (plan ? `<div class="sn-progtxt sn-maturing-status">${escHtml(plan.text)}</div>` : '')
-      + `<div class="sn-logbox">${log.length ? log.map(escHtml).join('<br>') : 'The log appears here once a cloud worker picks the campaign up.'}</div>`
-      + `<button type="button" class="btn" onclick="openCloudLive('${escHtml(id)}')">Open full live status</button>`
-      + (c.config?.matureWarm && c.sheet_url ? ` <button type="button" class="btn" data-url="${escHtml(c.sheet_url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')">Open results tab ↗</button>` : '')
-      + `</div>` };
+    const c = d.campaign || {}, lc = d.leadCounts || {}, st = String(c.status || '');
+    const bucket = ['running', 'monitoring', 'paused', 'stopping', 'pausing', 'waiting_daily_reset', 'needs_review'].includes(st) ? 'running'
+      : ['pending', 'queued', 'scheduled'].includes(st) ? 'queued' : 'done';
+    return { id, name: c.name || '', matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '',
+      bucket, bad: st === 'cancelled' || st === 'error', dailyWait: st === 'waiting_daily_reset', paused: st === 'paused' || st === 'pausing', stopping: st === 'stopping',
+      needsReview: st === 'needs_review', live: !!d.live, scheduledAt: c.scheduled_start_at || null, resumeAt: c.resumeTaskDueAt || null,
+      acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null,
+      sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)), log: Array.isArray(d.monitorLog) ? d.monitorLog : [] };
   }
   async function tick() {
     // Gone from the page (another campaign opened, or back on the dashboard).
-    if (!host.isConnected || host.closest('#nav-mature-profile')?.style.display === 'none' || !location.hash.startsWith('#/new')) {
+    if (!host.isConnected || host.hidden || host.closest('#nav-mature-profile')?.style.display === 'none' || !location.hash.startsWith('#/new')) {
       clearInterval(_matureLiveTimer); _matureLiveTimer = null; return;
     }
-    const parts = await Promise.all(ids.map((id) => one(id).catch((e) => ({ ended: false, html: `<div class="sn-logbox">Could not read the campaign from the cloud just now (${escHtml(e.message)}). Trying again…</div>` }))));
-    body.innerHTML = parts.map((p) => p.html).join('');
-    if (parts.every((p) => p.ended)) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
+    const items = (await Promise.all(ids.map((id) => one(id).catch(() => null)))).filter(Boolean);
+    if (!items.length) { body.querySelector('.sn-logbox').textContent = 'Could not read the campaign from the cloud just now. Trying again…'; return; }
+    // Same look and wording as the combined log on the Profile Maturing tab.
+    const group = groupMaturingAccounts(items)[0];
+    const dot = { green: 'run', amber: 'amber', red: 'red', done: 'done', muted: 'q' }[group.state.tone] || 'q';
+    const next = items.map((x) => maturingNextAction(x)).filter(Boolean).join('  ·  ');
+    const lines = [...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log }))), ...maturingWaitLines(items)];
+    const logHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
+    const active = items.find((x) => x.live) || null;
+    const counts = [group.warmSent !== null ? `Warm ${group.warmSent}` : '', group.coldSent !== null ? `Cold ${group.coldSent}` : ''].filter(Boolean).join(' · ');
+    const old = body.querySelector('.sn-logbox');
+    const pinned = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 40;   // stay at the newest line unless the operator scrolled up
+    const top = old ? old.scrollTop : 0;
+    body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
+      + `<div class="sn-top"><span class="sn-type">Maturing log · ${escHtml(group.name)}</span>`
+      + `<span class="sn-status"><span class="dot ${dot}"></span> ${escHtml(group.state.label)}${counts ? ` · ${escHtml(counts)} sent` : ''}</span></div>`
+      + (next ? `<div class="mature-row-next" style="margin:6px 0 10px">${escHtml(next)}</div>` : '')
+      + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
+      + `<div class="sn-logbox">${logHtml}</div></div></div>`
+      + `<div class="sn-foot"><button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || items[0]).id)}','${escHtml(group.name)}')" title="${active ? 'Watch this account\'s browser live' : 'This account has no browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button></div>`
+      + `</div></div>`;
+    const box = body.querySelector('.sn-logbox');
+    if (box) box.scrollTop = pinned ? box.scrollHeight : top;
+    if (items.every((x) => x.bucket === 'done')) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
   }
   tick();
   _matureLiveTimer = setInterval(tick, 5000);
@@ -36684,6 +36724,8 @@ window.startMaturePlan = async function(btn) {
       if (draftId) await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
       clearActiveDraft();
     } catch { /* non-fatal */ }
+    // This page no longer edits a saved record: the plan is a running campaign now.
+    _openedCampaignId = null;
     showResultsLink(data.resultsUrl);
     if (_cloudLaunch) _cloudLaunch.leadsRead = Number(data.warm?.leadsAdded ?? data.cold?.leadsAdded) || 0;
     setCloudLaunchPhase('accepted');
@@ -36696,8 +36738,12 @@ window.startMaturePlan = async function(btn) {
     showCampaignToast(`Plan started — ${parts.join(' · ')}.${coldProblem}`, coldProblem ? 12000 : 7000);
     // Stay on the plan page: the card now follows the running campaign.
     const liveIds = [data.warm?.ok && data.warm.id, data.cold?.ok && data.cold.id].filter(Boolean);
-    try { await showMatureLiveStatus(liveIds[0]); }
-    catch (_) { startMatureInlineLive(liveIds); } // plain fallback if the card cannot be shown
+    // Hand over from the launch card to the plan's own maturing log.
+    try { stopViewingCloudCampaign(); } catch (_) { /* */ }
+    liveStatusForcedOpen = false;
+    try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+    _matureLiveFor = name;
+    startMatureInlineLive(liveIds);
   } catch (error) {
     launchLog(`✗ Not started — ${error.message}`);
     failCloudLaunch(`Could not start the plan: ${error.message}`);
