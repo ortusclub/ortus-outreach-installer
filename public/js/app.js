@@ -13356,7 +13356,30 @@ async function _renderCampaignsBoardInner() {
   board.classList.add('cb-nogrey');
   const { regular: regularCampaigns, maturing: maturingCampaigns } = splitMaturingCampaigns(shown);
   let html;
-  if (_viewerIsAdmin) {
+  syncDashTabs();
+  // The Campaigns tab shows everything except maturing; the Profile Maturing
+  // tab shows only maturing.
+  if (_dashTab === 'maturing') {
+    // One log across every maturing campaign, INSIDE the Profile Maturing section
+    // and styled like a campaign's own log. All maturing campaigns share one
+    // worker, so a single Show button follows whichever account is active.
+    const _maturingLive = maturingCampaigns.filter((x) => x.where === 'cloud' && x.maturing && x.bucket !== 'done');
+    let _maturingFooter = '';
+    if (_maturingLive.length) {
+      const active = _maturingLive.find((x) => x.live) || null;
+      const showBtn = `<button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || _maturingLive[0]).id)}','${escHtml(active ? active.name : 'Maturing')}')" title="${active ? `Watch ${escHtml(active.name)}'s browser live` : 'No maturing account has a browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button>`;
+      _maturingFooter = `<div class="sn-strip sn-maturing-log"><div class="sn-compact">`
+        + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
+        + `<span class="sn-status">${active ? `<span class="dot run"></span> ${escHtml(active.name)} is connecting` : '<span class="dot q"></span> No account is connecting right now'}</span></div>`
+        + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
+        + `<div class="sn-logbox" id="maturing-all-log">${_maturingLogHtml}</div></div></div>`
+        + `<div class="sn-foot">${showBtn}</div></div></div>`;
+      refreshMaturingLog(_maturingLive);
+    }
+    // The combined log comes first, then one plain line per account.
+    html = _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: true, emptyMsg: 'No profile maturing campaigns yet. Create one with New campaign → Mature Profile Campaign.', ..._matureDraftOpts,
+      topHtml: _maturingFooter, listHtml: _maturingListHtml });
+  } else if (_viewerIsAdmin) {
     const mineItems  = regularCampaigns.filter((x) => !x.isFG && x.mine);
     const adminItems = regularCampaigns.filter((x) => x.isFG); // Follower Growth (extensible)
     html = _renderBoardSection('mine', 'Your campaigns', mineItems, { alwaysShow: true, ..._draftOpts })
@@ -13364,25 +13387,6 @@ async function _renderCampaignsBoardInner() {
   } else {
     html = _renderBoardSection('mine', '', regularCampaigns, { flat: true, ..._draftOpts });
   }
-  // One log across every maturing campaign, INSIDE the Profile Maturing section
-  // and styled like a campaign's own log. All maturing campaigns share one
-  // worker, so a single Show button follows whichever account is active.
-  const _maturingLive = maturingCampaigns.filter((x) => x.where === 'cloud' && x.maturing && x.bucket !== 'done');
-  let _maturingFooter = '';
-  if (_maturingLive.length) {
-    const active = _maturingLive.find((x) => x.live) || null;
-    const showBtn = `<button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || _maturingLive[0]).id)}','${escHtml(active ? active.name : 'Maturing')}')" title="${active ? `Watch ${escHtml(active.name)}'s browser live` : 'No maturing account has a browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button>`;
-    _maturingFooter = `<div class="sn-strip sn-maturing-log"><div class="sn-compact">`
-      + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
-      + `<span class="sn-status">${active ? `<span class="dot run"></span> ${escHtml(active.name)} is connecting` : '<span class="dot q"></span> No account is connecting right now'}</span></div>`
-      + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
-      + `<div class="sn-logbox" id="maturing-all-log">${_maturingLogHtml}</div></div></div>`
-      + `<div class="sn-foot">${showBtn}</div></div></div>`;
-    refreshMaturingLog(_maturingLive);
-  }
-  html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.', ..._matureDraftOpts,
-    // Minimised until opened; the combined log comes first, then one plain row per campaign.
-    defaultCollapsed: true, topHtml: _maturingFooter, listHtml: _maturingListHtml });
   _snItemsById = new Map(items.map((x) => [x.id, x]));
   // Anti-jank: the 4s poll used to blow away the whole board every tick — killing
   // clicks/scroll/expanded panes mid-interaction. Skip the rebuild when the
@@ -22364,6 +22368,21 @@ async function updateWizardQueueState() {
 window.updateWizardQueueState = updateWizardQueueState;
 function goCreateCampaign() { window.location.hash = '#/new'; }
 function goDashboard()      { window.location.hash = '#/'; }
+// Profile Maturing is its own tab in the top bar. It shares the dashboard view
+// and the campaigns board; the tab only decides which half of the board shows.
+let _dashTab = 'campaigns';
+function syncDashTabs() {
+  document.getElementById('dash-tab-campaigns')?.classList.toggle('is-active', _dashTab === 'campaigns');
+  document.getElementById('dash-tab-maturing')?.classList.toggle('is-active', _dashTab === 'maturing');
+}
+function _showDashTab(tab) {
+  _dashTab = tab;
+  syncDashTabs();
+  if (window.location.hash !== '#/' && window.location.hash !== '') goDashboard();
+  try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
+}
+window.goCampaignsTab = () => _showDashTab('campaigns');
+window.goMaturing = () => _showDashTab('maturing');
 function goConnections()    { window.location.hash = '#/connections'; }
 function goReplies()        { window.location.hash = '#/replies'; }
 window.goReplies = goReplies;
