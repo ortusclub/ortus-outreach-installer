@@ -11669,6 +11669,8 @@ function renderUnifiedRunStrip(it) {
   let statusTxt = scheduled ? whenTxt
     : warming ? '⏳ Warming up (~2 min)'
     : queued ? 'Queued'
+    // A maturing campaign that has sent today's batch is resting, not limited.
+    : (it.maturing && it.dailyWait) ? 'Sleeping · next daily batch tomorrow'
     : monitoring ? 'Monitoring'
     : waiting ? 'Waiting'
     : needsReview ? 'Needs review'
@@ -36378,7 +36380,7 @@ const MATURE_LIVE_STATUS = {
   pending: 'Waiting for a cloud worker — workers sleep when idle and take about 2 minutes to wake',
   scheduled: 'Scheduled — the cloud starts it on its first plan day',
   running: 'Sending',
-  waiting_daily_reset: "Today's amount is done — sending continues tomorrow",
+  waiting_daily_reset: 'Sleeping — waiting until the next daily batch',
   paused: 'Paused', pausing: 'Pausing…', stopping: 'Stopping…',
   needs_review: 'Stopped — needs attention',
   monitoring: 'Sending finished — checking for acceptances',
