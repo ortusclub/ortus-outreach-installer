@@ -227,7 +227,7 @@ function updateSummary() {
   const el = document.getElementById('mature-plan-summary');
   if (!el) return;
   const errors = maturePlanErrors(plan);
-  el.textContent = errors.length ? `Draft plan · ${errors[0]}` : 'Plan configured · ready to start warm connections.';
+  el.textContent = errors.length ? `Draft plan · ${errors[0]}` : 'Plan configured · ready to start.';
 }
 export function readMaturePlan() { return hydrated ? structuredClone(plan) : null; }
 export function loadMaturePlan(value) { plan = restoreMaturePlan(value); hydrated = true; accountSignature = null; renderMaturePlan(); }

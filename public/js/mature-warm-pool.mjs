@@ -66,6 +66,30 @@ export function matureWarmDailyAmount(plan, day) {
 
 // The plan's warm amounts as one list, day 1 first. The engine reads this to
 // change the daily limit each day; an open-ended plan repeats its last amount.
+// Cold connections to send on a given day of the plan. Cold has no
+// until-exhausted rule: after its last stage it stops.
+export function matureColdDailyAmount(plan, day) {
+  if (!plan || plan.coldEnabled !== true || !Number.isInteger(day) || day < 1) return 0;
+  const stages = plan.connectionStages?.cold
+    || (plan.stages || []).map(s => ({ fromDay: s.fromDay, toDay: s.toDay, daily: s.coldDaily }));
+  const stage = stages.find(s => day >= Number(s.fromDay) && day <= Number(s.toDay));
+  const amount = Number(stage?.daily);
+  return Number.isInteger(amount) && amount > 0 ? amount : 0;
+}
+
+// Cold usually begins some days into the plan. Returns the days to wait before
+// its first send and the amounts from that day on, or null when the plan sends
+// no cold connections at all.
+export function matureColdSchedule(plan, maxDays = 365) {
+  const amounts = [];
+  for (let day = 1; day <= maxDays; day++) amounts.push(matureColdDailyAmount(plan, day));
+  const first = amounts.findIndex(n => n > 0);
+  if (first < 0) return null;
+  const rest = amounts.slice(first);
+  while (rest.length > 1 && rest.at(-1) === rest.at(-2)) rest.pop();
+  return { delayDays: first, amounts: rest };
+}
+
 export function matureWarmSchedule(plan, startDate, maxDays = 365) {
   // "Stop on a date" is the one rule that depends on when the plan starts.
   let lastDay = Infinity;

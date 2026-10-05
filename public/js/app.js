@@ -7090,7 +7090,7 @@ async function startCampaign(opts = {}) {
   // endpoint and no campaign templates. Delegate to startCheckDms() and
   // return — the rest of this function only applies to outreach campaigns.
   const _modeEarly = document.getElementById('campaign-mode').value;
-  if (_modeEarly === 'mature_profile') { showCampaignToast('Use "Start warm connections" in the Mature Profile section to start this plan.', 5000); return; }
+  if (_modeEarly === 'mature_profile') { showCampaignToast('Use "Start plan" in the Mature Profile section to start this plan.', 5000); return; }
   if (_modeEarly === 'check_dms') {
     return startCheckDms();
   }
@@ -9412,7 +9412,7 @@ async function _refreshCloudActiveStatus(id) {
         const camp = (d && d.campaign) || {}, lc = (d && d.leadCounts) || {};
         const pre = Number(lc._preActioned || 0);
         const html = camp.config?.matureWarm ? _maturingStatusHtml({
-          id, warmSchedule: camp.config.dailySchedule,
+          id, matureKind: camp.config.matureKind, warmSchedule: camp.config.dailySchedule,
           sent: Math.max(0, Number(lc.sent || 0) - pre),
           total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - pre,
         }) : '';
@@ -11580,7 +11580,7 @@ function renderUnifiedStrip(it) {
 function _maturingStatusHtml(it) {
   const accounts = _cloudAccountsById.get(it.id);
   const sentToday = Array.isArray(accounts) && accounts.length ? Number(accounts[0].dailyCount) || 0 : null;
-  const status = maturingStatus({ schedule: it.warmSchedule, today: new Date().toISOString().slice(0, 10), sentToday, sent: it.sent || 0, total: it.total || 0 });
+  const status = maturingStatus({ kind: it.matureKind, schedule: it.warmSchedule, today: new Date().toISOString().slice(0, 10), sentToday, sent: it.sent || 0, total: it.total || 0 });
   return status ? `<div class="sn-progtxt sn-maturing-status" role="status">Maturing · ${escHtml(status.text)}</div>` : '';
 }
 function renderUnifiedRunStrip(it) {
@@ -12438,7 +12438,7 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
     ? `<button type="button" class="sn-clear-cat" onclick="event.stopPropagation(); ${fn}">Delete all</button>` : '';
 
   const draftsRail = opts.draftsHtml
-    ? `<div class="sn-railhead">Drafts <span class="sn-railcount">${opts.draftsCount || ''}</span>${clearBtn('clearAllDrafts()', opts.draftsCount || 0)}</div>` + opts.draftsHtml
+    ? `<div class="sn-railhead">Drafts <span class="sn-railcount">${opts.draftsCount || ''}</span>${opts.draftsNoClear ? '' : clearBtn('clearAllDrafts()', opts.draftsCount || 0)}</div>` + opts.draftsHtml
     : '';
 
   // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
@@ -12906,7 +12906,7 @@ async function _renderCampaignsBoardInner() {
       const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing' || c.status === 'waiting_daily_reset' || c.status === 'needs_review') ? 'running'
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
-        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, maturing: !!c.config?.matureWarm, warmSchedule: c.config?.dailySchedule || null, isFG: c.mode === 'follower_growth',
+        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, maturing: !!c.config?.matureWarm, matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, isFG: c.mode === 'follower_growth',
         // When this campaign began. A LinkedIn account outlives the campaign
         // that used it, so a follow-up queued BEFORE this one started was never
         // its own — without this date the strip and the card both fall back to
@@ -13181,7 +13181,7 @@ async function _renderCampaignsBoardInner() {
     }
     for (const saved of unlistedSavedCampaigns(savedData.configs || [], items, draftData.drafts || [])) {
       items.push({ id: 'saved-' + (saved.campaignId || encodeURIComponent(saved.name)), campaignId: saved.campaignId, name: saved.name,
-        where: 'local', mine: true, bucket: 'saved', hasRun: false });
+        mode: saved.mode || '', where: 'local', mine: true, bucket: 'saved', hasRun: false });
     }
   } catch (err) { console.warn('[board] saved campaigns:', err.message); }
 
@@ -13240,12 +13240,19 @@ async function _renderCampaignsBoardInner() {
       _draftRows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch { /* drafts rail is best-effort — board renders without it */ }
   }
-  let _draftsHtml = '';
-  for (const d of _draftRows) {
-    try { _draftsHtml += renderDraftStrip(d); }
-    catch (e) { try { console.error('[board] draft strip render failed for', d && d.id, e); } catch { /* */ } }
-  }
-  const _draftOpts = _draftsHtml ? { draftsHtml: _draftsHtml, draftsCount: _draftRows.length } : {};
+  // Mature Profile drafts belong to the Profile Maturing section only.
+  const _isMatureDraft = (d) => d?.config?.mode === 'mature_profile';
+  const _draftRail = (rows) => {
+    let html = '';
+    for (const d of rows) {
+      try { html += renderDraftStrip(d); }
+      catch (e) { try { console.error('[board] draft strip render failed for', d && d.id, e); } catch { /* */ } }
+    }
+    return html ? { draftsHtml: html, draftsCount: rows.length } : {};
+  };
+  const _draftOpts = _draftRail(_draftRows.filter((d) => !_isMatureDraft(d)));
+  // No "Delete all" on this rail: that button clears every draft on the board.
+  const _matureDraftOpts = { ..._draftRail(_draftRows.filter(_isMatureDraft)), draftsNoClear: true };
 
   // Scheduled runs (this Mac's node-cron schedules). Like drafts, they are not
   // board items, so they arrive pre-rendered; soonest first.
@@ -13279,7 +13286,7 @@ async function _renderCampaignsBoardInner() {
   } else {
     html = _renderBoardSection('mine', '', regularCampaigns, { flat: true, ..._draftOpts });
   }
-  html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.' });
+  html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.', ..._matureDraftOpts });
   _snItemsById = new Map(items.map((x) => [x.id, x]));
   // Anti-jank: the 4s poll used to blow away the whole board every tick — killing
   // clicks/scroll/expanded panes mid-interaction. Skip the rebuild when the
@@ -36359,12 +36366,12 @@ window.saveMatureProfilePlan = async function(btn) {
   } catch (error) { showCampaignToast(error.message, 5000); }
   finally { btn.disabled = false; }
 };
-// Start the warm-connection stage of a Mature Profile plan. The server builds
-// the pool's lead sheet and launches a cloud Connection campaign from the
-// profile being warmed; the board then shows it under Profile Maturing.
-window.startMatureWarm = async function(btn) {
+// Start a Mature Profile plan. The server launches a cloud Connection campaign
+// from the profile being warmed for each switched-on activity (warm, cold), and
+// the Live Status view opens on it straight away.
+window.startMaturePlan = async function(btn) {
   const name = document.getElementById('campaign-name-input')?.value.trim();
-  if (!name) { showCampaignToast('Give this campaign a name before starting it.'); return; }
+  if (!name) { requireCampaignNameToSave(); return; }
   const maturePlan = readMaturePlan();
   if (!maturePlan) return;
   const label = btn.textContent;
@@ -36376,14 +36383,26 @@ window.startMatureWarm = async function(btn) {
     const res = await fetch('/api/mature/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, campaignId: _openedCampaignId, launchId, maturePlan }),
-      signal: AbortSignal.timeout(4 * 60 * 1000),
+      signal: AbortSignal.timeout(6 * 60 * 1000),
     });
     const txt = await res.text();
     let data; try { data = JSON.parse(txt); } catch { data = { error: txt }; }
     if (res.status === 409 && txt.includes('OPERATOR_EMAIL_REQUIRED')) { openOperatorEmailModal({ mandatory: true }); return; }
     if (!res.ok || data.error) throw new Error(String(data.error || txt).split('\n')[0]);
-    showCampaignToast(`Warm connections started — ${data.leadsAdded ?? 'the'} pool account(s) queued.`, 7000);
-    goDashboard();
+    // Draft consumed on launch, same as every other campaign.
+    try {
+      const draftId = getActiveDraftId();
+      if (draftId) await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
+      clearActiveDraft();
+    } catch { /* non-fatal */ }
+    const parts = [
+      data.warm?.ok ? `warm connections started (${data.warm.leadsAdded ?? 0} pool accounts)` : '',
+      data.cold?.ok ? (data.cold.scheduled ? 'cold connections scheduled for their first plan day' : `cold connections started (${data.cold.leadsAdded ?? 0} leads)`) : '',
+    ].filter(Boolean);
+    const coldProblem = data.cold && !data.cold.ok ? ` Cold connections did not start: ${data.cold.error}` : '';
+    showCampaignToast(`Plan started — ${parts.join(' · ')}.${coldProblem}`, coldProblem ? 12000 : 7000);
+    // Straight to Live Status for the campaign that is sending now.
+    if (data.id) await openCloudLive(data.id); else goDashboard();
   } catch (error) { showCampaignToast(`✗ ${error.message}`, 8000); }
   finally { btn.disabled = false; btn.textContent = label; }
 };

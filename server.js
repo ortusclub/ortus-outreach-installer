@@ -103,7 +103,7 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { fetchLvAccounts } from './src/mature-warm.js';
-import { buildWarmPool, matureWarmSchedule, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
+import { buildWarmPool, matureWarmSchedule, matureColdSchedule, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
 import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
 import { dataPath } from './src/paths.js';
 import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
@@ -1562,6 +1562,11 @@ async function handleStartCloudOnce(req, res) {
       // every column header exactly like a local campaign ({company}, {Event}, …).
       leads.push({ leadUrl, fullName, memberUrn: row['LinkedIn URN'] || row['Member ID'] || null, routeAccount, row });
     }
+    // Randomised order (Mature Profile cold connections): Fisher–Yates.
+    if (body.shuffleLeads) {
+      for (let i = leads.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [leads[i], leads[j]] = [leads[j], leads[i]]; }
+    }
+
     // Edit-redispatch: drop leads the ORIGINAL run already processed, so a
     // "Save edits & resume" only redispatches what was still pending when the
     // operator paused. Normal launches never set excludeLeadUrls.
@@ -1692,10 +1697,11 @@ async function handleStartCloudOnce(req, res) {
       // k8s secret, not in a campaign document.
       // A warm stage runs on the warmed profile's own workspace, which need not
       // be the operator's (an Ortus operator can mature a Linked Velocity profile).
-      glAccount: (body.matureWarm && accountOfProfile(profileIds?.[0])) || viewerAccount(req),
-      // Mature Profile warm stage: the per-day amounts the engine applies as
-      // the daily limit, and the flag the board files the campaign under.
-      ...(body.matureWarm ? { matureWarm: true, warmPool: body.matureWarm.pool, dailySchedule: body.matureWarm.dailySchedule } : {}),
+      glAccount: (body.mature && accountOfProfile(profileIds?.[0])) || viewerAccount(req),
+      // Mature Profile stage: the per-day amounts the engine applies as the
+      // daily limit, and the flag the board files the campaign under.
+      // dailyCounterScope makes warm and cold count their sends separately.
+      ...(body.mature ? { matureWarm: true, matureKind: body.mature.kind, warmPool: body.mature.pool || '', dailySchedule: body.mature.dailySchedule, dailyCounterScope: body.mature.kind } : {}),
     };
     // Operator timezone → engine → GAS stamps "Date/Time of Last Action" in the
     // operator's local clock (parity with local runs, where sheets-writer attaches
@@ -3961,10 +3967,28 @@ app.get('/api/mature/warm-pool', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Start the warm-connection stage: write the pool to a new lead sheet, then
-// launch an ordinary cloud Connection campaign from the account being warmed.
-// The plan's per-day amounts ride along so the engine changes the daily limit
-// each day; until the engine supports that it keeps the day-1 amount.
+// Run the cloud launch pipeline for one stage of a plan and hand back what it
+// would have sent to the client, so a plan can launch more than one campaign.
+async function launchMatureStage(req, body) {
+  const out = { status: 200, body: null };
+  const res = {
+    headersSent: false,
+    status(code) { out.status = code; return res; },
+    json(payload) { out.body = payload; res.headersSent = true; return res; },
+  };
+  await handleStartCloud(Object.create(req, { body: { value: body, writable: true, enumerable: true } }), res);
+  const failed = out.status >= 400 || !out.body || out.body.error;
+  return { ok: !failed, error: failed ? String(out.body?.error || `HTTP ${out.status}`) : '', ...(out.body || {}) };
+}
+
+// Start a Mature Profile plan. Each switched-on activity becomes an ordinary
+// cloud Connection campaign from the profile being warmed:
+//   • warm — the pool is written to a new lead sheet and sent from day 1
+//   • cold — the operator's own sheet, starting on the plan's first cold day
+// The plan's per-day amounts ride along (config.dailySchedule) and each activity
+// counts its own sends (config.dailyCounterScope), so the engine sends warm and
+// cold at their own planned rates. An engine without that support keeps each
+// campaign at its first amount.
 app.post('/api/mature/start', async (req, res) => {
   try {
     const b = req.body || {};
@@ -3973,36 +3997,63 @@ app.post('/api/mature/start', async (req, res) => {
     if (errors.length) return res.status(400).json({ error: errors[0] });
     const profileId = plan.targetProfileIds[0];
     if (!profileId) return res.status(400).json({ error: 'Choose the profile to warm.' });
-    if (plan.warmEnabled === false) return res.status(400).json({ error: 'Warm connections are switched off in this plan. Switch them on to start.' });
     const name = String(b.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Give this campaign a name.' });
 
-    const startDate = new Date().toISOString().slice(0, 10); // the engine counts days in UTC
-    const amounts = matureWarmSchedule(plan, startDate);
-    if (!(amounts[0] > 0)) return res.status(400).json({ error: 'The plan sends no warm connections on day 1. Set a starting daily amount.' });
+    const now = new Date();
+    const startDate = now.toISOString().slice(0, 10); // the engine counts days in UTC
+    const warmAmounts = plan.warmEnabled !== false ? matureWarmSchedule(plan, startDate) : [0];
+    const warmOn = warmAmounts[0] > 0;
+    const cold = matureColdSchedule(plan);
+    if (plan.warmEnabled !== false && !warmOn) return res.status(400).json({ error: 'The plan sends no warm connections on day 1. Set a starting daily amount, or switch warm connections off.' });
+    if (!warmOn && !cold) return res.status(400).json({ error: 'This plan sends nothing. Set a daily amount for warm or cold connections.' });
 
     const sources = await matureWarmSources();
-    const pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
-    if (!pool.targets.length) {
-      return res.status(400).json({ error: sources.lvError && WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity'
-        ? sources.lvError : 'No accounts in this pool have a known LinkedIn URL.' });
+    const result = { ok: true };
+
+    if (warmOn) {
+      const pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
+      if (!pool.targets.length) {
+        return res.status(400).json({ error: sources.lvError && WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity'
+          ? sources.lvError : 'No accounts in the warm pool have a known LinkedIn URL.' });
+      }
+      const sheet = await createWorkbookTab({
+        name: `Warm connections — ${name} — ${startDate}`,
+        header: ['Full Name', 'LinkedIn URL', 'Pool Account'],
+        rows: pool.targets.map((t) => [t.name, t.linkedinUrl, t.profile]),
+      });
+      console.log(`[mature] ${name}: ${pool.targets.length} warm target(s) written to ${sheet.url}; schedule ${warmAmounts.join(',')}`);
+      result.warm = await launchMatureStage(req, {
+        campaignId: b.campaignId, launchId: b.launchId, name,
+        mode: 'connect_only', profileIds: [profileId],
+        sheetUrl: sheet.url, sheetGid: sheet.gid, linkedinColumn: 'LinkedIn URL',
+        dailyLimit: warmAmounts[0], templates: {},
+        mature: { kind: 'warm', pool: plan.warmPool, dailySchedule: { startDate, amounts: warmAmounts } },
+      });
+      if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
     }
 
-    const sheet = await createWorkbookTab({
-      name: `Warm connections — ${name} — ${startDate}`,
-      header: ['Full Name', 'LinkedIn URL', 'Pool Account'],
-      rows: pool.targets.map((t) => [t.name, t.linkedinUrl, t.profile]),
-    });
-    console.log(`[mature] ${name}: ${pool.targets.length} warm target(s) written to ${sheet.url}; schedule ${amounts.join(',')}`);
+    if (cold) {
+      // Cold begins on its first planned day; the engine holds it until then.
+      const startAt = cold.delayDays > 0 ? new Date(now.getTime() + cold.delayDays * 86400000) : null;
+      // Managed profiles belong to the warm pools, never to the cold list.
+      const managed = ['ortus_owned', 'linkedvelocity_owned']
+        .flatMap((p) => buildWarmPool({ pool: p, ...sources }).targets.map((t) => t.linkedinUrl));
+      console.log(`[mature] ${name}: cold from day ${cold.delayDays + 1}; schedule ${cold.amounts.join(',')}`);
+      result.cold = await launchMatureStage(req, {
+        name: `${name} · Cold`,
+        mode: 'connect_only', profileIds: [profileId],
+        sheetUrl: plan.coldPool, dailyLimit: cold.amounts[0], templates: {},
+        shuffleLeads: plan.coldPoolOrder !== 'descending',
+        _preflightExcludedUrls: managed,
+        ...(startAt ? { startAt: startAt.toISOString() } : {}),
+        mature: { kind: 'cold', dailySchedule: { startDate: (startAt || now).toISOString().slice(0, 10), amounts: cold.amounts } },
+      });
+      // Warm is already running, so a cold failure is reported, not fatal.
+      if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });
+    }
 
-    req.body = {
-      campaignId: b.campaignId, launchId: b.launchId, name,
-      mode: 'connect_only', profileIds: [profileId],
-      sheetUrl: sheet.url, sheetGid: sheet.gid, linkedinColumn: 'LinkedIn URL',
-      dailyLimit: amounts[0], templates: {},
-      matureWarm: { pool: plan.warmPool, dailySchedule: { startDate, amounts } },
-    };
-    return await handleStartCloud(req, res);
+    res.json({ ...result, id: result.warm?.id || result.cold?.id || null });
   } catch (err) {
     console.error(`[mature] start failed: ${err.message}`);
     if (!res.headersSent) res.status(500).json({ error: err.message });

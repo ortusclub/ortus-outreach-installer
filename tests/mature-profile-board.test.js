@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { splitMaturingCampaigns } from '../public/js/mature-profile-board.mjs';
-test('maturing runs are separate without duplicating or moving drafts',()=>{
+test('everything maturing — runs, drafts and saved plans — sits in its own section, once',()=>{
   const items=[{id:'regular',mode:'connect_only',bucket:'running'},{id:'mature',mode:'mature_profile',bucket:'running'},{id:'draft',mode:'mature_profile',bucket:'draft'},{id:'saved',mode:'mature_profile',bucket:'saved'},{id:'paused',mode:'mature_profile',bucket:'running',paused:true}];
   const {regular,maturing}=splitMaturingCampaigns(items);
-  assert.deepEqual(regular.map(x=>x.id),['regular','draft','saved']);assert.deepEqual(maturing.map(x=>x.id),['mature','paused']);
+  assert.deepEqual(regular.map(x=>x.id),['regular']);assert.deepEqual(maturing.map(x=>x.id),['mature','draft','saved','paused']);
   assert.equal(new Set([...regular,...maturing].map(x=>x.id)).size,items.length);
 });
 
@@ -30,4 +30,9 @@ test('an exhausted pool wins over the plan', () => {
 });
 test('a campaign without a schedule has no maturing status', () => {
   assert.equal(maturingStatus({ schedule: null, today: '2026-10-06' }), null);
+});
+
+test('a cold stage is described as cold connections to leads', () => {
+  const s = maturingStatus({ kind: 'cold', schedule: { startDate: '2026-10-12', amounts: [5, 5, 0] }, today: '2026-10-12', sentToday: 1, sent: 1, total: 300 });
+  assert.equal(s.text, 'Day 1 of 2 · 1 of 5 cold connections sent today · same amount tomorrow · 1 of 300 leads invited');
 });

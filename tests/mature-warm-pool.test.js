@@ -64,3 +64,15 @@ test('manual warm stages give each day its stage amount', () => {
   const plan = { connectionStages: { warm: [{ fromDay: 1, toDay: 2, daily: 4 }, { fromDay: 3, toDay: 4, daily: 9 }] } };
   assert.deepEqual(matureWarmSchedule(plan, '2026-10-05'), [4, 4, 9, 9, 0]);
 });
+
+import { matureColdSchedule } from '../public/js/mature-warm-pool.mjs';
+test('cold waits for its first planned day, then follows its stages and stops', () => {
+  const plan = { coldEnabled: true, connectionStages: { cold: [{ fromDay: 8, toDay: 9, daily: 4 }, { fromDay: 10, toDay: 11, daily: 7 }] } };
+  assert.deepEqual(matureColdSchedule(plan), { delayDays: 7, amounts: [4, 4, 7, 7, 0] });
+});
+test('cold sends nothing when switched off or when every amount is 0', () => {
+  const stages = { cold: [{ fromDay: 1, toDay: 5, daily: 6 }] };
+  assert.equal(matureColdSchedule({ coldEnabled: false, connectionStages: stages }), null);
+  assert.equal(matureColdSchedule({ coldEnabled: true, connectionStages: { cold: [{ fromDay: 1, toDay: 5, daily: 0 }] } }), null);
+  assert.deepEqual(matureColdSchedule({ coldEnabled: true, connectionStages: stages }), { delayDays: 0, amounts: [6, 6, 6, 6, 6, 0] });
+});
