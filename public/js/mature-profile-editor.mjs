@@ -1,4 +1,5 @@
-import { matureProfileIdentity } from './mature-profile-identity.mjs';
+import { warmProfileIdentity, WARM_POOL_ACCOUNT } from './mature-warm-pool.mjs';
+import { matureCampaignName } from './mature-profile-identity.mjs';
 import { WARM_PRESETS, warmPreset, warmRampErrors, warmSchedule } from './mature-warm-ramp.mjs';
 import { newMaturePlan, restoreMaturePlan, maturePlanErrors, updateMatureStageEnd, MATURE_WARM_POOLS } from './mature-profile-plan.mjs';
 let plan = newMaturePlan();
@@ -22,6 +23,19 @@ function connectionSection(title, id) {
   const body = document.createElement('div'); body.className = 'mature-connection-body';
   section.append(summary, body); return {section, body};
 }
+// On/off switch at the top of an activity section. Off hides the settings and
+// the plan sends nothing for that activity.
+function activityToggle(section, key, label) {
+  const row = document.createElement('label'); row.className = 'mature-source-help mature-activity-toggle';
+  const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.id = `mature-${key}`;
+  const settings = document.createElement('div');
+  const sync = () => { const on = key === 'warmEnabled' ? plan[key] !== false : plan[key] === true; checkbox.checked = on; settings.hidden = !on; };
+  checkbox.onchange = () => { plan[key] = checkbox.checked; sync(); changed(); updateSummary(); };
+  row.append(checkbox, document.createTextNode(` ${label}`));
+  section.body.append(row, settings); sync();
+  // Everything appended to the section from here on belongs to the switch.
+  section.body = settings;
+}
 function selectField(label, id, value, choices, update) {
   const wrap = document.createElement('label'); wrap.className = 'mature-field';
   const text = document.createElement('span'); text.textContent = label;
@@ -31,14 +45,33 @@ function selectField(label, id, value, choices, update) {
   control.addEventListener('change', () => { update(control.value); changed(); updateSummary(); });
   wrap.append(text, control); return wrap;
 }
+// The campaign is named after the profile being matured and cannot be renamed:
+// choosing the profile fills the name box, which stays locked in this mode.
+function nameCampaignAfter(profile, loginEmail = '') {
+  const input = document.getElementById('campaign-name-input');
+  if (!input) return;
+  input.readOnly = true;
+  input.title = 'A maturing campaign is named after the login email of the profile being matured.';
+  const name = profile ? matureCampaignName(profile, loginEmail) : '';
+  if (!name || input.value === name) return;
+  input.value = name;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
 let accessibleProfiles = null;
 let profilesRequest = null;
-let identityRequest = null;
-function fetchMatureIdentities() {
-  if (!identityRequest) identityRequest = fetch('/api/soo-status', {signal:AbortSignal.timeout(30000)})
-    .then(async response=>{const data=await response.json();if(!response.ok || !Array.isArray(data.accounts)) throw new Error('SoO unavailable');return data.accounts;})
-    .catch(error=>{identityRequest=null;throw error;});
-  return identityRequest;
+const identityRequests = {};
+function fetchAccountList(url) {
+  if (!identityRequests[url]) identityRequests[url] = fetch(url, {signal:AbortSignal.timeout(30000)})
+    .then(async response=>{const data=await response.json();if(!response.ok || !Array.isArray(data.accounts)) throw new Error('unavailable');return data.accounts;})
+    .catch(error=>{delete identityRequests[url];throw error;});
+  return identityRequests[url];
+}
+// Ortus profiles are named from the SoO; Linked Velocity profiles from the
+// Linked Velocity account list. Only the list that profile needs is fetched.
+function fetchMatureIdentity(profile) {
+  const lv = profile.account === WARM_POOL_ACCOUNT.linkedvelocity_owned;
+  return fetchAccountList(lv ? '/api/mature/lv-identities' : '/api/soo-status')
+    .then(accounts=>({source: lv ? 'Linked Velocity' : 'SoO', identity: warmProfileIdentity(profile, lv ? {lvAccounts:accounts} : {sooAccounts:accounts})}));
 }
 async function fetchMatureProfiles() {
   if (accessibleProfiles) return accessibleProfiles;
@@ -73,6 +106,7 @@ function profileSection() {
     if (selected) {
       plan.targetProfileIds = [profile.id];
       plan.accounts[profile.id] = { ...plan.accounts[profile.id], profileLabel: profile.name || profile.id };
+      nameCampaignAfter(profile);
     } else plan.targetProfileIds = plan.targetProfileIds.filter(id => id !== profile.id);
   }
   function populate() {
@@ -109,20 +143,21 @@ function profileSection() {
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn'; remove.textContent = 'Remove profile';
       remove.onclick = () => { plan.targetProfileIds = plan.targetProfileIds.filter(p => p !== id); changed(); populate(); renderRows(); };
       const identityStatus=document.createElement('p');identityStatus.className='mature-source-help';
-      identityStatus.textContent='Checking the SoO LinkedIn account details…';
+      identityStatus.textContent='Checking the LinkedIn account details…';
       card.append(title, grid, identityStatus, remove); rows.append(card);
-      fetchMatureIdentities().then(accounts=>{
+      fetchMatureIdentity(profile || {name:details.profileLabel}).then(({source,identity})=>{
         if (!card.isConnected || !plan.targetProfileIds.includes(id)) return;
-        const identity=matureProfileIdentity(profile || {name:details.profileLabel}, accounts);
-        if (!identity) {identityStatus.textContent='No unique SoO match found. Enter the LinkedIn details below.';return;}
+        // The recorded login email is the campaign's name when there is one.
+        if (identity?.loginEmail && profile) nameCampaignAfter(profile, identity.loginEmail);
+        if (!identity) {identityStatus.textContent=`No unique ${source} match found. Enter the LinkedIn details above.`;return;}
         let filled=false;
         for (const [key,field] of [['name',nameField],['linkedinUrl',urlField]]) {
           const control=field.querySelector('input');
           if (!details[key] && !control.value.trim() && identity[key]) {details[key]=identity[key];control.value=identity[key];filled=true;}
         }
-        identityStatus.textContent=filled ? 'Prefilled from SoO. You can edit these details.' : 'SoO checked. Your existing details have been kept.';
+        identityStatus.textContent=filled ? `Prefilled from ${source}. You can edit these details.` : `${source} checked. Your existing details have been kept.`;
         if(filled){changed();updateSummary();}
-      }).catch(()=>{if(card.isConnected)identityStatus.textContent='SoO is unavailable right now. You can enter the details manually.';});
+      }).catch(()=>{if(card.isConnected)identityStatus.textContent='The account list is unavailable right now. You can enter the details manually.';});
     }
   }
   body.append(help, search, status, browser, rows);
@@ -131,6 +166,8 @@ function profileSection() {
     try {
       profiles = await fetchMatureProfiles(); if (!section.isConnected) return;
       populate(); renderRows();
+      // A plan opened with its profile already chosen takes that profile's name.
+      nameCampaignAfter(profiles.find(p => p.id === plan.targetProfileIds[0]) || null);
     } catch (error) {
       if (!section.isConnected) return;
       status.textContent = error.message;
@@ -208,7 +245,7 @@ function updateSummary() {
   const el = document.getElementById('mature-plan-summary');
   if (!el) return;
   const errors = maturePlanErrors(plan);
-  el.textContent = errors.length ? `Draft plan · ${errors[0]}` : 'Plan configured · automatic execution is not enabled yet.';
+  el.textContent = errors.length ? `Draft plan · ${errors[0]}` : 'Plan configured · ready to start.';
 }
 export function readMaturePlan() { return hydrated ? structuredClone(plan) : null; }
 export function loadMaturePlan(value) { plan = restoreMaturePlan(value); hydrated = true; accountSignature = null; renderMaturePlan(); }
@@ -222,6 +259,8 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   const cold = connectionSection('Cold Connections', 'mature-cold-section');
   const posts = connectionSection('Post Engagement — Coming soon', 'mature-post-section');
   sources.append(profileSection(), warmPresetSection(), warm.section, cold.section, posts.section);
+  activityToggle(warm, 'warmEnabled', 'Send warm connections');
+  activityToggle(cold, 'coldEnabled', 'Send cold connections');
   const warmLabel = document.createElement('label'); warmLabel.className = 'mature-field';
   const warmText = document.createElement('span'); warmText.textContent = 'Warm pool';
   const warmSelect = document.createElement('select'); warmSelect.id = 'mature-warm-pool';
@@ -231,10 +270,25 @@ export function renderMaturePlan({onChange, accounts} = {}) {
     const option = document.createElement('option'); option.value = value; option.textContent = label; warmSelect.append(option);
   }
   warmSelect.value = Object.hasOwn(MATURE_WARM_POOLS, plan.warmPool) ? plan.warmPool : '';
-  warmSelect.addEventListener('change', () => { plan.warmPool = warmSelect.value; changed(); updateSummary(); });
-  warmLabel.append(warmText, warmSelect); warm.body.append(warmLabel);
+  const poolStatus = document.createElement('p'); poolStatus.className = 'mature-source-help'; poolStatus.id = 'mature-warm-pool-status'; poolStatus.setAttribute('role','status');
+  // How many accounts in the pool can actually be invited (have a LinkedIn URL).
+  async function showPoolSize() {
+    const pool = plan.warmPool;
+    if (!Object.hasOwn(MATURE_WARM_POOLS, pool)) { poolStatus.textContent = ''; return; }
+    poolStatus.textContent = 'Counting the accounts in this pool…';
+    try {
+      const response = await fetch(`/api/mature/warm-pool?pool=${encodeURIComponent(pool)}&exclude=${encodeURIComponent(plan.targetProfileIds.join(','))}`, {signal:AbortSignal.timeout(45000)});
+      const data = await response.json();
+      if (plan.warmPool !== pool || !poolStatus.isConnected) return;
+      if (!response.ok || data.error) { poolStatus.textContent = data.error || 'Could not count this pool.'; return; }
+      const left = [data.missing ? `${data.missing} have no known LinkedIn URL` : '', data.restricted ? `${data.restricted} are restricted` : ''].filter(Boolean).join(' and ');
+      poolStatus.textContent = `${data.ready} of ${data.total} accounts in this pool can be invited${left ? ` · ${left} and will be skipped` : ''}.`;
+    } catch { if (poolStatus.isConnected) poolStatus.textContent = 'Could not count this pool.'; }
+  }
+  warmSelect.addEventListener('change', () => { plan.warmPool = warmSelect.value; changed(); updateSummary(); showPoolSize(); });
+  warmLabel.append(warmText, warmSelect); warm.body.append(warmLabel, poolStatus); showPoolSize();
   const warmHelp = document.createElement('p'); warmHelp.className = 'mature-source-help';
-  warmHelp.textContent = 'Warm connections: managed profiles in the selected ownership group. The planned workflow sends an invitation and automatically accepts it from the receiving profile.'; warm.body.append(warmHelp, warmRampEditor());
+  warmHelp.textContent = 'Warm connections: managed profiles in the selected ownership group. Starting sends each one a connection request from the profile being warmed. Accepting from the receiving profile is not automatic yet.'; warm.body.append(warmHelp, warmRampEditor());
   const coldRow = document.createElement('div'); coldRow.className = 'mature-cold-row';
   const customSheet = input('Your Google Sheet — paste the link to the tab to use', plan.coldPool, v => plan.coldPool = v, 'url');
   customSheet.id = 'mature-custom-cold-sheet';

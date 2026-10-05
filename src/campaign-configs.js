@@ -69,7 +69,7 @@ export function ensureCampaignIdentity({ campaignId, name = '', config = {}, lis
   return { campaignId: created.campaignId, name: created.name };
 }
 export function listConfigs() {
-  return Object.values(readAll().campaigns).filter(e => e.listed !== false && normaliseName(e.name)).map(({campaignId,name,savedAt}) => ({campaignId,name,savedAt}))
+  return Object.values(readAll().campaigns).filter(e => e.listed !== false && normaliseName(e.name)).map(({campaignId,name,savedAt,config}) => ({campaignId,name,savedAt,mode:config?.mode || ''}))
     .sort((a,b) => String(b.savedAt).localeCompare(String(a.savedAt)));
 }
 export function renameConfig(from, to, campaignId = null) {

@@ -2488,16 +2488,22 @@
     <section class="section" id="nav-mature-profile" style="display:none">
       <h2>Mature Profile Campaign</h2>
       <p>Build a staged plan for each account: start with your warm network, increase activity, then introduce cold connections and post engagement.</p>
-      <p style="color:var(--gray)">Days are relative to when the campaign starts. Edit the suggested stages and set your own daily limits. Saving stores the plan; it does not start activity.</p>
+      <p style="color:var(--gray)">Days are relative to when the campaign starts. Edit the suggested stages and set your own daily limits. Saving stores the plan without starting any activity.</p>
       <div id="mature-plan-editor"></div>
       <p id="mature-plan-summary" role="status"></p>
       <div class="mature-actions" role="group" aria-label="Profile maturing controls" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-        <button type="button" class="btn btn-primary" disabled aria-describedby="mature-runner-notice">Start Maturing</button>
-        <button type="button" class="btn" disabled aria-describedby="mature-runner-notice">Pause Maturing</button>
-        <button type="button" class="btn" disabled aria-describedby="mature-runner-notice">Stop Maturing</button>
+        <button type="button" class="btn btn-primary" onclick="startMaturePlan(this)" aria-describedby="mature-runner-notice">Start plan</button>
         <button type="button" class="btn" onclick="saveMatureProfilePlan(this)">Save plan</button>
       </div>
-      <p id="mature-runner-notice" class="mature-source-help">Maturing controls will be available when the automatic runner is connected. You can save your plan now.</p>
+      <!-- Live progress of a plan start: filled the moment Start plan is pressed. -->
+      <div id="mature-start-status" class="sn-logbox" role="status" aria-live="polite" hidden></div>
+      <!-- Live status of the started plan, shown here under the options so the
+           operator stays on the plan page. Filled by startMatureInlineLive(). -->
+      <div id="mature-live" hidden>
+        <h3>Live status</h3>
+        <div id="mature-live-body"></div>
+      </div>
+      <p id="mature-runner-notice" class="mature-source-help">Starting sends connection requests from the profile being warmed, at the plan's daily amounts: warm connections to the accounts in the warm pool from day 1, and cold connections to your cold sheet from their first plan day. It runs in the cloud and appears under Profile Maturing on the dashboard, where you can pause or stop it. Post engagement does not run yet.</p>
     </section>
     <style>
       .mature-connection-section{border:1px solid var(--hairline);border-radius:16px;overflow:hidden}.mature-connection-section summary{cursor:pointer;padding:20px;font-weight:600;font-size:20px}.mature-connection-body{display:grid;gap:16px;padding:0 20px 20px}.mature-source-help{margin:0;color:var(--gray);font-size:14px;line-height:1.5}.mature-cold-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.mature-field[hidden]{display:none}.mature-sources{display:grid;gap:16px;margin:24px 0}.mature-field{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:13px}
@@ -3663,6 +3669,9 @@
       <!-- Per-account status for a cloud CC+IC campaign (Account | Status), rendered
            by renderCloudAccountsPanel() from the engine's /accounts endpoint. Hidden
            until there's data. -->
+      <!-- Profile maturing: plan day, today's amount and pool progress. Filled
+           by _refreshCloudActiveStatus() for a warm-connection campaign only. -->
+      <div id="cloud-maturing-status" class="sn-progtxt sn-maturing-status" role="status" hidden></div>
       <div id="cloud-accounts-panel" class="cloud-accounts-panel" hidden></div>
       <!-- Post-launch tips — 2-col grid: cockpit + queue + log on the left,
            tips card on the right (320 px fixed). Tips card is hidden by

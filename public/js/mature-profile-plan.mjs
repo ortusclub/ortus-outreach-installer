@@ -1,27 +1,36 @@
 import { warmRampErrors } from './mature-warm-ramp.mjs';
-export const MATURE_WARM_POOLS = Object.freeze({ ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'Other Pool Accounts' });
+export const MATURE_WARM_POOLS = Object.freeze({ ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'Other Pool Accounts (LV)' });
 // Plan data is stored inside the campaign config, never in shared localStorage.
 export function newMaturePlan() {
-  return { version: 1, warmPool: '', coldPool: '', coldPoolSource: 'default', coldPoolOrder: 'random', postPool: '', notes: '', accounts: {}, targetProfileIds: [], stages: [
-    { id: 'warm', name: 'Warm connections', fromDay: 1, toDay: 3, warmDaily: '', coldDaily: 0, likesDaily: 0 },
-    { id: 'ramp', name: 'Increase warm connections', fromDay: 4, toDay: 7, warmDaily: '', coldDaily: 0, likesDaily: 0 },
-    { id: 'cold', name: 'Introduce cold connections', fromDay: 8, toDay: 14, warmDaily: '', coldDaily: '', likesDaily: 0 },
-    { id: 'engage', name: 'Add post engagement', fromDay: 15, toDay: 28, warmDaily: '', coldDaily: '', likesDaily: '' },
+  // Default warm ramp (Sam, 2026-10-05): 3 → 6 → 10 → 20 a day, holding the last
+  // rate until the pool runs out. Every figure stays editable before starting.
+  // Cold connections and post engagement do not run yet: cold starts switched
+  // off and both default to 0.
+  return { version: 1, warmPool: '', coldPool: '', coldPoolSource: 'default', coldPoolOrder: 'random', postPool: '', notes: '', accounts: {}, targetProfileIds: [], warmUntilExhausted: true, warmEnabled: true, coldEnabled: false, stages: [
+    { id: 'warm', name: 'Warm connections', fromDay: 1, toDay: 3, warmDaily: 3, coldDaily: 0, likesDaily: 0 },
+    { id: 'ramp', name: 'Increase warm connections', fromDay: 4, toDay: 7, warmDaily: 6, coldDaily: 0, likesDaily: 0 },
+    { id: 'cold', name: 'Introduce cold connections', fromDay: 8, toDay: 14, warmDaily: 10, coldDaily: 0, likesDaily: 0 },
+    { id: 'engage', name: 'Add post engagement', fromDay: 15, toDay: 28, warmDaily: 20, coldDaily: 0, likesDaily: 0 },
   ] };
 }
 export function restoreMaturePlan(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.stages)) return newMaturePlan();
-  return { ...newMaturePlan(), ...structuredClone(value), coldPoolSource: value.coldPoolSource || (value.coldPool ? 'custom' : 'default'), coldPoolOrder: value.coldPoolOrder || 'random', targetProfileIds: [...new Set(value.targetProfileIds || [])].slice(0, 1) };
+  // A plan saved before the until-exhausted default existed keeps its own end.
+  return { ...newMaturePlan(), ...structuredClone(value), warmUntilExhausted: !!value.warmUntilExhausted, warmEnabled: value.warmEnabled !== false, coldEnabled: value.coldEnabled === true, coldPoolSource: value.coldPoolSource || (value.coldPool ? 'custom' : 'default'), coldPoolOrder: value.coldPoolOrder || 'random', targetProfileIds: [...new Set(value.targetProfileIds || [])].slice(0, 1) };
 }
 export function maturePlanErrors(plan) {
   const errors = [];
-  if (plan.warmRamp) errors.push(...warmRampErrors(plan.warmUntilExhausted ? {...plan.warmRamp,stopMode:"none"} : plan.warmRamp));
+  // A switched-off activity sends nothing, so its settings are not checked.
+  const warmOn = plan.warmEnabled !== false, coldOn = plan.coldEnabled !== false;
+  if (!warmOn && !coldOn) errors.push('Switch on warm or cold connections.');
+  if (warmOn && plan.warmRamp) errors.push(...warmRampErrors(plan.warmUntilExhausted ? {...plan.warmRamp,stopMode:"none"} : plan.warmRamp));
   let last = 0;
   for (const stage of plan.stages) {
     const from = Number(stage.fromDay), to = Number(stage.toDay);
     if (!plan.connectionStages && (!Number.isInteger(from) || from !== last + 1 || !Number.isInteger(to) || to < from)) errors.push(`${stage.name}: days must follow the previous stage without gaps or overlaps.`);
     last = to;
     for (const field of (plan.connectionStages ? [] : plan.warmRamp ? ['coldDaily', 'likesDaily'] : ['warmDaily', 'coldDaily', 'likesDaily'])) {
+      if ((field === 'warmDaily' && !warmOn) || (field === 'coldDaily' && !coldOn)) continue;
       const n = Number(stage[field]);
       if (stage[field] === '' || !Number.isInteger(n) || n < 0) errors.push(`${stage.name}: set each daily limit (use 0 to disable an activity).`);
     }
@@ -29,6 +38,7 @@ export function maturePlanErrors(plan) {
   if (plan.connectionStages) {
     for (const kind of ['warm','cold']) {
       if (kind === 'warm' && plan.warmRamp) continue;
+      if (!(kind === 'warm' ? warmOn : coldOn)) continue;
       let end = null;
       for (const stage of plan.connectionStages[kind] || []) {
         const from=Number(stage.fromDay),to=Number(stage.toDay),daily=Number(stage.daily);
@@ -39,8 +49,8 @@ export function maturePlanErrors(plan) {
       }
     }
   }
-  if ((plan.warmRamp ? Number(plan.warmRamp.maximumDaily) > 0 : (plan.connectionStages?.warm ? plan.connectionStages.warm.some(s=>Number(s.daily)>0) : plan.stages.some(s => Number(s.warmDaily) > 0))) && !Object.hasOwn(MATURE_WARM_POOLS, plan.warmPool)) errors.push('Choose the warm connection pool.');
-  if (plan.connectionStages?.cold ? plan.connectionStages.cold.some(s=>Number(s.daily)>0) : plan.stages.some(s => Number(s.coldDaily) > 0)) {
+  if (warmOn && (plan.warmRamp ? Number(plan.warmRamp.maximumDaily) > 0 : (plan.connectionStages?.warm ? plan.connectionStages.warm.some(s=>Number(s.daily)>0) : plan.stages.some(s => Number(s.warmDaily) > 0))) && !Object.hasOwn(MATURE_WARM_POOLS, plan.warmPool)) errors.push('Choose the warm connection pool.');
+  if (coldOn && (plan.connectionStages?.cold ? plan.connectionStages.cold.some(s=>Number(s.daily)>0) : plan.stages.some(s => Number(s.coldDaily) > 0))) {
     if (plan.coldPoolSource === 'default') errors.push('The default cold connection sheet has not been configured yet.');
     else if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[^/]+/.test(plan.coldPool || '')) errors.push('Add a Google Sheet link for the cold connection pool.');
   }
