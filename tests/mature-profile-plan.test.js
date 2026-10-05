@@ -12,7 +12,7 @@ test('round trip retains pools, account starts and limits without shared referen
   assert.deepEqual(restoreMaturePlan(null).accounts,{});
 });
 test('reject overlaps, negative limits and missing sources',()=>{
-  const p=newMaturePlan();for(const stage of p.stages)for(const k of ['warmDaily','coldDaily','likesDaily'])stage[k]=0;
+  const p=newMaturePlan();p.coldEnabled=true;for(const stage of p.stages)for(const k of ['warmDaily','coldDaily','likesDaily'])stage[k]=0;
   assert.deepEqual(maturePlanErrors(p),[]);p.stages[1].fromDay=3;p.stages[0].warmDaily=-1;p.stages[2].coldDaily=2;
   const errors=maturePlanErrors(p).join(' ');assert.match(errors,/overlaps/);assert.match(errors,/daily limit/);assert.match(errors,/cold connection sheet/);
 });
@@ -43,4 +43,22 @@ test('a new plan defaults to 3, 6, 10 then 20 warm connections a day until the p
   assert.deepEqual(maturePlanErrors({ ...plan, warmPool: 'ortus_owned' }), []);
   // A plan saved before this default keeps its own fixed end.
   assert.equal(restoreMaturePlan({ version: 1, stages: plan.stages }).warmUntilExhausted, false);
+});
+
+test('a switched-off activity is not validated and sends nothing', async () => {
+  const { newMaturePlan, restoreMaturePlan, maturePlanErrors } = await import('../public/js/mature-profile-plan.mjs');
+  const { matureWarmDailyAmount } = await import('../public/js/mature-warm-pool.mjs');
+  const plan = { ...newMaturePlan(), warmPool: 'ortus_owned' };
+  assert.equal(plan.warmEnabled, true);
+  assert.equal(plan.coldEnabled, false);
+  // Cold is off, so a blank cold limit no longer blocks the plan.
+  plan.connectionStages = { warm: [{ fromDay: 1, toDay: 3, daily: 3 }], cold: [{ fromDay: 8, toDay: 14, daily: '' }] };
+  assert.deepEqual(maturePlanErrors(plan), []);
+  assert.match(maturePlanErrors({ ...plan, coldEnabled: true })[0], /cold: set a daily limit/);
+  // Warm off: no pool needed, nothing sent; both off is an error.
+  assert.equal(matureWarmDailyAmount({ ...plan, warmEnabled: false }, 1), 0);
+  assert.deepEqual(maturePlanErrors({ ...plan, warmEnabled: false, warmPool: '' }), ['Switch on warm or cold connections.']);
+  // Older saved plans: warm stays on, cold stays off unless it was switched on.
+  const old = restoreMaturePlan({ version: 1, stages: plan.stages });
+  assert.deepEqual([old.warmEnabled, old.coldEnabled], [true, false]);
 });

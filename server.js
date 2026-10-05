@@ -3973,6 +3973,7 @@ app.post('/api/mature/start', async (req, res) => {
     if (errors.length) return res.status(400).json({ error: errors[0] });
     const profileId = plan.targetProfileIds[0];
     if (!profileId) return res.status(400).json({ error: 'Choose the profile to warm.' });
+    if (plan.warmEnabled === false) return res.status(400).json({ error: 'Warm connections are switched off in this plan. Switch them on to start.' });
     const name = String(b.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Give this campaign a name.' });
 

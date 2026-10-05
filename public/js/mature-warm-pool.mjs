@@ -54,7 +54,7 @@ export function buildWarmPool({ pool, profiles = [], sooAccounts = [], lvAccount
 
 // Warm connections to send on a given day of the plan (day 1 = the start day).
 export function matureWarmDailyAmount(plan, day) {
-  if (!plan || !Number.isInteger(day) || day < 1) return 0;
+  if (!plan || plan.warmEnabled === false || !Number.isInteger(day) || day < 1) return 0;
   if (plan.warmRamp) return warmDailyAmount(plan.warmUntilExhausted ? { ...plan.warmRamp, stopMode: 'none' } : plan.warmRamp, day);
   const stages = plan.connectionStages?.warm
     || (plan.stages || []).map(s => ({ fromDay: s.fromDay, toDay: s.toDay, daily: s.warmDaily }));

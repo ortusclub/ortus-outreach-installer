@@ -22,6 +22,19 @@ function connectionSection(title, id) {
   const body = document.createElement('div'); body.className = 'mature-connection-body';
   section.append(summary, body); return {section, body};
 }
+// On/off switch at the top of an activity section. Off hides the settings and
+// the plan sends nothing for that activity.
+function activityToggle(section, key, label) {
+  const row = document.createElement('label'); row.className = 'mature-source-help mature-activity-toggle';
+  const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.id = `mature-${key}`;
+  const settings = document.createElement('div');
+  const sync = () => { const on = key === 'warmEnabled' ? plan[key] !== false : plan[key] === true; checkbox.checked = on; settings.hidden = !on; };
+  checkbox.onchange = () => { plan[key] = checkbox.checked; sync(); changed(); updateSummary(); };
+  row.append(checkbox, document.createTextNode(` ${label}`));
+  section.body.append(row, settings); sync();
+  // Everything appended to the section from here on belongs to the switch.
+  section.body = settings;
+}
 function selectField(label, id, value, choices, update) {
   const wrap = document.createElement('label'); wrap.className = 'mature-field';
   const text = document.createElement('span'); text.textContent = label;
@@ -228,6 +241,8 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   const cold = connectionSection('Cold Connections', 'mature-cold-section');
   const posts = connectionSection('Post Engagement — Coming soon', 'mature-post-section');
   sources.append(profileSection(), warmPresetSection(), warm.section, cold.section, posts.section);
+  activityToggle(warm, 'warmEnabled', 'Send warm connections');
+  activityToggle(cold, 'coldEnabled', 'Send cold connections');
   const warmLabel = document.createElement('label'); warmLabel.className = 'mature-field';
   const warmText = document.createElement('span'); warmText.textContent = 'Warm pool';
   const warmSelect = document.createElement('select'); warmSelect.id = 'mature-warm-pool';
