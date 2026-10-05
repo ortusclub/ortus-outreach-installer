@@ -4089,9 +4089,15 @@ app.post('/api/mature/start', async (req, res) => {
     const details = plan.accounts?.[profileId] || {};
     const maturedAccount = { name: String(details.name || '').trim(), profileUrl: String(details.linkedinUrl || '').trim() };
 
+    step(`Maturing ${name}${maturedAccount.name ? ` (${maturedAccount.name} on LinkedIn)` : ''}.`);
     let pool = null;
     if (warmOn) {
       pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
+      const skipped = [pool.missing ? `${pool.missing} with no known LinkedIn URL` : '', pool.restricted ? `${pool.restricted} restricted` : ''].filter(Boolean).join(', ');
+      step(`Warm pool: ${pool.total} accounts in the ${WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity' ? 'Linked Velocity' : 'Ortus'} workspace — ${pool.targets.length} can be invited${skipped ? ` (skipping ${skipped})` : ''}.`);
+      step(`Warm plan by day: ${warmAmounts.slice(0, 16).join(', ')}${warmAmounts.length > 16 ? ', …' : ''}${warmAmounts.at(-1) > 0 ? ' — then that amount daily until the pool runs out' : ''}.`);
+      if (!maturedAccount.name && !maturedAccount.profileUrl) step('⚠ No LinkedIn name or URL is set for this profile, so the receiving accounts cannot accept automatically.');
+      else step('Each receiving account accepts its request 15 minutes after the day\'s batch is sent.');
       if (!pool.targets.length) {
         return res.status(400).json({ error: sources.lvError && WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity'
           ? sources.lvError : 'No accounts in the warm pool have a known LinkedIn URL.' });
@@ -4118,6 +4124,7 @@ app.post('/api/mature/start', async (req, res) => {
         for (let i = coldLeads.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [coldLeads[i], coldLeads[j]] = [coldLeads[j], coldLeads[i]]; }
       }
       if (!coldLeads.length && !warmOn) return res.status(400).json({ error: 'The cold connection sheet has no usable LinkedIn URLs.' });
+      step(`Cold list: ${coldLeads.length} people, ${plan.coldPoolOrder !== 'descending' ? 'in random order' : 'top to bottom'}, starting on day ${cold.delayDays + 1} — by day: ${cold.amounts.slice(0, 16).join(', ')}.`);
     }
 
     // The account's tab in the results workbook: the plan (who, and on which
@@ -4132,6 +4139,7 @@ app.post('/api/mature/start', async (req, res) => {
         rows: buildMatureTabRows({ startDate, warmTargets: pool?.targets || [], warmAmounts, coldLeads, cold }),
       }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
       console.log(`[mature] ${name}: results tab ${tab.url} — ${tab.added} added, ${tab.existing} already listed`);
+      step(`Results tab "${name}" ${tab.created ? 'created' : 'updated'} — ${tab.added} people added${tab.existing ? `, ${tab.existing} already listed and left as they are` : ''}.`);
       // Offer the link while the start is still running, not only at the end.
       { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) progress.resultsUrl = tab.url; }
     } catch (error) {
@@ -4162,6 +4170,7 @@ app.post('/api/mature/start', async (req, res) => {
         mature: { kind: 'warm', pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, startAt: now.toISOString(), amounts: warmAmounts } },
       });
       if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
+      step(`Warm campaign is on the VM — ${result.warm.leadsAdded ?? pool.targets.length} pool accounts queued, ${warmAmounts[0]} to send today.`);
     }
 
     if (cold && coldLeads.length) {
@@ -4182,10 +4191,11 @@ app.post('/api/mature/start', async (req, res) => {
       });
       // Warm is already running, so a cold failure is reported, not fatal.
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });
+      step(result.cold.ok ? `Cold campaign is on the VM — ${result.cold.leadsAdded ?? coldLeads.length} people queued${startAt ? `, first batch on day ${cold.delayDays + 1}` : ''}.` : `⚠ Cold connections did not start: ${result.cold.error}`);
     }
     if (tab) result.resultsUrl = tab.url;
 
-    step('Started. Opening Live Status…');
+    step('Started. A cloud worker picks it up next — that takes about 2 minutes when the workers are asleep.');
     res.json({ ...result, id: result.warm?.id || result.cold?.id || null });
   } catch (err) {
     console.error(`[mature] start failed: ${err.message}`);
