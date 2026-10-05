@@ -105,6 +105,7 @@ import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { fetchLvAccounts } from './src/mature-warm.js';
 import { buildWarmPool, matureWarmSchedule, matureColdSchedule, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
 import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
+import { matureCampaignName } from './public/js/mature-profile-identity.mjs';
 import { dataPath } from './src/paths.js';
 import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
@@ -3997,8 +3998,16 @@ app.post('/api/mature/start', async (req, res) => {
     if (errors.length) return res.status(400).json({ error: errors[0] });
     const profileId = plan.targetProfileIds[0];
     if (!profileId) return res.status(400).json({ error: 'Choose the profile to warm.' });
-    const name = String(b.name || '').trim();
-    if (!name) return res.status(400).json({ error: 'Give this campaign a name.' });
+    // One maturing campaign per account. Asked of the engine, team-wide, so a
+    // plan a colleague started on this account counts too.
+    const live = await listCloudCampaigns();
+    if (live.error || !Array.isArray(live.campaigns)) return res.status(502).json({ error: 'Could not check for an existing maturing campaign on this account. Retry once the engine is reachable.' });
+    const ENDED = new Set(['done', 'cancelled', 'error', 'stopped', 'completed']);
+    const existing = live.campaigns.find((c) => c.config?.matureWarm && !ENDED.has(String(c.status || '')) && (c.profile_ids || []).includes(profileId));
+    if (existing) {
+      return res.status(409).json({ code: 'ACCOUNT_ALREADY_MATURING',
+        error: `This account is already being matured by “${existing.name || 'another campaign'}”. Stop that campaign before starting another on the same account.` });
+    }
 
     const now = new Date();
     const startDate = now.toISOString().slice(0, 10); // the engine counts days in UTC
@@ -4009,6 +4018,9 @@ app.post('/api/mature/start', async (req, res) => {
     if (!warmOn && !cold) return res.status(400).json({ error: 'This plan sends nothing. Set a daily amount for warm or cold connections.' });
 
     const sources = await matureWarmSources();
+    // Always named after the login email of the profile being matured.
+    const name = matureCampaignName(sources.profiles.find((p) => p.id === profileId) || { name: plan.accounts?.[profileId]?.profileLabel || '' });
+    if (!name) return res.status(400).json({ error: 'Could not work out the login email of the profile to mature.' });
     const result = { ok: true };
 
     if (warmOn) {

@@ -1,4 +1,5 @@
 import { warmProfileIdentity, WARM_POOL_ACCOUNT } from './mature-warm-pool.mjs';
+import { matureCampaignName } from './mature-profile-identity.mjs';
 import { WARM_PRESETS, warmPreset, warmRampErrors, warmSchedule } from './mature-warm-ramp.mjs';
 import { newMaturePlan, restoreMaturePlan, maturePlanErrors, updateMatureStageEnd, MATURE_WARM_POOLS } from './mature-profile-plan.mjs';
 let plan = newMaturePlan();
@@ -43,6 +44,18 @@ function selectField(label, id, value, choices, update) {
   control.value = value;
   control.addEventListener('change', () => { update(control.value); changed(); updateSummary(); });
   wrap.append(text, control); return wrap;
+}
+// The campaign is named after the profile being matured and cannot be renamed:
+// choosing the profile fills the name box, which stays locked in this mode.
+function nameCampaignAfter(profile) {
+  const input = document.getElementById('campaign-name-input');
+  if (!input) return;
+  input.readOnly = true;
+  input.title = 'A maturing campaign is named after the login email of the profile being matured.';
+  const name = profile ? matureCampaignName(profile) : '';
+  if (!name || input.value === name) return;
+  input.value = name;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 let accessibleProfiles = null;
 let profilesRequest = null;
@@ -93,6 +106,7 @@ function profileSection() {
     if (selected) {
       plan.targetProfileIds = [profile.id];
       plan.accounts[profile.id] = { ...plan.accounts[profile.id], profileLabel: profile.name || profile.id };
+      nameCampaignAfter(profile);
     } else plan.targetProfileIds = plan.targetProfileIds.filter(id => id !== profile.id);
   }
   function populate() {
@@ -150,6 +164,8 @@ function profileSection() {
     try {
       profiles = await fetchMatureProfiles(); if (!section.isConnected) return;
       populate(); renderRows();
+      // A plan opened with its profile already chosen takes that profile's name.
+      nameCampaignAfter(profiles.find(p => p.id === plan.targetProfileIds[0]) || null);
     } catch (error) {
       if (!section.isConnected) return;
       status.textContent = error.message;

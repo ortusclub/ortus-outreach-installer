@@ -4012,6 +4012,9 @@ function onModeChange() {
   if (targetPicker) targetPicker.hidden = isMature;
   const maturePanel = document.getElementById('nav-mature-profile');
   if (maturePanel) maturePanel.style.display = isMature ? '' : 'none';
+  // Only a maturing campaign has a fixed name (its profile's login email).
+  { const nameBox = document.getElementById('campaign-name-input');
+    if (nameBox) { nameBox.readOnly = isMature; if (!isMature) nameBox.title = ''; nameBox.placeholder = isMature ? 'Named after the profile you choose below' : 'e.g. TAG_CITY_I'; } }
   if (isMature) {
     for (const el of [navAccounts, navPace, navTemplates, navSheet, dailyKnob, navLaunch, runBar]) if (el) el.style.display = 'none';
     renderMaturePlan({ onChange: wizardDirtyOnInput, accounts: selectedProfileIds.map(id => ({id, name: profileLabel(id)})) });
@@ -36357,7 +36360,7 @@ setTimeout(() => restoreOpenedCampaignView().catch(error => console.warn('[campa
 
 window.saveMatureProfilePlan = async function(btn) {
   const name = document.getElementById('campaign-name-input')?.value.trim();
-  if (!name) { showCampaignToast('Give this campaign a name before saving its plan.'); return; }
+  if (!name) { showCampaignToast('Choose the profile to mature first. The campaign is named after it.', 5000); return; }
   btn.disabled = true;
   try {
     await flushAutosaveImmediate();
@@ -36371,7 +36374,7 @@ window.saveMatureProfilePlan = async function(btn) {
 // the Live Status view opens on it straight away.
 window.startMaturePlan = async function(btn) {
   const name = document.getElementById('campaign-name-input')?.value.trim();
-  if (!name) { requireCampaignNameToSave(); return; }
+  if (!name) { showCampaignToast('Choose the profile to mature first. The campaign is named after it.', 5000); return; }
   const maturePlan = readMaturePlan();
   if (!maturePlan) return;
   const label = btn.textContent;

@@ -7,3 +7,10 @@ export function matureProfileIdentity(profile, accounts) {
   const url=fields.linkedinurl || fields.linkedinprofileurl || fields.linkedinprofile || fields.profileurl || fields.linkedin || '';
   return {name,linkedinUrl:/^https?:\/\/(?:[a-z]+\.)?linkedin\.com\/in\/[^\s/]+/i.test(url) ? url : ''};
 }
+
+// A maturing campaign is always named after the login email of the profile it
+// matures — the email that names the GoLogin profile.
+export function matureCampaignName(profile) {
+  const email = `${profile?.email || ''} ${profile?.name || ''}`.toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
+  return email ? email[0] : String(profile?.name || profile?.id || '').trim();
+}
