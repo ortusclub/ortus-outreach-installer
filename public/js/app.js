@@ -11580,8 +11580,20 @@ function renderUnifiedStrip(it) {
 }
 // One understated line per matured account: a small dot, the account, its state
 // in a word, how many warm and cold connections it has attempted, Open, Delete.
+// A line for something that has not run: a saved plan or a draft.
+function _maturingPlainRow({ name, state, open, del }) {
+  return `<div class="mature-row">`
+    + `<span class="dot q"></span>`
+    + `<span class="mature-row-name">${escHtml(name || '(unnamed)')}</span>`
+    + `<span class="mature-row-state">${escHtml(state)}</span>`
+    + `<span class="mature-row-detail"></span>`
+    + `<button type="button" class="mini solid" onclick="${open}">Open</button>`
+    + `<button type="button" class="mature-del" title="Delete" aria-label="Delete ${escHtml(name || '')}" onclick="${del}">${V3_SVG_TRASH}</button>`
+    + `</div>`;
+}
 function _maturingListHtml(items) {
-  return groupMaturingAccounts(items).map((g) => {
+  const saved = items.filter((x) => x.bucket === 'saved');
+  return groupMaturingAccounts(items.filter((x) => x.bucket !== 'saved')).map((g) => {
     const dot = { green: 'run', amber: 'amber', red: 'red', done: 'done', muted: 'q' }[g.state.tone] || 'q';
     const main = g.warm || g.cold;
     const ids = g.items.map((x) => x.id).join(',');
@@ -11594,7 +11606,9 @@ function _maturingListHtml(items) {
       + `<button type="button" class="mini solid" onclick="openCloudLive('${escHtml(main.id)}')">Open</button>`
       + `<button type="button" class="mature-del" title="Delete" aria-label="Delete ${escHtml(g.name)}" onclick="deleteMaturingAccount('${escHtml(ids)}', '${escHtml(g.name)}', this)">${V3_SVG_TRASH}</button>`
       + `</div>`;
-  }).join('');
+  }).join('')
+    + saved.map((it) => _maturingPlainRow({ name: it.name, state: 'Saved plan',
+      open: `openCampaignForEdit('${escHtml(it.id)}')`, del: `deleteBoardCampaign('${escHtml(it.id)}', this)` })).join('');
 }
 // Delete a matured account's campaigns from the dashboard. Anything still
 // running is stopped first — a deleted campaign must not keep sending unseen.
@@ -12519,8 +12533,7 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
   // groups (sections + Done/Cancelled) show a caret, so the affordance reads true.
   // A section can list its campaigns as plain one-line rows instead of full
   // strips (Profile Maturing): one understated list, no rails.
-  const body = opts.listHtml ? opts.listHtml(secItems.filter((x) => x.bucket !== 'saved'))
-      + rail('Saved plans', secItems.filter((x) => x.bucket === 'saved')) + draftsRail
+  const body = opts.listHtml ? opts.listHtml(secItems) + (opts.draftsPlain ? (opts.draftsHtml || '') : draftsRail)
     : rail('Needs review', review)
     + rail('Running', running)
     + rail('Paused', paused)
@@ -13330,7 +13343,11 @@ async function _renderCampaignsBoardInner() {
   };
   const _draftOpts = _draftRail(_draftRows.filter((d) => !_isMatureDraft(d)));
   // No "Delete all" on this rail: that button clears every draft on the board.
-  const _matureDraftOpts = { ..._draftRail(_draftRows.filter(_isMatureDraft)), draftsNoClear: true };
+  // In the Profile Maturing tab a draft is one more quiet line, like the rest.
+  const _matureDrafts = _draftRows.filter(_isMatureDraft);
+  const _matureDraftOpts = { draftsPlain: true, draftsCount: _matureDrafts.length,
+    draftsHtml: _matureDrafts.map((d) => _maturingPlainRow({ name: d.name, state: 'Draft',
+      open: `editDraft('${escHtml(d.id)}')`, del: `deleteDraftStrip('${escHtml(d.id)}', this)` })).join('') };
 
   // Scheduled runs (this Mac's node-cron schedules). Like drafts, they are not
   // board items, so they arrive pre-rendered; soonest first.
