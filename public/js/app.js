@@ -1,5 +1,5 @@
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
-import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction, maturingWaitLines } from '/js/mature-profile-board.mjs';
+import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction, maturingWaitLines, logClock } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
@@ -11649,7 +11649,7 @@ async function refreshMaturingLog(items) {
     }));
     // While a due action waits for a worker, say so (and keep saying so).
     const lines = [...mergeMaturingLogs(campaigns), ...maturingWaitLines(items)];
-    _maturingLogHtml = lines.length ? lines.map((l) => escHtml(l.text)).join('<br>') : 'Nothing logged yet.';
+    _maturingLogHtml = lines.length ? lines.map((l) => { const at = logClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
     _maturingLogAt = Date.now();
     const box = document.getElementById('maturing-all-log');
     if (box) { box.innerHTML = _maturingLogHtml; box.scrollTop = box.scrollHeight; }

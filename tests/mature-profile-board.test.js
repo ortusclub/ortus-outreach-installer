@@ -127,3 +127,9 @@ test('the log says it is looking for a VM worker, and keeps saying so every 15 s
   // A daily batch that has fallen due waits for a worker the same way.
   assert.match(maturingWaitLines([{ ...it, acceptPending: 0 }], Date.parse('2026-10-07T01:00:20Z'))[0].text, /Looking for a VM worker to send today's warm connections/);
 });
+
+import { logClock } from '../public/js/mature-profile-board.mjs';
+test('every log line can carry its time of day', () => {
+  assert.equal(logClock(Date.parse('2026-10-05T19:20:58Z'), 'Europe/Rome'), '21:20:58');
+  assert.equal(logClock(0), '');
+});

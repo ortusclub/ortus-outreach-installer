@@ -65,6 +65,12 @@ export function mergeMaturingLogs(campaigns, limit = 60) {
   return all.sort((a, b) => a.t - b.t).slice(-limit);
 }
 
+// "21:20:58" in the viewer's own time zone, for the start of a log line.
+export function logClock(t, timeZone) {
+  if (!Number.isFinite(Number(t)) || Number(t) <= 0) return '';
+  return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, ...(timeZone ? { timeZone } : {}) }).format(new Date(Number(t)));
+}
+
 // Lines the app adds to the combined log while a due action waits for a cloud
 // worker: nothing in the cloud is running then, so nothing else would log it.
 // One "looking" line when the action falls due, then a "still looking" line
