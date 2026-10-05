@@ -1,3 +1,4 @@
+import { updateAppTarget } from './src/update-app-target.js';
 import { getCampaignDeletions, deleteCampaignFromBoard } from './src/campaign-board-deletions.js';
 import { withCampaignLaunch, findActiveCampaign } from './src/cloud-campaign-identity.js';
 import { messageSubjectError } from './public/js/message-subject-validation.mjs';
@@ -629,19 +630,15 @@ app.get('/api/update-progress', (_req, res) => res.json(_downloadState));
 // launched from a packaged .app bundle; otherwise the caller falls back to
 // opening the DMG.
 function _packagedAppBundlePath() {
-  // process.execPath in a packaged build:
-  //   /Applications/The Ortus Outreach.app/Contents/MacOS/The Ortus Outreach
-  const m = String(process.execPath || '').match(/^(.*\.app)\/Contents\/MacOS\//);
-  if (!m) return null;
-  // In dev (`electron .`) execPath points at node_modules/.../Electron.app —
-  // never swap that. Only the real installed bundle qualifies.
-  if (!m[1].endsWith('/The Ortus Outreach.app')) return null;
-  return m[1];
+  return updateAppTarget(process.execPath, pkg.productName);
 }
 
 app.post('/api/update-install', (_req, res) => {
   const appBundle = _packagedAppBundlePath();
   const dmg = _downloadState.path;
+  if (!_downloadState.done || _downloadState.active || _downloadState.error || !dmg || !existsSync(dmg)) {
+    return res.status(409).json({ ok: false, error: 'The update download is not complete. Please download it again.' });
+  }
   // Not packaged (dev) or no downloaded DMG → open the DMG for a manual
   // drag-install and tell the UI to show the drag hint.
   if (process.platform !== 'darwin' || !appBundle || !dmg || !existsSync(dmg)) {

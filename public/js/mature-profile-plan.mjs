@@ -1,5 +1,5 @@
 import { warmRampErrors } from './mature-warm-ramp.mjs';
-export const MATURE_WARM_POOLS = Object.freeze({ ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'LinkedVelocity Owned Account' });
+export const MATURE_WARM_POOLS = Object.freeze({ ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'Other Pool Accounts' });
 // Plan data is stored inside the campaign config, never in shared localStorage.
 export function newMaturePlan() {
   return { version: 1, warmPool: '', coldPool: '', coldPoolSource: 'default', coldPoolOrder: 'random', postPool: '', notes: '', accounts: {}, targetProfileIds: [], stages: [
