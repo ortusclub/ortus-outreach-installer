@@ -13012,6 +13012,7 @@ async function _renderCampaignsBoardInner() {
         needsReview: c.status === 'needs_review',
         engineStatus: c.status || '',
         resumeAt: c.resumeTaskDueAt || null,
+        acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null,
         resumeReason: c.resumeTaskReason || null,
         stopping: c.status === 'stopping' || c.status === 'pausing',
         monitoringPhase: c.status === 'monitoring' && String(c.runs_on || '') === 'local',

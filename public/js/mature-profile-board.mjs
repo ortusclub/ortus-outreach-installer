@@ -94,12 +94,17 @@ export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}
     return amounts[Math.min(Math.max(index, 0), amounts.length - 1)] || 0;
   };
   const count = (n) => (n === null ? `${what}s` : `${n} ${what}${n === 1 ? '' : 's'}`);
-  const at = (instant) => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, ...(viewerTimeZone ? { timeZone: viewerTimeZone } : {}) }).format(new Date(instant)).replace(/^(\w+),/, '$1');
+  const at = (instant) => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short', ...(viewerTimeZone ? { timeZone: viewerTimeZone } : {}) }).format(new Date(instant)).replace(/^(\w+),/, '$1');
   const free = 'when the worker is free';
   const due = (instant) => (Number.isFinite(Date.parse(instant || '')) ? instant : null);
   if (it.bucket === 'queued') {
     const start = due(it.scheduledAt);
     return start ? `Next: ${count(amountOn(start))} · ${at(start)} · ${free}` : `Next: ${count(amountOn(now))} today · as soon as the worker is free`;
+  }
+  // Today's batch is out: the receiving accounts accept it 15 minutes later.
+  if (Number(it.acceptPending) > 0 && !(it.live && !it.dailyWait)) {
+    const n = Number(it.acceptPending), when = due(it.acceptDueAt);
+    return `Next: accept ${n} connection request${n === 1 ? '' : 's'} in the receiving account${n === 1 ? '' : 's'}${when ? ` · ${at(when)}` : ''} · ${free}`;
   }
   if (it.dailyWait) {
     const resume = due(it.resumeAt);
