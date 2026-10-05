@@ -411,6 +411,11 @@ function doPost(e) {
     if (data.action === 'createLeadTab') {
       return handleCreateLeadTab(data);
     }
+    // Mature Profile — one tab per matured account in the shared results
+    // workbook. Names its own spreadsheet, so no sheetId is required.
+    if (data.action === 'writeMatureTab') {
+      return handleWriteMatureTab(data);
+    }
 
     // Validate required field
     if (!data.sheetId) {
@@ -578,6 +583,81 @@ function handleGetConnection(data) {
 // and return its URL. Used by the campaign "Build & attach a warm list" flow.
 // Creates a standalone spreadsheet owned by the deployer (no central-workbook id
 // needed); header row bold + frozen. Returns { url, gid, tabName, count }.
+// Mature Profile results: write an account's plan into ITS tab of the results
+// workbook (the tab is named after the account's login email), creating the tab
+// when it does not exist. The tab is both the plan and the record: the campaign
+// reads its leads from it and stamps each row's request status, dates and
+// acceptance back into it.
+//
+// Re-running a plan must never lose results, so rows already in the tab are
+// left exactly as they are (matched on the key column, by LinkedIn slug) and
+// only people not yet listed are appended. Missing header columns are added at
+// the right.
+//   data: { spreadsheetId, tabName, header: [..], rows: [[..]], keyColumn }
+function handleWriteMatureTab(data) {
+  try {
+    var ss = SpreadsheetApp.openById(String(data.spreadsheetId || ''));
+    var tabName = String(data.tabName || '').substring(0, 95);
+    if (!tabName) return jsonResponse({ ok: false, error: 'tabName required' });
+    var header = data.header || [];
+    var rows = data.rows || [];
+    var keyColumn = data.keyColumn || 'LinkedIn URL';
+    var slug = function (v) {
+      var m = String(v || '').toLowerCase().match(/\/in\/([^\/?#]+)/);
+      return m ? m[1] : String(v || '').trim().toLowerCase();
+    };
+
+    var sheet = ss.getSheetByName(tabName);
+    var created = false;
+    if (!sheet) {
+      // Reuse the workbook's untouched default tab rather than leave "Sheet1" behind.
+      var first = ss.getSheets()[0];
+      if (ss.getSheets().length === 1 && first.getLastRow() === 0 && /^Sheet\d+$/.test(first.getName())) {
+        sheet = first; sheet.setName(tabName);
+      } else {
+        sheet = ss.insertSheet(tabName);
+      }
+      created = true;
+    }
+
+    var lastRow = sheet.getLastRow();
+    var live = lastRow > 0 ? sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0].map(String) : [];
+    // Add any header column the tab does not have yet, keeping existing order.
+    var missing = header.filter(function (h) { return live.indexOf(h) === -1; });
+    if (missing.length) {
+      sheet.getRange(1, live.length + 1, 1, missing.length).setValues([missing]);
+      live = live.concat(missing);
+    }
+    sheet.getRange(1, 1, 1, live.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+
+    var keyAt = live.indexOf(keyColumn);
+    var inputKeyAt = header.indexOf(keyColumn);
+    if (keyAt === -1 || inputKeyAt === -1) return jsonResponse({ ok: false, error: 'key column "' + keyColumn + '" missing' });
+    var seen = {};
+    if (lastRow > 1) {
+      sheet.getRange(2, keyAt + 1, lastRow - 1, 1).getValues().forEach(function (r) { seen[slug(r[0])] = true; });
+    }
+    var fresh = [];
+    rows.forEach(function (r) {
+      var k = slug(r[inputKeyAt]);
+      if (!k || seen[k]) return;
+      seen[k] = true;
+      // Lay the row out in the tab's own column order.
+      fresh.push(live.map(function (h) { var i = header.indexOf(h); return i === -1 ? '' : (r[i] === undefined || r[i] === null ? '' : r[i]); }));
+    });
+    if (fresh.length) sheet.getRange(Math.max(lastRow, 1) + 1, 1, fresh.length, live.length).setValues(fresh);
+
+    var gid = sheet.getSheetId();
+    return jsonResponse({
+      ok: true, url: ss.getUrl().replace(/\/edit.*$/, '') + '/edit#gid=' + gid, gid: gid, tabName: tabName,
+      spreadsheetId: ss.getId(), created: created, added: fresh.length, existing: rows.length - fresh.length
+    });
+  } catch (err) {
+    return jsonResponse({ ok: false, error: err.message, stack: err.stack });
+  }
+}
+
 function handleCreateLeadTab(data) {
   try {
     var name = (data.name || 'Warm ICB list').toString().substring(0, 95);

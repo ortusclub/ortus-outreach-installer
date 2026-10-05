@@ -102,3 +102,45 @@ export function matureWarmSchedule(plan, startDate, maxDays = 365) {
   while (amounts.length > 1 && amounts.at(-1) === amounts.at(-2)) amounts.pop();
   return amounts;
 }
+
+// ── The account's results tab ───────────────────────────────────────────────
+// One tab per matured account, named after its login email. It lists everyone
+// the plan intends to connect with and when; the campaign reads its leads from
+// it and stamps each row's request status, dates and acceptance back into it.
+// ("Date", "Status" and "Time" are avoided as headers: the sheet tooling
+// removes columns with those legacy names.)
+// The tracking columns the campaign stamps are created up front, so the tab is
+// complete from the start and nothing depends on another script adding them.
+export const MATURE_TAB_HEADER = Object.freeze(['Type', 'Full Name', 'LinkedIn URL', 'Pool Account', 'Pool Profile ID', 'Planned Day', 'Planned Date',
+  'Connection Request Status', 'Connection Accepted Status', 'Account Used', 'Date of Last Action', 'Time of Last Action']);
+const TAB_PLAN_COLUMNS = 7; // Type … Planned Date; the rest start blank
+
+// Which plan day each person in a list falls on: day 1 takes amounts[0] people,
+// day 2 the next amounts[1], and so on. Past the list the last amount repeats;
+// if that is 0 the plan has ended and the rest are left unplanned (0).
+export function plannedDays(count, amounts, firstDay = 1) {
+  const days = [];
+  for (let i = 0; days.length < count && i < 100000; i++) {
+    const amount = Number(amounts[Math.min(i, amounts.length - 1)]) || 0;
+    if (amount <= 0 && i >= amounts.length - 1) break;
+    for (let n = 0; n < amount && days.length < count; n++) days.push(firstDay + i);
+  }
+  while (days.length < count) days.push(0);
+  return days;
+}
+
+const addDays = (startDate, days) => new Date(Date.parse(`${startDate}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+
+// Rows for the tab: warm pool accounts first, then cold leads, each with the
+// day the plan expects to reach them. `cold` is matureColdSchedule()'s result.
+export function buildMatureTabRows({ startDate, warmTargets = [], warmAmounts = [], coldLeads = [], cold = null }) {
+  const rows = [];
+  const add = (type, list, days, cells) => list.forEach((item, i) => {
+    const day = days[i];
+    rows.push([type, ...cells(item), day || '', day ? addDays(startDate, day - 1) : 'After the plan ends',
+      ...Array(MATURE_TAB_HEADER.length - TAB_PLAN_COLUMNS).fill('')]);
+  });
+  add('Warm', warmTargets, plannedDays(warmTargets.length, warmAmounts), t => [t.name, t.linkedinUrl, t.profile, t.profileId]);
+  if (cold) add('Cold', coldLeads, plannedDays(coldLeads.length, cold.amounts, cold.delayDays + 1), l => [l.name, l.linkedinUrl, '', '']);
+  return rows;
+}

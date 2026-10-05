@@ -9,7 +9,7 @@ import { cloudOptionError } from './public/js/cloud-option-compatibility.mjs';
 import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
 import { canViewCampaign, visibleCampaigns } from './src/campaign-visibility.js';
 import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
-import { ensureCampaignIdentity, getConfigById } from './src/campaign-configs.js';
+import { ensureCampaignIdentity, getConfigById, getConfig as getSavedCampaign, detachCampaignIdentity } from './src/campaign-configs.js';
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
 import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
@@ -103,8 +103,9 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { fetchLvAccounts } from './src/mature-warm.js';
-import { buildWarmPool, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
+import { buildWarmPool, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, buildMatureTabRows, MATURE_TAB_HEADER, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
 import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
+import { localDay, MATURE_DEFAULT_TIME_ZONE } from './public/js/mature-profile-board.mjs';
 import { matureCampaignName } from './public/js/mature-profile-identity.mjs';
 import { dataPath } from './src/paths.js';
 import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
@@ -140,9 +141,9 @@ import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.j
 import { stageConnectionsCsv } from './src/connections/magellan-csv-import.js';
 import { connectionsPropOptions, addConnectionsOptions, tokenScopes } from './src/connections/hubspot-client.js';
 import { normMonth } from './src/connections/fg-export.js';
-import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
+import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab, writeMatureTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
-import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
+import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID, matureSheetsWebappUrl } from './src/sheets-webapp-url.js';
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse, cloudFlipAction } from './src/soo-writer.js';
 import { reconcileCloudConnections, reconcileCloudInUse } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
@@ -1549,6 +1550,9 @@ async function handleStartCloudOnce(req, res) {
     for (const row of rows) {
       const leadUrl = extractLinkedInUrl(row, linkedinColumn);
       if (!leadUrl) continue;
+      // A sheet shared by two campaigns (a maturing account's tab holds warm
+      // and cold rows): take only this campaign's rows.
+      if (body.leadFilter && String(row[body.leadFilter.column] || '').trim().toLowerCase() !== String(body.leadFilter.value || '').trim().toLowerCase()) continue;
       // Skip blocklisted / client-excluded URLs.
       if (blExcluded.has(normalizeProfileUrl(leadUrl)) || clientExcluded.has(normalizeProfileUrl(leadUrl))) continue;
       const first = row['First Name'] || row['first name'] || '';
@@ -1679,7 +1683,9 @@ async function handleStartCloudOnce(req, res) {
       // Sheet write-back: the engine pushes per-lead status back to this
       // operator's Apps Script web app (same one local campaigns use), matching
       // rows by this linkedin column — so cloud results land in the Sheet too.
-      sheetsWebappUrl: SHEETS_WEBAPP_URL,
+      // A maturing campaign reading its results tab writes back through the
+      // maturing bridge, which owns that workbook; everything else uses the shared script.
+      sheetsWebappUrl: (body.mature && body.mature.viaMatureBridge && matureSheetsWebappUrl()) || SHEETS_WEBAPP_URL,
       linkedinColumn: linkedinColumn || 'LinkedIn URL',
       // Ban-safety: randomized inter-send delay (seconds) the engine's worker
       // waits between sends per account — same knob local campaigns use. The
@@ -1702,7 +1708,11 @@ async function handleStartCloudOnce(req, res) {
       // Mature Profile stage: the per-day amounts the engine applies as the
       // daily limit, and the flag the board files the campaign under.
       // dailyCounterScope makes warm and cold count their sends separately.
-      ...(body.mature ? { matureWarm: true, matureKind: body.mature.kind, warmPool: body.mature.pool || '', dailySchedule: body.mature.dailySchedule, dailyCounterScope: body.mature.kind } : {}),
+      ...(body.mature ? { matureWarm: true, matureKind: body.mature.kind, warmPool: body.mature.pool || '', dailySchedule: body.mature.dailySchedule, dailyCounterScope: body.mature.kind,
+        // Warm only: the receiving accounts accept the request 15 minutes after each day's batch.
+        ...(body.mature.maturedAccount ? { maturedAccount: body.mature.maturedAccount } : {}),
+        // The plan itself, so the campaign reopens as its Mature Profile set-up on any computer.
+        ...(body.mature.plan ? { maturePlan: body.mature.plan } : {}) } : {}),
     };
     // Operator timezone → engine → GAS stamps "Date/Time of Last Action" in the
     // operator's local clock (parity with local runs, where sheets-writer attaches
@@ -3968,6 +3978,10 @@ app.get('/api/mature/warm-pool', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Where Mature Profile plans and their results are kept: one tab per matured
+// account, named after its login email.
+const MATURE_RESULTS_SHEET_ID = String(process.env.MATURE_RESULTS_SHEET_ID || '').trim() || '1aZFtGnJcAs4dZ4Pvw5ju5dFwkX29zP_h3s1R8K-XXfo';
+
 // What a plan start is doing right now, keyed by the client's launchId, so the
 // editor can show progress the moment Start is pressed instead of a dead button.
 const matureStartProgress = new Map(); // launchId -> { lines: [text], done }
@@ -3991,13 +4005,15 @@ app.get('/api/mature/start-progress', (req, res) => {
 // Google-side flap measured in magellan-sheet.js; the same call works seconds
 // later). Try again rather than fail the whole start. A retry can leave an
 // unused extra sheet behind if the first attempt did create one.
-async function createWarmSheet(args, onRetry) {
+async function createWarmSheet(args, onRetry, write = createWorkbookTab) {
   let lastError;
   for (let attempt = 1; attempt <= 4; attempt++) {
-    try { return await createWorkbookTab(args); }
+    try { return await write(args); }
     catch (error) {
       lastError = error;
-      if (!/not JSON|timeout|fetch failed|aborted/i.test(error.message) || attempt === 4) break;
+      // Anything else (e.g. the script has no such action yet) will not fix itself.
+      if (!/not JSON|timeout|fetch failed|aborted/i.test(error.message)) throw error;
+      if (attempt === 4) break;
       onRetry?.(attempt + 1);
       await new Promise((r) => setTimeout(r, 2500 * attempt));
     }
@@ -4049,7 +4065,12 @@ app.post('/api/mature/start', async (req, res) => {
     }
 
     const now = new Date();
-    const startDate = now.toISOString().slice(0, 10); // the engine counts days in UTC
+    // Plan days are calendar days in the campaign's time zone — the zone the
+    // engine schedules each next daily batch in (09:00 local). It is the
+    // operator's saved zone, or the engine's default when none is saved.
+    let planTz = MATURE_DEFAULT_TIME_ZONE;
+    try { const prefs = await getOperatorPrefs(getOperatorEmail() || req.user || ''); if (prefs && prefs.tz) planTz = prefs.tz; } catch (_) { /* default zone */ }
+    const startDate = localDay(now, planTz);
     const warmAmounts = plan.warmEnabled !== false ? matureWarmSchedule(plan, startDate) : [0];
     const warmOn = warmAmounts[0] > 0;
     const cold = matureColdSchedule(plan);
@@ -4064,54 +4085,131 @@ app.post('/api/mature/start', async (req, res) => {
     const warmed = sources.profiles.find((p) => p.id === profileId) || { id: profileId, name: plan.accounts?.[profileId]?.profileLabel || '' };
     const name = matureCampaignName(warmed, lvProfileIdentity(warmed, sources.lvAccounts)?.loginEmail);
     if (!name) return res.status(400).json({ error: 'Could not work out the login email of the profile to mature.' });
+    // A maturing campaign's permanent ID belongs to its account. The page can
+    // still be holding the ID of the plan that was open before (pick another
+    // profile and the name changes but the ID does not), which made a
+    // never-started account look like the other account's running campaign.
+    let campaignId = getSavedCampaign(name)?.campaignId || null;
+    if (campaignId) {
+      const owner = live.campaigns.find((c) => c.config?.campaignId === campaignId && c.config?.matureWarm && String(c.name || '').replace(/ · Cold$/, '') !== name);
+      if (owner) {
+        campaignId = detachCampaignIdentity(campaignId, String(owner.name || '').replace(/ · Cold$/, ''))?.campaignId || null;
+        console.log(`[mature] ${name}: its saved plan carried ${owner.name}'s campaign ID — given its own`);
+      }
+    }
     const result = { ok: true };
+    // Whose invitation the receiving accounts accept (the editor's "Name as it
+    // appears on LinkedIn" and "LinkedIn URL" for the matured profile).
+    const details = plan.accounts?.[profileId] || {};
+    const maturedAccount = { name: String(details.name || '').trim(), profileUrl: String(details.linkedinUrl || '').trim() };
 
+    step(`Maturing ${name}${maturedAccount.name ? ` (${maturedAccount.name} on LinkedIn)` : ''}.`);
+    let pool = null;
     if (warmOn) {
-      const pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
+      pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
+      const skipped = [pool.missing ? `${pool.missing} with no known LinkedIn URL` : '', pool.restricted ? `${pool.restricted} restricted` : ''].filter(Boolean).join(', ');
+      step(`Warm pool: ${pool.total} accounts in the ${WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity' ? 'Linked Velocity' : 'Ortus'} workspace — ${pool.targets.length} can be invited${skipped ? ` (skipping ${skipped})` : ''}.`);
+      step(`Warm plan by day: ${warmAmounts.slice(0, 16).join(', ')}${warmAmounts.length > 16 ? ', …' : ''}${warmAmounts.at(-1) > 0 ? ' — then that amount daily until the pool runs out' : ''}.`);
+      if (!maturedAccount.name && !maturedAccount.profileUrl) step('⚠ No LinkedIn name or URL is set for this profile, so the receiving accounts cannot accept automatically.');
+      else step('Each receiving account accepts its request 15 minutes after the day\'s batch is sent.');
       if (!pool.targets.length) {
         return res.status(400).json({ error: sources.lvError && WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity'
           ? sources.lvError : 'No accounts in the warm pool have a known LinkedIn URL.' });
       }
-      step(`Writing ${pool.targets.length} pool accounts to a new Google Sheet…`);
-      const sheet = await createWarmSheet({
-        name: `Warm connections — ${name} — ${startDate}`,
-        header: ['Full Name', 'LinkedIn URL', 'Pool Account'],
-        rows: pool.targets.map((t) => [t.name, t.linkedinUrl, t.profile]),
-      }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`));
-      step(`Sending warm connections to the cloud — ${warmAmounts[0]} today…`);
-      console.log(`[mature] ${name}: ${pool.targets.length} warm target(s) written to ${sheet.url}; schedule ${warmAmounts.join(',')}`);
-      result.warm = await launchMatureStage(req, {
-        campaignId: b.campaignId, launchId: b.launchId, name,
-        mode: 'connect_only', profileIds: [profileId],
-        sheetUrl: sheet.url, sheetGid: sheet.gid, linkedinColumn: 'LinkedIn URL',
-        dailyLimit: warmAmounts[0], templates: {},
-        mature: { kind: 'warm', pool: plan.warmPool, dailySchedule: { startDate, amounts: warmAmounts } },
-      });
-      if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
     }
 
+    // Managed profiles belong to the warm pools, never to the cold list.
+    const managed = ['ortus_owned', 'linkedvelocity_owned']
+      .flatMap((p) => buildWarmPool({ pool: p, ...sources }).targets.map((t) => t.linkedinUrl));
+    let coldLeads = [];
     if (cold) {
+      step('Reading the cold connection sheet…');
+      const skip = new Set(managed.map((u) => normalizeProfileUrl(u)));
+      const seen = new Set();
+      for (const row of await fetchSheet(plan.coldPool)) {
+        const linkedinUrl = extractLinkedInUrl(row);
+        const key = linkedinUrl && normalizeProfileUrl(linkedinUrl);
+        if (!key || skip.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        const first = row['First Name'] || row['first name'] || '', last = row['Last Name'] || row['last name'] || '';
+        coldLeads.push({ name: String(row['Full Name'] || row['Name'] || `${first} ${last}`).trim(), linkedinUrl });
+      }
+      if (plan.coldPoolOrder !== 'descending') {
+        for (let i = coldLeads.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [coldLeads[i], coldLeads[j]] = [coldLeads[j], coldLeads[i]]; }
+      }
+      if (!coldLeads.length && !warmOn) return res.status(400).json({ error: 'The cold connection sheet has no usable LinkedIn URLs.' });
+      step(`Cold list: ${coldLeads.length} people, ${plan.coldPoolOrder !== 'descending' ? 'in random order' : 'top to bottom'}, starting on day ${cold.delayDays + 1} — by day: ${cold.amounts.slice(0, 16).join(', ')}.`);
+    }
+
+    // The account's tab in the results workbook: the plan (who, and on which
+    // day) and the record (request status, dates, acceptance) in one place.
+    // Both campaigns read their leads from it, so the engine stamps results
+    // straight back into it.
+    let tab = null;
+    try {
+      step(`Writing the plan to this account's tab in the results workbook…`);
+      tab = await createWarmSheet({
+        spreadsheetId: MATURE_RESULTS_SHEET_ID, tabName: name, header: [...MATURE_TAB_HEADER],
+        rows: buildMatureTabRows({ startDate, warmTargets: pool?.targets || [], warmAmounts, coldLeads, cold }),
+      }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
+      console.log(`[mature] ${name}: results tab ${tab.url} — ${tab.added} added, ${tab.existing} already listed`);
+      step(`Results tab "${name}" ${tab.created ? 'created' : 'updated'} — ${tab.added} people added${tab.existing ? `, ${tab.existing} already listed and left as they are` : ''}.`);
+      // Offer the link while the start is still running, not only at the end.
+      { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) progress.resultsUrl = tab.url; }
+    } catch (error) {
+      // The maturing sheets bridge is not set up or not reachable. Keep the
+      // plan startable the old way.
+      console.warn(`[mature] ${name}: results tab unavailable (${error.message}) — using separate sheets`);
+      step('The results workbook is not available yet — using a separate sheet for this run…');
+    }
+
+    if (warmOn) {
+      let sheetUrl = tab?.url, sheetGid = tab?.gid;
+      if (!tab) {
+        const sheet = await createWarmSheet({
+          name: `Warm connections — ${name} — ${startDate}`,
+          header: ['Full Name', 'LinkedIn URL', 'Pool Account', 'Pool Profile ID'],
+          rows: pool.targets.map((t) => [t.name, t.linkedinUrl, t.profile, t.profileId]),
+        }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`));
+        sheetUrl = sheet.url; sheetGid = sheet.gid;
+      }
+      step(`Sending warm connections to the cloud — ${warmAmounts[0]} today…`);
+      console.log(`[mature] ${name}: ${pool.targets.length} warm target(s) in ${sheetUrl}; schedule ${warmAmounts.join(',')}`);
+      result.warm = await launchMatureStage(req, {
+        campaignId, launchId: b.launchId, name,
+        mode: 'connect_only', profileIds: [profileId],
+        sheetUrl, sheetGid, linkedinColumn: 'LinkedIn URL',
+        ...(tab ? { leadFilter: { column: 'Type', value: 'Warm' } } : {}),
+        dailyLimit: warmAmounts[0], templates: {},
+        mature: { kind: 'warm', plan, pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, startAt: now.toISOString(), amounts: warmAmounts } },
+      });
+      if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
+      step(`Warm campaign is on the VM — ${result.warm.leadsAdded ?? pool.targets.length} pool accounts queued, ${warmAmounts[0]} to send today.`);
+    }
+
+    if (cold && coldLeads.length) {
       // Cold begins on its first planned day; the engine holds it until then.
       const startAt = cold.delayDays > 0 ? new Date(now.getTime() + cold.delayDays * 86400000) : null;
-      // Managed profiles belong to the warm pools, never to the cold list.
-      const managed = ['ortus_owned', 'linkedvelocity_owned']
-        .flatMap((p) => buildWarmPool({ pool: p, ...sources }).targets.map((t) => t.linkedinUrl));
       console.log(`[mature] ${name}: cold from day ${cold.delayDays + 1}; schedule ${cold.amounts.join(',')}`);
       step(cold.delayDays > 0 ? `Scheduling cold connections for day ${cold.delayDays + 1} of the plan…` : 'Sending cold connections to the cloud…');
       result.cold = await launchMatureStage(req, {
         name: `${name} · Cold`,
         mode: 'connect_only', profileIds: [profileId],
-        sheetUrl: plan.coldPool, dailyLimit: cold.amounts[0], templates: {},
-        shuffleLeads: plan.coldPoolOrder !== 'descending',
-        _preflightExcludedUrls: managed,
+        dailyLimit: cold.amounts[0], templates: {}, linkedinColumn: 'LinkedIn URL',
+        // From the tab the order is already the plan's; from the operator's own
+        // sheet (no tab) it is shuffled and filtered here instead.
+        ...(tab ? { sheetUrl: tab.url, sheetGid: tab.gid, leadFilter: { column: 'Type', value: 'Cold' } }
+          : { sheetUrl: plan.coldPool, shuffleLeads: plan.coldPoolOrder !== 'descending', _preflightExcludedUrls: managed }),
         ...(startAt ? { startAt: startAt.toISOString() } : {}),
-        mature: { kind: 'cold', dailySchedule: { startDate: (startAt || now).toISOString().slice(0, 10), amounts: cold.amounts } },
+        mature: { kind: 'cold', plan, viaMatureBridge: !!tab, dailySchedule: { startDate: localDay(startAt || now, planTz), startAt: (startAt || now).toISOString(), amounts: cold.amounts } },
       });
       // Warm is already running, so a cold failure is reported, not fatal.
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });
+      step(result.cold.ok ? `Cold campaign is on the VM — ${result.cold.leadsAdded ?? coldLeads.length} people queued${startAt ? `, first batch on day ${cold.delayDays + 1}` : ''}.` : `⚠ Cold connections did not start: ${result.cold.error}`);
     }
+    if (tab) result.resultsUrl = tab.url;
 
-    step('Started. Opening Live Status…');
+    step('Started. A cloud worker picks it up next — that takes about 2 minutes when the workers are asleep.');
     res.json({ ...result, id: result.warm?.id || result.cold?.id || null });
   } catch (err) {
     console.error(`[mature] start failed: ${err.message}`);
