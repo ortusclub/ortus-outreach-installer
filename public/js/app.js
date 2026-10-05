@@ -13386,7 +13386,7 @@ async function _renderCampaignsBoardInner() {
     if (_maturingLive.length) {
       const active = _maturingLive.find((x) => x.live) || null;
       const showBtn = `<button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || _maturingLive[0]).id)}','${escHtml(active ? active.name : 'Maturing')}')" title="${active ? `Watch ${escHtml(active.name)}'s browser live` : 'No maturing account has a browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button>`;
-      _maturingFooter = `<div class="sn-strip sn-maturing-log"><div class="sn-compact">`
+      _maturingFooter = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
         + `<span class="sn-status">${active ? `<span class="dot run"></span> ${escHtml(active.name)} is connecting` : '<span class="dot q"></span> No account is connecting right now'}</span></div>`
         + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
@@ -13394,9 +13394,9 @@ async function _renderCampaignsBoardInner() {
         + `<div class="sn-foot">${showBtn}</div></div></div>`;
       refreshMaturingLog(_maturingLive);
     }
-    // The combined log comes first, then one plain line per account.
+    // One plain line per account, then the combined log below them.
     html = _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: true, emptyMsg: 'No profile maturing campaigns yet. Create one with New campaign → Mature Profile Campaign.', ..._matureDraftOpts,
-      topHtml: _maturingFooter, listHtml: _maturingListHtml });
+      footerHtml: _maturingFooter, listHtml: _maturingListHtml });
   } else if (_viewerIsAdmin) {
     const mineItems  = regularCampaigns.filter((x) => !x.isFG && x.mine);
     const adminItems = regularCampaigns.filter((x) => x.isFG); // Follower Growth (extensible)
