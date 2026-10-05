@@ -2495,6 +2495,8 @@
         <button type="button" class="btn btn-primary" onclick="startMaturePlan(this)" aria-describedby="mature-runner-notice">Start plan</button>
         <button type="button" class="btn" onclick="saveMatureProfilePlan(this)">Save plan</button>
       </div>
+      <!-- Live progress of a plan start: filled the moment Start plan is pressed. -->
+      <div id="mature-start-status" class="sn-logbox" role="status" aria-live="polite" hidden></div>
       <p id="mature-runner-notice" class="mature-source-help">Starting sends connection requests from the profile being warmed, at the plan's daily amounts: warm connections to the accounts in the warm pool from day 1, and cold connections to your cold sheet from their first plan day. It runs in the cloud and appears under Profile Maturing on the dashboard, where you can pause or stop it. Post engagement does not run yet.</p>
     </section>
     <style>

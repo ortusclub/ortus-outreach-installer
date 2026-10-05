@@ -36379,10 +36379,31 @@ window.startMaturePlan = async function(btn) {
   if (!maturePlan) return;
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Starting…';
+  // Live status, from the first moment: each step the server takes is listed
+  // here as it happens, with a running clock on the current one.
+  const box = document.getElementById('mature-start-status');
+  const launchId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+  const began = Date.now();
+  let lines = ['Saving the plan…'], finalLine = '';
+  const paint = () => {
+    if (!box) return;
+    const secs = Math.round((Date.now() - began) / 1000);
+    box.hidden = false;
+    const last = lines.length - 1, failed = finalLine.startsWith('✗');
+    box.innerHTML = lines.map((l, i) => escHtml(i < last ? `✓ ${l}` : failed ? `✗ ${l}` : finalLine ? `✓ ${l}` : `⏳ ${l} · ${secs}s`)).join('<br>')
+      + (finalLine ? `<br>${escHtml(finalLine)}` : '');
+  };
+  paint();
+  const poll = setInterval(async () => {
+    try {
+      const p = await (await fetch(`/api/mature/start-progress?launchId=${encodeURIComponent(launchId)}`)).json();
+      if (Array.isArray(p.lines) && p.lines.length) lines = ['Saving the plan…', ...p.lines];
+    } catch { /* keep the last known step */ }
+    paint();
+  }, 1000);
   try {
     await flushAutosaveImmediate();
     if (!(await saveCampaignConfigByName(name))) throw new Error('Could not save the plan. Please try again.');
-    const launchId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : undefined;
     const res = await fetch('/api/mature/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, campaignId: _openedCampaignId, launchId, maturePlan }),
@@ -36405,7 +36426,13 @@ window.startMaturePlan = async function(btn) {
     const coldProblem = data.cold && !data.cold.ok ? ` Cold connections did not start: ${data.cold.error}` : '';
     showCampaignToast(`Plan started — ${parts.join(' · ')}.${coldProblem}`, coldProblem ? 12000 : 7000);
     // Straight to Live Status for the campaign that is sending now.
+    finalLine = '✓ Plan started.'; paint();
     if (data.id) await openCloudLive(data.id); else goDashboard();
-  } catch (error) { showCampaignToast(`✗ ${error.message}`, 8000); }
-  finally { btn.disabled = false; btn.textContent = label; }
+    if (box) box.hidden = true;
+  } catch (error) {
+    // The reason stays on screen under the buttons, not only in a passing toast.
+    finalLine = `✗ Not started — ${error.message}`; paint();
+    showCampaignToast(`✗ ${error.message}`, 8000);
+  }
+  finally { clearInterval(poll); btn.disabled = false; btn.textContent = label; }
 };

@@ -3968,6 +3968,43 @@ app.get('/api/mature/warm-pool', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// What a plan start is doing right now, keyed by the client's launchId, so the
+// editor can show progress the moment Start is pressed instead of a dead button.
+const matureStartProgress = new Map(); // launchId -> { lines: [text], done }
+function matureStep(launchId, text) {
+  if (!launchId) return;
+  const entry = matureStartProgress.get(launchId) || { lines: [], done: false };
+  entry.lines.push(text);
+  matureStartProgress.set(launchId, entry);
+}
+function matureStepsDone(launchId) {
+  const entry = matureStartProgress.get(launchId);
+  if (!entry) return;
+  entry.done = true;
+  setTimeout(() => matureStartProgress.delete(launchId), 120000).unref?.();
+}
+app.get('/api/mature/start-progress', (req, res) => {
+  res.json(matureStartProgress.get(String(req.query.launchId || '')) || { lines: [], done: false });
+});
+
+// Google intermittently answers the Apps Script's reply with a 404 page (a
+// Google-side flap measured in magellan-sheet.js; the same call works seconds
+// later). Try again rather than fail the whole start. A retry can leave an
+// unused extra sheet behind if the first attempt did create one.
+async function createWarmSheet(args, onRetry) {
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try { return await createWorkbookTab(args); }
+    catch (error) {
+      lastError = error;
+      if (!/not JSON|timeout|fetch failed|aborted/i.test(error.message) || attempt === 4) break;
+      onRetry?.(attempt + 1);
+      await new Promise((r) => setTimeout(r, 2500 * attempt));
+    }
+  }
+  throw new Error(`Google did not create the lead sheet after several tries (${lastError.message}). Press Start plan again in a minute.`);
+}
+
 // Run the cloud launch pipeline for one stage of a plan and hand back what it
 // would have sent to the client, so a plan can launch more than one campaign.
 async function launchMatureStage(req, body) {
@@ -3991,6 +4028,7 @@ async function launchMatureStage(req, body) {
 // cold at their own planned rates. An engine without that support keeps each
 // campaign at its first amount.
 app.post('/api/mature/start', async (req, res) => {
+  const step = (text) => matureStep(req.body?.launchId, text);
   try {
     const b = req.body || {};
     const plan = restoreMaturePlan(b.maturePlan);
@@ -4000,6 +4038,7 @@ app.post('/api/mature/start', async (req, res) => {
     if (!profileId) return res.status(400).json({ error: 'Choose the profile to warm.' });
     // One maturing campaign per account. Asked of the engine, team-wide, so a
     // plan a colleague started on this account counts too.
+    step('Checking this account is not already being matured…');
     const live = await listCloudCampaigns();
     if (live.error || !Array.isArray(live.campaigns)) return res.status(502).json({ error: 'Could not check for an existing maturing campaign on this account. Retry once the engine is reachable.' });
     const ENDED = new Set(['done', 'cancelled', 'error', 'stopped', 'completed']);
@@ -4017,6 +4056,7 @@ app.post('/api/mature/start', async (req, res) => {
     if (plan.warmEnabled !== false && !warmOn) return res.status(400).json({ error: 'The plan sends no warm connections on day 1. Set a starting daily amount, or switch warm connections off.' });
     if (!warmOn && !cold) return res.status(400).json({ error: 'This plan sends nothing. Set a daily amount for warm or cold connections.' });
 
+    step('Loading the accounts in the pool…');
     const sources = await matureWarmSources();
     // Always named after the login email of the profile being matured.
     // That is the address used to sign in today: Linked Velocity records it per
@@ -4032,11 +4072,13 @@ app.post('/api/mature/start', async (req, res) => {
         return res.status(400).json({ error: sources.lvError && WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity'
           ? sources.lvError : 'No accounts in the warm pool have a known LinkedIn URL.' });
       }
-      const sheet = await createWorkbookTab({
+      step(`Writing ${pool.targets.length} pool accounts to a new Google Sheet…`);
+      const sheet = await createWarmSheet({
         name: `Warm connections — ${name} — ${startDate}`,
         header: ['Full Name', 'LinkedIn URL', 'Pool Account'],
         rows: pool.targets.map((t) => [t.name, t.linkedinUrl, t.profile]),
-      });
+      }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`));
+      step(`Sending warm connections to the cloud — ${warmAmounts[0]} today…`);
       console.log(`[mature] ${name}: ${pool.targets.length} warm target(s) written to ${sheet.url}; schedule ${warmAmounts.join(',')}`);
       result.warm = await launchMatureStage(req, {
         campaignId: b.campaignId, launchId: b.launchId, name,
@@ -4055,6 +4097,7 @@ app.post('/api/mature/start', async (req, res) => {
       const managed = ['ortus_owned', 'linkedvelocity_owned']
         .flatMap((p) => buildWarmPool({ pool: p, ...sources }).targets.map((t) => t.linkedinUrl));
       console.log(`[mature] ${name}: cold from day ${cold.delayDays + 1}; schedule ${cold.amounts.join(',')}`);
+      step(cold.delayDays > 0 ? `Scheduling cold connections for day ${cold.delayDays + 1} of the plan…` : 'Sending cold connections to the cloud…');
       result.cold = await launchMatureStage(req, {
         name: `${name} · Cold`,
         mode: 'connect_only', profileIds: [profileId],
@@ -4068,11 +4111,12 @@ app.post('/api/mature/start', async (req, res) => {
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });
     }
 
+    step('Started. Opening Live Status…');
     res.json({ ...result, id: result.warm?.id || result.cold?.id || null });
   } catch (err) {
     console.error(`[mature] start failed: ${err.message}`);
     if (!res.headersSent) res.status(500).json({ error: err.message });
-  }
+  } finally { matureStepsDone(req.body?.launchId); }
 });
 
 // ── Follower Growth campaign ───────────────────────────────────────
