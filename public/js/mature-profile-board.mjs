@@ -118,6 +118,17 @@ export function maturingRowState(it) {
   return { label: 'Awaiting its turn', tone: 'amber' };
 }
 
+// Has today's batch been fully sent? Read from the engine's own log: its send
+// and turn lines end "n/m today". The newest such line decides.
+export function maturingBatchDone(log) {
+  const lines = (Array.isArray(log) ? log : []).map((e) => ({ t: Number(e && e.t) || 0, line: String((e && e.line) || '') })).sort((a, b) => b.t - a.t);
+  for (const { line } of lines) {
+    const m = line.match(/(\d+)\s*(?:\/|of)\s*(\d+)\s*(?:sent\s*)?today/i);
+    if (m) return Number(m[1]) >= Number(m[2]) && Number(m[2]) > 0;
+  }
+  return false;
+}
+
 // What a maturing campaign does next and when, as one short line. The time is
 // the engine's own next-batch time; it is always subject to the shared
 // maturing worker being free. `viewerTimeZone` is for tests (default: this
@@ -153,6 +164,9 @@ export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}
   }
   const today = amountOn(now);
   if (today === 0) return 'Plan complete — nothing further is planned';
+  // Today's batch is out but the engine has not closed the day yet (it rests a
+  // few minutes first). The accepts are queued when it does.
+  if (it.batchDoneToday && !it.live) return `Next: the receiving accounts accept today's requests · about 15 minutes after the batch closes, which takes a few minutes · ${free}`;
   return it.live ? `Now: sending today's ${count(today)}` : `Next: today's ${count(today)} · as soon as the worker is free`;
 }
 

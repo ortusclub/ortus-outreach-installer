@@ -1,5 +1,5 @@
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
-import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction, maturingWaitLines, logClock as matureLogClock } from '/js/mature-profile-board.mjs';
+import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction, maturingWaitLines, maturingBatchDone, logClock as matureLogClock } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
@@ -13014,6 +13014,7 @@ async function _renderCampaignsBoardInner() {
         engineStatus: c.status || '',
         resumeAt: c.resumeTaskDueAt || null,
         acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null,
+        batchDoneToday: !!c.config?.matureWarm && maturingBatchDone(d.monitorLog),
         resumeReason: c.resumeTaskReason || null,
         stopping: c.status === 'stopping' || c.status === 'pausing',
         monitoringPhase: c.status === 'monitoring' && String(c.runs_on || '') === 'local',
@@ -36659,7 +36660,7 @@ function startMatureInlineLive(ids, startLines = []) {
     return { id, name: c.name || '', matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '',
       bucket, bad: st === 'cancelled' || st === 'error', dailyWait: st === 'waiting_daily_reset', paused: st === 'paused' || st === 'pausing', stopping: st === 'stopping',
       needsReview: st === 'needs_review', live: !!d.live, scheduledAt: c.scheduled_start_at || null, resumeAt: c.resumeTaskDueAt || null,
-      acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null,
+      acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null, batchDoneToday: maturingBatchDone(d.monitorLog),
       sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)), log: Array.isArray(d.monitorLog) ? d.monitorLog : [] };
   }
   async function tick() {
