@@ -10,6 +10,7 @@ export const DEFAULT_RUN_TARGET = 'local'; // operator default — cloud VM is a
 export function isCloudMode(mode) { return CLOUD_MODES.has(String(mode || '')); }
 
 export function modeAvailability(mode, runTarget, { engineConfigured = true } = {}) {
+  if (mode === 'mature_profile') return { available: true, reason: '' }; // editable plan; no execution target yet
   if (runTarget !== 'cloud') return { available: true, reason: '' };
   if (!engineConfigured) return { available: false, reason: 'Cloud engine not configured' };
   if (!isCloudMode(mode)) return { available: false, reason: 'This mode is local-only — switch to 💻 This machine' };

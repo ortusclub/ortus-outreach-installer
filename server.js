@@ -67,7 +67,7 @@ import { replyWatermarkForRows, detectLinkedinColumn } from './src/reply-check-w
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCapacity, getCloudPreflight, getCloudCampaign, getCloudCampaignLeads, getCloudCampaignAccounts, stopCloudCampaign, cloudCheckStop, releaseCloudCampaign, reclaimCloudCampaign, resumeCloudCampaign, restartCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone, cloudCheckNow, setCloudAutoChecks, syncCloudLeadStatuses, benchCloudAccount, unbenchCloudAccount, recordCloudPrimaryConn, setCloudCampaignAccounts, extractPrimarySlug, getPrimarySession } from './src/campaigns-client.js';
 import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js';
 import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
@@ -1462,6 +1462,7 @@ function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 // Named so /api/campaign/cloud/:id/edit-redispatch can re-enter the same
 // pipeline after stopping the original campaign (excludeLeadUrls set).
 async function handleStartCloud(req, res) {
+  if (req.body?.mode === 'mature_profile') return res.status(400).json({ error: 'Mature Profile plans cannot be launched yet. Save the plan in the campaign editor.' });
   try {
     if (rejectIfNoOperatorEmail(res)) return;
     const identity = ensureCampaignIdentity({ campaignId: req.body?.campaignId, name: req.body?.name, config: req.body });
@@ -2178,6 +2179,12 @@ app.get('/api/campaign/cloud/:id/accounts', async (req, res) => {
 });
 // Operator Retry on a benched (weekly-cap) account — proxied so the engine
 // token stays server-side.
+app.post('/api/campaign/cloud/:id/accounts/:pid/bench', async (req, res) => {
+  if (typeof req.body?.benched !== 'boolean') return res.status(400).json({ error: 'benched must be true or false' });
+  const r = await benchCloudAccount(req.params.id, req.params.pid, req.body.benched);
+  if (r && r.error) return res.status(502).json(r);
+  res.json(r || { ok: true });
+});
 app.post('/api/campaign/cloud/:id/accounts/:pid/unbench', async (req, res) => {
   const r = await unbenchCloudAccount(req.params.id, req.params.pid);
   if (r && r.error) return res.status(502).json(r);
@@ -3193,6 +3200,7 @@ app.post('/api/campaign/start', async (req, res) => {
     // Retired modes (2026-08-06) — the picker no longer offers them, but a saved
     // draft, a schedule or an old queued row can still carry one, and those all
     // arrive here. Reject at the door so a retired mode can't run locally either.
+    if (mode === 'mature_profile') return res.status(400).json({ error: 'Mature Profile plans cannot be launched yet. Save the plan in the campaign editor.' });
     if (isRetiredMode(mode)) {
       return res.status(400).json({ error: `"${mode}" campaigns have been retired and can no longer be launched.` });
     }
@@ -5387,6 +5395,7 @@ app.post('/api/campaign/queue-only', async (req, res) => {
 
     // Retired modes — same gate as /api/campaign/start. Queueing one would just
     // defer the rejection to drain time, where nobody is watching for the error.
+    if (mode === 'mature_profile') return res.status(400).json({ error: 'Mature Profile plans cannot be launched yet. Save the plan in the campaign editor.' });
     if (isRetiredMode(mode)) {
       return res.status(400).json({ error: `"${mode}" campaigns have been retired and can no longer be queued.` });
     }

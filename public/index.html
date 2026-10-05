@@ -351,8 +351,6 @@
               </div>
             </div>
             <div class="vj-stage-safety" id="stageSafety"></div>
-            <div class="vj-stage-facts" id="stageFacts"></div>
-            <div class="vj-stage-miles" id="stageMiles"></div>
             <div class="vj-stage-outcome" id="stageOutcome">
               <div class="vj-stage-metrics">
                 <div><strong id="stageMetricAccepted">0</strong><span id="stageMetricAcceptedLabel">Newly accepted</span></div>
@@ -420,7 +418,6 @@
         <div id="primary-panel" hidden></div>
         <div class="vj-profiles" id="active-profiles" hidden></div>
         <div class="vj-controls">
-          <button class="btn-pill" onclick="window.dashOpenActive()">Open campaign tab</button>
           <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleActiveDetails(this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -542,7 +539,6 @@
           </div>
         </div>
         <div class="vj-controls">
-          <button class="btn-pill" onclick="window.dashOpenActive()">Open campaign tab</button>
           <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleMonitorDetails(this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -1206,6 +1202,7 @@
         <option value="check_dms">Check DMs (scan inboxes for replies)</option>
         <option value="sales_nav_scrape">Sales Nav Scrape</option>
         <option value="post_amplification">Post Amplification</option>
+        <option value="mature_profile">Mature Profile Campaign</option>
       </select>
 
       <!-- v2.62: variant-C wiring — Primary Person + Cadence sit as a
@@ -1556,14 +1553,14 @@
                 <span id="free-for-all-local"></span>
                 <br>Tip: you do not have to be at your desk when it opens — set the campaign up now and press <b>Schedule it</b> (in <b>6. Launch</b>) to have it start by itself at the opening time.
               </div>
-              <!-- "Free for all Friday" — Connect + Introduce Back only (toggled in onModeChange). -->
+              <!-- "Free for all weekends" — Connect + Introduce Back only (toggled in onModeChange). -->
               <div class="throttle-row" id="weekly-cutoff-row" style="display:none">
                 <label class="alpha-toggle" title="Stop this campaign when the weekend free for all ends (Sunday 12:00 Philippine time)">
                   <input type="checkbox" id="stop-before-weekly-reset" onchange="syncWeeklyCutoffHelp(); wizardDirtyOnInput()" />
                   <span class="alpha-toggle-track"></span>
                 </label>
                 <div class="tr-text">
-                  <div class="tr-label">Free for all Friday — stop when the free for all ends</div>
+                  <div class="tr-label">Free for all weekends — stop when the free for all ends</div>
                   <div class="tr-help" id="weekly-cutoff-help"></div>
                 </div>
               </div>
@@ -2488,6 +2485,28 @@
       </div>
     </div>
 
+    <section class="section" id="nav-mature-profile" style="display:none">
+      <h2>Mature Profile Campaign</h2>
+      <p>Build a staged plan for each account: start with your warm network, increase activity, then introduce cold connections and post engagement.</p>
+      <p style="color:var(--gray)">Days are relative to when the campaign starts. Edit the suggested stages and set your own daily limits. Saving stores the plan; it does not start activity.</p>
+      <div id="mature-plan-editor"></div>
+      <p id="mature-plan-summary" role="status"></p>
+      <div class="mature-actions" role="group" aria-label="Profile maturing controls" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+        <button type="button" class="btn btn-primary" disabled aria-describedby="mature-runner-notice">Start Maturing</button>
+        <button type="button" class="btn" disabled aria-describedby="mature-runner-notice">Pause Maturing</button>
+        <button type="button" class="btn" disabled aria-describedby="mature-runner-notice">Stop Maturing</button>
+        <button type="button" class="btn" onclick="saveMatureProfilePlan(this)">Save plan</button>
+      </div>
+      <p id="mature-runner-notice" class="mature-source-help">Maturing controls will be available when the automatic runner is connected. You can save your plan now.</p>
+    </section>
+    <style>
+      .mature-connection-section{border:1px solid var(--hairline);border-radius:16px;overflow:hidden}.mature-connection-section summary{cursor:pointer;padding:20px;font-weight:600;font-size:20px}.mature-connection-body{display:grid;gap:16px;padding:0 20px 20px}.mature-source-help{margin:0;color:var(--gray);font-size:14px;line-height:1.5}.mature-cold-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.mature-field[hidden]{display:none}.mature-sources{display:grid;gap:16px;margin:24px 0}.mature-field{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:13px}
+      .mature-field input,.mature-field textarea,.mature-field select{width:100%;padding:12px;border:1px solid var(--hairline);border-radius:10px;background:var(--paper,#fff);color:var(--ink)}
+      .mature-preset-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}.mature-preset{padding:18px;text-align:left;border:1px solid var(--hairline);border-radius:14px;background:var(--card-bg);color:var(--ink);cursor:pointer;display:flex;flex-direction:column;gap:10px}.mature-preset[aria-pressed="true"]{border-color:var(--gold);background:rgba(247,190,104,.12)}.mature-preset span{font-size:13px;line-height:1.5}.mature-day-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}.mature-day{border:1px solid var(--hairline);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px}.mature-day span{font-size:12px;color:var(--gray)}.mature-day strong{font-size:22px}.mature-ramp-preview{margin-top:18px}@media(max-width:850px){.mature-preset-grid{grid-template-columns:1fr}.mature-day-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      .mature-stage{border:1px solid var(--hairline);border-radius:16px;padding:20px;margin:14px 0}.mature-stage h3{margin:0 0 18px}
+      .mature-stage-fields{display:grid;grid-template-columns:repeat(5,minmax(100px,1fr));gap:14px}.mature-account{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:12px 0;border-bottom:1px solid var(--hairline)}
+      @media(max-width:850px){.mature-cold-row{grid-template-columns:1fr}.mature-stage-fields{grid-template-columns:repeat(2,minmax(100px,1fr))}}
+    </style>
     <!-- ── GoLogin Profiles ── -->
     <div class="section collapsible collapsed" id="nav-accounts">
       <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select GoLogin Accounts</span> <span class="section-summary" id="summary-accounts"></span></h2>

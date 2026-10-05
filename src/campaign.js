@@ -2333,7 +2333,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   // throttling after only the backoff sleep. Older saved campaigns without the
   // field default ON (back-compat). Challenges always halt regardless.
   campaign.pauseOnThrottle = pauseOnThrottle !== false;
-  // "Free for all Friday": stop sending just before LinkedIn's weekly invitation
+  // "Free for all weekends": stop sending just before LinkedIn's weekly invitation
   // allowance resets, so this run never spends next week's invites.
   campaign.weeklyCutoffAt = stopBeforeWeeklyReset ? new Date(weeklyCutoffMs(Date.now())).toISOString() : null;
   // "Connections only": every intro pass consults _primaryIntroAllowed, which
@@ -2420,7 +2420,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
     log(`Campaign limit per account: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
     if (campaign.monthlyCutoffAt) log(`Free for all 25th: ON — this campaign stops itself at ${new Date(campaign.monthlyCutoffAt).toLocaleString()} (15 min before LinkedIn's monthly message allowance renews, the 1st at 00:00 UTC).`);
-    if (campaign.weeklyCutoffAt) log(`Free for all Friday: ON — this campaign stops itself at ${new Date(campaign.weeklyCutoffAt).toLocaleString()} (Sunday 12:00 Philippine time — when the weekend free for all ends).`);
+    if (campaign.weeklyCutoffAt) log(`Free for all weekends: ON — this campaign stops itself at ${new Date(campaign.weeklyCutoffAt).toLocaleString()} (Sunday 12:00 Philippine time — when the weekend free for all ends).`);
     if (!_NO_LIMIT_MODES.has(mode)) {
       log(`  (set in launch wizard — adjust under "Campaign limit per account" before next run if this isn't what you expected)`);
     }
@@ -5543,7 +5543,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     }  // end runProfileTurn
 
     // ── Worker dispatcher: spawn N concurrent workers ──
-    // "Free for all Friday" — true once the cutoff has passed; stops the campaign
+    // "Free for all weekends" — true once the cutoff has passed; stops the campaign
     // (once) at a lead boundary, never mid-lead.
     function weeklyCutoffReached() {
       if (campaign._abort) return false;
@@ -5559,7 +5559,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       if (!campaign.weeklyCutoffAt) return false;
       const cutoff = Date.parse(campaign.weeklyCutoffAt);
       if (!Number.isFinite(cutoff) || Date.now() < cutoff) return false;
-      log(`🛑 Free for all Friday — the weekend free for all has ended (Sunday 12:00 Philippine time), so this campaign is stopping. Nothing more is sent. Remaining leads stay queued.`);
+      log(`🛑 Free for all weekends — the weekend free for all has ended (Sunday 12:00 Philippine time), so this campaign is stopping. Nothing more is sent. Remaining leads stay queued.`);
       stopCampaign({ reason: 'weekly-reset-cutoff' });
       return true;
     }
@@ -6938,7 +6938,7 @@ export function getCampaignStatus() {
       ? checkCadenceMin({ baseMin: campaign.checkIntervalMinutes, emptyStreak: campaign.emptyCheckStreak })
       : null,
     checkIntervalBaseMinutes: campaign.checkIntervalMinutes || null,
-    // "Free for all Friday": when this run stops itself, or null when the option is off.
+    // "Free for all weekends": when this run stops itself, or null when the option is off.
     weeklyCutoffAt: campaign.weeklyCutoffAt || null,
     monthlyCutoffAt: campaign.monthlyCutoffAt || null,
     emptyCheckStreak: Math.max(0, Number(campaign.emptyCheckStreak) || 0),

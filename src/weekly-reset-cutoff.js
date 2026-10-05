@@ -1,5 +1,5 @@
 /**
- * "Free for all Friday" — when LinkedIn's weekly invitation allowance is assumed
+ * "Free for all weekends" — when LinkedIn's weekly invitation allowance is assumed
  * to reset, and when a campaign that must not spend NEXT week's allowance should
  * stop. Pure: no clock, no campaign state.
  *
@@ -10,7 +10,7 @@
 export const RESET_TIME_ZONE = 'America/Los_Angeles';
 export const RESET_WEEKDAY = 1;            // Monday (0 = Sunday)
 export const STOP_BEFORE_RESET_MS = 15 * 60 * 1000;   // monthly cutoff only
-// Free for all Friday stops when the weekend free-for-all ends: Sunday 12:00
+// Free for all weekends stops when the weekend free-for-all ends: Sunday 12:00
 // Philippine time (operator, 2026-09-21). The window opens Saturday 12:00 PH time.
 export const WEEKLY_STOP_TIME_ZONE = 'Asia/Manila';
 export const WEEKLY_STOP_WEEKDAY = 0;      // Sunday

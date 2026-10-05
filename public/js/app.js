@@ -1,3 +1,5 @@
+import { splitMaturingCampaigns } from '/js/mature-profile-board.mjs';
+import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
 import { hasPreviewMessage } from '/js/preview-content.mjs';
@@ -1753,7 +1755,7 @@ function gatherCampaignFormState() {
     sheetUrl,
     linkedinColumn,
     templates,
-    profileIds: [...selectedProfileIds],
+    profileIds: getV('campaign-mode') === 'mature_profile' ? (readMaturePlan()?.targetProfileIds || []) : [...selectedProfileIds],
     benchedProfileIds: [...benchedProfileIds].filter(id => selectedProfileIds.includes(id)),
     senderFirstNames,
     senderNames,
@@ -3612,6 +3614,10 @@ function applyFgRunTargetDefault() {
 // Run-target tab click entry point. Records a deliberate "This machine" pin while
 // in FG mode (so the default logic won't fight it), then applies the choice.
 function pickRunTarget(t) {
+  if (runTargetIsLocked()) {
+    showCampaignToast('Stop the campaign before changing where it runs.', 5000);
+    return;
+  }
   try {
     const m = document.getElementById('campaign-mode');
     if (m && m.value === 'follower_growth') _fgRunTargetPinnedLocal = (t === 'local');
@@ -4000,6 +4006,15 @@ function onModeChange() {
     try { rsweepInitControls(); } catch (_) {}
     try { rsweepPoll(); } catch (_) {}
   }
+  const isMature = mode === 'mature_profile';
+  const targetPicker = document.getElementById('run-target');
+  if (targetPicker) targetPicker.hidden = isMature;
+  const maturePanel = document.getElementById('nav-mature-profile');
+  if (maturePanel) maturePanel.style.display = isMature ? '' : 'none';
+  if (isMature) {
+    for (const el of [navAccounts, navPace, navTemplates, navSheet, dailyKnob, navLaunch, runBar]) if (el) el.style.display = 'none';
+    renderMaturePlan({ onChange: wizardDirtyOnInput, accounts: selectedProfileIds.map(id => ({id, name: profileLabel(id)})) });
+  }
   // Re-evaluate the generic Live Status section now that the mode changed — so a
   // prior finished campaign's card hides the moment we enter FG view (v2.119.2).
   try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
@@ -4243,214 +4258,26 @@ async function refreshScrapeConfigured() {
   } catch (_) { /* leave as-is */ }
 }
 
-// Per-job live View — opens a modal whose <img> points straight at
-// /api/scrape/view/:jobId, an MJPEG (multipart/x-mixed-replace) screencast the
-// engine streams via CDP. The browser renders it as live video natively — no
-// polling, no frame handling here. The request rides the dashboard's own
-// session (no token in the URL). Closing the modal clears src, which aborts the
-// stream (the engine then stops the screencast). One viewer open at a time.
-function openScrapeJobView(jobId, label) {
-  closeScrapeJobView();
-  const overlay = document.createElement('div');
-  overlay.id = 'scrape-job-viewer';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
-  const safeLabel = (label || jobId).replace(/</g, '&lt;');
-  overlay.innerHTML =
-    '<div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1280px;margin-bottom:10px">' +
-      '<span style="color:#fff;font-size:14px">👁 Live · ' + safeLabel + '</span>' +
-      '<span id="scrape-jv-status" style="color:#9aa;font-size:12px">connecting…</span>' +
-      '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeScrapeJobView()">✕ Close</button>' +
-    '</div>' +
-    '<div style="max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
-      '<img id="scrape-jv-img" alt="live page" style="max-width:100%;max-height:78vh;display:block" />' +
-    '</div>';
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeScrapeJobView(); });
-  document.body.appendChild(overlay);
-
-  const img = document.getElementById('scrape-jv-img');
-  const status = document.getElementById('scrape-jv-status');
-  img.onload = () => { if (status) status.textContent = ''; };
-  img.onerror = () => { if (status) status.textContent = 'stream ended — the job may have finished.'; };
-  img.src = `/api/scrape/view/${encodeURIComponent(jobId)}`;
-}
-function closeScrapeJobView() {
-  const img = document.getElementById('scrape-jv-img');
-  if (img) img.src = ''; // aborts the MJPEG connection → engine stops the screencast
-  const el = document.getElementById('scrape-job-viewer');
-  if (el) el.remove();
-}
-
-// "Show campaign happening" — the cloud-campaign analogue of openScrapeJobView.
-// Opens a modal whose <img> streams the engine's MJPEG screencast of the
-// campaign's active browser session via /api/campaign/cloud/:id/view. Browsers
-// are intentionally ephemeral, so the idle state is expected and the viewer
-// reconnects when the campaign next opens its own browser. One viewer at a time.
-function openCloudCampaignView(id, label) {
-  closeCloudCampaignView();
-  const overlay = document.createElement('div');
-  overlay.id = 'cloud-cmp-viewer';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
-  const safeLabel = (label || id).replace(/</g, '&lt;');
-  overlay.innerHTML =
-    '<div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1280px;margin-bottom:10px">' +
-      '<span style="color:#fff;font-size:14px">👁 Live · ' + safeLabel + '</span>' +
-      '<span id="cloud-cv-status" style="color:#9aa;font-size:12px">connecting…</span>' +
-      '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeCloudCampaignView()">✕ Close</button>' +
-    '</div>' +
-    '<div id="cloud-cv-stage" style="position:relative;max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
-      '<img id="cloud-cv-img" alt="" style="max-width:100%;max-height:78vh;display:block" />' +
-      '<div id="cloud-cv-empty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center"></div>' +
-    '</div>';
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeCloudCampaignView(); });
-  document.body.appendChild(overlay);
-
-  const img = document.getElementById('cloud-cv-img');
-  const status = document.getElementById('cloud-cv-status');
-  const viewUrl = `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
-  const detailUrl = `/api/campaign/cloud/${encodeURIComponent(id)}`;
-
-  // Cloud campaign browsers are SHORT-LIVED: the VM opens a browser only while
-  // it's actively sending a lead or running an acceptance check (often just a
-  // few seconds), then reaps it. So a one-shot <img> almost always misses the
-  // window and 404s. Instead we KEEP WATCHING: when there's no live browser,
-  // show a "waiting" state and re-probe every few seconds, auto-starting the
-  // stream the moment one opens. The operator opens this once and leaves it up.
-  let _tries = 0;
-  let fastRetryUntil = 0;
-  const nextCheckText = (value) => {
-    if (!value) return '';
-    const when = new Date(value);
-    if (Number.isNaN(when.getTime())) return '';
-    return when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-  const showWaiting = ({ nextCheckAt = '', reason = '', checking = false, canCheckNow = false } = {}) => {
-    img.style.display = 'none';
-    if (status) status.textContent = checking ? 'check queued…' : 'no browser open';
-    const empty = document.getElementById('cloud-cv-empty');
-    if (empty) {
-      const next = nextCheckText(nextCheckAt);
-      empty.style.display = 'flex';
-      empty.innerHTML =
-        '<div style="padding:44px 34px;text-align:center;max-width:560px">' +
-          '<div style="font-size:15px;line-height:1.55;color:#e8eaed;margin-bottom:8px">' +
-            (checking ? 'Check queued. Waiting for the browser to open…' : 'No browser open right now.') +
-          '</div>' +
-          '<div style="font-size:12.5px;line-height:1.55;color:#9aa">' +
-            (next
-              ? `This campaign next checks at ${escHtml(next)}. `
-              : 'Cloud campaigns open a browser only while working. ') +
-            (canCheckNow ? 'Run a check now, then leave this viewer open. ' : 'Leave this viewer open. ') +
-            'It connects automatically when frames arrive.' +
-            (reason ? '<br><span style="color:#f2b8b5">' + escHtml(reason) + '</span>' : '') +
-          '</div>' +
-          (canCheckNow ? '<button id="cloud-cv-check-now" class="btn btn-primary btn-sm" style="margin-top:18px">Run check now</button>' : '') +
-        '</div>';
-      const checkBtn = document.getElementById('cloud-cv-check-now');
-      if (checkBtn) checkBtn.onclick = queueCheckNow;
-    }
-  };
-  const readCampaign = async () => {
-    try {
-      const res = await fetch(detailUrl, { cache: 'no-store' });
-      return await res.json().catch(() => ({}));
-    } catch (_) { return {}; }
-  };
-  const scheduleRetry = (delay) => {
-    if (_cloudCvRetryTimer) clearTimeout(_cloudCvRetryTimer);
-    _cloudCvRetryTimer = setTimeout(retry, delay);
-  };
-  const retry = () => {
-    if (!document.getElementById('cloud-cmp-viewer')) return; // closed
-    _tries++;
-    // Cache-bust so the browser actually re-requests (a failed <img> won't retry
-    // the same URL on its own).
-    const empty = document.getElementById('cloud-cv-empty');
-    if (empty) empty.style.display = 'none';
-    img.style.display = 'block';
-    img.src = `${viewUrl}?t=${Date.now()}`;
-  };
-  img.onload = () => { if (status) status.textContent = '● live'; };
-  img.onerror = async () => {
-    const detail = await readCampaign();
-    let reason = '';
-    try {
-      const r = await fetch(viewUrl, { cache: 'no-store' });
-      const j = await r.json().catch(() => ({}));
-      if (j && j.error && !/no active session/i.test(j.error)) reason = j.error;
-    } catch { /* ignore */ }
-    showWaiting({
-      nextCheckAt: detail && detail.campaign && detail.campaign.next_check_at,
-      reason,
-      checking: Date.now() < fastRetryUntil,
-      canCheckNow: !!(detail && detail.campaign && detail.campaign.status === 'monitoring'),
-    });
-    scheduleRetry(Date.now() < fastRetryUntil ? 1500 : 4000);
-  };
-  async function queueCheckNow(scope) {
-    // Opened from a click (scope is the event object, not a valid scope) → ask the
-    // same scope question as the local check, then re-enter with the choice.
-    if (scope !== 'campaign' && scope !== 'all') {
-      // Scope only. The old second step asked WHERE to run the check, which is
-      // now a question the card already answers: RUNNING ON says which side owns
-      // the campaign, and a check runs where the campaign runs. Asking again made
-      // the two disagreeable (an operator could run a VM check on a campaign
-      // sitting on their Mac) and put a modal in front of the one button people
-      // press when they are already unsure the app is working.
-      _soloCheckHandler = (mode) => {
-        const sc = mode === 'sheet' ? 'all' : 'campaign';
-        if (_checkRunsLocally(id)) cloudCheckLocal(id, document.getElementById('cloud-cv-check-now'), sc);
-        else queueCheckNow(sc);
-      };
-      _showSoloCheckModal();
-      return;
-    }
-    const btn = document.getElementById('cloud-cv-check-now');
-    if (btn) btn.disabled = true;
-    try {
-      const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/check-now`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.error) {
-        const detail = await readCampaign();
-        showWaiting({
-          nextCheckAt: detail && detail.campaign && detail.campaign.next_check_at,
-          reason: data.error || 'Could not queue a check.',
-          canCheckNow: !!(detail && detail.campaign && detail.campaign.status === 'monitoring'),
-        });
-        return;
-      }
-      fastRetryUntil = Date.now() + 60 * 1000;
-      const detail = await readCampaign();
-      showWaiting({
-        nextCheckAt: detail && detail.campaign && detail.campaign.next_check_at,
-        checking: true,
-        canCheckNow: true,
-      });
-      scheduleRetry(0);
-    } catch (_) {
-      const detail = await readCampaign();
-      showWaiting({
-        nextCheckAt: detail && detail.campaign && detail.campaign.next_check_at,
-        reason: 'Could not reach the campaign service.',
-        canCheckNow: !!(detail && detail.campaign && detail.campaign.status === 'monitoring'),
-      });
-    }
+// Live browsers open in a reusable, independent window so the campaign stays usable.
+let _livePreviewWindow = null;
+function openLivePreview(kind, id, label) {
+  const query = new URLSearchParams({ kind, id, label: label || (kind === 'scrape' ? 'Scrape' : 'Campaign') });
+  const previewUrl = new URL(`/live-preview.html?${query}`, location.origin).href;
+  if (window.ortusPreview) {
+    window.ortusPreview.open(previewUrl).catch(() => showCampaignToast('Could not open the live preview. Try again.'));
+    return;
   }
-  retry();
+  _livePreviewWindow = window.open(previewUrl, 'ortus-live-preview',
+    'popup=yes,width=560,height=480,resizable=yes,scrollbars=no');
+  if (_livePreviewWindow) _livePreviewWindow.focus();
+  else showCampaignToast('Allow pop-up windows to open the live preview.');
 }
-let _cloudCvRetryTimer = null;
-function closeCloudCampaignView() {
-  if (_cloudCvRetryTimer) { clearTimeout(_cloudCvRetryTimer); _cloudCvRetryTimer = null; }
-  const img = document.getElementById('cloud-cv-img');
-  if (img) { img.onerror = null; img.onload = null; img.src = ''; } // abort stream + stop retrying
-  const el = document.getElementById('cloud-cmp-viewer');
-  if (el) el.remove();
-}
-if (typeof window !== 'undefined') {
-  window.openCloudCampaignView = openCloudCampaignView;
-  window.closeCloudCampaignView = closeCloudCampaignView;
-}
+function openScrapeJobView(jobId, label) { openLivePreview('scrape', jobId, label); }
+function openCloudCampaignView(id, label) { openLivePreview('campaign', id, label); }
+function closeScrapeJobView() { window.ortusPreview?.close(); _livePreviewWindow?.close(); _livePreviewWindow = null; }
+function closeCloudCampaignView() { closeScrapeJobView(); }
+window.openCloudCampaignView = openCloudCampaignView;
+window.closeCloudCampaignView = closeCloudCampaignView;
 
 async function startScrapeJob() {
   const sheetEl = document.getElementById('scrape-sheet');
@@ -5874,6 +5701,7 @@ const MODE_LIST = [
       '80% Like · 20% mixed reactions',
     ],
   },
+  { value: 'mature_profile', name: 'Mature Profile Campaign', bullets: ['Create a staged plan for each account', 'Warm connections first, then a cold connection pool', 'Add post engagement in later stages'] },
 ];
 
 // ── Campaign-type lock (v2.160.42) ──────────────────────────────────────────
@@ -6624,7 +6452,7 @@ function checkDelayDanger() {
 }
 
 // Task 4 (2026-06-19): B2 pause-on-throttle help text update.
-// "Free for all Friday": next Sunday 12:00 Philippine time, shown in the
+// "Free for all weekends": next Sunday 12:00 Philippine time, shown in the
 // operator's own clock. Mirrors weeklyCutoffMs in src/weekly-reset-cutoff.js.
 function _nextWeeklyResetLocal() {
   const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hourCycle: 'h23', weekday: 'short', hour: 'numeric', minute: 'numeric' });
@@ -7261,6 +7089,7 @@ async function startCampaign(opts = {}) {
   // endpoint and no campaign templates. Delegate to startCheckDms() and
   // return — the rest of this function only applies to outreach campaigns.
   const _modeEarly = document.getElementById('campaign-mode').value;
+  if (_modeEarly === 'mature_profile') { showCampaignToast('Save your maturity plan first. Automatic execution is not enabled yet.', 5000); return; }
   if (_modeEarly === 'check_dms') {
     return startCheckDms();
   }
@@ -7693,7 +7522,7 @@ async function startCampaign(opts = {}) {
     // Task 4 (2026-06-19): pause the account when LinkedIn returns 429.
     // Default true (ON) — operator can disable in Advanced section.
     pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
-    // "Free for all Friday" — only offered (and only sent) for Connect + Introduce Back.
+    // "Free for all weekends" — only offered (and only sent) for Connect + Introduce Back.
     stopBeforeWeeklyReset: document.getElementById('campaign-mode')?.value === 'connect_and_introduce' && document.getElementById('stop-before-weekly-reset')?.checked === true,
     // "Connections only" — CC+IB sends and checks acceptances but never introduces.
     skipIntroductions: document.getElementById('campaign-mode')?.value === 'connect_and_introduce' && document.getElementById('skip-intros')?.checked === true,
@@ -7870,6 +7699,16 @@ function refreshCloudToggle() {
 // #cloud-run-checkbox.checked in sync so the launch-time cloud dispatch gate
 // above (untouched) needs no changes — cloud tab → checked → cloud dispatch
 // for cloud-supported modes, local tab → unchecked → local dispatch.
+function runTargetIsLocked() {
+  try {
+    const status = _viewingCloudId ? window.__cloudActiveStatus : (isViewingRunningCampaign() ? __cockpit : null);
+    if (status && (status.running || status.paused || status.monitoring || status.monitoringPhase || status.queued || ['running','paused','monitoring','queued','preflight','starting'].includes(status.state))) return true;
+    const id = _editingCampaignId || _openedCampaignId;
+    if (!id) return false;
+    const item = [..._boardItemsById.values()].find(it => it.id === id || it.campaignId === id);
+    return !!item && ['running', 'queued', 'monitoring', 'paused'].includes(item.bucket);
+  } catch (_) { return false; }
+}
 function getRunTarget() {
   return document.getElementById('run-target')?.dataset.target || DEFAULT_RUN_TARGET;
 }
@@ -7885,6 +7724,8 @@ function setRunTarget(t) {
 }
 function refreshRunTarget() {
   const t = getRunTarget();
+  const locked = runTargetIsLocked();
+  document.querySelectorAll('#run-target .rt-tab').forEach(button => { button.disabled = locked || (button.dataset.rt === 'cloud' && !_engineConfigured); button.title = locked ? 'Stop the campaign to change its location' : ''; });
   const facts = document.getElementById('run-target-facts');
   if (facts) facts.innerHTML = runTargetFacts(t).map((f) =>
     `<span class="rt-fact"><span class="i">${f.ok ? '✓' : '—'}</span><span>${escHtml(f.text)}</span></span>`).join('');
@@ -7942,7 +7783,7 @@ function refreshAccountPickerForRunTarget() {
 function refreshVmTabAvailability() {
   const cloudTab = document.querySelector('#run-target .rt-tab[data-rt="cloud"]');
   if (!cloudTab) return;
-  cloudTab.disabled = !_engineConfigured;
+  cloudTab.disabled = !_engineConfigured || runTargetIsLocked();
   cloudTab.classList.toggle('rt-tab-disabled', !_engineConfigured);
   cloudTab.title = _engineConfigured ? '' : 'Cloud engine not configured';
   if (!_engineConfigured && getRunTarget() === 'cloud') setRunTarget('local');
@@ -8053,7 +7894,7 @@ const CLOUD_MODE_LABELS = {
   introduce_back: 'Introduction', follower_growth: 'Follower Growth',
   inmail_only: 'InMail', open_profile_only: 'Message', check_status: 'Check Status',
 };
-const CLOUD_MODE_BADGES = {
+const CLOUD_MODE_BADGES = { mature_profile: 'MP',
   connect_only: 'CC', connect_and_introduce: 'C+I', connect_and_message: 'C+D',
   message_only: 'DM', introduce_back: 'IB', follower_growth: 'FG',
   inmail_only: 'IM', open_profile_only: 'OP', check_status: 'CS',
@@ -9724,6 +9565,7 @@ function _capDetailHtml(id, a, st, opts = {}) {
   }
   const pid = escHtml(a.profileId || '');
   const acts = [];
+  acts.push(`<button type="button" onclick="benchCloudCampaignAccount('${escHtml(id)}','${pid}',${!a.manuallyBenched},this)">${a.manuallyBenched ? 'Unbench account' : 'Bench account'}</button>`);
   // A weekly cap gets no "try again": it is a window, not a cooldown. Offering
   // one while the live stage says "not before Monday" is the app arguing with
   // itself, and taking it spends rate-limit strikes for nothing.
@@ -10079,6 +9921,21 @@ window.renderCloudAccountsPanel = renderCloudAccountsPanel;
 // engine; the account is eligible again from the next turn.
 // `quiet` suppresses the success toast so the bulk Retry (stageRetryBlocked)
 // doesn't fire one per account — it reports once, on its own button.
+async function benchCloudCampaignAccount(campaignId, profileId, benched, button) {
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch(`/api/campaign/cloud/${encodeURIComponent(campaignId)}/accounts/${encodeURIComponent(profileId)}/bench`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ benched }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || 'Could not update the account');
+    showCampaignToast(benched ? 'Account benched for this campaign — it finishes its current lead, then sits out.' : 'Account unbenched — eligible next turn, subject to login and sending limits.');
+    await _refreshCloudActiveStatus(campaignId);
+  } catch (error) { showCampaignToast(error.message, 7000); }
+  finally { if (button) button.disabled = false; }
+}
+window.benchCloudCampaignAccount = benchCloudCampaignAccount;
+
 async function unbenchCloudAccount(campaignId, profileId, btn, quiet) {
   if (!campaignId || !profileId) return;
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
@@ -11110,7 +10967,7 @@ function _vjControlsHtml(c, status, options = {}) {
   const stopHtml = c.stop
     ? `<button class="btn-pill stop"${active ? ' id="btn-active-stop"' : ''} onclick="${c.stop.onclick}">${escHtml(stopTip === 'Stop' ? 'Stop campaign' : stopTip)}</button>`
     : '';
-  const openHtml = c.open ? `<button class="btn-pill" onclick="${c.open.onclick}">Open campaign tab</button>` : '';
+  const openHtml = '';
   const sheetHtml = c.sheet ? `<button class="btn-pill" onclick="${c.sheet.onclick}">Open sheet</button>` : '';
   const detailsHtml = active
     ? `<button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleActiveDetails(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>`
@@ -11967,7 +11824,7 @@ function renderUnifiedRunStrip(it) {
     // handshake modal owns Cancel / Dispatch anyway while it's up.
     foot = '';
   } else if (it.where === 'local' && it.interrupted) {
-    foot = _dib(V3_SVG_PLAY, 'Continue where it left off', `window.openCampaignResumeDecision('local-active','sending','local',this)`)
+    foot = _dib(V3_SVG_PLAY, 'Start again', `window.openCampaignResumeDecision('local-active','sending','local',this)`)
       + _dib(V3_SVG_TRASH, 'Delete', `deleteBoardCampaign('${escHtml(it.id)}', this)`, 'danger')
       + _dib(V3_SVG_COPY, 'Duplicate', `duplicateCampaign('${escHtml(it.id)}')`)
       + `<button class="mini solid" onclick="openCampaignForEdit('${escHtml(it.id)}')">Open</button>`;
@@ -12028,11 +11885,9 @@ function renderUnifiedRunStrip(it) {
       ? _dib(V3_SVG_DOC, 'Debrief', `window.openDebrief('${escHtml(it.id)}')`)
       : '';
     // Restart — only for a STOPPED/CANCELLED/ERRORED campaign (it.bad), never a
-    // cleanly-completed one. ▶ Continue where it left off · ⟲ Restart from the
-    // beginning. Both skip already-done rows/leads (no double-outreach).
+    // cleanly-completed one. One Start again action preserves processed leads.
     const restartBtns = it.bad
-      ? _dib(V3_SVG_PLAY, 'Continue where it left off', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', false)` : `restartLocalFromItem('${escHtml(it.id)}', false)`)
-        + _dib(V3_SVG_RESTART, 'Restart from the beginning', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', true)` : `restartLocalFromItem('${escHtml(it.id)}', true)`)
+      ? _dib(V3_SVG_PLAY, 'Start again', cloud ? `restartCloudCampaignUI('${escHtml(it.id)}', false)` : `restartLocalFromItem('${escHtml(it.id)}', false)`)
       : '';
     // OPEN routing for a finished strip: STOPPED/cancelled cloud → prefilled
     // editable setup wizard (edit & re-launch); cleanly-done cloud → live view;
@@ -12157,17 +12012,40 @@ function renderDraftStrip(d) {
 // Delete a draft from its board strip — optimistic strip removal (the 4s board
 // poll would otherwise show the stale row), then the same API + wizard-reference
 // cleanup as deleteDraft (Drafts & Stops tab), then re-render both surfaces.
+const deletedDraftIds = new Set();
+const deletingDraftIds = new Set();
 async function deleteDraftStrip(id, btn) {
-  if (!id) return;
-  if (!confirm('Delete this draft?')) return;
-  const strip = btn && btn.closest('.sn-strip');
-  if (strip) strip.remove();
+  return deleteDraftRecord(id, btn);
+}
+async function deleteDraftRecord(id, btn) {
+  if (!id || deletingDraftIds.has(id)) return;
+  deletingDraftIds.add(id);
   try {
-    await fetch('/api/drafts/' + encodeURIComponent(id), { method: 'DELETE' });
-  } catch (err) { alert('Failed: ' + err.message); return; }
-  try { if (getActiveDraftId() === id) clearActiveDraft(); } catch { /* not the active draft */ }
-  try { if (typeof refreshDashboardDrafts === 'function') refreshDashboardDrafts(); } catch { /* */ }
-  try { renderCampaignsBoard(); } catch { /* next poll repaints */ }
+    if (!(await appConfirm('Delete this draft permanently?', { title: 'Delete draft', okLabel: 'Delete draft' }))) return;
+    if (btn) btn.disabled = true;
+    const response = await fetch('/api/drafts/' + encodeURIComponent(id), { method: 'DELETE' });
+    const result = await response.json().catch(() => ({}));
+    // Missing is already deleted. Other failures must leave the draft visible.
+    if (response.status !== 404 && (!response.ok || result.ok !== true)) {
+      throw new Error(result.error || 'The draft could not be deleted. Please try again.');
+    }
+    deletedDraftIds.add(id);
+    if (getActiveDraftId() === id) {
+      clearActiveDraft();
+      if (_autosaveTimer) { clearTimeout(_autosaveTimer); _autosaveTimer = null; }
+    }
+    document.querySelectorAll('.sn-strip.draft, .campaign-row[data-campaign-id]').forEach(row => {
+      if (row.dataset.cid === 'draft:' + id || row.dataset.campaignId === id) row.remove();
+    });
+    await refreshDashboardDrafts();
+    await renderCampaignsBoard();
+    showCampaignToast('Draft deleted.');
+  } catch (error) {
+    showCampaignToast('Could not delete draft: ' + error.message, 6000);
+  } finally {
+    deletingDraftIds.delete(id);
+    if (btn) btn.disabled = false;
+  }
 }
 window.deleteDraftStrip = deleteDraftStrip;
 
@@ -13329,7 +13207,7 @@ async function _renderCampaignsBoardInner() {
   if (_campaignsTypeFilter === 'All') {
     try {
       const dj = await fetch('/api/drafts').then((r) => r.json());
-      if (Array.isArray(dj?.drafts)) _draftRows = dj.drafts;
+      if (Array.isArray(dj?.drafts)) _draftRows = dj.drafts.filter(d => !deletedDraftIds.has(d.id));
       _draftRows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch { /* drafts rail is best-effort — board renders without it */ }
   }
@@ -13362,15 +13240,17 @@ async function _renderCampaignsBoardInner() {
   // with the same bucket ordering. Cancelled strips are NOT greyed (see CSS
   // .sn-board.cb-nogrey .sn-strip.cancelled).
   board.classList.add('cb-nogrey');
+  const { regular: regularCampaigns, maturing: maturingCampaigns } = splitMaturingCampaigns(shown);
   let html;
   if (_viewerIsAdmin) {
-    const mineItems  = shown.filter((x) => !x.isFG && x.mine);
-    const adminItems = shown.filter((x) => x.isFG); // Follower Growth (extensible)
+    const mineItems  = regularCampaigns.filter((x) => !x.isFG && x.mine);
+    const adminItems = regularCampaigns.filter((x) => x.isFG); // Follower Growth (extensible)
     html = _renderBoardSection('mine', 'Your campaigns', mineItems, { alwaysShow: true, ..._draftOpts })
       + _renderBoardSection('admin', 'Admin campaigns', adminItems, { subtitle: 'Follower Growth' });
   } else {
-    html = _renderBoardSection('mine', '', shown, { flat: true, ..._draftOpts });
+    html = _renderBoardSection('mine', '', regularCampaigns, { flat: true, ..._draftOpts });
   }
+  html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.' });
   _snItemsById = new Map(items.map((x) => [x.id, x]));
   // Anti-jank: the 4s poll used to blow away the whole board every tick — killing
   // clicks/scroll/expanded panes mid-interaction. Skip the rebuild when the
@@ -19845,6 +19725,7 @@ function collectCurrentConfig() {
   return {
     campaignId: _openedCampaignId,
     runTarget: getRunTarget(),
+    maturePlan: readMaturePlan(),
     mode: getV('campaign-mode') || 'connect_only',
     sheetUrl: getV('sheet-url').trim(),
     profileIds: [...selectedProfileIds],
@@ -19907,6 +19788,7 @@ function collectCurrentConfig() {
 
 function applyPresetConfig(config) {
   if (!config || typeof config !== 'object') return;
+  loadMaturePlan(config.maturePlan ? { ...config.maturePlan, targetProfileIds: config.maturePlan.targetProfileIds || config.profileIds || [] } : null);
   const setV = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
   if (config.campaignId) {
     _openedCampaignId = config.campaignId;
@@ -21705,7 +21587,7 @@ if (document.readyState !== 'loading') restoreIntroState();
 // like raw enum values (CONNECT_AND_INTRODUCE looked like a database
 // column). Operator-facing nicknames only — the canonical mode strings
 // in payloads, history, and the wizard stay untouched.
-const DASHBOARD_MODE_LABELS = {
+const DASHBOARD_MODE_LABELS = { mature_profile: 'Mature Profile Campaign',
   connect_only: 'Connect Only',
   check_status: 'Check Status',
   message_only: 'Direct Messages',
@@ -22353,7 +22235,7 @@ async function refreshDashboardDrafts() {
       fetch('/api/drafts').then((r) => r.json()).catch(() => null),
       fetch('/api/history').then((r) => r.json()).catch(() => null),
     ]);
-    const drafts = Array.isArray(draftsData?.drafts) ? draftsData.drafts : [];
+    const drafts = Array.isArray(draftsData?.drafts) ? draftsData.drafts.filter(d => !deletedDraftIds.has(d.id)) : [];
 
     // Render multi-store drafts
     let draftRowsHtml = '';
@@ -22437,25 +22319,7 @@ async function refreshDashboardDrafts() {
 }
 
 async function deleteDraft(id) {
-  if (!id) return;
-  if (!confirm('Delete this draft?')) return;
-  // v2.57.7: optimistic removal — drops the row from every visible
-  // instance (source panel + ALL-tab clone) before the network call so
-  // the operator sees instant feedback instead of a stale row.
-  document.querySelectorAll(`.campaign-row[data-campaign-id="${CSS.escape(id)}"]`)
-    .forEach((el) => el.remove());
-  try {
-    await fetch('/api/drafts/' + encodeURIComponent(id), { method: 'DELETE' });
-  } catch (err) {
-    alert('Failed: ' + err.message);
-    return;
-  }
-  // If the wizard is currently editing this draft, drop the reference.
-  try {
-    if (getActiveDraftId() === id) clearActiveDraft();
-  } catch {}
-  refreshDashboardDrafts();
-  if (typeof renderDashboardAll === 'function') renderDashboardAll();
+  return deleteDraftRecord(id);
 }
 window.deleteDraft = deleteDraft;
 
@@ -24325,6 +24189,7 @@ window.resumeWithEditFirst = resumeWithEditFirst;
 // in the Dashboard's Drafts section), so the operator can stage multiple
 // campaigns in parallel without losing any.
 async function startNewCampaign() {
+  loadMaturePlan(null);
   _openedCampaignId = null;
   _openedCampaignName = '';
   window.__viewingActiveCampaign = false;
@@ -28124,6 +27989,7 @@ function showRunningEditWarning() {
 }
 
 function wizardDirtyOnInput() {
+  if (document.getElementById('campaign-mode')?.value === 'mature_profile') renderMatureAccounts(selectedProfileIds.map(id => ({id, name: profileLabel(id)})));
   // 2026-05-27 (drafts-isolation): every input on the wizard triggers a
   // debounced autosave — the dirty flag is kept for legacy code paths that
   // read it (Save Edits button, viewing-running-campaign warning). We no
@@ -28203,6 +28069,7 @@ async function flushAutosaveImmediate() {
 }
 
 async function _flushAutosave() {
+  if (document.getElementById('campaign-mode')?.value === 'mature_profile' && !readMaturePlan()) return;
   const id = getActiveDraftId();
   if (!id) return;
   // Unbound wizard → we cannot say which campaign this form is, so we must not
@@ -28452,8 +28319,23 @@ function _existingCampaignBlocksNewDispatch() {
   return false;
 }
 
+function openedWizardCampaign() {
+  const name = _currentWizardName().trim().toLowerCase();
+  const id = _editingCampaignId || _viewingCloudId;
+  const item = id && (_boardItemsById.get(id) || _snItemsById.get(id));
+  return item && String(item.name || '').trim().toLowerCase() === name ? item : null;
+}
+
 window.launchStartNow = async function() {
   if (_readOnlyBlocksLaunch()) return;
+  const opened = openedWizardCampaign();
+  // Restart the selected cloud record in place, retaining its pending leads.
+  // The fresh launch path would create a second run and trip name uniqueness.
+  if (opened?.where === 'cloud' && getRunTarget() === 'cloud') {
+    _closeLaunchMenu();
+    await restartCloudCampaignUI(opened.id, false);
+    return;
+  }
   // Existing local campaigns may resume locally; the VM choice must always
   // reach the normal cloud launch path, including its preflight and identity guard.
   if (getRunTarget() === 'cloud' && !isCloudRunOn()) {
@@ -30011,25 +29893,21 @@ function _stageOverview(status, ca, la, phase) {
     side = ['Current lead', String(la && la.who || ca && ca.lead || 'Accepted connection'), currentAccount ? `via ${profileLabel(currentAccount)}` : 'Preparing introduction'];
     next = ['Next expected event', String(ca && ca.sub || 'Confirm the introduction'), 'The result is written to the campaign sheet after confirmation.'];
   } else if (phase === 'starting') {
-    // The value is the ONE line of this panel the operator reads, and it is
-    // clipped to a single line — "Preparing browser runti…" is what it actually
-    // showed for the whole first minute of the 2026-08-28 launch. Keep it to two
-    // or three words, and say what is happening NOW: during a launch the sheet
-    // is being read on this Mac, and nothing on the VM has started at all.
+    // Show the selected destination separately from local launch preparation.
     const _lp = String((status && status.launchPhase) || '');
     side = _lp === 'handshake'
-      ? ['Connecting to the primary', 'on this Mac', 'Nothing has been sent yet']
+      ? ['Connecting to the primary', 'Cloud VM selected', 'The primary connection check runs on your Mac before cloud handoff']
       : _lp === 'preflight'
-        ? ['Checking your accounts', 'on this Mac', 'Nothing has been sent yet']
+        ? ['Checking your accounts', 'Cloud VM selected', 'Your Mac is checking the accounts before cloud handoff']
         : _lp === 'accepted'
           ? ['Waking a VM worker', 'about 2 minutes', 'Workers sleep when idle · nothing is lost while it wakes']
           : _lp === 'dispatching'
-            ? ['Reading your sheet', 'on this Mac', 'Nothing has been sent yet']
+            ? ['Reading your sheet', 'Cloud VM selected', 'Your Mac is preparing the handoff · cloud sending has not started yet']
             : ['Starting up', 'about 2 minutes', 'Workers sleep when idle · nothing is lost while it wakes'];
     next = ['Next expected event', 'First sender browser opens', `${pending} lead${pending === 1 ? '' : 's'} remain safe and unconsumed.`];
   } else if (phase === 'paused') {
     side = ['Campaign state', 'Paused safely', 'No new lead starts until the operator resumes'];
-    next = ['Operator action', 'Resume here or switch machines', 'The campaign continues from its saved queue position.'];
+    next = ['Operator action', 'Resume here, or stop before changing machines', 'The campaign continues from its saved queue position.'];
   } else if (phase === 'checked') {
     side = ['Check finished', 'Nothing is running', 'Every result is already on the campaign sheet'];
     next = ['Next', 'Run another check whenever you like', 'Sending stays stopped until you start the campaign.'];
@@ -30886,38 +30764,14 @@ function whereBlockHtml(status) {
   const deliberatelyStopped = status.stopReason === 'operator-stopped';
   const waiting = side === 'local' && !running && !monitoring && !status.queued && !deliberatelyStopped
     && (status._cloud || !!status.handoverAt);
-  if (!running && !monitoring && !waiting && !queued) return '';
+  if (!running && !monitoring && !waiting && !queued && !status.paused && status.state !== 'paused') return '';
 
-  const busy = _whBusy && _whBusy.id === id ? _whBusy.to : '';
-  const ask = _whAsk && _whAsk.id === id ? _whAsk.to : '';
-  const msg = _whMsg && _whMsg.id === id ? _whMsg.text : '';
-
-  let tail;
-  if (busy) tail = '<span class="wh-warn">moving, both locked</span>';
-  else if (msg) tail = '<span class="wh-warn">not moved</span>';
-  else if (ask) tail = '<span class="wh-warn">confirm below</span>';
-  else if (waiting) tail = '<span class="wh-warn">waiting on this Mac, nothing running here</span>';
-  else if (status.handoverAt) tail = `<span class="wh-note">${_whAgo(status.handoverAt)}</span>`;
-  else if (side === 'vm') tail = '<span class="wh-note">tap to move it here · the destination checks automatically</span>';
-  else if (side === 'unknown') tail = '<span class="wh-warn">where this runs is not known · pick a machine to pin it</span>';
-  else tail = '<span class="wh-note">keep the app open · switching starts a check automatically</span>';
-
-  const btn = (to, label) => {
-    const on = side === to ? ' on' : '';
-    const bz = busy === to ? ' busy' : '';
-    const dis = busy || side === to ? ' disabled' : '';
-    return `<button type="button" class="${(on + bz).trim()}"${dis} onclick="whereAsk('${escHtml(id)}','${to}')">${label}</button>`;
-  };
-  let html = `<div class="wh">
+  const label = side === 'vm' ? 'Cloud VM' : side === 'local' ? 'This Mac' : 'Confirming location…';
+  return `<div class="wh">
     <span class="wh-lab">Running on</span>
-    <span class="wh-seg">${btn('vm', 'Cloud VM')}${btn('local', 'This Mac')}</span>
-    ${tail}
+    <strong class="wh-location">${label}</strong>
+    <span class="wh-note">Stop the campaign to change its location, then start it again.</span>
   </div>`;
-  // A refusal is never a bare "failed": the server's sentence says what the VM
-  // did, and both sides stay exactly where they were.
-  if (msg) html += `<div class="wh-confirm">${escHtml(msg)}<span class="row"><button type="button" onclick="whereCancel()">OK</button></span></div>`;
-  else if (ask && !busy) html += _whConfirmHtml(id, ask, status);
-  return html;
 }
 
 // Paint the control into a card. Keeps the status it drew from on the host node
@@ -30949,10 +30803,7 @@ function whereRepaint() {
 }
 
 window.whereAsk = function(id, to) {
-  if (_whBusy) return;
-  _whMsg = null;
-  _whAsk = { id: String(id), to };
-  whereRepaint();
+  showCampaignToast('Stop the campaign first, then choose Cloud VM or This Mac in its settings and start it again.', 5500);
 };
 
 window.whereCancel = function() {
@@ -36224,6 +36075,16 @@ function _showDupeNameModal(name) {
 async function _nameIsTaken(name) {
   const key = String(name || '').trim().toLowerCase();
   if (!key) return false;
+  // A run opened from Live Status is the same campaign even when the editor's
+  // saved-name flag was cleared during a status transition.
+  if (openedWizardCampaign()) return false;
+  if (_openedCampaignId) {
+    const response = await fetch(`/api/campaign-configs/by-id/${encodeURIComponent(_openedCampaignId)}`);
+    if (response.ok) {
+      const saved = await response.json();
+      if (String(saved.name || '').trim().toLowerCase() === key) return false;
+    }
+  }
   // Editing an existing campaign keeps its own name — that is not a clash.
   if (typeof _editingExistingCampaign !== 'undefined' && _editingExistingCampaign
       && key === String(_openedCampaignName || '').trim().toLowerCase()) return false;
@@ -36413,3 +36274,15 @@ async function restoreOpenedCampaignView() {
   return true;
 }
 setTimeout(() => restoreOpenedCampaignView().catch(error => console.warn('[campaign-view] Restore failed:', error.message)), 1000);
+
+window.saveMatureProfilePlan = async function(btn) {
+  const name = document.getElementById('campaign-name-input')?.value.trim();
+  if (!name) { showCampaignToast('Give this campaign a name before saving its plan.'); return; }
+  btn.disabled = true;
+  try {
+    await flushAutosaveImmediate();
+    if (!(await saveCampaignConfigByName(name))) throw new Error('Could not save the plan. Please try again.');
+    showCampaignToast('Mature profile plan saved.');
+  } catch (error) { showCampaignToast(error.message, 5000); }
+  finally { btn.disabled = false; }
+};
