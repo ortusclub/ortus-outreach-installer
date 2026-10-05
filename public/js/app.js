@@ -13391,15 +13391,21 @@ async function _renderCampaignsBoardInner() {
     if (_maturingLive.length) {
       const active = _maturingLive.find((x) => x.live) || null;
       const showBtn = `<button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || _maturingLive[0]).id)}','${escHtml(active ? active.name : 'Maturing')}')" title="${active ? `Watch ${escHtml(active.name)}'s browser live` : 'No maturing account has a browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button>`;
+      // More than one account can have a browser open at once (workers run in
+      // parallel): one Show button per active account, each named.
+      const _activeAll = _maturingLive.filter((x) => x.live);
+      const showBtns = _activeAll.length > 1
+        ? _activeAll.map((x) => `<button class="mini live-on" onclick="openCloudCampaignView('${escHtml(x.id)}','${escHtml(x.name)}')" title="Watch ${escHtml(x.name)}'s browser live"><span class="dot run"></span> 👁 Show ${escHtml(String(x.name).split('@')[0])}</button>`).join(' ')
+        : showBtn;
       // The results workbook holds one tab per matured account.
       const _resultsUrl = ((maturingCampaigns.find((x) => /\/spreadsheets\/d\//.test(x.matureSheetUrl || '')) || {}).matureSheetUrl || '').replace(/(\/spreadsheets\/d\/[^/]+).*$/, '$1/edit');
       const _resultsLink = _resultsUrl ? `<div class="mature-results-row"><button type="button" class="mini" data-url="${escHtml(_resultsUrl)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="One tab per matured account, named after its login email">Open the results workbook ↗</button></div>` : '';
       _maturingFooter = _resultsLink + `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
-        + `<span class="sn-status">${active ? `<span class="dot run"></span> ${escHtml(active.name)} is connecting` : '<span class="dot q"></span> No account is connecting right now'}</span></div>`
+        + `<span class="sn-status">${active ? `<span class="dot run"></span> ${_maturingLive.filter((x) => x.live).length > 1 ? `${_maturingLive.filter((x) => x.live).length} accounts are connecting` : `${escHtml(active.name)} is connecting`}` : '<span class="dot q"></span> No account is connecting right now'}</span></div>`
         + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
         + `<div class="sn-logbox" id="maturing-all-log">${_maturingLogHtml}</div></div></div>`
-        + `<div class="sn-foot">${showBtn}</div></div></div>`;
+        + `<div class="sn-foot">${showBtns}</div></div></div>`;
       refreshMaturingLog(_maturingLive);
     }
     // One plain line per account, then the combined log below them.
