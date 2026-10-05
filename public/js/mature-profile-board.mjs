@@ -11,10 +11,25 @@ export function splitMaturingCampaigns(items) {
 // Where a running warm stage is in its plan. `schedule` is the campaign's
 // { startDate, amounts } (see mature-warm-pool.mjs); days are UTC dates, the
 // clock the engine counts sends on. Past the list, the last amount applies.
-export function maturingStatus({ kind = 'warm', schedule, today, sentToday = null, sent = 0, total = 0 }) {
+// The calendar date an instant falls on in a time zone (YYYY-MM-DD).
+export function localDay(instant, timeZone) {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(instant)); }
+  catch { return new Date(instant).toISOString().slice(0, 10); }
+}
+// The engine's default zone for a campaign that names none (its 09:00 batch).
+export const MATURE_DEFAULT_TIME_ZONE = 'Europe/Rome';
+
+// A schedule with `startAt` counts days in the campaign's time zone (pass
+// `timeZone` and `now`), matching the engine; an older one with only
+// `startDate` counts UTC dates from `today`.
+export function maturingStatus({ kind = 'warm', schedule, today, now = Date.now(), timeZone = '', sentToday = null, sent = 0, total = 0 }) {
   const cold = kind === 'cold', what = `${cold ? 'cold' : 'warm'} connections`, who = cold ? 'leads' : 'pool accounts';
   const amounts = Array.isArray(schedule?.amounts) ? schedule.amounts.map(Number) : [];
-  const index = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${schedule?.startDate}T00:00:00Z`)) / 86400000);
+  const zoned = Number.isFinite(Date.parse(schedule?.startAt || ''));
+  const tz = timeZone || MATURE_DEFAULT_TIME_ZONE;
+  const from = zoned ? localDay(schedule.startAt, tz) : schedule?.startDate;
+  const to = zoned ? localDay(now, tz) : today;
+  const index = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
   if (!amounts.length || !Number.isFinite(index)) return null;
   const at = i => amounts[Math.min(Math.max(i, 0), amounts.length - 1)] || 0;
   const day = Math.max(index, 0) + 1;

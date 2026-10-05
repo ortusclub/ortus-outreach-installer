@@ -52,3 +52,12 @@ test('the maturing log merges every campaign in time order, tagged by account an
   ]);
   assert.equal(mergeMaturingLogs([{ name: 'a', log: Array.from({ length: 90 }, (_, t) => ({ t, line: `l${t}` })) }], 60).length, 60);
 });
+
+test('a schedule with startAt counts plan days in the campaign time zone, like the engine', () => {
+  // Started 02:13 on 6 Oct in Manila (18:13 UTC on the 5th).
+  const s = { startAt: '2026-10-05T18:13:00Z', startDate: '2026-10-06', amounts: [3, 6, 10] };
+  const at = (now) => maturingStatus({ schedule: s, timeZone: 'Asia/Manila', now: Date.parse(now), today: now.slice(0, 10), sent: 0, total: 9 });
+  assert.equal(at('2026-10-05T18:30:00Z').day, 1);   // still 6 Oct in Manila
+  assert.equal(at('2026-10-07T01:00:00Z').day, 2);   // 09:00 Manila on the 7th — the next batch
+  assert.equal(at('2026-10-07T01:00:00Z').todayLimit, 6);
+});

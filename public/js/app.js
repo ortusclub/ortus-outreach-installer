@@ -9416,7 +9416,7 @@ async function _refreshCloudActiveStatus(id) {
         const camp = (d && d.campaign) || {}, lc = (d && d.leadCounts) || {};
         const pre = Number(lc._preActioned || 0);
         const html = camp.config?.matureWarm ? _maturingStatusHtml({
-          id, matureKind: camp.config.matureKind, warmSchedule: camp.config.dailySchedule,
+          id, matureKind: camp.config.matureKind, warmSchedule: camp.config.dailySchedule, matureTz: camp.config.tz || '',
           sent: Math.max(0, Number(lc.sent || 0) - pre),
           total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - pre,
         }) : '';
@@ -11605,7 +11605,7 @@ async function refreshMaturingLog(items) {
 function _maturingStatusHtml(it) {
   const accounts = _cloudAccountsById.get(it.id);
   const sentToday = Array.isArray(accounts) && accounts.length ? Number(accounts[0].dailyCount) || 0 : null;
-  const status = maturingStatus({ kind: it.matureKind, schedule: it.warmSchedule, today: new Date().toISOString().slice(0, 10), sentToday, sent: it.sent || 0, total: it.total || 0 });
+  const status = maturingStatus({ kind: it.matureKind, schedule: it.warmSchedule, timeZone: it.matureTz, today: new Date().toISOString().slice(0, 10), sentToday, sent: it.sent || 0, total: it.total || 0 });
   return status ? `<div class="sn-progtxt sn-maturing-status" role="status">Maturing · ${escHtml(status.text)}</div>` : '';
 }
 function renderUnifiedRunStrip(it) {
@@ -12933,7 +12933,7 @@ async function _renderCampaignsBoardInner() {
       const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing' || c.status === 'waiting_daily_reset' || c.status === 'needs_review') ? 'running'
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
-        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, maturing: !!c.config?.matureWarm, matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, isFG: c.mode === 'follower_growth',
+        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, maturing: !!c.config?.matureWarm, matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '', isFG: c.mode === 'follower_growth',
         // When this campaign began. A LinkedIn account outlives the campaign
         // that used it, so a follow-up queued BEFORE this one started was never
         // its own — without this date the strip and the card both fall back to
@@ -36455,7 +36455,7 @@ function startMatureInlineLive(ids) {
     const sent = Math.max(0, Number(lc.sent || 0) - pre);
     const total = Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - pre;
     const account = ar && Array.isArray(ar.accounts) ? ar.accounts[0] : null;
-    const plan = maturingStatus({ kind: c.config?.matureKind, schedule: c.config?.dailySchedule, today: today(),
+    const plan = maturingStatus({ kind: c.config?.matureKind, schedule: c.config?.dailySchedule, timeZone: c.config?.tz || '', today: today(),
       sentToday: account ? Number(account.dailyCount) || 0 : null, sent, total });
     const log = (Array.isArray(d.monitorLog) ? d.monitorLog : []).map((e) => String((e && e.line) || '')).filter(Boolean).slice(-10);
     const ended = ['done', 'cancelled', 'error'].includes(String(c.status || ''));

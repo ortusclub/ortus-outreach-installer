@@ -105,6 +105,7 @@ import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { fetchLvAccounts } from './src/mature-warm.js';
 import { buildWarmPool, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, buildMatureTabRows, MATURE_TAB_HEADER, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
 import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
+import { localDay, MATURE_DEFAULT_TIME_ZONE } from './public/js/mature-profile-board.mjs';
 import { matureCampaignName } from './public/js/mature-profile-identity.mjs';
 import { dataPath } from './src/paths.js';
 import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
@@ -4062,7 +4063,12 @@ app.post('/api/mature/start', async (req, res) => {
     }
 
     const now = new Date();
-    const startDate = now.toISOString().slice(0, 10); // the engine counts days in UTC
+    // Plan days are calendar days in the campaign's time zone — the zone the
+    // engine schedules each next daily batch in (09:00 local). It is the
+    // operator's saved zone, or the engine's default when none is saved.
+    let planTz = MATURE_DEFAULT_TIME_ZONE;
+    try { const prefs = await getOperatorPrefs(getOperatorEmail() || req.user || ''); if (prefs && prefs.tz) planTz = prefs.tz; } catch (_) { /* default zone */ }
+    const startDate = localDay(now, planTz);
     const warmAmounts = plan.warmEnabled !== false ? matureWarmSchedule(plan, startDate) : [0];
     const warmOn = warmAmounts[0] > 0;
     const cold = matureColdSchedule(plan);
@@ -4153,7 +4159,7 @@ app.post('/api/mature/start', async (req, res) => {
         sheetUrl, sheetGid, linkedinColumn: 'LinkedIn URL',
         ...(tab ? { leadFilter: { column: 'Type', value: 'Warm' } } : {}),
         dailyLimit: warmAmounts[0], templates: {},
-        mature: { kind: 'warm', pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, amounts: warmAmounts } },
+        mature: { kind: 'warm', pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, startAt: now.toISOString(), amounts: warmAmounts } },
       });
       if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
     }
@@ -4172,7 +4178,7 @@ app.post('/api/mature/start', async (req, res) => {
         ...(tab ? { sheetUrl: tab.url, sheetGid: tab.gid, leadFilter: { column: 'Type', value: 'Cold' } }
           : { sheetUrl: plan.coldPool, shuffleLeads: plan.coldPoolOrder !== 'descending', _preflightExcludedUrls: managed }),
         ...(startAt ? { startAt: startAt.toISOString() } : {}),
-        mature: { kind: 'cold', viaMatureBridge: !!tab, dailySchedule: { startDate: (startAt || now).toISOString().slice(0, 10), amounts: cold.amounts } },
+        mature: { kind: 'cold', viaMatureBridge: !!tab, dailySchedule: { startDate: localDay(startAt || now, planTz), startAt: (startAt || now).toISOString(), amounts: cold.amounts } },
       });
       // Warm is already running, so a cold failure is reported, not fatal.
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });
