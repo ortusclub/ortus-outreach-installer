@@ -36414,6 +36414,24 @@ const MATURE_LIVE_STATUS = {
   monitoring: 'Sending finished — checking for acceptances',
   done: 'Finished', cancelled: 'Stopped', error: 'Stopped on an error',
 };
+// The same Live Status card every other cloud campaign uses, shown under the
+// plan instead of replacing the page. This is openCloudLive() without the step
+// that refills the wizard from the campaign (which would swap the Mature
+// Profile plan for the underlying Connection campaign's settings).
+async function showMatureLiveStatus(id) {
+  if (!id) throw new Error('no campaign id');
+  _viewingCloudId = id;
+  liveStatusForcedOpen = true;
+  await _refreshCloudActiveStatus(id);
+  renderActiveCard(window.__cloudActiveStatus);
+  syncLiveStatusVisibility();
+  placeLiveCard();
+  const sec = document.getElementById('nav-status');
+  if (!sec || sec.style.display === 'none') throw new Error('live status section is hidden');
+  sec.classList.remove('collapsed');
+  try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ }
+  _startCloudCardPoll();
+}
 let _matureLiveTimer = null;
 // A different plan is being opened: the previous plan's live status goes away.
 function stopMatureInlineLive() {
@@ -36526,8 +36544,11 @@ window.startMaturePlan = async function(btn) {
     // Straight to Live Status for the campaign that is sending now.
     if (data.resultsUrl) resultsUrl = data.resultsUrl;
     finalLine = '✓ Plan started.'; paint();
-    // Stay on the plan page: live status appears right here, under the options.
-    startMatureInlineLive([data.warm?.ok && data.warm.id, data.cold?.ok && data.cold.id].filter(Boolean));
+    // Stay on the plan page: the standard Live Status card (pause, stop, live
+    // browser preview, full log) opens right here, under the options.
+    const liveIds = [data.warm?.ok && data.warm.id, data.cold?.ok && data.cold.id].filter(Boolean);
+    try { await showMatureLiveStatus(liveIds[0]); }
+    catch (_) { startMatureInlineLive(liveIds); } // plain fallback if the card cannot be shown
   } catch (error) {
     // The reason stays on screen under the buttons, not only in a passing toast.
     finalLine = `✗ Not started — ${error.message}`; paint();
