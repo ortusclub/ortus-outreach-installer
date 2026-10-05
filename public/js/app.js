@@ -1,3 +1,4 @@
+import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
 import { splitMaturingCampaigns } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
@@ -20471,8 +20472,10 @@ async function onUpdateClick(e) {
             updateText();
             const iv = setInterval(() => { elapsed += 1; updateText(); if (elapsed > 120) clearInterval(iv); }, 1000);
           }
+        } else if (inst.error || !inst.ok) {
+          throw new Error(inst.error || 'The installer did not start. Please retry.');
         } else {
-          // Fallback: DMG opened for a manual drag, or install error.
+          // Explicit fallback only: the server actually opened the DMG.
           const msg = summarizeUpdateError({ installError: inst.error, fallback: inst.fallback });
           pill.innerHTML = '<span class="update-pill-arrow">✓</span> Installer opened — drag to Applications';
           if (text) text.textContent = msg || 'Download complete.';
@@ -21481,9 +21484,41 @@ function renderPrimarySourcePicker(filter = '') {
       renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
       refreshPrimarySourceLabels();
       savePrimaryPersonFields();
+      prefillPrimaryContact(p);
     });
     grid.appendChild(row);
   });
+}
+async function prefillPrimaryContact(profile) {
+  const campaignName = _currentWizardName();
+  const campaignId = _openedCampaignId;
+  const nameField = document.getElementById('primary-person-name');
+  const urlField = document.getElementById('primary-person-url');
+  if (!nameField || !urlField) return;
+  const before = { name: nameField.value, linkedinUrl: urlField.value };
+  const status = document.getElementById('primary-source-soo-status');
+  if (status) status.textContent = 'Looking up LinkedIn details…';
+  let identity = matureProfileIdentity(profile, Object.values(sooData || {}));
+  if (!identity) {
+    await loadSoOStatus();
+    identity = matureProfileIdentity(profile, Object.values(sooData || {}));
+  }
+  // A slow lookup must never populate a different profile or another campaign.
+  if (document.getElementById('primary-source-profile-id')?.value !== profile.id || campaignName !== _currentWizardName() || campaignId !== _openedCampaignId) return;
+  if (!identity) {
+    if (status) status.textContent = 'No unique SoO match. Enter the name and LinkedIn URL manually.';
+    return;
+  }
+  for (const [key,field] of [['name',nameField],['linkedinUrl',urlField]]) {
+    // Preserve typing that happened while the lookup was in flight.
+    if (identity[key] && field.value === before[key]) {
+      field.value = identity[key];
+      field.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+  }
+  savePrimaryPersonFields();
+  refreshPrimarySourceLabels();
+  if (status) status.textContent = 'LinkedIn details filled from SoO. You can edit them.';
 }
 function filterPrimarySourcePicker() {
   renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');

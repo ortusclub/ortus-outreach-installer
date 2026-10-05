@@ -1,3 +1,4 @@
+import { matureProfileIdentity } from './mature-profile-identity.mjs';
 import { WARM_PRESETS, warmPreset, warmRampErrors, warmSchedule } from './mature-warm-ramp.mjs';
 import { newMaturePlan, restoreMaturePlan, maturePlanErrors, updateMatureStageEnd, MATURE_WARM_POOLS } from './mature-profile-plan.mjs';
 let plan = newMaturePlan();
@@ -32,6 +33,13 @@ function selectField(label, id, value, choices, update) {
 }
 let accessibleProfiles = null;
 let profilesRequest = null;
+let identityRequest = null;
+function fetchMatureIdentities() {
+  if (!identityRequest) identityRequest = fetch('/api/soo-status', {signal:AbortSignal.timeout(30000)})
+    .then(async response=>{const data=await response.json();if(!response.ok || !Array.isArray(data.accounts)) throw new Error('SoO unavailable');return data.accounts;})
+    .catch(error=>{identityRequest=null;throw error;});
+  return identityRequest;
+}
 async function fetchMatureProfiles() {
   if (accessibleProfiles) return accessibleProfiles;
   if (!profilesRequest) profilesRequest = (async () => {
@@ -100,7 +108,21 @@ function profileSection() {
       grid.append(nameField, urlField);
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn'; remove.textContent = 'Remove profile';
       remove.onclick = () => { plan.targetProfileIds = plan.targetProfileIds.filter(p => p !== id); changed(); populate(); renderRows(); };
-      card.append(title, grid, remove); rows.append(card);
+      const identityStatus=document.createElement('p');identityStatus.className='mature-source-help';
+      identityStatus.textContent='Checking the SoO LinkedIn account details…';
+      card.append(title, grid, identityStatus, remove); rows.append(card);
+      fetchMatureIdentities().then(accounts=>{
+        if (!card.isConnected || !plan.targetProfileIds.includes(id)) return;
+        const identity=matureProfileIdentity(profile || {name:details.profileLabel}, accounts);
+        if (!identity) {identityStatus.textContent='No unique SoO match found. Enter the LinkedIn details below.';return;}
+        let filled=false;
+        for (const [key,field] of [['name',nameField],['linkedinUrl',urlField]]) {
+          const control=field.querySelector('input');
+          if (!details[key] && !control.value.trim() && identity[key]) {details[key]=identity[key];control.value=identity[key];filled=true;}
+        }
+        identityStatus.textContent=filled ? 'Prefilled from SoO. You can edit these details.' : 'SoO checked. Your existing details have been kept.';
+        if(filled){changed();updateSummary();}
+      }).catch(()=>{if(card.isConnected)identityStatus.textContent='SoO is unavailable right now. You can enter the details manually.';});
     }
   }
   body.append(help, search, status, browser, rows);
