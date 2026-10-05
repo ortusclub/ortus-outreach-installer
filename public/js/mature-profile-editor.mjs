@@ -50,6 +50,9 @@ function selectField(label, id, value, choices, update) {
 function nameCampaignAfter(profile, loginEmail = '') {
   const input = document.getElementById('campaign-name-input');
   if (!input) return;
+  // This editor is rendered (hidden) for every campaign type. Only a maturing
+  // campaign has a fixed name — any other must stay freely renameable.
+  if (document.getElementById('campaign-mode')?.value !== 'mature_profile') return;
   input.readOnly = true;
   input.title = 'A maturing campaign is named after the login email of the profile being matured.';
   const name = profile ? matureCampaignName(profile, loginEmail) : '';
