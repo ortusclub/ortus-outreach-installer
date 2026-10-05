@@ -73,9 +73,43 @@ export function maturingRowState(it) {
   if (it.stopping) return { label: 'Stopping', tone: 'muted' };
   if (it.paused) return { label: 'Paused', tone: 'muted' };
   if (it.bucket === 'queued') return it.scheduledAt ? { label: 'Scheduled', tone: 'muted' } : { label: 'Starting', tone: 'amber' };
-  if (it.live) return { label: 'Active', tone: 'green' };
+  // The engine's own status wins over the browser-open flag, which can lag.
   if (it.dailyWait) return { label: 'Sleeping', tone: 'amber' };
+  if (it.live) return { label: 'Active', tone: 'green' };
   return { label: 'Awaiting its turn', tone: 'amber' };
+}
+
+// What a maturing campaign does next and when, as one short line. The time is
+// the engine's own next-batch time; it is always subject to the shared
+// maturing worker being free. `viewerTimeZone` is for tests (default: this
+// computer's zone).
+export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}) {
+  if (!it || it.needsReview || it.bucket === 'done' || it.stopping || it.paused) return '';
+  const what = `${it.matureKind === 'cold' ? 'cold' : 'warm'} connection`;
+  const schedule = it.warmSchedule, amounts = Array.isArray(schedule?.amounts) ? schedule.amounts.map(Number) : [];
+  const tz = it.matureTz || MATURE_DEFAULT_TIME_ZONE;
+  const amountOn = (instant) => {
+    if (!amounts.length || !Number.isFinite(Date.parse(schedule?.startAt || ''))) return null;
+    const index = Math.round((Date.parse(`${localDay(instant, tz)}T00:00:00Z`) - Date.parse(`${localDay(schedule.startAt, tz)}T00:00:00Z`)) / 86400000);
+    return amounts[Math.min(Math.max(index, 0), amounts.length - 1)] || 0;
+  };
+  const count = (n) => (n === null ? `${what}s` : `${n} ${what}${n === 1 ? '' : 's'}`);
+  const at = (instant) => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, ...(viewerTimeZone ? { timeZone: viewerTimeZone } : {}) }).format(new Date(instant)).replace(/^(\w+),/, '$1');
+  const free = 'when the worker is free';
+  const due = (instant) => (Number.isFinite(Date.parse(instant || '')) ? instant : null);
+  if (it.bucket === 'queued') {
+    const start = due(it.scheduledAt);
+    return start ? `Next: ${count(amountOn(start))} · ${at(start)} · ${free}` : `Next: ${count(amountOn(now))} today · as soon as the worker is free`;
+  }
+  if (it.dailyWait) {
+    const resume = due(it.resumeAt);
+    if (!resume) return `Next: ${what}s in the next daily batch · ${free}`;
+    const n = amountOn(resume);
+    return n === 0 ? 'Plan complete — nothing further is planned' : `Next: ${count(n)} · ${at(resume)} · ${free}`;
+  }
+  const today = amountOn(now);
+  if (today === 0) return 'Plan complete — nothing further is planned';
+  return it.live ? `Now: sending today's ${count(today)}` : `Next: today's ${count(today)} · as soon as the worker is free`;
 }
 
 // One entry per matured account: its warm and cold campaigns side by side, with

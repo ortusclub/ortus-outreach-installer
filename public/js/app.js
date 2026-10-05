@@ -1,5 +1,5 @@
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
-import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts } from '/js/mature-profile-board.mjs';
+import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
@@ -11598,10 +11598,12 @@ function _maturingListHtml(items) {
     const dot = { green: 'run', amber: 'amber', red: 'red', done: 'done', muted: 'q' }[g.state.tone] || 'q';
     const main = g.warm || g.cold;
     const ids = g.items.map((x) => x.id).join(',');
+    // What each of the account's campaigns does next, and when.
+    const next = [g.warm, g.cold].filter(Boolean).map((x) => maturingNextAction(x)).filter(Boolean).join('  ·  ');
     const counts = [g.warmSent !== null ? `Warm <b>${g.warmSent}</b>` : '', g.coldSent !== null ? `Cold <b>${g.coldSent}</b>` : ''].filter(Boolean).join(' · ');
     return `<div class="mature-row" data-cid="${escHtml(main.id)}">`
       + `<span class="dot ${dot}"></span>`
-      + `<span class="mature-row-name">${escHtml(g.name)}</span>`
+      + `<span class="mature-row-name">${escHtml(g.name)}${next ? `<small class="mature-row-next">${escHtml(next)}</small>` : ''}</span>`
       + `<span class="mature-row-state">${escHtml(g.state.label)}</span>`
       + `<span class="mature-row-detail">${counts}</span>`
       + `<button type="button" class="mini solid" onclick="openCloudLive('${escHtml(main.id)}')">Open</button>`

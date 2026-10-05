@@ -86,3 +86,23 @@ test('an account shows as one entry with its warm and cold counts', () => {
   assert.deepEqual([groups[0].name, groups[0].state.label, groups[0].warmSent, groups[0].coldSent], ['ana@ortus.solutions', 'Sleeping', 6, 0]);
   assert.deepEqual([groups[1].state.label, groups[1].warmSent, groups[1].coldSent], ['Active', 2, null]);
 });
+
+import { maturingNextAction } from '../public/js/mature-profile-board.mjs';
+test('each maturing account says what it does next and when', () => {
+  const schedule = { startAt: '2026-10-05T18:30:00Z', amounts: [3, 3, 3, 6] };
+  const it = { bucket: 'running', matureKind: 'warm', matureTz: 'Asia/Manila', warmSchedule: schedule };
+  const opts = { now: Date.parse('2026-10-05T19:30:00Z'), viewerTimeZone: 'Europe/Rome' };
+  // Sleeping: the engine's next batch time, and that day's amount.
+  assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-07T01:00:00.000Z' }, opts),
+    'Next: 3 warm connections · Wed 7 Oct, 03:00 · when the worker is free');
+  assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-09T01:00:00.000Z' }, opts),
+    'Next: 6 warm connections · Fri 9 Oct, 03:00 · when the worker is free');
+  // A sleeping campaign reads as sleeping even if the browser flag lags behind.
+  assert.equal(maturingRowState({ bucket: 'running', dailyWait: true, live: true }).label, 'Sleeping');
+  assert.equal(maturingNextAction({ ...it, live: true }, opts), "Now: sending today's 3 warm connections");
+  assert.equal(maturingNextAction(it, opts), "Next: today's 3 warm connections · as soon as the worker is free");
+  assert.equal(maturingNextAction({ ...it, bucket: 'queued' }, opts), 'Next: 3 warm connections today · as soon as the worker is free');
+  assert.equal(maturingNextAction({ ...it, matureKind: 'cold', bucket: 'queued', scheduledAt: '2026-10-12T07:00:00Z' }, opts),
+    'Next: 3 cold connections · Mon 12 Oct, 09:00 · when the worker is free');
+  for (const ended of [{ bucket: 'done' }, { paused: true }, { needsReview: true }, { stopping: true }]) assert.equal(maturingNextAction({ ...it, ...ended }, opts), '');
+});
