@@ -76,3 +76,23 @@ test('cold sends nothing when switched off or when every amount is 0', () => {
   assert.equal(matureColdSchedule({ coldEnabled: true, connectionStages: { cold: [{ fromDay: 1, toDay: 5, daily: 0 }] } }), null);
   assert.deepEqual(matureColdSchedule({ coldEnabled: true, connectionStages: stages }), { delayDays: 0, amounts: [6, 6, 6, 6, 6, 0] });
 });
+
+import { plannedDays, buildMatureTabRows, MATURE_TAB_HEADER } from '../public/js/mature-warm-pool.mjs';
+test('people are planned day by day at each day\'s amount', () => {
+  assert.deepEqual(plannedDays(7, [2, 3, 0]), [1, 1, 2, 2, 2, 0, 0]);       // plan ends: the rest are unplanned
+  assert.deepEqual(plannedDays(7, [2, 3]), [1, 1, 2, 2, 2, 3, 3]);          // open-ended: last amount repeats
+  assert.deepEqual(plannedDays(3, [2, 2, 0], 8), [8, 8, 9]);                // cold starts on its own day
+});
+test('the results tab lists warm then cold with the day each is planned for', () => {
+  const rows = buildMatureTabRows({ startDate: '2026-10-05',
+    warmTargets: [{ name: 'Ana A', linkedinUrl: 'https://www.linkedin.com/in/ana', profile: 'ana@ortus.solutions', profileId: 'p-ana' },
+                  { name: 'Ben B', linkedinUrl: 'https://www.linkedin.com/in/ben', profile: 'ben@ortus.solutions', profileId: 'p-ben' }],
+    warmAmounts: [1, 0],
+    coldLeads: [{ name: 'Cy C', linkedinUrl: 'https://www.linkedin.com/in/cy' }], cold: { delayDays: 7, amounts: [5, 0] } });
+  assert.equal(rows[0].length, MATURE_TAB_HEADER.length);
+  assert.deepEqual(rows, [
+    ['Warm', 'Ana A', 'https://www.linkedin.com/in/ana', 'ana@ortus.solutions', 'p-ana', 1, '2026-10-05', ''],
+    ['Warm', 'Ben B', 'https://www.linkedin.com/in/ben', 'ben@ortus.solutions', 'p-ben', '', 'After the plan ends', ''],
+    ['Cold', 'Cy C', 'https://www.linkedin.com/in/cy', '', '', 8, '2026-10-12', ''],
+  ]);
+});

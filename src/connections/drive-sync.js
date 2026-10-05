@@ -89,6 +89,17 @@ export async function createWorkbookTab({ name, header, rows }) {
   return r; // { url, gid, tabName, spreadsheetId, count }
 }
 
+// Mature Profile: write an account's plan into its own tab of the results
+// workbook (action: writeMatureTab — creates the tab if needed, appends people
+// not yet listed, never touches existing rows). Returns { url, gid, tabName,
+// created, added, existing }. Needs the Apps Script redeployed with that action.
+export async function writeMatureTab({ spreadsheetId, tabName, header, rows, keyColumn = 'LinkedIn URL' }) {
+  const r = await postWebApp({ action: 'writeMatureTab', spreadsheetId, tabName, header, rows, keyColumn }, { timeoutMs: 120000 });
+  if (r?.error) throw new Error(r.error);
+  if (!r?.url) throw new Error('writeMatureTab returned no url — redeploy the Apps Script with the writeMatureTab handler');
+  return r;
+}
+
 // Download only new/changed files. Returns { added[], updated[], unchanged, errors[], remoteCount }.
 export async function syncFromDrive({ folderId = CONNECTIONS_FOLDER_ID, dir = DEFAULT_DIR, onProgress } = {}) {
   fs.mkdirSync(dir, { recursive: true });
