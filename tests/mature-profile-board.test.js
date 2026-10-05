@@ -102,7 +102,7 @@ test('each maturing account says what it does next and when', () => {
   assert.equal(maturingNextAction({ ...it, live: true }, opts), "Now: sending today's 3 warm connections");
   assert.equal(maturingNextAction(it, opts), "Next: today's 3 warm connections · as soon as the worker is free");
   assert.equal(maturingNextAction({ ...it, bucket: 'queued' }, opts), 'Next: 3 warm connections today · as soon as the worker is free');
-  assert.equal(maturingNextAction({ ...it, matureKind: 'cold', bucket: 'queued', scheduledAt: '2026-10-12T07:00:00Z' }, opts),
+  assert.equal(maturingNextAction({ ...it, matureKind: 'cold', bucket: 'queued', scheduledAt: '2026-10-12T07:00:00Z', warmSchedule: { startAt: '2026-10-12T07:00:00Z', amounts: [3, 5] } }, opts),
     'Next: 3 cold connections · Mon 12 Oct, 09:00 · when the worker is free');
   for (const ended of [{ bucket: 'done' }, { paused: true }, { needsReview: true }, { stopping: true }]) assert.equal(maturingNextAction({ ...it, ...ended }, opts), '');
 });
