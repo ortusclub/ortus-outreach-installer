@@ -2,16 +2,20 @@ import { warmRampErrors } from './mature-warm-ramp.mjs';
 export const MATURE_WARM_POOLS = Object.freeze({ ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'Other Pool Accounts (LV)' });
 // Plan data is stored inside the campaign config, never in shared localStorage.
 export function newMaturePlan() {
-  return { version: 1, warmPool: '', coldPool: '', coldPoolSource: 'default', coldPoolOrder: 'random', postPool: '', notes: '', accounts: {}, targetProfileIds: [], stages: [
-    { id: 'warm', name: 'Warm connections', fromDay: 1, toDay: 3, warmDaily: '', coldDaily: 0, likesDaily: 0 },
-    { id: 'ramp', name: 'Increase warm connections', fromDay: 4, toDay: 7, warmDaily: '', coldDaily: 0, likesDaily: 0 },
-    { id: 'cold', name: 'Introduce cold connections', fromDay: 8, toDay: 14, warmDaily: '', coldDaily: '', likesDaily: 0 },
-    { id: 'engage', name: 'Add post engagement', fromDay: 15, toDay: 28, warmDaily: '', coldDaily: '', likesDaily: '' },
+  // Default warm ramp (Sam, 2026-10-05): 3 → 6 → 10 → 20 a day, holding the last
+  // rate until the pool runs out. Every figure stays editable before starting.
+  // Cold connections and post engagement do not run yet, so they default to 0.
+  return { version: 1, warmPool: '', coldPool: '', coldPoolSource: 'default', coldPoolOrder: 'random', postPool: '', notes: '', accounts: {}, targetProfileIds: [], warmUntilExhausted: true, stages: [
+    { id: 'warm', name: 'Warm connections', fromDay: 1, toDay: 3, warmDaily: 3, coldDaily: 0, likesDaily: 0 },
+    { id: 'ramp', name: 'Increase warm connections', fromDay: 4, toDay: 7, warmDaily: 6, coldDaily: 0, likesDaily: 0 },
+    { id: 'cold', name: 'Introduce cold connections', fromDay: 8, toDay: 14, warmDaily: 10, coldDaily: 0, likesDaily: 0 },
+    { id: 'engage', name: 'Add post engagement', fromDay: 15, toDay: 28, warmDaily: 20, coldDaily: 0, likesDaily: 0 },
   ] };
 }
 export function restoreMaturePlan(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.stages)) return newMaturePlan();
-  return { ...newMaturePlan(), ...structuredClone(value), coldPoolSource: value.coldPoolSource || (value.coldPool ? 'custom' : 'default'), coldPoolOrder: value.coldPoolOrder || 'random', targetProfileIds: [...new Set(value.targetProfileIds || [])].slice(0, 1) };
+  // A plan saved before the until-exhausted default existed keeps its own end.
+  return { ...newMaturePlan(), ...structuredClone(value), warmUntilExhausted: !!value.warmUntilExhausted, coldPoolSource: value.coldPoolSource || (value.coldPool ? 'custom' : 'default'), coldPoolOrder: value.coldPoolOrder || 'random', targetProfileIds: [...new Set(value.targetProfileIds || [])].slice(0, 1) };
 }
 export function maturePlanErrors(plan) {
   const errors = [];

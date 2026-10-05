@@ -34,3 +34,13 @@ test('changing a stage end advances subsequent starts and cascades overruns', as
   updateMatureStageEnd(plan, 0, '');
   assert.equal(plan.stages[1].fromDay, 17, 'blank edits do not corrupt following stages');
 });
+
+test('a new plan defaults to 3, 6, 10 then 20 warm connections a day until the pool is exhausted', async () => {
+  const { newMaturePlan, restoreMaturePlan, maturePlanErrors } = await import('../public/js/mature-profile-plan.mjs');
+  const plan = newMaturePlan();
+  assert.deepEqual(plan.stages.map(s => [s.fromDay, s.toDay, s.warmDaily]), [[1, 3, 3], [4, 7, 6], [8, 14, 10], [15, 28, 20]]);
+  assert.equal(plan.warmUntilExhausted, true);
+  assert.deepEqual(maturePlanErrors({ ...plan, warmPool: 'ortus_owned' }), []);
+  // A plan saved before this default keeps its own fixed end.
+  assert.equal(restoreMaturePlan({ version: 1, stages: plan.stages }).warmUntilExhausted, false);
+});
