@@ -102,6 +102,9 @@ import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs, identityGat
 import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/operator-identity.js';
 import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
+import { fetchLvAccounts } from './src/mature-warm.js';
+import { buildWarmPool, matureWarmSchedule, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
+import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
 import { dataPath } from './src/paths.js';
 import { jobIdsForCampaign, scopeLiveLines } from './src/scrape-log-scope.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
@@ -1687,7 +1690,12 @@ async function handleStartCloudOnce(req, res) {
       // back to its default account, which is exactly the pre-2026-08-07
       // behaviour. Sent as an ID, never a token — secrets stay in the engine's
       // k8s secret, not in a campaign document.
-      glAccount: viewerAccount(req),
+      // A warm stage runs on the warmed profile's own workspace, which need not
+      // be the operator's (an Ortus operator can mature a Linked Velocity profile).
+      glAccount: (body.matureWarm && accountOfProfile(profileIds?.[0])) || viewerAccount(req),
+      // Mature Profile warm stage: the per-day amounts the engine applies as
+      // the daily limit, and the flag the board files the campaign under.
+      ...(body.matureWarm ? { matureWarm: true, warmPool: body.matureWarm.pool, dailySchedule: body.matureWarm.dailySchedule } : {}),
     };
     // Operator timezone → engine → GAS stamps "Date/Time of Last Action" in the
     // operator's local clock (parity with local runs, where sheets-writer attaches
@@ -2574,6 +2582,8 @@ async function handoverToLocal(id, req, res) {
   if (cur && cur.error) return res.status(502).json({ error: `Could not read the campaign on the VM: ${cur.error}` });
   const camp = (cur && cur.campaign) || cur || {};
   const cfg = camp.config || {};
+  // Maturing is cloud-only: its daily amounts are applied by the engine each day.
+  if (cfg.matureWarm) return res.status(400).json({ error: 'Profile maturing campaigns only run in the cloud and cannot be moved to this Mac.' });
   if (!camp.sheet_url) return res.status(400).json({ error: 'That cloud campaign has no source sheet, so it cannot be rebuilt here.' });
 
   // Release FIRST. Fails closed: a live sweep, a lost race, or an engine too old
@@ -3918,6 +3928,83 @@ app.post('/api/connections/to-workbook', async (req, res) => {
   } catch (err) {
     console.error(`[to-workbook] FAILED: ${err.message}`);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Mature Profile: warm connections ───────────────────────────────
+// A warm pool is a whole GoLogin workspace. Its LinkedIn URLs come from the SoO
+// (Ortus) or the Linked Velocity account list; see public/js/mature-warm-pool.mjs.
+async function matureWarmSources() {
+  const [profiles, soo, lv] = await Promise.all([
+    getProfiles(),
+    fetchSoOStatusData().then((r) => r.data?.accounts || []).catch(() => []),
+    fetchLvAccounts().then((accounts) => ({ accounts })).catch((error) => ({ accounts: [], error: error.message })),
+  ]);
+  return { profiles, sooAccounts: soo, lvAccounts: lv.accounts, lvError: lv.error || '' };
+}
+
+// Names and LinkedIn URLs for Linked Velocity profiles — the editor prefills
+// "Profile to warm" from this the same way it prefills Ortus profiles from the SoO.
+app.get('/api/mature/lv-identities', async (_req, res) => {
+  try { res.json({ accounts: await fetchLvAccounts() }); }
+  catch (err) { res.status(503).json({ error: err.message }); }
+});
+
+// How many accounts in a pool can actually be invited (have a LinkedIn URL).
+app.get('/api/mature/warm-pool', async (req, res) => {
+  try {
+    const sources = await matureWarmSources();
+    const exclude = String(req.query.exclude || '').split(',').filter(Boolean);
+    const { targets, total, missing, restricted } = buildWarmPool({ pool: String(req.query.pool || ''), excludeProfileIds: exclude, ...sources });
+    const lvPool = WARM_POOL_ACCOUNT[req.query.pool] === 'linkedvelocity';
+    res.json({ ready: targets.length, total, missing, restricted, error: lvPool ? sources.lvError : '' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Start the warm-connection stage: write the pool to a new lead sheet, then
+// launch an ordinary cloud Connection campaign from the account being warmed.
+// The plan's per-day amounts ride along so the engine changes the daily limit
+// each day; until the engine supports that it keeps the day-1 amount.
+app.post('/api/mature/start', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const plan = restoreMaturePlan(b.maturePlan);
+    const errors = maturePlanErrors(plan);
+    if (errors.length) return res.status(400).json({ error: errors[0] });
+    const profileId = plan.targetProfileIds[0];
+    if (!profileId) return res.status(400).json({ error: 'Choose the profile to warm.' });
+    const name = String(b.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Give this campaign a name.' });
+
+    const startDate = new Date().toISOString().slice(0, 10); // the engine counts days in UTC
+    const amounts = matureWarmSchedule(plan, startDate);
+    if (!(amounts[0] > 0)) return res.status(400).json({ error: 'The plan sends no warm connections on day 1. Set a starting daily amount.' });
+
+    const sources = await matureWarmSources();
+    const pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
+    if (!pool.targets.length) {
+      return res.status(400).json({ error: sources.lvError && WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity'
+        ? sources.lvError : 'No accounts in this pool have a known LinkedIn URL.' });
+    }
+
+    const sheet = await createWorkbookTab({
+      name: `Warm connections — ${name} — ${startDate}`,
+      header: ['Full Name', 'LinkedIn URL', 'Pool Account'],
+      rows: pool.targets.map((t) => [t.name, t.linkedinUrl, t.profile]),
+    });
+    console.log(`[mature] ${name}: ${pool.targets.length} warm target(s) written to ${sheet.url}; schedule ${amounts.join(',')}`);
+
+    req.body = {
+      campaignId: b.campaignId, launchId: b.launchId, name,
+      mode: 'connect_only', profileIds: [profileId],
+      sheetUrl: sheet.url, sheetGid: sheet.gid, linkedinColumn: 'LinkedIn URL',
+      dailyLimit: amounts[0], templates: {},
+      matureWarm: { pool: plan.warmPool, dailySchedule: { startDate, amounts } },
+    };
+    return await handleStartCloud(req, res);
+  } catch (err) {
+    console.error(`[mature] start failed: ${err.message}`);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
 

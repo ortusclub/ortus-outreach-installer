@@ -1,5 +1,5 @@
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
-import { splitMaturingCampaigns } from '/js/mature-profile-board.mjs';
+import { splitMaturingCampaigns, maturingStatus } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
@@ -7090,7 +7090,7 @@ async function startCampaign(opts = {}) {
   // endpoint and no campaign templates. Delegate to startCheckDms() and
   // return — the rest of this function only applies to outreach campaigns.
   const _modeEarly = document.getElementById('campaign-mode').value;
-  if (_modeEarly === 'mature_profile') { showCampaignToast('Save your maturity plan first. Automatic execution is not enabled yet.', 5000); return; }
+  if (_modeEarly === 'mature_profile') { showCampaignToast('Use "Start warm connections" in the Mature Profile section to start this plan.', 5000); return; }
   if (_modeEarly === 'check_dms') {
     return startCheckDms();
   }
@@ -9405,6 +9405,21 @@ async function _refreshCloudActiveStatus(id) {
       if (ar && Array.isArray(ar.accounts)) _cloudAccountsById.set(id, ar.accounts);
     } catch (_) { /* engine may not expose it yet — panel just won't show */ }
     try { if (_viewingCloudId === id) renderCloudAccountsPanel(id); } catch (_) { /* */ }
+    // Profile maturing: the same plan line the dashboard strip shows.
+    try {
+      const box = document.getElementById('cloud-maturing-status');
+      if (box && _viewingCloudId === id) {
+        const camp = (d && d.campaign) || {}, lc = (d && d.leadCounts) || {};
+        const pre = Number(lc._preActioned || 0);
+        const html = camp.config?.matureWarm ? _maturingStatusHtml({
+          id, warmSchedule: camp.config.dailySchedule,
+          sent: Math.max(0, Number(lc.sent || 0) - pre),
+          total: Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - pre,
+        }) : '';
+        box.hidden = !html;
+        box.innerHTML = html ? html.replace(/^<div[^>]*>|<\/div>$/g, '') : '';
+      }
+    } catch (_) { /* the line is extra detail — the view works without it */ }
     // Follow-up health for THIS CAMPAIGN. The queue itself is one flat local
     // list, and asking it unscoped is what put the app's lifetime totals under
     // every campaign's heading — a run minutes old reading "56 sent · 48 could
@@ -10078,7 +10093,7 @@ function _startCloudCardPoll() {
   }, 5000);
 }
 // Leaving the wizard / starting something else stops the cloud-view takeover.
-function stopViewingCloudCampaign() { try { sessionStorage.removeItem('ortus-opened-campaign'); } catch {} _viewingLocalCampaign = null; _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); const _ap = document.getElementById('cloud-accounts-panel'); if (_ap) { _ap.hidden = true; _ap.innerHTML = ''; } }
+function stopViewingCloudCampaign() { try { sessionStorage.removeItem('ortus-opened-campaign'); } catch {} { const m = document.getElementById('cloud-maturing-status'); if (m) m.hidden = true; } _viewingLocalCampaign = null; _viewingCloudId = null; window.__cloudActiveStatus = null; _stopCloudCardPoll(); const _ap = document.getElementById('cloud-accounts-panel'); if (_ap) { _ap.hidden = true; _ap.innerHTML = ''; } }
 window.stopViewingCloudCampaign = stopViewingCloudCampaign;
 
 // The large Campaign-tab card delegates every action to the same renderer as
@@ -11559,6 +11574,15 @@ function renderUnifiedStrip(it) {
   }).join('');
   return card + `<details class="campaign-run-history"><summary>${it.previousRuns.length} previous run${it.previousRuns.length === 1 ? '' : 's'}</summary>${activeWarning}${rows}</details>`;
 }
+// One line saying which plan day a maturing campaign is on, today's amount and
+// how much of the pool has been invited. Today's count comes from the engine's
+// per-account figures when the board has them.
+function _maturingStatusHtml(it) {
+  const accounts = _cloudAccountsById.get(it.id);
+  const sentToday = Array.isArray(accounts) && accounts.length ? Number(accounts[0].dailyCount) || 0 : null;
+  const status = maturingStatus({ schedule: it.warmSchedule, today: new Date().toISOString().slice(0, 10), sentToday, sent: it.sent || 0, total: it.total || 0 });
+  return status ? `<div class="sn-progtxt sn-maturing-status" role="status">Maturing · ${escHtml(status.text)}</div>` : '';
+}
 function renderUnifiedRunStrip(it) {
   if (it.bucket === 'saved') return renderSavedCampaignStrip(it);
   const cloud = it.where === 'cloud';
@@ -11701,9 +11725,11 @@ function renderUnifiedRunStrip(it) {
     : `<b>${it.total || 0} leads</b> → <b>${it.accounts || 0} ${acctWord}</b> → feeds <b>${escHtml(it.name || '')}</b> · ${escHtml(_cloudModeLabel(it.mode))}`;
   const whereNote = _ownedLocal ? 'runs on this machine — closing the app stops it'
     : 'runs in the cloud — keeps going if you close the app';
-  const progLine = running
+  // Profile maturing: where the warm stage is in its plan today.
+  const maturingLine = it.maturing && (running || queued) ? _maturingStatusHtml(it) : '';
+  const progLine = (running
     ? `<div class="sn-progtxt"><b>${it.sent || 0}</b> of ${it.total || 0} ${it.isFG ? 'invites' : 'sent'} · ${whereNote}</div>`
-    : '';
+    : '') + maturingLine;
 
   const expandBtn = ''; // Open the campaign to see live status and logs.
   let logHtml;
@@ -12880,7 +12906,7 @@ async function _renderCampaignsBoardInner() {
       const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing' || c.status === 'waiting_daily_reset' || c.status === 'needs_review') ? 'running'
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
-        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
+        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, maturing: !!c.config?.matureWarm, warmSchedule: c.config?.dailySchedule || null, isFG: c.mode === 'follower_growth',
         // When this campaign began. A LinkedIn account outlives the campaign
         // that used it, so a follow-up queued BEFORE this one started was never
         // its own — without this date the strip and the card both fall back to
@@ -13208,7 +13234,9 @@ async function _renderCampaignsBoardInner() {
   if (_campaignsTypeFilter === 'All') {
     try {
       const dj = await fetch('/api/drafts').then((r) => r.json());
-      if (Array.isArray(dj?.drafts)) _draftRows = dj.drafts.filter(d => !deletedDraftIds.has(d.id));
+      // An unnamed draft is an autosave nobody chose to keep (Save asks for a
+      // name), so it stays off the board.
+      if (Array.isArray(dj?.drafts)) _draftRows = dj.drafts.filter(d => !deletedDraftIds.has(d.id) && String(d.name || '').trim());
       _draftRows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch { /* drafts rail is best-effort — board renders without it */ }
   }
@@ -22270,7 +22298,7 @@ async function refreshDashboardDrafts() {
       fetch('/api/drafts').then((r) => r.json()).catch(() => null),
       fetch('/api/history').then((r) => r.json()).catch(() => null),
     ]);
-    const drafts = Array.isArray(draftsData?.drafts) ? draftsData.drafts.filter(d => !deletedDraftIds.has(d.id)) : [];
+    const drafts = Array.isArray(draftsData?.drafts) ? draftsData.drafts.filter(d => !deletedDraftIds.has(d.id) && String(d.name || '').trim()) : [];
 
     // Render multi-store drafts
     let draftRowsHtml = '';
@@ -28581,8 +28609,17 @@ window.launchScheduleIt = async function () {
 // Save as draft — autosave already persisted everything; this just closes
 // the wizard and returns to the dashboard. The draft stays in the drafts
 // list and the resume pill will surface it from the dashboard header.
+// A campaign cannot be saved without a name: point the operator at the name box.
+function requireCampaignNameToSave() {
+  const input = document.getElementById('campaign-name-input');
+  if ((input?.value || '').trim()) return true;
+  if (input) { input.scrollIntoView({ block: 'center', behavior: 'smooth' }); input.focus({ preventScroll: true }); }
+  showCampaignToast('Name this campaign to save it.', 5000);
+  return false;
+}
 window.launchSaveAsDraft = async function() {
   _closeLaunchMenu();
+  if (!requireCampaignNameToSave()) return;
   // Ortus Basics 1.0: Save stays put. It used to jump back to the dashboard,
   // which threw away the operator's place in the wizard; the toast is the
   // confirmation that the selected settings were stored. Flush the debounced
@@ -28640,6 +28677,7 @@ window.launchSaveButton = function() {
 // editor form so the operator can re-run / tweak it later. Does NOT stop the
 // running campaign or navigate away.
 window.railSaveAsDraft = async function() {
+  if (!requireCampaignNameToSave()) return;
   try {
     const nameInput = document.getElementById('campaign-name-input');
     const name = (nameInput?.value || '').trim();
@@ -36320,4 +36358,32 @@ window.saveMatureProfilePlan = async function(btn) {
     showCampaignToast('Mature profile plan saved.');
   } catch (error) { showCampaignToast(error.message, 5000); }
   finally { btn.disabled = false; }
+};
+// Start the warm-connection stage of a Mature Profile plan. The server builds
+// the pool's lead sheet and launches a cloud Connection campaign from the
+// profile being warmed; the board then shows it under Profile Maturing.
+window.startMatureWarm = async function(btn) {
+  const name = document.getElementById('campaign-name-input')?.value.trim();
+  if (!name) { showCampaignToast('Give this campaign a name before starting it.'); return; }
+  const maturePlan = readMaturePlan();
+  if (!maturePlan) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Starting…';
+  try {
+    await flushAutosaveImmediate();
+    if (!(await saveCampaignConfigByName(name))) throw new Error('Could not save the plan. Please try again.');
+    const launchId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : undefined;
+    const res = await fetch('/api/mature/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, campaignId: _openedCampaignId, launchId, maturePlan }),
+      signal: AbortSignal.timeout(4 * 60 * 1000),
+    });
+    const txt = await res.text();
+    let data; try { data = JSON.parse(txt); } catch { data = { error: txt }; }
+    if (res.status === 409 && txt.includes('OPERATOR_EMAIL_REQUIRED')) { openOperatorEmailModal({ mandatory: true }); return; }
+    if (!res.ok || data.error) throw new Error(String(data.error || txt).split('\n')[0]);
+    showCampaignToast(`Warm connections started — ${data.leadsAdded ?? 'the'} pool account(s) queued.`, 7000);
+    goDashboard();
+  } catch (error) { showCampaignToast(`✗ ${error.message}`, 8000); }
+  finally { btn.disabled = false; btn.textContent = label; }
 };
