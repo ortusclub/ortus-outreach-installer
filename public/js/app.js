@@ -36625,12 +36625,30 @@ function stopMatureInlineLive() {
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
   for (const id of ['mature-live', 'mature-start-status', 'mature-results-link']) { const el = document.getElementById(id); if (el) el.hidden = true; }
 }
-function startMatureInlineLive(ids) {
+// The plan's log while it is being started: the server's steps, in the same
+// plain dark log the running campaign uses.
+function _renderMatureLaunchLog(name, steps, state) {
+  const host = document.getElementById('mature-live'), body = document.getElementById('mature-live-body');
+  if (!host || !body) return;
+  if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
+  host.hidden = false;
+  const bad = state === 'Not started';
+  body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
+    + `<div class="sn-top"><span class="sn-type">Maturing log · ${escHtml(name)}</span><span class="sn-status"><span class="dot ${bad ? 'red' : 'amber'}"></span> ${escHtml(state)}</span></div>`
+    + (bad ? '' : `<div class="mature-row-next" style="margin:6px 0 10px">Starting usually takes about 1 minute; a cloud worker then picks it up in about 2 minutes.</div>`)
+    + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
+    + `<div class="sn-logbox">${steps.map((l) => `<span class="mature-log-time">${matureLogClock(l.t)}</span> ${escHtml(l.text)}`).join('<br>')}</div></div></div>`
+    + `</div></div>`;
+  const box = body.querySelector('.sn-logbox');
+  if (box) box.scrollTop = box.scrollHeight;
+  try { host.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) { /* */ }
+}
+function startMatureInlineLive(ids, startLines = []) {
   const host = document.getElementById('mature-live'), body = document.getElementById('mature-live-body');
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
   if (!host || !body || !ids.length) return;
   host.hidden = false;
-  body.innerHTML = '<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-logbox">Loading the maturing log…</div></div></div>';
+  if (!startLines.length) body.innerHTML = '<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-logbox">Loading the maturing log…</div></div></div>';
   // The engine's campaign, in the shape the Profile Maturing tab's helpers read.
   async function one(id) {
     const d = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json());
@@ -36655,7 +36673,7 @@ function startMatureInlineLive(ids) {
     const group = groupMaturingAccounts(items)[0];
     const dot = { green: 'run', amber: 'amber', red: 'red', done: 'done', muted: 'q' }[group.state.tone] || 'q';
     const next = items.map((x) => maturingNextAction(x)).filter(Boolean).join('  ·  ');
-    const lines = [...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log }))), ...maturingWaitLines(items)];
+    const lines = [...startLines, ...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log }))), ...maturingWaitLines(items)].sort((a, b) => a.t - b.t);
     const logHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
     const active = items.find((x) => x.live) || null;
     const counts = [group.warmSent !== null ? `Warm ${group.warmSent}` : '', group.coldSent !== null ? `Cold ${group.coldSent}` : ''].filter(Boolean).join(' · ');
@@ -36695,7 +36713,14 @@ window.startMaturePlan = async function(btn) {
   const linkBtn = document.getElementById('mature-results-link');
   const showResultsLink = (url) => { if (linkBtn && url) { linkBtn.dataset.url = url; linkBtn.hidden = false; } };
   if (linkBtn) linkBtn.hidden = true;
-  beginCloudLaunch({ name, profileIds: maturePlan.targetProfileIds || [], handshake: false });
+  // The start is logged in the plan's own maturing log, under the options — the
+  // same plain log the running campaign then continues in.
+  const steps = [];
+  const launchLog = (text) => { steps.push({ t: Date.now(), text: `${name} · start — ${text}` }); _renderMatureLaunchLog(name, steps, 'Starting'); };
+  try { stopViewingCloudCampaign(); } catch (_) { /* */ }
+  liveStatusForcedOpen = false;
+  try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+  _matureLiveFor = name;
   launchLog('Saving the plan…');
   let logged = 0;
   const poll = setInterval(async () => {
@@ -36727,8 +36752,6 @@ window.startMaturePlan = async function(btn) {
     // This page no longer edits a saved record: the plan is a running campaign now.
     _openedCampaignId = null;
     showResultsLink(data.resultsUrl);
-    if (_cloudLaunch) _cloudLaunch.leadsRead = Number(data.warm?.leadsAdded ?? data.cold?.leadsAdded) || 0;
-    setCloudLaunchPhase('accepted');
     const parts = [
       data.warm?.ok ? `warm connections started (${data.warm.leadsAdded ?? 0} pool accounts)` : '',
       data.cold?.ok ? (data.cold.scheduled ? 'cold connections scheduled for their first plan day' : `cold connections started (${data.cold.leadsAdded ?? 0} leads)`) : '',
@@ -36738,16 +36761,13 @@ window.startMaturePlan = async function(btn) {
     showCampaignToast(`Plan started — ${parts.join(' · ')}.${coldProblem}`, coldProblem ? 12000 : 7000);
     // Stay on the plan page: the card now follows the running campaign.
     const liveIds = [data.warm?.ok && data.warm.id, data.cold?.ok && data.cold.id].filter(Boolean);
-    // Hand over from the launch card to the plan's own maturing log.
-    try { stopViewingCloudCampaign(); } catch (_) { /* */ }
-    liveStatusForcedOpen = false;
-    try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+    // The same log carries on with the running campaign's own lines.
     _matureLiveFor = name;
-    startMatureInlineLive(liveIds);
+    startMatureInlineLive(liveIds, steps);
   } catch (error) {
     launchLog(`✗ Not started — ${error.message}`);
-    failCloudLaunch(`Could not start the plan: ${error.message}`);
+    _renderMatureLaunchLog(name, steps, 'Not started');
     showCampaignToast(`✗ ${error.message}`, 8000);
   }
-  finally { clearInterval(poll); btn.disabled = false; btn.textContent = label; endCloudLaunch(); }
+  finally { clearInterval(poll); btn.disabled = false; btn.textContent = label; }
 };
