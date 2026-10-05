@@ -19827,7 +19827,7 @@ function collectCurrentConfig() {
 
 function applyPresetConfig(config) {
   if (!config || typeof config !== 'object') return;
-  loadMaturePlan(config.maturePlan ? { ...config.maturePlan, targetProfileIds: config.maturePlan.targetProfileIds || config.profileIds || [] } : null);
+  loadMaturePlan(config.maturePlan ? { ...config.maturePlan, targetProfileIds: config.maturePlan.targetProfileIds || config.profileIds || [] } : null); stopMatureInlineLive();
   const setV = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
   if (config.campaignId) {
     _openedCampaignId = config.campaignId;
@@ -24262,7 +24262,7 @@ window.resumeWithEditFirst = resumeWithEditFirst;
 // in the Dashboard's Drafts section), so the operator can stage multiple
 // campaigns in parallel without losing any.
 async function startNewCampaign() {
-  loadMaturePlan(null);
+  loadMaturePlan(null); stopMatureInlineLive();
   _openedCampaignId = null;
   _openedCampaignName = '';
   window.__viewingActiveCampaign = false;
@@ -36369,9 +36369,71 @@ window.saveMatureProfilePlan = async function(btn) {
   } catch (error) { showCampaignToast(error.message, 5000); }
   finally { btn.disabled = false; }
 };
+// Live status of a started plan, inside the Mature Profile page. Polls the
+// engine for each of the plan's campaigns (warm, cold) and shows where it is in
+// the plan, what the engine is doing and the latest log lines. Stops by itself
+// when the operator leaves the page or every campaign has ended.
+const MATURE_LIVE_STATUS = {
+  queued: 'Waiting for a cloud worker — workers sleep when idle and take about 2 minutes to wake',
+  pending: 'Waiting for a cloud worker — workers sleep when idle and take about 2 minutes to wake',
+  scheduled: 'Scheduled — the cloud starts it on its first plan day',
+  running: 'Sending',
+  waiting_daily_reset: "Today's amount is done — sending continues tomorrow",
+  paused: 'Paused', pausing: 'Pausing…', stopping: 'Stopping…',
+  needs_review: 'Stopped — needs attention',
+  monitoring: 'Sending finished — checking for acceptances',
+  done: 'Finished', cancelled: 'Stopped', error: 'Stopped on an error',
+};
+let _matureLiveTimer = null;
+// A different plan is being opened: the previous plan's live status goes away.
+function stopMatureInlineLive() {
+  if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
+  for (const id of ['mature-live', 'mature-start-status']) { const el = document.getElementById(id); if (el) el.hidden = true; }
+}
+function startMatureInlineLive(ids) {
+  const host = document.getElementById('mature-live'), body = document.getElementById('mature-live-body');
+  if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
+  if (!host || !body || !ids.length) return;
+  host.hidden = false;
+  body.innerHTML = '<div class="sn-logbox">Loading live status…</div>';
+  const today = () => new Date().toISOString().slice(0, 10);
+  async function one(id) {
+    const [d, ar] = await Promise.all([
+      fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json()),
+      fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/accounts`).then((r) => r.json()).catch(() => null),
+    ]);
+    if (!d || d.error) throw new Error((d && d.error) || 'no reply');
+    const c = d.campaign || {}, lc = d.leadCounts || {}, pre = Number(lc._preActioned || 0);
+    const sent = Math.max(0, Number(lc.sent || 0) - pre);
+    const total = Object.entries(lc).reduce((a, [k, b]) => a + (k.startsWith('_') ? 0 : (Number(b) || 0)), 0) - pre;
+    const account = ar && Array.isArray(ar.accounts) ? ar.accounts[0] : null;
+    const plan = maturingStatus({ kind: c.config?.matureKind, schedule: c.config?.dailySchedule, today: today(),
+      sentToday: account ? Number(account.dailyCount) || 0 : null, sent, total });
+    const log = (Array.isArray(d.monitorLog) ? d.monitorLog : []).map((e) => String((e && e.line) || '')).filter(Boolean).slice(-10);
+    const ended = ['done', 'cancelled', 'error'].includes(String(c.status || ''));
+    const kind = c.config?.matureKind === 'cold' ? 'Cold connections' : 'Warm connections';
+    return { ended, html:
+      `<div class="mature-stage"><h3>${escHtml(kind)} · ${escHtml(MATURE_LIVE_STATUS[c.status] || c.status || 'Starting')}</h3>`
+      + (plan ? `<div class="sn-progtxt sn-maturing-status">${escHtml(plan.text)}</div>` : '')
+      + `<div class="sn-logbox">${log.length ? log.map(escHtml).join('<br>') : 'The log appears here once a cloud worker picks the campaign up.'}</div>`
+      + `<button type="button" class="btn" onclick="openCloudLive('${escHtml(id)}')">Open full live status</button></div>` };
+  }
+  async function tick() {
+    // Gone from the page (another campaign opened, or back on the dashboard).
+    if (!host.isConnected || host.closest('#nav-mature-profile')?.style.display === 'none' || !location.hash.startsWith('#/new')) {
+      clearInterval(_matureLiveTimer); _matureLiveTimer = null; return;
+    }
+    const parts = await Promise.all(ids.map((id) => one(id).catch((e) => ({ ended: false, html: `<div class="sn-logbox">Could not read the campaign from the cloud just now (${escHtml(e.message)}). Trying again…</div>` }))));
+    body.innerHTML = parts.map((p) => p.html).join('');
+    if (parts.every((p) => p.ended)) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
+  }
+  tick();
+  _matureLiveTimer = setInterval(tick, 5000);
+}
+
 // Start a Mature Profile plan. The server launches a cloud Connection campaign
 // from the profile being warmed for each switched-on activity (warm, cold), and
-// the Live Status view opens on it straight away.
+// live status then shows on this same page, under the options.
 window.startMaturePlan = async function(btn) {
   const name = document.getElementById('campaign-name-input')?.value.trim();
   if (!name) { showCampaignToast('Choose the profile to mature first. The campaign is named after it.', 5000); return; }
@@ -36427,8 +36489,8 @@ window.startMaturePlan = async function(btn) {
     showCampaignToast(`Plan started — ${parts.join(' · ')}.${coldProblem}`, coldProblem ? 12000 : 7000);
     // Straight to Live Status for the campaign that is sending now.
     finalLine = '✓ Plan started.'; paint();
-    if (data.id) await openCloudLive(data.id); else goDashboard();
-    if (box) box.hidden = true;
+    // Stay on the plan page: live status appears right here, under the options.
+    startMatureInlineLive([data.warm?.ok && data.warm.id, data.cold?.ok && data.cold.id].filter(Boolean));
   } catch (error) {
     // The reason stays on screen under the buttons, not only in a passing toast.
     finalLine = `✗ Not started — ${error.message}`; paint();
