@@ -109,3 +109,21 @@ test('each maturing account says what it does next and when', () => {
     'Next: accept 3 connection requests in the receiving accounts · Mon 5 Oct, 21:40 CEST · when the worker is free');
   for (const ended of [{ bucket: 'done' }, { paused: true }, { needsReview: true }, { stopping: true }]) assert.equal(maturingNextAction({ ...it, ...ended }, opts), '');
 });
+
+import { maturingWaitLines } from '../public/js/mature-profile-board.mjs';
+test('the log says it is looking for a VM worker, and keeps saying so every 15 seconds', () => {
+  const due = Date.parse('2026-10-05T19:35:58Z');
+  const it = { bucket: 'running', name: 'cat@x.io', matureKind: 'warm', dailyWait: true, acceptPending: 3, acceptDueAt: new Date(due).toISOString(), resumeAt: '2026-10-07T01:00:00Z' };
+  assert.deepEqual(maturingWaitLines([it], due - 1000), []);                       // not due yet
+  const first = maturingWaitLines([it], due + 5000);
+  assert.equal(first.length, 1);
+  assert.match(first[0].text, /^cat@x\.io · warm — 🔎 Looking for a VM worker to accept 3 connection requests in the receiving accounts\. This is usually about 2 minutes/);
+  const later = maturingWaitLines([it], due + 47000);
+  assert.deepEqual(later.map((l) => l.text.includes('Still looking')), [false, true, true, true]);
+  assert.match(later.at(-1).text, /45s so far \(usually about 2 minutes\)/);
+  assert.match(maturingWaitLines([it], due + 400000).at(-1).text, /6m 30s so far \(longer than usual/);
+  // Once a browser is open the worker has been found: no more waiting lines.
+  assert.deepEqual(maturingWaitLines([{ ...it, live: true }], due + 47000), []);
+  // A daily batch that has fallen due waits for a worker the same way.
+  assert.match(maturingWaitLines([{ ...it, acceptPending: 0 }], Date.parse('2026-10-07T01:00:20Z'))[0].text, /Looking for a VM worker to send today's warm connections/);
+});

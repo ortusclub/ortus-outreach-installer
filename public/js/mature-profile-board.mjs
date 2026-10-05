@@ -65,6 +65,39 @@ export function mergeMaturingLogs(campaigns, limit = 60) {
   return all.sort((a, b) => a.t - b.t).slice(-limit);
 }
 
+// Lines the app adds to the combined log while a due action waits for a cloud
+// worker: nothing in the cloud is running then, so nothing else would log it.
+// One "looking" line when the action falls due, then a "still looking" line
+// every 15 seconds, each with how long this normally takes.
+export const WORKER_WAKE_TYPICAL = 'usually about 2 minutes, because workers sleep when idle';
+export function maturingWaitLines(items, now = Date.now(), maxLines = 12) {
+  const lines = [];
+  for (const it of items || []) {
+    if (!it || it.live || it.needsReview || it.paused || it.stopping || it.bucket === 'done') continue;
+    const tag = `${String(it.name || '').replace(/ · Cold$/, '')} · ${it.matureKind === 'cold' ? 'cold' : 'warm'}`;
+    const accepts = Number(it.acceptPending) || 0;
+    const acceptDue = Date.parse(it.acceptDueAt || ''), resumeDue = Date.parse(it.resumeAt || '');
+    let since = NaN, what = '', after = '';
+    if (accepts > 0 && acceptDue <= now) {
+      since = acceptDue; what = `accept ${accepts} connection request${accepts === 1 ? '' : 's'} in the receiving account${accepts === 1 ? '' : 's'}`;
+      after = ' Accepting then takes about 1 minute per account.';
+    } else if (it.dailyWait && resumeDue <= now) {
+      since = resumeDue; what = `send today's ${it.matureKind === 'cold' ? 'cold' : 'warm'} connections`;
+      after = ' Sending then takes a few minutes per batch.';
+    }
+    if (!Number.isFinite(since)) continue;
+    const waited = Math.max(0, Math.floor((now - since) / 1000));
+    const mine = [{ t: since, text: `${tag} — 🔎 Looking for a VM worker to ${what}. This is ${WORKER_WAKE_TYPICAL}.${after}` }];
+    const span = (sec) => (sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`);
+    for (let sec = 15; sec <= waited; sec += 15) {
+      mine.push({ t: since + sec * 1000, text: `${tag} — ⏳ Still looking for a VM worker to ${what} — ${span(sec)} so far (${sec > 300 ? 'longer than usual; it keeps trying' : 'usually about 2 minutes'}).` });
+    }
+    // Keep the opening line and the most recent ticks.
+    lines.push(...(mine.length > maxLines ? [mine[0], ...mine.slice(-(maxLines - 1))] : mine));
+  }
+  return lines.sort((a, b) => a.t - b.t);
+}
+
 // The one-word state a maturing campaign shows in the Profile Maturing list.
 // `tone` picks the dot colour: green only while it is actually connecting.
 export function maturingRowState(it) {

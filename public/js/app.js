@@ -1,5 +1,5 @@
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
-import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction } from '/js/mature-profile-board.mjs';
+import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction, maturingWaitLines } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
@@ -11638,7 +11638,7 @@ window.deleteMaturingAccount = async function(idList, name, btn) {
 let _maturingLogHtml = 'Loading the maturing log…';
 let _maturingLogAt = 0, _maturingLogBusy = false;
 async function refreshMaturingLog(items) {
-  if (_maturingLogBusy || Date.now() - _maturingLogAt < 15000) return;
+  if (_maturingLogBusy || Date.now() - _maturingLogAt < 14000) return;
   _maturingLogBusy = true;
   try {
     const campaigns = await Promise.all(items.slice(0, 40).map(async (it) => {
@@ -11647,7 +11647,8 @@ async function refreshMaturingLog(items) {
         return { name: it.name, kind: it.matureKind, log: Array.isArray(d && d.monitorLog) ? d.monitorLog : [] };
       } catch { return { name: it.name, kind: it.matureKind, log: [] }; }
     }));
-    const lines = mergeMaturingLogs(campaigns);
+    // While a due action waits for a worker, say so (and keep saying so).
+    const lines = [...mergeMaturingLogs(campaigns), ...maturingWaitLines(items)];
     _maturingLogHtml = lines.length ? lines.map((l) => escHtml(l.text)).join('<br>') : 'Nothing logged yet.';
     _maturingLogAt = Date.now();
     const box = document.getElementById('maturing-all-log');
