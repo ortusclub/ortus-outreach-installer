@@ -419,6 +419,9 @@ export function reclaimCloudCampaign(id) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/handover-reclaim`, {});
 }
 // Un-bench a weekly-capped account (operator Retry in the Accounts panel).
+export function benchCloudAccount(id, profileId, benched) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/bench`, { benched });
+}
 export function unbenchCloudAccount(id, profileId) {
   return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/accounts/${encodeURIComponent(profileId)}/unbench`, {});
 }

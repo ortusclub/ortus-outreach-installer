@@ -15,13 +15,14 @@
 // that captures env at load time (src/sheets-webapp-url.js, pulled in via
 // log-writer.js below) is evaluated. See electron/load-env.js for why.
 import './load-env.js';
-import { app, BrowserWindow, Tray, Menu, shell, dialog, powerMonitor } from 'electron';
+import { app, BrowserWindow, Tray, Menu, shell, dialog, powerMonitor, screen, ipcMain } from 'electron';
 import { existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
 import { spawn } from 'node:child_process';
 import dotenv from 'dotenv';
+import { isLivePreviewUrl, previewWindowBounds, restorePreviewWindow } from './live-preview-window.mjs';
 // Same in-process singleton the server uses — flush its ops buffer on quit so
 // the last buffered events aren't lost when the operator closes the app.
 import { flushOpsLog } from '../src/log-writer.js';
@@ -80,6 +81,37 @@ async function pickFreePort() {
 }
 
 let mainWindow = null;
+let livePreviewWindow = null;
+
+function openLivePreviewWindow(url) {
+  if (!isLivePreviewUrl(url, `http://127.0.0.1:${serverPort}`)) throw new Error('Invalid preview URL');
+  if (livePreviewWindow && !livePreviewWindow.isDestroyed()) {
+    if (livePreviewWindow.webContents.getURL() !== url) livePreviewWindow.loadURL(url);
+    restorePreviewWindow(livePreviewWindow);
+    return;
+  }
+  const bounds = mainWindow.getBounds();
+  const preview = new BrowserWindow({
+    ...previewWindowBounds(bounds, screen.getDisplayMatching(bounds).workArea),
+    minWidth: 360, minHeight: 260, resizable: true, minimizable: true, maximizable: true,
+    autoHideMenuBar: true, title: 'Live preview — Ortus Outreach', backgroundColor: '#111111',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  livePreviewWindow = preview;
+  preview.on('closed', () => { if (livePreviewWindow === preview) livePreviewWindow = null; });
+  preview.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  preview.loadURL(url);
+  restorePreviewWindow(preview);
+}
+ipcMain.handle('ortus:open-live-preview', (event, url) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error('Invalid preview sender');
+  openLivePreviewWindow(url);
+  return true;
+});
+ipcMain.handle('ortus:close-live-preview', (event) => {
+  if (event.sender !== mainWindow?.webContents) return;
+  if (livePreviewWindow && !livePreviewWindow.isDestroyed()) livePreviewWindow.close();
+});
 let serverPort = null;
 let tray = null;
 let serverProcess = null;
@@ -151,7 +183,7 @@ function getOrCreateWindow() {
     title: 'The Ortus Outreach',
     backgroundColor: '#0d1117',
     webPreferences: {
-      preload: resolve(__dirname, 'preload.js'),
+      preload: resolve(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -163,6 +195,10 @@ function getOrCreateWindow() {
 
   // External links open in the system browser, not inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isLivePreviewUrl(url, `http://127.0.0.1:${serverPort}`)) {
+      openLivePreviewWindow(url);
+      return { action: 'deny' };
+    }
     if (url.startsWith('http')) {
       shell.openExternal(url);
       return { action: 'deny' };

@@ -430,15 +430,10 @@ export function vjCardControlsFor(status = {}) {
         onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id}','sending-from-monitoring','vm',this)` });
     }
   } else if (done) {
-    // Restart controls — only for a STOPPED/CANCELLED/ERRORED campaign (never a
-    // cleanly-completed one). ▶ Continue where it left off · ⟲ from the beginning.
-    // An ERRORED campaign gets its restart as the card's big labelled button
-    // instead (failedStartRetry). Leaving the glyphs here too would offer the
-    // same action twice, one of them tipped "restart from the beginning" —
-    // which on a campaign that sent 31 invites re-sends to all 31.
+    // One start-again action for stopped runs; preserve already-processed leads.
+    // Failed starts use the card's primary retry action instead.
     if ((s.bad || terminalPresentation(s).pending > 0) && !failedStartRetry(s)) {
-      c.extra.push({ tip: 'Continue where it left off', kind: 'play', onclick: cloud ? `restartCloudCampaignUI('${id}', false)` : `restartLocalFromItem('${id}', false)` });
-      c.extra.push({ tip: 'Restart from the beginning', kind: 'restart', onclick: cloud ? `restartCloudCampaignUI('${id}', true)` : `restartLocalFromItem('${id}', true)` });
+      c.extra.push({ tip: 'Start again', kind: 'play', onclick: cloud ? `restartCloudCampaignUI('${id}', false)` : `restartLocalFromItem('${id}', false)` });
     }
     c.extra.push({ tip: 'Duplicate', kind: 'dup', onclick: `duplicateCampaign('${id}')` });
     if (!cloud && s.hist) c.extra.push({ tip: 'Debrief', kind: 'debrief', onclick: `window.openDebrief('${id}')` });
@@ -499,7 +494,8 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
   const pills = [];
   let blocked = true;
   let status;
-  if (a.loginRechecking) { pills.push(['warn', 'Checking login…']); status = 'Login recheck queued — waiting for a worker turn'; }
+  if (a.manuallyBenched) { pills.push(['warn', 'Benched']); status = 'Benched for this campaign — Unbench account to rejoin'; }
+  else if (a.loginRechecking) { pills.push(['warn', 'Checking login…']); status = 'Login recheck queued — waiting for a worker turn'; }
   else if (a.needsLogin) { pills.push(['bad', 'Logged out']); status = 'Logged out — open the account and sign in to LinkedIn'; }
   // Parked by 3 consecutive proxy 407s: the VM cannot open this profile's
   // browser at all. Distinct from a throttle, because waiting will not fix it.

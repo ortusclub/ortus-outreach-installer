@@ -8,7 +8,7 @@ const code = source.slice(start, source.indexOf('// Queue it', start));
 for (const success of [true, false]) {
   test(`existing campaign Start uses local resume and navigates only on success (${success})`, async () => {
     const calls = [];
-    const ctx = vm.createContext({
+    const ctx = vm.createContext({openedWizardCampaign:()=>null,
       window: { location: { hash: '#/new' } }, _editingCampaignId: 'sam-id',
       _boardItemsById: new Map(), _snItemsById: new Map(),
       getRunTarget: () => "local", _readOnlyBlocksLaunch: () => false, _closeLaunchMenu() {},

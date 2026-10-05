@@ -20,8 +20,8 @@ export function campaignLifecycle(s = {}) {
   const actions = {
     draft:['start','queue','duplicate','delete','open'], queued:['cancel','duplicate','open'],scheduled:['cancel','duplicate','open'],
     running:['pause','stop','duplicate','open'],paused:['resume','stop','duplicate','open'],stopping:['open'],
-    stopped:['resume','restart','duplicate','delete','open'],completed:['duplicate','delete','open'],
-    monitoring:['check','stop','duplicate','open'],waiting:['stop','duplicate','open'],failed:['resume','restart','duplicate','delete','open'],
+    stopped:['restart','duplicate','delete','open'],completed:['duplicate','delete','open'],
+    monitoring:['check','stop','duplicate','open'],waiting:['stop','duplicate','open'],failed:['restart','duplicate','delete','open'],
   };
   if (status === 'monitoring' && (Number(s.pending) > 0 || Number(s.totalTargets ?? s.total) > Number(s.totalProcessed ?? s.sent))) actions.monitoring.unshift('resume');
   if (s.hist && ['stopped','completed','failed'].includes(status)) actions[status].splice(-1, 0, 'report');
@@ -81,8 +81,8 @@ export function campaignActionSpecs(s = {}) {
   const actions = {
     start: { label: 'Start campaign', kind: 'play', onclick: call('openSavedCampaignStart', id) },
     queue: { label: 'Queue campaign', kind: 'queue', onclick: call('openSavedCampaignStart', id, 'queue') },
-    resume: { label: lifecycle.status === 'paused' ? 'Resume' : lifecycle.status === 'monitoring' ? 'Choose what resumes' : 'Continue where it left off', kind: 'play', onclick: lifecycle.status === 'paused' ? 'window.dashPauseActive()' : localRuntime ? call('window.openCampaignResumeDecision', 'local-active',lifecycle.status === 'monitoring' ? 'sending-from-monitoring' : 'sending','local') : call('restartLocalFromItem',id,false) },
-    restart: { label: 'Restart from the beginning', kind: 'restart', onclick: call('restartLocalFromItem', id, true) },
+    resume: { label: lifecycle.status === 'paused' ? 'Resume' : lifecycle.status === 'monitoring' ? 'Choose what resumes' : 'Start again', kind: 'play', onclick: lifecycle.status === 'paused' ? 'window.dashPauseActive()' : localRuntime ? call('window.openCampaignResumeDecision', 'local-active',lifecycle.status === 'monitoring' ? 'sending-from-monitoring' : 'sending','local') : call('restartLocalFromItem',id,false) },
+    restart: { label: 'Start again', kind: 'play', onclick: call('restartLocalFromItem', id, false) },
     report: { label: 'Debrief', kind: 'debrief', onclick: call('window.openDebrief', id) },
     pause: { label: 'Pause', kind: 'pause', onclick: 'window.dashPauseActive()' },
     stop: { label: lifecycle.status === 'monitoring' ? 'Stop monitoring' : 'Stop campaign', kind: 'stop', onclick: 'window.dashStopActive()' },
