@@ -1710,7 +1710,9 @@ async function handleStartCloudOnce(req, res) {
       // dailyCounterScope makes warm and cold count their sends separately.
       ...(body.mature ? { matureWarm: true, matureKind: body.mature.kind, warmPool: body.mature.pool || '', dailySchedule: body.mature.dailySchedule, dailyCounterScope: body.mature.kind,
         // Warm only: the receiving accounts accept the request 15 minutes after each day's batch.
-        ...(body.mature.maturedAccount ? { maturedAccount: body.mature.maturedAccount } : {}) } : {}),
+        ...(body.mature.maturedAccount ? { maturedAccount: body.mature.maturedAccount } : {}),
+        // The plan itself, so the campaign reopens as its Mature Profile set-up on any computer.
+        ...(body.mature.plan ? { maturePlan: body.mature.plan } : {}) } : {}),
     };
     // Operator timezone → engine → GAS stamps "Date/Time of Last Action" in the
     // operator's local clock (parity with local runs, where sheets-writer attaches
@@ -4167,7 +4169,7 @@ app.post('/api/mature/start', async (req, res) => {
         sheetUrl, sheetGid, linkedinColumn: 'LinkedIn URL',
         ...(tab ? { leadFilter: { column: 'Type', value: 'Warm' } } : {}),
         dailyLimit: warmAmounts[0], templates: {},
-        mature: { kind: 'warm', pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, startAt: now.toISOString(), amounts: warmAmounts } },
+        mature: { kind: 'warm', plan, pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, startAt: now.toISOString(), amounts: warmAmounts } },
       });
       if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
       step(`Warm campaign is on the VM — ${result.warm.leadsAdded ?? pool.targets.length} pool accounts queued, ${warmAmounts[0]} to send today.`);
@@ -4187,7 +4189,7 @@ app.post('/api/mature/start', async (req, res) => {
         ...(tab ? { sheetUrl: tab.url, sheetGid: tab.gid, leadFilter: { column: 'Type', value: 'Cold' } }
           : { sheetUrl: plan.coldPool, shuffleLeads: plan.coldPoolOrder !== 'descending', _preflightExcludedUrls: managed }),
         ...(startAt ? { startAt: startAt.toISOString() } : {}),
-        mature: { kind: 'cold', viaMatureBridge: !!tab, dailySchedule: { startDate: localDay(startAt || now, planTz), startAt: (startAt || now).toISOString(), amounts: cold.amounts } },
+        mature: { kind: 'cold', plan, viaMatureBridge: !!tab, dailySchedule: { startDate: localDay(startAt || now, planTz), startAt: (startAt || now).toISOString(), amounts: cold.amounts } },
       });
       // Warm is already running, so a cold failure is reported, not fatal.
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });

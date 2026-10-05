@@ -10238,6 +10238,7 @@ function _seedCloudLiveName(name) {
 async function openCloudLive(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
+  if (_isMaturingCampaign(id)) return openMaturePlan(id);
   if (typeof showBusy === 'function') showBusy('Opening…');
   _viewingCloudId = id;
   try { sessionStorage.setItem('ortus-opened-campaign', JSON.stringify({id,cloud:true})); } catch {}
@@ -14330,6 +14331,7 @@ function localCampaignViewStatus(incoming) {
 async function openRunningCampaignReadOnly(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
+  if (_isMaturingCampaign(id)) return openMaturePlan(id);
   if (typeof showBusy === 'function') showBusy('Opening…');                   // instant feedback for the config fetch below
   // Local launch snapshot if we have it (we launched this one here), else the
   // engine's own copy — so opening another operator's campaign shows its real
@@ -14419,6 +14421,7 @@ function _wireReadOnlyEditGuard() {
 // Campaigns launched before the launch-config snapshot existed fall back to the
 // live view.
 async function openCampaignForEditCloud(id) {
+  if (_isMaturingCampaign(id)) return openMaturePlan(id);
   if (typeof showBusy === 'function') showBusy('Opening…');                   // instant feedback for the config fetch below
   // Local launch snapshot first, else the engine's own copy — so editing a
   // campaign launched on another machine (or before local configs were recorded)
@@ -36531,6 +36534,54 @@ async function showMatureLiveStatus(id) {
   try { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ }
   _startCloudCardPoll();
 }
+// A maturing campaign opens as its Mature Profile plan, never as the
+// Connection campaign the cloud runs it with. Every "open a cloud campaign"
+// path checks this first.
+function _isMaturingCampaign(id) {
+  return !!(_boardItemsById.get(id) || _snItemsById.get(id))?.maturing;
+}
+// Open a started maturing campaign: the Mature Profile set-up page filled with
+// its plan, and the campaign's live status underneath. The plan travels with
+// the campaign in the cloud; one started before that was recorded falls back
+// to the plan saved on this computer under the same name.
+async function openMaturePlan(id) {
+  if (typeof showBusy === 'function') showBusy('Opening…');
+  try {
+    const item = _boardItemsById.get(id) || _snItemsById.get(id);
+    const detail = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json()).catch(() => null);
+    const c = (detail && detail.campaign) || {}, cfg = c.config || {};
+    const name = String((item && item.name) || c.name || '').replace(/ · Cold$/, '');
+    let plan = cfg.maturePlan || null, recovered = !!plan;
+    if (!plan) {
+      const saved = await fetch(cfg.campaignId ? `/api/campaign-configs/by-id/${encodeURIComponent(cfg.campaignId)}` : `/api/campaign-configs/${encodeURIComponent(name)}`)
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      plan = saved?.config?.maturePlan || saved?.entry?.config?.maturePlan || null;
+      recovered = !!plan;
+    }
+    const profileIds = Array.isArray(c.profile_ids) ? c.profile_ids : [];
+    if (!plan) plan = { targetProfileIds: profileIds, ...(cfg.warmPool ? { warmPool: cfg.warmPool } : {}) };
+    try { clearCloudEditMode(); } catch (_) { /* not in running-edit lock mode */ }
+    try { clearActiveDraft(); } catch (_) { /* a started plan, not a draft */ }
+    window._openEditNameOverride = name;
+    try { localStorage.setItem('campaignName', name); } catch (_) { /* private mode */ }
+    const nameInput = document.getElementById('campaign-name-input');
+    if (nameInput) nameInput.value = name;
+    applyPresetConfig({ mode: 'mature_profile', runTarget: 'cloud', profileIds, maturePlan: plan, ...(cfg.campaignId ? { campaignId: cfg.campaignId } : {}) });
+    try { sessionStorage.setItem('ortus-opened-campaign', JSON.stringify({ id, cloud: true })); } catch { /* */ }
+    goCreateCampaign();
+    lockCampaignType('mature_profile');
+    // Let the route change settle before the live card is placed under the plan.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const linkBtn = document.getElementById('mature-results-link');
+    if (linkBtn && cfg.matureWarm && c.sheet_url) { linkBtn.dataset.url = c.sheet_url; linkBtn.hidden = false; }
+    try { await showMatureLiveStatus(id); }
+    catch (_) { startMatureInlineLive([id]); }
+    if (!recovered) showCampaignToast('This campaign’s plan settings were not kept when it was started, so the page shows the default plan. Live status below is the real campaign.', 9000);
+  } catch (error) {
+    showCampaignToast('Could not open this maturing campaign: ' + (error && error.message || error), 6000);
+  } finally { if (typeof hideBusy === 'function') hideBusy(); }
+}
+window.openMaturePlan = openMaturePlan;
 let _matureLiveTimer = null;
 // A different plan is being opened: the previous plan's live status goes away.
 function stopMatureInlineLive() {
