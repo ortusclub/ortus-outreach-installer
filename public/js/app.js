@@ -36418,7 +36418,7 @@ let _matureLiveTimer = null;
 // A different plan is being opened: the previous plan's live status goes away.
 function stopMatureInlineLive() {
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
-  for (const id of ['mature-live', 'mature-start-status']) { const el = document.getElementById(id); if (el) el.hidden = true; }
+  for (const id of ['mature-live', 'mature-start-status', 'mature-results-link']) { const el = document.getElementById(id); if (el) el.hidden = true; }
 }
 function startMatureInlineLive(ids) {
   const host = document.getElementById('mature-live'), body = document.getElementById('mature-live-body');
@@ -36446,7 +36446,9 @@ function startMatureInlineLive(ids) {
       `<div class="mature-stage"><h3>${escHtml(kind)} · ${escHtml(MATURE_LIVE_STATUS[c.status] || c.status || 'Starting')}</h3>`
       + (plan ? `<div class="sn-progtxt sn-maturing-status">${escHtml(plan.text)}</div>` : '')
       + `<div class="sn-logbox">${log.length ? log.map(escHtml).join('<br>') : 'The log appears here once a cloud worker picks the campaign up.'}</div>`
-      + `<button type="button" class="btn" onclick="openCloudLive('${escHtml(id)}')">Open full live status</button></div>` };
+      + `<button type="button" class="btn" onclick="openCloudLive('${escHtml(id)}')">Open full live status</button>`
+      + (c.config?.matureWarm && c.sheet_url ? ` <button type="button" class="btn" data-url="${escHtml(c.sheet_url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')">Open results tab ↗</button>` : '')
+      + `</div>` };
   }
   async function tick() {
     // Gone from the page (another campaign opened, or back on the dashboard).
@@ -36476,7 +36478,7 @@ window.startMaturePlan = async function(btn) {
   const box = document.getElementById('mature-start-status');
   const launchId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
   const began = Date.now();
-  let lines = ['Saving the plan…'], finalLine = '';
+  let lines = ['Saving the plan…'], finalLine = '', resultsUrl = '';
   const paint = () => {
     if (!box) return;
     const secs = Math.round((Date.now() - began) / 1000);
@@ -36484,12 +36486,16 @@ window.startMaturePlan = async function(btn) {
     const last = lines.length - 1, failed = finalLine.startsWith('✗');
     box.innerHTML = lines.map((l, i) => escHtml(i < last ? `✓ ${l}` : failed ? `✗ ${l}` : finalLine ? `✓ ${l}` : `⏳ ${l} · ${secs}s`)).join('<br>')
       + (finalLine ? `<br>${escHtml(finalLine)}` : '');
+    // The account's own tab in the results workbook, as soon as it exists.
+    const link = document.getElementById('mature-results-link');
+    if (link) { link.hidden = !resultsUrl; link.dataset.url = resultsUrl; }
   };
   paint();
   const poll = setInterval(async () => {
     try {
       const p = await (await fetch(`/api/mature/start-progress?launchId=${encodeURIComponent(launchId)}`)).json();
       if (Array.isArray(p.lines) && p.lines.length) lines = ['Saving the plan…', ...p.lines];
+      if (p.resultsUrl) resultsUrl = p.resultsUrl;
     } catch { /* keep the last known step */ }
     paint();
   }, 1000);
@@ -36518,6 +36524,7 @@ window.startMaturePlan = async function(btn) {
     const coldProblem = data.cold && !data.cold.ok ? ` Cold connections did not start: ${data.cold.error}` : '';
     showCampaignToast(`Plan started — ${parts.join(' · ')}.${coldProblem}`, coldProblem ? 12000 : 7000);
     // Straight to Live Status for the campaign that is sending now.
+    if (data.resultsUrl) resultsUrl = data.resultsUrl;
     finalLine = '✓ Plan started.'; paint();
     // Stay on the plan page: live status appears right here, under the options.
     startMatureInlineLive([data.warm?.ok && data.warm.id, data.cold?.ok && data.cold.id].filter(Boolean));

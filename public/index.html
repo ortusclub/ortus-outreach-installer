@@ -2497,6 +2497,8 @@
       </div>
       <!-- Live progress of a plan start: filled the moment Start plan is pressed. -->
       <div id="mature-start-status" class="sn-logbox" role="status" aria-live="polite" hidden></div>
+      <!-- This account's tab in the results workbook; shown once the tab is written. -->
+      <button type="button" id="mature-results-link" class="btn" hidden onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')">Open this account's results tab ↗</button>
       <!-- Live status of the started plan, shown here under the options so the
            operator stays on the plan page. Filled by startMatureInlineLive(). -->
       <div id="mature-live" hidden>

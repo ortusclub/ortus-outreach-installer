@@ -4126,6 +4126,8 @@ app.post('/api/mature/start', async (req, res) => {
         rows: buildMatureTabRows({ startDate, warmTargets: pool?.targets || [], warmAmounts, coldLeads, cold }),
       }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
       console.log(`[mature] ${name}: results tab ${tab.url} — ${tab.added} added, ${tab.existing} already listed`);
+      // Offer the link while the start is still running, not only at the end.
+      { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) progress.resultsUrl = tab.url; }
     } catch (error) {
       // The maturing sheets bridge is not set up or not reachable. Keep the
       // plan startable the old way.
