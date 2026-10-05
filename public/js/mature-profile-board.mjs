@@ -34,3 +34,18 @@ export function maturingStatus({ kind = 'warm', schedule, today, sentToday = nul
   if (total > 0 && !poolDone) parts.push(`${sent} of ${total} ${who} invited`);
   return { day, planDays, todayLimit: finished ? 0 : at(index), finished: finished || poolDone, text: parts.join(' · ') };
 }
+
+// One log for every maturing campaign. Each campaign's engine log is
+// [{ t, line }]; lines are merged in time order and tagged with the account
+// (the campaign's name) and whether it is the warm or the cold stage.
+export function mergeMaturingLogs(campaigns, limit = 60) {
+  const all = [];
+  for (const c of campaigns || []) {
+    const tag = `${String(c.name || '').replace(/ · Cold$/, '')} · ${c.kind === 'cold' ? 'cold' : 'warm'}`;
+    for (const e of c.log || []) {
+      const line = String((e && e.line) || '').trim();
+      if (line) all.push({ t: Number(e.t) || 0, text: `${tag} — ${line}` });
+    }
+  }
+  return all.sort((a, b) => a.t - b.t).slice(-limit);
+}

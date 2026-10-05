@@ -36,3 +36,19 @@ test('a cold stage is described as cold connections to leads', () => {
   const s = maturingStatus({ kind: 'cold', schedule: { startDate: '2026-10-12', amounts: [5, 5, 0] }, today: '2026-10-12', sentToday: 1, sent: 1, total: 300 });
   assert.equal(s.text, 'Day 1 of 2 · 1 of 5 cold connections sent today · same amount tomorrow · 1 of 300 leads invited');
 });
+
+import { mergeMaturingLogs } from '../public/js/mature-profile-board.mjs';
+test('the maturing log merges every campaign in time order, tagged by account and stage', () => {
+  const lines = mergeMaturingLogs([
+    { name: 'ana@ortus.solutions', kind: 'warm', log: [{ t: 10, line: 'sent 3' }, { t: 30, line: '😴 Sleeping' }] },
+    { name: 'ana@ortus.solutions · Cold', kind: 'cold', log: [{ t: 20, line: 'scheduled' }] },
+    { name: 'ben@klabber.co', kind: 'warm', log: [{ t: 25, line: 'sent 3' }, { line: '' }] },
+  ]);
+  assert.deepEqual(lines.map(l => l.text), [
+    'ana@ortus.solutions · warm — sent 3',
+    'ana@ortus.solutions · cold — scheduled',
+    'ben@klabber.co · warm — sent 3',
+    'ana@ortus.solutions · warm — 😴 Sleeping',
+  ]);
+  assert.equal(mergeMaturingLogs([{ name: 'a', log: Array.from({ length: 90 }, (_, t) => ({ t, line: `l${t}` })) }], 60).length, 60);
+});

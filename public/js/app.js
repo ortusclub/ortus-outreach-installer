@@ -1,5 +1,5 @@
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
-import { splitMaturingCampaigns, maturingStatus } from '/js/mature-profile-board.mjs';
+import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
@@ -11577,6 +11577,27 @@ function renderUnifiedStrip(it) {
   }).join('');
   return card + `<details class="campaign-run-history"><summary>${it.previousRuns.length} previous run${it.previousRuns.length === 1 ? '' : 's'}</summary>${activeWarning}${rows}</details>`;
 }
+// The combined maturing log. Kept as HTML between board renders so a re-render
+// shows the last known log at once; refreshed from the engine at most every 15s.
+let _maturingLogHtml = 'Loading the maturing log…';
+let _maturingLogAt = 0, _maturingLogBusy = false;
+async function refreshMaturingLog(items) {
+  if (_maturingLogBusy || Date.now() - _maturingLogAt < 15000) return;
+  _maturingLogBusy = true;
+  try {
+    const campaigns = await Promise.all(items.slice(0, 40).map(async (it) => {
+      try {
+        const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(it.id)}`)).json();
+        return { name: it.name, kind: it.matureKind, log: Array.isArray(d && d.monitorLog) ? d.monitorLog : [] };
+      } catch { return { name: it.name, kind: it.matureKind, log: [] }; }
+    }));
+    const lines = mergeMaturingLogs(campaigns);
+    _maturingLogHtml = lines.length ? lines.map((l) => escHtml(l.text)).join('<br>') : 'Nothing logged yet.';
+    _maturingLogAt = Date.now();
+    const box = document.getElementById('maturing-all-log');
+    if (box) { box.innerHTML = _maturingLogHtml; box.scrollTop = box.scrollHeight; }
+  } finally { _maturingLogBusy = false; }
+}
 // One line saying which plan day a maturing campaign is on, today's amount and
 // how much of the pool has been invited. Today's count comes from the engine's
 // per-account figures when the board has them.
@@ -13292,6 +13313,12 @@ async function _renderCampaignsBoardInner() {
     html = _renderBoardSection('mine', '', regularCampaigns, { flat: true, ..._draftOpts });
   }
   html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.', ..._matureDraftOpts });
+  // One log across every maturing campaign, under the section.
+  const _maturingLive = maturingCampaigns.filter((x) => x.where === 'cloud' && x.maturing && x.bucket !== 'done');
+  if (_maturingLive.length) {
+    html += `<div class="sn-railhead">Maturing log · all accounts</div><div class="sn-logbox" id="maturing-all-log">${_maturingLogHtml}</div>`;
+    refreshMaturingLog(_maturingLive);
+  }
   _snItemsById = new Map(items.map((x) => [x.id, x]));
   // Anti-jank: the 4s poll used to blow away the whole board every tick — killing
   // clicks/scroll/expanded panes mid-interaction. Skip the rebuild when the
