@@ -10304,6 +10304,36 @@ function _wizardConfigFromCloudCampaign(cc) {
     checkIntervalMinutes: cc.check_interval_minutes || raw.checkIntervalMinutes,
   };
 }
+window._wizardConfigFromCloudCampaign = _wizardConfigFromCloudCampaign;
+
+// Resolve the wizard config for OPENing a cloud campaign, returning { name, config }
+// or null. The full launch snapshot is saved LOCALLY on the launching operator's
+// machine (cloud-launch-configs.json), so another operator — or an admin opening
+// someone else's campaign, or this operator after a reinstall — gets a 404 there
+// and used to see a blank wizard. The engine keeps its own authoritative copy
+// (/api/campaign/cloud/:id returns sheet_url + the config jsonb for ANY campaign),
+// so fall back to that, mapped to the wizard shape. Local first (it's the richest,
+// exactly what was launched); engine copy second.
+async function _resolveCloudWizardConfig(id) {
+  try {
+    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
+    if (r.ok) {
+      const d = await r.json();
+      if (d && d.config && Object.keys(d.config).length) return { name: d.name || '', config: d.config, source: 'local' };
+    }
+  } catch (_) { /* fall through to the engine's own copy */ }
+  try {
+    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}?nocache=${Date.now()}`);
+    if (r.ok) {
+      const b = await r.json();
+      const cc = b && b.campaign;
+      const config = _wizardConfigFromCloudCampaign(cc);
+      if (config) return { name: (cc && cc.name) || '', config, source: 'engine' };
+    }
+  } catch (_) { /* leave the wizard blank rather than break the open */ }
+  return null;
+}
+window._resolveCloudWizardConfig = _resolveCloudWizardConfig;
 
 // Prefill the wizard from the opened cloud campaign's detail (cached by
 // _refreshCloudActiveStatus). Best-effort: a blank wizard is the fallback.
@@ -14268,11 +14298,10 @@ async function openRunningCampaignReadOnly(id) {
   const selectedItem = _boardItemsById.get(id) || _snItemsById.get(id);
   if (selectedItem?.where === 'local') return openCampaignForEdit(id);
   if (typeof showBusy === 'function') showBusy('Opening…');                   // instant feedback for the config fetch below
-  let d = null;
-  try {
-    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
-    if (r.ok) d = await r.json();
-  } catch (_) { /* fall through to best-effort */ }
+  // Local launch snapshot if we have it (we launched this one here), else the
+  // engine's own copy — so opening another operator's campaign shows its real
+  // sheet / accounts / templates instead of a blank, locked wizard.
+  const d = await _resolveCloudWizardConfig(id);
   const _it = (_boardItemsById && _boardItemsById.get(id)) || (_snItemsById && _snItemsById.get(id));
   const displayName = (_it && _it.name) || (d && d.name) || '';
   const mode = (d && d.config && d.config.mode) || (_it && _it.mode) || '';
@@ -14358,11 +14387,10 @@ function _wireReadOnlyEditGuard() {
 // live view.
 async function openCampaignForEditCloud(id) {
   if (typeof showBusy === 'function') showBusy('Opening…');                   // instant feedback for the config fetch below
-  let d = null;
-  try {
-    const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/launch-config`);
-    if (r.ok) d = await r.json();
-  } catch (_) { /* fall through to live view */ }
+  // Local launch snapshot first, else the engine's own copy — so editing a
+  // campaign launched on another machine (or before local configs were recorded)
+  // recovers its sheet / accounts / templates instead of opening blank.
+  const d = await _resolveCloudWizardConfig(id);
   // Prefer the name/type shown on the board strip (what the operator actually
   // clicked); fall back to the saved launch-config snapshot.
   const _it = (_boardItemsById && _boardItemsById.get(id)) || (_snItemsById && _snItemsById.get(id));
