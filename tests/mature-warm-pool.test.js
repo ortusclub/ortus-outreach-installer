@@ -90,9 +90,12 @@ test('the results tab lists warm then cold with the day each is planned for', ()
     warmAmounts: [1, 0],
     coldLeads: [{ name: 'Cy C', linkedinUrl: 'https://www.linkedin.com/in/cy' }], cold: { delayDays: 7, amounts: [5, 0] } });
   assert.equal(rows[0].length, MATURE_TAB_HEADER.length);
-  assert.deepEqual(rows, [
-    ['Warm', 'Ana A', 'https://www.linkedin.com/in/ana', 'ana@ortus.solutions', 'p-ana', 1, '2026-10-05', ''],
-    ['Warm', 'Ben B', 'https://www.linkedin.com/in/ben', 'ben@ortus.solutions', 'p-ben', '', 'After the plan ends', ''],
-    ['Cold', 'Cy C', 'https://www.linkedin.com/in/cy', '', '', 8, '2026-10-12', ''],
+  assert.deepEqual(rows.map(r => r.slice(0, 7)), [
+    ['Warm', 'Ana A', 'https://www.linkedin.com/in/ana', 'ana@ortus.solutions', 'p-ana', 1, '2026-10-05'],
+    ['Warm', 'Ben B', 'https://www.linkedin.com/in/ben', 'ben@ortus.solutions', 'p-ben', '', 'After the plan ends'],
+    ['Cold', 'Cy C', 'https://www.linkedin.com/in/cy', '', '', 8, '2026-10-12'],
   ]);
+  // Status columns exist from the start and are blank until the campaign stamps them.
+  assert.ok(MATURE_TAB_HEADER.includes('Connection Request Status') && MATURE_TAB_HEADER.includes('Connection Accepted Status'));
+  assert.ok(rows.every(r => r.slice(7).every(cell => cell === '')));
 });

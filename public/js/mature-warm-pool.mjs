@@ -109,7 +109,11 @@ export function matureWarmSchedule(plan, startDate, maxDays = 365) {
 // it and stamps each row's request status, dates and acceptance back into it.
 // ("Date", "Status" and "Time" are avoided as headers: the sheet tooling
 // removes columns with those legacy names.)
-export const MATURE_TAB_HEADER = Object.freeze(['Type', 'Full Name', 'LinkedIn URL', 'Pool Account', 'Pool Profile ID', 'Planned Day', 'Planned Date', 'Connected Status']);
+// The tracking columns the campaign stamps are created up front, so the tab is
+// complete from the start and nothing depends on another script adding them.
+export const MATURE_TAB_HEADER = Object.freeze(['Type', 'Full Name', 'LinkedIn URL', 'Pool Account', 'Pool Profile ID', 'Planned Day', 'Planned Date',
+  'Connection Request Status', 'Connection Accepted Status', 'Account Used', 'Date of Last Action', 'Time of Last Action']);
+const TAB_PLAN_COLUMNS = 7; // Type … Planned Date; the rest start blank
 
 // Which plan day each person in a list falls on: day 1 takes amounts[0] people,
 // day 2 the next amounts[1], and so on. Past the list the last amount repeats;
@@ -133,7 +137,8 @@ export function buildMatureTabRows({ startDate, warmTargets = [], warmAmounts = 
   const rows = [];
   const add = (type, list, days, cells) => list.forEach((item, i) => {
     const day = days[i];
-    rows.push([type, ...cells(item), day || '', day ? addDays(startDate, day - 1) : 'After the plan ends', '']);
+    rows.push([type, ...cells(item), day || '', day ? addDays(startDate, day - 1) : 'After the plan ends',
+      ...Array(MATURE_TAB_HEADER.length - TAB_PLAN_COLUMNS).fill('')]);
   });
   add('Warm', warmTargets, plannedDays(warmTargets.length, warmAmounts), t => [t.name, t.linkedinUrl, t.profile, t.profileId]);
   if (cold) add('Cold', coldLeads, plannedDays(coldLeads.length, cold.amounts, cold.delayDays + 1), l => [l.name, l.linkedinUrl, '', '']);

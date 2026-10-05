@@ -142,7 +142,7 @@ import { connectionsPropOptions, addConnectionsOptions, tokenScopes } from './sr
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab, writeMatureTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
-import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
+import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID, matureSheetsWebappUrl } from './src/sheets-webapp-url.js';
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse, cloudFlipAction } from './src/soo-writer.js';
 import { reconcileCloudConnections, reconcileCloudInUse } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
@@ -1682,7 +1682,9 @@ async function handleStartCloudOnce(req, res) {
       // Sheet write-back: the engine pushes per-lead status back to this
       // operator's Apps Script web app (same one local campaigns use), matching
       // rows by this linkedin column — so cloud results land in the Sheet too.
-      sheetsWebappUrl: SHEETS_WEBAPP_URL,
+      // A maturing campaign reading its results tab writes back through the
+      // maturing bridge, which owns that workbook; everything else uses the shared script.
+      sheetsWebappUrl: (body.mature && body.mature.viaMatureBridge && matureSheetsWebappUrl()) || SHEETS_WEBAPP_URL,
       linkedinColumn: linkedinColumn || 'LinkedIn URL',
       // Ban-safety: randomized inter-send delay (seconds) the engine's worker
       // waits between sends per account — same knob local campaigns use. The
@@ -4125,8 +4127,8 @@ app.post('/api/mature/start', async (req, res) => {
       }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
       console.log(`[mature] ${name}: results tab ${tab.url} — ${tab.added} added, ${tab.existing} already listed`);
     } catch (error) {
-      // Most likely the shared Apps Script has not been redeployed with the
-      // writeMatureTab action yet. Keep the plan startable the old way.
+      // The maturing sheets bridge is not set up or not reachable. Keep the
+      // plan startable the old way.
       console.warn(`[mature] ${name}: results tab unavailable (${error.message}) — using separate sheets`);
       step('The results workbook is not available yet — using a separate sheet for this run…');
     }
@@ -4149,7 +4151,7 @@ app.post('/api/mature/start', async (req, res) => {
         sheetUrl, sheetGid, linkedinColumn: 'LinkedIn URL',
         ...(tab ? { leadFilter: { column: 'Type', value: 'Warm' } } : {}),
         dailyLimit: warmAmounts[0], templates: {},
-        mature: { kind: 'warm', pool: plan.warmPool, maturedAccount, dailySchedule: { startDate, amounts: warmAmounts } },
+        mature: { kind: 'warm', pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, amounts: warmAmounts } },
       });
       if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
     }
@@ -4168,7 +4170,7 @@ app.post('/api/mature/start', async (req, res) => {
         ...(tab ? { sheetUrl: tab.url, sheetGid: tab.gid, leadFilter: { column: 'Type', value: 'Cold' } }
           : { sheetUrl: plan.coldPool, shuffleLeads: plan.coldPoolOrder !== 'descending', _preflightExcludedUrls: managed }),
         ...(startAt ? { startAt: startAt.toISOString() } : {}),
-        mature: { kind: 'cold', dailySchedule: { startDate: (startAt || now).toISOString().slice(0, 10), amounts: cold.amounts } },
+        mature: { kind: 'cold', viaMatureBridge: !!tab, dailySchedule: { startDate: (startAt || now).toISOString().slice(0, 10), amounts: cold.amounts } },
       });
       // Warm is already running, so a cold failure is reported, not fatal.
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });

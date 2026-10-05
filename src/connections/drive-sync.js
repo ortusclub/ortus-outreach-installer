@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SHEETS_WEBAPP_URL } from '../sheets-webapp-url.js';
+import { SHEETS_WEBAPP_URL, matureSheetsWebappUrl } from '../sheets-webapp-url.js';
 import { buildCache } from './cache-builder.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,14 +20,14 @@ export const CONNECTIONS_FOLDER_ID = '1NnDfoeQv4-VKJqzYza4k_TFCkzNwZ7oG';
 
 // Mirror src/sheets-writer.js _postOnce: Apps Script answers POST with a 302 that
 // Node's fetch would turn into a GET (hitting doGet); follow the redirect by hand.
-async function postWebApp(payload, { timeoutMs = 30000 } = {}) {
-  if (!SHEETS_WEBAPP_URL) return { error: 'SHEETS_WEBAPP_URL not configured' };
+async function postWebApp(payload, { timeoutMs = 30000, url = SHEETS_WEBAPP_URL } = {}) {
+  if (!url) return { error: 'SHEETS_WEBAPP_URL not configured' };
   const body = JSON.stringify(payload);
   try {
     // Apps Script's 302 points at a ONE-TIME URL. Fetching it ourselves spends
     // it outside its redirect and Google answers 404 — see the note in
     // magellan-sheet.js for the measurement. fetch follows it correctly.
-    const res = await fetch(SHEETS_WEBAPP_URL, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
@@ -92,9 +92,12 @@ export async function createWorkbookTab({ name, header, rows }) {
 // Mature Profile: write an account's plan into its own tab of the results
 // workbook (action: writeMatureTab — creates the tab if needed, appends people
 // not yet listed, never touches existing rows). Returns { url, gid, tabName,
-// created, added, existing }. Needs the Apps Script redeployed with that action.
+// created, added, existing }. Goes through the Mature Profile bridge (the copy
+// of the script hosted under info@ortus.solutions), not the shared script.
 export async function writeMatureTab({ spreadsheetId, tabName, header, rows, keyColumn = 'LinkedIn URL' }) {
-  const r = await postWebApp({ action: 'writeMatureTab', spreadsheetId, tabName, header, rows, keyColumn }, { timeoutMs: 120000 });
+  const url = matureSheetsWebappUrl();
+  if (!url) throw new Error('The maturing sheets bridge is not set up on this build (MATURE_SHEETS_WEBAPP_URL).');
+  const r = await postWebApp({ action: 'writeMatureTab', spreadsheetId, tabName, header, rows, keyColumn }, { timeoutMs: 120000, url });
   if (r?.error) throw new Error(r.error);
   if (!r?.url) throw new Error('writeMatureTab returned no url — redeploy the Apps Script with the writeMatureTab handler');
   return r;
