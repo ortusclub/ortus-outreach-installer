@@ -2114,11 +2114,12 @@
   .sn-strip.sn-maturing-log .sn-logbox{max-height:260px;overflow:auto;}
   /* The combined log is always open: it has no collapsed/expanded states. */
   .sn-strip.sn-collapsed.sn-maturing-log .sn-switch{display:block;}
-  .sn-strip.sn-maturing-log{margin-top:18px;}
+  .sn-strip.sn-maturing-log{margin-top:12px;}
+  .mature-results-row{margin-top:18px;display:flex;justify-content:flex-end;}
   /* Profile Maturing: one quiet line per campaign under the shared log. */
   .mature-row{display:flex;align-items:center;gap:14px;padding:10px 6px;border-top:1px solid var(--hairline,rgba(0,0,0,.08));font-size:13px;}
   /* Same pill as the strip footers' buttons (.sn-foot .mini), which is scoped there. */
-  .mature-row .mini{flex:none;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 14px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;line-height:1.2;}
+  .mature-row .mini,.mature-results-row .mini{flex:none;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 14px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;line-height:1.2;}
   .mature-row .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
   .mature-row .mini:disabled{opacity:.45;cursor:default;}
   .mature-row .mature-del{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--red);cursor:pointer;}

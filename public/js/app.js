@@ -12998,7 +12998,7 @@ async function _renderCampaignsBoardInner() {
       const bucket = (c.status === 'running' || c.status === 'monitoring' || c.status === 'paused' || c.status === 'stopping' || c.status === 'pausing' || c.status === 'waiting_daily_reset' || c.status === 'needs_review') ? 'running'
         : (c.status === 'pending' || c.status === 'queued' || c.status === 'scheduled') ? 'queued' : 'done';
       items.push({
-        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, maturing: !!c.config?.matureWarm, matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '', isFG: c.mode === 'follower_growth',
+        where: 'cloud', id: c.id, campaignId: c.config?.campaignId || null, name: c.name, mode: c.mode, maturing: !!c.config?.matureWarm, matureSheetUrl: c.config?.matureWarm ? (c.sheet_url || '') : '', matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '', isFG: c.mode === 'follower_growth',
         // When this campaign began. A LinkedIn account outlives the campaign
         // that used it, so a follow-up queued BEFORE this one started was never
         // its own — without this date the strip and the card both fall back to
@@ -13386,7 +13386,10 @@ async function _renderCampaignsBoardInner() {
     if (_maturingLive.length) {
       const active = _maturingLive.find((x) => x.live) || null;
       const showBtn = `<button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || _maturingLive[0]).id)}','${escHtml(active ? active.name : 'Maturing')}')" title="${active ? `Watch ${escHtml(active.name)}'s browser live` : 'No maturing account has a browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button>`;
-      _maturingFooter = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
+      // The results workbook holds one tab per matured account.
+      const _resultsUrl = ((maturingCampaigns.find((x) => /\/spreadsheets\/d\//.test(x.matureSheetUrl || '')) || {}).matureSheetUrl || '').replace(/(\/spreadsheets\/d\/[^/]+).*$/, '$1/edit');
+      const _resultsLink = _resultsUrl ? `<div class="mature-results-row"><button type="button" class="mini" data-url="${escHtml(_resultsUrl)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="One tab per matured account, named after its login email">Open the results workbook ↗</button></div>` : '';
+      _maturingFooter = _resultsLink + `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
         + `<span class="sn-status">${active ? `<span class="dot run"></span> ${escHtml(active.name)} is connecting` : '<span class="dot q"></span> No account is connecting right now'}</span></div>`
         + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
