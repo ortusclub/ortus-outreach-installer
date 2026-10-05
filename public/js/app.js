@@ -1,5 +1,5 @@
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
-import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs } from '/js/mature-profile-board.mjs';
+import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
@@ -11578,6 +11578,44 @@ function renderUnifiedStrip(it) {
   }).join('');
   return card + `<details class="campaign-run-history"><summary>${it.previousRuns.length} previous run${it.previousRuns.length === 1 ? '' : 's'}</summary>${activeWarning}${rows}</details>`;
 }
+// One understated line per matured account: a small dot, the account, its state
+// in a word, how many warm and cold connections it has attempted, Open, Delete.
+function _maturingListHtml(items) {
+  return groupMaturingAccounts(items).map((g) => {
+    const dot = { green: 'run', amber: 'amber', red: 'red', done: 'done', muted: 'q' }[g.state.tone] || 'q';
+    const main = g.warm || g.cold;
+    const ids = g.items.map((x) => x.id).join(',');
+    const counts = [g.warmSent !== null ? `Warm <b>${g.warmSent}</b>` : '', g.coldSent !== null ? `Cold <b>${g.coldSent}</b>` : ''].filter(Boolean).join(' · ');
+    return `<div class="mature-row" data-cid="${escHtml(main.id)}">`
+      + `<span class="dot ${dot}"></span>`
+      + `<span class="mature-row-name">${escHtml(g.name)}</span>`
+      + `<span class="mature-row-state">${escHtml(g.state.label)}</span>`
+      + `<span class="mature-row-detail">${counts}</span>`
+      + `<button type="button" class="mini solid" onclick="openCloudLive('${escHtml(main.id)}')">Open</button>`
+      + `<button type="button" class="mini danger" title="Delete" aria-label="Delete ${escHtml(g.name)}" onclick="deleteMaturingAccount('${escHtml(ids)}', '${escHtml(g.name)}', this)">${typeof V3_SVG_TRASH === 'string' ? V3_SVG_TRASH : 'Delete'}</button>`
+      + `</div>`;
+  }).join('');
+}
+// Delete a matured account's campaigns from the dashboard. Anything still
+// running is stopped first — a deleted campaign must not keep sending unseen.
+window.deleteMaturingAccount = async function(idList, name, btn) {
+  const items = String(idList || '').split(',').map((id) => _boardItemsById.get(id) || _snItemsById?.get(id)).filter(Boolean);
+  if (!items.length) return;
+  const active = items.filter((it) => it.bucket === 'running' || it.bucket === 'queued');
+  const question = active.length
+    ? `Stop maturing “${name}” and delete it from your dashboard? Requests already sent stay sent.`
+    : `Delete “${name}” and its previous runs from your dashboard?`;
+  if (!await appConfirm(question, { title: 'Delete maturing campaign', okLabel: active.length ? 'Stop and delete' : 'Delete' })) return;
+  if (btn) btn.disabled = true;
+  try {
+    for (const it of active) {
+      const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(it.id)}/stop?immediate=1`, { method: 'POST' });
+      if (!r.ok) throw new Error(`could not stop ${it.name}`);
+    }
+    for (const it of items) await persistBoardCampaignDeletion(it);
+    if (typeof renderCampaignsBoard === 'function') await renderCampaignsBoard();
+  } catch (error) { showCampaignToast('Could not delete: ' + error.message, 7000); if (btn) btn.disabled = false; }
+};
 // The combined maturing log. Kept as HTML between board renders so a re-render
 // shows the last known log at once; refreshed from the engine at most every 15s.
 let _maturingLogHtml = 'Loading the maturing log…';
@@ -12479,7 +12517,11 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
 
   // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
   // groups (sections + Done/Cancelled) show a caret, so the affordance reads true.
-  const body = rail('Needs review', review)
+  // A section can list its campaigns as plain one-line rows instead of full
+  // strips (Profile Maturing): one understated list, no rails.
+  const body = opts.listHtml ? opts.listHtml(secItems.filter((x) => x.bucket !== 'saved'))
+      + rail('Saved plans', secItems.filter((x) => x.bucket === 'saved')) + draftsRail
+    : rail('Needs review', review)
     + rail('Running', running)
     + rail('Paused', paused)
     + rail('Queued', idle)
@@ -12495,16 +12537,16 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
   if (!secItems.length && !opts.alwaysShow) return '';
 
   const secKey = `sec:${key}`;
-  const collapsed = _cbIsCollapsed(secKey, false);
+  const collapsed = _cbIsCollapsed(secKey, !!opts.defaultCollapsed);
   const subtitle = opts.subtitle ? `<span class="cb-secsub">${escHtml(opts.subtitle)}</span>` : '';
-  const head = `<div class="cb-sectionhead" onclick="toggleBoardGroup('${secKey}', false)">`
+  const head = `<div class="cb-sectionhead" onclick="toggleBoardGroup('${secKey}', ${opts.defaultCollapsed ? 'true' : 'false'})">`
     + `<span class="cb-caret">${_cbCaretSvg(collapsed, true)}</span>`
     + `<span class="cb-sectitle">${title}</span>${subtitle}`
     + `<span class="cb-seccount">${secItems.length + (opts.draftsCount || 0)}</span>`
     + `<span class="cb-headextra">${opts.headExtra || ''}</span></div>`;
   const emptyMsg = opts.emptyMsg || 'There are no campaigns to show at the moment.';
   const inner = collapsed ? ''
-    : `<div class="cb-secbody">${body || `<div class="cb-secempty">${escHtml(emptyMsg)}</div>`}${opts.footerHtml || ''}</div>`;
+    : `<div class="cb-secbody">${opts.topHtml || ''}${body || `<div class="cb-secempty">${escHtml(emptyMsg)}</div>`}${opts.footerHtml || ''}</div>`;
   return `<div class="cb-section${collapsed ? ' cb-collapsed' : ''}">${head}${inner}</div>`;
 }
 
@@ -13338,7 +13380,9 @@ async function _renderCampaignsBoardInner() {
       + `<div class="sn-foot">${showBtn}</div></div></div>`;
     refreshMaturingLog(_maturingLive);
   }
-  html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.', ..._matureDraftOpts, footerHtml: _maturingFooter });
+  html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.', ..._matureDraftOpts,
+    // Minimised until opened; the combined log comes first, then one plain row per campaign.
+    defaultCollapsed: true, topHtml: _maturingFooter, listHtml: _maturingListHtml });
   _snItemsById = new Map(items.map((x) => [x.id, x]));
   // Anti-jank: the 4s poll used to blow away the whole board every tick — killing
   // clicks/scroll/expanded panes mid-interaction. Skip the rebuild when the

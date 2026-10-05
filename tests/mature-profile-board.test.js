@@ -61,3 +61,28 @@ test('a schedule with startAt counts plan days in the campaign time zone, like t
   assert.equal(at('2026-10-07T01:00:00Z').day, 2);   // 09:00 Manila on the 7th — the next batch
   assert.equal(at('2026-10-07T01:00:00Z').todayLimit, 6);
 });
+
+import { maturingRowState } from '../public/js/mature-profile-board.mjs';
+test('each maturing campaign reads as one plain state, green only while connecting', () => {
+  const state = (it) => maturingRowState({ bucket: 'running', ...it });
+  assert.deepEqual(state({ live: true }), { label: 'Active', tone: 'green' });
+  assert.deepEqual(state({ dailyWait: true }), { label: 'Sleeping', tone: 'amber' });
+  assert.deepEqual(state({}), { label: 'Awaiting its turn', tone: 'amber' });
+  assert.equal(state({ paused: true, live: true }).label, 'Paused');
+  assert.equal(state({ bucket: 'done', bad: true }).label, 'Stopped');
+  assert.equal(state({ bucket: 'done' }).label, 'Finished');
+  assert.equal(state({ bucket: 'queued', scheduledAt: '2026-10-12' }).label, 'Scheduled');
+  assert.equal(state({ needsReview: true, live: true }).label, 'Needs attention');
+});
+
+import { groupMaturingAccounts } from '../public/js/mature-profile-board.mjs';
+test('an account shows as one entry with its warm and cold counts', () => {
+  const groups = groupMaturingAccounts([
+    { id: 'w', name: 'ana@ortus.solutions', matureKind: 'warm', bucket: 'running', dailyWait: true, sent: 6 },
+    { id: 'c', name: 'ana@ortus.solutions · Cold', matureKind: 'cold', bucket: 'queued', scheduledAt: '2026-10-12', sent: 0 },
+    { id: 'b', name: 'ben@klabber.co', matureKind: 'warm', bucket: 'running', live: true, sent: 2 },
+  ]);
+  assert.equal(groups.length, 2);
+  assert.deepEqual([groups[0].name, groups[0].state.label, groups[0].warmSent, groups[0].coldSent], ['ana@ortus.solutions', 'Sleeping', 6, 0]);
+  assert.deepEqual([groups[1].state.label, groups[1].warmSent, groups[1].coldSent], ['Active', 2, null]);
+});

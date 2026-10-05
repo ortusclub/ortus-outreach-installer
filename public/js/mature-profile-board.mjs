@@ -64,3 +64,37 @@ export function mergeMaturingLogs(campaigns, limit = 60) {
   }
   return all.sort((a, b) => a.t - b.t).slice(-limit);
 }
+
+// The one-word state a maturing campaign shows in the Profile Maturing list.
+// `tone` picks the dot colour: green only while it is actually connecting.
+export function maturingRowState(it) {
+  if (it.needsReview) return { label: 'Needs attention', tone: 'red' };
+  if (it.bucket === 'done') return it.bad ? { label: 'Stopped', tone: 'muted' } : { label: 'Finished', tone: 'done' };
+  if (it.stopping) return { label: 'Stopping', tone: 'muted' };
+  if (it.paused) return { label: 'Paused', tone: 'muted' };
+  if (it.bucket === 'queued') return it.scheduledAt ? { label: 'Scheduled', tone: 'muted' } : { label: 'Starting', tone: 'amber' };
+  if (it.live) return { label: 'Active', tone: 'green' };
+  if (it.dailyWait) return { label: 'Sleeping', tone: 'amber' };
+  return { label: 'Awaiting its turn', tone: 'amber' };
+}
+
+// One entry per matured account: its warm and cold campaigns side by side, with
+// how many connections each has attempted. The newest run of each kind wins.
+export function groupMaturingAccounts(items) {
+  const groups = new Map();
+  for (const it of items || []) {
+    const name = String(it.name || '(unnamed)').replace(/ · Cold$/, '');
+    const g = groups.get(name) || { name, warm: null, cold: null, items: [] };
+    const kind = it.matureKind === 'cold' ? 'cold' : 'warm';
+    if (!g[kind] || (it.startedAt || 0) > (g[kind].startedAt || 0)) g[kind] = it;
+    g.items.push(it);
+    groups.set(name, g);
+  }
+  return [...groups.values()].map(g => {
+    // The account's state is its most "alive" campaign's state.
+    const order = ['Active', 'Needs attention', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
+    const states = [g.warm, g.cold].filter(Boolean).map(maturingRowState);
+    states.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
+    return { ...g, state: states[0] || { label: '', tone: 'muted' }, warmSent: g.warm ? (g.warm.sent || 0) : null, coldSent: g.cold ? (g.cold.sent || 0) : null };
+  });
+}
