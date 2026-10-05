@@ -11637,7 +11637,8 @@ function renderUnifiedRunStrip(it) {
   // Besides looking unrelated, the two paths derived WAITING/RUNNING differently.
   // Every active lifecycle state now stays on the literal #active-card clone.
   const collapsed = queued ? true : running ? _snCollapsedActive.has(it.id) : !_snExpanded.has(it.id);
-  const badge = _cloudBadge(it.mode);
+  // A maturing campaign is its own type on the board, not a CC campaign.
+  const badge = it.maturing ? 'Maturing' : _cloudBadge(it.mode);
   const acctWord = it.accounts === 1 ? 'account' : 'accounts';
 
   // Rail (sketch A · muted archive): colour = live + errors only. running cloud →
@@ -11654,9 +11655,13 @@ function renderUnifiedRunStrip(it) {
   // rail; keying the rail off `where` alone painted it cloud-green while the
   // pill on the same row said This machine (operator, 2026-08-28).
   const _ownedLocal = it.where === 'local' || String(it.runsOn || '') === 'local';
+  const _matureSleeping = !!(it.maturing && running && !needsReview && (it.dailyWait || !it.live));
   const stateCls = [
     _ownedLocal ? 'local' : '',
-    running && !monitoring && !waiting && !needsReview ? 'run' : '',
+    // Green is for a campaign that is actually connecting; a maturing campaign
+    // resting between daily batches is amber.
+    running && !monitoring && !waiting && !needsReview && !_matureSleeping ? 'run' : '',
+    _matureSleeping ? 'mature-sleeping' : '',
     (monitoring || waiting) ? 'monitoring' : '',
     queued ? 'queued' : '',
     scheduled ? 'sched' : '',
@@ -11677,6 +11682,7 @@ function renderUnifiedRunStrip(it) {
     : needsReview ? '<span class="dot red"></span>'  // needs operator action — not sending
     : (monitoring || waiting) ? '<span class="dot mon"></span>'
     // Pink dot follows the pink rail: where it RUNS, not where it came from.
+    : _matureSleeping ? '<span class="dot amber"></span>'
     : running ? (_ownedLocal ? '<span class="dot runlocal"></span>' : '<span class="dot run"></span>')
     : scheduled ? '<span class="dot gold"></span>'
     : queued ? '<span class="dot q"></span>'
@@ -11693,6 +11699,7 @@ function renderUnifiedRunStrip(it) {
     : queued ? 'Queued'
     // A maturing campaign that has sent today's batch is resting, not limited.
     : (it.maturing && it.dailyWait) ? 'Sleeping · next daily batch tomorrow'
+    : _matureSleeping ? 'Awaiting its turn'
     : monitoring ? 'Monitoring'
     : waiting ? 'Waiting'
     : needsReview ? 'Needs review'
@@ -11749,6 +11756,8 @@ function renderUnifiedRunStrip(it) {
 
   const flow = it.isFG
     ? `<b>${it.total || '—'} invites</b> → <b>${it.accounts || 1} account${(it.accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
+    : it.maturing
+    ? `<b>${it.total || 0} ${it.matureKind === 'cold' ? 'cold leads' : 'pool accounts'}</b> → matures <b>${escHtml(String(it.name || '').replace(/ · Cold$/, ''))}</b> · ${it.matureKind === 'cold' ? 'Cold connections' : 'Warm connections'}`
     : `<b>${it.total || 0} leads</b> → <b>${it.accounts || 0} ${acctWord}</b> → feeds <b>${escHtml(it.name || '')}</b> · ${escHtml(_cloudModeLabel(it.mode))}`;
   const whereNote = _ownedLocal ? 'runs on this machine — closing the app stops it'
     : 'runs in the cloud — keeps going if you close the app';
@@ -12495,7 +12504,7 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
     + `<span class="cb-headextra">${opts.headExtra || ''}</span></div>`;
   const emptyMsg = opts.emptyMsg || 'There are no campaigns to show at the moment.';
   const inner = collapsed ? ''
-    : `<div class="cb-secbody">${body || `<div class="cb-secempty">${escHtml(emptyMsg)}</div>`}</div>`;
+    : `<div class="cb-secbody">${body || `<div class="cb-secempty">${escHtml(emptyMsg)}</div>`}${opts.footerHtml || ''}</div>`;
   return `<div class="cb-section${collapsed ? ' cb-collapsed' : ''}">${head}${inner}</div>`;
 }
 
@@ -13313,13 +13322,23 @@ async function _renderCampaignsBoardInner() {
   } else {
     html = _renderBoardSection('mine', '', regularCampaigns, { flat: true, ..._draftOpts });
   }
-  html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.', ..._matureDraftOpts });
-  // One log across every maturing campaign, under the section.
+  // One log across every maturing campaign, INSIDE the Profile Maturing section
+  // and styled like a campaign's own log. All maturing campaigns share one
+  // worker, so a single Show button follows whichever account is active.
   const _maturingLive = maturingCampaigns.filter((x) => x.where === 'cloud' && x.maturing && x.bucket !== 'done');
+  let _maturingFooter = '';
   if (_maturingLive.length) {
-    html += `<div class="sn-railhead">Maturing log · all accounts</div><div class="sn-logbox" id="maturing-all-log">${_maturingLogHtml}</div>`;
+    const active = _maturingLive.find((x) => x.live) || null;
+    const showBtn = `<button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || _maturingLive[0]).id)}','${escHtml(active ? active.name : 'Maturing')}')" title="${active ? `Watch ${escHtml(active.name)}'s browser live` : 'No maturing account has a browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button>`;
+    _maturingFooter = `<div class="sn-strip sn-maturing-log"><div class="sn-compact">`
+      + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
+      + `<span class="sn-status">${active ? `<span class="dot run"></span> ${escHtml(active.name)} is connecting` : '<span class="dot q"></span> No account is connecting right now'}</span></div>`
+      + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
+      + `<div class="sn-logbox" id="maturing-all-log">${_maturingLogHtml}</div></div></div>`
+      + `<div class="sn-foot">${showBtn}</div></div></div>`;
     refreshMaturingLog(_maturingLive);
   }
+  html += _renderBoardSection('profile-maturing', 'Profile Maturing', maturingCampaigns, { alwaysShow: _campaignsTypeFilter === 'All', emptyMsg: 'No profile maturing campaigns are running.', ..._matureDraftOpts, footerHtml: _maturingFooter });
   _snItemsById = new Map(items.map((x) => [x.id, x]));
   // Anti-jank: the 4s poll used to blow away the whole board every tick — killing
   // clicks/scroll/expanded panes mid-interaction. Skip the rebuild when the
