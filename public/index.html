@@ -2501,17 +2501,17 @@
         <button type="button" class="btn btn-primary" onclick="startMaturePlan(this)" aria-describedby="mature-runner-notice">Start plan</button>
         <button type="button" class="btn" onclick="saveMatureProfilePlan(this)">Save plan</button>
       </div>
-      <!-- Live progress of a plan start: filled the moment Start plan is pressed. -->
-      <div id="mature-start-status" class="sn-logbox" role="status" aria-live="polite" hidden></div>
       <!-- This account's tab in the results workbook; shown once the tab is written. -->
-      <button type="button" id="mature-results-link" class="btn" hidden onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')">Open this account's results tab ↗</button>
+      <div style="margin-top:14px">
+        <button type="button" id="mature-results-link" class="btn" hidden style="font-size:12px;padding:8px 18px;letter-spacing:.08em" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')">Open this account's results tab ↗</button>
+      </div>
       <!-- Live status of the started plan, shown here under the options so the
            operator stays on the plan page. Filled by startMatureInlineLive(). -->
       <div id="mature-live" hidden>
         <h3>Live status</h3>
         <div id="mature-live-body"></div>
       </div>
-      <p id="mature-runner-notice" class="mature-source-help">Starting sends connection requests from the profile being warmed, at the plan's daily amounts: warm connections to the accounts in the warm pool from day 1, and cold connections to your cold sheet from their first plan day. It runs in the cloud and appears under Profile Maturing on the dashboard, where you can pause or stop it. Post engagement does not run yet.</p>
+      <p id="mature-runner-notice" class="mature-source-help" style="margin-top:14px">Starting sends connection requests from the profile being warmed, at the plan's daily amounts: warm connections to the accounts in the warm pool from day 1, and cold connections to your cold sheet from their first plan day. It runs in the cloud and appears under Profile Maturing on the dashboard, where you can pause or stop it. Post engagement does not run yet.</p>
     </section>
     <style>
       .mature-connection-section{border:1px solid var(--hairline);border-radius:16px;overflow:hidden}.mature-connection-section summary{cursor:pointer;padding:20px;font-weight:600;font-size:20px}.mature-connection-body{display:grid;gap:16px;padding:0 20px 20px}.mature-source-help{margin:0;color:var(--gray);font-size:14px;line-height:1.5}.mature-cold-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.mature-field[hidden]{display:none}.mature-sources{display:grid;gap:16px;margin:24px 0}.mature-field{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:13px}

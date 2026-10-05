@@ -36510,31 +36510,23 @@ window.startMaturePlan = async function(btn) {
   if (!maturePlan) return;
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Starting…';
-  // Live status, from the first moment: each step the server takes is listed
-  // here as it happens, with a running clock on the current one.
-  const box = document.getElementById('mature-start-status');
+  // The same launch card every cloud campaign shows while it starts — it opens
+  // in Live Status under the plan at once, logs each step the server takes, and
+  // becomes the running campaign's card (pause, stop, live browser preview).
   const launchId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
-  const began = Date.now();
-  let lines = ['Saving the plan…'], finalLine = '', resultsUrl = '';
-  const paint = () => {
-    if (!box) return;
-    const secs = Math.round((Date.now() - began) / 1000);
-    box.hidden = false;
-    const last = lines.length - 1, failed = finalLine.startsWith('✗');
-    box.innerHTML = lines.map((l, i) => escHtml(i < last ? `✓ ${l}` : failed ? `✗ ${l}` : finalLine ? `✓ ${l}` : `⏳ ${l} · ${secs}s`)).join('<br>')
-      + (finalLine ? `<br>${escHtml(finalLine)}` : '');
-    // The account's own tab in the results workbook, as soon as it exists.
-    const link = document.getElementById('mature-results-link');
-    if (link) { link.hidden = !resultsUrl; link.dataset.url = resultsUrl; }
-  };
-  paint();
+  const linkBtn = document.getElementById('mature-results-link');
+  const showResultsLink = (url) => { if (linkBtn && url) { linkBtn.dataset.url = url; linkBtn.hidden = false; } };
+  if (linkBtn) linkBtn.hidden = true;
+  beginCloudLaunch({ name, profileIds: maturePlan.targetProfileIds || [], handshake: false });
+  launchLog('Saving the plan…');
+  let logged = 0;
   const poll = setInterval(async () => {
     try {
       const p = await (await fetch(`/api/mature/start-progress?launchId=${encodeURIComponent(launchId)}`)).json();
-      if (Array.isArray(p.lines) && p.lines.length) lines = ['Saving the plan…', ...p.lines];
-      if (p.resultsUrl) resultsUrl = p.resultsUrl;
+      const lines = Array.isArray(p.lines) ? p.lines : [];
+      for (; logged < lines.length; logged++) launchLog(lines[logged]);
+      showResultsLink(p.resultsUrl);
     } catch { /* keep the last known step */ }
-    paint();
   }, 1000);
   try {
     await flushAutosaveImmediate();
@@ -36554,24 +36546,24 @@ window.startMaturePlan = async function(btn) {
       if (draftId) await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
       clearActiveDraft();
     } catch { /* non-fatal */ }
+    showResultsLink(data.resultsUrl);
+    if (_cloudLaunch) _cloudLaunch.leadsRead = Number(data.warm?.leadsAdded ?? data.cold?.leadsAdded) || 0;
+    setCloudLaunchPhase('accepted');
     const parts = [
       data.warm?.ok ? `warm connections started (${data.warm.leadsAdded ?? 0} pool accounts)` : '',
       data.cold?.ok ? (data.cold.scheduled ? 'cold connections scheduled for their first plan day' : `cold connections started (${data.cold.leadsAdded ?? 0} leads)`) : '',
     ].filter(Boolean);
     const coldProblem = data.cold && !data.cold.ok ? ` Cold connections did not start: ${data.cold.error}` : '';
+    launchLog(`☁︎ Plan accepted by the VM — ${parts.join(' · ')}.${coldProblem}`);
     showCampaignToast(`Plan started — ${parts.join(' · ')}.${coldProblem}`, coldProblem ? 12000 : 7000);
-    // Straight to Live Status for the campaign that is sending now.
-    if (data.resultsUrl) resultsUrl = data.resultsUrl;
-    finalLine = '✓ Plan started.'; paint();
-    // Stay on the plan page: the standard Live Status card (pause, stop, live
-    // browser preview, full log) opens right here, under the options.
+    // Stay on the plan page: the card now follows the running campaign.
     const liveIds = [data.warm?.ok && data.warm.id, data.cold?.ok && data.cold.id].filter(Boolean);
     try { await showMatureLiveStatus(liveIds[0]); }
     catch (_) { startMatureInlineLive(liveIds); } // plain fallback if the card cannot be shown
   } catch (error) {
-    // The reason stays on screen under the buttons, not only in a passing toast.
-    finalLine = `✗ Not started — ${error.message}`; paint();
+    launchLog(`✗ Not started — ${error.message}`);
+    failCloudLaunch(`Could not start the plan: ${error.message}`);
     showCampaignToast(`✗ ${error.message}`, 8000);
   }
-  finally { clearInterval(poll); btn.disabled = false; btn.textContent = label; }
+  finally { clearInterval(poll); btn.disabled = false; btn.textContent = label; endCloudLaunch(); }
 };
