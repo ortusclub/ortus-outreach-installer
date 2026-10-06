@@ -4008,6 +4008,33 @@ app.get('/api/mature/start-progress', (req, res) => {
   res.json(matureStartProgress.get(String(req.query.launchId || '')) || { lines: [], done: false });
 });
 
+app.post('/api/mature/cancel-start', (req, res) => {
+  const id = String(req.query.launchId || '');
+  if (!id) return res.status(400).json({ error: 'Missing launch ID.' });
+  const entry = matureStartProgress.get(id) || { lines: [], done: false };
+  if (entry.done) return res.status(409).json({ error: 'Setup has finished. Use the plan’s Stop button.' });
+  entry.cancelled = true;
+  matureStartProgress.set(id, entry);
+  matureStep(id, 'Stop requested — waiting for the current setup request to finish.');
+  res.json({ ok: true });
+});
+
+app.post('/api/mature/control/:id/:action', async (req, res) => {
+  try {
+    const { id, action } = req.params;
+    if (!['pause', 'resume', 'stop'].includes(action)) return res.status(400).json({ error: 'Unknown control.' });
+    const detail = await getCloudCampaign(id);
+    if (detail.error) throw new Error(detail.error);
+    const saved = detail.campaign;
+    if (!saved?.config?.matureWarm) return res.status(400).json({ error: 'Not a maturing campaign.' });
+    const startAt = saved.config.dailySchedule?.startAt;
+    const result = action === 'resume'
+      ? (Date.parse(startAt) > Date.now() ? await restartCloudCampaign(id, { startAt }) : await resumeCloudCampaign(id))
+      : await stopCloudCampaign(id, { pause: action === 'pause', immediate: action === 'stop' });
+    res.status(result.error ? 502 : 200).json(result);
+  } catch (error) { res.status(502).json({ error: error.message }); }
+});
+
 // Google intermittently answers the Apps Script's reply with a 404 page (a
 // Google-side flap measured in magellan-sheet.js; the same call works seconds
 // later). Try again rather than fail the whole start. A retry can leave an
@@ -4052,7 +4079,14 @@ async function launchMatureStage(req, body) {
 // campaign at its first amount.
 app.post('/api/mature/start', async (req, res) => {
   const step = (text) => matureStep(req.body?.launchId, text);
+  const launched = [];
+  const checkCancelled = () => {
+    if (matureStartProgress.get(req.body?.launchId)?.cancelled) {
+      const error = new Error('Setup stopped by operator.'); error.code = 'MATURE_CANCELLED'; throw error;
+    }
+  };
   try {
+    checkCancelled();
     const b = req.body || {};
     const plan = restoreMaturePlan(b.maturePlan);
     const defaultColdPoolUrl = String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim() || DEFAULT_MATURE_COLD_SHEET_URL;
@@ -4149,7 +4183,8 @@ app.post('/api/mature/start', async (req, res) => {
     const tabs = {};
     try {
       const rows = buildMatureTabRows({ startDate, warmTargets: pool?.targets || [], warmAmounts, coldLeads, cold });
-      for (const kind of ['warm', 'cold']) {
+      for (const kind of [warmOn && 'warm', cold && 'cold'].filter(Boolean)) {
+        checkCancelled();
         const tabName = `${name}_${kind}`;
         step(`Writing the ${kind} list to "${tabName}"…`);
         tabs[kind] = await createWarmSheet({
@@ -4164,12 +4199,14 @@ app.post('/api/mature/start', async (req, res) => {
         step(`Results tab "${tabName}" ${written.created ? 'created' : 'updated'} — ${written.added} people added${written.existing ? `, ${written.existing} already listed and left as they are` : ''}.`);
       }
       tab = warmOn ? tabs.warm : tabs.cold;
-      { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) { progress.resultsUrl = tab.url; progress.resultsUrls = { warm: tabs.warm.url, cold: tabs.cold.url }; } }
+      { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) { progress.resultsUrl = tab.url; progress.resultsUrls = Object.fromEntries(Object.entries(tabs).map(([kind, value]) => [kind, value.url])); } }
     } catch (error) {
+      if (error.code === 'MATURE_CANCELLED') throw error;
       console.warn(`[mature] ${name}: results tabs unavailable (${error.message})`);
-      throw new Error(`Could not prepare this account's warm and cold tabs in the shared results workbook. No campaign was started. ${error.message}`);
+      throw new Error(`Could not prepare this account's enabled connection lists in the shared results workbook. No campaign was started. ${error.message}`);
     }
 
+    checkCancelled();
     if (warmOn) {
       const sheetUrl = tab.url, sheetGid = tab.gid;
       step(`Sending warm connections to the cloud — ${warmAmounts[0]} today…`);
@@ -4182,10 +4219,13 @@ app.post('/api/mature/start', async (req, res) => {
         dailyLimit: warmAmounts[0], templates: {},
         mature: { kind: 'warm', plan, pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, startAt: now.toISOString(), amounts: warmAmounts } },
       });
+      if (result.warm.ok && result.warm.id) launched.push(result.warm.id);
+      checkCancelled();
       if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
       step(`Warm campaign is on the VM — ${result.warm.leadsAdded ?? pool.targets.length} pool accounts queued, ${warmAmounts[0]} to send today.`);
     }
 
+    checkCancelled();
     if (cold && coldLeads.length) {
       // Cold begins on its first planned day; the engine holds it until then.
       const startAt = cold.delayDays > 0 ? new Date(now.getTime() + cold.delayDays * 86400000) : null;
@@ -4202,15 +4242,27 @@ app.post('/api/mature/start', async (req, res) => {
         ...(startAt ? { startAt: startAt.toISOString() } : {}),
         mature: { kind: 'cold', plan, viaMatureBridge: !!tab, dailySchedule: { startDate: localDay(startAt || now, planTz), startAt: (startAt || now).toISOString(), amounts: cold.amounts } },
       });
+      if (result.cold.ok && result.cold.id) launched.push(result.cold.id);
+      checkCancelled();
       // Warm is already running, so a cold failure is reported, not fatal.
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });
       step(result.cold.ok ? `Cold campaign is on the VM — ${result.cold.leadsAdded ?? coldLeads.length} people queued${startAt ? `, first batch on day ${cold.delayDays + 1}` : ''}.` : `⚠ Cold connections did not start: ${result.cold.error}`);
     }
-    if (tab) { result.resultsUrl = tab.url; result.resultsUrls = { warm: tabs.warm.url, cold: tabs.cold.url }; }
+    if (tab) { result.resultsUrl = tab.url; result.resultsUrls = Object.fromEntries(Object.entries(tabs).map(([kind, value]) => [kind, value.url])); }
 
     step('Started. A cloud worker picks it up next — that takes about 2 minutes when the workers are asleep.');
     res.json({ ...result, id: result.warm?.id || result.cold?.id || null });
   } catch (err) {
+    if (err.code === 'MATURE_CANCELLED') {
+      const failures = [];
+      for (const id of launched) {
+        try { const reply = await stopCloudCampaign(id, { immediate: true }); if (reply.error) throw new Error(reply.error); }
+        catch (error) { failures.push(`${id}: ${error.message}`); }
+      }
+      if (failures.length) return res.status(502).json({ error: `Setup cancelled, but stopping dispatched campaigns could not be confirmed. Check the dashboard: ${failures.join('; ')}` });
+      step('Setup stopped. Any campaigns dispatched during setup have been stopped.');
+      return res.json({ ok: true, cancelled: true });
+    }
     console.error(`[mature] start failed: ${err.message}`);
     if (!res.headersSent) res.status(500).json({ error: err.message });
   } finally { matureStepsDone(req.body?.launchId); }

@@ -11595,6 +11595,29 @@ function _maturingPlainRow({ name, state, open, del }) {
     + `<button type="button" class="mature-del" title="Delete" aria-label="Delete ${escHtml(name || '')}" onclick="${del}">${V3_SVG_TRASH}</button>`
     + `</div>`;
 }
+function maturingControlButtons(items) {
+  const active = items.filter(it => it.bucket !== 'done' && it.bucket !== 'saved');
+  if (!active.length) return '';
+  const ids = active.map(it => it.id).join(',');
+  const paused = active.every(it => it.paused);
+  return `<button type="button" class="mini" onclick="controlMaturingPlan('${escHtml(ids)}','${paused ? 'resume' : 'pause'}',this)">${paused ? 'Resume' : 'Pause'}</button> `
+    + `<button type="button" class="mini" onclick="controlMaturingPlan('${escHtml(ids)}','stop',this)">Stop</button>`;
+}
+window.controlMaturingPlan = async function(ids, action, btn) {
+  if (action === 'stop' && !await appConfirm('Stop this profile’s warm and cold campaigns? Requests already sent stay sent.', { title: 'Stop maturing', okLabel: 'Stop plan' })) return;
+  btn.disabled = true;
+  const failures = [];
+  for (const id of ids.split(',').filter(Boolean)) {
+    try {
+      await _cloudMutationRequest(`/api/mature/control/${encodeURIComponent(id)}/${action}`, action);
+      _pushCloudEvent(id, action === 'pause' ? 'Paused by operator' : action === 'resume' ? 'Resumed by operator' : 'Stopped by operator');
+    } catch (error) { failures.push(`${id}: ${error.message}`); }
+  }
+  showCampaignToast(failures.length ? `Some campaigns could not ${action}: ${failures.join('; ')}`
+    : action === 'pause' ? 'Plan paused. Pauses expire after 48 hours; resume before then to continue.' : action === 'resume' ? 'Plan resumed; future stages keep their scheduled start.' : 'Plan stopped.', 8000);
+  btn.disabled = false;
+  renderCampaignsBoard();
+};
 function _maturingListHtml(items) {
   const saved = items.filter((x) => x.bucket === 'saved');
   return groupMaturingAccounts(items.filter((x) => x.bucket !== 'saved')).map((g) => {
@@ -11609,6 +11632,7 @@ function _maturingListHtml(items) {
       + `<span class="mature-row-name">${escHtml(g.name)}${next ? `<small class="mature-row-next">${escHtml(next)}</small>` : ''}</span>`
       + `<span class="mature-row-state">${escHtml(g.state.label)}</span>`
       + `<span class="mature-row-detail">${counts}</span>`
+      + maturingControlButtons(g.items)
       + `<button type="button" class="mini solid" onclick="openCloudLive('${escHtml(main.id)}')">Open</button>`
       + `<button type="button" class="mature-del" title="Delete" aria-label="Delete ${escHtml(g.name)}" onclick="deleteMaturingAccount('${escHtml(ids)}', '${escHtml(g.name)}', this)">${V3_SVG_TRASH}</button>`
       + `</div>`;
@@ -36700,6 +36724,8 @@ let _matureLiveGeneration = 0;
 var _matureLiveFor = '';
 // A different plan is being opened: the previous plan's live status goes away.
 function stopMatureInlineLive() {
+  const controls = document.getElementById('mature-running-controls');
+  if (controls) controls.innerHTML = '';
   _matureLiveGeneration++;
   _matureLiveFor = '';
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
@@ -36762,6 +36788,8 @@ function startMatureInlineLive(ids, startLines = []) {
       if (generation !== _matureLiveGeneration || host.hidden) return;
       if (!items.length) return;
 
+      const controls = document.getElementById('mature-running-controls');
+      if (controls) controls.innerHTML = maturingControlButtons(items.filter(it => ids.includes(it.id)));
       // Same look and wording as the combined log on the Profile Maturing tab.
       const lines = rememberMaturingLog([...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log })), 2000), ...maturingWaitLines(items)]);
       const logHtml = sharedMaturingLogHtml();
@@ -36795,6 +36823,9 @@ window.startMaturePlan = async function(btn) {
   // in Live Status under the plan at once, logs each step the server takes, and
   // becomes the running campaign's card (pause, stop, live browser preview).
   const launchId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+  const cancel = document.getElementById('mature-cancel-start');
+  cancel.hidden = false; cancel.disabled = false; cancel.dataset.launchId = launchId;
+  document.getElementById('mature-running-controls').innerHTML = '';
   const linkBtn = document.getElementById('mature-results-link');
   const showResultsLink = (url) => { if (linkBtn && url) { linkBtn.dataset.url = matureResultsLink(url).url; linkBtn.hidden = false; } };
   if (linkBtn) linkBtn.hidden = true;
@@ -36828,6 +36859,7 @@ window.startMaturePlan = async function(btn) {
     let data; try { data = JSON.parse(txt); } catch { data = { error: txt }; }
     if (res.status === 409 && txt.includes('OPERATOR_EMAIL_REQUIRED')) { openOperatorEmailModal({ mandatory: true }); return; }
     if (!res.ok || data.error) throw new Error(String(data.error || txt).split('\n')[0]);
+    if (data.cancelled) { launchLog('Setup stopped. No further stages will start.'); return; }
     // Draft consumed on launch, same as every other campaign.
     try {
       const draftId = getActiveDraftId();
@@ -36858,5 +36890,13 @@ window.startMaturePlan = async function(btn) {
     _renderMatureLaunchLog(name, steps, lostResponse ? 'Check dashboard' : 'Not started');
     showCampaignToast(message, 12000);
   }
-  finally { clearInterval(poll); btn.disabled = false; btn.textContent = label; }
+  finally { clearInterval(poll); cancel.hidden = true; btn.disabled = false; btn.textContent = label; }
+};
+
+window.cancelMatureStart = async function(btn) {
+  btn.disabled = true;
+  try {
+    await _cloudMutationRequest('/api/mature/cancel-start?launchId=' + encodeURIComponent(btn.dataset.launchId), 'stop setup');
+    showCampaignToast('Stopping setup after the current request finishes…', 6000);
+  } catch (error) { btn.disabled = false; showCampaignToast('Could not stop setup: ' + error.message, 8000); }
 };

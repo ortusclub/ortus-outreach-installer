@@ -2526,6 +2526,8 @@
       #nav-mature-profile .mature-actions .btn-primary{min-width:138px;background:var(--ink,#151515);color:var(--paper,#fff);border-color:var(--ink,#151515);box-shadow:0 2px 5px #00000014}
       #nav-mature-profile .mature-actions .btn-primary::before{content:"";width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:7px solid currentColor}
       #nav-mature-profile .mature-actions .btn-primary:hover:not(:disabled){background:#333;border-color:#333;box-shadow:0 3px 8px #00000020}
+      #nav-mature-profile .mature-actions [hidden]{display:none!important}
+      #nav-mature-profile .mature-actions .mini{min-height:44px;padding:10px 18px;border-radius:10px;font-size:14px;text-transform:none;letter-spacing:normal}
       #nav-mature-profile .mature-actions .btn:focus-visible{outline:3px solid var(--gold,#f7be68);outline-offset:3px}
       #nav-mature-profile .mature-actions .btn:disabled{cursor:wait;opacity:1;background:#eeeae3;border-color:#e2dace;color:#6b6051;box-shadow:none}
       #nav-mature-profile .mature-actions .btn-primary:disabled::before{width:13px;height:13px;border:2px solid #c7bcac;border-top-color:#796447;border-radius:50%;animation:mature-action-spin .8s linear infinite}
@@ -2541,6 +2543,8 @@
       <div class="mature-actions" role="group" aria-label="Profile maturing controls" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
         <button type="button" class="btn btn-primary" onclick="startMaturePlan(this)" aria-describedby="mature-runner-notice">Start plan</button>
         <button type="button" class="btn" onclick="saveMatureProfilePlan(this)">Save plan</button>
+        <button id="mature-cancel-start" type="button" class="btn" hidden onclick="cancelMatureStart(this)">Stop setup</button>
+        <span id="mature-running-controls" style="display:flex;gap:10px"></span>
       </div>
       <!-- This account's tab in the results workbook; shown once the tab is written. -->
       <div style="margin-top:14px">
