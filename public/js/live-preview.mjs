@@ -43,7 +43,7 @@ async function poll() {
     }
     if (closed) return;
     model = previewStatus(data, fallback);
-    name(model.name);
+    name(data.live && data.liveAccount ? `${model.name} · Browser: ${data.liveAccount}` : model.name);
     checkedAt = Date.now();
     el('engine').textContent = `${engineName} · connected`;
     el('step').textContent = model.step;

@@ -8950,3 +8950,41 @@ body:not(.route-wizard) #active-card { display: none !important; }
   min-height: 30px;
   line-height: 1.2;
 }
+
+/* Dedicated app settings: existing controls keep their IDs and saved values. */
+body.route-app-settings #app-settings-view { display:block; }
+body.route-app-settings .page-header,
+body.route-app-settings .sidebar-nav { display:none; }
+.sidebar-settings-link { margin-top:auto;padding:20px 12px;border-top:1px solid var(--hairline); }
+.sidebar-settings-link .nav-item { width:100%; }
+.app-settings-heading { margin:24px 0 32px; }
+.app-settings-heading h1 { margin:24px 0 8px;font:48px var(--display); }
+.app-settings-heading p,.settings-description { color:var(--gray);font-size:14px;line-height:1.6; }
+.app-settings-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start;padding-bottom:40px; }
+.app-settings-card { padding:28px;border:1px solid var(--hairline);border-radius:18px;min-width:0; }
+.app-settings-card h2 { font:600 20px var(--body);margin:0 0 12px; }
+.app-settings-card .theme-toggle-group,.app-settings-card .sb-tight,.app-settings-card .sidebar-footer { padding:18px 0;margin:0;border:0; }
+.app-settings-card .sb-line { padding:12px 0; }
+.app-settings-card .sidebar-footer { display:grid;gap:12px; }
+.app-settings-card .operator-chip { width:100%; }
+.app-settings-card .sidebar-signout { width:auto;justify-self:start; }
+.settings-explanations { margin:16px 0 0;font-size:13px;line-height:1.6; }
+.settings-explanations dt { font-weight:600;margin-top:16px; }
+.settings-explanations dd { color:var(--gray);margin:4px 0 0; }
+.setting-help { display:inline-flex;position:relative;vertical-align:middle; }
+.setting-help button { width:20px;height:20px;padding:0;border:1px solid var(--hairline);border-radius:50%;background:transparent;color:var(--gray);font:12px var(--body);letter-spacing:0;cursor:help; }
+.setting-help [role=tooltip] { display:none;position:absolute;left:0;bottom:calc(100% + 8px);width:min(260px,60vw);padding:12px;border:1px solid var(--hairline);border-radius:10px;background:var(--bg);color:var(--ink);font:13px/1.5 var(--body);letter-spacing:normal;text-transform:none;z-index:50;box-shadow:var(--card-shadow); }
+.setting-help:hover [role=tooltip],.setting-help:focus-within [role=tooltip] { display:block; }
+@media(max-width:1100px) { .app-settings-grid { grid-template-columns:1fr; } }
+.sidebar-main-nav { display:grid;gap:6px;padding:24px 12px 16px; }
+.sidebar-main-nav .nav-item { width:100%;font-size:13px;letter-spacing:1px; }
+.sidebar-main-nav .is-active { background:var(--ink);color:var(--bg);border-radius:10px; }
+.sidebar #engine-version-banner { display:grid;grid-template-columns:1fr;gap:12px;margin:12px 18px;padding:16px;border-width:1px;border-radius:12px;width:auto; }
+.sidebar #engine-version-banner .engine-version-banner__flag { font-size:10px;letter-spacing:1px;gap:7px; }
+.sidebar #engine-version-banner .engine-version-banner__current,
+.sidebar #engine-version-banner .engine-version-banner__live { min-width:0; }
+.sidebar #engine-version-banner strong { font-size:30px;line-height:1.1; }
+.sidebar #engine-version-banner .engine-version-banner__label { font-size:9px;letter-spacing:1px; }
+.sidebar #engine-version-banner .engine-version-banner__url { font-size:10px;overflow-wrap:anywhere; }
+.sidebar #engine-version-banner .engine-version-banner__divider { height:1px;width:100%;background:var(--hairline); }
+.sidebar #engine-version-banner .engine-version-banner__explanation { font-size:11px;line-height:1.5;grid-column:auto;margin:0; }

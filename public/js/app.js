@@ -22273,6 +22273,7 @@ function applyViewingActiveLock() {
 window.applyViewingActiveLock = applyViewingActiveLock;
 
 function applyRoute() {
+  syncDashTabs();
   const hash = window.location.hash || '#/';
   const isWizard = hash.startsWith('#/new');
   if (!isWizard) { const section = document.getElementById('nav-status'); if (section) section.style.display = 'none'; }
@@ -22284,18 +22285,29 @@ function applyRoute() {
   try { if (!isWizard && _acctAdd) { _acctAdd = null; _acctAddTouched = false; _renderAcctAddBanner(); } } catch (_) { /* */ }
   const isConnections = hash.startsWith('#/connections');
   const isSalesNav = hash.startsWith('#/salesnav');
+  const isSettings = hash.startsWith('#/settings');
+  document.body.classList.toggle('route-app-settings', isSettings);
+  document.getElementById('app-settings-nav')?.classList.toggle('active', isSettings);
   const isReplies = hash.startsWith('#/replies');
   document.body.classList.toggle('route-connections', isConnections);
   document.body.classList.toggle('route-salesnav', isSalesNav);
   document.body.classList.toggle('route-replies', isReplies);
-  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav && !isReplies);
-  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav && !isReplies);
+  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings);
+  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings);
   // Highlight the Replies nav-item when its route is active.
   const _replBtn = document.getElementById('nav-replies-btn');
   if (_replBtn) _replBtn.classList.toggle('active', isReplies);
   // Leaving the board with the inline scrape setup open: move the relocated
   // wizard sections back so the campaign wizard is intact for other modes.
   if (!isSalesNav && _snSetupOpen && typeof closeScrapeSetup === 'function') closeScrapeSetup();
+  if (isSettings) {
+    stopDashboardPolling();
+    stopWizardPolling();
+    if (typeof stopConnectionsPolling === 'function') stopConnectionsPolling();
+    refreshNotifPanel();
+    loadNotificationPrefs();
+    return;
+  }
   if (isSalesNav) {
     // Sales Nav board — its own top-level route-view. Stop the other routes'
     // pollers and start the board's load/poll loop.
@@ -22415,9 +22427,20 @@ function goDashboard()      { window.location.hash = '#/'; }
 // and the campaigns board; the tab only decides which half of the board shows.
 let _dashTab = 'campaigns';
 function syncDashTabs() {
-  document.getElementById('dash-tab-campaigns')?.classList.toggle('is-active', _dashTab === 'campaigns');
-  document.getElementById('dash-tab-maturing')?.classList.toggle('is-active', _dashTab === 'maturing');
+  const hash = window.location.hash || '#/';
+  const dashboard = hash === '#/' || hash === '';
+  for (const [id, active] of [
+    ['dash-tab-campaigns', dashboard && _dashTab === 'campaigns'],
+    ['dash-tab-maturing', dashboard && _dashTab === 'maturing'],
+    ['dash-tab-salesnav', hash.startsWith('#/salesnav')],
+    ['dash-tab-connections', hash.startsWith('#/connections')],
+  ]) {
+    const button = document.getElementById(id);
+    button?.classList.toggle('is-active', active);
+    if (active) button?.setAttribute('aria-current', 'page'); else button?.removeAttribute('aria-current');
+  }
 }
+
 function _showDashTab(tab) {
   _dashTab = tab;
   syncDashTabs();
