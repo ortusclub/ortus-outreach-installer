@@ -188,242 +188,189 @@ export async function findButtonByText(page, text) {
  */
 export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2, onEnrichProgress = null } = {}) {
   try {
-    const result = await page.evaluate(async ({ since, maxPages: pageCap }) => {
-      try {
-        const csrf = document.cookie.split(';').map((c) => c.trim())
-          .find((c) => c.startsWith('JSESSIONID='));
-        // Name the location instead of pasting the path. Two reasons: the log
-        // has to read out loud to an operator, and the raw path is actively
-        // dangerous here — LinkedIn's connections URL contains the substring
-        // "network", which magellan-diagnose.js rule 73 matches, so pasting it
-        // reclassified "no-csrf" and "http-429" as a GoLogin connection fault.
-        // Caught 2026-08-31 before release by running both classifiers over the
-        // new message shapes.
-        const whereTab = () => {
-          const path = (location.pathname || '');
-          if (!path || path === 'blank') return 'a blank page';
-          if (/\/checkpoint/.test(path)) return 'a security checkpoint';
-          if (/\/login|\/uas\//.test(path)) return 'the sign-in page';
-          if (/invite-connect\/connections/.test(path)) return 'the connections page';
-          if (/mynetwork/.test(path)) return 'the connections area';
-          if (/\/feed/.test(path)) return 'the feed';
-          return path;
-        };
-        // "no-csrf" reads like a glitch, but a logged-out tab and a security
-        // checkpoint have no JSESSIONID either, so this is the most common way
-        // an expired session shows up. The location says which it was.
-        if (!csrf) return { error: `no-csrf (tab was on ${whereTab()})` };
-        const token = csrf.split('=')[1]?.replace(/"/g, '');
+    // Walk the connections list in CHUNKS, each its own page.evaluate(), so no
+    // single CDP call approaches the 180s protocolTimeout. The old
+    // whole-list-in-one-evaluate() capped a network at whatever fit in 180s
+    // (~2,600): Operation Magellan timed a 13k-connection account out at page 66
+    // ("Runtime.callFunctionOn timed out"), and the retry restarted from scratch
+    // so it could never finish. Returning to Node between chunks removes that
+    // ceiling; the progress beacon stays monotonic via baseCount/basePage, and the
+    // endpoint is probed once (first chunk) and reused so later chunks don't
+    // re-fetch page 0.
+    const CHUNK_PAGES = 40; // ~40 pages (~1,600 conns) per evaluate — well under 180s
 
-        const headers = {
-          'accept': 'application/vnd.linkedin.normalized+json+2.1',
-          'csrf-token': token,
-          'x-restli-protocol-version': '2.0.0',
-        };
+    let conns = [];
+    let endpointIndex = -1;
+    let firstPageKeys = '';
+    let totalHint = null;
+    let partial = null;
+    let done = false;
+    let hardError = null;
 
-        const PAGE_SIZE = 40;
-        // Default caps at the 80 most-recent connections — covers ~2-3 days of
-        // acceptances at the steady-state pace, plenty for the 6h
-        // bulk-check cadence. Old caps (8 pages × 40 = 320) pulled too
-        // much history each sweep and made the sidecar tab churn a lot.
-        // Magellan overrides this to walk the whole network.
-        const MAX_PAGES = pageCap;
+    for (let base = 0; base < maxPages && !done; base += CHUNK_PAGES) {
+      const want = Math.min(CHUNK_PAGES, maxPages - base);
+      const result = await page.evaluate(async ({ since, basePage, want: pageWant, baseCount, endpointIdx, knownTotal }) => {
+        try {
+          const csrf = document.cookie.split(';').map((c) => c.trim())
+            .find((c) => c.startsWith('JSESSIONID='));
+          const whereTab = () => {
+            const path = (location.pathname || '');
+            if (!path || path === 'blank') return 'a blank page';
+            if (/\/checkpoint/.test(path)) return 'a security checkpoint';
+            if (/\/login|\/uas\//.test(path)) return 'the sign-in page';
+            if (/invite-connect\/connections/.test(path)) return 'the connections page';
+            if (/mynetwork/.test(path)) return 'the connections area';
+            if (/\/feed/.test(path)) return 'the feed';
+            return path;
+          };
+          if (!csrf) return { error: `no-csrf (tab was on ${whereTab()})` };
+          const token = csrf.split('=')[1]?.replace(/"/g, '');
 
-        // Try endpoints in priority order. LinkedIn has shipped multiple
-        // connection-list endpoints over the years; the /relationshipsDash/
-        // and legacy /relationships/connections variants are still around
-        // on different account types. We probe each on page 0 to see which
-        // one returns 200, then settle on it for the remaining pages.
-        const endpointFactories = [
-          (start) => `https://www.linkedin.com/voyager/api/relationships/dash/connections`
-            + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
-          (start) => `https://www.linkedin.com/voyager/api/relationships/connections`
-            + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
-          (start) => `https://www.linkedin.com/voyager/api/relationships/connectionsV2`
-            + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
-        ];
+          const headers = {
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': token,
+            'x-restli-protocol-version': '2.0.0',
+          };
 
-        let chosenFactory = null;
-        let probeStatus = null;
-        let probeBodySample = '';
-        for (const factory of endpointFactories) {
-          const probe = await fetch(factory(0), { headers, credentials: 'include' });
-          probeStatus = probe.status;
-          if (probe.ok) {
-            // Sample the first ~400 chars in case this returns a non-JSON
-            // gateway page (Cloudflare interstitial, login redirect HTML).
-            const text = await probe.clone().text();
-            probeBodySample = text.slice(0, 400);
-            // Quick sanity: must look like JSON, not an HTML login page.
-            if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
-              chosenFactory = factory;
+          const PAGE_SIZE = 40;
+          const endpointFactories = [
+            (start) => `https://www.linkedin.com/voyager/api/relationships/dash/connections`
+              + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
+            (start) => `https://www.linkedin.com/voyager/api/relationships/connections`
+              + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
+            (start) => `https://www.linkedin.com/voyager/api/relationships/connectionsV2`
+              + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
+          ];
+
+          // Probe for a working endpoint only on the first chunk (endpointIdx < 0);
+          // later chunks reuse the chosen index so they don't re-fetch page 0.
+          let chosenIdx = endpointIdx;
+          if (chosenIdx < 0) {
+            let probeStatus = null;
+            let probeBodySample = '';
+            for (let idx = 0; idx < endpointFactories.length; idx++) {
+              const probe = await fetch(endpointFactories[idx](0), { headers, credentials: 'include' });
+              probeStatus = probe.status;
+              if (probe.ok) {
+                const text = await probe.clone().text();
+                probeBodySample = text.slice(0, 400);
+                if (text.trim().startsWith('{') || text.trim().startsWith('[')) { chosenIdx = idx; break; }
+              }
+            }
+            if (chosenIdx < 0) {
+              return { error: `no-endpoint-ok (last status: ${probeStatus}, sample: ${probeBodySample.slice(0, 120)})` };
+            }
+          }
+          const chosenFactory = endpointFactories[chosenIdx];
+
+          const out = [];
+          let stoppedEarly = false;
+          let firstPageKeys = '';
+          let totalHint = (knownTotal != null) ? knownTotal : null;
+          let partial = null;
+          let reachedEnd = false;
+          // Progress beacon — reports GLOBAL numbers (across chunks) so the card's
+          // counter stays monotonic. Node polls window.__ortusConnProgress.
+          const _beat = (pagesDoneInChunk) => {
+            try {
+              window.__ortusConnProgress = {
+                pages: basePage + pagesDoneInChunk, count: baseCount + out.length, total: totalHint, at: Date.now(),
+              };
+            } catch { /* progress must never break the walk */ }
+          };
+
+          for (let i = 0; i < pageWant && !stoppedEarly; i++) {
+            const p = basePage + i;
+            const start = p * PAGE_SIZE;
+            const RETRYABLE_STATUS = [429, 500, 502, 503, 504, 999];
+            let resp = null;
+            let fetchErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              let throttled = false;
+              try {
+                fetchErr = null;
+                resp = await fetch(chosenFactory(start), { headers, credentials: 'include' });
+                if (resp.ok || !RETRYABLE_STATUS.includes(resp.status)) break;
+                throttled = true;
+              } catch (e) {
+                fetchErr = e;
+              }
+              if (attempt < 2) await new Promise((r) => setTimeout(r, throttled ? 3000 * (attempt + 1) : 1500));
+            }
+            if (fetchErr) {
+              const where = `${fetchErr.message} (page ${p + 1}, ${baseCount + out.length} collected, tab was on ${whereTab()})`;
+              if (p === 0) return { error: where };
+              partial = where;
               break;
             }
-          }
-        }
-        if (!chosenFactory) {
-          return { error: `no-endpoint-ok (last status: ${probeStatus}, sample: ${probeBodySample.slice(0, 120)})` };
-        }
-
-        const out = [];
-        let stoppedEarly = false;
-        let firstPageKeys = '';
-        let totalHint = null;
-        // Set when the walk ended early on a network failure past page 1. The
-        // connections collected before it are still good.
-        let partial = null;
-        // Progress beacon. The whole walk happens inside this one evaluate(), so
-        // without it a 7,000-connection account looks frozen for minutes. Node
-        // polls window.__ortusConnProgress; callers that don't care just ignore it.
-        const _beat = (pagesDone) => {
-          try {
-            window.__ortusConnProgress = {
-              pages: pagesDone, count: out.length, total: totalHint, at: Date.now(),
-            };
-          } catch { /* progress must never break the walk */ }
-        };
-
-        for (let p = 0; p < MAX_PAGES && !stoppedEarly; p++) {
-          const start = p * PAGE_SIZE;
-          // A page-context fetch throws a bare "Failed to fetch" for anything
-          // network-level: the tab navigating away, LinkedIn dropping the
-          // connection, the browser going down. One retry rides out a blip
-          // rather than throwing away everything collected so far, and the
-          // error we do report says where it happened and where the tab was —
-          // "Failed to fetch" on its own is unactionable.
-          // A non-OK status used to end the account on the spot. LinkedIn hands
-          // back 429 and 999 here routinely under load, and those are momentary
-          // throttles, not a verdict: one of them cost a whole sweep and stopped
-          // the campaign's sending. Retried like the network errors below, but
-          // with a longer pause, because a throttle wants seconds. 401/403 are
-          // deliberately NOT retryable — they mean logged out, and repeating
-          // them only delays telling the operator to sign the account back in.
-          const RETRYABLE_STATUS = [429, 500, 502, 503, 504, 999];
-          let resp = null;
-          let fetchErr = null;
-          for (let attempt = 0; attempt < 3; attempt++) {
-            let throttled = false;
-            try {
-              fetchErr = null;
-              resp = await fetch(chosenFactory(start), { headers, credentials: 'include' });
-              if (resp.ok || !RETRYABLE_STATUS.includes(resp.status)) break;
-              throttled = true;
-            } catch (e) {
-              fetchErr = e;
+            if (!resp.ok) {
+              if (p === 0) return { error: `http-${resp.status} (page ${p + 1}, ${baseCount + out.length} collected, tab was on ${whereTab()})` };
+              break;
             }
-            if (attempt < 2) await new Promise((r) => setTimeout(r, throttled ? 3000 * (attempt + 1) : 1500));
-          }
-          if (fetchErr) {
-            const where = `${fetchErr.message} (page ${p + 1}, ${out.length} collected, tab was on ${whereTab()})`;
-            if (p === 0) return { error: where };
-            // Past the first page: keep what we have and say so upstream.
-            partial = where;
-            break;
-          }
-          if (!resp.ok) {
-            // Same shape as the fetch-error line above. The "http-NNN" prefix is
-            // load-bearing: sweepHealth() and magellan-diagnose.js both classify
-            // 429/999 off it, so it stays first and only context is appended.
-            if (p === 0) return { error: `http-${resp.status} (page ${p + 1}, ${out.length} collected, tab was on ${whereTab()})` };
-            break;
-          }
 
-          const data = await resp.json();
-          if (p === 0) {
-            firstPageKeys = Object.keys(data || {}).join(',');
-            // LinkedIn reports the network size on the first page. Used to show
-            // "1,240 of 7,213" instead of a counter with no end in sight.
-            const t = data?.paging?.total ?? data?.data?.paging?.total ?? null;
-            if (typeof t === 'number' && t > 0) totalHint = t;
-          }
+            const data = await resp.json();
+            if (p === 0) {
+              firstPageKeys = Object.keys(data || {}).join(',');
+              const t = data?.paging?.total ?? data?.data?.paging?.total ?? null;
+              if (typeof t === 'number' && t > 0) totalHint = t;
+            }
 
-          // Build a urn → entity map from `included` once per page so any
-          // strategy can resolve member references in O(1).
-          const includedById = {};
-          // ALSO build a memberId-portion → entity map. LinkedIn often stores
-          // Profile entities under `urn:li:fs_miniProfile:ACoAA...` while the
-          // Connection's connectedMember references `urn:li:fsd_profile:ACoAA...`
-          // (different prefix for the same person). This second index lets us
-          // match by the ACoAA portion regardless of prefix differences.
-          const includedByMemberId = {};
-          // Helper extracts ACoAA / ACwAA from any URN-like string.
-          const _midOf = (s) => {
-            if (!s) return '';
-            const m = String(s).match(/(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/);
-            return m ? m[1] : '';
-          };
-          if (Array.isArray(data.included)) {
-            for (const item of data.included) {
-              if (!item) continue;
-              if (item.entityUrn) includedById[item.entityUrn] = item;
-              const mid = _midOf(item.entityUrn);
-              if (mid && (item.publicIdentifier || item.firstName || item.lastName)) {
-                // Prefer entries that have actual name/slug data — overwrite
-                // a stub if a fuller entry comes along later in `included`.
-                const existing = includedByMemberId[mid];
-                if (!existing || (!existing.publicIdentifier && !existing.firstName)) {
-                  includedByMemberId[mid] = item;
+            // Build a urn → entity map from `included` once per page so any
+            // strategy can resolve member references in O(1).
+            const includedById = {};
+            // ALSO build a memberId-portion → entity map. LinkedIn often stores
+            // Profile entities under `urn:li:fs_miniProfile:ACoAA...` while the
+            // Connection's connectedMember references `urn:li:fsd_profile:ACoAA...`
+            // (different prefix for the same person). This second index lets us
+            // match by the ACoAA portion regardless of prefix differences.
+            const includedByMemberId = {};
+            // Helper extracts ACoAA / ACwAA from any URN-like string.
+            const _midOf = (s) => {
+              if (!s) return '';
+              const m = String(s).match(/(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/);
+              return m ? m[1] : '';
+            };
+            if (Array.isArray(data.included)) {
+              for (const item of data.included) {
+                if (!item) continue;
+                if (item.entityUrn) includedById[item.entityUrn] = item;
+                const mid = _midOf(item.entityUrn);
+                if (mid && (item.publicIdentifier || item.firstName || item.lastName)) {
+                  // Prefer entries that have actual name/slug data — overwrite
+                  // a stub if a fuller entry comes along later in `included`.
+                  const existing = includedByMemberId[mid];
+                  if (!existing || (!existing.publicIdentifier && !existing.firstName)) {
+                    includedByMemberId[mid] = item;
+                  }
                 }
               }
             }
-          }
-          // Resolve a connectedMember URN (or any URN) to its richest profile
-          // entity by trying direct match first, then ACoAA-portion match.
-          const _resolveMember = (memberUrn) => {
-            if (typeof memberUrn !== 'string' || !memberUrn) return {};
-            const direct = includedById[memberUrn];
-            if (direct && (direct.publicIdentifier || direct.firstName)) return direct;
-            const mid = _midOf(memberUrn);
-            const byMid = mid ? includedByMemberId[mid] : null;
-            return byMid || direct || {};
-          };
-
-          let pageOut = 0;
-
-          // Strategy A — direct elements array (older Voyager endpoints).
-          const directElements = data?.elements || data?.data?.elements || [];
-          if (directElements.length) {
-            for (const el of directElements) {
-              const createdAt = el.createdAt || el.connectedAt || 0;
-              if (since && createdAt && createdAt < since) { stoppedEarly = true; break; }
-              const memberUrn = el.connectedMember || el['*connectedMember'] || el.miniProfile || '';
-              const member = (typeof memberUrn === 'string' ? _resolveMember(memberUrn) : el.connectedMember) || {};
-              out.push({
-                urn: typeof memberUrn === 'string' ? memberUrn : (member.entityUrn || ''),
-                publicId: member.publicIdentifier || '',
-                firstName: member.firstName || '',
-                lastName: member.lastName || '',
-                memberNumber: (member.objectUrn && typeof member.objectUrn === 'string'
-                  && (member.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
-                connectedAt: createdAt || 0,
-              });
-              pageOut++;
-            }
-          }
-
-          // Strategy B — normalized JSON: data["*elements"] is an array of
-          // URN refs, resolved against `included`. The newer connections
-          // endpoint returns this shape.
-          if (pageOut === 0) {
-            const elementUrns = data?.data?.['*elements'] || data?.['*elements'] || [];
-            if (Array.isArray(elementUrns) && elementUrns.length) {
-              for (const connectionUrn of elementUrns) {
-                const conn = includedById[connectionUrn];
-                if (!conn) continue;
-                const createdAt = conn.createdAt || conn.connectedAt || 0;
+            // Resolve a connectedMember URN (or any URN) to its richest profile
+            // entity by trying direct match first, then ACoAA-portion match.
+            const _resolveMember = (memberUrn) => {
+              if (typeof memberUrn !== 'string' || !memberUrn) return {};
+              const direct = includedById[memberUrn];
+              if (direct && (direct.publicIdentifier || direct.firstName)) return direct;
+              const mid = _midOf(memberUrn);
+              const byMid = mid ? includedByMemberId[mid] : null;
+              return byMid || direct || {};
+            };
+  
+            let pageOut = 0;
+  
+            // Strategy A — direct elements array (older Voyager endpoints).
+            const directElements = data?.elements || data?.data?.elements || [];
+            if (directElements.length) {
+              for (const el of directElements) {
+                const createdAt = el.createdAt || el.connectedAt || 0;
                 if (since && createdAt && createdAt < since) { stoppedEarly = true; break; }
-                const memberUrn = conn.connectedMember || conn['*connectedMember'] || '';
-                const member = _resolveMember(memberUrn);
+                const memberUrn = el.connectedMember || el['*connectedMember'] || el.miniProfile || '';
+                const member = (typeof memberUrn === 'string' ? _resolveMember(memberUrn) : el.connectedMember) || {};
                 out.push({
                   urn: typeof memberUrn === 'string' ? memberUrn : (member.entityUrn || ''),
                   publicId: member.publicIdentifier || '',
                   firstName: member.firstName || '',
                   lastName: member.lastName || '',
-                  // Strategies A and C already read this; B dropped it. The numeric
-                  // member id is the ONLY identity that bridges a Sales-Nav
-                  // /in/ACwAA… sheet URL to a Voyager ACoAA… URN (the two token
-                  // forms share no substring), so without it an ACwAA-sourced sheet
-                  // can never detect an acceptance.
                   memberNumber: (member.objectUrn && typeof member.objectUrn === 'string'
                     && (member.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
                   connectedAt: createdAt || 0,
@@ -431,64 +378,110 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2, on
                 pageOut++;
               }
             }
-          }
-
-          // Strategy C — fallback: scan `included` for any profile-shaped
-          // entity. Match risk: same response can include "people you may
-          // know" suggestions, but we'll filter strictly by URN/publicId
-          // matching against the sheet later, so non-connections that
-          // happen to live here won't false-positive someone who's actually
-          // pending. Worst case: they'd be marked Connected when they're
-          // really a strong-signal suggestion. Acceptable for the operator's
-          // workflow given Voyager's shape variance.
-          if (pageOut === 0 && Array.isArray(data.included)) {
-            for (const item of data.included) {
-              if (!item) continue;
-              const urn = item.entityUrn || '';
-              const isProfileUrn = urn.indexOf('urn:li:fsd_profile:') === 0
-                || urn.indexOf('urn:li:fs_miniProfile:') === 0
-                || urn.indexOf('urn:li:fsd_lazyLoadedActions:') === 0;
-              if (!isProfileUrn) continue;
-              if (!item.publicIdentifier && !item.firstName) continue;
-              out.push({
-                urn,
-                publicId: item.publicIdentifier || '',
-                firstName: item.firstName || '',
-                lastName: item.lastName || '',
-                memberNumber: (item.objectUrn && typeof item.objectUrn === 'string'
-                  && (item.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
-                connectedAt: 0,
-              });
-              pageOut++;
+  
+            // Strategy B — normalized JSON: data["*elements"] is an array of
+            // URN refs, resolved against `included`. The newer connections
+            // endpoint returns this shape.
+            if (pageOut === 0) {
+              const elementUrns = data?.data?.['*elements'] || data?.['*elements'] || [];
+              if (Array.isArray(elementUrns) && elementUrns.length) {
+                for (const connectionUrn of elementUrns) {
+                  const conn = includedById[connectionUrn];
+                  if (!conn) continue;
+                  const createdAt = conn.createdAt || conn.connectedAt || 0;
+                  if (since && createdAt && createdAt < since) { stoppedEarly = true; break; }
+                  const memberUrn = conn.connectedMember || conn['*connectedMember'] || '';
+                  const member = _resolveMember(memberUrn);
+                  out.push({
+                    urn: typeof memberUrn === 'string' ? memberUrn : (member.entityUrn || ''),
+                    publicId: member.publicIdentifier || '',
+                    firstName: member.firstName || '',
+                    lastName: member.lastName || '',
+                    // Strategies A and C already read this; B dropped it. The numeric
+                    // member id is the ONLY identity that bridges a Sales-Nav
+                    // /in/ACwAA… sheet URL to a Voyager ACoAA… URN (the two token
+                    // forms share no substring), so without it an ACwAA-sourced sheet
+                    // can never detect an acceptance.
+                    memberNumber: (member.objectUrn && typeof member.objectUrn === 'string'
+                      && (member.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
+                    connectedAt: createdAt || 0,
+                  });
+                  pageOut++;
+                }
+              }
             }
+  
+            // Strategy C — fallback: scan `included` for any profile-shaped
+            // entity. Match risk: same response can include "people you may
+            // know" suggestions, but we'll filter strictly by URN/publicId
+            // matching against the sheet later, so non-connections that
+            // happen to live here won't false-positive someone who's actually
+            // pending. Worst case: they'd be marked Connected when they're
+            // really a strong-signal suggestion. Acceptable for the operator's
+            // workflow given Voyager's shape variance.
+            if (pageOut === 0 && Array.isArray(data.included)) {
+              for (const item of data.included) {
+                if (!item) continue;
+                const urn = item.entityUrn || '';
+                const isProfileUrn = urn.indexOf('urn:li:fsd_profile:') === 0
+                  || urn.indexOf('urn:li:fs_miniProfile:') === 0
+                  || urn.indexOf('urn:li:fsd_lazyLoadedActions:') === 0;
+                if (!isProfileUrn) continue;
+                if (!item.publicIdentifier && !item.firstName) continue;
+                out.push({
+                  urn,
+                  publicId: item.publicIdentifier || '',
+                  firstName: item.firstName || '',
+                  lastName: item.lastName || '',
+                  memberNumber: (item.objectUrn && typeof item.objectUrn === 'string'
+                    && (item.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
+                  connectedAt: 0,
+                });
+                pageOut++;
+              }
+            }
+            _beat(i + 1);
+
+            if (pageOut === 0) {
+              if (p === 0) return { error: `empty-after-3-strategies (keys: ${firstPageKeys}, included.len: ${(data.included || []).length})` };
+              reachedEnd = true;
+              break;
+            }
+            if (pageOut < PAGE_SIZE) { reachedEnd = true; break; }
           }
 
-          _beat(p + 1);
-
-          if (pageOut === 0) {
-            if (p === 0) return { error: `empty-after-3-strategies (keys: ${firstPageKeys}, included.len: ${(data.included || []).length})` };
-            break;
-          }
-          if (pageOut < PAGE_SIZE) break;
+          return { connections: out, done: reachedEnd, stoppedEarly, partial, total: totalHint, firstPageKeys, endpointIndex: chosenIdx };
+        } catch (err) {
+          return { error: err.message };
         }
+      }, { since: sinceMs, basePage: base, want, baseCount: conns.length, endpointIdx: endpointIndex, knownTotal: totalHint });
 
-        return { connections: out, firstPageKeys, total: totalHint, partial };
-      } catch (err) {
-        return { error: err.message };
+      if (result?.error) {
+        if (base === 0) { hardError = result.error; break; }
+        // Past the first chunk: keep everything the earlier chunks collected.
+        partial = result.error;
+        done = true;
+        break;
       }
-    }, { since: sinceMs, maxPages });
+      if (result.endpointIndex != null && result.endpointIndex >= 0) endpointIndex = result.endpointIndex;
+      if (base === 0) firstPageKeys = result.firstPageKeys || '';
+      if (result.total != null) totalHint = result.total;
+      if (Array.isArray(result.connections) && result.connections.length) conns.push(...result.connections);
+      if (result.partial) { partial = result.partial; done = true; }
+      if (result.done || result.stoppedEarly) done = true;
+      // An empty chunk means the list is exhausted — sequential pagination never
+      // leaves a gap — so stop rather than keep probing to maxPages.
+      if (!(Array.isArray(result.connections) && result.connections.length)) done = true;
+    }
 
-    if (result?.error) {
-      console.log(`[helpers] getRecentConnections error: ${result.error}`);
-      // Return a special sentinel so callers can surface the exact reason
-      // upward (instead of just an empty array meaning "nothing found").
+    if (hardError) {
+      console.log(`[helpers] getRecentConnections error: ${hardError}`);
       const empty = [];
-      empty.error = result.error;
+      empty.error = hardError;
       return empty;
     }
-    let conns = result?.connections || [];
-    if (result?.partial) console.warn(`[helpers] getRecentConnections stopped early: ${result.partial}`);
-    console.log(`[helpers] Voyager bulk: ${conns.length} recent connections fetched (keys: ${result?.firstPageKeys || ''})`);
+    if (partial) console.warn(`[helpers] getRecentConnections stopped early: ${partial}`);
+    console.log(`[helpers] Voyager bulk: ${conns.length} recent connections fetched (keys: ${firstPageKeys || ''})`);
 
     // Enrichment pass — when the connections list returns URNs only (no
     // publicIdentifier or firstName), do a follow-up bulk lookup against
@@ -535,7 +528,7 @@ export async function getRecentConnections(page, sinceMs = 0, { maxPages = 2, on
 
     // Same array-with-a-property convention as `.error`: existing callers keep
     // treating it as a plain array, Magellan reads the note.
-    if (result?.partial) conns.partial = result.partial;
+    if (partial) conns.partial = partial;
     return conns;
   } catch (err) {
     console.log(`[helpers] getRecentConnections threw: ${err.message}`);
