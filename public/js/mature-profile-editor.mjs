@@ -378,8 +378,9 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   if (!plan.connectionStages) {
     plan.connectionStages = {
       warm: plan.stages.map((s,i)=>({fromDay:s.fromDay,toDay:s.toDay,daily:s.warmDaily})),
-      cold: plan.stages.filter(s=>['cold','engage'].includes(s.id) || Number(s.coldDaily)>0)
-        .map(s=>({fromDay:s.fromDay,toDay:s.toDay,daily:s.coldDaily})),
+      cold: plan.stages.some(s=>Number(s.coldDaily)>0)
+        ? plan.stages.filter(s=>Number(s.coldDaily)>0).map(s=>({fromDay:s.fromDay,toDay:s.toDay,daily:s.coldDaily}))
+        : [{fromDay:8,toDay:17,daily:5},{fromDay:18,toDay:27,daily:10}],
     };
   }
   function activityStages(kind, destination) {

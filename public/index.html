@@ -2517,6 +2517,21 @@
       </div>
     </div>
 
+
+    <style id="mature-action-styles">
+      #nav-mature-profile #mature-plan-summary{font-size:13px;line-height:1.5;color:var(--gray,#6b6b6b);margin:18px 0 10px}
+      #nav-mature-profile .mature-actions{gap:10px!important;margin-bottom:20px}
+      #nav-mature-profile .mature-actions .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:11px 18px;border:1px solid var(--hairline,#d6d6d6);border-radius:10px;background:var(--paper,#fff);color:var(--ink,#151515);font-family:inherit;font-size:14px;font-weight:600;line-height:20px;letter-spacing:0;text-transform:none;box-shadow:0 1px 2px #00000006;transition:background .15s,border-color .15s,box-shadow .15s}
+      #nav-mature-profile .mature-actions .btn:hover:not(:disabled){background:var(--card-bg,#f3f3f3);border-color:var(--gray,#888)}
+      #nav-mature-profile .mature-actions .btn-primary{min-width:138px;background:var(--ink,#151515);color:var(--paper,#fff);border-color:var(--ink,#151515);box-shadow:0 2px 5px #00000014}
+      #nav-mature-profile .mature-actions .btn-primary::before{content:"";width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:7px solid currentColor}
+      #nav-mature-profile .mature-actions .btn-primary:hover:not(:disabled){background:#333;border-color:#333;box-shadow:0 3px 8px #00000020}
+      #nav-mature-profile .mature-actions .btn:focus-visible{outline:3px solid var(--gold,#f7be68);outline-offset:3px}
+      #nav-mature-profile .mature-actions .btn:disabled{cursor:wait;opacity:1;background:#eeeae3;border-color:#e2dace;color:#6b6051;box-shadow:none}
+      #nav-mature-profile .mature-actions .btn-primary:disabled::before{width:13px;height:13px;border:2px solid #c7bcac;border-top-color:#796447;border-radius:50%;animation:mature-action-spin .8s linear infinite}
+      @keyframes mature-action-spin{to{transform:rotate(360deg)}}
+      @media(prefers-reduced-motion:reduce){#nav-mature-profile .mature-actions .btn{transition:none}#nav-mature-profile .mature-actions .btn-primary:disabled::before{animation:none}}
+    </style>
     <section class="section" id="nav-mature-profile" style="display:none">
       <h2>Mature Profile Campaign</h2>
       <p>Build a staged plan for each account: start with your warm network, increase activity, then introduce cold connections and post engagement.</p>

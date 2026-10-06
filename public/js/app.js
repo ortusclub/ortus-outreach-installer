@@ -36850,9 +36850,13 @@ window.startMaturePlan = async function(btn) {
     _matureLiveFor = name;
     startMatureInlineLive(liveIds, steps);
   } catch (error) {
-    launchLog(`✗ Not started — ${error.message}`);
-    _renderMatureLaunchLog(name, steps, 'Not started');
-    showCampaignToast(`✗ ${error.message}`, 8000);
+    const lostResponse = /failed to fetch|fetch failed|network|timed out|timeout|aborted/i.test(error.message);
+    const message = lostResponse
+      ? 'Launch confirmation was interrupted. The engine may already have started the plan. Check Profile Maturing before trying again.'
+      : `Not started — ${error.message}`;
+    launchLog(`⚠ ${message}`);
+    _renderMatureLaunchLog(name, steps, lostResponse ? 'Check dashboard' : 'Not started');
+    showCampaignToast(message, 12000);
   }
   finally { clearInterval(poll); btn.disabled = false; btn.textContent = label; }
 };
