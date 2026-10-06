@@ -11671,7 +11671,7 @@ async function refreshMaturingLog(items) {
     _maturingLogHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
     _maturingLogAt = Date.now();
     const box = document.getElementById('maturing-all-log');
-    if (box) { box.innerHTML = _maturingLogHtml; box.scrollTop = box.scrollHeight; }
+    if (box) { box.innerHTML = _maturingLogHtml; _pinLogToNewest(box, 'mature-board'); }
   } finally { _maturingLogBusy = false; }
 }
 // One line saying which plan day a maturing campaign is on, today's amount and
@@ -13442,6 +13442,7 @@ async function _renderCampaignsBoardInner() {
   _lastBoardHtml = final;
   board.dataset.rendered = '1';
   board.innerHTML = final;
+  _pinLogToNewest(board.querySelector('#maturing-all-log'), 'mature-board');
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
@@ -36680,9 +36681,8 @@ function _renderMatureLaunchLog(name, steps, state) {
   if (!_matureLiveTimer) startMatureInlineLive([]);
   const box = body.querySelector('.sn-logbox');
   if (box) {
-    const pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     box.innerHTML = sharedMaturingLogHtml();
-    if (pinned) box.scrollTop = box.scrollHeight;
+    _pinLogToNewest(box, 'mature-inline');
   }
 }
 function startMatureInlineLive(ids, startLines = []) {
@@ -36692,6 +36692,9 @@ function startMatureInlineLive(ids, startLines = []) {
   rememberMaturingLog(startLines);
   host.hidden = false;
   body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-top"><span class="sn-type">Maturing log · all accounts</span></div><div class="sn-logbox">${sharedMaturingLogHtml()}</div></div></div>`;
+  // Start at the newest entry even when retained history already overflows.
+  _vjLogPin.delete('mature-inline');
+  _pinLogToNewest(body.querySelector('.sn-logbox'), 'mature-inline');
   // The engine's campaign, in the shape the Profile Maturing tab's helpers read.
   async function one(id) {
     const d = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json());
@@ -36729,9 +36732,6 @@ function startMatureInlineLive(ids, startLines = []) {
       const lines = rememberMaturingLog([...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log })), 2000), ...maturingWaitLines(items)]);
       const logHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
       const active = items.find((x) => x.live) || null;
-      const old = body.querySelector('.sn-logbox');
-      const pinned = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 40;   // stay at the newest line unless the operator scrolled up
-      const top = old ? old.scrollTop : 0;
       body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
         + `<span class="sn-status">${groupMaturingAccounts(items).length} accounts</span></div>`
@@ -36740,7 +36740,7 @@ function startMatureInlineLive(ids, startLines = []) {
         + `<div class="sn-foot">${maturingPreviewButton(items)}</div>`
         + `</div></div>`;
       const box = body.querySelector('.sn-logbox');
-      if (box) box.scrollTop = pinned ? box.scrollHeight : top;
+      _pinLogToNewest(box, 'mature-inline');
     } finally { busy = false; }
   }
   tick();
