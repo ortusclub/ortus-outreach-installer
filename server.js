@@ -4157,22 +4157,12 @@ app.post('/api/mature/start', async (req, res) => {
       // Offer the link while the start is still running, not only at the end.
       { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) progress.resultsUrl = tab.url; }
     } catch (error) {
-      // The maturing sheets bridge is not set up or not reachable. Keep the
-      // plan startable the old way.
-      console.warn(`[mature] ${name}: results tab unavailable (${error.message}) — using separate sheets`);
-      step('The results workbook is not available yet — using a separate sheet for this run…');
+      console.warn(`[mature] ${name}: results tab unavailable (${error.message})`);
+      throw new Error(`Could not open this account's tab in the shared results workbook. No campaign was started. ${error.message}`);
     }
 
     if (warmOn) {
-      let sheetUrl = tab?.url, sheetGid = tab?.gid;
-      if (!tab) {
-        const sheet = await createWarmSheet({
-          name: `Warm connections — ${name} — ${startDate}`,
-          header: ['Full Name', 'LinkedIn URL', 'Pool Account', 'Pool Profile ID'],
-          rows: pool.targets.map((t) => [t.name, t.linkedinUrl, t.profile, t.profileId]),
-        }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`));
-        sheetUrl = sheet.url; sheetGid = sheet.gid;
-      }
+      const sheetUrl = tab.url, sheetGid = tab.gid;
       step(`Sending warm connections to the cloud — ${warmAmounts[0]} today…`);
       console.log(`[mature] ${name}: ${pool.targets.length} warm target(s) in ${sheetUrl}; schedule ${warmAmounts.join(',')}`);
       result.warm = await launchMatureStage(req, {

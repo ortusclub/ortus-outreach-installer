@@ -94,19 +94,19 @@ test('each maturing account says what it does next and when', () => {
   const opts = { now: Date.parse('2026-10-05T19:30:00Z'), viewerTimeZone: 'Europe/Rome' };
   // Sleeping: the engine's next batch time, and that day's amount.
   assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-07T01:00:00.000Z' }, opts),
-    'Next: 3 warm connections · Wed 7 Oct, 03:00 CEST · when the worker is free');
+    'Next: 3 warm connections · Attempt at Wed 7 Oct, 03:00 CEST');
   assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-09T01:00:00.000Z' }, opts),
-    'Next: 6 warm connections · Fri 9 Oct, 03:00 CEST · when the worker is free');
+    'Next: 6 warm connections · Attempt at Fri 9 Oct, 03:00 CEST');
   // A sleeping campaign reads as sleeping even if the browser flag lags behind.
   assert.equal(maturingRowState({ bucket: 'running', dailyWait: true, live: true }).label, 'Sleeping');
   assert.equal(maturingNextAction({ ...it, live: true }, opts), "Now: sending today's 3 warm connections");
-  assert.equal(maturingNextAction(it, opts), "Next: today's 3 warm connections · as soon as the worker is free");
-  assert.equal(maturingNextAction({ ...it, bucket: 'queued' }, opts), 'Next: 3 warm connections today · as soon as the worker is free');
+  assert.equal(maturingNextAction(it, opts), "Next: today's 3 warm connections · Waiting for attempt time");
+  assert.equal(maturingNextAction({ ...it, bucket: 'queued' }, opts), 'Next: 3 warm connections today · Waiting for attempt time');
   assert.equal(maturingNextAction({ ...it, matureKind: 'cold', bucket: 'queued', scheduledAt: '2026-10-12T07:00:00Z', warmSchedule: { startAt: '2026-10-12T07:00:00Z', amounts: [3, 5] } }, opts),
-    'Next: 3 cold connections · Mon 12 Oct, 09:00 CEST · when the worker is free');
+    'Next: 3 cold connections · Attempt at Mon 12 Oct, 09:00 CEST');
   // Right after the batch, the next thing is the receiving accounts accepting.
   assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-07T01:00:00.000Z', acceptPending: 3, acceptDueAt: '2026-10-05T19:40:00Z' }, opts),
-    'Next: accept 3 connection requests in the receiving accounts · Mon 5 Oct, 21:40 CEST · when the worker is free');
+    'Next: accept 3 connection requests in the receiving accounts · Attempt at Mon 5 Oct, 21:40 CEST');
   for (const ended of [{ bucket: 'done' }, { paused: true }, { needsReview: true }, { stopping: true }]) assert.equal(maturingNextAction({ ...it, ...ended }, opts), '');
 });
 
@@ -132,4 +132,22 @@ import { logClock } from '../public/js/mature-profile-board.mjs';
 test('every log line can carry its time of day', () => {
   assert.equal(logClock(Date.parse('2026-10-05T19:20:58Z'), 'Europe/Rome'), '21:20:58');
   assert.equal(logClock(0), '');
+});
+
+import { retainMaturingLog } from '../public/js/mature-profile-board.mjs';
+test('shared history retains earlier accounts when another account starts and deduplicates polling', () => {
+  const first = { t: 1, text: 'Pauline · start — Saving the plan…' };
+  const second = { t: 3, text: 'Riccardo · start — Saving the plan…' };
+  let history = retainMaturingLog([], [first]);
+  history = retainMaturingLog(history, [second]);
+  history = retainMaturingLog(history, [second, { t: 2, text: 'Pauline · warm — Browser ready' }]);
+  assert.deepEqual(history.map(x => x.t), [1, 2, 3]);
+  assert.deepEqual(retainMaturingLog(history, []), history);
+  assert.deepEqual(retainMaturingLog([], JSON.parse(JSON.stringify(history))), history);
+});
+test('same-time events from separate accounts remain and history is bounded', () => {
+  const lines = [{ t: 1, text: 'A · warm — Ready' }, { t: 1, text: 'B · warm — Ready' }];
+  assert.equal(retainMaturingLog([], lines).length, 2);
+  assert.deepEqual(retainMaturingLog(lines, [{ t: 2, text: 'C · start' }], 2), [lines[1], { t: 2, text: 'C · start' }]);
+  assert.deepEqual(retainMaturingLog([], [null, {}, { t: 'bad', text: 'bad' }]), []);
 });
