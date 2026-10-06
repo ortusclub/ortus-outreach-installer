@@ -37,7 +37,7 @@ function conflict(message, code = 'name_exists') {
 }
 export function getConfig(name) { return byName(readAll(), name); }
 export function getConfigById(campaignId) { return readAll().campaigns[campaignId] || null; }
-export function saveConfig(name, config, { campaignId = config?.campaignId, create = false, listed } = {}) {
+export function saveConfig(name, config, { campaignId = config?.campaignId, create = false, listed, owner = '' } = {}) {
   const label = String(name || '').trim();
   if (!label) return null;
   const store = readAll();
@@ -46,7 +46,7 @@ export function saveConfig(name, config, { campaignId = config?.campaignId, crea
   if (campaignId && !current) conflict('Campaign no longer exists. Reopen it from the dashboard.', 'unknown_campaign');
   if ((create && named) || (named && current && named.campaignId !== current.campaignId)) conflict('That campaign name already exists. Please choose a different name.');
   const id = current?.campaignId || randomUUID();
-  store.campaigns[id] = { ...current, campaignId: id, name: label, listed: listed ?? current?.listed ?? true, savedAt: new Date().toISOString(), config: { ...config, campaignId: id } };
+  store.campaigns[id] = { ...current, owner: current?.owner || String(owner).trim().toLowerCase(), campaignId: id, name: label, listed: listed ?? current?.listed ?? true, savedAt: new Date().toISOString(), config: { ...config, campaignId: id } };
   writeAll(store);
   return store.campaigns[id];
 }
@@ -68,25 +68,25 @@ export function detachCampaignIdentity(campaignId, ownerName) {
   return store.campaigns[id];
 }
 /** Explicit Save replaces the named campaign while preserving its permanent ID. */
-export function saveNamedCampaign(name, config, campaignId = config?.campaignId) {
+export function saveNamedCampaign(name, config, campaignId = config?.campaignId, owner = '') {
   const existing = getConfig(name);
-  return saveConfig(name, config, { campaignId: existing?.campaignId || campaignId, listed: true });
+  return saveConfig(name, config, { campaignId: existing?.campaignId || campaignId, listed: true, owner });
 }
 /** Resolve identity without overwriting saved wizard settings. */
-export function ensureCampaignIdentity({ campaignId, name = '', config = {}, listed = true } = {}) {
+export function ensureCampaignIdentity({ campaignId, name = '', config = {}, listed = true, owner = '' } = {}) {
   const entry = campaignId ? getConfigById(campaignId) : (normaliseName(name) ? getConfig(name) : null);
   if (campaignId && !entry) conflict('Campaign no longer exists. Reopen it from the dashboard.', 'unknown_campaign');
   if (entry) return { campaignId: entry.campaignId, name: entry.name };
   if (!normaliseName(name)) {
     const store = readAll(); const id = randomUUID();
-    store.campaigns[id] = { campaignId: id, name: '', listed, savedAt: new Date().toISOString(), config: { ...config, campaignId: id } };
+    store.campaigns[id] = { campaignId: id, owner: String(owner).trim().toLowerCase(), name: '', listed, savedAt: new Date().toISOString(), config: { ...config, campaignId: id } };
     writeAll(store); return { campaignId: id, name: '' };
   }
-  const created = saveConfig(name, config, { listed });
+  const created = saveConfig(name, config, { listed, owner });
   return { campaignId: created.campaignId, name: created.name };
 }
 export function listConfigs() {
-  return Object.values(readAll().campaigns).filter(e => e.listed !== false && normaliseName(e.name)).map(({campaignId,name,savedAt,config}) => ({campaignId,name,savedAt,mode:config?.mode || ''}))
+  return Object.values(readAll().campaigns).filter(e => e.listed !== false && normaliseName(e.name)).map(({campaignId,name,savedAt,config,owner}) => ({campaignId,name,savedAt,owner,mode:config?.mode || ''}))
     .sort((a,b) => String(b.savedAt).localeCompare(String(a.savedAt)));
 }
 export function renameConfig(from, to, campaignId = null) {

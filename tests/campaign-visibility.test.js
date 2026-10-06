@@ -27,3 +27,10 @@ test('saved maturing plans and board rows follow the same company rule', () => {
     assert(!canViewCampaign({...flag,owner:'other@linkedvelocity.com'},{email:'sam@ortusclub.com',admin:true}));
   }
 });
+
+test('saved config and draft modes use actual login even if the device operator differs', () => {
+  const record = {config:{mode:'mature_profile'},owner:'info@linkedvelocity.com'};
+  assert.equal(canViewCampaign(record,{admin:true,email:'info@linkedvelocity.com',maturingEmail:'sam@ortusclub.com'}),false);
+  assert.equal(canViewCampaign(record,{email:'sam@ortusclub.com',maturingEmail:'staff@linkedvelocity.com'}),true);
+  assert.equal(canViewCampaign({...record,owner:''},{admin:true,email:'sam@ortusclub.com'}),false);
+});

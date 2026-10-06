@@ -177,3 +177,14 @@ test('weekly block outranks a future cold stage and displays the actual Monday r
   assert.deepEqual(maturingWaitLines([{...warm, dailyWait:true, resumeAt:'2000-01-01'}]), []);
   assert.doesNotMatch(maturingNextAction({...warm, accountBlocks:[{reason:'weekly',until:'2000-01-01'}]}), /Weekly limit/);
 });
+
+test('finished warm sends show acceptance next even while the browser-open flag lingers', () => {
+  const warm = {matureKind:'warm',bucket:'running',live:true,batchDoneToday:true};
+  assert.match(maturingNextAction(warm), /^Next: the receiving accounts accept/);
+  assert.equal(maturingRowState(warm).label, 'Waiting for acceptance');
+  const pending = {...warm,acceptPending:3,acceptDueAt:'2099-10-06T16:15:00Z'};
+  assert.match(maturingNextAction(pending), /^Next: accept 3 connection requests/);
+  assert.equal(maturingRowState(pending).label, 'Waiting for acceptance');
+  assert.doesNotMatch(maturingNextAction({...warm,matureKind:'cold'}), /accept/);
+  assert.match(maturingNextAction({...warm,dailyWait:true,resumeAt:'2099-10-07T07:00:00Z'}), /next|Next/);
+});

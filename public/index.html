@@ -2117,6 +2117,17 @@
   .sn-strip.sn-collapsed.sn-maturing-log .sn-switch{display:block;}
   .sn-strip.sn-maturing-log{margin-top:12px;}
   .mature-log-time{opacity:.55;}
+  #mature-live{margin-top:20px}
+  .mature-log-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:130px;margin:14px 0;background:var(--card-bg,#f7f7f7);border:1px dashed var(--hairline,#ddd);border-radius:12px;text-align:center;padding:24px;color:var(--gray);font-size:13px;line-height:1.5}
+  .mature-log-empty strong{color:var(--ink);font-size:14px;font-weight:600}
+  .sn-maturing-log .sn-foot{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+  .sn-maturing-log .sn-foot .mini{font-family:inherit;font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;line-height:20px;padding:7px 12px;border:1px solid var(--hairline);border-radius:8px;background:var(--paper);color:var(--ink);cursor:pointer}
+  .sn-maturing-log .sn-foot .mini:hover{background:var(--card-bg);border-color:var(--gold)}
+  .mature-workbook-access{margin-top:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  #nav-mature-profile .mature-workbook-button{display:inline-flex;align-items:center;gap:10px;min-height:38px;padding:8px 14px;border:1px solid var(--hairline,#ddd);border-radius:9px;background:var(--paper,#fff);color:var(--ink);font-family:inherit;font-size:13px;font-weight:600;line-height:20px;letter-spacing:0;text-transform:none;box-shadow:0 1px 2px #00000006}
+  #nav-mature-profile .mature-workbook-button:hover{border-color:var(--gold);background:var(--card-bg)}
+  .mature-workbook-password{display:inline-flex;gap:8px;align-items:center;font-size:12px;color:var(--gray);letter-spacing:0;text-transform:none}
+  .mature-workbook-password code{padding:4px 7px;border:1px solid var(--hairline,#ddd);border-radius:6px;background:var(--card-bg);color:var(--ink);font-size:12px;user-select:all}
   .mature-results-row{margin-top:18px;display:flex;justify-content:flex-end;}
   /* Profile Maturing: one quiet line per campaign under the shared log. */
   .mature-row{display:flex;align-items:center;gap:14px;padding:10px 6px;border-top:1px solid var(--hairline,rgba(0,0,0,.08));font-size:13px;}
@@ -2547,15 +2558,18 @@
         <span id="mature-running-controls" style="display:flex;gap:10px"></span>
       </div>
       <!-- Workbook access is available before and after starting a plan. -->
-      <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-        <button type="button" class="btn" onclick="openMaturingWebWorkbook()">Web workbook ↗</button>
-        <span style="font-size:12px">Password: <code>alwaysDELIVER</code></span>
-        <button type="button" id="mature-results-link" class="btn" hidden style="font-size:12px;padding:8px 18px;letter-spacing:.08em" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')">Open this account's results tab ↗</button>
-      </div>
-      <!-- Live status of the started plan, shown here under the options so the
-           operator stays on the plan page. Filled by startMatureInlineLive(). -->
-      <div id="mature-live" hidden>
-        <div id="mature-live-body"></div>
+      <button type="button" id="mature-results-link" hidden onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')">Google Sheets ↗</button>
+      <div id="mature-live">
+        <div id="mature-live-body">
+          <div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">
+            <div class="sn-top"><span class="sn-type">Maturing log</span><span class="sn-status">Not started</span></div>
+            <div class="mature-log-empty"><strong>No activity yet</strong><span>Start your plan to see setup progress and connection results here.</span></div>
+            <div class="sn-foot mature-log-links">
+              <button type="button" class="mini" onclick="openMaturingWebWorkbook()">Web workbook ↗</button>
+              <button type="button" class="mini" onclick="window.open('https://docs.google.com/spreadsheets/d/1aZFtGnJcAs4dZ4Pvw5ju5dFwkX29zP_h3s1R8K-XXfo/edit', '_blank', 'noopener,noreferrer')">Google Sheets ↗</button>
+            </div>
+          </div></div>
+        </div>
       </div>
       <p id="mature-runner-notice" class="mature-source-help" style="margin-top:14px">Starting sends connection requests from the profile being warmed, at the plan's daily amounts: warm connections to the accounts in the warm pool from day 1, and cold connections to your cold sheet from their first plan day. It runs in the cloud and appears under Profile Maturing on the dashboard, where you can pause or stop it. Post engagement does not run yet.</p>
     </section>

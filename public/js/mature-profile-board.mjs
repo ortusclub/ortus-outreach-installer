@@ -123,6 +123,7 @@ export function maturingRowState(it) {
   const weekly = maturingWeeklyBlock(it);
   if (weekly) return { label: weekly.reason === 'weekly_suspected' ? 'Possible weekly limit' : 'Weekly limit · paused', tone: 'amber' };
   if (maturingWorkerWait(it)) return { label: 'Waiting for a worker', tone: 'amber' };
+  if (it.matureKind !== 'cold' && (Number(it.acceptPending) > 0 || (it.batchDoneToday && !it.dailyWait))) return { label: 'Waiting for acceptance', tone: 'amber' };
   if (it.bucket === 'queued') return it.scheduledAt ? { label: 'Scheduled', tone: 'muted' } : { label: 'Starting', tone: 'amber' };
   if (maturingPreviewActivity(it)) return { label: 'Active', tone: 'green' };
   // The engine's own status wins over the browser-open flag, which can lag.
@@ -169,10 +170,11 @@ export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}
     return start ? `Next: ${count(amountOn(start))} · Earliest start ${at(start)}` : `Next: ${count(amountOn(now))} today · Waiting for attempt time`;
   }
   // Today's batch is out: the receiving accounts accept it 15 minutes later.
-  if (Number(it.acceptPending) > 0 && !(it.live && !it.dailyWait)) {
+  if (it.matureKind !== 'cold' && Number(it.acceptPending) > 0) {
     const n = Number(it.acceptPending), when = due(it.acceptDueAt);
     return `Next: accept ${n} connection request${n === 1 ? '' : 's'} in the receiving account${n === 1 ? '' : 's'}${when ? ` · Earliest start ${at(when)}` : ' · Waiting for attempt time'}`;
   }
+  if (it.matureKind !== 'cold' && it.batchDoneToday && !it.dailyWait) return `Next: the receiving accounts accept today's requests · about 15 minutes after the batch closes, which takes a few minutes`;
   if (it.dailyWait) {
     const resume = due(it.resumeAt);
     if (!resume) return `Next: ${what}s in the next daily batch · Waiting for attempt time`;
@@ -183,7 +185,6 @@ export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}
   if (today === 0) return 'Plan complete — nothing further is planned';
   // Today's batch is out but the engine has not closed the day yet (it rests a
   // few minutes first). The accepts are queued when it does.
-  if (it.batchDoneToday && !it.live) return `Next: the receiving accounts accept today's requests · about 15 minutes after the batch closes, which takes a few minutes`;
   return it.live ? `Now: sending today's ${count(today)}` : `Next: today's ${count(today)} · Waiting for attempt time`;
 }
 
@@ -201,7 +202,7 @@ export function groupMaturingAccounts(items) {
   }
   return [...groups.values()].map(g => {
     // The account's state is its most "alive" campaign's state.
-    const order = ['Active', 'Needs attention', 'Weekly limit · paused', 'Possible weekly limit', 'Waiting for a worker', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
+    const order = ['Active', 'Needs attention', 'Weekly limit · paused', 'Possible weekly limit', 'Waiting for a worker', 'Waiting for acceptance', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
     const states = [g.warm, g.cold].filter(Boolean).map(maturingRowState);
     states.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
     return { ...g, state: states[0] || { label: '', tone: 'muted' }, warmSent: g.warm ? (g.warm.sent || 0) : null, coldSent: g.cold ? (g.cold.sent || 0) : null };

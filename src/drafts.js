@@ -86,11 +86,11 @@ export async function trashDraft(id) {
 
 // Bulk soft-delete every non-trashed draft in ONE load + ONE persist (the
 // per-draft path would rewrite the whole file once per draft — 227 writes).
-export async function trashAllDrafts() {
+export async function trashAllDrafts(canTrash = () => true) {
   await load();
   const now = Date.now();
   let n = 0;
-  for (const d of cache) { if (!d.trashedAt) { d.trashedAt = now; n++; } }
+  for (const d of cache) { if (!d.trashedAt && canTrash(d)) { d.trashedAt = now; n++; } }
   if (n) await persist();
   return n;
 }
@@ -143,7 +143,7 @@ function _dedupByName(name, exceptId) {
   return before - cache.length;
 }
 
-export async function addDraft({ name = '', config = null } = {}) {
+export async function addDraft({ name = '', config = null, owner = '' } = {}) {
   await load();
   const trimmed = String(name || '').trim();
   // Silently merge over any existing draft with the same name (operator
@@ -153,9 +153,10 @@ export async function addDraft({ name = '', config = null } = {}) {
   const entry = {
     id: 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     name: trimmed,
+    owner: String(owner).trim().toLowerCase(),
     createdAt: Date.now(),
     lastEditedAt: _nowIso(),
-    ...ensureCampaignIdentity({ name: trimmed, listed: false, config: { ...config, campaignId: undefined } }),
+    ...ensureCampaignIdentity({ name: trimmed, listed: false, owner, config: { ...config, campaignId: undefined } }),
     config: config ? { ...config, campaignId: undefined } : null,
   };
   if (entry.config) entry.config.campaignId = entry.campaignId;
