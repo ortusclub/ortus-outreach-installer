@@ -36735,7 +36735,7 @@ function startMatureInlineLive(ids, startLines = []) {
     const c = d.campaign || {}, lc = d.leadCounts || {}, st = String(c.status || '');
     const bucket = ['running', 'monitoring', 'paused', 'stopping', 'pausing', 'waiting_daily_reset', 'needs_review'].includes(st) ? 'running'
       : ['pending', 'queued', 'scheduled'].includes(st) ? 'queued' : 'done';
-    return { id, name: c.name || '', matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '',
+    return { id, startedAt: Date.parse(c.started_at || c.created_at || '') || 0, name: c.name || '', matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '',
       bucket, bad: st === 'cancelled' || st === 'error', dailyWait: st === 'waiting_daily_reset', paused: st === 'paused' || st === 'pausing', stopping: st === 'stopping',
       needsReview: st === 'needs_review', engineStatus: st, liveProgress: d.liveProgress || null, liveStamp: d.liveStamp || null, live: !!d.live, scheduledAt: c.scheduled_start_at || null, resumeAt: c.resumeTaskDueAt || null,
       accountBlocks: c.matureAccountBlocks || [],
