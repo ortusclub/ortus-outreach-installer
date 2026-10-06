@@ -52,6 +52,17 @@ export function buildWarmPool({ pool, profiles = [], sooAccounts = [], lvAccount
   return { targets, total: members.length, missing, restricted };
 }
 
+// Choose a fresh order for each profile's plan, without mutating the shared pool.
+// Shuffle before assigning planned days, then persist that order in the sheet.
+export function shuffleWarmTargets(targets, random = Math.random) {
+  const shuffled = [...targets];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 // Warm connections to send on a given day of the plan (day 1 = the start day).
 export function matureWarmDailyAmount(plan, day) {
   if (!plan || plan.warmEnabled === false || !Number.isInteger(day) || day < 1) return 0;

@@ -13406,7 +13406,7 @@ async function _renderCampaignsBoardInner() {
       const showBtns = maturingPreviewButton(maturingCampaigns.filter(x => x.where === 'cloud' && x.maturing));
       // The results workbook holds one tab per matured account.
       const _resultsUrl = matureResultsLink().url;
-      const _resultsLink = _resultsUrl ? `<div class="mature-results-row"><button type="button" class="mini" data-url="${escHtml(_resultsUrl)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="One tab per matured account, named after its login email">Open the results workbook ↗</button></div>` : '';
+      const _resultsLink = _resultsUrl ? `<div class="mature-results-row"><button type="button" class="mini" data-url="${escHtml(_resultsUrl)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Separate email_warm and email_cold tabs for each account">Open the results workbook ↗</button></div>` : '';
       _maturingFooter = _resultsLink + `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
         + `<span class="sn-status">${groupMaturingAccounts(_maturingLive).length} ${groupMaturingAccounts(_maturingLive).length === 1 ? 'account is' : 'accounts are'} maturing</span></div>`
@@ -36644,7 +36644,7 @@ async function openMaturePlan(id) {
     if (linkBtn && cfg.matureWarm) {
       const results = matureResultsLink(c.sheet_url);
       linkBtn.dataset.url = results.url; linkBtn.hidden = false;
-      linkBtn.textContent = results.legacy ? 'Open the shared results workbook ↗' : "Open this account's results tab ↗";
+      linkBtn.textContent = results.legacy ? 'Open the shared results workbook ↗' : "Open this campaign’s results tab ↗";
       if (results.legacy) showCampaignToast('This older run still records results in its original sheet. The shared workbook link does not migrate those results.', 10000);
     }
     // The same maturing log as the Profile Maturing tab — not the Connection

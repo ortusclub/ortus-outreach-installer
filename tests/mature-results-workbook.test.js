@@ -20,7 +20,7 @@ test('development uses the released maturing bridge unless explicitly overridden
 
 test('a failed workbook write stops instead of creating a separate spreadsheet', async () => {
   const source = fs.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
-  const start = source.indexOf('    let tab = null;', source.indexOf("Writing the plan to this account's tab") - 400);
+  const start = source.indexOf('    let tab = null;', source.indexOf("app.post('/api/mature/start'"));
   const end = source.indexOf('    if (warmOn) {', start);
   assert.ok(start > 0 && end > start);
   const calls = [];
@@ -34,6 +34,29 @@ test('a failed workbook write stops instead of creating a separate spreadsheet',
   await assert.rejects(vm.runInContext(`(async () => {${source.slice(start, end)}})()`, context), /No campaign was started/);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].payload.spreadsheetId, 'existing-workbook');
-  assert.equal(calls[0].payload.tabName, 'Pauline');
+  assert.equal(calls[0].payload.tabName, 'Pauline_warm');
   assert.equal(calls[0].writer, writeMatureTab);
+});
+
+test('warm and cold launches use separate tabs with only their own scheduled recipients', async()=>{
+  const { buildMatureTabRows, MATURE_TAB_HEADER } = await import('../public/js/mature-warm-pool.mjs');
+  const source=fs.readFileSync(new URL('../server.js',import.meta.url),'utf8');
+  const start=source.indexOf('    let tab = null;',source.indexOf("app.post('/api/mature/start'"));
+  const end=source.indexOf("    step('Started. A cloud worker",start);
+  const writes=[],launches=[];
+  const context=vm.createContext({
+    buildMatureTabRows,MATURE_TAB_HEADER,name:'person@example.com',warmOn:true,warmAmounts:[1,0],
+    pool:{targets:[{name:'Warm Person',linkedinUrl:'https://www.linkedin.com/in/warm',profile:'warm@example.com',profileId:'warm-id'}]},
+    cold:{delayDays:7,amounts:[1,0]},coldLeads:[{name:'Cold Person',linkedinUrl:'https://www.linkedin.com/in/cold'}],
+    startDate:'2026-10-06',now:new Date('2026-10-06T09:00:00Z'),planTz:'UTC',localDay:d=>d.toISOString().slice(0,10),
+    MATURE_RESULTS_SHEET_ID:'workbook',writeMatureTab(){},step(){},console,
+    createWarmSheet:async payload=>{writes.push(payload);return {url:`https://example.test/${writes.length}`,gid:writes.length,created:true,added:payload.rows.length,existing:0}},
+    matureStartProgress:new Map(),b:{launchId:'launch'},campaignId:'plan',profileId:'profile',plan:{warmPool:'all_available'},maturedAccount:{},req:{},result:{ok:true},
+    launchMatureStage:async(req,body)=>{launches.push(body);return {ok:true,id:String(launches.length),leadsAdded:1}},
+  });
+  await vm.runInContext(`(async()=>{${source.slice(start,end)}})()`,context);
+  assert.deepEqual(writes.map(w=>w.tabName),['person@example.com_warm','person@example.com_cold']);
+  assert.deepEqual(writes.map(w=>w.rows.map(r=>r[0])),[['Warm'],['Cold']]);
+  assert.deepEqual(launches.map(l=>l.sheetUrl),['https://example.test/1','https://example.test/2']);
+  assert.equal(writes[1].rows[0][5],8);
 });

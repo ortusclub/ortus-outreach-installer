@@ -104,7 +104,7 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { fetchLvAccounts } from './src/mature-warm.js';
-import { buildWarmPool, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, buildMatureTabRows, MATURE_TAB_HEADER, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
+import { buildWarmPool, shuffleWarmTargets, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, buildMatureTabRows, MATURE_TAB_HEADER, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
 import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
 import { localDay, MATURE_DEFAULT_TIME_ZONE } from './public/js/mature-profile-board.mjs';
 import { matureCampaignName } from './public/js/mature-profile-identity.mjs';
@@ -4116,6 +4116,8 @@ app.post('/api/mature/start', async (req, res) => {
     let pool = null;
     if (warmOn) {
       pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
+      pool.targets = shuffleWarmTargets(pool.targets);
+      step('Randomising the warm recipient order for this profile before assigning planned days…');
       const skipped = [pool.missing ? `${pool.missing} with no known LinkedIn URL` : '', pool.restricted ? `${pool.restricted} restricted` : ''].filter(Boolean).join(', ');
       step(`Warm pool: ${pool.total} accounts in the ${plan.warmPool === 'all_available' ? 'all accessible workspaces' : WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity' ? 'Linked Velocity workspace' : 'Ortus workspace'} — ${pool.targets.length} can be invited${skipped ? ` (skipping ${skipped})` : ''}.`);
       step(`Warm plan by day: ${warmAmounts.slice(0, 16).join(', ')}${warmAmounts.length > 16 ? ', …' : ''}${warmAmounts.at(-1) > 0 ? ' — then that amount daily until the pool runs out' : ''}.`);
@@ -4142,24 +4144,26 @@ app.post('/api/mature/start', async (req, res) => {
       step(`Selected ${coldLeads.length} of ${selection.available} eligible people ${plan.coldPoolOrder !== 'descending' ? 'at random' : 'in sheet order'}, starting on day ${cold.delayDays + 1}.`);
     }
 
-    // The account's tab in the results workbook: the plan (who, and on which
-    // day) and the record (request status, dates, acceptance) in one place.
-    // Both campaigns read their leads from it, so the engine stamps results
-    // straight back into it.
+    // Separate persistent warm/cold tabs: each campaign reads and updates its own list.
     let tab = null;
+    const tabs = {};
     try {
-      step(`Writing the plan to this account's tab in the results workbook…`);
-      tab = await createWarmSheet({
-        spreadsheetId: MATURE_RESULTS_SHEET_ID, tabName: name, header: [...MATURE_TAB_HEADER],
-        rows: buildMatureTabRows({ startDate, warmTargets: pool?.targets || [], warmAmounts, coldLeads, cold }),
-      }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
-      console.log(`[mature] ${name}: results tab ${tab.url} — ${tab.added} added, ${tab.existing} already listed`);
-      step(`Results tab "${name}" ${tab.created ? 'created' : 'updated'} — ${tab.added} people added${tab.existing ? `, ${tab.existing} already listed and left as they are` : ''}.`);
-      // Offer the link while the start is still running, not only at the end.
-      { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) progress.resultsUrl = tab.url; }
+      const rows = buildMatureTabRows({ startDate, warmTargets: pool?.targets || [], warmAmounts, coldLeads, cold });
+      for (const kind of ['warm', 'cold']) {
+        const tabName = `${name}_${kind}`;
+        step(`Writing the ${kind} list to "${tabName}"…`);
+        tabs[kind] = await createWarmSheet({
+          spreadsheetId: MATURE_RESULTS_SHEET_ID, tabName, header: [...MATURE_TAB_HEADER],
+          rows: rows.filter(row => row[0].toLowerCase() === kind),
+        }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
+        const written = tabs[kind];
+        step(`Results tab "${tabName}" ${written.created ? 'created' : 'updated'} — ${written.added} people added${written.existing ? `, ${written.existing} already listed and left as they are` : ''}.`);
+      }
+      tab = warmOn ? tabs.warm : tabs.cold;
+      { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) { progress.resultsUrl = tab.url; progress.resultsUrls = { warm: tabs.warm.url, cold: tabs.cold.url }; } }
     } catch (error) {
-      console.warn(`[mature] ${name}: results tab unavailable (${error.message})`);
-      throw new Error(`Could not open this account's tab in the shared results workbook. No campaign was started. ${error.message}`);
+      console.warn(`[mature] ${name}: results tabs unavailable (${error.message})`);
+      throw new Error(`Could not prepare this account's warm and cold tabs in the shared results workbook. No campaign was started. ${error.message}`);
     }
 
     if (warmOn) {
@@ -4190,8 +4194,7 @@ app.post('/api/mature/start', async (req, res) => {
         dailyLimit: cold.amounts[0], templates: {}, linkedinColumn: 'LinkedIn URL',
         // From the tab the order is already the plan's; from the operator's own
         // sheet (no tab) it is shuffled and filtered here instead.
-        ...(tab ? { sheetUrl: tab.url, sheetGid: tab.gid, leadFilter: { column: 'Type', value: 'Cold' } }
-          : { sheetUrl: plan.coldPool, shuffleLeads: plan.coldPoolOrder !== 'descending', _preflightExcludedUrls: managed }),
+        sheetUrl: tabs.cold.url, sheetGid: tabs.cold.gid, leadFilter: { column: 'Type', value: 'Cold' },
         ...(startAt ? { startAt: startAt.toISOString() } : {}),
         mature: { kind: 'cold', plan, viaMatureBridge: !!tab, dailySchedule: { startDate: localDay(startAt || now, planTz), startAt: (startAt || now).toISOString(), amounts: cold.amounts } },
       });
@@ -4199,7 +4202,7 @@ app.post('/api/mature/start', async (req, res) => {
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });
       step(result.cold.ok ? `Cold campaign is on the VM — ${result.cold.leadsAdded ?? coldLeads.length} people queued${startAt ? `, first batch on day ${cold.delayDays + 1}` : ''}.` : `⚠ Cold connections did not start: ${result.cold.error}`);
     }
-    if (tab) result.resultsUrl = tab.url;
+    if (tab) { result.resultsUrl = tab.url; result.resultsUrls = { warm: tabs.warm.url, cold: tabs.cold.url }; }
 
     step('Started. A cloud worker picks it up next — that takes about 2 minutes when the workers are asleep.');
     res.json({ ...result, id: result.warm?.id || result.cold?.id || null });
