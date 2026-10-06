@@ -1932,7 +1932,6 @@ app.get('/api/campaign/cloud-preflight', async (req, res) => {
   });
 });
 app.use('/api/campaign/cloud/:id', async (req, res, next) => {
-  if (viewerIsAdmin(req)) return next();
   try {
     const result = await memoCloud(`campaign:${req.params.id}`, () => getCloudCampaign(req.params.id));
     if (result?.error) return res.status(502).json({ error: 'Could not verify campaign access.' });
@@ -4027,6 +4026,7 @@ app.post('/api/mature/control/:id/:action', async (req, res) => {
     if (detail.error) throw new Error(detail.error);
     const saved = detail.campaign;
     if (!saved?.config?.matureWarm) return res.status(400).json({ error: 'Not a maturing campaign.' });
+    if (!canViewCampaign(saved, campaignViewer(req))) return res.status(404).json({ error: 'Campaign not found.' });
     const startAt = saved.config.dailySchedule?.startAt;
     const result = action === 'resume'
       ? (Date.parse(startAt) > Date.now() ? await restartCloudCampaign(id, { startAt }) : await resumeCloudCampaign(id))
