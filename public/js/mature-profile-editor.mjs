@@ -1,3 +1,4 @@
+import { warmPoolCapacity, coldStageRequirements } from './mature-pool-capacity.mjs';
 import { renderWarmRampChart, renderColdRampChart } from './mature-ramp-chart.mjs';
 import { warmProfileIdentity, WARM_POOL_ACCOUNT } from './mature-warm-pool.mjs';
 import { matureCampaignName } from './mature-profile-identity.mjs';
@@ -5,6 +6,7 @@ import { WARM_PRESETS, warmPreset, warmRampErrors, warmSchedule } from './mature
 import { newMaturePlan, restoreMaturePlan, maturePlanErrors, updateMatureStageEnd, MATURE_WARM_POOLS } from './mature-profile-plan.mjs';
 let plan = newMaturePlan();
 let hydrated = false;
+let defaultColdPoolUrl = '';
 let changed = () => {};
 let accountSignature = null;
 const fieldLabels = {fromDay:'From day',toDay:'Through day',warmDaily:'Warm connections / day',coldDaily:'Cold connections / day',likesDaily:'Post likes / day'};
@@ -248,7 +250,7 @@ function warmRampEditor() {
 function updateSummary() {
   const el = document.getElementById('mature-plan-summary');
   if (!el) return;
-  const errors = maturePlanErrors(plan);
+  const errors = maturePlanErrors(plan, { defaultColdPoolUrl });
   el.textContent = errors.length ? `Draft plan · ${errors[0]}` : 'Plan configured · ready to start.';
 }
 export function readMaturePlan() { return hydrated ? structuredClone(plan) : null; }
@@ -264,19 +266,34 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   const posts = connectionSection('Post Engagement — Coming soon', 'mature-post-section');
   sources.append(profileSection(), warmPresetSection(), warm.section, cold.section, posts.section);
   activityToggle(warm, 'warmEnabled', 'Send warm connections');
+  activityToggle(cold, 'coldEnabled', 'Send cold connections');
   const rampChart = document.createElement('div'); rampChart.className = 'mature-ramp-chart';
   warm.body.append(rampChart);
   const coldRampChart = document.createElement('div'); coldRampChart.className = 'mature-ramp-chart';
   cold.body.append(coldRampChart);
+  let warmPoolState = { status: 'unselected' };
   const refreshRampChart = () => {
     renderWarmRampChart(rampChart, plan);
     renderColdRampChart(coldRampChart, plan);
+    const notice = document.createElement('p'); notice.className = 'mature-pool-capacity'; notice.setAttribute('role', 'status');
+    if (!plan.warmPool) notice.textContent = 'Select a warm pool to check the maximum available accounts.';
+    else if (warmPoolState.status !== 'ready') notice.textContent = warmPoolState.status === 'error' ? 'Pool size unavailable — the maximum cannot be checked yet.' : 'Checking the maximum available accounts…';
+    else {
+      const capacity = warmPoolCapacity(plan, warmPoolState.ready);
+      const remaining = capacity.firstUnavailableDay ? ` The pool runs out ${capacity.available ? `on day ${capacity.lastAvailableDay}` : 'before the first send'}; no additional unique accounts are available.` : '';
+      notice.classList.toggle('is-warning', capacity.exceeds);
+      notice.textContent = `${capacity.exceeds ? '⚠ ' : ''}${capacity.available} eligible warm accounts · ${capacity.planned} planned${capacity.openEnded ? ' in the first 28 days' : ' across all stages'}.${capacity.exceeds ? ` This exceeds the pool by ${capacity.planned - capacity.available}.` : ''}${remaining}${warmPoolState.warning ? ` ${warmPoolState.warning}` : ''}`;
+    }
+    rampChart.append(notice);
+    const requirements = coldStageRequirements(plan);
+    const coldSummary = document.createElement('p'); coldSummary.className = 'mature-pool-capacity';
+    coldSummary.textContent = `${requirements.reduce((sum, s) => sum + s.count, 0)} unique cold profiles needed in total${requirements.length ? ' · ' + requirements.map(s => `Stage ${s.stage}: ${s.count}`).join(' · ') : ''}.`;
+    coldRampChart.append(coldSummary);
   };
   cold.section.addEventListener('input', refreshRampChart);
   cold.section.addEventListener('change', refreshRampChart);
   warm.section.addEventListener('input', refreshRampChart);
   warm.section.addEventListener('change', refreshRampChart);
-  activityToggle(cold, 'coldEnabled', 'Send cold connections');
   const warmLabel = document.createElement('label'); warmLabel.className = 'mature-field';
   const warmText = document.createElement('span'); warmText.textContent = 'Warm pool';
   const warmSelect = document.createElement('select'); warmSelect.id = 'mature-warm-pool';
@@ -290,16 +307,19 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   // How many accounts in the pool can actually be invited (have a LinkedIn URL).
   async function showPoolSize() {
     const pool = plan.warmPool;
+    const exclude = plan.targetProfileIds.join(',');
+    warmPoolState = { status: 'loading' }; refreshRampChart();
     if (!Object.hasOwn(MATURE_WARM_POOLS, pool)) { poolStatus.textContent = ''; return; }
     poolStatus.textContent = 'Counting the accounts in this pool…';
     try {
-      const response = await fetch(`/api/mature/warm-pool?pool=${encodeURIComponent(pool)}&exclude=${encodeURIComponent(plan.targetProfileIds.join(','))}`, {signal:AbortSignal.timeout(45000)});
+      const response = await fetch(`/api/mature/warm-pool?pool=${encodeURIComponent(pool)}&exclude=${encodeURIComponent(exclude)}`, {signal:AbortSignal.timeout(45000)});
       const data = await response.json();
-      if (plan.warmPool !== pool || !poolStatus.isConnected) return;
-      if (!response.ok || data.error) { poolStatus.textContent = data.error || 'Could not count this pool.'; return; }
+      if (plan.warmPool !== pool || plan.targetProfileIds.join(',') !== exclude || !poolStatus.isConnected) return;
+      if (!response.ok || data.error) { warmPoolState = { status: 'error' }; refreshRampChart(); poolStatus.textContent = data.error || 'Could not count this pool.'; return; }
+      warmPoolState = { status: 'ready', ready: data.ready, warning: data.warning || '' }; refreshRampChart();
       const left = [data.missing ? `${data.missing} have no known LinkedIn URL` : '', data.restricted ? `${data.restricted} are restricted` : ''].filter(Boolean).join(' and ');
       poolStatus.textContent = `${data.ready} of ${data.total} accounts in this pool can be invited${left ? ` · ${left} and will be skipped` : ''}.${data.warning ? ` ${data.warning}` : ''}`;
-    } catch { if (poolStatus.isConnected) poolStatus.textContent = 'Could not count this pool.'; }
+    } catch { if (poolStatus.isConnected && plan.warmPool === pool && plan.targetProfileIds.join(',') === exclude) { warmPoolState = { status: 'error' }; refreshRampChart(); poolStatus.textContent = 'Could not count this pool.'; } }
   }
   warmSelect.addEventListener('change', () => { plan.warmPool = warmSelect.value; changed(); updateSummary(); showPoolSize(); });
   warmLabel.append(warmText, warmSelect); warm.body.append(warmLabel, poolStatus); showPoolSize();
@@ -309,7 +329,17 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   const customSheet = input('Your Google Sheet — paste the link to the tab to use', plan.coldPool, v => plan.coldPool = v, 'url');
   customSheet.id = 'mature-custom-cold-sheet';
   const defaultHelp = document.createElement('p'); defaultHelp.id = 'mature-default-cold-help';
-  defaultHelp.textContent = 'Default cold-connection sheet: awaiting setup.';
+  const showDefaultSource = () => {
+    defaultHelp.replaceChildren();
+    if (!defaultColdPoolUrl) { defaultHelp.textContent = 'Default cold-connection sheet: awaiting setup.'; return; }
+    const link = document.createElement('a'); link.href = defaultColdPoolUrl; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Open default cold-connection sheet'; defaultHelp.append(link);
+  };
+  showDefaultSource();
+  fetch('/api/mature/cold-source').then(r => { if (!r.ok) throw new Error('Source unavailable'); return r.json(); }).then(data => {
+    if (!defaultHelp.isConnected) return;
+    defaultColdPoolUrl = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[^/]+/.test(data.url || '') ? data.url : '';
+    showDefaultSource(); updateSummary();
+  }).catch(() => { if (defaultHelp.isConnected) defaultHelp.textContent = 'Could not load the default cold sheet configuration.'; });
   const syncColdSource = () => { customSheet.hidden = plan.coldPoolSource !== 'custom'; defaultHelp.hidden = plan.coldPoolSource !== 'default'; };
   coldRow.append(selectField('Cold connection pool', 'mature-cold-source', plan.coldPoolSource,
     [['default', 'Default Google Sheet'], ['custom', 'Add your own Google Sheet']], v => { plan.coldPoolSource = v; syncColdSource(); }));

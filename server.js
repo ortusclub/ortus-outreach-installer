@@ -13,6 +13,7 @@ import { ensureCampaignIdentity, getConfigById, getConfig as getSavedCampaign, d
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
 import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
+import { selectMatureColdLeads } from './src/mature-cold-pool.js';
 import { applyCredentials } from './src/gologin-credentials.js';
 applyCredentials();
 
@@ -1545,11 +1546,13 @@ async function handleStartCloudOnce(req, res) {
       cloudLog(`[cloud] pre-flight excluded ${totalExcluded} URL(s) (blocklist: ${blExcluded.size}, client: ${clientExcluded.size})`);
     }
 
+    const includedUrls = Array.isArray(body.includeLeadUrls) ? new Set(body.includeLeadUrls.map(normalizeProfileUrl)) : null;
     const leads = [];
     const skippedNoAccount = [];
     for (const row of rows) {
       const leadUrl = extractLinkedInUrl(row, linkedinColumn);
       if (!leadUrl) continue;
+      if (includedUrls && !includedUrls.has(normalizeProfileUrl(leadUrl))) continue;
       // A sheet shared by two campaigns (a maturing account's tab holds warm
       // and cold rows): take only this campaign's rows.
       if (body.leadFilter && String(row[body.leadFilter.column] || '').trim().toLowerCase() !== String(body.leadFilter.value || '').trim().toLowerCase()) continue;
@@ -3960,6 +3963,10 @@ async function matureWarmSources() {
   return { profiles, sooAccounts: soo, lvAccounts: lv.accounts, lvError: lv.error || '' };
 }
 
+app.get('/api/mature/cold-source', (_req, res) => {
+  res.json({ url: String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim() });
+});
+
 // Names and LinkedIn URLs for Linked Velocity profiles — the editor prefills
 // "Profile to warm" from this the same way it prefills Ortus profiles from the SoO.
 app.get('/api/mature/lv-identities', async (_req, res) => {
@@ -4048,7 +4055,9 @@ app.post('/api/mature/start', async (req, res) => {
   try {
     const b = req.body || {};
     const plan = restoreMaturePlan(b.maturePlan);
-    const errors = maturePlanErrors(plan);
+    const defaultColdPoolUrl = String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim();
+    const errors = maturePlanErrors(plan, { defaultColdPoolUrl });
+    if (plan.coldPoolSource === 'default') plan.coldPool = defaultColdPoolUrl;
     if (errors.length) return res.status(400).json({ error: errors[0] });
     const profileId = plan.targetProfileIds[0];
     if (!profileId) return res.status(400).json({ error: 'Choose the profile to warm.' });
@@ -4124,21 +4133,13 @@ app.post('/api/mature/start', async (req, res) => {
     let coldLeads = [];
     if (cold) {
       step('Reading the cold connection sheet…');
-      const skip = new Set(managed.map((u) => normalizeProfileUrl(u)));
-      const seen = new Set();
-      for (const row of await fetchSheet(plan.coldPool)) {
-        const linkedinUrl = extractLinkedInUrl(row);
-        const key = linkedinUrl && normalizeProfileUrl(linkedinUrl);
-        if (!key || skip.has(key) || seen.has(key)) continue;
-        seen.add(key);
-        const first = row['First Name'] || row['first name'] || '', last = row['Last Name'] || row['last name'] || '';
-        coldLeads.push({ name: String(row['Full Name'] || row['Name'] || `${first} ${last}`).trim(), linkedinUrl });
-      }
-      if (plan.coldPoolOrder !== 'descending') {
-        for (let i = coldLeads.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [coldLeads[i], coldLeads[j]] = [coldLeads[j], coldLeads[i]]; }
-      }
-      if (!coldLeads.length && !warmOn) return res.status(400).json({ error: 'The cold connection sheet has no usable LinkedIn URLs.' });
-      step(`Cold list: ${coldLeads.length} people, ${plan.coldPoolOrder !== 'descending' ? 'in random order' : 'top to bottom'}, starting on day ${cold.delayDays + 1} — by day: ${cold.amounts.slice(0, 16).join(', ')}.`);
+      const sourceRows = await fetchSheet(plan.coldPool);
+      const blocked = blocklistExcludedUrls(sourceRows, { linkedinColumn: 'LinkedIn URL', mode: 'connect_only', blocklist: readBlocklist() });
+      const selection = selectMatureColdLeads({ plan, rows: sourceRows, urlOf: extractLinkedInUrl,
+        excludedUrls: [...managed, maturedAccount.profileUrl, ...blocked] });
+      coldLeads = selection.leads;
+      step(`Cold plan needs ${selection.required} unique profiles: ${selection.stages.map(s => `stage ${s.stage}: ${s.count}`).join(', ')}.`);
+      step(`Selected ${coldLeads.length} of ${selection.available} eligible people ${plan.coldPoolOrder !== 'descending' ? 'at random' : 'in sheet order'}, starting on day ${cold.delayDays + 1}.`);
     }
 
     // The account's tab in the results workbook: the plan (who, and on which
@@ -4184,6 +4185,7 @@ app.post('/api/mature/start', async (req, res) => {
       step(cold.delayDays > 0 ? `Scheduling cold connections for day ${cold.delayDays + 1} of the plan…` : 'Sending cold connections to the cloud…');
       result.cold = await launchMatureStage(req, {
         name: `${name} · Cold`,
+        includeLeadUrls: coldLeads.map(l => l.linkedinUrl),
         mode: 'connect_only', profileIds: [profileId],
         dailyLimit: cold.amounts[0], templates: {}, linkedinColumn: 'LinkedIn URL',
         // From the tab the order is already the plan's; from the operator's own

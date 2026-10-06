@@ -62,3 +62,10 @@ test('a switched-off activity is not validated and sends nothing', async () => {
   const old = restoreMaturePlan({ version: 1, stages: plan.stages });
   assert.deepEqual([old.warmEnabled, old.coldEnabled], [true, false]);
 });
+
+
+test('the configured default cold source validates while a missing default still blocks',()=>{
+  const plan={...newMaturePlan(),warmEnabled:false,coldEnabled:true,connectionStages:{cold:[{fromDay:1,toDay:3,daily:2}]}};
+  assert.match(maturePlanErrors(plan).join(' '),/not been configured/);
+  assert.deepEqual(maturePlanErrors(plan,{defaultColdPoolUrl:'https://docs.google.com/spreadsheets/d/source/edit#gid=42'}),[]);
+});

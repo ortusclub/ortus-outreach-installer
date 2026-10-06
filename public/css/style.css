@@ -9024,3 +9024,6 @@ body.route-app-settings .sidebar-nav { display:none; }
 .campaign-editor-tools { width:100%;border-top:1px solid var(--hairline);padding-top:8px;margin-top:4px; }
 .campaign-editor-tools summary { cursor:pointer;color:var(--gray);font:12px var(--body); }
 .campaign-editor-tools .nav-section-label { padding:12px 10px 4px; }
+
+.mature-pool-capacity { font:12px/1.5 var(--body);margin:10px 0 0;color:var(--gray); }
+.mature-pool-capacity.is-warning { color:var(--ink);background:var(--gold-tint-bg);border-left:3px solid var(--gold);padding:8px 10px;border-radius:4px; }
