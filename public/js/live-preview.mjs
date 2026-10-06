@@ -1,3 +1,4 @@
+import { createJpegDecoder } from './mjpeg-frames.mjs';
 import { previewStatus, countdown, previewSessionKey } from './live-preview-status.mjs';
 const params = new URLSearchParams(location.search);
 const kind = params.get('kind');
@@ -10,9 +11,29 @@ const valid = ['campaign', 'scrape'].includes(kind) && id;
 const url = kind === 'scrape' ? `/api/scrape/view/${encodeURIComponent(id)}` : `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
 function name(value) { el('label').textContent = value; document.title = `${value} — Live preview`; }
 name(fallback);
-function connect() {
-  if (closed) return;
-  img.src = `${url}?t=${Date.now()}`;
+let frameController, connecting = false, frameUrl, frameTimeout;
+async function connect() {
+  if (closed || connecting) return;
+  if (kind !== 'scrape') { img.src = `${url}?t=${Date.now()}`; return; }
+  connecting = true;
+  frameController = new AbortController();
+  const armTimeout = () => { clearTimeout(frameTimeout); frameTimeout = setTimeout(() => frameController.abort(), 20000); };
+  armTimeout();
+  try {
+    const response = await fetch(url, {signal:frameController.signal,cache:'no-store'});
+    if (!response.ok) throw Error('Browser stream unavailable');
+    const decode = createJpegDecoder(frame => {
+      if(closed)return;
+      armTimeout();
+      const previous=frameUrl;
+      frameUrl=URL.createObjectURL(new Blob([frame],{type:'image/jpeg'}));
+      img.src=frameUrl;
+      if(previous)URL.revokeObjectURL(previous);
+    });
+    const reader=response.body.getReader();
+    while(!closed){const {value,done}=await reader.read();if(done)break;decode(value);}
+  } catch (_) { if(!closed) waiting(); }
+  finally { clearTimeout(frameTimeout); connecting=false; if(!closed){clearTimeout(imageTimer);imageTimer=setTimeout(connect,4000);} }
 }
 img.onload = () => {
   if (closed || model?.terminal || latestData?.live === false) return;
@@ -77,7 +98,7 @@ const tick = setInterval(() => {
   el('checked').textContent = checkedAt ? `Last checked ${Math.floor((Date.now()-checkedAt)/1000)}s ago · refreshes every 5s` : '';
 }, 1000);
 addEventListener('beforeunload', () => {
-  closed = true; clearTimeout(imageTimer); clearTimeout(pollTimer); clearInterval(tick); controller?.abort();
+  closed = true; clearTimeout(frameTimeout); frameController?.abort(); if(frameUrl)URL.revokeObjectURL(frameUrl); clearTimeout(imageTimer); clearTimeout(pollTimer); clearInterval(tick); controller?.abort();
   img.onload = img.onerror = null; img.removeAttribute('src');
 });
 if (valid) { connect(); poll(); }

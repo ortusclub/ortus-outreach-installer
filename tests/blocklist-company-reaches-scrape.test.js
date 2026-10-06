@@ -12,7 +12,7 @@ const server = fs.readFileSync(fileURLToPath(new URL('../server.js', import.meta
 const client = fs.readFileSync(fileURLToPath(new URL('../src/scraper-client.js', import.meta.url)), 'utf8');
 const html = fs.readFileSync(fileURLToPath(new URL('../public/index.html', import.meta.url)), 'utf8');
 
-const route = server.slice(server.indexOf("app.post('/api/scrape/start'"), server.indexOf("app.post('/api/scrape/start'") + 1800);
+const route = server.slice(server.indexOf('async function handleScrapeStart('), server.indexOf('async function handleScrapeStart(') + 2600);
 
 test('the scrape route builds a company exclusion list', () => {
   assert.match(route, /excludeCompanies/, 'companies must be collected');

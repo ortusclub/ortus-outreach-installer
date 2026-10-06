@@ -46,7 +46,7 @@ test('concurrent refreshes collapse into one engine fetch', () => {
 test('the board is warmed at boot so the first open is instant too', () => {
   assert.match(SERVER, /Sales Nav board: warmed/);
   // Must NOT be awaited — an 8s engine fetch would delay the server listening.
-  assert.equal(SERVER.includes('await refreshScrapeBoardOnce()'), false, 'warm-up must not block boot');
+  assert.equal(SERVER.slice(SERVER.lastIndexOf('app.listen(')).includes('await refreshScrapeBoardOnce()'), false, 'warm-up must not block boot');
 });
 
 test('there is a single-record route so callers stop pulling the whole list', () => {

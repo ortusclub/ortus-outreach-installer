@@ -196,7 +196,7 @@ function requestWithRetry(method, path, body) {
  * @param {string}   [opts.tabName]          destination tab (single scrape only)
  * @param {boolean}  [opts.slowMode]         larger inter-page delays
  */
-export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [], excludeCompanies = [], accountName = '', runId = '', accountPool = [] } = {}) {
+export async function startScrape({ replaceTab = false, retryOperatorId, searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '', excludeUrns = [], excludeCompanies = [], accountName = '', runId = '', accountPool = [] } = {}) {
   const urls = (Array.isArray(searchUrls) ? searchUrls : [searchUrls])
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
@@ -207,7 +207,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
 
   // Tag every job with this install's operator id so the engine can scope the
   // jobs/logs views to just this operator (the engine is shared across the team).
-  const userId = getOperatorId();
+  const userId = retryOperatorId || getOperatorId();
 
   // Blocklisted people (member URNs) the engine must skip mid-scrape — never
   // written to the sheet. Best-effort: an older engine ignores the field and
@@ -235,8 +235,13 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
   // engine drops unknown fields, the board falls back to userId + tab name.
   // accountName = the GoLogin profile's human name, so an account-level engine
   // error (logged out / no Sales Nav seat) can say WHICH account, not a hash.
+  if (replaceTab) {
+    const health = await engineHealth();
+    if (urls.length !== 1 || health.replaceSearchTab !== true) return {error:'This engine is not ready to replace a single search tab. No retry was started and no rows were changed.'};
+  }
   if (urls.length === 1) {
     return requestOnce('POST', '/api/scrape/single', {
+      ...(replaceTab ? {replaceTab: true} : {}),
       searchUrl: urls[0],
       sheetUrl,
       tabName: tabName || 'Results',

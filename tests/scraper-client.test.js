@@ -128,3 +128,19 @@ test('engineHealth issues a single GET', async () => {
   assert.equal(calls[0].opts.method, 'GET');
   assert.equal(calls[0].url, 'https://scraper.example.com/api/health');
 });
+
+test('replacement retry refuses an older engine without dispatching', async () => {
+  const calls = mockFetch(() => ({body:'{"ok":true}'}));
+  const result = await startScrape({searchUrls:['url'],sheetUrl:'sheet',profileId:'p',tabName:'Results 10',replaceTab:true});
+  assert.match(result.error,/not ready/);
+  assert.equal(calls.length,1);
+  assert.match(calls[0].url,/api\/health$/);
+});
+test('supported replacement retry retains original owner and targets exactly one tab', async () => {
+  const calls = mockFetch((url)=>({body:url.endsWith('/api/health') ? '{"replaceSearchTab":true}' : '{"job":{"id":"new"}}'}));
+  await startScrape({searchUrls:['url'],sheetUrl:'sheet',profileId:'p',tabName:'Results 10',replaceTab:true,retryOperatorId:'original-owner',runId:'run_original'});
+  assert.equal(calls.length,2);
+  const body=JSON.parse(calls[1].opts.body);
+  assert.equal(body.replaceTab,true);assert.equal(body.tabName,'Results 10');
+  assert.equal(body.userId,'original-owner');assert.equal(body.runId,'run_original');
+});
