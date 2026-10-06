@@ -1,11 +1,11 @@
-import { previewStatus, countdown } from './live-preview-status.mjs';
+import { previewStatus, countdown, previewSessionKey } from './live-preview-status.mjs';
 const params = new URLSearchParams(location.search);
 const kind = params.get('kind');
 const id = params.get('id');
 const fallback = params.get('label') || (kind === 'scrape' ? 'Scrape' : 'Campaign');
 const el = id => document.getElementById(id);
 const img = el('stream');
-let latestData, imageTimer, pollTimer, closed = false, controller, model, checkedAt = 0, engineName = 'Cloud engine', live = false;
+let streamSession = '', latestData, imageTimer, pollTimer, closed = false, controller, model, checkedAt = 0, engineName = 'Cloud engine', live = false;
 const valid = ['campaign', 'scrape'].includes(kind) && id;
 const url = kind === 'scrape' ? `/api/scrape/view/${encodeURIComponent(id)}` : `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
 function name(value) { el('label').textContent = value; document.title = `${value} — Live preview`; }
@@ -15,7 +15,7 @@ function connect() {
   img.src = `${url}?t=${Date.now()}`;
 }
 img.onload = () => {
-  if (closed || model?.terminal) return;
+  if (closed || model?.terminal || latestData?.live === false) return;
   live = true; img.hidden = !!model?.transition; el('waiting').hidden = !model?.transition; el('status').textContent = model?.transition ? 'Mid-batch' : '● Live';
 };
 function waiting() { live = false; img.hidden = true; el('waiting').hidden = false; el('status').textContent = model?.transition ? 'Mid-batch' : 'Waiting for browser'; }
@@ -42,9 +42,12 @@ async function poll() {
       data = { campaign: { name: job.campaignName || fallback, status: job.state }, monitorLog: [], liveProgress: { stepLabel: job.state === 'running' ? `Scraping · ${job.profiles || 0} profiles collected` : '' } };
     }
     if (closed) return;
+    const sessionKey = previewSessionKey(data);
+    const sessionChanged = sessionKey && sessionKey !== streamSession;
+    streamSession = sessionKey;
     latestData = data;
     model = previewStatus(data, fallback);
-    name(data.live && data.liveAccount ? `${model.name} · Browser: ${data.liveAccount}` : model.name);
+    name(data.live && data.liveAccount ? `${model.name} · Browser: ${data.liveProgress?.accountName || data.liveAccount}` : model.name);
     checkedAt = Date.now();
     el('engine').textContent = `${engineName} · connected`;
     el('step').textContent = model.step;
@@ -58,7 +61,7 @@ async function poll() {
     else if (model.transition) { img.hidden = true; el('waiting').hidden = false; el('status').textContent = 'Mid-batch'; }
     else if (live) { img.hidden = false; el('waiting').hidden = true; }
     // A stream may have ended without an error event; reconnect after an idle poll.
-    if (!live && !model.transition) { clearTimeout(imageTimer); connect(); }
+    if (sessionChanged || (!live && !model.transition && !model.terminal)) { clearTimeout(imageTimer); connect(); }
   } catch (_) {
     if (!closed) { el('engine').textContent = `${engineName} · status unavailable, retrying…`; if (!model) el('step').textContent = 'Waiting for the engine'; }
   } finally { clearTimeout(timeout); if (!closed) pollTimer = setTimeout(poll, 5000); }

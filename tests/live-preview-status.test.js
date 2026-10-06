@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { previewStatus, countdown } from '../public/js/live-preview-status.mjs';
+import { previewStatus, countdown, previewSessionKey } from '../public/js/live-preview-status.mjs';
 test('completed campaign overrides stale waiting activity and scheduled timestamps', () => {
   const m = previewStatus({campaign:{name:'Example',status:'done',blocked_until:'2099-01-01'},monitorLog:[{t:1,line:'Still waiting'}],liveProgress:{stepLabel:'Opening browser'}});
   assert.equal(m.step,'Campaign complete'); assert.equal(m.due,0); assert.equal(m.name,'Example'); assert.equal(m.terminal,true);
@@ -58,4 +58,12 @@ test('mid-batch gap shows the engine timer, then loading without inventing a dea
   assert.equal(stopped.transition,undefined);
   const next = previewStatus({...data,liveProgress:{step:'opening_profile'}},'Brian',62000);
   assert.equal(next.transition,undefined);
+});
+
+
+test('preview session identity changes when accepting moves to another browser',()=>{
+  const a={live:true,liveAccount:'a',liveStamp:{startedAt:100}};
+  assert.notEqual(previewSessionKey(a),previewSessionKey({...a,liveAccount:'b'}));
+  assert.notEqual(previewSessionKey(a),previewSessionKey({...a,liveStamp:{startedAt:200}}));
+  assert.equal(previewSessionKey({...a,live:false}),'');
 });

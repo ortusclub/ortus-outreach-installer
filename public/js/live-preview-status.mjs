@@ -45,3 +45,9 @@ export function countdown(due, now = Date.now()) {
   if (seconds >= 3600) return `In ${Math.floor(seconds/3600)}h ${String(Math.floor(seconds%3600/60)).padStart(2,'0')}m`;
   return `In ${Math.floor(seconds/60)}m ${String(seconds%60).padStart(2,'0')}s`;
 }
+
+
+export function previewSessionKey(data) {
+  if (!data?.live) return '';
+  return `${data.liveAccount || ''}:${data.liveStamp?.startedAt || ''}`;
+}
