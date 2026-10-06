@@ -13313,14 +13313,8 @@ async function _renderCampaignsBoardInner() {
     if(response.ok) _campaignDeletions=(await response.json()).deletions || [];
   } catch (_) { /* retain last confirmed deletions during a connection interruption */ }
   const visibleItems = groupCampaignRuns(items.filter((x) => (x.mine || (_viewerIsAdmin && x.isFG)) && !isDeletedCampaign(x,_campaignDeletions)));
-  renderCampaignsTypeFilter(visibleItems);
-  // Conductor filter (admin only): narrow to one operator's campaigns.
-  renderCampaignsConductorFilter(visibleItems);
-  let shown = _campaignsTypeFilter === 'All'
-    ? visibleItems : visibleItems.filter((x) => x.bucket === 'saved' || _cloudBadge(x.mode) === _campaignsTypeFilter);
-  if (_viewerIsAdmin && _campaignsConductorFilter !== 'Everyone') {
-    shown = shown.filter((x) => (x.owner || (x.mine ? _viewerEmail : '')) === _campaignsConductorFilter);
-  }
+  // Show every permitted campaign; there are no dashboard type/owner filters.
+  const shown = visibleItems;
 
   const running = shown.filter((x) => x.bucket === 'running');
   const queued = shown.filter((x) => x.bucket === 'queued');
@@ -13347,7 +13341,7 @@ async function _renderCampaignsBoardInner() {
   // staging area, so they always land in "mine" (never other-users/admin) and
   // hide when a type filter narrows the board (a draft has no committed type).
   let _draftRows = [];
-  if (_campaignsTypeFilter === 'All') {
+  {
     try {
       const dj = await fetch('/api/drafts').then((r) => r.json());
       // An unnamed draft is an autosave nobody chose to keep (Save asks for a
@@ -13380,7 +13374,7 @@ async function _renderCampaignsBoardInner() {
     const _sch = (await refreshLocalSchedules()).filter((x) => x.enabled !== false)
       .map((x) => ({ sch: x, next: _cronNextRun(x.cron) })).filter((x) => x.next)
       .sort((a, b) => a.next - b.next);
-    if (_sch.length && _campaignsTypeFilter === 'All') {
+    if (_sch.length) {
       const byCampaign = new Map(items.filter((x) => x.campaignId).map((x) => [x.campaignId, x.id]));
       _draftOpts.scheduledHtml = _sch.map(({ sch, next }) => renderScheduledStrip(sch, next, byCampaign.get(sch.campaignId) || '')).join('');
       _draftOpts.scheduledCount = _sch.length;
