@@ -13,7 +13,7 @@ test('editor discovers other accounts during startup, retains entries on failure
   let timer = 0, offline = false;
   const requested = [];
   const context = vm.createContext({
-    window: {}, pinRecentLog() {}, ...board, matureLogClock: board.logClock, escHtml: String,
+    window: {}, matureResultsLink: () => ({url:'https://docs.google.com/spreadsheets/d/results/edit'}), pinRecentLog() {}, ...board, matureLogClock: board.logClock, escHtml: String,
     document: { createElement: () => ({ className: '', innerHTML: '' }), getElementById: id => id === 'mature-live' ? host : id === 'mature-live-body' ? body : null },
     sessionStorage: { getItem: () => null, setItem() {} },
     location: { hash: '#/new' },
@@ -32,6 +32,8 @@ test('editor discovers other accounts during startup, retains entries on failure
   vm.runInContext("_renderMatureLaunchLog('New account', [{t: 20, text: 'New account · start — Saving'}], 'Starting')", context);
   await new Promise(resolve => setImmediate(resolve));
   assert.match(body.innerHTML, /Maturing log · all accounts/);
+  assert.match(body.innerHTML, /Open results workbook/);
+  assert.match(body.innerHTML, /spreadsheets\/d\/results/);
   assert.match(body.innerHTML, /Pauline · warm/);
   assert.match(body.innerHTML, /Riccardo · warm/);
   assert.match(body.innerHTML, /New account · start/);

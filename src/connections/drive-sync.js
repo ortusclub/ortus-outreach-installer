@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHEETS_WEBAPP_URL, matureSheetsWebappUrl } from '../sheets-webapp-url.js';
 import { buildCache } from './cache-builder.js';
+import { fetchSheet } from '../sheets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(__dirname, '../..');
@@ -94,13 +95,39 @@ export async function createWorkbookTab({ name, header, rows }) {
 // not yet listed, never touches existing rows). Returns { url, gid, tabName,
 // created, added, existing }. Goes through the Mature Profile bridge (the copy
 // of the script hosted under info@ortus.solutions), not the shared script.
-export async function writeMatureTab({ spreadsheetId, tabName, header, rows, keyColumn = 'LinkedIn URL' }) {
+export async function writeMatureTab({ spreadsheetId, tabName, header, rows, keyColumn = 'LinkedIn URL', reuseExistingPlan = false }) {
   const url = matureSheetsWebappUrl();
   if (!url) throw new Error('The maturing sheets bridge is not set up on this build (MATURE_SHEETS_WEBAPP_URL).');
-  const r = await postWebApp({ action: 'writeMatureTab', spreadsheetId, tabName, header, rows, keyColumn }, { timeoutMs: 120000, url });
-  if (r?.error) throw new Error(r.error);
-  if (!r?.url) throw new Error('writeMatureTab returned no url — redeploy the Apps Script with the writeMatureTab handler');
-  return r;
+  const request = async (planRows) => {
+    const result = await postWebApp({ action: 'writeMatureTab', spreadsheetId, tabName, header, rows: planRows, keyColumn }, { timeoutMs: 120000, url });
+    if (result?.error) throw new Error(result.error);
+    if (!result?.url) {
+      const error = new Error('Google returned an incomplete confirmation for the saved plan; retrying the same tab.');
+      error.code = 'MATURE_SHEET_REPLY_INCOMPLETE';
+      throw error;
+    }
+    return result;
+  };
+  if (reuseExistingPlan) {
+    // An empty idempotent write resolves the existing tab without appending a
+    // newly randomized set. Recover the plan Google saved before a lost reply.
+    const existing = await request([]);
+    const saved = (await fetchSheet(existing.url)).filter(row => row[keyColumn]);
+    if (saved.length) {
+      const planRows = saved.map(row => header.map(h => row[h] ?? ''));
+      const shape = (list) => {
+        const days = new Map();
+        const dayAt = header.indexOf('Planned Day'), typeAt = header.indexOf('Type');
+        for (const row of list) { const key = `${row[typeAt]}:${row[dayAt]}`; days.set(key, (days.get(key) || 0) + 1); }
+        return JSON.stringify([...days].sort(([a], [b]) => a.localeCompare(b)));
+      };
+      if (shape(planRows) !== shape(rows)) throw new Error('The saved tab contains a different plan. No rows were changed. Use the saved schedule or a new results tab.');
+      return { ...existing, created: false, added: 0, existing: saved.length, planRows, reused: true };
+    }
+  }
+  const result = await request(rows);
+  return { ...result, planRows: rows };
+
 }
 
 // Download only new/changed files. Returns { added[], updated[], unchanged, errors[], remoteCount }.

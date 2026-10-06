@@ -11675,6 +11675,10 @@ function _pinMaturingLog(box, key) {
     _pinMaturingLog(box, key);
   };
 }
+function maturingResultsButton() {
+  const url = matureResultsLink().url;
+  return url ? `<button type="button" class="mini" data-url="${escHtml(url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Warm and cold results for each profile">Open results workbook ↗</button>` : '';
+}
 let _maturingPreviewItems = [];
 window.openMaturingPreviewPicker = () => showMaturingPreviewPicker(_maturingPreviewItems, openCloudCampaignView);
 function maturingPreviewButton(items) {
@@ -36720,7 +36724,7 @@ function startMatureInlineLive(ids, startLines = []) {
   if (!host || !body) return;
   rememberMaturingLog(startLines);
   host.hidden = false;
-  body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-top"><span class="sn-type">Maturing log · all accounts</span></div><div class="sn-logbox">${sharedMaturingLogHtml()}</div></div></div>`;
+  body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-top"><span class="sn-type">Maturing log · all accounts</span></div><div class="sn-logbox">${sharedMaturingLogHtml()}</div><div class="sn-foot">${maturingResultsButton()}</div></div></div>`;
   // Start at the newest entry even when retained history already overflows.
   pinRecentLog(body.querySelector('.sn-logbox'), 'mature-inline', { reset: 'bottom' });
   _pinMaturingLog(body.querySelector('.sn-logbox'), 'mature-inline');
@@ -36767,7 +36771,7 @@ function startMatureInlineLive(ids, startLines = []) {
         + `<span class="sn-status">${groupMaturingAccounts(items).length} accounts</span></div>`
         + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
         + `<div class="sn-logbox">${logHtml}</div></div></div>`
-        + `<div class="sn-foot">${maturingPreviewButton(items)}</div>`
+        + `<div class="sn-foot">${maturingResultsButton()} ${maturingPreviewButton(items)}</div>`
         + `</div></div>`;
       const box = body.querySelector('.sn-logbox');
       _pinMaturingLog(box, 'mature-inline');

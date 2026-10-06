@@ -4019,7 +4019,7 @@ async function createWarmSheet(args, onRetry, write = createWorkbookTab) {
     catch (error) {
       lastError = error;
       // Anything else (e.g. the script has no such action yet) will not fix itself.
-      if (!/not JSON|timeout|fetch failed|aborted/i.test(error.message)) throw error;
+      if (error.code !== 'MATURE_SHEET_REPLY_INCOMPLETE' && !/not JSON|timeout|fetch failed|aborted|busy.*retry|could not acquire lock/i.test(error.message)) throw error;
       if (attempt === 4) break;
       onRetry?.(attempt + 1);
       await new Promise((r) => setTimeout(r, 2500 * attempt));
@@ -4154,9 +4154,13 @@ app.post('/api/mature/start', async (req, res) => {
         step(`Writing the ${kind} list to "${tabName}"…`);
         tabs[kind] = await createWarmSheet({
           spreadsheetId: MATURE_RESULTS_SHEET_ID, tabName, header: [...MATURE_TAB_HEADER],
-          rows: rows.filter(row => row[0].toLowerCase() === kind),
+          rows: rows.filter(row => row[0].toLowerCase() === kind), reuseExistingPlan: true,
         }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
         const written = tabs[kind];
+        if (kind === 'cold' && Array.isArray(written.planRows)) {
+          const at = MATURE_TAB_HEADER.indexOf('LinkedIn URL');
+          coldLeads = written.planRows.filter(row => row[0] === 'Cold' && row[at]).map(row => ({ linkedinUrl: row[at] }));
+        }
         step(`Results tab "${tabName}" ${written.created ? 'created' : 'updated'} — ${written.added} people added${written.existing ? `, ${written.existing} already listed and left as they are` : ''}.`);
       }
       tab = warmOn ? tabs.warm : tabs.cold;
