@@ -1,4 +1,4 @@
-import { renderWarmRampChart } from './mature-ramp-chart.mjs';
+import { renderWarmRampChart, renderColdRampChart } from './mature-ramp-chart.mjs';
 import { warmProfileIdentity, WARM_POOL_ACCOUNT } from './mature-warm-pool.mjs';
 import { matureCampaignName } from './mature-profile-identity.mjs';
 import { WARM_PRESETS, warmPreset, warmRampErrors, warmSchedule } from './mature-warm-ramp.mjs';
@@ -266,7 +266,14 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   activityToggle(warm, 'warmEnabled', 'Send warm connections');
   const rampChart = document.createElement('div'); rampChart.className = 'mature-ramp-chart';
   warm.body.append(rampChart);
-  const refreshRampChart = () => renderWarmRampChart(rampChart, plan);
+  const coldRampChart = document.createElement('div'); coldRampChart.className = 'mature-ramp-chart';
+  cold.body.append(coldRampChart);
+  const refreshRampChart = () => {
+    renderWarmRampChart(rampChart, plan);
+    renderColdRampChart(coldRampChart, plan);
+  };
+  cold.section.addEventListener('input', refreshRampChart);
+  cold.section.addEventListener('change', refreshRampChart);
   warm.section.addEventListener('input', refreshRampChart);
   warm.section.addEventListener('change', refreshRampChart);
   activityToggle(cold, 'coldEnabled', 'Send cold connections');

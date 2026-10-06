@@ -9015,3 +9015,12 @@ body.route-app-settings .sidebar-nav { display:none; }
 .mature-stage--compact .mature-field > span { font-size:9px;letter-spacing:.6px; }
 .mature-stage--compact input[type=number] { width:100%;min-width:0;padding:8px 10px;font-size:13px;height:36px;box-sizing:border-box;background:var(--bg);color:var(--ink); }
 .mature-stage--compact .mature-source-help { margin:10px 0 0;font-size:11px; }
+
+/* Campaign steps belong to the editor; global navigation stays in place. */
+.campaign-editor-nav { display:flex;flex-wrap:wrap;gap:6px;margin:0 0 24px;padding:12px;border:1px solid var(--hairline);border-radius:12px; }
+.campaign-editor-nav > .nav-section-label { width:100%;padding:0 4px 6px; }
+.campaign-editor-nav .nav-item { width:auto;font-size:11px;letter-spacing:.6px;padding:8px 10px; }
+.campaign-editor-nav .nav-num { width:auto;font-size:13px; }
+.campaign-editor-tools { width:100%;border-top:1px solid var(--hairline);padding-top:8px;margin-top:4px; }
+.campaign-editor-tools summary { cursor:pointer;color:var(--gray);font:12px var(--body); }
+.campaign-editor-tools .nav-section-label { padding:12px 10px 4px; }

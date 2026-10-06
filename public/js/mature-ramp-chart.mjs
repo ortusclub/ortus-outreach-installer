@@ -1,17 +1,28 @@
-import { matureWarmDailyAmount } from './mature-warm-pool.mjs';
+import { matureWarmDailyAmount, matureColdDailyAmount } from './mature-warm-pool.mjs';
 
 export function warmRampPreview(plan, days = 28) {
   return Array.from({ length: days }, (_, i) => ({ day: i + 1, amount: matureWarmDailyAmount(plan, i + 1) }));
 }
 
+export function coldRampPreview(plan, days = 28) {
+  return Array.from({ length: days }, (_, i) => ({ day: i + 1, amount: matureColdDailyAmount(plan, i + 1) }));
+}
+
+export function renderColdRampChart(host, plan) {
+  renderConnectionRampChart(host, coldRampPreview(plan), 'Cold');
+}
+
 // A short preview of the same daily schedule used to launch the campaign.
 export function renderWarmRampChart(host, plan) {
+  renderConnectionRampChart(host, warmRampPreview(plan), 'Warm');
+}
+
+function renderConnectionRampChart(host, rows, kind) {
   host.replaceChildren();
-  const rows = warmRampPreview(plan);
   const maximum = Math.max(1, ...rows.map(r => r.amount));
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
   const heading = document.createElement('div'); heading.className = 'mature-ramp-chart__heading';
-  const title = document.createElement('strong'); title.textContent = 'Warm connection ramp';
+  const title = document.createElement('strong'); title.textContent = `${kind} connection ramp`;
   const summary = document.createElement('span'); summary.textContent = `First 28 days · ${total} planned connections`;
   heading.append(title, summary);
   const ns = 'http://www.w3.org/2000/svg';

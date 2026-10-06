@@ -30,45 +30,7 @@
         <div id="update-detail" class="update-detail hidden"></div>
       </div>
 
-      <nav class="sidebar-nav">
-        <button type="button" class="nav-item nav-item-back" onclick="goDashboard()"><span class="nav-num">←</span>Dashboard</button>
-        <div class="nav-section-label">Campaign</div>
-        <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph" id="nav-glyph-settings"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph" id="nav-glyph-sheet"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph" id="nav-glyph-accounts"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph" id="nav-glyph-templates"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
 
-        <div class="nav-section-label">Team</div>
-        <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
-
-        <div class="nav-section-label">Review</div>
-        <button type="button" class="nav-item" id="nav-replies-btn" onclick="goReplies()">Replies</button>
-        <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
-
-        <div class="nav-section-label">Help</div>
-        <div class="nav-help-wrapper">
-          <button type="button" class="nav-item nav-item-help" id="nav-help-btn" onclick="toggleHelpPopover(event)">
-            <span class="nav-num">?</span>Help
-          </button>
-          <div id="help-popover" class="help-popover hidden">
-            <div class="help-popover-title">HELP</div>
-            <button type="button" class="help-pop-item" onclick="onHelpTakeTour()">
-              <span class="help-pop-icon">📘</span><span>Take the tour</span>
-            </button>
-            <a class="help-pop-item" href="/help.html" target="_blank" rel="noopener">
-              <span class="help-pop-icon">📄</span><span>Open the manual</span>
-            </a>
-            <button type="button" id="help-pop-replay" class="help-pop-item" onclick="onHelpReplayTour()" style="display:none">
-              <span class="help-pop-icon">🔁</span><span>Replay tour</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="nav-section-label">Dev tools</div>
-        <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
-      </nav>
 
         <div class="sidebar-main-nav" role="navigation" aria-label="Main sections">
           <button type="button" class="nav-item is-active" id="dash-tab-campaigns" onclick="goCampaignsTab()">Outreach campaigns</button>
@@ -1076,6 +1038,43 @@
 
     <!-- ── Wizard view (route #/new) ── -->
     <div id="wizard-view" class="route-view">
+      <nav class="campaign-editor-nav" aria-label="Campaign steps">
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph" id="nav-glyph-settings"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph" id="nav-glyph-sheet"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph" id="nav-glyph-accounts"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph" id="nav-glyph-templates"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
+
+        <details class="campaign-editor-tools"><summary>Campaign tools</summary>
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item" id="nav-replies-btn" onclick="goReplies()">Replies</button>
+        <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
+
+        <div class="nav-section-label">Help</div>
+        <div class="nav-help-wrapper">
+          <button type="button" class="nav-item nav-item-help" id="nav-help-btn" onclick="toggleHelpPopover(event)">
+            <span class="nav-num">?</span>Help
+          </button>
+          <div id="help-popover" class="help-popover hidden">
+            <div class="help-popover-title">HELP</div>
+            <button type="button" class="help-pop-item" onclick="onHelpTakeTour()">
+              <span class="help-pop-icon">📘</span><span>Take the tour</span>
+            </button>
+            <a class="help-pop-item" href="/help.html" target="_blank" rel="noopener">
+              <span class="help-pop-icon">📄</span><span>Open the manual</span>
+            </a>
+            <button type="button" id="help-pop-replay" class="help-pop-item" onclick="onHelpReplayTour()" style="display:none">
+              <span class="help-pop-icon">🔁</span><span>Replay tour</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-section-label">Dev tools</div>
+        <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
+        </details>
+      </nav>
 <!--
    2026-05-27 — wizard top cleanup: 'Save Edits' button removed (autosave
    handles it). 'Save Edits' was duplicated top+bottom; both gone.

@@ -22429,9 +22429,11 @@ let _dashTab = 'campaigns';
 function syncDashTabs() {
   const hash = window.location.hash || '#/';
   const dashboard = hash === '#/' || hash === '';
+  const wizard = hash.startsWith('#/new');
+  const maturing = document.getElementById('campaign-mode')?.value === 'mature_profile';
   for (const [id, active] of [
-    ['dash-tab-campaigns', dashboard && _dashTab === 'campaigns'],
-    ['dash-tab-maturing', dashboard && _dashTab === 'maturing'],
+    ['dash-tab-campaigns', (dashboard && _dashTab === 'campaigns') || (wizard && !maturing)],
+    ['dash-tab-maturing', (dashboard && _dashTab === 'maturing') || (wizard && maturing)],
     ['dash-tab-salesnav', hash.startsWith('#/salesnav')],
     ['dash-tab-connections', hash.startsWith('#/connections')],
   ]) {
