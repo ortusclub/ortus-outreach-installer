@@ -1,3 +1,4 @@
+import { maturingPreviewActivity } from './mature-preview-picker.mjs';
 // Called after ownership, deletion and dashboard filters have been applied.
 export function splitMaturingCampaigns(items) {
   const regular = [], maturing = [];
@@ -112,9 +113,9 @@ export function maturingRowState(it) {
   if (it.stopping) return { label: 'Stopping', tone: 'muted' };
   if (it.paused) return { label: 'Paused', tone: 'muted' };
   if (it.bucket === 'queued') return it.scheduledAt ? { label: 'Scheduled', tone: 'muted' } : { label: 'Starting', tone: 'amber' };
+  if (maturingPreviewActivity(it)) return { label: 'Active', tone: 'green' };
   // The engine's own status wins over the browser-open flag, which can lag.
   if (it.dailyWait) return { label: 'Sleeping', tone: 'amber' };
-  if (it.live) return { label: 'Active', tone: 'green' };
   return { label: 'Awaiting its turn', tone: 'amber' };
 }
 
@@ -135,6 +136,7 @@ export function maturingBatchDone(log) {
 // computer's zone).
 export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}) {
   if (!it || it.needsReview || it.bucket === 'done' || it.stopping || it.paused) return '';
+  if (maturingPreviewActivity(it, now) === 'Accepting') return 'Now: accepting connection requests';
   const what = `${it.matureKind === 'cold' ? 'cold' : 'warm'} connection`;
   const schedule = it.warmSchedule, amounts = Array.isArray(schedule?.amounts) ? schedule.amounts.map(Number) : [];
   const tz = it.matureTz || MATURE_DEFAULT_TIME_ZONE;

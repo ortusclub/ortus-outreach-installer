@@ -65,7 +65,7 @@ test('a schedule with startAt counts plan days in the campaign time zone, like t
 import { maturingRowState } from '../public/js/mature-profile-board.mjs';
 test('each maturing campaign reads as one plain state, green only while connecting', () => {
   const state = (it) => maturingRowState({ bucket: 'running', ...it });
-  assert.deepEqual(state({ live: true }), { label: 'Active', tone: 'green' });
+  assert.deepEqual(state({ live: true, liveProgress: {phase:'sending',stepAt:Date.now()} }), { label: 'Active', tone: 'green' });
   assert.deepEqual(state({ dailyWait: true }), { label: 'Sleeping', tone: 'amber' });
   assert.deepEqual(state({}), { label: 'Awaiting its turn', tone: 'amber' });
   assert.equal(state({ paused: true, live: true }).label, 'Paused');
@@ -80,7 +80,7 @@ test('an account shows as one entry with its warm and cold counts', () => {
   const groups = groupMaturingAccounts([
     { id: 'w', name: 'ana@ortus.solutions', matureKind: 'warm', bucket: 'running', dailyWait: true, sent: 6 },
     { id: 'c', name: 'ana@ortus.solutions · Cold', matureKind: 'cold', bucket: 'queued', scheduledAt: '2026-10-12', sent: 0 },
-    { id: 'b', name: 'ben@klabber.co', matureKind: 'warm', bucket: 'running', live: true, sent: 2 },
+    { id: 'b', name: 'ben@klabber.co', matureKind: 'warm', bucket: 'running', live: true, liveProgress: {phase:'sending',stepAt:Date.now()}, sent: 2 },
   ]);
   assert.equal(groups.length, 2);
   assert.deepEqual([groups[0].name, groups[0].state.label, groups[0].warmSent, groups[0].coldSent], ['ana@ortus.solutions', 'Sleeping', 6, 0]);
@@ -150,4 +150,11 @@ test('same-time events from separate accounts remain and history is bounded', ()
   assert.equal(retainMaturingLog([], lines).length, 2);
   assert.deepEqual(retainMaturingLog(lines, [{ t: 2, text: 'C · start' }], 2), [lines[1], { t: 2, text: 'C · start' }]);
   assert.deepEqual(retainMaturingLog([], [null, {}, { t: 'bad', text: 'bad' }]), []);
+});
+
+test('reported acceptance activity marks its parent maturing campaign active during daily sleep', () => {
+  const it = {name:'Pauline',bucket:'running',dailyWait:true,live:true,liveProgress:{phase:'accepting',stepAt:Date.now()}};
+  assert.equal(maturingRowState(it).label,'Active');
+  assert.equal(maturingNextAction(it),'Now: accepting connection requests');
+  assert.equal(maturingRowState({...it,liveProgress:null}).label,'Sleeping');
 });

@@ -70,87 +70,32 @@
         <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
       </nav>
 
-      <div class="theme-toggle-group">
-        <div class="theme-toggle-label">Theme</div>
-        <div class="theme-toggle">
-          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
-          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        <div class="sidebar-main-nav" role="navigation" aria-label="Main sections">
+          <button type="button" class="nav-item is-active" id="dash-tab-campaigns" onclick="goCampaignsTab()">Campaigns</button>
+          <button type="button" class="nav-item" id="dash-tab-maturing" onclick="goMaturing()">Profile Maturing</button>
+          <button type="button" class="nav-item" id="dash-tab-salesnav" onclick="goSalesNav()">Sales Nav Scraper</button>
+          <button type="button" class="nav-item" id="dash-tab-connections" onclick="goConnections()">Connection DB</button>
         </div>
+    <section id="engine-version-banner" class="engine-version-banner is-loading" aria-live="polite">
+      <div class="engine-version-banner__flag">
+        <span class="engine-version-banner__signal" aria-hidden="true"></span>
+        <span id="engine-version-environment">CHECKING ENGINE</span>
       </div>
-
-      <!-- Bug 17: Sidebar tightened (Variant A). Same functions/IDs as before —
-           Change becomes an inline ✎, push/SMTP become compact chips, Send test
-           becomes a "Test" link — just less button-heavy. -->
-      <div class="sb-tight">
-        <div class="sb-line">
-          <span class="sb-line-k">Timestamps</span>
-          <span class="sb-line-v">
-            <span id="op-tz-current" class="notif-row-v">—</span>
-            <button type="button" class="sb-icon-btn" title="Change timezone" aria-label="Change timezone" onclick="openOpTzModal()">✎</button>
-          </span>
-        </div>
-
-        <div class="sb-line">
-          <span class="sb-line-k">Notifications</span>
-          <span class="sb-line-v">
-            <button type="button" id="notif-enable-btn" class="sb-link" onclick="requestNotificationPermission()" style="display:none">Enable</button>
-            <button type="button" class="sb-link" onclick="sendTestNotification()">Test</button>
-          </span>
-        </div>
-        <div class="sb-chips" id="notif-state-rows">
-          <span class="sb-chip"><span class="sb-chip-k">Push</span> <span id="notif-push-state" class="notif-row-v">—</span></span>
-          <span class="sb-chip"><span class="sb-chip-k">Email</span> <span id="notif-smtp-state" class="notif-row-v">—</span></span>
-          <span id="notif-last-test" class="notif-row-v sb-lasttest" hidden>never</span>
-        </div>
-
-        <div class="sb-line">
-          <span class="sb-line-k">Check reminders</span>
-          <label class="notif-pref-toggle">
-            <input type="checkbox" id="notif-pref-conn-check" onchange="onNotifPrefChange('connectionCheckReminders', this.checked)">
-            <span class="notif-pref-slider"></span>
-          </label>
-        </div>
-        <div class="sb-line">
-          <span class="sb-line-k">Reply alerts</span>
-          <label class="notif-pref-toggle">
-            <input type="checkbox" id="notif-pref-reply-alerts" onchange="onNotifPrefChange('replyAlerts', this.checked)">
-            <span class="notif-pref-slider"></span>
-          </label>
-        </div>
-
-        <!-- v2.113 — pre-send identity safeguard. Hairline-separated into its
-             own block so it's not mistaken for a notification toggle. ON
-             (default) = confirm each loaded profile matches the sheet row
-             before connecting (blocks wrong-person sends). OFF = send straight
-             to the sheet URL like pre-v2.97; the dead-profile (404) skip stays
-             on either way. Sticky per-operator (stored via /api/operator-prefs). -->
-        <div class="sb-line sb-safeguard" title="ON: before each connection, confirm the open profile matches the sheet row (blocks wrong-person sends). OFF: connect straight to the sheet URL like older versions. The dead-profile (404) skip stays on either way.">
-          <span class="sb-line-k">Identity safeguard</span>
-          <span class="sb-line-v">
-            <span id="op-identity-gate-state" class="notif-row-v bad">Off</span>
-            <label class="notif-pref-toggle">
-              <input type="checkbox" id="op-identity-gate" onchange="onIdentityGateChange(this.checked)">
-              <span class="notif-pref-slider"></span>
-            </label>
-          </span>
-        </div>
+      <div class="engine-version-banner__current">
+        <span class="engine-version-banner__label">THIS APP IS USING</span>
+        <strong id="engine-version-current">—</strong>
+        <span id="engine-version-url" class="engine-version-banner__url">Connecting…</span>
       </div>
-
-      <div class="sidebar-footer">
-        <button type="button" class="operator-chip settings-chip" onclick="openCredentialsModal()"><span class="operator-chip-label">Settings</span><strong id="settings-chip-state">GoLogin tokens</strong></button>
-        <button type="button" class="operator-chip engine-chip" id="engine-chip" onclick="openEngineModal()" title="Point this app's scrapes and campaigns at the production or a dev engine."><span class="operator-chip-label">Engine</span><strong id="engine-chip-state">—</strong></button>
-        <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
-             in the SoO 'CC User App' column; click to set/change. Highlighted
-             gold until set (it's mandatory before a campaign can start). -->
-        <button type="button" class="operator-chip" id="operator-chip" onclick="openOperatorEmailModal({ mandatory:false })" title="The email stamped on every LinkedIn account you reserve. Click to change.">
-          <span class="operator-chip-label">Operating as</span>
-          <strong id="operator-chip-email">—</strong>
-        </button>
-        <div class="user-chip">
-          <strong id="user-chip-email">info@ortus.solutions</strong>
-          <span id="user-chip-date"></span>
-        </div>
-        <button type="button" class="btn btn-sm sidebar-signout" onclick="signOut()">Sign out</button>
+      <div class="engine-version-banner__divider" aria-hidden="true"></div>
+      <div class="engine-version-banner__live">
+        <span class="engine-version-banner__label">TEAM LIVE ENGINE</span>
+        <strong id="engine-version-live">—</strong>
+        <span class="engine-version-banner__url">scraper.ortusclub.com</span>
+      </div>
+      <p id="engine-version-explanation" class="engine-version-banner__explanation">Confirming which engine this app controls.</p>
+    </section>
+      <div class="sidebar-settings-link">
+        <button type="button" class="nav-item" id="app-settings-nav" onclick="location.hash='#/settings'">⚙ Settings</button>
       </div>
     </aside>
 
@@ -208,24 +153,7 @@
       </div>
     </div>
 
-    <section id="engine-version-banner" class="engine-version-banner is-loading" aria-live="polite">
-      <div class="engine-version-banner__flag">
-        <span class="engine-version-banner__signal" aria-hidden="true"></span>
-        <span id="engine-version-environment">CHECKING ENGINE</span>
-      </div>
-      <div class="engine-version-banner__current">
-        <span class="engine-version-banner__label">THIS APP IS USING</span>
-        <strong id="engine-version-current">—</strong>
-        <span id="engine-version-url" class="engine-version-banner__url">Connecting…</span>
-      </div>
-      <div class="engine-version-banner__divider" aria-hidden="true"></div>
-      <div class="engine-version-banner__live">
-        <span class="engine-version-banner__label">TEAM LIVE ENGINE</span>
-        <strong id="engine-version-live">—</strong>
-        <span class="engine-version-banner__url">scraper.ortusclub.com</span>
-      </div>
-      <p id="engine-version-explanation" class="engine-version-banner__explanation">Confirming which engine this app controls.</p>
-    </section>
+
 
     <!-- Phase 2.8.20 (W3-C2): disk-low banner -->
     <div id="disk-warning-banner" class="disk-warning-banner" hidden>
@@ -233,14 +161,104 @@
     </div>
 
     <!-- ── Dashboard view (default route #/) ── -->
+    <div id="app-settings-view" class="route-view">
+      <header class="app-settings-heading"><button type="button" class="btn btn-sm" onclick="goDashboard()">← Dashboard</button><h1>Settings</h1><p>Manage your display, notifications and connected accounts.</p></header>
+      <div class="app-settings-grid">
+        <section class="app-settings-card"><h2>Preferences</h2><p class="settings-description">These controls update your existing preferences. Hover over or focus a question mark for more information.</p>
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme <span class="setting-help"><button type="button" aria-label="More information" aria-describedby="setting-help-1">?</button><span role="tooltip" id="setting-help-1">Choose a light or dark appearance. Your choice is saved on this device.</span></span></div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+
+      <div class="sb-tight">
+        <div class="sb-line">
+          <span class="sb-line-k">Timestamps <span class="setting-help"><button type="button" aria-label="More information" aria-describedby="setting-help-2">?</button><span role="tooltip" id="setting-help-2">Choose the timezone used for activity timestamps and notifications. Campaign schedules keep their own timezone.</span></span></span>
+          <span class="sb-line-v">
+            <span id="op-tz-current" class="notif-row-v">—</span>
+            <button type="button" class="sb-icon-btn" title="Change timezone" aria-label="Change timezone" onclick="openOpTzModal()">✎</button>
+          </span>
+        </div>
+
+        <div class="sb-line">
+          <span class="sb-line-k">Notifications <span class="setting-help"><button type="button" aria-label="More information" aria-describedby="setting-help-3">?</button><span role="tooltip" id="setting-help-3">Desktop alerts need notification permission. Test checks delivery. Email alerts also require the app’s email service to be configured.</span></span></span>
+          <span class="sb-line-v">
+            <button type="button" id="notif-enable-btn" class="sb-link" onclick="requestNotificationPermission()" style="display:none">Enable</button>
+            <button type="button" class="sb-link" onclick="sendTestNotification()">Test</button>
+          </span>
+        </div>
+        <div class="sb-chips" id="notif-state-rows">
+          <span class="sb-chip"><span class="sb-chip-k">Push</span> <span id="notif-push-state" class="notif-row-v">—</span></span>
+          <span class="sb-chip"><span class="sb-chip-k">Email</span> <span id="notif-smtp-state" class="notif-row-v">—</span></span>
+          <span id="notif-last-test" class="notif-row-v sb-lasttest" hidden>never</span>
+        </div>
+
+        <div class="sb-line">
+          <span class="sb-line-k">Check reminders <span class="setting-help"><button type="button" aria-label="More information" aria-describedby="setting-help-4">?</button><span role="tooltip" id="setting-help-4">Receive reminders to check connection requests. This changes alerts, not campaign activity.</span></span></span>
+          <label class="notif-pref-toggle">
+            <input type="checkbox" id="notif-pref-conn-check" aria-label="Check reminders" onchange="onNotifPrefChange('connectionCheckReminders', this.checked)">
+            <span class="notif-pref-slider"></span>
+          </label>
+        </div>
+        <div class="sb-line">
+          <span class="sb-line-k">Reply alerts <span class="setting-help"><button type="button" aria-label="More information" aria-describedby="setting-help-5">?</button><span role="tooltip" id="setting-help-5">Receive alerts when the app detects new replies. Turning this off does not stop reply checks.</span></span></span>
+          <label class="notif-pref-toggle">
+            <input type="checkbox" id="notif-pref-reply-alerts" aria-label="Reply alerts" onchange="onNotifPrefChange('replyAlerts', this.checked)">
+            <span class="notif-pref-slider"></span>
+          </label>
+        </div>
+
+        <!-- v2.113 — pre-send identity safeguard. Hairline-separated into its
+             own block so it's not mistaken for a notification toggle. ON
+             (default) = confirm each loaded profile matches the sheet row
+             before connecting (blocks wrong-person sends). OFF = send straight
+             to the sheet URL like pre-v2.97; the dead-profile (404) skip stays
+             on either way. Sticky per-operator (stored via /api/operator-prefs). -->
+        <div class="sb-line sb-safeguard" title="ON: before each connection, confirm the open profile matches the sheet row (blocks wrong-person sends). OFF: connect straight to the sheet URL like older versions. The dead-profile (404) skip stays on either way.">
+          <span class="sb-line-k">Identity safeguard <span class="setting-help"><button type="button" aria-label="More information" aria-describedby="setting-help-6">?</button><span role="tooltip" id="setting-help-6">Checks that the loaded LinkedIn profile matches the sheet entry before a connection request is sent. Helps prevent sending to the wrong person.</span></span></span>
+          <span class="sb-line-v">
+            <span id="op-identity-gate-state" class="notif-row-v bad">Off</span>
+            <label class="notif-pref-toggle">
+              <input type="checkbox" id="op-identity-gate" aria-label="Identity safeguard" onchange="onIdentityGateChange(this.checked)">
+              <span class="notif-pref-slider"></span>
+            </label>
+          </span>
+        </div>
+      </div>
+
+        </section>
+        <section class="app-settings-card"><h2>Accounts &amp; connections</h2>
+          <p class="settings-description">Manage GoLogin access, choose your engine and check the identity used by this app.</p>
+      <div class="sidebar-footer">
+        <button type="button" class="operator-chip settings-chip" onclick="openCredentialsModal()"><span class="operator-chip-label">GoLogin access</span><strong id="settings-chip-state">GoLogin tokens</strong></button>
+        <button type="button" class="operator-chip engine-chip" id="engine-chip" onclick="openEngineModal()" title="Point this app's scrapes and campaigns at the production or a dev engine."><span class="operator-chip-label">Engine</span><strong id="engine-chip-state">—</strong></button>
+        <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
+             in the SoO 'CC User App' column; click to set/change. Highlighted
+             gold until set (it's mandatory before a campaign can start). -->
+        <button type="button" class="operator-chip" id="operator-chip" onclick="openOperatorEmailModal({ mandatory:false })" title="The email stamped on every LinkedIn account you reserve. Click to change.">
+          <span class="operator-chip-label">Operating as</span>
+          <strong id="operator-chip-email">—</strong>
+        </button>
+        <div class="user-chip">
+          <strong id="user-chip-email">info@ortus.solutions</strong>
+          <span id="user-chip-date"></span>
+        </div>
+        <button type="button" class="btn btn-sm sidebar-signout" onclick="signOut()">Sign out</button>
+      </div>
+          <dl class="settings-explanations">
+            <dt>GoLogin tokens</dt><dd>Connect the GoLogin workspaces whose profiles you can access. Tokens are stored on this device.</dd>
+            <dt>Engine</dt><dd>Production is the live team service. Development is the separate test environment. This choice controls where this app sends cloud work.</dd>
+            <dt>Operating as</dt><dd>The operator email recorded when you reserve accounts or start campaigns. It can differ from the signed-in account below it.</dd>
+            <dt>Signed-in account</dt><dd>Your app login. Sign out ends this app session; it does not stop campaigns already running in the cloud.</dd>
+          </dl>
+        </section>
+      </div>
+    </div>
     <div id="dashboard-view" class="route-view">
       <div class="dashboard-header">
-        <div class="route-seg" role="tablist" aria-label="Main sections">
-          <button type="button" class="route-seg-btn is-active" id="dash-tab-campaigns" onclick="goCampaignsTab()">Campaigns</button>
-          <button type="button" class="route-seg-btn" id="dash-tab-maturing" onclick="goMaturing()">Profile Maturing</button>
-          <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav Scraper</button>
-          <button type="button" class="route-seg-btn" onclick="goConnections()">Connection DB</button>
-        </div>
+
         <!-- 2026-05-27 (drafts-isolation v2): resume-draft surfaces as a small
              gold count-badge on the New-campaign button. Click the button →
              fresh campaign. Click the badge → resume the existing draft.
