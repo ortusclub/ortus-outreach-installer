@@ -36789,7 +36789,11 @@ function startMatureInlineLive(ids, startLines = []) {
       if (!items.length) return;
 
       const controls = document.getElementById('mature-running-controls');
-      if (controls) controls.innerHTML = maturingControlButtons(items.filter(it => ids.includes(it.id)));
+      if (controls) {
+        const selectedName = document.getElementById('campaign-name-input')?.value.trim().toLowerCase();
+        const selected = items.filter(it => String(it.name || '').replace(/ · Cold$/, '').toLowerCase() === selectedName);
+        controls.innerHTML = maturingControlButtons(groupMaturingAccounts(selected).flatMap(group => group.items));
+      }
       // Same look and wording as the combined log on the Profile Maturing tab.
       const lines = rememberMaturingLog([...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log })), 2000), ...maturingWaitLines(items)]);
       const logHtml = sharedMaturingLogHtml();
