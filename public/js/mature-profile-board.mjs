@@ -109,6 +109,7 @@ export function maturingWaitLines(items, now = Date.now(), maxLines = 12) {
 // `tone` picks the dot colour: green only while it is actually connecting.
 export function maturingRowState(it) {
   if (it.needsReview) return { label: 'Needs attention', tone: 'red' };
+  if (maturingPreviewActivity(it) === 'Accepting') return { label: 'Active', tone: 'green' };
   if (it.bucket === 'done') return it.bad ? { label: 'Stopped', tone: 'muted' } : { label: 'Finished', tone: 'done' };
   if (it.stopping) return { label: 'Stopping', tone: 'muted' };
   if (it.paused) return { label: 'Paused', tone: 'muted' };
@@ -135,8 +136,9 @@ export function maturingBatchDone(log) {
 // maturing worker being free. `viewerTimeZone` is for tests (default: this
 // computer's zone).
 export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}) {
-  if (!it || it.needsReview || it.bucket === 'done' || it.stopping || it.paused) return '';
-  if (maturingPreviewActivity(it, now) === 'Accepting') return 'Now: accepting connection requests';
+  if (!it || it.needsReview || it.stopping || it.paused) return '';
+  if (maturingPreviewActivity(it, now) === 'Accepting') return `Now: accepting connection requests${it.liveProgress?.accountName ? ` on ${it.liveProgress.accountName}` : ''}`;
+  if (it.bucket === 'done') return '';
   const what = `${it.matureKind === 'cold' ? 'cold' : 'warm'} connection`;
   const schedule = it.warmSchedule, amounts = Array.isArray(schedule?.amounts) ? schedule.amounts.map(Number) : [];
   const tz = it.matureTz || MATURE_DEFAULT_TIME_ZONE;

@@ -33,3 +33,12 @@ test('a maturing campaign says what it does next, in the words of the plan', () 
   // Long waits read in hours, not hundreds of minutes.
   assert.equal(countdown(Date.parse('2026-10-07T01:00:00Z'), now), 'In 29h 35m');
 });
+
+
+test('acceptance preview identifies the recipient under the completed parent campaign', () => {
+  const now=Date.now();
+  const result=previewStatus({campaign:{name:'Pauline',status:'completed',config:{matureWarm:true},matureAcceptPending:2},live:true,liveProgress:{phase:'accepting',accountName:'Recipient Name',stepAt:now}},'Campaign',now);
+  assert.equal(result.name,'Pauline');assert.equal(result.terminal,false);
+  assert.match(result.step,/accepting connection requests on Recipient Name/);
+  assert.equal(result.due,0);
+});

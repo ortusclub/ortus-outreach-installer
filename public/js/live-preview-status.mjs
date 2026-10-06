@@ -1,3 +1,4 @@
+import { maturingPreviewActivity } from './mature-preview-picker.mjs';
 import { maturingNextAction, maturingBatchDone } from './mature-profile-board.mjs';
 export function previewStatus(data, fallback = 'Campaign', now = Date.now()) {
   const c = data.campaign || {};
@@ -7,16 +8,17 @@ export function previewStatus(data, fallback = 'Campaign', now = Date.now()) {
   const due = terminal[state] ? 0 : [c.blocked_until, c.scheduled_start_at, c.resumeTaskDueAt, c.monitorTaskDueAt, c.next_check_at].map(v => v ? new Date(v).getTime() : 0).filter(t => t > now).sort((a,b) => a-b)[0] || 0;
   // Profile maturing: say what the plan does next and when, in the same words
   // as the Profile Maturing tab.
-  if (c.config?.matureWarm && !terminal[state]) {
+  const accepting = maturingPreviewActivity({live:!!data.live, engineStatus:state, liveProgress:data.liveProgress, liveStamp:data.liveStamp}, now) === 'Accepting';
+  if (c.config?.matureWarm && (!terminal[state] || accepting)) {
     const st = String(state);
     const item = { name: c.name, matureKind: c.config.matureKind || 'warm', warmSchedule: c.config.dailySchedule || null, matureTz: c.config.tz || '',
-      bucket: ['pending', 'queued', 'scheduled'].includes(st) ? 'queued' : 'running', dailyWait: st === 'waiting_daily_reset', live: !!data.live,
+      bucket: ['pending', 'queued', 'scheduled'].includes(st) ? 'queued' : 'running', dailyWait: st === 'waiting_daily_reset', live: !!data.live, engineStatus:st, liveProgress:data.liveProgress, liveStamp:data.liveStamp,
       scheduledAt: c.scheduled_start_at || null, resumeAt: c.resumeTaskDueAt || null,
       acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null, batchDoneToday: maturingBatchDone(data.monitorLog) };
     const text = maturingNextAction(item, { now });
     if (text) {
       const [head, ...rest] = text.split(' · ');
-      const when = item.acceptPending > 0 ? item.acceptDueAt : item.dailyWait ? item.resumeAt : item.bucket === 'queued' ? item.scheduledAt : null;
+      const when = accepting ? null : item.acceptPending > 0 ? item.acceptDueAt : item.dailyWait ? item.resumeAt : item.bucket === 'queued' ? item.scheduledAt : null;
       const whenMs = when ? new Date(when).getTime() : 0;
       return { name: c.name || fallback, logs, terminal: false, step: head, due: whenMs || 0,
         next: (rest.length ? `${rest.join(' · ')}. ` : '') + (item.live ? 'The browser is shown below while it works.' : 'The browser appears here automatically when a worker opens it.') };

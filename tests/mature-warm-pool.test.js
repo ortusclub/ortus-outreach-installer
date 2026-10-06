@@ -99,3 +99,10 @@ test('the results tab lists warm then cold with the day each is planned for', ()
   assert.ok(MATURE_TAB_HEADER.includes('Connection Request Status') && MATURE_TAB_HEADER.includes('Connection Accepted Status'));
   assert.ok(rows.every(r => r.slice(7).every(cell => cell === '')));
 });
+
+test('all available combines accessible workspaces, excludes self/restricted/missing and deduplicates URLs', () => {
+  const pool = buildWarmPool({ pool:'all_available', profiles:[...profiles, {id:'duplicate',account:'linkedvelocity',name:'dee@klabber.co'}], sooAccounts:soo, lvAccounts:lv, excludeProfileIds:['o1'] });
+  assert.deepEqual(pool.targets.map(t=>t.profileId), ['o2','lv1','lv2']);
+  assert.equal(pool.restricted, 1);
+  assert.equal(pool.missing, 2);
+});

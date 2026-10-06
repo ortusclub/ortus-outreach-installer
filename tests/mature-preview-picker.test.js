@@ -24,3 +24,10 @@ test('open browser, daily sleep, and stale progress never imply activity', () =>
   assert.equal(maturingPreviewActivity(live, now), 'Connecting');
   assert.equal(maturingPreviewActivity({...live,dailyWait:true,liveProgress:{phase:'accepting',stepAt:now}}, now), 'Accepting');
 });
+
+test('final acceptance stays active after sending completes, but cancellation wins', () => {
+  const item={id:'warm',name:'Pauline',live:true,bucket:'done',engineStatus:'completed',liveProgress:{phase:'accepting',accountName:'Recipient',stepAt:Date.now()}};
+  assert.equal(maturingPreviewActivity(item), 'Accepting');
+  assert.equal(maturingPreviewAccounts([item])[0].active,true);
+  assert.equal(maturingPreviewActivity({...item,engineStatus:'cancelled'}), '');
+});

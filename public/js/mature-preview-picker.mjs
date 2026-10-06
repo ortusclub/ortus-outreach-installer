@@ -1,12 +1,13 @@
 // Browser availability alone is not evidence of current work.
 export function maturingPreviewActivity(item, now = Date.now()) {
-  if (!item.live || item.paused || item.stopping || item.bucket === 'done' || ['paused', 'pausing', 'stopping', 'cancelled', 'completed', 'error'].includes(item.engineStatus)) return '';
+  if (!item.live || item.paused || item.stopping || ['paused', 'pausing', 'stopping', 'cancelled', 'error'].includes(item.engineStatus)) return '';
   const progress = item.liveProgress || {};
   const phase = String(progress.phase || '').toLowerCase();
   const raw = progress.stepAt || item.liveStamp?.updatedAt;
   const at = typeof raw === 'number' ? raw : Date.parse(raw || '');
   if (!Number.isFinite(at) || now - at > 120000 || at > now + 5000) return '';
   if (['accepting', 'accepting_connections', 'accepting_requests'].includes(phase)) return 'Accepting';
+  if (item.bucket === 'done' || item.engineStatus === 'completed') return '';
   if (item.dailyWait || item.batchDoneToday || ['waiting_daily_reset', 'monitoring', 'scheduled', 'queued', 'pending'].includes(item.engineStatus)) return '';
   return ['sending', 'connecting'].includes(phase) ? 'Connecting' : '';
 }

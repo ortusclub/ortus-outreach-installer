@@ -3974,7 +3974,7 @@ app.get('/api/mature/warm-pool', async (req, res) => {
     const exclude = String(req.query.exclude || '').split(',').filter(Boolean);
     const { targets, total, missing, restricted } = buildWarmPool({ pool: String(req.query.pool || ''), excludeProfileIds: exclude, ...sources });
     const lvPool = WARM_POOL_ACCOUNT[req.query.pool] === 'linkedvelocity';
-    res.json({ ready: targets.length, total, missing, restricted, error: lvPool ? sources.lvError : '' });
+    res.json({ ready: targets.length, total, missing, restricted, error: lvPool ? sources.lvError : '', warning: req.query.pool === 'all_available' && sources.lvError ? 'Linked Velocity identities could not be loaded; those accounts are not included yet.' : '' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -4108,7 +4108,7 @@ app.post('/api/mature/start', async (req, res) => {
     if (warmOn) {
       pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
       const skipped = [pool.missing ? `${pool.missing} with no known LinkedIn URL` : '', pool.restricted ? `${pool.restricted} restricted` : ''].filter(Boolean).join(', ');
-      step(`Warm pool: ${pool.total} accounts in the ${WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity' ? 'Linked Velocity' : 'Ortus'} workspace — ${pool.targets.length} can be invited${skipped ? ` (skipping ${skipped})` : ''}.`);
+      step(`Warm pool: ${pool.total} accounts in the ${plan.warmPool === 'all_available' ? 'all accessible workspaces' : WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity' ? 'Linked Velocity workspace' : 'Ortus workspace'} — ${pool.targets.length} can be invited${skipped ? ` (skipping ${skipped})` : ''}.`);
       step(`Warm plan by day: ${warmAmounts.slice(0, 16).join(', ')}${warmAmounts.length > 16 ? ', …' : ''}${warmAmounts.at(-1) > 0 ? ' — then that amount daily until the pool runs out' : ''}.`);
       if (!maturedAccount.name && !maturedAccount.profileUrl) step('⚠ No LinkedIn name or URL is set for this profile, so the receiving accounts cannot accept automatically.');
       else step('Each receiving account accepts its request 15 minutes after the day\'s batch is sent.');
@@ -4119,7 +4119,7 @@ app.post('/api/mature/start', async (req, res) => {
     }
 
     // Managed profiles belong to the warm pools, never to the cold list.
-    const managed = ['ortus_owned', 'linkedvelocity_owned']
+    const managed = ['all_available']
       .flatMap((p) => buildWarmPool({ pool: p, ...sources }).targets.map((t) => t.linkedinUrl));
     let coldLeads = [];
     if (cold) {

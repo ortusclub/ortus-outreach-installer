@@ -1,5 +1,5 @@
 import { warmRampErrors } from './mature-warm-ramp.mjs';
-export const MATURE_WARM_POOLS = Object.freeze({ ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'Other Pool Accounts (LV)' });
+export const MATURE_WARM_POOLS = Object.freeze({ all_available: 'All available accounts', ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'Other Pool Accounts (LV)' });
 // Plan data is stored inside the campaign config, never in shared localStorage.
 export function newMaturePlan() {
   // Default warm ramp (Sam, 2026-10-05): 3 → 6 → 10 → 20 a day, holding the last

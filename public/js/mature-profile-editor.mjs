@@ -1,3 +1,4 @@
+import { renderWarmRampChart } from './mature-ramp-chart.mjs';
 import { warmProfileIdentity, WARM_POOL_ACCOUNT } from './mature-warm-pool.mjs';
 import { matureCampaignName } from './mature-profile-identity.mjs';
 import { WARM_PRESETS, warmPreset, warmRampErrors, warmSchedule } from './mature-warm-ramp.mjs';
@@ -263,11 +264,16 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   const posts = connectionSection('Post Engagement — Coming soon', 'mature-post-section');
   sources.append(profileSection(), warmPresetSection(), warm.section, cold.section, posts.section);
   activityToggle(warm, 'warmEnabled', 'Send warm connections');
+  const rampChart = document.createElement('div'); rampChart.className = 'mature-ramp-chart';
+  warm.body.append(rampChart);
+  const refreshRampChart = () => renderWarmRampChart(rampChart, plan);
+  warm.section.addEventListener('input', refreshRampChart);
+  warm.section.addEventListener('change', refreshRampChart);
   activityToggle(cold, 'coldEnabled', 'Send cold connections');
   const warmLabel = document.createElement('label'); warmLabel.className = 'mature-field';
   const warmText = document.createElement('span'); warmText.textContent = 'Warm pool';
   const warmSelect = document.createElement('select'); warmSelect.id = 'mature-warm-pool';
-  const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Select account ownership'; placeholder.disabled = true;
+  const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Select warm pool'; placeholder.disabled = true;
   warmSelect.append(placeholder);
   for (const [value, label] of Object.entries(MATURE_WARM_POOLS)) {
     const option = document.createElement('option'); option.value = value; option.textContent = label; warmSelect.append(option);
@@ -285,13 +291,13 @@ export function renderMaturePlan({onChange, accounts} = {}) {
       if (plan.warmPool !== pool || !poolStatus.isConnected) return;
       if (!response.ok || data.error) { poolStatus.textContent = data.error || 'Could not count this pool.'; return; }
       const left = [data.missing ? `${data.missing} have no known LinkedIn URL` : '', data.restricted ? `${data.restricted} are restricted` : ''].filter(Boolean).join(' and ');
-      poolStatus.textContent = `${data.ready} of ${data.total} accounts in this pool can be invited${left ? ` · ${left} and will be skipped` : ''}.`;
+      poolStatus.textContent = `${data.ready} of ${data.total} accounts in this pool can be invited${left ? ` · ${left} and will be skipped` : ''}.${data.warning ? ` ${data.warning}` : ''}`;
     } catch { if (poolStatus.isConnected) poolStatus.textContent = 'Could not count this pool.'; }
   }
   warmSelect.addEventListener('change', () => { plan.warmPool = warmSelect.value; changed(); updateSummary(); showPoolSize(); });
   warmLabel.append(warmText, warmSelect); warm.body.append(warmLabel, poolStatus); showPoolSize();
   const warmHelp = document.createElement('p'); warmHelp.className = 'mature-source-help';
-  warmHelp.textContent = 'Warm connections: managed profiles in the selected ownership group. Starting sends each one a connection request from the profile being warmed. Accepting from the receiving profile is not automatic yet.'; warm.body.append(warmHelp, warmRampEditor());
+  warmHelp.textContent = 'Warm connections use eligible profiles in your selected pool. Each receives a request from the profile being warmed. After 15 minutes, one worker per campaign visits the receiving accounts in turn to accept requests.'; warm.body.append(warmHelp, warmRampEditor());
   const coldRow = document.createElement('div'); coldRow.className = 'mature-cold-row';
   const customSheet = input('Your Google Sheet — paste the link to the tab to use', plan.coldPool, v => plan.coldPool = v, 'url');
   customSheet.id = 'mature-custom-cold-sheet';
@@ -340,13 +346,13 @@ export function renderMaturePlan({onChange, accounts} = {}) {
     };
   }
   function activityStages(kind, destination) {
-    const list = document.createElement('div');
+    const list = document.createElement('div'); list.className = 'mature-stage-list';
     const label = kind === 'warm' ? 'Warm' : 'Cold';
     function paint() {
       list.replaceChildren();
       plan.connectionStages[kind].forEach((stage,index)=>{
-        const card=document.createElement('div');card.className='mature-stage';
-        const title=document.createElement('h3');title.textContent=`${label} connections · stage ${index+1}`;
+        const card=document.createElement('div');card.className='mature-stage mature-stage--compact';
+        const title=document.createElement('h3');title.textContent=`Stage ${index+1}`;
         const grid=document.createElement('div');grid.className='mature-cold-row';
         for(const [key,text] of [['fromDay','From day'],['toDay','Through day'],['daily',`${label} connections / day`]]) {
           const field=input(text,stage[key],value=>{
@@ -376,12 +382,13 @@ export function renderMaturePlan({onChange, accounts} = {}) {
       const stages=plan.connectionStages[kind],last=stages.at(-1);
       const from=Number(last?.toDay || 0)+1;
       stages.push({fromDay:from,toDay:from+6,daily:last?.daily ?? 0});
-      paint();changed();updateSummary();
+      paint();changed();updateSummary();refreshRampChart();
     };
     paint();destination.append(list,add);
   }
   if (!plan.warmRamp) activityStages('warm',warm.body);
   activityStages('cold',cold.body);
+  refreshRampChart();
   host.append(input('Plan notes',plan.notes,v=>plan.notes=v,'textarea'));
   updateSummary();
   if (accounts) renderMatureAccounts(accounts);
