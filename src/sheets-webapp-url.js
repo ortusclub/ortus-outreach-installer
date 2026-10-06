@@ -94,6 +94,7 @@ export const ORTUS_PAGE_INVITE_URL = 'https://www.linkedin.com/company/ortus-clu
 // It owns the maturing results workbook and carries the writeMatureTab action.
 // Read at call time so a release's bundled .env or a dev override both apply.
 export function matureSheetsWebappUrl() {
-  return String(process.env.MATURE_SHEETS_WEBAPP_URL || '').trim();
+  return String(process.env.MATURE_SHEETS_WEBAPP_URL || '').trim()
+    || 'https://script.google.com/macros/s/AKfycbw3WC9M0h0mKX_iUmIyA-g9RbipY__AvvrKm_tt-9JgYXhUY52uNwoArIlLBR5p7sjUCg/exec';
 }
 

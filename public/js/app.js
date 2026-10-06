@@ -1,5 +1,7 @@
+import { showMaturingPreviewPicker } from '/js/mature-preview-picker.mjs';
+import { matureResultsLink } from '/js/mature-results-link.mjs';
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
-import { splitMaturingCampaigns, maturingStatus, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction, maturingWaitLines, maturingBatchDone, logClock as matureLogClock } from '/js/mature-profile-board.mjs';
+import { splitMaturingCampaigns, maturingStatus, retainMaturingLog, mergeMaturingLogs, groupMaturingAccounts, maturingNextAction, maturingWaitLines, maturingBatchDone, logClock as matureLogClock } from '/js/mature-profile-board.mjs';
 import { readMaturePlan, loadMaturePlan, renderMaturePlan, renderMatureAccounts } from '/js/mature-profile-editor.mjs';
 import { isDeletedCampaign } from '/js/campaign-board-deletions.mjs';
 import { groupCampaignRuns } from '/js/campaign-board-identity.mjs';
@@ -11635,20 +11637,37 @@ window.deleteMaturingAccount = async function(idList, name, btn) {
 };
 // The combined maturing log. Kept as HTML between board renders so a re-render
 // shows the last known log at once; refreshed from the engine at most every 15s.
-let _maturingLogHtml = 'Loading the maturing log…';
+// Shared display history survives changing plans and reloading this app window.
+let _matureLogHistory = [];
+try { _matureLogHistory = retainMaturingLog([], JSON.parse(sessionStorage.getItem('maturing-log-history') || '[]')); } catch { /* optional cache */ }
+function rememberMaturingLog(lines) {
+  _matureLogHistory = retainMaturingLog(_matureLogHistory, lines);
+  try { sessionStorage.setItem('maturing-log-history', JSON.stringify(_matureLogHistory)); } catch { /* storage full */ }
+  return _matureLogHistory;
+}
+function sharedMaturingLogHtml() {
+  return _matureLogHistory.map((l) => `<span class="mature-log-time">${matureLogClock(l.t)}</span> ${escHtml(l.text)}`).join('<br>') || 'Nothing logged yet.';
+}
+let _maturingPreviewItems = [];
+window.openMaturingPreviewPicker = () => showMaturingPreviewPicker(_maturingPreviewItems, openCloudCampaignView);
+function maturingPreviewButton(items) {
+  _maturingPreviewItems = items;
+  return '<button type="button" class="mini" onclick="openMaturingPreviewPicker()" aria-haspopup="dialog">👁 Preview</button>';
+}
+let _maturingLogHtml = sharedMaturingLogHtml();
 let _maturingLogAt = 0, _maturingLogBusy = false;
 async function refreshMaturingLog(items) {
   if (_maturingLogBusy || Date.now() - _maturingLogAt < 14000) return;
   _maturingLogBusy = true;
   try {
-    const campaigns = await Promise.all(items.slice(0, 40).map(async (it) => {
+    const campaigns = await _mapLimit(items, CLOUD_FANOUT_LIMIT, async (it) => {
       try {
         const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(it.id)}`)).json();
         return { name: it.name, kind: it.matureKind, log: Array.isArray(d && d.monitorLog) ? d.monitorLog : [] };
       } catch { return { name: it.name, kind: it.matureKind, log: [] }; }
-    }));
+    });
     // While a due action waits for a worker, say so (and keep saying so).
-    const lines = [...mergeMaturingLogs(campaigns), ...maturingWaitLines(items)];
+    const lines = rememberMaturingLog([...mergeMaturingLogs(campaigns, 2000), ...maturingWaitLines(items)]);
     _maturingLogHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
     _maturingLogAt = Date.now();
     const box = document.getElementById('maturing-all-log');
@@ -13021,7 +13040,7 @@ async function _renderCampaignsBoardInner() {
         pausedAt: c.paused_at || null,
         // Live-browser flag from the engine (top-level of the /:id detail, NOT
         // inside d.campaign) — drives the green LIVE dot on the Show button.
-        live: !!(d && d.live), liveAccount: (d && d.liveAccount) || '',
+        liveProgress: d?.liveProgress || null, liveStamp: d?.liveStamp || null, live: !!(d && d.live), liveAccount: (d && d.liveAccount) || '',
         // The engine's per-person phase tick → the strip card's live stage.
         currentAction: _cloudCurrentAction(d),
         batchDone: _cloudSendingTurn(c.id, d).done,
@@ -13388,21 +13407,15 @@ async function _renderCampaignsBoardInner() {
     // worker, so a single Show button follows whichever account is active.
     const _maturingLive = maturingCampaigns.filter((x) => x.where === 'cloud' && x.maturing && x.bucket !== 'done');
     let _maturingFooter = '';
-    if (_maturingLive.length) {
+    if (maturingCampaigns.some(x => x.where === 'cloud' && x.maturing)) {
       const active = _maturingLive.find((x) => x.live) || null;
-      const showBtn = `<button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || _maturingLive[0]).id)}','${escHtml(active ? active.name : 'Maturing')}')" title="${active ? `Watch ${escHtml(active.name)}'s browser live` : 'No maturing account has a browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button>`;
-      // More than one account can have a browser open at once (workers run in
-      // parallel): one Show button per active account, each named.
-      const _activeAll = _maturingLive.filter((x) => x.live);
-      const showBtns = _activeAll.length > 1
-        ? _activeAll.map((x) => `<button class="mini live-on" onclick="openCloudCampaignView('${escHtml(x.id)}','${escHtml(x.name)}')" title="Watch ${escHtml(x.name)}'s browser live"><span class="dot run"></span> 👁 Show ${escHtml(String(x.name).split('@')[0])}</button>`).join(' ')
-        : showBtn;
+      const showBtns = maturingPreviewButton(maturingCampaigns.filter(x => x.where === 'cloud' && x.maturing));
       // The results workbook holds one tab per matured account.
-      const _resultsUrl = ((maturingCampaigns.find((x) => /\/spreadsheets\/d\//.test(x.matureSheetUrl || '')) || {}).matureSheetUrl || '').replace(/(\/spreadsheets\/d\/[^/]+).*$/, '$1/edit');
+      const _resultsUrl = matureResultsLink().url;
       const _resultsLink = _resultsUrl ? `<div class="mature-results-row"><button type="button" class="mini" data-url="${escHtml(_resultsUrl)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="One tab per matured account, named after its login email">Open the results workbook ↗</button></div>` : '';
       _maturingFooter = _resultsLink + `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
-        + `<span class="sn-status">${active ? `<span class="dot run"></span> ${_maturingLive.filter((x) => x.live).length > 1 ? `${_maturingLive.filter((x) => x.live).length} accounts are connecting` : `${escHtml(active.name)} is connecting`}` : '<span class="dot q"></span> No account is connecting right now'}</span></div>`
+        + `<span class="sn-status">${groupMaturingAccounts(_maturingLive).length} ${groupMaturingAccounts(_maturingLive).length === 1 ? 'account is' : 'accounts are'} maturing</span></div>`
         + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
         + `<div class="sn-logbox" id="maturing-all-log">${_maturingLogHtml}</div></div></div>`
         + `<div class="sn-foot">${showBtns}</div></div></div>`;
@@ -36608,7 +36621,12 @@ async function openMaturePlan(id) {
     // Let the route change settle before the live card is placed under the plan.
     await new Promise((resolve) => setTimeout(resolve, 200));
     const linkBtn = document.getElementById('mature-results-link');
-    if (linkBtn && cfg.matureWarm && c.sheet_url) { linkBtn.dataset.url = c.sheet_url; linkBtn.hidden = false; }
+    if (linkBtn && cfg.matureWarm) {
+      const results = matureResultsLink(c.sheet_url);
+      linkBtn.dataset.url = results.url; linkBtn.hidden = false;
+      linkBtn.textContent = results.legacy ? 'Open the shared results workbook ↗' : "Open this account's results tab ↗";
+      if (results.legacy) showCampaignToast('This older run still records results in its original sheet. The shared workbook link does not migrate those results.', 10000);
+    }
     // The same maturing log as the Profile Maturing tab — not the Connection
     // campaign card, whose wording and counters do not fit a maturing plan.
     try { stopViewingCloudCampaign(); } catch (_) { /* */ }
@@ -36624,38 +36642,37 @@ async function openMaturePlan(id) {
 }
 window.openMaturePlan = openMaturePlan;
 let _matureLiveTimer = null;
+let _matureLiveGeneration = 0;
 // Name of the running plan whose live log is on the page ('' when none).
 var _matureLiveFor = '';
 // A different plan is being opened: the previous plan's live status goes away.
 function stopMatureInlineLive() {
+  _matureLiveGeneration++;
   _matureLiveFor = '';
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
   for (const id of ['mature-live', 'mature-start-status', 'mature-results-link']) { const el = document.getElementById(id); if (el) el.hidden = true; }
 }
-// The plan's log while it is being started: the server's steps, in the same
-// plain dark log the running campaign uses.
+// Startup entries join the same history as all running accounts.
 function _renderMatureLaunchLog(name, steps, state) {
+  rememberMaturingLog(steps);
   const host = document.getElementById('mature-live'), body = document.getElementById('mature-live-body');
   if (!host || !body) return;
-  if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
   host.hidden = false;
-  const bad = state === 'Not started';
-  body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
-    + `<div class="sn-top"><span class="sn-type">Maturing log · ${escHtml(name)}</span><span class="sn-status"><span class="dot ${bad ? 'red' : 'amber'}"></span> ${escHtml(state)}</span></div>`
-    + (bad ? '' : `<div class="mature-row-next" style="margin:6px 0 10px">Starting usually takes about 1 minute; a cloud worker then picks it up in about 2 minutes.</div>`)
-    + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
-    + `<div class="sn-logbox">${steps.map((l) => `<span class="mature-log-time">${matureLogClock(l.t)}</span> ${escHtml(l.text)}`).join('<br>')}</div></div></div>`
-    + `</div></div>`;
+  if (!_matureLiveTimer) startMatureInlineLive([]);
   const box = body.querySelector('.sn-logbox');
-  if (box) box.scrollTop = box.scrollHeight;
-  try { host.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) { /* */ }
+  if (box) {
+    const pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.innerHTML = sharedMaturingLogHtml();
+    if (pinned) box.scrollTop = box.scrollHeight;
+  }
 }
 function startMatureInlineLive(ids, startLines = []) {
   const host = document.getElementById('mature-live'), body = document.getElementById('mature-live-body');
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
-  if (!host || !body || !ids.length) return;
+  if (!host || !body) return;
+  rememberMaturingLog(startLines);
   host.hidden = false;
-  if (!startLines.length) body.innerHTML = '<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-logbox">Loading the maturing log…</div></div></div>';
+  body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-top"><span class="sn-type">Maturing log · all accounts</span></div><div class="sn-logbox">${sharedMaturingLogHtml()}</div></div></div>`;
   // The engine's campaign, in the shape the Profile Maturing tab's helpers read.
   async function one(id) {
     const d = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json());
@@ -36665,39 +36682,47 @@ function startMatureInlineLive(ids, startLines = []) {
       : ['pending', 'queued', 'scheduled'].includes(st) ? 'queued' : 'done';
     return { id, name: c.name || '', matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '',
       bucket, bad: st === 'cancelled' || st === 'error', dailyWait: st === 'waiting_daily_reset', paused: st === 'paused' || st === 'pausing', stopping: st === 'stopping',
-      needsReview: st === 'needs_review', live: !!d.live, scheduledAt: c.scheduled_start_at || null, resumeAt: c.resumeTaskDueAt || null,
+      needsReview: st === 'needs_review', engineStatus: st, liveProgress: d.liveProgress || null, liveStamp: d.liveStamp || null, live: !!d.live, scheduledAt: c.scheduled_start_at || null, resumeAt: c.resumeTaskDueAt || null,
       acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null, batchDoneToday: maturingBatchDone(d.monitorLog),
       sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)), log: Array.isArray(d.monitorLog) ? d.monitorLog : [] };
   }
+  let busy = false;
+  const generation = ++_matureLiveGeneration;
   async function tick() {
+    if (busy || generation !== _matureLiveGeneration) return;
     // Gone from the page (another campaign opened, or back on the dashboard).
     if (!host.isConnected || host.hidden || host.closest('#nav-mature-profile')?.style.display === 'none' || !location.hash.startsWith('#/new')) {
       clearInterval(_matureLiveTimer); _matureLiveTimer = null; return;
     }
-    const items = (await Promise.all(ids.map((id) => one(id).catch(() => null)))).filter(Boolean);
-    if (!items.length) { body.querySelector('.sn-logbox').textContent = 'Could not read the campaign from the cloud just now. Trying again…'; return; }
-    // Same look and wording as the combined log on the Profile Maturing tab.
-    const group = groupMaturingAccounts(items)[0];
-    const dot = { green: 'run', amber: 'amber', red: 'red', done: 'done', muted: 'q' }[group.state.tone] || 'q';
-    const next = items.map((x) => maturingNextAction(x)).filter(Boolean).join('  ·  ');
-    const lines = [...startLines, ...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log }))), ...maturingWaitLines(items)].sort((a, b) => a.t - b.t);
-    const logHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
-    const active = items.find((x) => x.live) || null;
-    const counts = [group.warmSent !== null ? `Warm ${group.warmSent}` : '', group.coldSent !== null ? `Cold ${group.coldSent}` : ''].filter(Boolean).join(' · ');
-    const old = body.querySelector('.sn-logbox');
-    const pinned = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 40;   // stay at the newest line unless the operator scrolled up
-    const top = old ? old.scrollTop : 0;
-    body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
-      + `<div class="sn-top"><span class="sn-type">Maturing log · ${escHtml(group.name)}</span>`
-      + `<span class="sn-status"><span class="dot ${dot}"></span> ${escHtml(group.state.label)}${counts ? ` · ${escHtml(counts)} sent` : ''}</span></div>`
-      + (next ? `<div class="mature-row-next" style="margin:6px 0 10px">${escHtml(next)}</div>` : '')
-      + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
-      + `<div class="sn-logbox">${logHtml}</div></div></div>`
-      + `<div class="sn-foot"><button class="mini${active ? ' live-on' : ''}" ${active ? '' : 'disabled '}onclick="openCloudCampaignView('${escHtml((active || items[0]).id)}','${escHtml(group.name)}')" title="${active ? 'Watch this account\'s browser live' : 'This account has no browser open right now'}">${active ? '<span class="dot run"></span> ' : ''}👁 Show</button></div>`
-      + `</div></div>`;
-    const box = body.querySelector('.sn-logbox');
-    if (box) box.scrollTop = pinned ? box.scrollHeight : top;
-    if (items.every((x) => x.bucket === 'done')) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
+    busy = true;
+    try {
+      // Discover every accessible maturing account, including newly started ones.
+      let allIds = [...ids];
+      try {
+        const list = await fetch('/api/campaign/cloud-list').then((r) => r.json());
+        allIds.push(...(list.campaigns || []).filter((c) => c.config?.matureWarm || c.mode === 'mature_profile').map((c) => c.id));
+      } catch { /* keep known runs and history during a temporary outage */ }
+      const items = (await _mapLimit([...new Set(allIds)], CLOUD_FANOUT_LIMIT, (id) => one(id).catch(() => null))).filter(Boolean);
+      if (generation !== _matureLiveGeneration || host.hidden) return;
+      if (!items.length) return;
+
+      // Same look and wording as the combined log on the Profile Maturing tab.
+      const lines = rememberMaturingLog([...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log })), 2000), ...maturingWaitLines(items)]);
+      const logHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
+      const active = items.find((x) => x.live) || null;
+      const old = body.querySelector('.sn-logbox');
+      const pinned = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 40;   // stay at the newest line unless the operator scrolled up
+      const top = old ? old.scrollTop : 0;
+      body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
+        + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
+        + `<span class="sn-status">${groupMaturingAccounts(items).length} accounts</span></div>`
+        + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
+        + `<div class="sn-logbox">${logHtml}</div></div></div>`
+        + `<div class="sn-foot">${maturingPreviewButton(items)}</div>`
+        + `</div></div>`;
+      const box = body.querySelector('.sn-logbox');
+      if (box) box.scrollTop = pinned ? box.scrollHeight : top;
+    } finally { busy = false; }
   }
   tick();
   _matureLiveTimer = setInterval(tick, 5000);
@@ -36718,7 +36743,7 @@ window.startMaturePlan = async function(btn) {
   // becomes the running campaign's card (pause, stop, live browser preview).
   const launchId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
   const linkBtn = document.getElementById('mature-results-link');
-  const showResultsLink = (url) => { if (linkBtn && url) { linkBtn.dataset.url = url; linkBtn.hidden = false; } };
+  const showResultsLink = (url) => { if (linkBtn && url) { linkBtn.dataset.url = matureResultsLink(url).url; linkBtn.hidden = false; } };
   if (linkBtn) linkBtn.hidden = true;
   // The start is logged in the plan's own maturing log, under the options — the
   // same plain log the running campaign then continues in.

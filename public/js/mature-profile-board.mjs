@@ -145,29 +145,28 @@ export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}
   };
   const count = (n) => (n === null ? `${what}s` : `${n} ${what}${n === 1 ? '' : 's'}`);
   const at = (instant) => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short', ...(viewerTimeZone ? { timeZone: viewerTimeZone } : {}) }).format(new Date(instant)).replace(/^(\w+),/, '$1');
-  const free = 'when the worker is free';
   const due = (instant) => (Number.isFinite(Date.parse(instant || '')) ? instant : null);
   if (it.bucket === 'queued') {
     const start = due(it.scheduledAt);
-    return start ? `Next: ${count(amountOn(start))} · ${at(start)} · ${free}` : `Next: ${count(amountOn(now))} today · as soon as the worker is free`;
+    return start ? `Next: ${count(amountOn(start))} · Attempt at ${at(start)}` : `Next: ${count(amountOn(now))} today · Waiting for attempt time`;
   }
   // Today's batch is out: the receiving accounts accept it 15 minutes later.
   if (Number(it.acceptPending) > 0 && !(it.live && !it.dailyWait)) {
     const n = Number(it.acceptPending), when = due(it.acceptDueAt);
-    return `Next: accept ${n} connection request${n === 1 ? '' : 's'} in the receiving account${n === 1 ? '' : 's'}${when ? ` · ${at(when)}` : ''} · ${free}`;
+    return `Next: accept ${n} connection request${n === 1 ? '' : 's'} in the receiving account${n === 1 ? '' : 's'}${when ? ` · Attempt at ${at(when)}` : ' · Waiting for attempt time'}`;
   }
   if (it.dailyWait) {
     const resume = due(it.resumeAt);
-    if (!resume) return `Next: ${what}s in the next daily batch · ${free}`;
+    if (!resume) return `Next: ${what}s in the next daily batch · Waiting for attempt time`;
     const n = amountOn(resume);
-    return n === 0 ? 'Plan complete — nothing further is planned' : `Next: ${count(n)} · ${at(resume)} · ${free}`;
+    return n === 0 ? 'Plan complete — nothing further is planned' : `Next: ${count(n)} · Attempt at ${at(resume)}`;
   }
   const today = amountOn(now);
   if (today === 0) return 'Plan complete — nothing further is planned';
   // Today's batch is out but the engine has not closed the day yet (it rests a
   // few minutes first). The accepts are queued when it does.
-  if (it.batchDoneToday && !it.live) return `Next: the receiving accounts accept today's requests · about 15 minutes after the batch closes, which takes a few minutes · ${free}`;
-  return it.live ? `Now: sending today's ${count(today)}` : `Next: today's ${count(today)} · as soon as the worker is free`;
+  if (it.batchDoneToday && !it.live) return `Next: the receiving accounts accept today's requests · about 15 minutes after the batch closes, which takes a few minutes`;
+  return it.live ? `Now: sending today's ${count(today)}` : `Next: today's ${count(today)} · Waiting for attempt time`;
 }
 
 // One entry per matured account: its warm and cold campaigns side by side, with
@@ -189,4 +188,15 @@ export function groupMaturingAccounts(items) {
     states.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
     return { ...g, state: states[0] || { label: '', tone: 'muted' }, warmSent: g.warm ? (g.warm.sent || 0) : null, coldSent: g.cold ? (g.cold.sent || 0) : null };
   });
+}
+
+// Keep display history when switching accounts or receiving a shorter engine
+// snapshot. Account labels are part of the key, so separate accounts survive.
+export function retainMaturingLog(previous, incoming, limit = 2000) {
+  const events = new Map();
+  for (const line of [...(Array.isArray(previous) ? previous : []), ...(Array.isArray(incoming) ? incoming : [])]) {
+    if (!line || typeof line.text !== 'string' || !Number.isFinite(line.t)) continue;
+    events.set(JSON.stringify([line.t, line.text]), { t: line.t, text: line.text });
+  }
+  return [...events.values()].sort((a, b) => a.t - b.t).slice(-limit);
 }
