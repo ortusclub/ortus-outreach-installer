@@ -1,6 +1,6 @@
 /** Maturing is shared by the creator's company, never by the target profile. */
 export function isMaturingCampaign(record) {
-  return !!(record?.config?.matureWarm || record?.maturing || record?.mode === 'mature_profile');
+  return !!(record?.config?.matureWarm || record?.config?.mode === 'mature_profile' || record?.maturing || record?.mode === 'mature_profile');
 }
 export function maturingCompany(email) {
   const value = String(email || '').trim().toLowerCase();

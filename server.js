@@ -7,7 +7,7 @@ import { SHEETS_GATEWAY_URL as SHARED_GOLOGIN_GATEWAY } from './src/sheets-webap
 import { hasLocalBrowserSelection, GOLOGIN_REQUIRED } from './src/gologin-only.js';
 import { cloudOptionError } from './public/js/cloud-option-compatibility.mjs';
 import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
-import { canViewCampaign, visibleCampaigns } from './src/campaign-visibility.js';
+import { canViewCampaign, visibleCampaigns, canAccessSavedCampaign } from './src/campaign-visibility.js';
 import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById, getConfig as getSavedCampaign, detachCampaignIdentity } from './src/campaign-configs.js';
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
@@ -326,7 +326,7 @@ function viewerEmail(req) {
   return getOperatorEmail() || (req && req.user) || '';
 }
 
-function campaignViewer(req) { return { admin: viewerIsAdmin(req), email: viewerEmail(req), operatorId: getOperatorId() }; }
+function campaignViewer(req) { return { admin: viewerIsAdmin(req), email: viewerEmail(req), maturingEmail: req.user || '', operatorId: getOperatorId() }; }
 
 // Who may point the app at the DEV engine (Settings → Engine → Dev). Same
 // identity model as the admin gate — the per-machine operator email, because the
@@ -510,6 +510,23 @@ app.get('/api/engine-target', (req, res) => {
     canDev: canSwitchEngineToDev(req),   // may this operator switch to dev?
     lockedByEnv: engineTargetLockedByEnv(),
   });
+});
+
+// Exchange the authenticated Outreach login for a short-lived, read-only workbook session.
+app.post('/api/maturing/workbook-access', async (req, res) => {
+  try {
+    const engine = resolveEngine();
+    const response = await fetch(`${engine.url}/api/maturing/workbook-access`, {
+      method: 'POST', headers: { Authorization: `Bearer ${engine.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: req.user }), signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) return res.status(502).json({ error: 'Workbook access is unavailable. Please try again shortly.' });
+    const access = await response.json();
+    if (!access.token) throw new Error('Missing workbook session');
+    const url = new URL('/maturing-workbook.html', engine.environment === 'development' ? DEV_URL : PROD_URL);
+    url.hash = new URLSearchParams({ access: access.token }).toString();
+    res.set('Cache-Control', 'no-store').json({ url: url.href });
+  } catch { res.status(502).json({ error: 'Could not open the workbook. Please try again.' }); }
 });
 
 app.post('/api/engine-target', async (req, res) => {
@@ -1774,7 +1791,7 @@ async function handleStartCloudOnce(req, res) {
       // Idempotency: a duplicated POST (operator re-click, retry, second window)
       // with the same launchId collapses to ONE campaign engine-side.
       id: launchId || undefined,
-      mode, name: name || '', owner: getOperatorEmail() || req.user || '',
+      mode, name: name || '', owner: config?.matureWarm ? (req.user || '') : (getOperatorEmail() || req.user || ''),
       profileIds: accounts, leads, config,
       // sheet_url handed to the engine for WRITE-BACK must be the operator's
       // CHOSEN tab (cloudSheetUrl = withGid(sheetUrl, sheetGid)), NOT the raw
@@ -7714,15 +7731,15 @@ app.delete('/api/draft-name', async (_req, res) => {
 // wizard's saveDraftName still hits it). These power the new dashboard
 // Drafts section and let the operator stage multiple campaigns in
 // parallel without losing any.
-app.get('/api/drafts', async (_req, res) => {
-  try { res.json({ drafts: await getDrafts() }); }
+app.get('/api/drafts', async (req, res) => {
+  try { res.json({ drafts: (await getDrafts()).filter(d => canAccessSavedCampaign(d, campaignViewer(req))) }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/drafts/:id', async (req, res) => {
   try {
     const d = await getDraft(req.params.id);
-    if (!d) return res.status(404).json({ error: 'Not found' });
+    if (!d || !canAccessSavedCampaign(d, campaignViewer(req))) return res.status(404).json({ error: 'Not found' });
     res.json(d);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -7766,7 +7783,7 @@ app.post('/api/drafts', async (req, res) => {
     }
     const collision = _draftNameCollision(name);
     if (collision) return res.status(collision.status).json(collision.body);
-    const entry = await addDraft({ name, config });
+    const entry = await addDraft({ name, config, owner: req.user || '' });
     res.json({ ok: true, draft: entry });
   } catch (err) { res.status(500).json({ error: err.message }); }
   finally { if (reserved) _draftNamesBeingCreated.delete(key); }
@@ -7774,6 +7791,8 @@ app.post('/api/drafts', async (req, res) => {
 
 app.patch('/api/drafts/:id', async (req, res) => {
   try {
+    const existing = await getDraft(req.params.id);
+    if (existing && !canAccessSavedCampaign(existing, campaignViewer(req))) return res.status(404).json({ error: 'Not found' });
     const collision = _draftNameCollision(req.body?.name);
     if (collision) return res.status(collision.status).json(collision.body);
     const updated = await updateDraft(req.params.id, req.body || {});
@@ -7788,13 +7807,15 @@ app.patch('/api/drafts/:id', async (req, res) => {
 });
 
 // Bulk "Delete all drafts" — one request, one disk write (vs 227 DELETEs).
-app.post('/api/drafts/trash-all', async (_req, res) => {
-  try { res.json({ ok: true, trashed: await trashAllDrafts() }); }
+app.post('/api/drafts/trash-all', async (req, res) => {
+  try { res.json({ ok: true, trashed: await trashAllDrafts(d => canAccessSavedCampaign(d, campaignViewer(req))) }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/drafts/:id', async (req, res) => {
   try {
+    const existing = await getDraft(req.params.id);
+    if (existing && !canAccessSavedCampaign(existing, campaignViewer(req))) return res.status(404).json({ error: 'Not found' });
     // Bulk "Delete all drafts" sends {soft:true} → hide now, keep 1 week, then
     // purgeTrashedDrafts removes it. A per-draft delete (no flag) is immediate.
     const ok = (req.body && req.body.soft)
@@ -9075,18 +9096,19 @@ app.get('/api/export/csv', async (_req, res) => {
 // Saved on Save and on Start; restored when a campaign of that name is opened.
 // Keyed by name because an engine campaign id never survived a restart, which
 // is why reopening a campaign kept coming back empty.
-app.get('/api/campaign-configs', async (_req, res) => {
+app.get('/api/campaign-configs', async (req, res) => {
   try {
     const { listConfigs } = await import('./src/campaign-configs.js');
-    res.json({ ok: true, configs: listConfigs() });
+    res.json({ ok: true, configs: listConfigs().filter(d => canAccessSavedCampaign(d, campaignViewer(req))) });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
 app.delete('/api/campaign-configs/:name', async (req, res) => {
   try {
     const { deleteConfig, normaliseName } = await import('./src/campaign-configs.js');
-    const entry = req.query.campaignId ? getConfigById(String(req.query.campaignId)) : null;
+    const entry = req.query.campaignId ? getConfigById(String(req.query.campaignId)) : getSavedCampaign(req.params.name);
     if (req.query.campaignId && !entry) return res.status(404).json({ error: 'Campaign not found.' });
+    if (entry && !canAccessSavedCampaign(entry, campaignViewer(req))) return res.status(404).json({ error: 'Campaign not found.' });
     const key = normaliseName(entry?.name || req.params.name);
     const matches = row => entry ? row.campaignId === entry.campaignId : normaliseName(row.name) === key;
     const queue = await getQueue();
@@ -9115,7 +9137,7 @@ app.post('/api/campaign-board/deletions', (req, res) => {
 
 app.get('/api/campaign-configs/by-id/:campaignId', (req, res) => {
   const entry = getConfigById(req.params.campaignId);
-  if (!entry) return res.status(404).json({ ok: false, error: 'Campaign not found.' });
+  if (!entry || !canAccessSavedCampaign(entry, campaignViewer(req))) return res.status(404).json({ ok: false, error: 'Campaign not found.' });
   res.json({ ok: true, ...entry });
 });
 
@@ -9123,7 +9145,7 @@ app.get('/api/campaign-configs/:name', async (req, res) => {
   try {
     const { getConfig } = await import('./src/campaign-configs.js');
     const entry = getConfig(req.params.name);
-    if (!entry) return res.status(404).json({ ok: false, error: 'No saved settings for that campaign name.' });
+    if (!entry || !canAccessSavedCampaign(entry, campaignViewer(req))) return res.status(404).json({ ok: false, error: 'No saved settings for that campaign name.' });
     res.json({ ok: true, ...entry });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
@@ -9142,6 +9164,8 @@ app.post('/api/campaign-configs/rename', async (req, res) => {
     if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
 
     const { renameConfig } = await import('./src/campaign-configs.js');
+    const existing = req.body?.campaignId ? getConfigById(req.body.campaignId) : getSavedCampaign(from);
+    if (existing && !canAccessSavedCampaign(existing, campaignViewer(req))) return res.status(404).json({ error: 'Campaign not found.' });
     const moved = renameConfig(from, to, req.body?.campaignId);
     // 'missing' just means this campaign had no saved settings yet — the board
     // rename below is still worth doing. A clash is fatal: two campaigns must
@@ -9209,7 +9233,10 @@ app.post('/api/campaign-configs', async (req, res) => {
     if (!String(name || '').trim()) {
       return res.status(400).json({ ok: false, error: 'A campaign needs a name before its settings can be saved.' });
     }
-    res.json({ ok: true, saved: saveNamedCampaign(name, config, req.body?.campaignId || config?.campaignId) });
+    const id = req.body?.campaignId || config?.campaignId;
+    const existing = [getSavedCampaign(name), id ? getConfigById(id) : null].filter(Boolean);
+    if (existing.some(entry => !canAccessSavedCampaign(entry, campaignViewer(req)))) return res.status(404).json({ error: 'Campaign not found.' });
+    res.json({ ok: true, saved: saveNamedCampaign(name, config, id, req.user || '') });
   } catch (err) {
     console.error('[campaign-configs] save failed:', err);
     res.status(err.status || 500).json({ ok: false, error: err.message });

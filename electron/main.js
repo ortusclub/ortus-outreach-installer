@@ -16,7 +16,7 @@
 // log-writer.js below) is evaluated. See electron/load-env.js for why.
 import './load-env.js';
 import { app, BrowserWindow, Tray, Menu, shell, dialog, powerMonitor, screen, ipcMain } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, watch } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
@@ -116,6 +116,9 @@ let serverPort = null;
 let tray = null;
 let serverProcess = null;
 let shuttingDown = false;
+const devHotReload = !app.isPackaged && process.env.ORTUS_DEV_HOT_RELOAD === '1';
+let devFileWatcher = null;
+let devReloadTimer = null;
 
 async function startServer() {
   if (!serverPort) serverPort = await pickFreePort();
@@ -124,7 +127,7 @@ async function startServer() {
   // electron-builder includes the source under app.asar so the same relative
   // path works.
   const serverEntry = resolve(__dirname, '..', 'server.js');
-  serverProcess = spawn(process.execPath, [serverEntry], {
+  serverProcess = spawn(process.execPath, devHotReload ? ['--watch', '--watch-preserve-output', serverEntry] : [serverEntry], {
     cwd: REPO_ROOT,
     env: { ...process.env, PORT: String(serverPort), ELECTRON_RUN_AS_NODE: '1', ORTUS_ELECTRON_MODE: '1', ORTUS_DATA_DIR: userDataDir },
     stdio: ['ignore', 'inherit', 'inherit'],
@@ -260,6 +263,21 @@ if (!gotLock) {
 
       // Launch the dashboard window immediately — normal desktop-app behavior.
       getOrCreateWindow();
+      if (devHotReload) {
+        // Watch source assets only: user data/log writes must never reload the UI.
+        devFileWatcher = watch(resolve(REPO_ROOT, 'public'), { recursive: true }, (_event, filename) => {
+          if (!filename || !/\.(?:html|css|js|mjs|svg)$/.test(String(filename))) return;
+          clearTimeout(devReloadTimer);
+          devReloadTimer = setTimeout(() => {
+            if (shuttingDown) return;
+            for (const window of BrowserWindow.getAllWindows()) {
+              if (!window.isDestroyed()) window.webContents.reloadIgnoringCache();
+            }
+            console.log('[dev] Source changed — reloaded Electron windows.');
+          }, 500);
+        });
+        console.log('[dev] Live reload enabled: UI assets reload; server imports restart automatically.');
+      }
 
       // Tray icon is kept as a convenience (Show Browsers, quick campaign jump).
       // Dock icon remains visible; closing the window quits the app normally.
@@ -325,6 +343,8 @@ app.on('before-quit', async (e) => {
   e.preventDefault();
   _flushedOnQuit = true;
   shuttingDown = true;
+  devFileWatcher?.close();
+  clearTimeout(devReloadTimer);
   try {
     if (serverPort) await Promise.race([
       fetch(`http://127.0.0.1:${serverPort}/api/runtime/interruption`, {

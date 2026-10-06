@@ -259,6 +259,7 @@ export function renderMaturePlan({onChange, accounts} = {}) {
   if (onChange) changed = onChange;
   const host = document.getElementById('mature-plan-editor');
   if (!host) return;
+  hydrated = true; // A newly opened editor is a real editable plan, even before loading a saved one.
   host.replaceChildren();
   const sources = document.createElement('div'); sources.className = 'mature-sources';
   const warm = connectionSection('Warm Connections', 'mature-warm-section');

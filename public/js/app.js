@@ -11626,7 +11626,7 @@ function _maturingListHtml(items) {
     const main = g.warm || g.cold;
     const ids = g.items.map((x) => x.id).join(',');
     // What each of the account's campaigns does next, and when.
-    const next = [g.warm, g.cold].filter(Boolean).map((x) => maturingNextAction(x)).filter((line, i, all) => line && all.indexOf(line) === i).join('  ·  ');
+    const next = [g.warm, g.cold].filter(Boolean).map((x) => { const line = maturingNextAction(x); return x === g.cold && g.warm && Date.parse(x.scheduledAt || '') > Date.now() ? line.replace(/^Next:/, 'Later:') : line; }).filter((line, i, all) => line && all.indexOf(line) === i).join('  ·  ');
     const counts = [g.warmSent !== null ? `Warm <b>${g.warmSent}</b>` : '', g.coldSent !== null ? `Cold <b>${g.coldSent}</b>` : ''].filter(Boolean).join(' · ');
     return `<div class="mature-row" data-cid="${escHtml(main.id)}">`
       + `<span class="dot ${dot}"></span>`
@@ -11667,7 +11667,7 @@ window.deleteMaturingAccount = async function(idList, name, btn) {
 let _matureLogHistory = [];
 let _matureLogScope = '';
 function syncMaturingLogScope() {
-  const scope = typeof snCurrentEmail === 'string' ? snCurrentEmail.trim().toLowerCase() : '';
+  const scope = typeof _viewerEmail === 'string' ? _viewerEmail.trim().toLowerCase() : '';
   if (scope === _matureLogScope) return;
   _matureLogScope = scope;
   _matureLogHistory = [];
@@ -11682,7 +11682,7 @@ function rememberMaturingLog(lines) {
 let _matureLogVisible = 20;
 function sharedMaturingLogHtml() {
   syncMaturingLogScope();
-  return _matureLogHistory.slice(-_matureLogVisible).map((l) => `<span class="mature-log-time">${matureLogClock(l.t)}</span> ${escHtml(l.text)}`).join('<br>') || 'Nothing logged yet.';
+  return _matureLogHistory.slice(-_matureLogVisible).map((l) => `<span class="mature-log-time">${matureLogClock(l.t)}</span> ${escHtml(l.text)}`).join('<br>') || '<span class="mature-log-placeholder">No activity yet. Setup progress and connection results will appear here when a plan starts.</span>';
 }
 function _pinMaturingLog(box, key) {
   if (!box) return;
@@ -11711,13 +11711,14 @@ function _pinMaturingLog(box, key) {
 }
 function maturingResultsButton() {
   const url = matureResultsLink().url;
-  return `<button type="button" class="mini" onclick="openMaturingWebWorkbook()">Web workbook ↗</button> <span style="font-size:12px;letter-spacing:normal;text-transform:none">Password: <code>alwaysDELIVER</code></span> ` + (url ? `<button type="button" class="mini" data-url="${escHtml(url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Warm and cold results for each profile">Google Sheets ↗</button>` : '');
+  return `<button type="button" class="mini" onclick="openMaturingWebWorkbook()">Web workbook ↗</button> ` + (url ? `<button type="button" class="mini" data-url="${escHtml(url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Warm and cold results for each profile">Google Sheets ↗</button>` : '');
 }
 window.openMaturingWebWorkbook = async function() {
   try {
-    const target = await fetch('/api/engine-target').then(r => r.json());
-    const base = target.active === 'development' ? target.devUrl : target.prodUrl;
-    window.open(new URL('/maturing-workbook.html', base).href, '_blank', 'noopener,noreferrer');
+    const response = await fetch('/api/maturing/workbook-access', { method: 'POST' });
+    const access = await response.json();
+    if (!response.ok || !access.url) throw new Error(access.error || 'Workbook access unavailable');
+    window.open(access.url, '_blank', 'noopener,noreferrer');
   } catch (error) { showCampaignToast('Could not open the web workbook: ' + error.message, 6000); }
 };
 let _maturingPreviewItems = [];
@@ -13083,7 +13084,7 @@ async function _renderCampaignsBoardInner() {
       if (c.sheet_url) _cloudSheetUrls.set(c.id, c.sheet_url);
       const mine = !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase());
       // Maturing is shared within the creator's company; other campaign rules stay the same.
-      if (isMaturingCampaign(c) ? !canViewMaturingCampaign(c, snCurrentEmail) : (!_viewerIsAdmin && !mine)) continue;
+      if (isMaturingCampaign(c) ? !canViewMaturingCampaign(c, _viewerEmail) : (!_viewerIsAdmin && !mine)) continue;
       // 'monitoring' (post-send acceptance-watch — exactly like a local CC+IC /
       // CC+DM run) is an ACTIVE state: keep it in NOW RUNNING, not DONE. Task 3.
       // 'paused' is a still-ACTIVE state (sending held, resumable) — keep it in
@@ -13373,7 +13374,7 @@ async function _renderCampaignsBoardInner() {
     }
     for (const saved of unlistedSavedCampaigns(savedData.configs || [], items, draftData.drafts || [])) {
       items.push({ id: 'saved-' + (saved.campaignId || encodeURIComponent(saved.name)), campaignId: saved.campaignId, name: saved.name,
-        mode: saved.mode || '', where: 'local', mine: true, bucket: 'saved', hasRun: false });
+        mode: saved.mode || '', owner: saved.owner || '', where: 'local', mine: true, bucket: 'saved', hasRun: false });
     }
   } catch (err) { console.warn('[board] saved campaigns:', err.message); }
 
@@ -13388,7 +13389,7 @@ async function _renderCampaignsBoardInner() {
     const response=await fetch('/api/campaign-board/deletions');
     if(response.ok) _campaignDeletions=(await response.json()).deletions || [];
   } catch (_) { /* retain last confirmed deletions during a connection interruption */ }
-  const visibleItems = groupCampaignRuns(items.filter((x) => (x.maturing ? canViewMaturingCampaign(x, snCurrentEmail) : (x.mine || (_viewerIsAdmin && x.isFG))) && !isDeletedCampaign(x,_campaignDeletions)));
+  const visibleItems = groupCampaignRuns(items.filter((x) => (isMaturingCampaign(x) ? canViewMaturingCampaign(x, _viewerEmail) : (x.mine || (_viewerIsAdmin && x.isFG))) && !isDeletedCampaign(x,_campaignDeletions)));
   // Show every permitted campaign; there are no dashboard type/owner filters.
   const shown = visibleItems;
 
@@ -13477,17 +13478,15 @@ async function _renderCampaignsBoardInner() {
     // worker, so a single Show button follows whichever account is active.
     const _maturingLive = maturingCampaigns.filter((x) => x.where === 'cloud' && x.maturing && x.bucket !== 'done');
     let _maturingFooter = '';
-    if (maturingCampaigns.some(x => x.where === 'cloud' && x.maturing)) {
+    { // The shared log is present even when there are only saved plans.
       const active = _maturingLive.find((x) => x.live) || null;
       const showBtns = maturingPreviewButton(maturingCampaigns.filter(x => x.where === 'cloud' && x.maturing));
-      // Keep workbook access and its password visible above the shared log.
-      const _resultsLink = `<div class="mature-results-row">${maturingResultsButton()}</div>`;
-      _maturingFooter = _resultsLink + `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
+      _maturingFooter = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
         + `<span class="sn-status">${groupMaturingAccounts(_maturingLive).length} ${groupMaturingAccounts(_maturingLive).length === 1 ? 'account is' : 'accounts are'} maturing</span></div>`
         + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
         + `<div class="sn-logbox" id="maturing-all-log">${sharedMaturingLogHtml()}</div></div></div>`
-        + `<div class="sn-foot">${showBtns}</div></div></div>`;
+        + `<div class="sn-foot">${maturingResultsButton()} ${_maturingLive.length ? showBtns : ''}</div></div></div>`;
       refreshMaturingLog(_maturingLive);
     }
     // One plain line per account, then the combined log below them.
@@ -36748,7 +36747,14 @@ function stopMatureInlineLive() {
   _matureLiveGeneration++;
   _matureLiveFor = '';
   if (_matureLiveTimer) { clearInterval(_matureLiveTimer); _matureLiveTimer = null; }
-  for (const id of ['mature-live', 'mature-start-status', 'mature-results-link']) { const el = document.getElementById(id); if (el) el.hidden = true; }
+  renderEmptyMatureLog();
+  for (const id of ['mature-start-status', 'mature-results-link']) { const el = document.getElementById(id); if (el) el.hidden = true; }
+}
+function renderEmptyMatureLog() {
+  const host = document.getElementById('mature-live'), body = document.getElementById('mature-live-body');
+  if (!host || !body) return;
+  host.hidden = false;
+  body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-top"><span class="sn-type">Maturing log</span><span class="sn-status">Not started</span></div><div class="mature-log-empty"><strong>No activity yet</strong><span>Start your plan to see setup progress and connection results here.</span></div><div class="sn-foot mature-log-links">${maturingResultsButton()}</div></div></div>`;
 }
 // Startup entries join the same history as all running accounts.
 function _renderMatureLaunchLog(name, steps, state) {
@@ -36842,7 +36848,7 @@ window.startMaturePlan = async function(btn) {
   const name = document.getElementById('campaign-name-input')?.value.trim();
   if (!name) { showCampaignToast('Choose the profile to mature first. The campaign is named after it.', 5000); return; }
   const maturePlan = readMaturePlan();
-  if (!maturePlan) return;
+  if (!maturePlan) { showCampaignToast('The plan editor is not ready. Reopen Profile Maturing and try again.', 6000); return; }
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Starting…';
   // The same launch card every cloud campaign shows while it starts — it opens
