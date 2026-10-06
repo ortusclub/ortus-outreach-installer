@@ -2546,8 +2546,10 @@
         <button id="mature-cancel-start" type="button" class="btn" hidden onclick="cancelMatureStart(this)">Stop setup</button>
         <span id="mature-running-controls" style="display:flex;gap:10px"></span>
       </div>
-      <!-- This account's tab in the results workbook; shown once the tab is written. -->
-      <div style="margin-top:14px">
+      <!-- Workbook access is available before and after starting a plan. -->
+      <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <button type="button" class="btn" onclick="openMaturingWebWorkbook()">Web workbook ↗</button>
+        <span style="font-size:12px">Password: <code>alwaysDELIVER</code></span>
         <button type="button" id="mature-results-link" class="btn" hidden style="font-size:12px;padding:8px 18px;letter-spacing:.08em" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')">Open this account's results tab ↗</button>
       </div>
       <!-- Live status of the started plan, shown here under the options so the

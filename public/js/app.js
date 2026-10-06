@@ -11701,7 +11701,7 @@ function _pinMaturingLog(box, key) {
 }
 function maturingResultsButton() {
   const url = matureResultsLink().url;
-  return `<button type="button" class="mini" onclick="openMaturingWebWorkbook()">Web workbook ↗</button> ` + (url ? `<button type="button" class="mini" data-url="${escHtml(url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Warm and cold results for each profile">Google Sheets ↗</button>` : '');
+  return `<button type="button" class="mini" onclick="openMaturingWebWorkbook()">Web workbook ↗</button> <span style="font-size:12px;letter-spacing:normal;text-transform:none">Password: <code>alwaysDELIVER</code></span> ` + (url ? `<button type="button" class="mini" data-url="${escHtml(url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Warm and cold results for each profile">Google Sheets ↗</button>` : '');
 }
 window.openMaturingWebWorkbook = async function() {
   try {
@@ -13467,9 +13467,8 @@ async function _renderCampaignsBoardInner() {
     if (maturingCampaigns.some(x => x.where === 'cloud' && x.maturing)) {
       const active = _maturingLive.find((x) => x.live) || null;
       const showBtns = maturingPreviewButton(maturingCampaigns.filter(x => x.where === 'cloud' && x.maturing));
-      // The results workbook holds one tab per matured account.
-      const _resultsUrl = matureResultsLink().url;
-      const _resultsLink = _resultsUrl ? `<div class="mature-results-row"><button type="button" class="mini" data-url="${escHtml(_resultsUrl)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Separate email_warm and email_cold tabs for each account">Open the results workbook ↗</button></div>` : '';
+      // Keep workbook access and its password visible above the shared log.
+      const _resultsLink = `<div class="mature-results-row">${maturingResultsButton()}</div>`;
       _maturingFooter = _resultsLink + `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
         + `<span class="sn-status">${groupMaturingAccounts(_maturingLive).length} ${groupMaturingAccounts(_maturingLive).length === 1 ? 'account is' : 'accounts are'} maturing</span></div>`
