@@ -2,19 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { canViewCampaign } from '../src/campaign-visibility.js';
 const source = fs.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 function route(path, context) {
   const start = source.indexOf(`app.post('${path}'`);
   const end = source.indexOf('\n});', start) + 4;
   let handler;
-  vm.runInNewContext(source.slice(start, end), { ...context, app: { post: (_, fn) => { handler = fn; } } });
+  vm.runInNewContext(source.slice(start, end), { canViewCampaign, campaignViewer: () => ({email:'sam@ortusclub.com'}), ...context, app: { post: (_, fn) => { handler = fn; } } });
   return handler;
 }
 function response() { return { statusCode: 200, status(n) { this.statusCode = n; return this; }, json(body) { this.body = body; return this; } }; }
 for (const action of ['pause', 'resume', 'stop']) test(`maturing ${action} reaches the engine`, async () => {
   const calls = [];
   const handler = route('/api/mature/control/:id/:action', {
-    getCloudCampaign: async () => ({ campaign: { config: { matureWarm: true } } }),
+    getCloudCampaign: async () => ({ campaign: { owner:'sam@ortusclub.com', config: { matureWarm: true } } }),
     stopCloudCampaign: async (id, options) => { calls.push({ id, options }); return { ok: true }; },
     resumeCloudCampaign: async id => { calls.push({ id }); return { ok: true }; },
   });
@@ -28,7 +29,7 @@ test('resume preserves a future cold start', async () => {
   const startAt = '2099-01-01T09:00:00Z';
   let scheduled;
   const handler = route('/api/mature/control/:id/:action', {
-    getCloudCampaign: async () => ({ campaign: { config: { matureWarm: true, dailySchedule: { startAt } } } }),
+    getCloudCampaign: async () => ({ campaign: { owner:'sam@ortusclub.com', config: { matureWarm: true, dailySchedule: { startAt } } } }),
     restartCloudCampaign: async (id, opts) => { scheduled = opts.startAt; return { ok: true }; },
     resumeCloudCampaign: () => { throw Error('must not start early'); },
   });
@@ -52,4 +53,15 @@ test('cancelling during dispatch stops the campaign that was just created', asyn
     stopCloudCampaign: async (id, opts) => { assert.equal(opts.immediate, true); stopped.push(id); return { ok: true }; },
   });
   assert.deepEqual(stopped, ['warm','cold']); assert.equal(res.body.cancelled, true);
+});
+
+test('maturing controls reject a campaign from another company', async () => {
+  let called = false;
+  const handler = route('/api/mature/control/:id/:action', {
+    getCloudCampaign: async () => ({campaign:{owner:'other@linkedvelocity.com',config:{matureWarm:true}}}),
+    stopCloudCampaign: async () => {called=true;},
+  });
+  const res=response();
+  await handler({params:{id:'foreign',action:'stop'}},res);
+  assert.equal(res.statusCode,404);assert.equal(called,false);
 });

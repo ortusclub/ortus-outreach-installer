@@ -1,3 +1,4 @@
+import { isMaturingCampaign, canViewMaturingCampaign } from '/js/maturing-visibility.mjs';
 import { pinRecentLog } from '/js/mature-log-scroll.mjs';
 import { showMaturingPreviewPicker } from '/js/mature-preview-picker.mjs';
 import { matureResultsLink } from '/js/mature-results-link.mjs';
@@ -11664,14 +11665,23 @@ window.deleteMaturingAccount = async function(idList, name, btn) {
 // shows the last known log at once; refreshed from the engine at most every 15s.
 // Shared display history survives changing plans and reloading this app window.
 let _matureLogHistory = [];
-try { _matureLogHistory = retainMaturingLog([], JSON.parse(sessionStorage.getItem('maturing-log-history') || '[]')); } catch { /* optional cache */ }
+let _matureLogScope = '';
+function syncMaturingLogScope() {
+  const scope = typeof snCurrentEmail === 'string' ? snCurrentEmail.trim().toLowerCase() : '';
+  if (scope === _matureLogScope) return;
+  _matureLogScope = scope;
+  _matureLogHistory = [];
+  try { if (scope) _matureLogHistory = retainMaturingLog([], JSON.parse(sessionStorage.getItem('maturing-log-history:' + scope) || '[]')); } catch { /* optional cache */ }
+}
 function rememberMaturingLog(lines) {
+  syncMaturingLogScope();
   _matureLogHistory = retainMaturingLog(_matureLogHistory, lines);
-  try { sessionStorage.setItem('maturing-log-history', JSON.stringify(_matureLogHistory)); } catch { /* storage full */ }
+  try { sessionStorage.setItem('maturing-log-history:' + _matureLogScope, JSON.stringify(_matureLogHistory)); } catch { /* storage full */ }
   return _matureLogHistory;
 }
 let _matureLogVisible = 20;
 function sharedMaturingLogHtml() {
+  syncMaturingLogScope();
   return _matureLogHistory.slice(-_matureLogVisible).map((l) => `<span class="mature-log-time">${matureLogClock(l.t)}</span> ${escHtml(l.text)}`).join('<br>') || 'Nothing logged yet.';
 }
 function _pinMaturingLog(box, key) {
@@ -11721,6 +11731,8 @@ let _maturingLogAt = 0, _maturingLogBusy = false;
 async function refreshMaturingLog(items) {
   if (_maturingLogBusy || Date.now() - _maturingLogAt < 14000) return;
   _maturingLogBusy = true;
+  syncMaturingLogScope();
+  const viewerScope = _matureLogScope;
   try {
     const campaigns = await _mapLimit(items, CLOUD_FANOUT_LIMIT, async (it) => {
       try {
@@ -11728,6 +11740,8 @@ async function refreshMaturingLog(items) {
         return { name: it.name, kind: it.matureKind, log: Array.isArray(d && d.monitorLog) ? d.monitorLog : [] };
       } catch { return { name: it.name, kind: it.matureKind, log: [] }; }
     });
+    syncMaturingLogScope();
+    if (viewerScope !== _matureLogScope) return;
     // While a due action waits for a worker, say so (and keep saying so).
     const lines = rememberMaturingLog([...mergeMaturingLogs(campaigns, 2000), ...maturingWaitLines(items)]);
     _maturingLogHtml = sharedMaturingLogHtml();
@@ -13068,9 +13082,8 @@ async function _renderCampaignsBoardInner() {
       if (['done', 'cancelled', 'error'].includes(c.status) && _cloudDismissed.has(c.id)) continue;
       if (c.sheet_url) _cloudSheetUrls.set(c.id, c.sheet_url);
       const mine = !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase());
-      // Ownership gate: normal accounts see only their OWN cloud campaigns;
-      // admins see everyone's. (Local campaigns are always the viewer's.)
-      if (!_viewerIsAdmin && !mine) continue;
+      // Maturing is shared within the creator's company; other campaign rules stay the same.
+      if (isMaturingCampaign(c) ? !canViewMaturingCampaign(c, snCurrentEmail) : (!_viewerIsAdmin && !mine)) continue;
       // 'monitoring' (post-send acceptance-watch — exactly like a local CC+IC /
       // CC+DM run) is an ACTIVE state: keep it in NOW RUNNING, not DONE. Task 3.
       // 'paused' is a still-ACTIVE state (sending held, resumable) — keep it in
@@ -13375,7 +13388,7 @@ async function _renderCampaignsBoardInner() {
     const response=await fetch('/api/campaign-board/deletions');
     if(response.ok) _campaignDeletions=(await response.json()).deletions || [];
   } catch (_) { /* retain last confirmed deletions during a connection interruption */ }
-  const visibleItems = groupCampaignRuns(items.filter((x) => (x.mine || (_viewerIsAdmin && x.isFG)) && !isDeletedCampaign(x,_campaignDeletions)));
+  const visibleItems = groupCampaignRuns(items.filter((x) => (x.maturing ? canViewMaturingCampaign(x, snCurrentEmail) : (x.mine || (_viewerIsAdmin && x.isFG))) && !isDeletedCampaign(x,_campaignDeletions)));
   // Show every permitted campaign; there are no dashboard type/owner filters.
   const shown = visibleItems;
 
@@ -13473,7 +13486,7 @@ async function _renderCampaignsBoardInner() {
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
         + `<span class="sn-status">${groupMaturingAccounts(_maturingLive).length} ${groupMaturingAccounts(_maturingLive).length === 1 ? 'account is' : 'accounts are'} maturing</span></div>`
         + `<div class="sn-switch"><div class="sn-pane on"><button type="button" class="sn-logcopy" title="Copy log" aria-label="Copy log" onclick="event.stopPropagation(); copyStripLog(this)">⧉</button>`
-        + `<div class="sn-logbox" id="maturing-all-log">${_maturingLogHtml}</div></div></div>`
+        + `<div class="sn-logbox" id="maturing-all-log">${sharedMaturingLogHtml()}</div></div></div>`
         + `<div class="sn-foot">${showBtns}</div></div></div>`;
       refreshMaturingLog(_maturingLive);
     }
@@ -36783,6 +36796,8 @@ function startMatureInlineLive(ids, startLines = []) {
       clearInterval(_matureLiveTimer); _matureLiveTimer = null; return;
     }
     busy = true;
+    syncMaturingLogScope();
+    const viewerScope = _matureLogScope;
     try {
       // Discover every accessible maturing account, including newly started ones.
       let allIds = [...ids];
@@ -36791,7 +36806,8 @@ function startMatureInlineLive(ids, startLines = []) {
         allIds.push(...(list.campaigns || []).filter((c) => c.config?.matureWarm || c.mode === 'mature_profile').map((c) => c.id));
       } catch { /* keep known runs and history during a temporary outage */ }
       const items = (await _mapLimit([...new Set(allIds)], CLOUD_FANOUT_LIMIT, (id) => one(id).catch(() => null))).filter(Boolean);
-      if (generation !== _matureLiveGeneration || host.hidden) return;
+      syncMaturingLogScope();
+      if (generation !== _matureLiveGeneration || host.hidden || viewerScope !== _matureLogScope) return;
       if (!items.length) return;
 
       const controls = document.getElementById('mature-running-controls');
