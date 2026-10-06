@@ -158,3 +158,17 @@ test('reported acceptance activity marks its parent maturing campaign active dur
   assert.equal(maturingNextAction(it),'Now: accepting connection requests');
   assert.equal(maturingRowState({...it,liveProgress:null}).label,'Sleeping');
 });
+
+test('weekly block outranks a future cold stage and displays the actual Monday retry', () => {
+  const until = '2099-10-12T00:00:00Z';
+  const warm = { name: 'Eryca', matureKind: 'warm', bucket: 'running', live: true,
+    accountBlocks: [{ reason: 'weekly', until }] };
+  const cold = { name: 'Eryca', matureKind: 'cold', bucket: 'queued', scheduledAt: '2099-10-13T09:00:00Z' };
+  assert.equal(maturingRowState(warm).label, 'Weekly limit · paused');
+  assert.equal(groupMaturingAccounts([warm, cold])[0].state.label, 'Weekly limit · paused');
+  assert.match(maturingNextAction(warm, { viewerTimeZone: 'Europe/Rome' }), /Weekly limit reached · Retry .*12 Oct, 02:00/);
+  const suspected = {...warm, accountBlocks: [{ reason: 'weekly_suspected', until }]};
+  assert.match(maturingNextAction(suspected), /^Possible weekly limit/);
+  assert.deepEqual(maturingWaitLines([{...warm, dailyWait:true, resumeAt:'2000-01-01'}]), []);
+  assert.doesNotMatch(maturingNextAction({...warm, accountBlocks:[{reason:'weekly',until:'2000-01-01'}]}), /Weekly limit/);
+});

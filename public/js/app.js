@@ -1,3 +1,4 @@
+import { pinRecentLog } from '/js/mature-log-scroll.mjs';
 import { showMaturingPreviewPicker } from '/js/mature-preview-picker.mjs';
 import { matureResultsLink } from '/js/mature-results-link.mjs';
 import { matureProfileIdentity } from '/js/mature-profile-identity.mjs';
@@ -11601,7 +11602,7 @@ function _maturingListHtml(items) {
     const main = g.warm || g.cold;
     const ids = g.items.map((x) => x.id).join(',');
     // What each of the account's campaigns does next, and when.
-    const next = [g.warm, g.cold].filter(Boolean).map((x) => maturingNextAction(x)).filter(Boolean).join('  ·  ');
+    const next = [g.warm, g.cold].filter(Boolean).map((x) => maturingNextAction(x)).filter((line, i, all) => line && all.indexOf(line) === i).join('  ·  ');
     const counts = [g.warmSent !== null ? `Warm <b>${g.warmSent}</b>` : '', g.coldSent !== null ? `Cold <b>${g.coldSent}</b>` : ''].filter(Boolean).join(' · ');
     return `<div class="mature-row" data-cid="${escHtml(main.id)}">`
       + `<span class="dot ${dot}"></span>`
@@ -11645,8 +11646,34 @@ function rememberMaturingLog(lines) {
   try { sessionStorage.setItem('maturing-log-history', JSON.stringify(_matureLogHistory)); } catch { /* storage full */ }
   return _matureLogHistory;
 }
+let _matureLogVisible = 20;
 function sharedMaturingLogHtml() {
-  return _matureLogHistory.map((l) => `<span class="mature-log-time">${matureLogClock(l.t)}</span> ${escHtml(l.text)}`).join('<br>') || 'Nothing logged yet.';
+  return _matureLogHistory.slice(-_matureLogVisible).map((l) => `<span class="mature-log-time">${matureLogClock(l.t)}</span> ${escHtml(l.text)}`).join('<br>') || 'Nothing logged yet.';
+}
+function _pinMaturingLog(box, key) {
+  if (!box) return;
+  pinRecentLog(box, key);
+  let toolbar = box.previousElementSibling;
+  if (!toolbar?.classList.contains('mature-log-tools')) {
+    toolbar = document.createElement('div');
+    toolbar.className = 'mature-log-tools';
+    box.before(toolbar);
+  }
+  const older = Math.max(0, _matureLogHistory.length - _matureLogVisible);
+  toolbar.innerHTML = `<span>Latest ${Math.min(_matureLogVisible, _matureLogHistory.length)} entries</span>`
+    + (older ? `<button type="button" class="mini" data-more>See more (${older} older)</button>` : '')
+    + (_matureLogVisible > 20 ? '<button type="button" class="mini" data-latest>Back to latest</button>' : '');
+  toolbar.onclick = (event) => {
+    const more = event.target.closest('[data-more]'), latest = event.target.closest('[data-latest]');
+    if (!more && !latest) return;
+    event.stopPropagation();
+    _matureLogVisible = more ? _matureLogVisible + 20 : 20;
+    _maturingLogHtml = sharedMaturingLogHtml();
+    // Older entries are inserted ABOVE the recent entries, only on this click.
+    box.innerHTML = _maturingLogHtml;
+    pinRecentLog(box, key, { reset: latest ? 'bottom' : 'top' });
+    _pinMaturingLog(box, key);
+  };
 }
 let _maturingPreviewItems = [];
 window.openMaturingPreviewPicker = () => showMaturingPreviewPicker(_maturingPreviewItems, openCloudCampaignView);
@@ -11668,10 +11695,10 @@ async function refreshMaturingLog(items) {
     });
     // While a due action waits for a worker, say so (and keep saying so).
     const lines = rememberMaturingLog([...mergeMaturingLogs(campaigns, 2000), ...maturingWaitLines(items)]);
-    _maturingLogHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
+    _maturingLogHtml = sharedMaturingLogHtml();
     _maturingLogAt = Date.now();
     const box = document.getElementById('maturing-all-log');
-    if (box) { box.innerHTML = _maturingLogHtml; _pinLogToNewest(box, 'mature-board'); }
+    if (box) { box.innerHTML = _maturingLogHtml; _pinMaturingLog(box, 'mature-board'); }
   } finally { _maturingLogBusy = false; }
 }
 // One line saying which plan day a maturing campaign is on, today's amount and
@@ -13033,6 +13060,7 @@ async function _renderCampaignsBoardInner() {
         engineStatus: c.status || '',
         resumeAt: c.resumeTaskDueAt || null,
         acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null,
+        accountBlocks: c.matureAccountBlocks || [],
         batchDoneToday: !!c.config?.matureWarm && maturingBatchDone(d.monitorLog),
         resumeReason: c.resumeTaskReason || null,
         stopping: c.status === 'stopping' || c.status === 'pausing',
@@ -13442,7 +13470,7 @@ async function _renderCampaignsBoardInner() {
   _lastBoardHtml = final;
   board.dataset.rendered = '1';
   board.innerHTML = final;
-  _pinLogToNewest(board.querySelector('#maturing-all-log'), 'mature-board');
+  _pinMaturingLog(board.querySelector('#maturing-all-log'), 'mature-board');
   maybeOpenHandshakeModal(items);
   _fillHistLogBoxes(board);
   _fillVjCards(board); // expanded strips → card #2 parity
@@ -29759,6 +29787,7 @@ function _stageAcctPill(a, isCurrent, counts) {
   else if (a.loginRechecking) { cls = 'warn'; text = 'Checking login…'; tipExact = true; tip = 'A fresh login check is queued for the next worker turn.'; }
   else if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; tipExact = true; tip = 'This account is signed out of LinkedIn. Log back in, then tell the campaign — it rejoins on the next round.'; }
   else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
+  else if (a.parkReason === 'weekly_suspected') { cls = 'bad'; text = 'Possible weekly limit'; tipExact = true; tip = `Sending is paused after a rate limit. Scheduled to retry ${_nextMondayText()}.`; }
   else if (a.weeklySuspected) { cls = 'bad'; text = 'Suspected weekly limit'; tipExact = true; tip = 'LinkedIn refused this account\'s invite, which is nearly always the weekly invitation limit. Open it and choose "Try again on the next round" to test.'; }
   else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly limit reached'; tipExact = true; tip = `LinkedIn's weekly invitation limit. This account sends nothing more until it resets ${_nextMondayText()}.`; }
   else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
@@ -36682,7 +36711,7 @@ function _renderMatureLaunchLog(name, steps, state) {
   const box = body.querySelector('.sn-logbox');
   if (box) {
     box.innerHTML = sharedMaturingLogHtml();
-    _pinLogToNewest(box, 'mature-inline');
+    _pinMaturingLog(box, 'mature-inline');
   }
 }
 function startMatureInlineLive(ids, startLines = []) {
@@ -36693,8 +36722,8 @@ function startMatureInlineLive(ids, startLines = []) {
   host.hidden = false;
   body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact"><div class="sn-top"><span class="sn-type">Maturing log · all accounts</span></div><div class="sn-logbox">${sharedMaturingLogHtml()}</div></div></div>`;
   // Start at the newest entry even when retained history already overflows.
-  _vjLogPin.delete('mature-inline');
-  _pinLogToNewest(body.querySelector('.sn-logbox'), 'mature-inline');
+  pinRecentLog(body.querySelector('.sn-logbox'), 'mature-inline', { reset: 'bottom' });
+  _pinMaturingLog(body.querySelector('.sn-logbox'), 'mature-inline');
   // The engine's campaign, in the shape the Profile Maturing tab's helpers read.
   async function one(id) {
     const d = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`).then((r) => r.json());
@@ -36705,6 +36734,7 @@ function startMatureInlineLive(ids, startLines = []) {
     return { id, name: c.name || '', matureKind: c.config?.matureKind || 'warm', warmSchedule: c.config?.dailySchedule || null, matureTz: c.config?.tz || '',
       bucket, bad: st === 'cancelled' || st === 'error', dailyWait: st === 'waiting_daily_reset', paused: st === 'paused' || st === 'pausing', stopping: st === 'stopping',
       needsReview: st === 'needs_review', engineStatus: st, liveProgress: d.liveProgress || null, liveStamp: d.liveStamp || null, live: !!d.live, scheduledAt: c.scheduled_start_at || null, resumeAt: c.resumeTaskDueAt || null,
+      accountBlocks: c.matureAccountBlocks || [],
       acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null, batchDoneToday: maturingBatchDone(d.monitorLog),
       sent: Math.max(0, Number(lc.sent || 0) - Number(lc._preActioned || 0)), log: Array.isArray(d.monitorLog) ? d.monitorLog : [] };
   }
@@ -36730,7 +36760,7 @@ function startMatureInlineLive(ids, startLines = []) {
 
       // Same look and wording as the combined log on the Profile Maturing tab.
       const lines = rememberMaturingLog([...mergeMaturingLogs(items.map((x) => ({ name: x.name, kind: x.matureKind, log: x.log })), 2000), ...maturingWaitLines(items)]);
-      const logHtml = lines.length ? lines.map((l) => { const at = matureLogClock(l.t); return (at ? `<span class="mature-log-time">${at}</span> ` : '') + escHtml(l.text); }).join('<br>') : 'Nothing logged yet.';
+      const logHtml = sharedMaturingLogHtml();
       const active = items.find((x) => x.live) || null;
       body.innerHTML = `<div class="sn-strip sn-collapsed sn-maturing-log"><div class="sn-compact">`
         + `<div class="sn-top"><span class="sn-type">Maturing log · all accounts</span>`
@@ -36740,7 +36770,7 @@ function startMatureInlineLive(ids, startLines = []) {
         + `<div class="sn-foot">${maturingPreviewButton(items)}</div>`
         + `</div></div>`;
       const box = body.querySelector('.sn-logbox');
-      _pinLogToNewest(box, 'mature-inline');
+      _pinMaturingLog(box, 'mature-inline');
     } finally { busy = false; }
   }
   tick();

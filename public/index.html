@@ -2111,7 +2111,8 @@
   .sn-strip.mature-sleeping::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber,#d98a1f);}
   .sn-strip.mature-sleeping .sn-status{color:var(--amber,#d98a1f);}
   .sn-board .dot.amber{background:var(--amber,#d98a1f);}
-  .sn-strip.sn-maturing-log .sn-logbox{max-height:260px;overflow:auto;}
+  .sn-strip.sn-maturing-log .sn-logbox{max-height:220px;overflow:auto;overflow-anchor:none;}
+  .mature-log-tools{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin:6px 0;font-size:11px;color:var(--muted);}
   /* The combined log is always open: it has no collapsed/expanded states. */
   .sn-strip.sn-collapsed.sn-maturing-log .sn-switch{display:block;}
   .sn-strip.sn-maturing-log{margin-top:12px;}

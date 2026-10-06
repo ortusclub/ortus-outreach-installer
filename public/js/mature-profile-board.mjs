@@ -80,7 +80,7 @@ export const WORKER_WAKE_TYPICAL = 'usually about 2 minutes, because workers sle
 export function maturingWaitLines(items, now = Date.now(), maxLines = 12) {
   const lines = [];
   for (const it of items || []) {
-    if (!it || it.live || it.needsReview || it.paused || it.stopping || it.bucket === 'done') continue;
+    if (!it || maturingWeeklyBlock(it, now) || it.live || it.needsReview || it.paused || it.stopping || it.bucket === 'done') continue;
     const tag = `${String(it.name || '').replace(/ · Cold$/, '')} · ${it.matureKind === 'cold' ? 'cold' : 'warm'}`;
     const accepts = Number(it.acceptPending) || 0;
     const acceptDue = Date.parse(it.acceptDueAt || ''), resumeDue = Date.parse(it.resumeAt || '');
@@ -105,6 +105,13 @@ export function maturingWaitLines(items, now = Date.now(), maxLines = 12) {
   return lines.sort((a, b) => a.t - b.t);
 }
 
+// Read the engine's live account block, not an old log line or cold start date.
+export function maturingWeeklyBlock(it, now = Date.now()) {
+  if (!it || it.bucket === 'done') return null;
+  return (it.accountBlocks || []).find(b => ['weekly', 'weekly_suspected'].includes(b.reason)
+    && Number.isFinite(Date.parse(b.until)) && Date.parse(b.until) > now) || null;
+}
+
 // The one-word state a maturing campaign shows in the Profile Maturing list.
 // `tone` picks the dot colour: green only while it is actually connecting.
 export function maturingRowState(it) {
@@ -113,6 +120,8 @@ export function maturingRowState(it) {
   if (it.bucket === 'done') return it.bad ? { label: 'Stopped', tone: 'muted' } : { label: 'Finished', tone: 'done' };
   if (it.stopping) return { label: 'Stopping', tone: 'muted' };
   if (it.paused) return { label: 'Paused', tone: 'muted' };
+  const weekly = maturingWeeklyBlock(it);
+  if (weekly) return { label: weekly.reason === 'weekly_suspected' ? 'Possible weekly limit' : 'Weekly limit · paused', tone: 'amber' };
   if (it.bucket === 'queued') return it.scheduledAt ? { label: 'Scheduled', tone: 'muted' } : { label: 'Starting', tone: 'amber' };
   if (maturingPreviewActivity(it)) return { label: 'Active', tone: 'green' };
   // The engine's own status wins over the browser-open flag, which can lag.
@@ -150,6 +159,8 @@ export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}
   const count = (n) => (n === null ? `${what}s` : `${n} ${what}${n === 1 ? '' : 's'}`);
   const at = (instant) => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short', ...(viewerTimeZone ? { timeZone: viewerTimeZone } : {}) }).format(new Date(instant)).replace(/^(\w+),/, '$1');
   const due = (instant) => (Number.isFinite(Date.parse(instant || '')) ? instant : null);
+  const weekly = maturingWeeklyBlock(it, now);
+  if (weekly) return `${weekly.reason === 'weekly_suspected' ? 'Possible weekly limit' : 'Weekly limit reached'} · Retry ${at(weekly.until)}`;
   if (it.bucket === 'queued') {
     const start = due(it.scheduledAt);
     return start ? `Next: ${count(amountOn(start))} · Attempt at ${at(start)}` : `Next: ${count(amountOn(now))} today · Waiting for attempt time`;
@@ -187,7 +198,7 @@ export function groupMaturingAccounts(items) {
   }
   return [...groups.values()].map(g => {
     // The account's state is its most "alive" campaign's state.
-    const order = ['Active', 'Needs attention', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
+    const order = ['Active', 'Needs attention', 'Weekly limit · paused', 'Possible weekly limit', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
     const states = [g.warm, g.cold].filter(Boolean).map(maturingRowState);
     states.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
     return { ...g, state: states[0] || { label: '', tone: 'muted' }, warmSent: g.warm ? (g.warm.sent || 0) : null, coldSent: g.cold ? (g.cold.sent || 0) : null };

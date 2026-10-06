@@ -6,15 +6,15 @@ import * as board from '../public/js/mature-profile-board.mjs';
 
 test('editor discovers other accounts during startup, retains entries on failures, and rejects stale polls', async () => {
   const source = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
-  const box = { innerHTML: '', scrollHeight: 100, scrollTop: 100, clientHeight: 100 };
+  const box = { innerHTML: '', scrollHeight: 100, scrollTop: 100, clientHeight: 100, before() {} };
   const body = { innerHTML: '', querySelector: () => box };
   const host = { hidden: false, isConnected: true, closest: () => null };
   const callbacks = new Map();
   let timer = 0, offline = false;
   const requested = [];
   const context = vm.createContext({
-    window: {}, ...board, matureLogClock: board.logClock, escHtml: String,
-    document: { getElementById: id => id === 'mature-live' ? host : id === 'mature-live-body' ? body : null },
+    window: {}, pinRecentLog() {}, ...board, matureLogClock: board.logClock, escHtml: String,
+    document: { createElement: () => ({ className: '', innerHTML: '' }), getElementById: id => id === 'mature-live' ? host : id === 'mature-live-body' ? body : null },
     sessionStorage: { getItem: () => null, setItem() {} },
     location: { hash: '#/new' },
     setInterval: fn => { callbacks.set(++timer, fn); return timer; },
