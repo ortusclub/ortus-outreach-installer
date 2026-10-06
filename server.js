@@ -13,7 +13,7 @@ import { ensureCampaignIdentity, getConfigById, getConfig as getSavedCampaign, d
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
 import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
-import { selectMatureColdLeads } from './src/mature-cold-pool.js';
+import { selectMatureColdLeads, DEFAULT_MATURE_COLD_SHEET_URL } from './src/mature-cold-pool.js';
 import { applyCredentials } from './src/gologin-credentials.js';
 applyCredentials();
 
@@ -3964,7 +3964,7 @@ async function matureWarmSources() {
 }
 
 app.get('/api/mature/cold-source', (_req, res) => {
-  res.json({ url: String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim() });
+  res.json({ url: String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim() || DEFAULT_MATURE_COLD_SHEET_URL });
 });
 
 // Names and LinkedIn URLs for Linked Velocity profiles — the editor prefills
@@ -4055,7 +4055,7 @@ app.post('/api/mature/start', async (req, res) => {
   try {
     const b = req.body || {};
     const plan = restoreMaturePlan(b.maturePlan);
-    const defaultColdPoolUrl = String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim();
+    const defaultColdPoolUrl = String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim() || DEFAULT_MATURE_COLD_SHEET_URL;
     const errors = maturePlanErrors(plan, { defaultColdPoolUrl });
     if (plan.coldPoolSource === 'default') plan.coldPool = defaultColdPoolUrl;
     if (errors.length) return res.status(400).json({ error: errors[0] });

@@ -1,6 +1,8 @@
 import { coldStageRequirements } from '../public/js/mature-pool-capacity.mjs';
 import { normalizeProfileUrl } from './preflight-lint.js';
 
+export const DEFAULT_MATURE_COLD_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1BXuJJXmk5v2RasWfvkBw1-HV1UaXqN6O9cbpRspuvo4/edit?gid=0#gid=0';
+
 // Sample once at launch and persist that exact list to the account's plan tab.
 // Never repeat a recipient within one profile's list or pad a short pool.
 export function selectMatureColdLeads({ plan, rows, excludedUrls = [], urlOf = row => row['LinkedIn URL'], random = Math.random }) {
