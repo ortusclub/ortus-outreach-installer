@@ -32,7 +32,8 @@ test('editor discovers other accounts during startup, retains entries on failure
   vm.runInContext("_renderMatureLaunchLog('New account', [{t: 20, text: 'New account · start — Saving'}], 'Starting')", context);
   await new Promise(resolve => setImmediate(resolve));
   assert.match(body.innerHTML, /Maturing log · all accounts/);
-  assert.match(body.innerHTML, /Open results workbook/);
+  assert.match(body.innerHTML, /openMaturingWebWorkbook/);
+  assert.match(body.innerHTML, /Google Sheets/);
   assert.match(body.innerHTML, /spreadsheets\/d\/results/);
   assert.match(body.innerHTML, /Pauline · warm/);
   assert.match(body.innerHTML, /Riccardo · warm/);
