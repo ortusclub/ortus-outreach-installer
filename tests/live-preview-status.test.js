@@ -42,3 +42,20 @@ test('acceptance preview identifies the recipient under the completed parent cam
   assert.match(result.step,/accepting connection requests on Recipient Name/);
   assert.equal(result.due,0);
 });
+
+
+test('mid-batch gap shows the engine timer, then loading without inventing a deadline', () => {
+  const data = { campaign:{status:'running',config:{matureWarm:true}},live:true,
+    liveProgress:{step:'between_profiles',nextProfileAt:61000} };
+  const waiting = previewStatus(data, 'Brian', 1000);
+  assert.equal(waiting.transition, true);
+  assert.equal(waiting.due, 61000);
+  assert.match(waiting.step,/Mid-batch.*waiting/);
+  const loading = previewStatus(data, 'Brian', 62000);
+  assert.match(loading.step,/loading the next profile/);
+  assert.equal(loading.due,61000);
+  const stopped = previewStatus({...data,campaign:{status:'cancelled'}},'Brian',1000);
+  assert.equal(stopped.transition,undefined);
+  const next = previewStatus({...data,liveProgress:{step:'opening_profile'}},'Brian',62000);
+  assert.equal(next.transition,undefined);
+});

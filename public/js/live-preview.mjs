@@ -5,7 +5,7 @@ const id = params.get('id');
 const fallback = params.get('label') || (kind === 'scrape' ? 'Scrape' : 'Campaign');
 const el = id => document.getElementById(id);
 const img = el('stream');
-let imageTimer, pollTimer, closed = false, controller, model, checkedAt = 0, engineName = 'Cloud engine', live = false;
+let latestData, imageTimer, pollTimer, closed = false, controller, model, checkedAt = 0, engineName = 'Cloud engine', live = false;
 const valid = ['campaign', 'scrape'].includes(kind) && id;
 const url = kind === 'scrape' ? `/api/scrape/view/${encodeURIComponent(id)}` : `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
 function name(value) { el('label').textContent = value; document.title = `${value} — Live preview`; }
@@ -16,9 +16,9 @@ function connect() {
 }
 img.onload = () => {
   if (closed || model?.terminal) return;
-  live = true; img.hidden = false; el('waiting').hidden = true; el('status').textContent = '● Live';
+  live = true; img.hidden = !!model?.transition; el('waiting').hidden = !model?.transition; el('status').textContent = model?.transition ? 'Mid-batch' : '● Live';
 };
-function waiting() { live = false; img.hidden = true; el('waiting').hidden = false; el('status').textContent = 'Browser inactive'; }
+function waiting() { live = false; img.hidden = true; el('waiting').hidden = false; el('status').textContent = model?.transition ? 'Mid-batch' : 'Waiting for browser'; }
 img.onerror = () => { if (closed) return; waiting(); clearTimeout(imageTimer); imageTimer = setTimeout(connect, 4000); };
 async function json(url, signal) {
   const response = await fetch(url, { signal });
@@ -42,6 +42,7 @@ async function poll() {
       data = { campaign: { name: job.campaignName || fallback, status: job.state }, monitorLog: [], liveProgress: { stepLabel: job.state === 'running' ? `Scraping · ${job.profiles || 0} profiles collected` : '' } };
     }
     if (closed) return;
+    latestData = data;
     model = previewStatus(data, fallback);
     name(data.live && data.liveAccount ? `${model.name} · Browser: ${data.liveAccount}` : model.name);
     checkedAt = Date.now();
@@ -54,14 +55,22 @@ async function poll() {
       li.append(document.createTextNode(log.line)); return li;
     }));
     if (data.live === false || model.terminal) waiting();
+    else if (model.transition) { img.hidden = true; el('waiting').hidden = false; el('status').textContent = 'Mid-batch'; }
+    else if (live) { img.hidden = false; el('waiting').hidden = true; }
     // A stream may have ended without an error event; reconnect after an idle poll.
-    if (!live) { clearTimeout(imageTimer); connect(); }
+    if (!live && !model.transition) { clearTimeout(imageTimer); connect(); }
   } catch (_) {
     if (!closed) { el('engine').textContent = `${engineName} · status unavailable, retrying…`; if (!model) el('step').textContent = 'Waiting for the engine'; }
   } finally { clearTimeout(timeout); if (!closed) pollTimer = setTimeout(poll, 5000); }
 }
 const tick = setInterval(() => {
-  el('countdown').textContent = countdown(model?.due);
+  if (latestData) model = previewStatus(latestData, fallback);
+  const timer = model?.nextProfile
+    ? model.due > Date.now() ? `Next profile starts loading ${countdown(model.due).toLowerCase()}` : 'Loading the next profile automatically…'
+    : countdown(model?.due);
+  el('countdown').textContent = timer;
+  el('progress-note').textContent = model ? `${model.step}${timer ? ' · ' + timer : ''}` : 'Connecting to the browser…';
+  if (model?.transition) { el('step').textContent = model.step; el('next').textContent = model.next; }
   el('checked').textContent = checkedAt ? `Last checked ${Math.floor((Date.now()-checkedAt)/1000)}s ago · refreshes every 5s` : '';
 }, 1000);
 addEventListener('beforeunload', () => {

@@ -6,6 +6,16 @@ export function previewStatus(data, fallback = 'Campaign', now = Date.now()) {
   const terminal = { done: 'Campaign complete', completed: 'Campaign complete', cancelled: 'Campaign stopped', stopped: 'Campaign stopped', failed: 'Campaign failed', needs_review: 'Needs attention', paused: 'Campaign paused' };
   const logs = (Array.isArray(data.monitorLog) ? data.monitorLog : []).map(e => ({ line: String(e.line || ''), t: Number(e.t) || 0 })).filter(e => e.line).sort((a,b) => b.t-a.t).slice(0,5);
   const due = terminal[state] ? 0 : [c.blocked_until, c.scheduled_start_at, c.resumeTaskDueAt, c.monitorTaskDueAt, c.next_check_at].map(v => v ? new Date(v).getTime() : 0).filter(t => t > now).sort((a,b) => a-b)[0] || 0;
+  const progress = data.liveProgress || {};
+  if (!terminal[state] && data.live && progress.step === 'between_profiles') {
+    const nextProfileAt = Number(progress.nextProfileAt) || 0;
+    const remaining = nextProfileAt > now;
+    return { name: c.name || fallback, logs, terminal: false, transition: true,
+      step: remaining ? 'Mid-batch — waiting for the next profile' : 'Mid-batch — loading the next profile',
+      next: remaining ? 'The worker will start opening the next profile when this timer ends. Page loading can take a little longer.'
+        : 'The scheduled pause has ended. The worker is preparing the next profile; the preview resumes automatically.',
+      due: nextProfileAt, nextProfile: true };
+  }
   // Profile maturing: say what the plan does next and when, in the same words
   // as the Profile Maturing tab.
   const accepting = maturingPreviewActivity({live:!!data.live, engineStatus:state, liveProgress:data.liveProgress, liveStamp:data.liveStamp}, now) === 'Accepting';
