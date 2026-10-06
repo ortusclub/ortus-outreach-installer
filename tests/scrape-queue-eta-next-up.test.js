@@ -66,12 +66,12 @@ test('a queued job with no usable estimate says nothing rather than guessing', (
 
 test('the headline no longer doubles the tilde', () => {
   const l2 = headlineFor('~3m');
-  assert.equal(l2, 'starts in ~3m');
+  assert.match(l2, /Estimated queue wait: ~3m/);
   assert.ok(!l2.includes('~~'), 'fmtEta already supplies the tilde');
 });
 
 test('a next-up campaign says so instead of going blank', () => {
-  assert.match(headlineFor(''), /next up/i);
+  assert.match(headlineFor(''), /Starts automatically.*30 seconds/i);
 });
 
 test('the board keeps 0 so the strip agrees with the card', () => {

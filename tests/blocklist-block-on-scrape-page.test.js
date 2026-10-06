@@ -19,11 +19,9 @@ const html = fs.readFileSync(fileURLToPath(new URL('../public/index.html', impor
 const app = fs.readFileSync(fileURLToPath(new URL('../public/js/app.js', import.meta.url)), 'utf8');
 const server = fs.readFileSync(fileURLToPath(new URL('../server.js', import.meta.url)), 'utf8');
 
-test('the scrape setup has its own blocklist box', () => {
+test('the simplified scrape setup omits the blocklist editor', () => {
   const scrape = html.slice(html.indexOf('id="nav-scrape"'), html.indexOf('id="nav-message-only"'));
-  assert.ok(scrape.includes('id="sn-bl-value"'), 'no blocklist input on the scrape page');
-  assert.ok(scrape.includes('id="sn-bl-add"'), 'no Add button on the scrape page');
-  assert.ok(scrape.includes('id="sn-bl-chips"'), 'nowhere to render the chips');
+  assert.ok(!scrape.includes('id="sn-blocklist"'));
 });
 
 test('the campaign wizard keeps its box — this adds one, it does not move it', () => {
@@ -36,9 +34,9 @@ test('both copies are found by the SAME class, so they share one code path', () 
   const inputs = html.match(/class="wiz-bl-value"/g) || [];
   const adds = html.match(/class="btn btn-secondary btn-sm wiz-bl-add"/g) || [];
   const chips = html.match(/wiz-bl-chips/g) || [];
-  assert.equal(inputs.length, 2, 'each copy needs the shared input class');
-  assert.equal(adds.length, 2, 'each copy needs the shared button class');
-  assert.ok(chips.length >= 2, 'each copy needs a chips host');
+  assert.equal(inputs.length, 1, 'each copy needs the shared input class');
+  assert.equal(adds.length, 1, 'each copy needs the shared button class');
+  assert.ok(chips.length >= 1, 'each copy needs a chips host');
 });
 
 test('the renderer paints every copy, not just the first', () => {
@@ -56,7 +54,7 @@ test('adding from either copy is wired, not just the wizard one', () => {
 
 test('the list this edits is the one the scrape actually filters on', () => {
   // If these ever diverge, the box on the scrape page becomes decorative.
-  const route = server.slice(server.indexOf("app.post('/api/scrape/start'"));
+  const route = server.slice(server.indexOf('async function handleScrapeStart('));
   const body = route.slice(0, 1200);
   assert.match(body, /readBlocklist\(\)/, 'the scrape must read the same list');
   assert.match(body, /excludeUrns/, 'and pass it to the engine');

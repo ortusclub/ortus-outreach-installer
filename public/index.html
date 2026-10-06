@@ -1016,7 +1016,7 @@
           <div class="sn-boardtitle">Sales Nav Scraper</div>
         </div>
         <div class="sn-qmeta" id="sn-qmeta">—</div>
-        <button type="button" id="sn-new-btn" class="btn btn-secondary" onclick="startNewScrapeSetup()">＋ New scrape</button>
+        <button type="button" id="sn-new-btn" class="btn btn-secondary" onclick="startNewScrapeSetup()">+ New scrape</button>
       </div>
       <!-- Inline scrape composer — "＋ New scrape" reveals the real scrape setup
            sections (config + accounts + launch) here, relocated from the wizard,
@@ -1024,7 +1024,7 @@
       <div id="sn-setup" style="display:none">
         <div class="sn-setup-head">
           <div class="sn-setup-title">New scrape</div>
-          <button type="button" class="btn btn-secondary" onclick="closeScrapeSetup()">← Sales Nav Scraper dashboard</button>
+          <button type="button" class="btn btn-secondary" onclick="closeScrapeSetup()">← Back to scrapes</button>
         </div>
         <div id="sn-setup-body"></div>
       </div>
@@ -1840,11 +1840,11 @@
   #sn-setup input[type=text]{border:1px solid var(--hairline);border-radius:10px;padding:11px 13px;background:var(--card-bg);}
   #sn-setup .scrape-label{margin-bottom:8px;}
   /* editable hero campaign name, pulled to the top of the composer (label below) */
-  #sn-setup #scrape-name-field{display:flex;flex-direction:column-reverse;margin:0 0 28px;}
-  #sn-setup #scrape-name-field .scrape-label{margin:12px 0 0;}
-  #sn-setup #scrape-name{font-family:var(--display);font-size:52px;line-height:1;letter-spacing:.02em;text-transform:uppercase;border:0;border-bottom:2px solid var(--hairline);border-radius:0;padding:4px 0 12px;background:transparent;}
+  #sn-setup #scrape-name-field{display:flex;flex-direction:column;margin:0 0 20px;}
+  #sn-setup #scrape-name-field .scrape-label{margin:0 0 8px;font-size:11px;letter-spacing:.08em;}
+  #sn-setup #scrape-name{font-family:var(--body);font-size:24px;font-weight:600;line-height:1.3;letter-spacing:0;text-transform:none;border:1px solid var(--hairline);border-radius:10px;padding:12px 14px;background:var(--card-bg);}
   #sn-setup #scrape-name:focus{border-color:var(--ink);outline:none;}
-  #sn-setup #scrape-name::placeholder{font-family:var(--display);font-size:52px;text-transform:uppercase;color:#d0d0d0;opacity:1;}
+  #sn-setup #scrape-name::placeholder{font-family:var(--body);font-size:24px;text-transform:none;color:var(--gray);opacity:1;}
 
   /* Sales Nav board — namespaced (sn-/snm-) so nothing collides with style.css */
   .sn-boardhead{display:flex;align-items:flex-end;gap:16px;margin:0 0 6px;}
@@ -1865,9 +1865,11 @@
   .sn-handover.launching{border-left:3px solid var(--green);}
   .sn-handover.launching .spin{border-top-color:var(--green);}
 
-  #sn-setup{margin:32px 0 28px;padding:32px 0 8px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
-  .sn-setup-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 26px;}
-  .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;display:flex;align-items:center;gap:12px;}
+  #sn-setup{margin:20px 0;padding:20px 0 8px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
+  .sn-setup-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 18px;}
+  .sn-setup-title{font-family:var(--body);font-size:16px;font-weight:600;letter-spacing:0;display:flex;align-items:center;gap:12px;}
+  #sn-setup .sn-setup-head .btn{font-family:var(--body);font-size:13px;letter-spacing:0;text-transform:none;line-height:20px;padding:8px 14px;min-height:36px;border-radius:8px;}
+  #sn-setup .sn-setup-head .btn:focus-visible{outline:2px solid var(--gold);outline-offset:3px;}
   /* Small spinner shown beside "Loading scrape…" so it's clearly loading, not stalled. */
   .sn-setup-spinner{width:16px;height:16px;border:2px solid var(--hairline);border-top-color:var(--ink);border-radius:9999px;animation:sn-spin .7s linear infinite;flex:0 0 auto;}
   @keyframes sn-spin{to{transform:rotate(360deg);}}
@@ -2380,7 +2382,7 @@
             <label for="scrape-src-sheet" class="scrape-label">Sheet holding your searches <span class="scrape-sublabel">· we read them out of it</span></label>
             <div style="display:flex; gap:10px; align-items:stretch;">
               <input type="text" id="scrape-src-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1" />
-              <button type="button" class="btn btn-secondary btn-sm" onclick="loadScrapeUrlsFromSheet()">Load URLs</button>
+              <button type="button" class="btn btn-secondary btn-sm scrape-load-urls" onclick="loadScrapeUrlsFromSheet()">Load URLs</button>
             </div>
             <div id="scrape-src-status" class="scrape-hint" style="margin-top:8px;"></div>
             <div id="scrape-row-pick" style="display:none; margin-top:12px;">
@@ -2396,41 +2398,23 @@
 
         <!-- DESTINATION panel -->
         <div class="scrape-panel">
-          <div class="scrape-panel-head">Where the leads end up</div>
+          <div class="scrape-panel-head">Results destination</div>
           <div style="margin-bottom:16px;" id="scrape-name-field">
             <label for="scrape-name" class="scrape-label">Name <span class="scrape-sublabel">· shown on the board</span></label>
             <input type="text" id="scrape-name" placeholder="tag_city_ee" style="width:100%" />
           </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <div class="scrape-destination-grid">
             <div>
-              <label for="scrape-sheet" class="scrape-label">Sheet</label>
+              <label for="scrape-sheet" class="scrape-label">Google Sheet URL</label>
               <div style="display:flex; gap:8px; align-items:stretch;">
                 <input type="text" id="scrape-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1" />
-                <button type="button" class="btn btn-secondary btn-sm" onclick="openScrapeSheetInBrowser()" title="Open this Google Sheet in your browser">Open</button>
+                <button type="button" class="btn btn-secondary btn-sm scrape-sheet-open" onclick="openScrapeSheetInBrowser()" title="Open this Google Sheet in your browser">Open</button>
               </div>
             </div>
             <div>
-              <label for="scrape-tab" class="scrape-label">New tab <span class="scrape-sublabel">· we create it</span></label>
-              <input type="text" id="scrape-tab" value="Results" style="width:100%" />
+              <label for="scrape-tab" class="scrape-label">Results tab name</label>
+              <input type="text" id="scrape-tab" value="Results" style="width:100%" /><p class="scrape-destination-help">Multiple searches use numbered tabs, such as Results 1 and Results 2. Existing tabs are reused.</p>
             </div>
-          </div>
-        </div>
-
-        <!-- BLOCKLIST panel — the same data/blocklist.json the campaign wizard
-             edits. It lives here too because this is the screen the exclusion
-             actually acts on: /api/scrape/start turns every person entry with a
-             member URN into excludeUrns, and the engine drops them mid-scrape.
-             Operator, 2026-09-01: having it only in the campaign wizard meant
-             leaving the scrape screen to use a scrape feature. -->
-        <div class="scrape-panel">
-          <div class="scrape-panel-head">Blocklist</div>
-          <div class="wiz-blocklist" id="sn-blocklist">
-            <div class="wiz-blocklist-chips wiz-bl-chips" id="sn-bl-chips"></div>
-            <div class="wiz-blocklist-add">
-              <input type="text" class="wiz-bl-value" id="sn-bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />
-              <button type="button" class="btn btn-secondary btn-sm wiz-bl-add" id="sn-bl-add">Add</button>
-            </div>
-            <div class="wiz-blocklist-hint">Companies are skipped mid-scrape and never written to your tab. People are too, but only if you add them using the <code>linkedin.com/in/ACw…</code> form of their URL, the kind you copy out of a scraped sheet. A plain profile link can only be matched later, at send-out.</div>
           </div>
         </div>
 

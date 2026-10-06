@@ -1,3 +1,6 @@
+import { retrySearchPayload, findSearchRetry } from '/js/scrape-retry.mjs';
+import { createScrapeWaitLog } from '/js/scrape-wait-log.mjs';
+const scrapeWaitLog = createScrapeWaitLog();
 import { isMaturingCampaign, canViewMaturingCampaign } from '/js/maturing-visibility.mjs';
 import { pinRecentLog } from '/js/mature-log-scroll.mjs';
 import { showMaturingPreviewPicker } from '/js/mature-preview-picker.mjs';
@@ -57,7 +60,7 @@ import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
-import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus, searchKey } from '/js/scrape-board.mjs';
+import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus, searchKey, scrapeCampaignId } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
@@ -1097,7 +1100,7 @@ async function rerunScrape(cid, btn) {
     const urls = (rec.searchUrls || []).filter(Boolean);
     const sheetUrl = rec.sheetUrl || '';
     const baseTab = (rec.tabName || 'Results').trim();
-    const campaignName = (rec.name || baseTab).trim();
+    const campaignName = `${(rec.name || baseTab).trim()} rerun`;
     const accts = (rec.profileIds || []).filter(Boolean);
     if (!urls.length || !sheetUrl || !accts.length) {
       toast('Re-run: this scrape is missing its URLs, sheet, or accounts — Open it and start manually.');
@@ -3015,12 +3018,13 @@ function filterProfiles() {
   let list = allProfilesData;
 
   // Preset filter (Assigned to me / Unassigned Pool / All)
-  if (activePresetFilter && activePresetFilter !== 'all') {
+  const scrapePicker = document.getElementById('campaign-mode')?.value === 'sales_nav_scrape';
+  if (!scrapePicker && activePresetFilter && activePresetFilter !== 'all') {
     list = list.filter((p) => matchesPreset(activePresetFilter, findSoOForProfile(p.name)));
   }
 
   // Chip filter (Available / In use / Selected)
-  if (activeAccountFilter !== 'all') {
+  if (activeAccountFilter !== 'all' && (!scrapePicker || activeAccountFilter === 'selected')) {
     list = list.filter((p) => {
       const soo = findSoOForProfile(p.name);
       if (activeAccountFilter === 'selected') return selectedProfileIds.includes(p.id);
@@ -4857,10 +4861,51 @@ function _groupScrapeRuns(jobs) {
 }
 if (typeof window !== 'undefined') window._groupScrapeRuns = _groupScrapeRuns;
 
+const _scrapeRetryPending = new Set();
+let _scrapeConsoleJobs = [];
+async function retryScrapeSearch(id, button) {
+  if (_scrapeRetryPending.has(id)) return;
+  _scrapeRetryPending.add(id);
+  button.disabled = true;
+  button.textContent = 'Queuing…';
+  try {
+    let job = _scrapeConsoleJobs.find(j => j.id === id);
+    if (_snOpenedScrape?.cid) {
+      const response = await fetch(`/api/scrape/campaigns/${encodeURIComponent(_snOpenedScrape.cid)}`);
+      const data = await response.json();
+      if (!response.ok || !_snCanControl(data.campaign)) throw new Error('Only the scrape owner or an administrator can retry this search.');
+      job = data.campaign.jobs?.find(j => j.id === id);
+    }
+    const payload = retrySearchPayload(job);
+    payload.runId = job.runId || '';
+    const response = await fetch(`/api/scrape/retry/${encodeURIComponent(id)}`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || 'Could not queue this search.');
+    showCampaignToast(`Retrying ${job.tabName || 'this search'} in this campaign. The results in this tab are replaced; other tabs are unchanged.`, 7000);
+    button.textContent = 'Opening retry…';
+    await pollSalesNavBoard();
+    if (result.job?.userId) {
+      const cid = scrapeCampaignId({userId:result.job.userId, sheetUrl:payload.sheetUrl, base:payload.campaignName});
+      await openScrapeSetupFor(cid);
+      await pollScrapeLogs();
+      await pollScrapeJobs();
+    }
+  } catch (error) {
+    _scrapeRetryPending.delete(id);
+    button.disabled = false;
+    button.textContent = 'Retry search';
+    showCampaignToast(`Retry not confirmed: ${error.message}. Check the board before trying again.`, 8000);
+  }
+}
+window.retryScrapeSearch = retryScrapeSearch;
+
 function _renderScrapeConsole(jobs, el) {
   el = el || document.getElementById('scrape-jobs');
   if (!el) return;
   jobs = jobs || [];
+  _scrapeConsoleJobs = jobs;
   if (!jobs.length) {
     el.innerHTML = '<div class="scrape-job-empty">No active scrape jobs. Finished scrapes stay on the board below with their full status.</div>';
     _setScrapeFoot(0, 0, 0);
@@ -4873,14 +4918,15 @@ function _renderScrapeConsole(jobs, el) {
     const statClass = (s) => (s === 'error' || s === 'cancelled') ? 'err'
       : (s === 'done' ? 'done' : (s === 'running' ? 'running' : ''));
     const rowHtml = (j) => {
+      const originalCampaign = (_snLastCampaigns || []).find(c => c.id === _snOpenedScrape?.cid);
+      const retry = findSearchRetry(j, _snLastCampaigns, j.sheetUrl || originalCampaign?.sheetUrl);
+      const retryButton = retry
+        ? `<button type="button" class="btn btn-secondary btn-sm" onclick="openScrapeSetupFor('${escHtml(retry.campaign.id)}')">View retry · ${escHtml(retry.job.state)} · ${retry.job.profiles || 0} leads</button>`
+        : `<button type="button" class="btn btn-secondary btn-sm" onclick="retryScrapeSearch('${escHtml(j.id)}',this)" ${_scrapeRetryPending.has(j.id) ? 'disabled' : ''} title="Restart only this search from page 1 in the same results tab; this tab’s data is replaced; other tabs are unchanged">${_scrapeRetryPending.has(j.id) ? 'Waiting for confirmation…' : 'Retry search'}</button>`;
       const leads = j.profiles || 0;
       const leadsHtml = leads > 0 ? `<span class="leads">${leads} lead${leads === 1 ? '' : 's'}</span>` : `${leads} leads`;
       const label = (j.tabName || j.searchLabel || j.searchUrl || j.id || 'job');
       const jLabel = String(label).replace(/'/g, '&#39;');
-      // Per-job live View — only while running (no live page otherwise).
-      const viewBtn = j.state === 'running'
-        ? `<button class="btn btn-ghost btn-sm scrape-job-view" onclick="openScrapeJobView('${escHtml(j.id)}','${jLabel}')" title="Watch this account's browser live">👁 View</button>`
-        : '';
       // "rerouted" = this search was moved off a dead account (no seat / logged
       // out) onto a surviving selected account; show it as "moved", not the raw state.
       const stateLabel = j.state === 'rerouted' ? 'moved to another account' : (j.state || '');
@@ -4891,7 +4937,7 @@ function _renderScrapeConsole(jobs, el) {
       return `<div class="scrape-job-row">
           <span class="scrape-job-name">${escHtml(label)}${acctHtml}</span>
           <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(stateLabel)} · ${j.pages || 0}p · ${leadsHtml}</span>
-          ${viewBtn}
+          ${['error','cancelled'].includes(j.state) ? retryButton : ''}
         </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
     };
     // When a scrape was re-run, separate the runs with a header so "1st scrape" and
@@ -4931,7 +4977,7 @@ function _renderScrapeConsole(jobs, el) {
     const doneCount = jobs.filter((j) => j.state === 'done').length;
     _setScrapeFoot(totalLeads, doneCount, jobs.length);
     _setScrapeVjCard({
-      leads: totalLeads, pages: totalPages, accounts, done: doneCount, total: jobs.length,
+      leads: totalLeads, pages: totalPages, accounts, done: doneCount, total: jobs.length, waitLog: scrapeWaitLog(jobs),
       units: scrapeProgressUnits(jobs),
       status: campaignStatus(jobs),
       name: _scrapeVjName(),
@@ -4966,7 +5012,9 @@ if (typeof window !== 'undefined') window._renderScrapeConsole = _renderScrapeCo
 // and SHOW a 👁 View button wired to the running job's live browser — the
 // analogue of a campaign's 👁 Show. Restores Start when nothing is live.
 let _scrapeDockRunningJobId = null;
+let _scrapePreviewJobs = [];
 function _syncScrapeDock(jobs) {
+  _scrapePreviewJobs = (jobs || []).filter(j => j.state === 'running' && j.id);
   const runningJob = (jobs || []).find((j) => j.state === 'running' && j.id);
   const anyLive = (jobs || []).some((j) => j.state === 'running' || j.state === 'queued');
   _scrapeDockRunningJobId = runningJob ? runningJob.id : null;
@@ -4980,9 +5028,20 @@ function _syncScrapeDock(jobs) {
 }
 // Dock 👁 View → open the currently-running job's live browser stream.
 function scrapeDockView() {
-  if (!_scrapeDockRunningJobId) return;
-  const label = (_snOpenedScrape && _snOpenedScrape.tabName) || document.getElementById('scrape-name')?.value || 'scrape';
-  openScrapeJobView(_scrapeDockRunningJobId, label);
+  document.getElementById('scrape-preview-picker')?.remove();
+  const dialog=document.createElement('dialog');dialog.id='scrape-preview-picker';dialog.className='scrape-preview-picker';
+  dialog.setAttribute('aria-label','Choose a scraping browser');
+  const title=document.createElement('h3');title.textContent='Choose a scraping browser';dialog.append(title);
+  const hint=document.createElement('p');hint.textContent='Each active account has its own browser. Accounts may share a worker.';dialog.append(hint);
+  for(const job of _scrapePreviewJobs){
+    const name=job.accountName || (typeof profileLabel==='function' ? profileLabel(job.profileId) : '') || job.profileId || job.tabName;
+    const button=document.createElement('button');button.type='button';button.className='scrape-preview-account';
+    button.textContent=`${name} · ${job.tabName || 'Scraping'} · ${job.profiles || 0} leads`;
+    button.onclick=()=>{dialog.close();openScrapeJobView(job.id,name);};dialog.append(button);
+  }
+  if(!_scrapePreviewJobs.length){const p=document.createElement('p');p.textContent='No browser is running yet. Preview becomes available when a worker starts.';dialog.append(p);}
+  const close=document.createElement('button');close.type='button';close.textContent='Close';close.onclick=()=>dialog.close();dialog.append(close);
+  dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();
 }
 window.scrapeDockView = scrapeDockView;
 
@@ -5005,7 +5064,7 @@ function _scrapeVjName() {
 // Scrape-specific labels for the live-status card.
 const _SCRAPE_VJ = {
   running: { eyebrow: 'Collecting', state: 'Collecting', l1: 'Collecting leads from Sales Navigator…' },
-  queued:  { eyebrow: 'In queue',   state: 'In queue',   l1: 'Waiting in the queue for an account…' },
+  queued:  { eyebrow: 'In queue',   state: 'In queue',   l1: 'Waiting for a worker and an available account…' },
   done:    { eyebrow: 'Done',       state: 'Done',       l1: 'Finished.' },
   error:   { eyebrow: 'Stopped',    state: 'Stopped',    l1: 'Stopped before finishing.' },
   idle:    { eyebrow: 'No scrape running', state: 'Idle', l1: 'Add search URLs and pick accounts, then press Start.' },
@@ -5055,14 +5114,14 @@ function _ensureScrapeVjCard() {
     const queue = document.getElementById('scrape-tab-queue'); if (queue) extra.appendChild(queue);
     const foot = statusCard.querySelector('.ssc-foot'); if (foot) extra.appendChild(foot);
     // Drop the footer VIEW button — each Jobs row already has its own VIEW.
-    const footView = document.getElementById('btn-scrape-view'); if (footView) footView.remove();
+    const footView = document.getElementById('btn-scrape-view'); if (footView) { footView.textContent = '👁 Preview'; footView.title = 'Choose a scraping account to preview'; }
     root.appendChild(extra);
     statusCard.style.display = 'none';
   }
 
   // Log-panel "Copy all" → scrape console.
   const acts = root.querySelector('.vj-log-acts');
-  if (acts) acts.innerHTML = '<button type="button" class="vj-log-act" onclick="copyScrapeLog()">Copy all</button>';
+  if (acts) acts.innerHTML = '<button type="button" class="vj-log-act" onclick="scrapeDockView()">👁 Preview</button><button type="button" class="vj-log-act" onclick="copyScrapeLog()">Copy all</button>';
   return root;
 }
 
@@ -5098,7 +5157,7 @@ function _setScrapeVjCard(s) {
     live.hidden = false;
     let l1 = V.l1, l2 = '';
     if (state === 'running') l2 = `${leads} lead${leads === 1 ? '' : 's'} so far · ${pages} page${pages === 1 ? '' : 's'} · ${accounts} account${accounts === 1 ? '' : 's'}`;
-    else if (state === 'queued') l2 = s.queueEta ? `starts in ${s.queueEta}` : 'next up — starts when an account frees';
+    else if (state === 'queued') l2 = `${s.queueEta ? `Estimated queue wait: ${s.queueEta} · ` : ''}Starts automatically · waiting updates every 30 seconds`;
     else if (state === 'done') l2 = `${leads} lead${leads === 1 ? '' : 's'} collected across ${total} search${total === 1 ? '' : 'es'}`;
     else if (state === 'error') { l1 = s.errorText || V.l1; }
     setF('activeLiveIco', '›'); setF('activeLiveL1', l1); setF('activeLiveL2', l2);
@@ -5109,7 +5168,7 @@ function _setScrapeVjCard(s) {
   // filter wrongly hid the operator's own lines when the engine tab name differed.
   const logEl = root.querySelector('[data-f="active-log"]');
   if (logEl) {
-    const src = Array.isArray(scrapeLogLines) ? scrapeLogLines : [];
+    const src = [...(Array.isArray(scrapeLogLines) ? scrapeLogLines : []), ...(s.waitLog || [])].sort((a,b) => Number(a.ts)-Number(b.ts));
     const head = root.querySelector('.vj-log-head .vj-details-head');
     if (!src.length) {
       logEl.innerHTML = '<div style="padding:6px 2px;color:var(--gray);opacity:.75;white-space:normal;line-height:1.6;">No activity yet — your scrape events appear here once it starts.</div>';

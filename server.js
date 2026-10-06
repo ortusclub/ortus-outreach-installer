@@ -1,3 +1,4 @@
+import { retrySearchPayload } from './public/js/scrape-retry.mjs';
 import { updateAppTarget } from './src/update-app-target.js';
 import { getCampaignDeletions, deleteCampaignFromBoard } from './src/campaign-board-deletions.js';
 import { withCampaignLaunch, findActiveCampaign } from './src/cloud-campaign-identity.js';
@@ -6308,7 +6309,7 @@ function boardIdForLaunch({ sheetUrl, tabName, campaignName }) {
   });
 }
 
-app.post('/api/scrape/start', async (req, res) => {
+async function handleScrapeStart(req, res) {
   const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName, accountName, runId, accountPool } = req.body || {};
   // Blocklisted people the engine must skip mid-scrape. Only URN-form entries
   // can be matched against a search result (which carries a memberUrn, not a
@@ -6330,7 +6331,9 @@ app.post('/api/scrape/start', async (req, res) => {
   // shared board can show WHO launched each scrape across machines.
   const result = await startScrape({
     searchUrls, sheetUrl, tabName, profileId, slowMode,
-    ownerEmail: getOperatorEmail() || '', campaignName: campaignName || '',
+    replaceTab: !!req.scrapeRetryJob,
+    retryOperatorId: req.scrapeRetryJob?.userId,
+    ownerEmail: req.scrapeRetryJob?.ownerEmail || getOperatorEmail() || '', campaignName: campaignName || '',
     excludeUrns, excludeCompanies,
     accountName: accountName || '',
     // runId groups a launch's per-URL submissions; accountPool is the full
@@ -6343,7 +6346,7 @@ app.post('/api/scrape/start', async (req, res) => {
   // GoLogin profile, destination sheet + tab) was never written down anywhere,
   // so results landing in the wrong tab left no record of the request.
   const { actor } = scrapeActor(req);
-  const cid = boardIdForLaunch({ sheetUrl, tabName, campaignName });
+  const cid = req.scrapeRetryCampaignId || boardIdForLaunch({ sheetUrl, tabName, campaignName });
   const urls = (Array.isArray(searchUrls) ? searchUrls : [searchUrls]).filter(Boolean);
   if (result && result.error) {
     await logScrape(cid, `✗  Dispatch failed — ${urls.length} search(es) on ${profileId || 'no profile'}: ${result.error}`, { level: 'err', actor });
@@ -6357,6 +6360,28 @@ app.post('/api/scrape/start', async (req, res) => {
     if (sheetUrl) await logScrape(cid, `  → sheet ${sheetUrl}`, { actor });
   }
   res.status(result && result.error ? 400 : 200).json(result);
+}
+app.post('/api/scrape/start', handleScrapeStart);
+const scrapeRetryInFlight = new Set();
+app.post('/api/scrape/retry/:jobId', async (req, res) => {
+  const id = req.params.jobId;
+  if (scrapeRetryInFlight.has(id)) return res.status(409).json({error:'This search is already being retried.'});
+  scrapeRetryInFlight.add(id);
+  try {
+    const board = await refreshScrapeBoardOnce();
+    const campaign = board.campaigns.find(c => c.jobs?.some(j => j.id === id));
+    if (!campaign || !(viewerIsAdmin(req) || campaign.mine)) return res.status(403).json({error:'Only the scrape owner or an administrator can retry this search.'});
+    const job = campaign.jobs.find(j => j.id === id);
+    if (campaign.jobs.some(j => j.id !== id && j.runId === job.runId && j.searchUrl === job.searchUrl && j.tabName === job.tabName && Number(j.createdAt) > Number(job.createdAt))) {
+      return res.status(409).json({error:'A newer attempt already exists. Open this campaign to follow it.'});
+    }
+    req.body = retrySearchPayload(job);
+    req.scrapeRetryJob = job;
+    req.scrapeRetryCampaignId = campaign.id;
+    await handleScrapeStart(req, res);
+  } catch (error) {
+    if (!res.headersSent) res.status(400).json({error:error.message});
+  } finally { scrapeRetryInFlight.delete(id); }
 });
 
 // Read input Sales Nav search URLs from a pasted Google Sheet (app-side only —

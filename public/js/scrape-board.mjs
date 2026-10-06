@@ -73,11 +73,24 @@ export function scrapeCampaignId({ userId = '', sheetUrl = '', base = '' } = {})
   return 'eng_' + _hash(`${userId || ''}|${sheetUrl || ''}|${name}`);
 }
 
+// A retry reuses the launch, search and tab: display its latest attempt once.
+export function latestSearchAttempts(jobs) {
+  const latest = new Map();
+  for (const job of jobs || []) {
+    const key = job.runId && job.searchUrl
+      ? JSON.stringify([job.userId, job.sheetUrl, job.campaignName, job.runId, job.searchUrl, job.tabName])
+      : job.id || Symbol();
+    const previous = latest.get(key);
+    if (!previous || Number(job.createdAt) > Number(previous.createdAt)) latest.set(key, job);
+  }
+  return [...latest.values()];
+}
+
 export function groupJobsIntoCampaigns(jobs, { currentEmail = '', currentOperatorId = '' } = {}) {
   const curEmail = String(currentEmail || '').trim().toLowerCase();
   const curId = String(currentOperatorId || '').trim();
   const groups = new Map();
-  for (const j of jobs || []) {
+  for (const j of latestSearchAttempts(jobs)) {
     const userId = j.userId || '';
     const base = (j.campaignName || baseTabName(j.tabName) || 'Sales Nav scrape').trim();
     const key = `${userId}|${j.sheetUrl || ''}|${base}`;
