@@ -11701,8 +11701,15 @@ function _pinMaturingLog(box, key) {
 }
 function maturingResultsButton() {
   const url = matureResultsLink().url;
-  return url ? `<button type="button" class="mini" data-url="${escHtml(url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Warm and cold results for each profile">Open results workbook ↗</button>` : '';
+  return `<button type="button" class="mini" onclick="openMaturingWebWorkbook()">Web workbook ↗</button> ` + (url ? `<button type="button" class="mini" data-url="${escHtml(url)}" onclick="window.open(this.dataset.url, '_blank', 'noopener,noreferrer')" title="Warm and cold results for each profile">Google Sheets ↗</button>` : '');
 }
+window.openMaturingWebWorkbook = async function() {
+  try {
+    const target = await fetch('/api/engine-target').then(r => r.json());
+    const base = target.active === 'development' ? target.devUrl : target.prodUrl;
+    window.open(new URL('/maturing-workbook.html', base).href, '_blank', 'noopener,noreferrer');
+  } catch (error) { showCampaignToast('Could not open the web workbook: ' + error.message, 6000); }
+};
 let _maturingPreviewItems = [];
 window.openMaturingPreviewPicker = () => showMaturingPreviewPicker(_maturingPreviewItems, openCloudCampaignView);
 function maturingPreviewButton(items) {
