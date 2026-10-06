@@ -12,12 +12,12 @@ test('stop-timeout interruption is stopped, not paused; a genuine pause remains 
  assert.equal(row.bucket,'done');assert.equal(row.badLabel,'Stopped');assert.equal(row.paused,false);
  assert.equal(ctx.localDashboardLifecycle({running:true,paused:true}).bucket,'running');
 });
-test('interrupted card has Continue, Delete, Duplicate, Open without the rich live card',()=>{
+test('interrupted card has Start again, Delete, Duplicate, Open without the rich live card',()=>{
  const a=source.indexOf("} else if (it.where === 'local' && it.interrupted) {");
  const b=source.indexOf('} else if (running && cloud)',a);
  const code=source.slice(a+2,b).replace(/^else /, '');
  const ctx=vm.createContext({ campaignLifecycle,it:{where:'local',interrupted:true,id:'local-active'},foot:'',
   _dib:(_svg,label)=>label+'|',escHtml:s=>s,V3_SVG_PLAY:'',V3_SVG_TRASH:'',V3_SVG_COPY:''});
  vm.runInContext(code+'}',ctx);
- for(const label of ['Continue where it left off','Delete','Duplicate','Open']) assert.ok(ctx.foot.includes(label));
+ for(const label of ['Start again','Delete','Duplicate','Open']) assert.ok(ctx.foot.includes(label));
 });

@@ -17,3 +17,7 @@ LinkedIn outreach automation for The Ortus Club. macOS only.
 4. The Ortus icon appears in your menu bar (top-right). Click → Show Dashboard.
 
 If macOS still blocks the app: **System Settings → Privacy & Security** → click "Open Anyway".
+
+## Deployment
+
+See the [engine and desktop deployment runbook](docs/ortus-deploy-runbook.md).

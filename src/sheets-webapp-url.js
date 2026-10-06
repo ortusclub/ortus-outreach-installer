@@ -88,3 +88,13 @@ export const MAGELLAN_WEBAPP_URL = process.env.MAGELLAN_WEBAPP_URL || 'https://s
 // The ?invite=true query opens the invite modal directly; the /posts/ path +
 // feedView=all is the exact URL confirmed to open it for this page (slug ortus-club).
 export const ORTUS_PAGE_INVITE_URL = 'https://www.linkedin.com/company/ortus-club/posts/?feedView=all&invite=true';
+
+// Mature Profile has its own sheets bridge: an independent copy of the shared
+// script hosted under info@ortus.solutions (scripts/mature-apps-script-deploy.sh).
+// It owns the maturing results workbook and carries the writeMatureTab action.
+// Read at call time so a release's bundled .env or a dev override both apply.
+export function matureSheetsWebappUrl() {
+  return String(process.env.MATURE_SHEETS_WEBAPP_URL || '').trim()
+    || 'https://script.google.com/macros/s/AKfycbw3WC9M0h0mKX_iUmIyA-g9RbipY__AvvrKm_tt-9JgYXhUY52uNwoArIlLBR5p7sjUCg/exec';
+}
+

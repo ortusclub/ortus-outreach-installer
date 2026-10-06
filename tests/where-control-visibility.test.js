@@ -34,7 +34,7 @@ const whereBlockHtml = new Function(`
   return whereBlockHtml;
 `)();
 
-test('a campaign whose monitor is live keeps the machine switcher', () => {
+test('a campaign whose monitor is live keeps a read-only location', () => {
   const html = whereBlockHtml({
     id: 'cmp_13s04kukmt7b0ro6',
     state: 'stopping',
@@ -45,12 +45,19 @@ test('a campaign whose monitor is live keeps the machine switcher', () => {
   });
   assert.match(html, /Running on/);
   assert.match(html, /Cloud VM/);
-  assert.match(html, /This Mac/);
+  assert.doesNotMatch(html, /<button|onclick=|whereAsk|Move it/);
+  assert.match(html, /Stop the campaign/);
 });
 
-test('the switcher still hides when nothing is running or monitoring', () => {
+test('the location still hides when nothing is running or monitoring', () => {
   const html = whereBlockHtml({
     id: 'cmp_dead', state: 'done', running: false, monitoring: false, stopReason: 'operator-stopped', _cloud: true,
   });
   assert.equal(html, '');
+});
+
+test('local and paused runs also show location without transfer controls',()=>{
+  for(const status of [{id:'local',running:true,_side:'local'},{id:'paused',paused:true,state:'paused'}]) {
+    const html=whereBlockHtml(status);assert.match(html,/Running on/);assert.doesNotMatch(html,/<button|onclick=/);
+  }
 });
