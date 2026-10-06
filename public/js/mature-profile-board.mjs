@@ -72,46 +72,57 @@ export function logClock(t, timeZone) {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, ...(timeZone ? { timeZone } : {}) }).format(new Date(Number(t)));
 }
 
-// Lines the app adds to the combined log while a due action waits for a cloud
-// worker: nothing in the cloud is running then, so nothing else would log it.
-// One "looking" line when the action falls due, then a "still looking" line
-// every 15 seconds, each with how long this normally takes.
-export const WORKER_WAKE_TYPICAL = 'usually about 2 minutes, because workers sleep when idle';
+// A due action is eligible to start, not a promise that a worker is free.
+export function maturingWorkerWait(it, now = Date.now()) {
+  if (!it || it.live || it.needsReview || it.paused || it.stopping || it.bucket === 'done') return null;
+  if ((it.accountBlocks || []).some(b => b.reason && (!b.until || Date.parse(b.until) > now))) return null;
+  const accepts = Number(it.acceptPending) || 0;
+  const acceptDue = Date.parse(it.acceptDueAt || ''), resumeDue = Date.parse(it.resumeAt || '');
+  const kind = it.matureKind === 'cold' ? 'cold' : 'warm';
+  if (accepts > 0 && acceptDue <= now) return { since: acceptDue, what: `accept ${accepts} connection request${accepts === 1 ? '' : 's'} in the receiving account${accepts === 1 ? '' : 's'}` };
+  if (it.dailyWait && resumeDue <= now) return { since: resumeDue, what: `send today's ${kind} connections` };
+  if (it.bucket === 'queued') {
+    const scheduled = Date.parse(it.scheduledAt || '');
+    const since = Number.isFinite(scheduled) ? scheduled : Number(it.startedAt);
+    if (since > 0 && since <= now) return { since, what: `start ${kind} connections` };
+  }
+  return null;
+}
+const waitingDuration = sec => sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`;
 export function maturingWaitLines(items, now = Date.now(), maxLines = 12) {
   const lines = [];
   for (const it of items || []) {
-    if (!it || it.live || it.needsReview || it.paused || it.stopping || it.bucket === 'done') continue;
+    const wait = maturingWorkerWait(it, now);
+    if (!wait) continue;
     const tag = `${String(it.name || '').replace(/ · Cold$/, '')} · ${it.matureKind === 'cold' ? 'cold' : 'warm'}`;
-    const accepts = Number(it.acceptPending) || 0;
-    const acceptDue = Date.parse(it.acceptDueAt || ''), resumeDue = Date.parse(it.resumeAt || '');
-    let since = NaN, what = '', after = '';
-    if (accepts > 0 && acceptDue <= now) {
-      since = acceptDue; what = `accept ${accepts} connection request${accepts === 1 ? '' : 's'} in the receiving account${accepts === 1 ? '' : 's'}`;
-      after = ' Accepting then takes about 1 minute per account.';
-    } else if (it.dailyWait && resumeDue <= now) {
-      since = resumeDue; what = `send today's ${it.matureKind === 'cold' ? 'cold' : 'warm'} connections`;
-      after = ' Sending then takes a few minutes per batch.';
+    const ticks = Math.floor((now - wait.since) / 30000);
+    lines.push({ t: wait.since, text: `${tag} — ⏳ Waiting for a worker to ${wait.what}. The scheduled time is the earliest start; actual start depends on worker availability.` });
+    // Generate only the retained ticks, even after a long wait.
+    for (let tick = Math.max(1, ticks - Math.max(0, maxLines - 2)); tick <= ticks; tick++) {
+      lines.push({ t: wait.since + tick * 30000, text: `${tag} — ⏳ Still waiting for a worker to ${wait.what} — ${waitingDuration(tick * 30)} elapsed. It will start automatically when a worker is available.` });
     }
-    if (!Number.isFinite(since)) continue;
-    const waited = Math.max(0, Math.floor((now - since) / 1000));
-    const mine = [{ t: since, text: `${tag} — 🔎 Looking for a VM worker to ${what}. This is ${WORKER_WAKE_TYPICAL}.${after}` }];
-    const span = (sec) => (sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`);
-    for (let sec = 15; sec <= waited; sec += 15) {
-      mine.push({ t: since + sec * 1000, text: `${tag} — ⏳ Still looking for a VM worker to ${what} — ${span(sec)} so far (${sec > 300 ? 'longer than usual; it keeps trying' : 'usually about 2 minutes'}).` });
-    }
-    // Keep the opening line and the most recent ticks.
-    lines.push(...(mine.length > maxLines ? [mine[0], ...mine.slice(-(maxLines - 1))] : mine));
   }
   return lines.sort((a, b) => a.t - b.t);
+}
+
+// Read the engine's live account block, not an old log line or cold start date.
+export function maturingWeeklyBlock(it, now = Date.now()) {
+  if (!it || it.bucket === 'done') return null;
+  return (it.accountBlocks || []).find(b => ['weekly', 'weekly_suspected'].includes(b.reason)
+    && Number.isFinite(Date.parse(b.until)) && Date.parse(b.until) > now) || null;
 }
 
 // The one-word state a maturing campaign shows in the Profile Maturing list.
 // `tone` picks the dot colour: green only while it is actually connecting.
 export function maturingRowState(it) {
   if (it.needsReview) return { label: 'Needs attention', tone: 'red' };
+  if (maturingPreviewActivity(it) === 'Accepting') return { label: 'Active', tone: 'green' };
   if (it.bucket === 'done') return it.bad ? { label: 'Stopped', tone: 'muted' } : { label: 'Finished', tone: 'done' };
   if (it.stopping) return { label: 'Stopping', tone: 'muted' };
   if (it.paused) return { label: 'Paused', tone: 'muted' };
+  const weekly = maturingWeeklyBlock(it);
+  if (weekly) return { label: weekly.reason === 'weekly_suspected' ? 'Possible weekly limit' : 'Weekly limit · paused', tone: 'amber' };
+  if (maturingWorkerWait(it)) return { label: 'Waiting for a worker', tone: 'amber' };
   if (it.bucket === 'queued') return it.scheduledAt ? { label: 'Scheduled', tone: 'muted' } : { label: 'Starting', tone: 'amber' };
   if (maturingPreviewActivity(it)) return { label: 'Active', tone: 'green' };
   // The engine's own status wins over the browser-open flag, which can lag.
@@ -135,8 +146,9 @@ export function maturingBatchDone(log) {
 // maturing worker being free. `viewerTimeZone` is for tests (default: this
 // computer's zone).
 export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}) {
-  if (!it || it.needsReview || it.bucket === 'done' || it.stopping || it.paused) return '';
-  if (maturingPreviewActivity(it, now) === 'Accepting') return 'Now: accepting connection requests';
+  if (!it || it.needsReview || it.stopping || it.paused) return '';
+  if (maturingPreviewActivity(it, now) === 'Accepting') return `Now: accepting connection requests${it.liveProgress?.accountName ? ` on ${it.liveProgress.accountName}` : ''}`;
+  if (it.bucket === 'done') return '';
   const what = `${it.matureKind === 'cold' ? 'cold' : 'warm'} connection`;
   const schedule = it.warmSchedule, amounts = Array.isArray(schedule?.amounts) ? schedule.amounts.map(Number) : [];
   const tz = it.matureTz || MATURE_DEFAULT_TIME_ZONE;
@@ -148,20 +160,24 @@ export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}
   const count = (n) => (n === null ? `${what}s` : `${n} ${what}${n === 1 ? '' : 's'}`);
   const at = (instant) => new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short', ...(viewerTimeZone ? { timeZone: viewerTimeZone } : {}) }).format(new Date(instant)).replace(/^(\w+),/, '$1');
   const due = (instant) => (Number.isFinite(Date.parse(instant || '')) ? instant : null);
+  const weekly = maturingWeeklyBlock(it, now);
+  if (weekly) return `${weekly.reason === 'weekly_suspected' ? 'Possible weekly limit' : 'Weekly limit reached'} · Retry ${at(weekly.until)}`;
+  const wait = maturingWorkerWait(it, now);
+  if (wait) return `Waiting for a worker to ${wait.what} · ${waitingDuration(Math.max(0, Math.floor((now - wait.since) / 1000)))} elapsed · starts automatically`;
   if (it.bucket === 'queued') {
     const start = due(it.scheduledAt);
-    return start ? `Next: ${count(amountOn(start))} · Attempt at ${at(start)}` : `Next: ${count(amountOn(now))} today · Waiting for attempt time`;
+    return start ? `Next: ${count(amountOn(start))} · Earliest start ${at(start)}` : `Next: ${count(amountOn(now))} today · Waiting for attempt time`;
   }
   // Today's batch is out: the receiving accounts accept it 15 minutes later.
   if (Number(it.acceptPending) > 0 && !(it.live && !it.dailyWait)) {
     const n = Number(it.acceptPending), when = due(it.acceptDueAt);
-    return `Next: accept ${n} connection request${n === 1 ? '' : 's'} in the receiving account${n === 1 ? '' : 's'}${when ? ` · Attempt at ${at(when)}` : ' · Waiting for attempt time'}`;
+    return `Next: accept ${n} connection request${n === 1 ? '' : 's'} in the receiving account${n === 1 ? '' : 's'}${when ? ` · Earliest start ${at(when)}` : ' · Waiting for attempt time'}`;
   }
   if (it.dailyWait) {
     const resume = due(it.resumeAt);
     if (!resume) return `Next: ${what}s in the next daily batch · Waiting for attempt time`;
     const n = amountOn(resume);
-    return n === 0 ? 'Plan complete — nothing further is planned' : `Next: ${count(n)} · Attempt at ${at(resume)}`;
+    return n === 0 ? 'Plan complete — nothing further is planned' : `Next: ${count(n)} · Earliest start ${at(resume)}`;
   }
   const today = amountOn(now);
   if (today === 0) return 'Plan complete — nothing further is planned';
@@ -185,7 +201,7 @@ export function groupMaturingAccounts(items) {
   }
   return [...groups.values()].map(g => {
     // The account's state is its most "alive" campaign's state.
-    const order = ['Active', 'Needs attention', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
+    const order = ['Active', 'Needs attention', 'Weekly limit · paused', 'Possible weekly limit', 'Waiting for a worker', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
     const states = [g.warm, g.cold].filter(Boolean).map(maturingRowState);
     states.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
     return { ...g, state: states[0] || { label: '', tone: 'muted' }, warmSent: g.warm ? (g.warm.sent || 0) : null, coldSent: g.cold ? (g.cold.sent || 0) : null };

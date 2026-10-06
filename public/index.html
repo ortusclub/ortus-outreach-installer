@@ -30,48 +30,10 @@
         <div id="update-detail" class="update-detail hidden"></div>
       </div>
 
-      <nav class="sidebar-nav">
-        <button type="button" class="nav-item nav-item-back" onclick="goDashboard()"><span class="nav-num">←</span>Dashboard</button>
-        <div class="nav-section-label">Campaign</div>
-        <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph" id="nav-glyph-settings"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph" id="nav-glyph-sheet"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph" id="nav-glyph-accounts"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph" id="nav-glyph-templates"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
 
-        <div class="nav-section-label">Team</div>
-        <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
-
-        <div class="nav-section-label">Review</div>
-        <button type="button" class="nav-item" id="nav-replies-btn" onclick="goReplies()">Replies</button>
-        <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
-
-        <div class="nav-section-label">Help</div>
-        <div class="nav-help-wrapper">
-          <button type="button" class="nav-item nav-item-help" id="nav-help-btn" onclick="toggleHelpPopover(event)">
-            <span class="nav-num">?</span>Help
-          </button>
-          <div id="help-popover" class="help-popover hidden">
-            <div class="help-popover-title">HELP</div>
-            <button type="button" class="help-pop-item" onclick="onHelpTakeTour()">
-              <span class="help-pop-icon">📘</span><span>Take the tour</span>
-            </button>
-            <a class="help-pop-item" href="/help.html" target="_blank" rel="noopener">
-              <span class="help-pop-icon">📄</span><span>Open the manual</span>
-            </a>
-            <button type="button" id="help-pop-replay" class="help-pop-item" onclick="onHelpReplayTour()" style="display:none">
-              <span class="help-pop-icon">🔁</span><span>Replay tour</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="nav-section-label">Dev tools</div>
-        <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
-      </nav>
 
         <div class="sidebar-main-nav" role="navigation" aria-label="Main sections">
-          <button type="button" class="nav-item is-active" id="dash-tab-campaigns" onclick="goCampaignsTab()">Campaigns</button>
+          <button type="button" class="nav-item is-active" id="dash-tab-campaigns" onclick="goCampaignsTab()">Outreach campaigns</button>
           <button type="button" class="nav-item" id="dash-tab-maturing" onclick="goMaturing()">Profile Maturing</button>
           <button type="button" class="nav-item" id="dash-tab-salesnav" onclick="goSalesNav()">Sales Nav Scraper</button>
           <button type="button" class="nav-item" id="dash-tab-connections" onclick="goConnections()">Connection DB</button>
@@ -82,13 +44,13 @@
         <span id="engine-version-environment">CHECKING ENGINE</span>
       </div>
       <div class="engine-version-banner__current">
-        <span class="engine-version-banner__label">THIS APP IS USING</span>
+        <span class="engine-version-banner__label">APP ENGINE</span>
         <strong id="engine-version-current">—</strong>
         <span id="engine-version-url" class="engine-version-banner__url">Connecting…</span>
       </div>
       <div class="engine-version-banner__divider" aria-hidden="true"></div>
       <div class="engine-version-banner__live">
-        <span class="engine-version-banner__label">TEAM LIVE ENGINE</span>
+        <span class="engine-version-banner__label">TEAM LIVE</span>
         <strong id="engine-version-live">—</strong>
         <span class="engine-version-banner__url">scraper.ortusclub.com</span>
       </div>
@@ -657,12 +619,6 @@
          export preview), monochrome (no gold — Bugatti). Client logic in
          app.js (Connections section). -->
     <div id="connections-view" class="route-view">
-      <div class="route-seg" role="tablist" aria-label="Main sections">
-        <button type="button" class="route-seg-btn" onclick="goCampaignsTab()">Campaigns</button>
-        <button type="button" class="route-seg-btn" onclick="goMaturing()">Profile Maturing</button>
-        <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav Scraper</button>
-        <button type="button" class="route-seg-btn is-active" onclick="goConnections()">Connection DB</button>
-      </div>
 
       <div class="dashboard-header">
         <h1 class="dashboard-title">Connection DB</h1>
@@ -1049,12 +1005,6 @@
 
     <!-- ── Sales Nav board view (route #/salesnav) — top-level queue board. ── -->
     <div id="salesnav-view" class="route-view">
-      <div class="route-seg" role="tablist" aria-label="Main sections">
-        <button type="button" class="route-seg-btn" onclick="goCampaignsTab()">Campaigns</button>
-        <button type="button" class="route-seg-btn" onclick="goMaturing()">Profile Maturing</button>
-        <button type="button" class="route-seg-btn is-active" onclick="goSalesNav()">Sales Nav Scraper</button>
-        <button type="button" class="route-seg-btn" onclick="goConnections()">Connection DB</button>
-      </div>
       <div class="sn-fallback-note" role="note">
         <strong>Scraper not working for you?</strong>
         You can always default to the Chrome extension instead.
@@ -1088,6 +1038,43 @@
 
     <!-- ── Wizard view (route #/new) ── -->
     <div id="wizard-view" class="route-view">
+      <nav class="campaign-editor-nav" aria-label="Campaign steps">
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph" id="nav-glyph-settings"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph" id="nav-glyph-sheet"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph" id="nav-glyph-accounts"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph" id="nav-glyph-templates"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
+
+        <details class="campaign-editor-tools"><summary>Campaign tools</summary>
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item" id="nav-replies-btn" onclick="goReplies()">Replies</button>
+        <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
+
+        <div class="nav-section-label">Help</div>
+        <div class="nav-help-wrapper">
+          <button type="button" class="nav-item nav-item-help" id="nav-help-btn" onclick="toggleHelpPopover(event)">
+            <span class="nav-num">?</span>Help
+          </button>
+          <div id="help-popover" class="help-popover hidden">
+            <div class="help-popover-title">HELP</div>
+            <button type="button" class="help-pop-item" onclick="onHelpTakeTour()">
+              <span class="help-pop-icon">📘</span><span>Take the tour</span>
+            </button>
+            <a class="help-pop-item" href="/help.html" target="_blank" rel="noopener">
+              <span class="help-pop-icon">📄</span><span>Open the manual</span>
+            </a>
+            <button type="button" id="help-pop-replay" class="help-pop-item" onclick="onHelpReplayTour()" style="display:none">
+              <span class="help-pop-icon">🔁</span><span>Replay tour</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-section-label">Dev tools</div>
+        <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
+        </details>
+      </nav>
 <!--
    2026-05-27 — wizard top cleanup: 'Save Edits' button removed (autosave
    handles it). 'Save Edits' was duplicated top+bottom; both gone.
@@ -2124,7 +2111,8 @@
   .sn-strip.mature-sleeping::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber,#d98a1f);}
   .sn-strip.mature-sleeping .sn-status{color:var(--amber,#d98a1f);}
   .sn-board .dot.amber{background:var(--amber,#d98a1f);}
-  .sn-strip.sn-maturing-log .sn-logbox{max-height:260px;overflow:auto;}
+  .sn-strip.sn-maturing-log .sn-logbox{max-height:220px;overflow:auto;overflow-anchor:none;}
+  .mature-log-tools{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin:6px 0;font-size:11px;color:var(--muted);}
   /* The combined log is always open: it has no collapsed/expanded states. */
   .sn-strip.sn-collapsed.sn-maturing-log .sn-switch{display:block;}
   .sn-strip.sn-maturing-log{margin-top:12px;}
@@ -2529,6 +2517,23 @@
       </div>
     </div>
 
+
+    <style id="mature-action-styles">
+      #nav-mature-profile #mature-plan-summary{font-size:13px;line-height:1.5;color:var(--gray,#6b6b6b);margin:18px 0 10px}
+      #nav-mature-profile .mature-actions{gap:10px!important;margin-bottom:20px}
+      #nav-mature-profile .mature-actions .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:11px 18px;border:1px solid var(--hairline,#d6d6d6);border-radius:10px;background:var(--paper,#fff);color:var(--ink,#151515);font-family:inherit;font-size:14px;font-weight:600;line-height:20px;letter-spacing:0;text-transform:none;box-shadow:0 1px 2px #00000006;transition:background .15s,border-color .15s,box-shadow .15s}
+      #nav-mature-profile .mature-actions .btn:hover:not(:disabled){background:var(--card-bg,#f3f3f3);border-color:var(--gray,#888)}
+      #nav-mature-profile .mature-actions .btn-primary{min-width:138px;background:var(--ink,#151515);color:var(--paper,#fff);border-color:var(--ink,#151515);box-shadow:0 2px 5px #00000014}
+      #nav-mature-profile .mature-actions .btn-primary::before{content:"";width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:7px solid currentColor}
+      #nav-mature-profile .mature-actions .btn-primary:hover:not(:disabled){background:#333;border-color:#333;box-shadow:0 3px 8px #00000020}
+      #nav-mature-profile .mature-actions [hidden]{display:none!important}
+      #nav-mature-profile .mature-actions .mini{min-height:44px;padding:10px 18px;border-radius:10px;font-size:14px;text-transform:none;letter-spacing:normal}
+      #nav-mature-profile .mature-actions .btn:focus-visible{outline:3px solid var(--gold,#f7be68);outline-offset:3px}
+      #nav-mature-profile .mature-actions .btn:disabled{cursor:wait;opacity:1;background:#eeeae3;border-color:#e2dace;color:#6b6051;box-shadow:none}
+      #nav-mature-profile .mature-actions .btn-primary:disabled::before{width:13px;height:13px;border:2px solid #c7bcac;border-top-color:#796447;border-radius:50%;animation:mature-action-spin .8s linear infinite}
+      @keyframes mature-action-spin{to{transform:rotate(360deg)}}
+      @media(prefers-reduced-motion:reduce){#nav-mature-profile .mature-actions .btn{transition:none}#nav-mature-profile .mature-actions .btn-primary:disabled::before{animation:none}}
+    </style>
     <section class="section" id="nav-mature-profile" style="display:none">
       <h2>Mature Profile Campaign</h2>
       <p>Build a staged plan for each account: start with your warm network, increase activity, then introduce cold connections and post engagement.</p>
@@ -2538,6 +2543,8 @@
       <div class="mature-actions" role="group" aria-label="Profile maturing controls" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
         <button type="button" class="btn btn-primary" onclick="startMaturePlan(this)" aria-describedby="mature-runner-notice">Start plan</button>
         <button type="button" class="btn" onclick="saveMatureProfilePlan(this)">Save plan</button>
+        <button id="mature-cancel-start" type="button" class="btn" hidden onclick="cancelMatureStart(this)">Stop setup</button>
+        <span id="mature-running-controls" style="display:flex;gap:10px"></span>
       </div>
       <!-- This account's tab in the results workbook; shown once the tab is written. -->
       <div style="margin-top:14px">
@@ -4644,6 +4651,7 @@
           document.getElementById('engine-version-current').textContent = d.scraperEngineVersion || 'unverified';
           document.getElementById('engine-version-live').textContent = d.productionEngineVersion || 'unverified';
           document.getElementById('engine-version-url').textContent = d.scraperEngineUrl || 'Not configured';
+          banner.title = `${d.scraperEngineUrl || 'Not configured'} · Team live: scraper.ortusclub.com`;
           document.getElementById('engine-version-explanation').textContent = isDev
             ? 'Isolated test environment. Your colleagues remain on the live engine shown here.'
             : 'This app and your colleagues are using the same live production engine.';

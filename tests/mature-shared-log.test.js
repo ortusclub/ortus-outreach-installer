@@ -6,15 +6,15 @@ import * as board from '../public/js/mature-profile-board.mjs';
 
 test('editor discovers other accounts during startup, retains entries on failures, and rejects stale polls', async () => {
   const source = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
-  const box = { innerHTML: '', scrollHeight: 100, scrollTop: 100, clientHeight: 100 };
+  const box = { innerHTML: '', scrollHeight: 100, scrollTop: 100, clientHeight: 100, before() {} };
   const body = { innerHTML: '', querySelector: () => box };
   const host = { hidden: false, isConnected: true, closest: () => null };
   const callbacks = new Map();
   let timer = 0, offline = false;
   const requested = [];
   const context = vm.createContext({
-    window: {}, ...board, matureLogClock: board.logClock, escHtml: String,
-    document: { getElementById: id => id === 'mature-live' ? host : id === 'mature-live-body' ? body : null },
+    window: {}, matureResultsLink: () => ({url:'https://docs.google.com/spreadsheets/d/results/edit'}), pinRecentLog() {}, ...board, matureLogClock: board.logClock, escHtml: String,
+    document: { createElement: () => ({ className: '', innerHTML: '' }), getElementById: id => id === 'mature-live' ? host : id === 'mature-live-body' ? body : null },
     sessionStorage: { getItem: () => null, setItem() {} },
     location: { hash: '#/new' },
     setInterval: fn => { callbacks.set(++timer, fn); return timer; },
@@ -32,6 +32,9 @@ test('editor discovers other accounts during startup, retains entries on failure
   vm.runInContext("_renderMatureLaunchLog('New account', [{t: 20, text: 'New account · start — Saving'}], 'Starting')", context);
   await new Promise(resolve => setImmediate(resolve));
   assert.match(body.innerHTML, /Maturing log · all accounts/);
+  assert.match(body.innerHTML, /openMaturingWebWorkbook/);
+  assert.match(body.innerHTML, /Google Sheets/);
+  assert.match(body.innerHTML, /spreadsheets\/d\/results/);
   assert.match(body.innerHTML, /Pauline · warm/);
   assert.match(body.innerHTML, /Riccardo · warm/);
   assert.match(body.innerHTML, /New account · start/);

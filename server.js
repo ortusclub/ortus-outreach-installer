@@ -13,6 +13,7 @@ import { ensureCampaignIdentity, getConfigById, getConfig as getSavedCampaign, d
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
 import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
+import { selectMatureColdLeads, DEFAULT_MATURE_COLD_SHEET_URL } from './src/mature-cold-pool.js';
 import { applyCredentials } from './src/gologin-credentials.js';
 applyCredentials();
 
@@ -103,7 +104,7 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { fetchLvAccounts } from './src/mature-warm.js';
-import { buildWarmPool, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, buildMatureTabRows, MATURE_TAB_HEADER, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
+import { buildWarmPool, shuffleWarmTargets, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, buildMatureTabRows, MATURE_TAB_HEADER, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
 import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
 import { localDay, MATURE_DEFAULT_TIME_ZONE } from './public/js/mature-profile-board.mjs';
 import { matureCampaignName } from './public/js/mature-profile-identity.mjs';
@@ -1545,11 +1546,13 @@ async function handleStartCloudOnce(req, res) {
       cloudLog(`[cloud] pre-flight excluded ${totalExcluded} URL(s) (blocklist: ${blExcluded.size}, client: ${clientExcluded.size})`);
     }
 
+    const includedUrls = Array.isArray(body.includeLeadUrls) ? new Set(body.includeLeadUrls.map(normalizeProfileUrl)) : null;
     const leads = [];
     const skippedNoAccount = [];
     for (const row of rows) {
       const leadUrl = extractLinkedInUrl(row, linkedinColumn);
       if (!leadUrl) continue;
+      if (includedUrls && !includedUrls.has(normalizeProfileUrl(leadUrl))) continue;
       // A sheet shared by two campaigns (a maturing account's tab holds warm
       // and cold rows): take only this campaign's rows.
       if (body.leadFilter && String(row[body.leadFilter.column] || '').trim().toLowerCase() !== String(body.leadFilter.value || '').trim().toLowerCase()) continue;
@@ -3960,6 +3963,10 @@ async function matureWarmSources() {
   return { profiles, sooAccounts: soo, lvAccounts: lv.accounts, lvError: lv.error || '' };
 }
 
+app.get('/api/mature/cold-source', (_req, res) => {
+  res.json({ url: String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim() || DEFAULT_MATURE_COLD_SHEET_URL });
+});
+
 // Names and LinkedIn URLs for Linked Velocity profiles — the editor prefills
 // "Profile to warm" from this the same way it prefills Ortus profiles from the SoO.
 app.get('/api/mature/lv-identities', async (_req, res) => {
@@ -3974,7 +3981,7 @@ app.get('/api/mature/warm-pool', async (req, res) => {
     const exclude = String(req.query.exclude || '').split(',').filter(Boolean);
     const { targets, total, missing, restricted } = buildWarmPool({ pool: String(req.query.pool || ''), excludeProfileIds: exclude, ...sources });
     const lvPool = WARM_POOL_ACCOUNT[req.query.pool] === 'linkedvelocity';
-    res.json({ ready: targets.length, total, missing, restricted, error: lvPool ? sources.lvError : '' });
+    res.json({ ready: targets.length, total, missing, restricted, error: lvPool ? sources.lvError : '', warning: req.query.pool === 'all_available' && sources.lvError ? 'Linked Velocity identities could not be loaded; those accounts are not included yet.' : '' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -4001,6 +4008,33 @@ app.get('/api/mature/start-progress', (req, res) => {
   res.json(matureStartProgress.get(String(req.query.launchId || '')) || { lines: [], done: false });
 });
 
+app.post('/api/mature/cancel-start', (req, res) => {
+  const id = String(req.query.launchId || '');
+  if (!id) return res.status(400).json({ error: 'Missing launch ID.' });
+  const entry = matureStartProgress.get(id) || { lines: [], done: false };
+  if (entry.done) return res.status(409).json({ error: 'Setup has finished. Use the plan’s Stop button.' });
+  entry.cancelled = true;
+  matureStartProgress.set(id, entry);
+  matureStep(id, 'Stop requested — waiting for the current setup request to finish.');
+  res.json({ ok: true });
+});
+
+app.post('/api/mature/control/:id/:action', async (req, res) => {
+  try {
+    const { id, action } = req.params;
+    if (!['pause', 'resume', 'stop'].includes(action)) return res.status(400).json({ error: 'Unknown control.' });
+    const detail = await getCloudCampaign(id);
+    if (detail.error) throw new Error(detail.error);
+    const saved = detail.campaign;
+    if (!saved?.config?.matureWarm) return res.status(400).json({ error: 'Not a maturing campaign.' });
+    const startAt = saved.config.dailySchedule?.startAt;
+    const result = action === 'resume'
+      ? (Date.parse(startAt) > Date.now() ? await restartCloudCampaign(id, { startAt }) : await resumeCloudCampaign(id))
+      : await stopCloudCampaign(id, { pause: action === 'pause', immediate: action === 'stop' });
+    res.status(result.error ? 502 : 200).json(result);
+  } catch (error) { res.status(502).json({ error: error.message }); }
+});
+
 // Google intermittently answers the Apps Script's reply with a 404 page (a
 // Google-side flap measured in magellan-sheet.js; the same call works seconds
 // later). Try again rather than fail the whole start. A retry can leave an
@@ -4012,7 +4046,7 @@ async function createWarmSheet(args, onRetry, write = createWorkbookTab) {
     catch (error) {
       lastError = error;
       // Anything else (e.g. the script has no such action yet) will not fix itself.
-      if (!/not JSON|timeout|fetch failed|aborted/i.test(error.message)) throw error;
+      if (error.code !== 'MATURE_SHEET_REPLY_INCOMPLETE' && !/not JSON|timeout|fetch failed|aborted|busy.*retry|could not acquire lock/i.test(error.message)) throw error;
       if (attempt === 4) break;
       onRetry?.(attempt + 1);
       await new Promise((r) => setTimeout(r, 2500 * attempt));
@@ -4045,10 +4079,19 @@ async function launchMatureStage(req, body) {
 // campaign at its first amount.
 app.post('/api/mature/start', async (req, res) => {
   const step = (text) => matureStep(req.body?.launchId, text);
+  const launched = [];
+  const checkCancelled = () => {
+    if (matureStartProgress.get(req.body?.launchId)?.cancelled) {
+      const error = new Error('Setup stopped by operator.'); error.code = 'MATURE_CANCELLED'; throw error;
+    }
+  };
   try {
+    checkCancelled();
     const b = req.body || {};
     const plan = restoreMaturePlan(b.maturePlan);
-    const errors = maturePlanErrors(plan);
+    const defaultColdPoolUrl = String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim() || DEFAULT_MATURE_COLD_SHEET_URL;
+    const errors = maturePlanErrors(plan, { defaultColdPoolUrl });
+    if (plan.coldPoolSource === 'default') plan.coldPool = defaultColdPoolUrl;
     if (errors.length) return res.status(400).json({ error: errors[0] });
     const profileId = plan.targetProfileIds[0];
     if (!profileId) return res.status(400).json({ error: 'Choose the profile to warm.' });
@@ -4107,8 +4150,10 @@ app.post('/api/mature/start', async (req, res) => {
     let pool = null;
     if (warmOn) {
       pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
+      pool.targets = shuffleWarmTargets(pool.targets);
+      step('Randomising the warm recipient order for this profile before assigning planned days…');
       const skipped = [pool.missing ? `${pool.missing} with no known LinkedIn URL` : '', pool.restricted ? `${pool.restricted} restricted` : ''].filter(Boolean).join(', ');
-      step(`Warm pool: ${pool.total} accounts in the ${WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity' ? 'Linked Velocity' : 'Ortus'} workspace — ${pool.targets.length} can be invited${skipped ? ` (skipping ${skipped})` : ''}.`);
+      step(`Warm pool: ${pool.total} accounts in the ${plan.warmPool === 'all_available' ? 'all accessible workspaces' : WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity' ? 'Linked Velocity workspace' : 'Ortus workspace'} — ${pool.targets.length} can be invited${skipped ? ` (skipping ${skipped})` : ''}.`);
       step(`Warm plan by day: ${warmAmounts.slice(0, 16).join(', ')}${warmAmounts.length > 16 ? ', …' : ''}${warmAmounts.at(-1) > 0 ? ' — then that amount daily until the pool runs out' : ''}.`);
       if (!maturedAccount.name && !maturedAccount.profileUrl) step('⚠ No LinkedIn name or URL is set for this profile, so the receiving accounts cannot accept automatically.');
       else step('Each receiving account accepts its request 15 minutes after the day\'s batch is sent.');
@@ -4119,48 +4164,49 @@ app.post('/api/mature/start', async (req, res) => {
     }
 
     // Managed profiles belong to the warm pools, never to the cold list.
-    const managed = ['ortus_owned', 'linkedvelocity_owned']
+    const managed = ['all_available']
       .flatMap((p) => buildWarmPool({ pool: p, ...sources }).targets.map((t) => t.linkedinUrl));
     let coldLeads = [];
     if (cold) {
       step('Reading the cold connection sheet…');
-      const skip = new Set(managed.map((u) => normalizeProfileUrl(u)));
-      const seen = new Set();
-      for (const row of await fetchSheet(plan.coldPool)) {
-        const linkedinUrl = extractLinkedInUrl(row);
-        const key = linkedinUrl && normalizeProfileUrl(linkedinUrl);
-        if (!key || skip.has(key) || seen.has(key)) continue;
-        seen.add(key);
-        const first = row['First Name'] || row['first name'] || '', last = row['Last Name'] || row['last name'] || '';
-        coldLeads.push({ name: String(row['Full Name'] || row['Name'] || `${first} ${last}`).trim(), linkedinUrl });
-      }
-      if (plan.coldPoolOrder !== 'descending') {
-        for (let i = coldLeads.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [coldLeads[i], coldLeads[j]] = [coldLeads[j], coldLeads[i]]; }
-      }
-      if (!coldLeads.length && !warmOn) return res.status(400).json({ error: 'The cold connection sheet has no usable LinkedIn URLs.' });
-      step(`Cold list: ${coldLeads.length} people, ${plan.coldPoolOrder !== 'descending' ? 'in random order' : 'top to bottom'}, starting on day ${cold.delayDays + 1} — by day: ${cold.amounts.slice(0, 16).join(', ')}.`);
+      const sourceRows = await fetchSheet(plan.coldPool);
+      const blocked = blocklistExcludedUrls(sourceRows, { linkedinColumn: 'LinkedIn URL', mode: 'connect_only', blocklist: readBlocklist() });
+      const selection = selectMatureColdLeads({ plan, rows: sourceRows, urlOf: extractLinkedInUrl,
+        excludedUrls: [...managed, maturedAccount.profileUrl, ...blocked] });
+      coldLeads = selection.leads;
+      step(`Cold plan needs ${selection.required} unique profiles: ${selection.stages.map(s => `stage ${s.stage}: ${s.count}`).join(', ')}.`);
+      step(`Selected ${coldLeads.length} of ${selection.available} eligible people ${plan.coldPoolOrder !== 'descending' ? 'at random' : 'in sheet order'}, starting on day ${cold.delayDays + 1}.`);
     }
 
-    // The account's tab in the results workbook: the plan (who, and on which
-    // day) and the record (request status, dates, acceptance) in one place.
-    // Both campaigns read their leads from it, so the engine stamps results
-    // straight back into it.
+    // Separate persistent warm/cold tabs: each campaign reads and updates its own list.
     let tab = null;
+    const tabs = {};
     try {
-      step(`Writing the plan to this account's tab in the results workbook…`);
-      tab = await createWarmSheet({
-        spreadsheetId: MATURE_RESULTS_SHEET_ID, tabName: name, header: [...MATURE_TAB_HEADER],
-        rows: buildMatureTabRows({ startDate, warmTargets: pool?.targets || [], warmAmounts, coldLeads, cold }),
-      }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
-      console.log(`[mature] ${name}: results tab ${tab.url} — ${tab.added} added, ${tab.existing} already listed`);
-      step(`Results tab "${name}" ${tab.created ? 'created' : 'updated'} — ${tab.added} people added${tab.existing ? `, ${tab.existing} already listed and left as they are` : ''}.`);
-      // Offer the link while the start is still running, not only at the end.
-      { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) progress.resultsUrl = tab.url; }
+      const rows = buildMatureTabRows({ startDate, warmTargets: pool?.targets || [], warmAmounts, coldLeads, cold });
+      for (const kind of [warmOn && 'warm', cold && 'cold'].filter(Boolean)) {
+        checkCancelled();
+        const tabName = `${name}_${kind}`;
+        step(`Writing the ${kind} list to "${tabName}"…`);
+        tabs[kind] = await createWarmSheet({
+          spreadsheetId: MATURE_RESULTS_SHEET_ID, tabName, header: [...MATURE_TAB_HEADER],
+          rows: rows.filter(row => row[0].toLowerCase() === kind), reuseExistingPlan: true,
+        }, (attempt) => step(`Google did not answer — trying again (attempt ${attempt} of 4)…`), writeMatureTab);
+        const written = tabs[kind];
+        if (kind === 'cold' && Array.isArray(written.planRows)) {
+          const at = MATURE_TAB_HEADER.indexOf('LinkedIn URL');
+          coldLeads = written.planRows.filter(row => row[0] === 'Cold' && row[at]).map(row => ({ linkedinUrl: row[at] }));
+        }
+        step(`Results tab "${tabName}" ${written.created ? 'created' : 'updated'} — ${written.added} people added${written.existing ? `, ${written.existing} already listed and left as they are` : ''}.`);
+      }
+      tab = warmOn ? tabs.warm : tabs.cold;
+      { const progress = matureStartProgress.get(String(b.launchId || '')); if (progress) { progress.resultsUrl = tab.url; progress.resultsUrls = Object.fromEntries(Object.entries(tabs).map(([kind, value]) => [kind, value.url])); } }
     } catch (error) {
-      console.warn(`[mature] ${name}: results tab unavailable (${error.message})`);
-      throw new Error(`Could not open this account's tab in the shared results workbook. No campaign was started. ${error.message}`);
+      if (error.code === 'MATURE_CANCELLED') throw error;
+      console.warn(`[mature] ${name}: results tabs unavailable (${error.message})`);
+      throw new Error(`Could not prepare this account's enabled connection lists in the shared results workbook. No campaign was started. ${error.message}`);
     }
 
+    checkCancelled();
     if (warmOn) {
       const sheetUrl = tab.url, sheetGid = tab.gid;
       step(`Sending warm connections to the cloud — ${warmAmounts[0]} today…`);
@@ -4173,10 +4219,13 @@ app.post('/api/mature/start', async (req, res) => {
         dailyLimit: warmAmounts[0], templates: {},
         mature: { kind: 'warm', plan, pool: plan.warmPool, maturedAccount, viaMatureBridge: !!tab, dailySchedule: { startDate, startAt: now.toISOString(), amounts: warmAmounts } },
       });
+      if (result.warm.ok && result.warm.id) launched.push(result.warm.id);
+      checkCancelled();
       if (!result.warm.ok) return res.status(400).json({ error: `Warm connections did not start: ${result.warm.error}` });
       step(`Warm campaign is on the VM — ${result.warm.leadsAdded ?? pool.targets.length} pool accounts queued, ${warmAmounts[0]} to send today.`);
     }
 
+    checkCancelled();
     if (cold && coldLeads.length) {
       // Cold begins on its first planned day; the engine holds it until then.
       const startAt = cold.delayDays > 0 ? new Date(now.getTime() + cold.delayDays * 86400000) : null;
@@ -4184,24 +4233,36 @@ app.post('/api/mature/start', async (req, res) => {
       step(cold.delayDays > 0 ? `Scheduling cold connections for day ${cold.delayDays + 1} of the plan…` : 'Sending cold connections to the cloud…');
       result.cold = await launchMatureStage(req, {
         name: `${name} · Cold`,
+        includeLeadUrls: coldLeads.map(l => l.linkedinUrl),
         mode: 'connect_only', profileIds: [profileId],
         dailyLimit: cold.amounts[0], templates: {}, linkedinColumn: 'LinkedIn URL',
         // From the tab the order is already the plan's; from the operator's own
         // sheet (no tab) it is shuffled and filtered here instead.
-        ...(tab ? { sheetUrl: tab.url, sheetGid: tab.gid, leadFilter: { column: 'Type', value: 'Cold' } }
-          : { sheetUrl: plan.coldPool, shuffleLeads: plan.coldPoolOrder !== 'descending', _preflightExcludedUrls: managed }),
+        sheetUrl: tabs.cold.url, sheetGid: tabs.cold.gid, leadFilter: { column: 'Type', value: 'Cold' },
         ...(startAt ? { startAt: startAt.toISOString() } : {}),
         mature: { kind: 'cold', plan, viaMatureBridge: !!tab, dailySchedule: { startDate: localDay(startAt || now, planTz), startAt: (startAt || now).toISOString(), amounts: cold.amounts } },
       });
+      if (result.cold.ok && result.cold.id) launched.push(result.cold.id);
+      checkCancelled();
       // Warm is already running, so a cold failure is reported, not fatal.
       if (!result.cold.ok && !result.warm) return res.status(400).json({ error: `Cold connections did not start: ${result.cold.error}` });
       step(result.cold.ok ? `Cold campaign is on the VM — ${result.cold.leadsAdded ?? coldLeads.length} people queued${startAt ? `, first batch on day ${cold.delayDays + 1}` : ''}.` : `⚠ Cold connections did not start: ${result.cold.error}`);
     }
-    if (tab) result.resultsUrl = tab.url;
+    if (tab) { result.resultsUrl = tab.url; result.resultsUrls = Object.fromEntries(Object.entries(tabs).map(([kind, value]) => [kind, value.url])); }
 
     step('Started. A cloud worker picks it up next — that takes about 2 minutes when the workers are asleep.');
     res.json({ ...result, id: result.warm?.id || result.cold?.id || null });
   } catch (err) {
+    if (err.code === 'MATURE_CANCELLED') {
+      const failures = [];
+      for (const id of launched) {
+        try { const reply = await stopCloudCampaign(id, { immediate: true }); if (reply.error) throw new Error(reply.error); }
+        catch (error) { failures.push(`${id}: ${error.message}`); }
+      }
+      if (failures.length) return res.status(502).json({ error: `Setup cancelled, but stopping dispatched campaigns could not be confirmed. Check the dashboard: ${failures.join('; ')}` });
+      step('Setup stopped. Any campaigns dispatched during setup have been stopped.');
+      return res.json({ ok: true, cancelled: true });
+    }
     console.error(`[mature] start failed: ${err.message}`);
     if (!res.headersSent) res.status(500).json({ error: err.message });
   } finally { matureStepsDone(req.body?.launchId); }

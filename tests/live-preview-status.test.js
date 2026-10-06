@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { previewStatus, countdown } from '../public/js/live-preview-status.mjs';
+import { previewStatus, countdown, previewSessionKey } from '../public/js/live-preview-status.mjs';
 test('completed campaign overrides stale waiting activity and scheduled timestamps', () => {
   const m = previewStatus({campaign:{name:'Example',status:'done',blocked_until:'2099-01-01'},monitorLog:[{t:1,line:'Still waiting'}],liveProgress:{stepLabel:'Opening browser'}});
   assert.equal(m.step,'Campaign complete'); assert.equal(m.due,0); assert.equal(m.name,'Example'); assert.equal(m.terminal,true);
@@ -32,4 +32,38 @@ test('a maturing campaign says what it does next, in the words of the plan', () 
   assert.equal(sleeping.due, Date.parse('2026-10-07T01:00:00Z'));
   // Long waits read in hours, not hundreds of minutes.
   assert.equal(countdown(Date.parse('2026-10-07T01:00:00Z'), now), 'In 29h 35m');
+});
+
+
+test('acceptance preview identifies the recipient under the completed parent campaign', () => {
+  const now=Date.now();
+  const result=previewStatus({campaign:{name:'Pauline',status:'completed',config:{matureWarm:true},matureAcceptPending:2},live:true,liveProgress:{phase:'accepting',accountName:'Recipient Name',stepAt:now}},'Campaign',now);
+  assert.equal(result.name,'Pauline');assert.equal(result.terminal,false);
+  assert.match(result.step,/accepting connection requests on Recipient Name/);
+  assert.equal(result.due,0);
+});
+
+
+test('mid-batch gap shows the engine timer, then loading without inventing a deadline', () => {
+  const data = { campaign:{status:'running',config:{matureWarm:true}},live:true,
+    liveProgress:{step:'between_profiles',nextProfileAt:61000} };
+  const waiting = previewStatus(data, 'Brian', 1000);
+  assert.equal(waiting.transition, true);
+  assert.equal(waiting.due, 61000);
+  assert.match(waiting.step,/Mid-batch.*waiting/);
+  const loading = previewStatus(data, 'Brian', 62000);
+  assert.match(loading.step,/loading the next profile/);
+  assert.equal(loading.due,61000);
+  const stopped = previewStatus({...data,campaign:{status:'cancelled'}},'Brian',1000);
+  assert.equal(stopped.transition,undefined);
+  const next = previewStatus({...data,liveProgress:{step:'opening_profile'}},'Brian',62000);
+  assert.equal(next.transition,undefined);
+});
+
+
+test('preview session identity changes when accepting moves to another browser',()=>{
+  const a={live:true,liveAccount:'a',liveStamp:{startedAt:100}};
+  assert.notEqual(previewSessionKey(a),previewSessionKey({...a,liveAccount:'b'}));
+  assert.notEqual(previewSessionKey(a),previewSessionKey({...a,liveStamp:{startedAt:200}}));
+  assert.equal(previewSessionKey({...a,live:false}),'');
 });

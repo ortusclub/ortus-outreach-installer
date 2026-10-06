@@ -94,38 +94,43 @@ test('each maturing account says what it does next and when', () => {
   const opts = { now: Date.parse('2026-10-05T19:30:00Z'), viewerTimeZone: 'Europe/Rome' };
   // Sleeping: the engine's next batch time, and that day's amount.
   assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-07T01:00:00.000Z' }, opts),
-    'Next: 3 warm connections · Attempt at Wed 7 Oct, 03:00 CEST');
+    'Next: 3 warm connections · Earliest start Wed 7 Oct, 03:00 CEST');
   assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-09T01:00:00.000Z' }, opts),
-    'Next: 6 warm connections · Attempt at Fri 9 Oct, 03:00 CEST');
+    'Next: 6 warm connections · Earliest start Fri 9 Oct, 03:00 CEST');
   // A sleeping campaign reads as sleeping even if the browser flag lags behind.
   assert.equal(maturingRowState({ bucket: 'running', dailyWait: true, live: true }).label, 'Sleeping');
   assert.equal(maturingNextAction({ ...it, live: true }, opts), "Now: sending today's 3 warm connections");
   assert.equal(maturingNextAction(it, opts), "Next: today's 3 warm connections · Waiting for attempt time");
   assert.equal(maturingNextAction({ ...it, bucket: 'queued' }, opts), 'Next: 3 warm connections today · Waiting for attempt time');
   assert.equal(maturingNextAction({ ...it, matureKind: 'cold', bucket: 'queued', scheduledAt: '2026-10-12T07:00:00Z', warmSchedule: { startAt: '2026-10-12T07:00:00Z', amounts: [3, 5] } }, opts),
-    'Next: 3 cold connections · Attempt at Mon 12 Oct, 09:00 CEST');
+    'Next: 3 cold connections · Earliest start Mon 12 Oct, 09:00 CEST');
   // Right after the batch, the next thing is the receiving accounts accepting.
   assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-07T01:00:00.000Z', acceptPending: 3, acceptDueAt: '2026-10-05T19:40:00Z' }, opts),
-    'Next: accept 3 connection requests in the receiving accounts · Attempt at Mon 5 Oct, 21:40 CEST');
+    'Next: accept 3 connection requests in the receiving accounts · Earliest start Mon 5 Oct, 21:40 CEST');
   for (const ended of [{ bucket: 'done' }, { paused: true }, { needsReview: true }, { stopping: true }]) assert.equal(maturingNextAction({ ...it, ...ended }, opts), '');
 });
 
 import { maturingWaitLines } from '../public/js/mature-profile-board.mjs';
-test('the log says it is looking for a VM worker, and keeps saying so every 15 seconds', () => {
+test('due starts, daily batches and acceptance waits log every 30 seconds', () => {
   const due = Date.parse('2026-10-05T19:35:58Z');
-  const it = { bucket: 'running', name: 'cat@x.io', matureKind: 'warm', dailyWait: true, acceptPending: 3, acceptDueAt: new Date(due).toISOString(), resumeAt: '2026-10-07T01:00:00Z' };
-  assert.deepEqual(maturingWaitLines([it], due - 1000), []);                       // not due yet
-  const first = maturingWaitLines([it], due + 5000);
-  assert.equal(first.length, 1);
-  assert.match(first[0].text, /^cat@x\.io · warm — 🔎 Looking for a VM worker to accept 3 connection requests in the receiving accounts\. This is usually about 2 minutes/);
-  const later = maturingWaitLines([it], due + 47000);
-  assert.deepEqual(later.map((l) => l.text.includes('Still looking')), [false, true, true, true]);
-  assert.match(later.at(-1).text, /45s so far \(usually about 2 minutes\)/);
-  assert.match(maturingWaitLines([it], due + 400000).at(-1).text, /6m 30s so far \(longer than usual/);
-  // Once a browser is open the worker has been found: no more waiting lines.
-  assert.deepEqual(maturingWaitLines([{ ...it, live: true }], due + 47000), []);
-  // A daily batch that has fallen due waits for a worker the same way.
-  assert.match(maturingWaitLines([{ ...it, acceptPending: 0 }], Date.parse('2026-10-07T01:00:20Z'))[0].text, /Looking for a VM worker to send today's warm connections/);
+  for (const details of [
+    {bucket:'queued', startedAt:due},
+    {bucket:'queued', scheduledAt:new Date(due).toISOString()},
+    {bucket:'running', dailyWait:true, resumeAt:new Date(due).toISOString()},
+    {bucket:'running', acceptPending:3, acceptDueAt:new Date(due).toISOString()},
+  ]) {
+    const it={name:'cat@x.io',matureKind:'warm',...details};
+    assert.deepEqual(maturingWaitLines([it],due-1),[]);
+    const lines=maturingWaitLines([it],due+65000);
+    assert.deepEqual(lines.map(l=>l.t-due),[0,30000,60000]);
+    assert.match(lines[0].text,/Waiting for a worker/);
+    assert.match(lines[2].text,/1m 00s elapsed/);
+    assert.match(maturingNextAction(it,{now:due+65000}),/Waiting for a worker.*1m 05s elapsed/);
+    assert.deepEqual(maturingWaitLines([{...it,live:true}],due+65000),[]);
+    assert.deepEqual(maturingWaitLines([{...it,paused:true}],due+65000),[]);
+    assert.deepEqual(maturingWaitLines([{...it,accountBlocks:[{reason:'throttle',until:new Date(due+3600000).toISOString()}]}],due+65000),[]);
+    assert.ok(maturingWaitLines([it],due+86400000).length<=12);
+  }
 });
 
 import { logClock } from '../public/js/mature-profile-board.mjs';
@@ -157,4 +162,18 @@ test('reported acceptance activity marks its parent maturing campaign active dur
   assert.equal(maturingRowState(it).label,'Active');
   assert.equal(maturingNextAction(it),'Now: accepting connection requests');
   assert.equal(maturingRowState({...it,liveProgress:null}).label,'Sleeping');
+});
+
+test('weekly block outranks a future cold stage and displays the actual Monday retry', () => {
+  const until = '2099-10-12T00:00:00Z';
+  const warm = { name: 'Eryca', matureKind: 'warm', bucket: 'running', live: true,
+    accountBlocks: [{ reason: 'weekly', until }] };
+  const cold = { name: 'Eryca', matureKind: 'cold', bucket: 'queued', scheduledAt: '2099-10-13T09:00:00Z' };
+  assert.equal(maturingRowState(warm).label, 'Weekly limit · paused');
+  assert.equal(groupMaturingAccounts([warm, cold])[0].state.label, 'Weekly limit · paused');
+  assert.match(maturingNextAction(warm, { viewerTimeZone: 'Europe/Rome' }), /Weekly limit reached · Retry .*12 Oct, 02:00/);
+  const suspected = {...warm, accountBlocks: [{ reason: 'weekly_suspected', until }]};
+  assert.match(maturingNextAction(suspected), /^Possible weekly limit/);
+  assert.deepEqual(maturingWaitLines([{...warm, dailyWait:true, resumeAt:'2000-01-01'}]), []);
+  assert.doesNotMatch(maturingNextAction({...warm, accountBlocks:[{reason:'weekly',until:'2000-01-01'}]}), /Weekly limit/);
 });

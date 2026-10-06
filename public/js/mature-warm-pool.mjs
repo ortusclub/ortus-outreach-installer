@@ -35,9 +35,9 @@ export function warmProfileIdentity(profile, { sooAccounts = [], lvAccounts = []
 // a known LinkedIn URL cannot be invited, so it is counted and left out.
 export function buildWarmPool({ pool, profiles = [], sooAccounts = [], lvAccounts = [], excludeProfileIds = [] }) {
   const account = WARM_POOL_ACCOUNT[pool];
-  if (!account) return { targets: [], total: 0, missing: 0, restricted: 0 };
+  if (!account && pool !== 'all_available') return { targets: [], total: 0, missing: 0, restricted: 0 };
   const exclude = new Set(excludeProfileIds);
-  const members = profiles.filter(p => p.account === account && !exclude.has(p.id));
+  const members = profiles.filter(p => (pool === 'all_available' || p.account === account) && !exclude.has(p.id));
   const targets = [], seen = new Set();
   let missing = 0, restricted = 0;
   for (const profile of members) {
@@ -50,6 +50,17 @@ export function buildWarmPool({ pool, profiles = [], sooAccounts = [], lvAccount
     targets.push({ profileId: profile.id, profile: profile.name || profile.id, name: identity.name, linkedinUrl: identity.linkedinUrl });
   }
   return { targets, total: members.length, missing, restricted };
+}
+
+// Choose a fresh order for each profile's plan, without mutating the shared pool.
+// Shuffle before assigning planned days, then persist that order in the sheet.
+export function shuffleWarmTargets(targets, random = Math.random) {
+  const shuffled = [...targets];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
 // Warm connections to send on a given day of the plan (day 1 = the start day).

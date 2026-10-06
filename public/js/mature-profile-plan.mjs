@@ -1,5 +1,5 @@
 import { warmRampErrors } from './mature-warm-ramp.mjs';
-export const MATURE_WARM_POOLS = Object.freeze({ ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'Other Pool Accounts (LV)' });
+export const MATURE_WARM_POOLS = Object.freeze({ all_available: 'All available accounts', ortus_owned: 'Ortus Owned Account', linkedvelocity_owned: 'Other Pool Accounts (LV)' });
 // Plan data is stored inside the campaign config, never in shared localStorage.
 export function newMaturePlan() {
   // Default warm ramp (Sam, 2026-10-05): 3 → 6 → 10 → 20 a day, holding the last
@@ -18,7 +18,7 @@ export function restoreMaturePlan(value) {
   // A plan saved before the until-exhausted default existed keeps its own end.
   return { ...newMaturePlan(), ...structuredClone(value), warmUntilExhausted: !!value.warmUntilExhausted, warmEnabled: value.warmEnabled !== false, coldEnabled: value.coldEnabled === true, coldPoolSource: value.coldPoolSource || (value.coldPool ? 'custom' : 'default'), coldPoolOrder: value.coldPoolOrder || 'random', targetProfileIds: [...new Set(value.targetProfileIds || [])].slice(0, 1) };
 }
-export function maturePlanErrors(plan) {
+export function maturePlanErrors(plan, { defaultColdPoolUrl = '' } = {}) {
   const errors = [];
   // A switched-off activity sends nothing, so its settings are not checked.
   const warmOn = plan.warmEnabled !== false, coldOn = plan.coldEnabled !== false;
@@ -50,9 +50,10 @@ export function maturePlanErrors(plan) {
     }
   }
   if (warmOn && (plan.warmRamp ? Number(plan.warmRamp.maximumDaily) > 0 : (plan.connectionStages?.warm ? plan.connectionStages.warm.some(s=>Number(s.daily)>0) : plan.stages.some(s => Number(s.warmDaily) > 0))) && !Object.hasOwn(MATURE_WARM_POOLS, plan.warmPool)) errors.push('Choose the warm connection pool.');
+  if (coldOn && (plan.connectionStages?.cold || plan.stages).some(s => Number(s.toDay) > 365)) errors.push('Cold connection stages must end within 365 days.');
   if (coldOn && (plan.connectionStages?.cold ? plan.connectionStages.cold.some(s=>Number(s.daily)>0) : plan.stages.some(s => Number(s.coldDaily) > 0))) {
-    if (plan.coldPoolSource === 'default') errors.push('The default cold connection sheet has not been configured yet.');
-    else if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[^/]+/.test(plan.coldPool || '')) errors.push('Add a Google Sheet link for the cold connection pool.');
+    if (plan.coldPoolSource === 'default' && !/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[^/]+/.test(defaultColdPoolUrl)) errors.push('The default cold connection sheet has not been configured yet.');
+    else if (plan.coldPoolSource !== 'default' && !/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[^/]+/.test(plan.coldPool || '')) errors.push('Add a Google Sheet link for the cold connection pool.');
   }
   if (!plan.connectionStages && plan.stages.some(s => Number(s.likesDaily) > 0) && !plan.postPool.trim()) errors.push('Choose the posts for the engagement stage.');
   return [...new Set(errors)];
