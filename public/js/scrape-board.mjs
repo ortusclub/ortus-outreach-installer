@@ -275,3 +275,15 @@ export function slimBoard(campaigns) {
     };
   });
 }
+
+// The live jobs for an opened scrape (`cid`) taken from the board cache, or null
+// when the cache is cold or doesn't yet hold that scrape. The opened-scrape
+// console scopes to a single scrape; on a cold open (right after a refresh, before
+// the first board poll) the cache is empty, and null tells the caller to fetch
+// that scrape's own record instead of falling back to the unscoped session jobs
+// (which render a running scrape as blank/new until a later poll catches up).
+export function openedScrapeJobs(campaigns, cid) {
+  if (!cid || !Array.isArray(campaigns)) return null;
+  const c = campaigns.find((x) => x && x.id === cid);
+  return (c && Array.isArray(c.jobs)) ? c.jobs : null;
+}
