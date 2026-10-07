@@ -24033,8 +24033,21 @@ function openActiveBulkCheckModal() {          // active "Run check now"
   // check instead (operator's rule: same button, VM path when in a VM campaign).
   // No scope modal — the VM sweeps its own accounts. Robust: fire on EITHER the
   // cloud-view flag or the cloud status object so it can't silently miss.
+  // A cloud campaign opened for EDIT (openCampaignForEditCloud) binds neither
+  // _viewingCloudId nor __cloudActiveStatus, so this button fell through to
+  // the LOCAL sweep and asked scope only — no "where" question, and it ran
+  // against this Mac's singleton instead of the campaign on screen (operator,
+  // 2026-10-07). Resolve the campaign from the editor too.
+  const _editedCloud = (() => {
+    const id = _editingCampaignId;
+    const item = id && (_boardItemsById.get(String(id)) || (typeof _snItemsById !== 'undefined' && _snItemsById.get(String(id))));
+    if (item && item.where === 'cloud') return String(id);
+    const opened = (typeof openedWizardCampaign === 'function') ? openedWizardCampaign() : null;
+    return opened && opened.where === 'cloud' ? String(opened.id) : null;
+  })();
   const _cloudId = _viewingCloudId
-    || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id);
+    || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id)
+    || _editedCloud;
   if (_cloudId) {
     // A cloud campaign's acceptance check runs on the VM (where the campaign
     // sends), via the engine's own check-now. Ask the same scope question as the
