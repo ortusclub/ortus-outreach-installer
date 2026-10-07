@@ -133,7 +133,7 @@ const CCIC = { isCCIC: true, nextMonday: 'Monday 7 Sept' };
 test('an account that is sending and connected says nothing at all', () => {
   const st = acctRowState({ dailyCount: 20, dailyLimit: 50, primaryConnected: true }, CCIC);
   assert.equal(st.dot, 'ok');
-  assert.deepEqual(st.pills, []);
+  assert.deepEqual(st.pills, [['quiet', 'Connected to primary']]);
 });
 
 test('sending, but unable to introduce, is amber and says which case it is', () => {
@@ -179,13 +179,13 @@ test('a weekly cap offers no way to try again — it is a window, not a cooldown
 test('spent invitation notes are worth a word but never turn the dot red', () => {
   const st = acctRowState({ dailyCount: 3, dailyLimit: 50, primaryConnected: true, noteExhausted: true }, CCIC);
   assert.equal(st.dot, 'ok');
-  assert.deepEqual(st.pills, [['warn', 'No note left']]);
+  assert.deepEqual(st.pills, [['quiet', 'Connected to primary'], ['warn', 'No note left']]);
 });
 
 test('an SoO restriction is a block wherever it appears', () => {
   const st = acctRowState({ dailyCount: 3, dailyLimit: 50, primaryConnected: true, identityRestricted: true, restrictionLabel: 'Identity Restricted' }, CCIC);
   assert.equal(st.dot, 'bad');
-  assert.deepEqual(st.pills, [['bad', 'Identity Restricted']]);
+  assert.deepEqual(st.pills, [['bad', 'Identity Restricted'], ['quiet', 'Connected to primary']]);
 });
 
 test('the bench pill carries the date, the drawer carries the countdown', () => {
@@ -211,7 +211,7 @@ test('every primary outcome gets its own words', () => {
   // both complaints: six unchecked accounts reading as six failures, and an
   // invitation that was never sent reading as one waiting to be accepted.
   const of = (primaryState) => acctRowState({ primaryState }, CCIC);
-  assert.deepEqual(of('connected').pills, []);
+  assert.deepEqual(of('connected').pills, [['quiet', 'Connected to primary']]);
   assert.deepEqual(of('pending').pills, [['warn', 'Primary invite pending']]);
   assert.deepEqual(of('not_connected').pills, [['warn', 'Primary not connected']]);
   assert.deepEqual(of('unverified').pills, [['warn', 'Primary unconfirmed']]);
@@ -221,7 +221,7 @@ test('every primary outcome gets its own words', () => {
 test('an engine too old to send primaryState still gets a truthful row', () => {
   // The boolean cannot tell pending from unverified, so it takes the reading
   // that does not accuse: false meant pending in every case we have seen.
-  assert.deepEqual(acctRowState({ primaryConnected: true }, CCIC).pills, []);
+  assert.deepEqual(acctRowState({ primaryConnected: true }, CCIC).pills, [['quiet', 'Connected to primary']]);
   assert.deepEqual(acctRowState({ primaryConnected: false }, CCIC).pills, [['warn', 'Primary invite pending']]);
   assert.deepEqual(acctRowState({ primaryConnected: null }, CCIC).pills, [['warn', 'Primary not checked']]);
 });
