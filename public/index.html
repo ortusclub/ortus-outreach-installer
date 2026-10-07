@@ -441,6 +441,10 @@
               <span id="vj-bulk-btn-label">Run check now</span>
             </button>
             <div class="vj-bulk-hint" id="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
+            <!-- 2026-10-07: when the next automatic sweep fires, and a switch to
+                 turn the automatic cadence off. Filled by _renderVjCardControls. -->
+            <div class="vj-bulk-next" id="vj-bulk-next"></div>
+            <label class="vj-bulk-auto" id="vj-bulk-auto-wrap"><input type="checkbox" id="vj-bulk-auto" checked onchange="window.vjBulkAutoToggle(this)"><span>Automatic sweeps</span></label>
           </div>
         </div>
         <!-- Reply strip (sketch 3) — found replies from the last reply check,
@@ -1220,10 +1224,11 @@
               <div class="intro-config-field" id="primary-timing-field">
                 <label for="primary-timing-select" class="intro-config-label">Primary check timing</label>
                 <select id="primary-timing-select" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
-                  <option value="immediately" selected>Immediately (at start)</option>
+                  <option value="skip" selected>Skip (no primary check)</option>
+                  <option value="immediately">Immediately (at start)</option>
                   <option value="after_connections">After connections complete</option>
                 </select>
-                <div class="intro-config-hint">When the connect/check to the primary person runs. "After connections complete" starts sending right away and does the primary step once every account has finished its connection requests for the day.</div>
+                <div class="intro-config-hint">When the connect/check to the primary person runs. "Skip" (default) never opens a browser just for the primary — senders are assumed connected and any gap shows up on the first introduction. "Immediately" checks every sender before the first lead; "After connections complete" starts sending right away and does the primary step once every account has finished its connection requests for the day.</div>
               </div>
 
               <!-- v2.91: Auto-accept the primary connection — locked until a URL is set -->
@@ -2463,30 +2468,9 @@
       </div>
 
 
-      <!-- v2.112.10 (Window C / banner-led): big Credit-passover banner up top,
-           then a compact stat-pill row, then the Browse-accounts card. The
-           banner's countdown bits are populated by renderPassoverBanner(). -->
-      <div class="acct-banner">
-        <div class="acct-banner-l">
-          <div class="acct-banner-h"><span class="ic">⏳</span> Credit passover</div>
-          <div class="acct-banner-sub">Passover accounts become available at <b>midnight Philippine time</b>. Reserve them in the <b>SoO</b> — please reserve only <b>4 accounts at a time</b>.</div>
-        </div>
-        <div class="acct-banner-r">
-          <div class="acct-cd">
-            <div class="acct-cd-t">Monthly · OP/InMail/SN</div>
-            <div class="acct-cd-n" id="pass-monthly-days">—</div>
-            <div class="acct-cd-s" id="pass-monthly-state">—</div>
-            <div class="acct-cd-w" id="pass-monthly-note">—</div>
-          </div>
-          <div class="acct-cd">
-            <div class="acct-cd-t">Weekly · Connect (CC)</div>
-            <div class="acct-cd-n" id="pass-cc-days">—</div>
-            <div class="acct-cd-s" id="pass-cc-state">—</div>
-            <div class="acct-cd-w" id="pass-cc-note">—</div>
-          </div>
-        </div>
-      </div>
-
+      <!-- The Credit-passover countdown banner that lived here was removed on
+           2026-10-07 (operator request). renderPassoverBanner() still runs and
+           simply finds no elements to fill. -->
       <!-- v2.112.10: compact stat-pill row. The buttons keep their ids +
            applyPreset() onclicks — only the classes/CSS changed (pill row). -->
       <div class="acct-summary-bar acct-pills">
@@ -4300,17 +4284,16 @@
   <div id="solo-check-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeSoloCheckModal()">
     <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="solo-check-title">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeSoloCheckModal()">&times;</button>
-      <div class="stop-choice-eyebrow">Run a solo check</div>
       <h3 id="solo-check-title" class="modal-title stop-choice-headline">Check which accounts?</h3>
-      <p class="stop-choice-sub">One connection check now — stamps newly Connected, and for Connect + Introduce fires the intro where Introduction Status is blank.</p>
+      <p class="stop-choice-sub">Step 1 of 2</p>
       <div class="stop-choice-row">
         <button type="button" class="stop-choice-pill is-monitor" onclick="runSoloCheck('campaign')">
-          <div class="stop-choice-pill-headline">This campaign's<br>accounts</div>
-          <div class="stop-choice-pill-sub">Checks only the accounts this campaign used.</div>
+          <div class="stop-choice-pill-headline">This campaign's accounts</div>
+          <div class="stop-choice-pill-sub">Only the accounts this campaign used.</div>
         </button>
         <button type="button" class="stop-choice-pill is-monitor" onclick="runSoloCheck('sheet')">
-          <div class="stop-choice-pill-headline">All senders<br>in this tab</div>
-          <div class="stop-choice-pill-sub">Checks every account in this tab's Sender column. Other tabs are never included.</div>
+          <div class="stop-choice-pill-headline">All senders in this tab</div>
+          <div class="stop-choice-pill-sub">Every account in the tab's Sender column.</div>
         </button>
       </div>
       <div class="stop-choice-cancel-row">
@@ -4327,17 +4310,16 @@
   <div id="check-where-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCheckWhereModal()">
     <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="check-where-title">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCheckWhereModal()">&times;</button>
-      <div class="stop-choice-eyebrow">Run the check</div>
-      <h3 id="check-where-title" class="modal-title stop-choice-headline">Where should this check run?</h3>
-      <p class="stop-choice-sub">Same check either way — detect accepted connections and send the intro where Introduction Status is blank.</p>
+      <h3 id="check-where-title" class="modal-title stop-choice-headline">Where should it run?</h3>
+      <p class="stop-choice-sub">Step 2 of 2</p>
       <div class="stop-choice-row">
-        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('vm')">
-          <div class="stop-choice-pill-headline">Cloud VMs</div>
-          <div class="stop-choice-pill-sub">The cloud machines run it — you can close the app.</div>
+        <button type="button" class="stop-choice-pill is-monitor is-recommended" onclick="runCheckWhere('local')">
+          <div class="stop-choice-pill-headline">This Mac <span class="stop-choice-pill-tag">Recommended</span></div>
+          <div class="stop-choice-pill-sub">Starts now, browsers open here. Keep the app open.</div>
         </button>
-        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('local')">
-          <div class="stop-choice-pill-headline">This machine</div>
-          <div class="stop-choice-pill-sub">Opens the GoLogin browsers here, like a local campaign's check. Keep the app open.</div>
+        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('vm')">
+          <div class="stop-choice-pill-headline">Cloud VM</div>
+          <div class="stop-choice-pill-sub">Runs on a worker, which may take a few minutes to wake.</div>
         </button>
       </div>
       <div class="stop-choice-cancel-row">

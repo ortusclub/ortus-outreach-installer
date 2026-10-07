@@ -1765,7 +1765,9 @@ function gatherCampaignFormState() {
     sheetUrl,
     linkedinColumn,
     templates,
-    profileIds: getV('campaign-mode') === 'mature_profile' ? (readMaturePlan()?.targetProfileIds || []) : [...selectedProfileIds],
+    // `getV` is a local helper of the launch payload builder, not in scope here;
+    // it threw ReferenceError and killed every per-section preview (2026-10-07).
+    profileIds: mode === 'mature_profile' ? (readMaturePlan()?.targetProfileIds || []) : [...selectedProfileIds],
     benchedProfileIds: [...benchedProfileIds].filter(id => selectedProfileIds.includes(id)),
     senderFirstNames,
     senderNames,
@@ -1797,10 +1799,21 @@ async function handlePreviewClick(button, fields = '') {
     return;
   }
 
-  const state = gatherCampaignFormState();
+  let state;
+  try {
+    state = gatherCampaignFormState();
+  } catch (err) {
+    // A missing form field used to throw here and the click silently did
+    // nothing. Surface it in the modal instead so the operator sees why.
+    console.error('[preview] could not read the campaign form', err);
+    renderPreviewModal([], `Could not read the campaign form: ${err.message}`);
+    return;
+  }
   state.previewLimit = 1;
   state.sheetGid = window._chosenSheetGid || '';
   if (fields) state.previewFields = fields.split(',');
+  const titleEl = document.getElementById('preview-modal-title');
+  if (titleEl) titleEl.textContent = fields ? 'Preview for first lead' : 'Message Preview';
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Loading…';
@@ -1910,20 +1923,36 @@ function showPreLaunchPreview(preview, senderFirstNames, senderNames) {
 
     const leadName = [preview.lead?.firstName, preview.lead?.lastName].filter(Boolean).join(' ') || '(no name)';
 
-    // Build the sender-variable summary so the operator sees the resolved values
-    const _firstId = selectedProfileIds[0];
-    const _resolvedFirst = (_firstId && senderFirstNames[_firstId]) || '';
-    const _resolvedName = (_firstId && senderNames[_firstId]) || '';
-    const _profileLabel = _firstId ? profileLabel(_firstId) : '';
+    // Who sends this lead's message is not known before launch: any of the
+    // selected accounts can open it (the engine log for one run showed Raquel's
+    // account inviting the lead this modal had attributed to Selassie, 2026-10-07).
+    // Only the per-row sender modes (IC / message_only with a sender column)
+    // know the sender in advance. So this box names every candidate, and says
+    // which one the rendered text below happens to use.
+    const _mode = document.getElementById('campaign-mode')?.value || '';
+    const _senderCol = document.getElementById('ic-sender-col-select')?.value || '';
+    const _perRow = ['introduce_back', 'message_only'].includes(_mode) && !!_senderCol;
+    const _ids = selectedProfileIds.slice();
+    const _firstId = _ids[0];
+    const _firstName = (id) => (id && senderFirstNames[id]) || (id && senderNames[id]) || '';
+    const _usesSender = Object.values(preview.rendered || {}).some(Boolean)
+      && /\{sender(First)?Name\}/i.test(JSON.stringify(gatherCampaignFormState().templates || {}));
+    const _names = _ids.map((id) => _firstName(id) || profileLabel(id)).filter(Boolean);
 
     let html = '';
     html += `<div style="margin-bottom:12px;padding:10px 14px;border-radius:6px;background:var(--paper,#fff);border:1px solid var(--hairline,#ddd)">`;
-    html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--fg-3,#888);margin-bottom:6px">Sender Variables</div>`;
-    html += `<div style="display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;font-size:13px">`;
-    html += `<span style="color:var(--fg-3,#888)">{senderFirstName}</span><span style="color:var(--ink,#111)">${escapeHtml(_resolvedFirst || '(empty)')}</span>`;
-    html += `<span style="color:var(--fg-3,#888)">{senderName}</span><span style="color:var(--ink,#111)">${escapeHtml(_resolvedFirst || _resolvedName || '(empty)')}</span>`;
-    html += `<span style="color:var(--fg-3,#888)">Account</span><span style="color:var(--ink,#111)">${escapeHtml(_profileLabel || '(none)')}</span>`;
-    html += `</div></div>`;
+    html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--fg-3,#888);margin-bottom:6px">Who sends it</div>`;
+    if (_perRow) {
+      html += `<div style="font-size:13px;color:var(--ink,#111)">The account named in the sheet's <b>${escapeHtml(_senderCol)}</b> column for each lead.</div>`;
+    } else if (_ids.length <= 1) {
+      html += `<div style="font-size:13px;color:var(--ink,#111)"><b>${escapeHtml(_names[0] || profileLabel(_firstId) || '(no account selected)')}</b>${_firstId ? ` · ${escapeHtml(profileLabel(_firstId))}` : ''}</div>`;
+    } else {
+      html += `<div style="font-size:13px;color:var(--ink,#111)">Whichever of your <b>${_ids.length} selected accounts</b> opens the lead: ${escapeHtml(_names.join(', '))}.</div>`;
+    }
+    if (_usesSender && !_perRow) {
+      html += `<div style="margin-top:6px;font-size:12px;color:var(--fg-3,#888)">{senderFirstName} / {senderName} resolve to that account's first name — shown below as <b>${escapeHtml(_firstName(_firstId) || '(empty)')}</b>.</div>`;
+    }
+    html += `</div>`;
 
     html += `<div class="preview-card">`;
     html += `<div class="preview-card__lead">`;
@@ -3781,14 +3810,13 @@ function onModeChange() {
     if (introModeBlock) introModeBlock.style.display = 'none';
   } catch (_) {}
 
-  // Entry C — "Build from warm connections" offered only for the two modes that
-  // run on a sheet of already-connected leads: Message Campaign (open_profile_only)
-  // and Introduction Campaign (introduce_back).
+  // Entry C — "Build from warm connections" card. Retired from the Data step
+  // on 2026-10-07 (operator request): hidden for every mode. Markup, CSS and
+  // the buildWarmListForCampaign / openConnectionsBuilder handlers stay so it
+  // can be brought back by restoring the mode gate here.
   try {
     const connSourceBlock = document.getElementById('conn-source-block');
-    if (connSourceBlock) {
-      connSourceBlock.style.display = (mode === 'open_profile_only' || mode === 'introduce_back') ? '' : 'none';
-    }
+    if (connSourceBlock) connSourceBlock.style.display = 'none';
   } catch (_) {}
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
@@ -7515,14 +7543,24 @@ async function startCampaign(opts = {}) {
       const ni = document.getElementById('campaign-name-input');
       const desired = (ni?.value || '').trim();
       if (desired) {
-        const taken = new Set((_knownCampaignNames || []).map(n => String(n).toLowerCase()));
-        const isOwnName = typeof _editingExistingCampaign !== 'undefined' && _editingExistingCampaign
-          && desired.toLowerCase() === String(_openedCampaignName || '').trim().toLowerCase();
-        if (!isOwnName && taken.has(desired.toLowerCase())) {
+        // _nameIsTaken knows every way a campaign can be "the one you have
+        // open" (editor flag, opened id, board item). The old inline check only
+        // knew the editor flag, so re-launching a campaign opened from the
+        // board after changing one setting demanded a new name instead
+        // (operator, 2026-10-07).
+        const taken = await _nameIsTaken(desired);
+        if (taken) {
           if (typeof _showDupeNameModal === 'function') _showDupeNameModal(desired);
           else alert('A campaign with this name already exists. Choose a different name.');
           if (ni) { ni.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => ni.focus(), 400); }
           return;
+        }
+        // Launching the campaign you have open saves your edits onto it first,
+        // so the run and the saved campaign never disagree.
+        const ownsName = (typeof _editingExistingCampaign !== 'undefined' && _editingExistingCampaign) || _openedCampaignId || openedWizardCampaign();
+        if (ownsName && typeof saveCampaignConfigByName === 'function') {
+          const saved = await saveCampaignConfigByName(desired);
+          if (!saved && typeof showCampaignToast === 'function') showCampaignToast('Could not save the campaign before launching — launching anyway.', 5000);
         }
       }
     }
@@ -7599,7 +7637,7 @@ async function startCampaign(opts = {}) {
     // #7: when the primary connect/check happens. Only meaningful for CC+IC;
     // omitted otherwise so the server keeps its default.
     primaryCheckTiming: (mode === 'connect_and_introduce')
-      ? (document.getElementById('primary-timing-select')?.value || 'immediately')
+      ? (document.getElementById('primary-timing-select')?.value || 'skip')
       : undefined,
     // Task 4 (2026-06-19): pause the account when LinkedIn returns 429.
     // Default true (ON) — operator can disable in Advanced section.
@@ -7821,6 +7859,9 @@ function refreshRunTarget() {
   // panel kept whichever target was selected when it last rendered.
   if (typeof alphaRecalc === 'function') alphaRecalc();
   if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
+  // "Keep laptop open" / "don't close the browser windows" only apply when the
+  // campaign runs on this Mac — a cloud VM run carries on with the lid shut.
+  document.querySelectorAll('.campaign-warnings-inline').forEach((el) => { el.hidden = (t === 'cloud'); });
 }
 // #btn-queue is a local-only launch path (Queue → addToQueueCampaign, which
 // never dispatches cloud) — hidden under the VM tab. #btn-schedule works on BOTH
@@ -8370,7 +8411,13 @@ function _tickQueueWait(id, campaign, detail = null) {
   const st = String(campaign?.status || '');
   const starting = st === 'running' && detail && _cloudCurrentAction(detail)?.phase === 'starting';
   if (st !== 'queued' && st !== 'pending' && !starting) { _queueTickBucket.delete(id); return; }
-  const startedAt = new Date((starting ? campaign.updated_at : null) || campaign.created_at || campaign.createdAt || 0).getTime();
+  // Count from when the campaign LAST became queued, not from when it was
+  // created. A campaign the engine hands back to the queue (worker replaced,
+  // resume after a stop) carries a creation time from an hour of sending ago,
+  // and the log then said "waiting 67 minutes" under lines showing it had been
+  // firing the whole time (operator, 2026-10-07). The engine bumps updated_at
+  // on every status change, so that is the queue entry time.
+  const startedAt = new Date(campaign.updated_at || campaign.updatedAt || campaign.created_at || campaign.createdAt || 0).getTime();
   if (!Number.isFinite(startedAt) || !startedAt) return;
   const secs = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
   const bucket = Math.floor(secs / 15);
@@ -8448,6 +8495,12 @@ function _markCloudStopping(id, on) {
         strip.querySelectorAll('button').forEach(button => { button.disabled = true; });
         const next = strip.querySelector('.mature-row-next');
         if (next) next.textContent = 'Stop requested — waiting for confirmation';
+      }
+      // The collapsed strip's chip, the moment the click lands — the board's
+      // own rebuild follows on its next poll.
+      if (on) {
+        const chip = strip.querySelector(':scope > .sn-compact .sn-status, .sn-compact .sn-status');
+        if (chip) chip.innerHTML = '<span class="dot q"></span> Stopping…';
       }
       const card = strip.classList.contains('vj-card') ? strip : strip.querySelector('.vj-card');
       if (!card) continue;
@@ -8545,14 +8598,23 @@ function _cloudSendingTurn(id, d) {
   const p = (d && d.liveProgress) || {};
   if (p.phase !== 'sending') return { done: null, total: null };
   const pid = String((d && d.liveAccount) || '');
-  const account = (_acctLabel({ profileId: pid, email: '' }, { full: true }) || pid).toLowerCase();
+  // The engine log names the account by EMAIL ("raquel.almeda@ortus.solutions
+  // invited … 2 of 8 this turn") while _acctLabel resolves the id to a display
+  // NAME, so no line ever matched and the side panel sat on the stamp's stale
+  // "0 of 8" under a log that plainly said 2 of 8 (operator, 2026-10-07).
+  // Match on any identity we know for this account.
+  const _known = (allProfilesData || []).find((x) => x && x.id === pid) || null;
+  const idents = [
+    _acctLabel({ profileId: pid, email: '' }, { full: true }),
+    _known && _known.email, _known && _known.name, pid,
+  ].map((v) => String(v || '').trim().toLowerCase()).filter((v) => v && v !== 'account');
   let done = Number(p.done) || 0;
   let total = Number(p.total) || 0;
   const lines = Array.isArray(d && d.monitorLog) ? d.monitorLog : [];
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = String((lines[i] && lines[i].line) || lines[i] || '');
     const lower = line.toLowerCase();
-    if (account && !lower.includes(account)) continue;
+    if (idents.length && !idents.some((v) => lower.includes(v))) continue;
     // Do not borrow a count from this account's previous turn.
     if (/opening .+browser|browser (?:opened|opening)/i.test(line)) break;
     const m = line.match(/(\d+)\s+of\s+(\d+)\s+this turn/i);
@@ -11061,8 +11123,15 @@ function _vjControlsHtml(c, status, options = {}) {
   // which glyph sent them. Its wording already comes from the matrix
   // ("Resume sending" / "Start now" / "Continue where it left off").
   let goHtml = '';
+  // The worker preview used to hide as an unlabelled eye glyph inside the dock
+  // (operator could not find it, 2026-10-07). It is now a labelled pill with a
+  // LIVE dot whenever the engine reports a browser open.
+  let watchHtml = '';
   for (const e of (c.extra || [])) {
-    if (e.kind === 'show') actions += dib(V3_SVG_EYE, 'Show', e.onclick);
+    if (e.kind === 'show') {
+      const live = !!(status && status.live);
+      watchHtml += `<button class="btn-pill watch${live ? ' live-on' : ''}" onclick="${e.onclick}" title="${live ? 'A browser is open on the worker right now' : 'Watch the worker\u2019s browser as soon as it opens'}">${live ? '<span class="live-dot"></span>' : ''}${V3_SVG_EYE}<span>${escHtml(e.tip || 'Watch live')}</span></button>`;
+    }
     else if (e.kind === 'play' || e.kind === 'queue') {
       goHtml += `<button class="btn-pill go${e.once ? ' one-shot' : ''}" onclick="${e.onclick}">${escHtml(e.tip || 'Resume sending')}</button>`;
     } else {
@@ -11099,8 +11168,65 @@ function _vjControlsHtml(c, status, options = {}) {
   const dockHtml = (dock || actions)
     ? `<div class="dock"${active ? ' id="dock-active"' : ''} role="toolbar" aria-label="Campaign actions">${dock}<div class="dock-actions">${actions}</div></div>`
     : '';
-  return `${resumeHtml}${resumeSendingHtml}${deleteForeverHtml}${openHtml}${detailsHtml}${sheetHtml}${goHtml}${autoHtml}${stopHtml}${dockHtml}`;
+  return `${resumeHtml}${resumeSendingHtml}${deleteForeverHtml}${openHtml}${detailsHtml}${watchHtml}${sheetHtml}${goHtml}${autoHtml}${stopHtml}${dockHtml}`;
 }
+
+// Under Run check now: when the next automatic sweep fires, and the switch
+// that turns the automatic cadence off. A manual sweep restarts the countdown
+// from the moment it finishes, on both sides (engine: nextMonitorDecision;
+// local: /api/monitoring/check-now).
+function _renderBulkSchedule(root, status) {
+  const line = root.querySelector('[data-f="vj-bulk-next"], #vj-bulk-next');
+  const wrap = root.querySelector('[data-f="vj-bulk-auto-wrap"], #vj-bulk-auto-wrap');
+  const cb = root.querySelector('[data-f="vj-bulk-auto"], #vj-bulk-auto');
+  if (!line) return;
+  const s = status || {};
+  const cloud = !!s._cloud;
+  const id = String(s.rawId || s.id || '');
+  const monitoring = s.state === 'monitoring' || !!s.monitoringPhase;
+  const autoOn = s.autoChecksEnabled !== false;
+  const everyMin = Number(s.checkIntervalBaseMinutes || s.checkIntervalMinutes) || 60;
+  const every = everyMin % 60 === 0 ? `${everyMin / 60}h` : `${everyMin}m`;
+  let text = '';
+  if (s.monitoringCheckInProgress) {
+    text = autoOn ? `A sweep is running now · the next automatic one is ${every} after it finishes` : 'A sweep is running now · automatic sweeps are off';
+  } else if (!autoOn) {
+    text = 'Automatic sweeps are off · run one manually any time';
+  } else if (s.nextCheckAt) {
+    const at = new Date(s.nextCheckAt);
+    const ms = at.getTime() - Date.now();
+    const clock = isNaN(at.getTime()) ? '' : at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    text = ms > 0
+      ? `Next automatic sweep in ${v3FmtCountdown(ms)}${clock ? ` · ${clock}` : ''} · every ${every}`
+      : 'Next automatic sweep is due now';
+  } else if (monitoring) {
+    text = `Next automatic sweep is being scheduled · every ${every}`;
+  } else {
+    text = `Automatic sweeps start every ${every} once sending finishes`;
+  }
+  if (autoOn && !s.monitoringCheckInProgress) text += ' · running one now restarts the countdown';
+  if (line.textContent !== text) line.textContent = text;
+  if (cb) {
+    if (cb.checked !== autoOn) cb.checked = autoOn;
+    cb.dataset.cloud = cloud ? '1' : '';
+    cb.dataset.id = id;
+    // The local route only accepts the toggle while monitoring; the engine
+    // accepts it at any time.
+    cb.disabled = !cloud && !monitoring;
+    if (wrap) wrap.title = cb.disabled ? 'Automatic sweeps can be switched once sending has finished' : '';
+  }
+}
+window.vjBulkAutoToggle = async function(cb) {
+  if (!cb) return;
+  const enabled = !!cb.checked;
+  if (cb.dataset.cloud === '1') return setCloudAutoChecks(cb.dataset.id, enabled, cb);
+  try {
+    const r = await fetch('/api/monitoring/auto-checks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || r.statusText);
+    showCampaignToast(`Automatic sweeps ${enabled ? 'on' : 'off'}.`, 4000);
+  } catch (e) { cb.checked = !enabled; showCampaignToast('Could not change automatic sweeps: ' + e.message, 6000); }
+};
 
 // One renderer owns the controls on BOTH campaign surfaces. The Dashboard's
 // expanded card and the Campaign tab's large card may have different layouts,
@@ -11137,6 +11263,7 @@ function _renderVjCardControls(root, status, options = {}) {
     }
     const lbl = root.querySelector('[data-f="vj-bulk-btn-label"], #vj-bulk-btn-label');
     if (lbl && c.bulk) lbl.textContent = status.monitoringCheckInProgress ? 'Check in progress' : (c.bulk.label || 'Run check now');
+    if (c.bulk) _renderBulkSchedule(root, status);
   }
 
   if (options.active && typeof _setActiveDetails === 'function') {
@@ -11967,6 +12094,10 @@ function renderUnifiedRunStrip(it) {
     : monitoring ? 'Monitoring'
     : waiting ? 'Waiting'
     : needsReview ? 'Needs review'
+    // A stop the operator asked for, not yet confirmed by the engine. Without
+    // this branch the strip kept saying "Running" until the VM answered
+    // (operator, 2026-10-07).
+    : (it.stopping || _stoppingCloudIds.has(String(it.id))) ? 'Stopping…'
     : running ? (it.paused && !locallyOwnedMonitoring ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
@@ -15183,6 +15314,25 @@ window.stopCloudCheckUI = stopCloudCheckUI;
 // profile can't open on this machine are skipped and reported, never fatal.
 // Afterwards, mirrors the sheet's statuses into the engine (fill-only) so the
 // VM's next sweep won't double-intro anyone this local check already handled.
+// When a sweep ran but NO account could open, "done — 0/4 checked, 4 skipped"
+// is the wrong headline (operator, 2026-10-07, with the Mac out of disk). Name
+// the cause instead. Every account carries its own error; one shared cause is
+// stated once, mixed causes list the first few.
+function _sweepBlockedMessage(perProfile) {
+  const per = Array.isArray(perProfile) ? perProfile : [];
+  if (!per.length) return '';
+  const failed = per.filter((p) => p && p.error);
+  if (failed.length !== per.length) return '';
+  const reasons = [...new Set(failed.map((p) => String(p.error).replace(/^Launch failed:\s*/i, '').trim()))];
+  const disk = reasons.find((r) => /disk space too low/i.test(r));
+  if (disk) {
+    const m = disk.match(/\(([^)]*)\)/);
+    return `⚠ Check could not run — this Mac is out of disk space${m ? ` (${m[1]})` : ''}. Free some space, then run it again.`;
+  }
+  const n = per.length;
+  return `⚠ Check could not run — none of the ${n} account${n === 1 ? '' : 's'} could open on this Mac: ${reasons.slice(0, 2).join(' · ')}`;
+}
+
 async function cloudCheckLocal(id, btn, scope) {
   if (!id) return;
   scope = scope === 'all' ? 'all' : 'campaign';
@@ -15197,6 +15347,33 @@ async function cloudCheckLocal(id, btn, scope) {
   _pushCloudEvent(id, scope === 'all'
     ? '🖥 Local check — every account in the Account Used column (on this machine)'
     : '🖥 Local check — this campaign’s accounts (on this machine)');
+  // The sweep narrates itself into THIS Mac's local campaign log ("📡 [acct]
+  // Launching browser…", "✓ … newly accepted"), which the cloud campaign's
+  // card never showed — the operator saw only "started" and "done" here
+  // (2026-10-07). Relay every new local line into this campaign's log while
+  // the sweep runs, so the results sit with the campaign they belong to.
+  const _seenLocal = new Set();
+  const _relayLocalLog = async () => {
+    try {
+      const st = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
+      for (const raw of (Array.isArray(st.logs) ? st.logs : [])) {
+        const line = String(raw || '');
+        if (_seenLocal.has(line)) continue;
+        _seenLocal.add(line);
+        if (_seenLocal.size <= _seedCount) continue; // lines that predate this check
+        const m = line.match(/^\[([^\]]+)\]\s*(.*)$/);
+        const at = m ? Date.parse(m[1]) : NaN;
+        _pushCloudEvent(id, m ? m[2] : line, Number.isFinite(at) ? at : undefined);
+      }
+    } catch (_) { /* best-effort narration */ }
+  };
+  let _seedCount = 0;
+  try {
+    const st0 = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
+    for (const raw of (Array.isArray(st0.logs) ? st0.logs : [])) _seenLocal.add(String(raw || ''));
+    _seedCount = _seenLocal.size;
+  } catch (_) { /* start relaying from whatever appears */ }
+  const _relayTimer = setInterval(_relayLocalLog, 1500);
   try {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
     const camp = d && d.campaign;
@@ -15256,11 +15433,17 @@ async function cloudCheckLocal(id, btn, scope) {
       const sj = await sr.json().catch(() => ({}));
       if (sr.ok && !sj.error) synced = sj.matched || 0;
     } catch { /* best-effort — the sheet already has the truth */ }
-    const bits = [`${okCount}/${per.length} account${per.length === 1 ? '' : 's'} checked`, `${matched} newly Connected`];
-    if (failed.length) bits.push(`${failed.length} couldn’t open on this machine (skipped)`);
-    if (synced) bits.push(`${synced} lead${synced === 1 ? '' : 's'} synced to the engine`);
-    showCampaignToast(`🖥 Local check done — ${bits.join(' · ')}.`, 12000);
-    _pushCloudEvent(id, `🖥 Local check done — ${bits.join(' · ')}`);
+    const blocked = _sweepBlockedMessage(per);
+    if (blocked) {
+      showCampaignToast(blocked, 15000);
+      _pushCloudEvent(id, blocked);
+    } else {
+      const bits = [`${okCount}/${per.length} account${per.length === 1 ? '' : 's'} checked`, `${matched} newly Connected`];
+      if (failed.length) bits.push(`${failed.length} couldn’t open on this machine (skipped)`);
+      if (synced) bits.push(`${synced} lead${synced === 1 ? '' : 's'} synced to the engine`);
+      showCampaignToast(`🖥 Local check done — ${bits.join(' · ')}.`, 12000);
+      _pushCloudEvent(id, `🖥 Local check done — ${bits.join(' · ')}`);
+    }
     if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
     if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
   } catch (e) {
@@ -15270,6 +15453,8 @@ async function cloudCheckLocal(id, btn, scope) {
     // "starting/checking" marker must not survive until its 90-second TTL.
     // Keeping it around made the hero disagree with the completed live log.
     if (_cloudCheckAsked.get(id) === askedAt) _cloudCheckAsked.delete(id);
+    clearInterval(_relayTimer);
+    await _relayLocalLog(); // the sweep's closing lines
     try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
     if (btn) btn.disabled = false;
   }
@@ -15282,13 +15467,18 @@ window.cloudCheckLocal = cloudCheckLocal;
 // 'all' scope (Account Used column) and 'campaign' to this campaign's accounts.
 function promptCloudCheckScope(id, btn) {
   if (!id) return;
-  // Scope only: this campaign's accounts, or every account in the sheet's
-  // Account Used column. WHERE it runs is no longer asked, it follows the
-  // campaign's own side. See _checkRunsLocally.
+  // Step 1: scope — this campaign's accounts, or every account in the sheet's
+  // Account Used column. Step 2: WHERE — this Mac (recommended: the browsers
+  // open in front of the operator, no worker wake-up) or the cloud VMs. The
+  // where question was dropped for a while in favour of following the
+  // campaign's own side; the operator asked for it back (2026-10-07).
   _soloCheckHandler = (mode) => {
     const scope = mode === 'sheet' ? 'all' : 'campaign';
-    if (_checkRunsLocally(id)) cloudCheckLocal(id, btn, scope);
-    else cloudCheckNow(id, btn, scope);
+    _checkWhereHandler = (where) => {
+      if (where === 'local') cloudCheckLocal(id, btn, scope);
+      else cloudCheckNow(id, btn, scope);
+    };
+    _showCheckWhereModal();
   };
   _showSoloCheckModal();
 }
@@ -16137,6 +16327,9 @@ async function _submitCloudCampaign(body) {
       launchLog(hs.ok
         ? '🤝 Handshake complete — every sender is connected to the primary'
         : (hs.proceedAnyway ? '🤝 Handshake skipped — dispatching anyway, as you chose' : '🤝 Handshake cancelled'));
+      // Tell the engine the Mac already did (or deliberately skipped) the
+      // start-of-run primary check, so it does not open every sender again.
+      body.primaryCheckedOnMac = true;
       if (!hs.ok && !hs.proceedAnyway) {
         // Never exit silently. This return abandons the launch AND the finally
         // below wipes the board card, so without a word on screen the campaign
@@ -18330,7 +18523,8 @@ async function pollStatus() {
         else if (s.pauseRequested) { runEl.textContent = 'Pausing…'; runEl.className = 'value pausing'; }
         else { runEl.textContent = 'Running'; runEl.className = 'value running'; }
       }
-      if (warningEl) warningEl.style.display = '';
+      // Local-only advice: a VM run keeps going with the laptop closed.
+      if (warningEl) warningEl.style.display = _whSide(s) === 'vm' ? 'none' : '';
       // On the new-campaign view, force the button state to idle — the
       // running campaign is somebody else's, not this draft. Start should
       // be live so the operator can launch (or queue) this draft;
@@ -20151,7 +20345,7 @@ function collectCurrentConfig() {
       followUpBody: getV('follow-up-body'),
       followUpDelayMinutes: getN('follow-up-delay', 10),
       primarySource: (typeof readPrimarySource === 'function') ? readPrimarySource() : '',
-      primaryCheckTiming: getV('primary-timing-select') || 'immediately',
+      primaryCheckTiming: getV('primary-timing-select') || 'skip',
       ccDmBody: getV('tpl-cc-dm-body'),
     },
   };
@@ -20354,7 +20548,7 @@ function applyPresetConfig(config) {
   // default ("immediately") regardless of what the original run used. Now that the
   // Manifest surfaces this value in its first readback line, the gap is visible —
   // fix it the same way checkIntervalMinutes/autoChecksEnabled are restored above.
-  setV('primary-timing-select', t.primaryCheckTiming || 'immediately');
+  setV('primary-timing-select', t.primaryCheckTiming || 'skip');
   // v2.154.2 (Manifest, Task 1.3 review fix): render once here, after ALL
   // restore fields above (including primaryCheckTiming just above) are set —
   // moved from right after refreshAutoAcceptGate() so the readback doesn't
@@ -21487,7 +21681,7 @@ function renderManifest() {
     primarySource: (typeof readPrimarySource === 'function') ? readPrimarySource() : '',
     autoAcceptPrimary: !!document.getElementById('auto-accept-toggle')?.checked,
     autoAcceptAllPending: !!document.getElementById('auto-accept-all-toggle')?.checked,
-    primaryCheckTiming: document.getElementById('primary-timing-select')?.value || 'immediately',
+    primaryCheckTiming: document.getElementById('primary-timing-select')?.value || 'skip',
     checkCadenceMinutes: Number(document.getElementById('check-cadence-select')?.value) || 360,
     autoChecksEnabled: document.getElementById('auto-checks-toggle')?.checked !== false,
     followUpEnabled: !!document.getElementById('follow-up-toggle')?.checked,
@@ -23839,8 +24033,21 @@ function openActiveBulkCheckModal() {          // active "Run check now"
   // check instead (operator's rule: same button, VM path when in a VM campaign).
   // No scope modal — the VM sweeps its own accounts. Robust: fire on EITHER the
   // cloud-view flag or the cloud status object so it can't silently miss.
+  // A cloud campaign opened for EDIT (openCampaignForEditCloud) binds neither
+  // _viewingCloudId nor __cloudActiveStatus, so this button fell through to
+  // the LOCAL sweep and asked scope only — no "where" question, and it ran
+  // against this Mac's singleton instead of the campaign on screen (operator,
+  // 2026-10-07). Resolve the campaign from the editor too.
+  const _editedCloud = (() => {
+    const id = _editingCampaignId;
+    const item = id && (_boardItemsById.get(String(id)) || (typeof _snItemsById !== 'undefined' && _snItemsById.get(String(id))));
+    if (item && item.where === 'cloud') return String(id);
+    const opened = (typeof openedWizardCampaign === 'function') ? openedWizardCampaign() : null;
+    return opened && opened.where === 'cloud' ? String(opened.id) : null;
+  })();
   const _cloudId = _viewingCloudId
-    || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id);
+    || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id)
+    || _editedCloud;
   if (_cloudId) {
     // A cloud campaign's acceptance check runs on the VM (where the campaign
     // sends), via the engine's own check-now. Ask the same scope question as the
@@ -23918,7 +24125,8 @@ async function _runActiveBulkCheck(mode) {
     const d = await r.json().catch(() => ({}));
     if (d.ok) {
       const res = d.result || {};
-      if (typeof showCampaignToast === 'function') showCampaignToast(`Bulk check done — ${res.matched || 0} newly accepted${d.autoPaused ? '. Campaign resumed.' : ''}.`);
+      const blocked = _sweepBlockedMessage(d.perProfile);
+      if (typeof showCampaignToast === 'function') showCampaignToast(blocked || `Bulk check done — ${res.matched || 0} newly accepted${d.autoPaused ? '. Campaign resumed.' : ''}.`, blocked ? 15000 : undefined);
     } else if (typeof showCampaignToast === 'function') {
       showCampaignToast('Bulk check failed: ' + (d.error || 'unknown'));
     }
@@ -24177,8 +24385,9 @@ async function _runSoloCheckPast(idx, mode) {
     const d = await r.json();
     if (!r.ok || !d.ok) throw new Error(d.error || 'failed');
     const res = d.result || {};
+    const blocked = _sweepBlockedMessage(d.perProfile);
     if (typeof showCampaignToast === 'function') {
-      showCampaignToast(`Solo check done — ${res.matched || 0} Connected, ${res.stamped || 0} still pending across ${d.profilesSweep || 0} account(s).`, 7000);
+      showCampaignToast(blocked || `Solo check done — ${res.matched || 0} Connected, ${res.stamped || 0} still pending across ${d.profilesSweep || 0} account(s).`, blocked ? 15000 : 7000);
     }
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Solo check failed: ' + e.message, 7000);
@@ -29615,7 +29824,7 @@ function renderPrimaryPanel(status) {
       `<span class="meta">${escHtml(meta)}</span></span>` +
       `<span class="st">${escHtml(s.st)}${remembered ? ' <span class=\"remember\">remembered</span>' : ''}</span></div>`;
   }).join('');
-  const timing = status.primaryCheckTiming === 'after_connections' ? 'After connections' : 'Immediately';
+  const timing = status.primaryCheckTiming === 'after_connections' ? 'After connections' : status.primaryCheckTiming === 'skip' ? 'Skipped' : 'Immediately';
   const timingChip = status.primaryCheckTiming
     ? `<div class="mode">Timing · ${escHtml(timing)}</div>`
     : '';
@@ -30894,6 +31103,13 @@ function renderLiveStage(root, status) {
   put('stageMetricIntroduced', overview.metricValues[1]); put('stageMetricIntroducedLabel', overview.metricLabels[1]);
   put('stageMetricRemaining', overview.metricValues[2]); put('stageMetricRemainingLabel', overview.metricLabels[2]);
   put('stageNextLabel', overview.next[0]); put('stageNextTitle', overview.next[1]); put('stageNextDetail', overview.next[2]);
+  // The "next expected event" box used to repeat the sentence already shown
+  // under the stage name; hide it whenever it would say the same thing.
+  const nextBox = root && root.querySelector('.vj-stage-next');
+  if (nextBox) {
+    const subNow = String((ca && ca.sub) || '').trim();
+    nextBox.hidden = !!subNow && String(overview.next[1] || '').trim() === subNow;
+  }
 
   // Account pills + drawer — keyed on everything they draw, so they're rewritten
   // when (and only when) something in them actually changed.
@@ -31237,10 +31453,10 @@ function whereBlockHtml(status) {
   if (!running && !monitoring && !waiting && !queued && !status.paused && status.state !== 'paused') return '';
 
   const label = side === 'vm' ? 'Cloud VM' : side === 'local' ? 'This Mac' : 'Confirming location…';
-  return `<div class="wh">
+  // One short line; the how-to-move sentence lives in the tooltip now.
+  return `<div class="wh" title="Stop the campaign to change where it runs, then start it again.">
     <span class="wh-lab">Running on</span>
     <strong class="wh-location">${label}</strong>
-    <span class="wh-note">Stop the campaign to change its location, then start it again.</span>
   </div>`;
 }
 

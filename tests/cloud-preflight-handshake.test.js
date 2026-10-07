@@ -9,8 +9,9 @@ test('needsCloudHandshake: CC+IC + auto-accept + local-browser primary → true'
 test('needsCloudHandshake: defaults primarySource to local-browser', () => {
   assert.equal(needsCloudHandshake({ mode: 'connect_and_introduce', autoAcceptPrimary: true }), true);
 });
-test('needsCloudHandshake: GoLogin primary → false (VM can accept itself)', () => {
-  assert.equal(needsCloudHandshake({ mode: 'connect_and_introduce', autoAcceptPrimary: true, primarySource: 'gl-profile-123' }), false);
+test('needsCloudHandshake: GoLogin primary → true (2026-10-07: the Mac handshake covers every primary)', () => {
+  assert.equal(needsCloudHandshake({ mode: 'connect_and_introduce', autoAcceptPrimary: true, primarySource: 'gl-profile-123' }), true);
+  assert.equal(needsCloudHandshake({ mode: 'connect_and_introduce', autoAcceptPrimary: true, primarySource: 'gl-profile-123', primaryCheckTiming: 'skip' }), false);
 });
 test('needsCloudHandshake: auto-accept off → false', () => {
   assert.equal(needsCloudHandshake({ mode: 'connect_and_introduce', autoAcceptPrimary: false, primarySource: 'local-browser' }), false);

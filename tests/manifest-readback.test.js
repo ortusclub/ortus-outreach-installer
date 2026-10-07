@@ -5,7 +5,7 @@ import { buildManifestReadback } from '../public/js/manifest-readback.mjs';
 const BASE = {
   mode: 'connect_and_introduce', primaryName: 'Antonio Varlese',
   primarySource: '', autoAcceptPrimary: true, autoAcceptAllPending: false,
-  primaryCheckTiming: 'after_connections', checkCadenceMinutes: 360, autoChecksEnabled: true,
+  primaryCheckTiming: 'skip', checkCadenceMinutes: 360, autoChecksEnabled: true,
   followUpEnabled: true, followUpDelayMinutes: 10, runTarget: 'local',
 };
 

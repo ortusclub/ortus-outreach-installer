@@ -415,8 +415,16 @@ export function buildLiveActivity(status, now = Date.now()) {
 // safely queued · sending is stopped"). Split it so the card can set that
 // number at a size an operator actually sees, and so "still work waiting" is a
 // decision made once, here, rather than by eye.
+// "pending leads remain safe(ly queued)" was engine wording — operators asked
+// what "safe" meant (2026-10-07). Every variant now reads as the plain fact:
+// these leads have not been contacted yet.
+export function plainSafetyText(text) {
+  return String(text == null ? '' : text)
+    .replace(/pending\s+(lead|leads)\s+remain\s+safe(?:ly\s+queued|\s+and\s+(?:untouched|unconsumed))?\.?/i, '$1 still to contact')
+    .replace(/(lead|leads)\s+remain\s+safe(?:ly\s+queued|\s+and\s+(?:untouched|unconsumed))?\.?/i, '$1 still to contact');
+}
 export function splitSafetyCount(safety) {
-  const text = String(safety == null ? '' : safety);
+  const text = plainSafetyText(safety);
   const m = /^(\d+)\s/.exec(text);
   if (!m) return { count: null, rest: text, pending: false };
   return { count: m[1], rest: text.slice(m[0].length), pending: Number(m[1]) > 0 };

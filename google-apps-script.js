@@ -1302,10 +1302,17 @@ function handleUpdateRows(sheet, data) {
   // (via findRowsByUrl) and cost a full-column read per lead: 46s measured for
   // a single 100-row chunk, which the client aborted at 30s — so the rows were
   // reported lost while the script went on writing them.
+  // 2026-10-07: read the column lazily. When every row carries `sheetRow`
+  // (engine campaigns since this date) and each one verifies, the column is
+  // never read at all — that read was the slow part on a 1,800-row tab.
   var lastRow = sheet.getLastRow();
-  var urlsCache = lastRow >= 2
-    ? sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues()
-    : [];
+  var urlsCache = null;
+  function urlsColumn() {
+    if (urlsCache === null) {
+      urlsCache = lastRow >= 2 ? sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues() : [];
+    }
+    return urlsCache;
+  }
 
   var results = [];
   for (var r = 0; r < rows.length; r++) {
@@ -1317,7 +1324,8 @@ function handleUpdateRows(sheet, data) {
     try {
       // Same semantics as handleUpdateRow: stamp EVERY copy of the lead
       // (duplicate rows), auditing only once per lead.
-      var targetRows = findRowsByUrl(sheet, urlColIndex, item.linkedinUrl, urlsCache);
+      var targetRows = rowByNumberIfItMatches(sheet, urlColIndex, item.sheetRow, item.linkedinUrl)
+        || findRowsByUrl(sheet, urlColIndex, item.linkedinUrl, urlsColumn());
       if (targetRows.length === 0) {
         results.push({ error: 'Row not found for: ' + item.linkedinUrl });
         continue;
@@ -1368,7 +1376,8 @@ function handleUpdateRow(sheet, data) {
   // v2.105 — stamp EVERY copy of this lead (duplicate rows), not just the first.
   // findRowsByUrl already does exact-normalized match with a loose /in/<slug>
   // fallback, so the inline fallback that lived here is no longer needed.
-  var targetRows = findRowsByUrl(sheet, urlColIndex, data.linkedinUrl);
+  var targetRows = rowByNumberIfItMatches(sheet, urlColIndex, data.sheetRow, data.linkedinUrl)
+    || findRowsByUrl(sheet, urlColIndex, data.linkedinUrl);
 
   if (targetRows.length === 0) {
     return jsonResponse({ error: 'Row not found for: ' + data.linkedinUrl });
@@ -1618,6 +1627,22 @@ function normalizeUrl(url) {
 // — past the client's 30s timeout, so the batch aborted and the rows were lost
 // even though the script kept running. With it, the column is read once.
 // Safe to reuse across a batch: nothing here ever writes the URL column.
+// 2026-10-07 — direct-row fast path. The engine sends the lead's row number
+// from import (`sheetRow`); if the URL cell at that row is the same lead, that
+// one row is the target and the whole-column scan is skipped. Any mismatch
+// (sorted, rows inserted or deleted, stale number) returns null and the caller
+// falls back to findRowsByUrl, so a wrong number can never stamp a stranger.
+// Deliberately returns ONE row: duplicates of a lead are rare, and the scan
+// still catches them whenever the number does not verify.
+function rowByNumberIfItMatches(sheet, urlColIndex, sheetRow, searchUrl) {
+  var n = parseInt(sheetRow, 10);
+  if (!n || n < 2 || n > sheet.getLastRow()) return null;
+  var target = normalizeUrl(searchUrl);
+  if (!target) return null;
+  var cell = sheet.getRange(n, urlColIndex + 1).getValue();
+  return normalizeUrl(cell) === target ? [n] : null;
+}
+
 function findRowsByUrl(sheet, urlColIndex, searchUrl, urlsCache) {
   var urls = urlsCache;
   if (!urls) {

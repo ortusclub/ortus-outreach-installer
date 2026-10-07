@@ -807,8 +807,12 @@ export async function runAutoIntros({
           break; // no reference photo available → skip-on-doubt
         }
         if (attempt < 2 && (errMsg.includes('INTRO_RECIPIENT_NOT_FOUND') || errMsg.includes('IC_INTRO_RECIPIENT_NOT_FOUND'))) {
-          log(`  ↻ [${profileName}] ${url}: typeahead miss, retrying once…`);
-          await new Promise(r => setTimeout(r, 2000));
+          // A connection accepted minutes ago can be missing from the
+          // messaging typeahead for a while (2026-10-07: 53 suggestions, none
+          // the lead, right after the sweep found them connected). Two seconds
+          // was never enough for LinkedIn's index to catch up.
+          log(`  ↻ [${profileName}] ${url}: typeahead miss, waiting 20s for LinkedIn to index the connection, then retrying once…`);
+          await new Promise(r => setTimeout(r, 20000));
           continue;
         }
         break;

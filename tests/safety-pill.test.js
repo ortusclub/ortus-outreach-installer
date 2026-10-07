@@ -10,7 +10,9 @@ import { splitSafetyCount } from '../public/js/live-activity.mjs';
 test('the leading count comes out of the sentence', () => {
   const r = splitSafetyCount('92 pending leads remain safely queued · sending is stopped');
   assert.equal(r.count, '92');
-  assert.equal(r.rest, 'pending leads remain safely queued · sending is stopped');
+  // "remain safe(ly queued)" is rewritten at render time to plain words
+  // (operator, 2026-10-07: "why remaining safe").
+  assert.equal(r.rest, 'leads still to contact · sending is stopped');
   assert.equal(r.pending, true);
 });
 

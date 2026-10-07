@@ -14,8 +14,13 @@ test('needsHandshakeFromBody: primarySource omitted defaults to local-browser', 
   const b = { mode: 'connect_and_introduce', templates: { autoAcceptPrimary: true } };
   assert.equal(needsHandshakeFromBody(b), true);
 });
-test('needsHandshakeFromBody: GoLogin primary → false', () => {
-  assert.equal(needsHandshakeFromBody(ccic({ primarySource: 'gl-abc' })), false);
+test('needsHandshakeFromBody: GoLogin primary → true (2026-10-07: the Mac runs it for every primary)', () => {
+  assert.equal(needsHandshakeFromBody(ccic({ primarySource: 'gl-abc' })), true);
+});
+test('needsHandshakeFromBody: timing Skip or After connections → false', () => {
+  assert.equal(needsHandshakeFromBody({ ...ccic(), primaryCheckTiming: 'skip' }), false);
+  assert.equal(needsHandshakeFromBody({ ...ccic(), primaryCheckTiming: 'after_connections' }), false);
+  assert.equal(needsHandshakeFromBody({ ...ccic(), primaryCheckTiming: 'immediately' }), true);
 });
 test('needsHandshakeFromBody: auto-accept off → false', () => {
   assert.equal(needsHandshakeFromBody(ccic({ autoAcceptPrimary: false })), false);

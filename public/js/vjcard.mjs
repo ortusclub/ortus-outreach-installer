@@ -401,7 +401,7 @@ export function vjCardControlsFor(status = {}) {
     // silently start a different kind of check from the other.
     c.bulk = { label: 'Run check now', onclick: `window.promptCloudCheckScope && window.promptCloudCheckScope('${id}',this)` };
     c.copy = { onclick: `duplicateCampaign('${id}')` };
-    c.extra.push({ tip: 'Show', kind: 'show', onclick: `openCloudCampaignView('${id}','${id}')` });
+    c.extra.push({ tip: 'Watch live', kind: 'show', onclick: `openCloudCampaignView('${id}','${id}')` });
   } else if (monitor && !cloud) {
     c.pause = { once: true, onclick: `window.openCampaignResumeDecision && window.openCampaignResumeDecision('${id || 'local-active'}','monitoring','local',this)` };
     c.stop = { tip: 'Stop', onclick: 'window.dashStopActive && window.dashStopActive()' };
@@ -418,6 +418,8 @@ export function vjCardControlsFor(status = {}) {
       : { tip: 'Stop monitoring', onclick: `stopCloudCampaignUI('${id}')` };
     c.bulk = { label: 'Run check now', onclick: `window.promptCloudCheckScope && window.promptCloudCheckScope('${id}',this)` };
     c.monAuto = { checked: s.autoChecksEnabled !== false, onclick: `setCloudAutoChecks('${id}',this.checked,this)` };
+    // A VM check opens a real browser on the worker; let the operator watch it.
+    if (s.monitoringCheckInProgress) c.extra.push({ tip: 'Watch live', kind: 'show', onclick: `openCloudCampaignView('${id}','${id}')` });
     // A campaign that switched to monitoring because nothing could send still has
     // leads waiting. The engine already accepts a restart in this state (it only
     // short-circuits when nothing is pending); the app just never offered it, so
@@ -439,6 +441,9 @@ export function vjCardControlsFor(status = {}) {
     if (!cloud && s.hist) c.extra.push({ tip: 'Debrief', kind: 'debrief', onclick: `window.openDebrief('${id}')` });
     c.extra.push({ tip: 'Delete', kind: 'delete', onclick: `deleteBoardCampaign('${id}', this)` });
   } else if (queued) {
+    // The worker is waking for a queued VM campaign; the eye lets the operator
+    // see the browser the moment it opens instead of guessing from the card.
+    if (cloud) c.extra.push({ tip: 'Watch live', kind: 'show', onclick: `openCloudCampaignView('${id}','${id}')` });
     c.extra.push({ tip: 'Cancel', kind: 'cancel', onclick: cloud ? `stopCloudCampaignUI('${id}')` : `window.cancelQueuedCampaign && window.cancelQueuedCampaign('${rawId}')` });
   }
   return c;

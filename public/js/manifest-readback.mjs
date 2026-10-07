@@ -26,7 +26,7 @@ function actorLabel(primarySource, primaryName) {
 // flip STANDARD → CUSTOMIZED. Mirrors the HTML defaults.
 const STANDARD = {
   autoAcceptPrimary: true, autoAcceptAllPending: false, primarySource: '',
-  primaryCheckTiming: 'after_connections', checkCadenceMinutes: 360,
+  primaryCheckTiming: 'skip', checkCadenceMinutes: 360,
   autoChecksEnabled: true, followUpEnabled: true, followUpDelayMinutes: 10,
 };
 
@@ -58,14 +58,16 @@ export function buildManifestReadback(sIn = {}) {
 
   if (isCCIC) {
     // Line 1 — auto-accept
-    const timing = s.primaryCheckTiming === 'immediately' ? 'Immediately at start' : 'After connections complete';
+    const timing = s.primaryCheckTiming === 'immediately' ? 'Immediately at start' : s.primaryCheckTiming === 'after_connections' ? 'After connections complete' : 'Skipped';
     const allPending = s.autoAcceptAllPending
       ? ' <span class="tok">+ all other pending invites ⚠️</span>' : '';
     lines.push({
       key: 'accept', on: !!s.autoAcceptPrimary,
-      html: s.autoAcceptPrimary
-        ? `<b>${timing}</b>, each sender requests <b>${nm}</b> — <b>${actor}</b> accepts automatically${allPending}`
-        : `Auto-accept off — connect the senders to ${nm} manually before intros`,
+      html: s.primaryCheckTiming === 'skip'
+        ? `<b>No primary check</b> — senders are assumed connected to <b>${nm}</b>; a missing link shows on the first introduction${s.autoAcceptPrimary ? ` (<b>${actor}</b> still accepts any request automatically${allPending})` : ''}`
+        : s.autoAcceptPrimary
+          ? `<b>${timing}</b>, each sender requests <b>${nm}</b> — <b>${actor}</b> accepts automatically${allPending}`
+          : `Auto-accept off — connect the senders to ${nm} manually before intros`,
     });
   }
   if (isCCIC || isCCDM) {

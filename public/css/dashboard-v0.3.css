@@ -554,8 +554,8 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
      claim to know how long a lead takes, and nothing does. The only number is
      elapsed seconds, which is a fact. */
   body[data-dashboard='v3'] .vj-stage {
-    grid-area: live; display: flex; gap: 20px; align-items: flex-start;
-    padding: 22px 24px; border-radius: 12px;
+    grid-area: live; display: flex; gap: 16px; align-items: flex-start;
+    padding: 16px 20px; border-radius: 12px;
     background: rgba(255,255,255,.03); border: 1px solid var(--hairline-soft);
   }
   body[data-dashboard='v3'] .vj-stage[hidden] { display: none; }
@@ -655,7 +655,7 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   body[data-dashboard='v3'] .vj-stage-body { flex: 1; min-width: 0; }
   body[data-dashboard='v3'] .vj-stage-summary {
     display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(220px, .55fr);
-    gap: 28px; align-items: center; min-height: 72px;
+    gap: 20px; align-items: center; min-height: 0;
   }
   body[data-dashboard='v3'] .vj-stage-side {
     border-left: 1px solid var(--hairline-soft); padding-left: 24px; min-width: 0;
@@ -666,7 +666,7 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
     text-transform: uppercase; color: var(--gray);
   }
   body[data-dashboard='v3'] .vj-stage-side strong {
-    display: block; margin-top: 7px; font-family: var(--display); font-size: 1.7rem;
+    display: block; margin-top: 5px; font-family: var(--display); font-size: 1.3rem;
     line-height: 1.05; color: var(--ink);
     /* v3.1.48.74: was nowrap + ellipsis, which showed "Preparing browser runti…"
        for the whole first minute of a launch. A clipped word is worse than a
@@ -683,15 +683,15 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   body[data-dashboard='v3'] .vj-stage.is-delayed .vj-stage-verb { color: var(--red); }
   body[data-dashboard='v3'] .vj-stage.is-paused .vj-stage-verb { color: var(--gray); }
   body[data-dashboard='v3'] .vj-stage-name {
-    font-family: var(--display); font-size: 2.25rem; letter-spacing: 0.015em; line-height: 1.04;
-    margin: 6px 0 5px; color: var(--ink);
+    font-family: var(--display); font-size: 1.65rem; letter-spacing: 0.015em; line-height: 1.04;
+    margin: 4px 0 3px; color: var(--ink);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   body[data-dashboard='v3'] .vj-stage-name.swap { animation: stg-name-in .42s cubic-bezier(.2,.7,.3,1); }
   @keyframes stg-name-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
   body[data-dashboard='v3'] .vj-stage-sub {
-    max-width: 82ch; font-family: var(--body); font-size: 0.94rem;
-    font-weight: 500; line-height: 1.5; color: var(--ink);
+    max-width: 82ch; font-family: var(--body); font-size: 0.86rem;
+    font-weight: 500; line-height: 1.45; color: var(--gray);
   }
   body[data-dashboard='v3'] .vj-stage-sub:empty { display: none; }
   /* v3.1.48.71: the queued-lead count is the one number on this card that
@@ -700,15 +700,15 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
      numeral, and the pill turns gold whenever leads are genuinely still
      waiting — at zero it stays the quiet green it always was. */
   body[data-dashboard='v3'] .vj-stage-safety {
-    display: inline-flex; align-items: center; margin-top: 15px; padding: 10px 18px;
+    display: inline-flex; align-items: center; margin-top: 10px; padding: 5px 12px;
     border: 1px solid var(--hairline); border-radius: 9999px;
-    font-family: var(--body); font-weight: 550; font-size: .92rem; letter-spacing: .01em; color: var(--ink);
+    font-family: var(--body); font-weight: 550; font-size: .78rem; letter-spacing: .01em; color: var(--ink);
   }
   body[data-dashboard='v3'] .vj-stage-safety::before {
-    content: ''; width: 9px; height: 9px; border-radius: 9999px; background: var(--green); margin-right: 11px;
+    content: ''; width: 7px; height: 7px; border-radius: 9999px; background: var(--green); margin-right: 8px;
   }
   body[data-dashboard='v3'] .vj-stage-safety .n {
-    font-family: var(--display); font-size: 1.7rem; line-height: 1; letter-spacing: .01em; margin-right: 10px;
+    font-family: var(--display); font-size: 1.05rem; line-height: 1; letter-spacing: .01em; margin-right: 6px;
   }
   body[data-dashboard='v3'] .vj-stage-safety.has-pending {
     border-color: var(--gold); color: var(--gold); background: var(--gold-tint-bg);
@@ -755,19 +755,21 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   body[data-dashboard='v3'] .vj-stage-miles .future { opacity: .46; }
   body[data-dashboard='v3'] .vj-stage-outcome {
     display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(230px, .65fr);
-    gap: 26px; margin-top: 18px;
+    gap: 18px; margin-top: 12px;
   }
+  body[data-dashboard='v3'] .vj-stage-next[hidden] { display: none; }
+  body[data-dashboard='v3'] .vj-stage-outcome:has(.vj-stage-next[hidden]) { grid-template-columns: 1fr; }
   body[data-dashboard='v3'] .vj-stage-metrics {
     display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
     border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
   }
-  body[data-dashboard='v3'] .vj-stage-metrics > div { padding: 15px 18px 14px 0; min-width: 0; }
-  body[data-dashboard='v3'] .vj-stage-metrics > div + div { border-left: 1px solid var(--hairline-soft); padding-left: 18px; }
-  body[data-dashboard='v3'] .vj-stage-metrics strong { display: block; font-family: var(--display); font-size: 1.95rem; line-height: 1; }
-  body[data-dashboard='v3'] .vj-stage-metrics span { display: block; margin-top: 5px; font-size: .75rem; color: var(--gray); font-weight: 550; }
-  body[data-dashboard='v3'] .vj-stage-next { border: 1px solid var(--hairline); border-radius: 9px; padding: 14px 16px; background: rgba(128,128,128,.035); }
-  body[data-dashboard='v3'] .vj-stage-next strong { display: block; margin-top: 7px; font-size: .86rem; color: var(--ink); }
-  body[data-dashboard='v3'] .vj-stage-next p { margin: 5px 0 0; font-size: .75rem; line-height: 1.4; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-stage-metrics > div { display: flex; align-items: baseline; gap: 8px; padding: 9px 14px 9px 0; min-width: 0; }
+  body[data-dashboard='v3'] .vj-stage-metrics > div + div { border-left: 1px solid var(--hairline-soft); padding-left: 14px; }
+  body[data-dashboard='v3'] .vj-stage-metrics strong { display: block; font-family: var(--display); font-size: 1.4rem; line-height: 1; }
+  body[data-dashboard='v3'] .vj-stage-metrics span { display: block; margin-top: 0; font-size: .72rem; color: var(--gray); font-weight: 550; }
+  body[data-dashboard='v3'] .vj-stage-next { border: 1px solid var(--hairline); border-radius: 9px; padding: 10px 14px; background: rgba(128,128,128,.035); }
+  body[data-dashboard='v3'] .vj-stage-next strong { display: block; margin-top: 4px; font-size: .82rem; color: var(--ink); }
+  body[data-dashboard='v3'] .vj-stage-next p { margin: 3px 0 0; font-size: .72rem; line-height: 1.35; color: var(--gray); }
   @media (max-width: 760px) {
     body[data-dashboard='v3'] .vj-stage-summary,
     body[data-dashboard='v3'] .vj-stage-outcome { grid-template-columns: 1fr; }
@@ -1580,6 +1582,11 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   }
   body[data-dashboard='v3'] .vj-bulk-btn svg { width: 16px; height: 16px; }
   body[data-dashboard='v3'] .vj-bulk-hint { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.03em; color: var(--gray-faint); line-height: 1.5; }
+  body[data-dashboard='v3'] .vj-bulk-next { font-family: var(--body); font-size: 0.8rem; color: var(--ink); line-height: 1.45; padding-top: 8px; border-top: 1px solid var(--hairline-soft); }
+  body[data-dashboard='v3'] .vj-bulk-next:empty { display: none; }
+  body[data-dashboard='v3'] .vj-bulk-auto { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); cursor: pointer; user-select: none; }
+  body[data-dashboard='v3'] .vj-bulk-auto input { accent-color: var(--ink); width: 14px; height: 14px; margin: 0; cursor: pointer; }
+  body[data-dashboard='v3'] .vj-bulk-auto input:disabled { cursor: not-allowed; opacity: .5; }
 
   /* ── Wizard ───────────────────────────────────────────────── */
   body[data-dashboard='v3'] .modal-shade { position: fixed; inset: 0; background: rgba(0,0,0,0.32); display: none; z-index: 50; }
@@ -1882,12 +1889,12 @@ body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto;
   grid-template-areas:
-    "eyebrow"
-    "name"
-    "live"
-    "where"
-    "controls"
-    "details";
+    "eyebrow eyebrow"
+    "name name"
+    "live live"
+    "where controls"
+    "details details";
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
 }
 body[data-dashboard='v3'] .vj-card.has-unified-stage .vj-hbar,
@@ -1928,20 +1935,34 @@ body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .wh-host {
   grid-area: where;
   min-width: 0;
 }
+body[data-dashboard='v3'] .vj-card.has-unified-stage > .wh-host,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .wh-host {
+  align-self: center;
+}
 body[data-dashboard='v3'] .vj-card.has-unified-stage > .wh-host .wh,
 body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .wh-host .wh {
-  padding: 12px 0;
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
+  padding: 0;
+  border: 0;
 }
+body[data-dashboard='v3'] .vj-card.has-unified-stage > .wh-host .wh-location,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .wh-host .wh-location {
+  font-family: var(--mono); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink);
+}
+/* Running-on label and the action pills share one row, separated by a single hairline above. */
 body[data-dashboard='v3'] .vj-card.has-unified-stage > .vj-controls,
 body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .vj-controls {
   grid-area: controls;
-  width: 100%;
-  padding: 0 0 2px;
-  justify-self: stretch;
+  width: auto;
+  padding: 0;
+  justify-self: end;
   justify-content: flex-end;
 }
+body[data-dashboard='v3'] .vj-card.has-unified-stage > .wh-host::before,
+body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .wh-host::before { content: none; }
+body[data-dashboard='v3'] .btn-pill.watch { display: inline-flex; align-items: center; gap: 7px; }
+body[data-dashboard='v3'] .btn-pill.watch svg { width: 15px; height: 15px; }
+body[data-dashboard='v3'] .btn-pill.watch.live-on { border-color: var(--green); color: var(--green); }
+body[data-dashboard='v3'] .btn-pill.watch .live-dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--green); box-shadow: 0 0 0 3px rgba(63,185,80,.18); }
 body[data-dashboard='v3'] .vj-card.has-unified-stage > .vj-details,
 body[data-dashboard='v3'] .vj-card:has(> .vj-stage:not([hidden])) > .vj-details {
   grid-area: details;
