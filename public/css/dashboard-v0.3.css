@@ -2269,3 +2269,52 @@ body[data-dashboard='v3'] #mg-log .vj-log-line .what {color:#eee;}
 body[data-dashboard='v3'] #mg-log .vj-log-line .evt, body[data-dashboard='v3'] #mg-log .vj-log-empty {color:#aaa;}
 body[data-dashboard='v3'] #mg-log .vj-log-line.is-err .what {color:#ff8585;}
 body[data-dashboard='v3'] #mg-log .vj-log-line.is-warn .what {color:#ffd080;}
+
+body[data-dashboard='v3'] .primary-gologin-picker {grid-column:1/-1;border:1px solid var(--hairline);border-radius:8px;margin-bottom:16px;font:13px var(--body);}
+body[data-dashboard='v3'] .primary-gologin-heading {padding:12px 16px;font-weight:600;}
+body[data-dashboard='v3'] .primary-gologin-fields {display:grid;gap:10px;padding:0 16px 16px;}
+body[data-dashboard='v3'] .primary-gologin-fields input, body[data-dashboard='v3'] .primary-gologin-fields select {width:100%;font:13px var(--body);border:1px solid var(--hairline);border-radius:6px;padding:10px;background:var(--card-bg);color:var(--ink);}
+body[data-dashboard='v3'] .primary-gologin-fields select {height:150px;}
+body[data-dashboard='v3'] .primary-gologin-fields p {font-size:12px;color:var(--gray);margin:0;}
+body[data-dashboard='v3'] .primary-gologin-fields button {justify-self:start;font:600 12px var(--body);padding:7px 12px;border-radius:6px;letter-spacing:0;text-transform:none;}
+
+/* Compact campaign account cards, with a quiet missing-roster label. */
+body[data-dashboard='v3'] #profiles-grid {align-items:start;align-content:start;gap:8px;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt {min-height:54px;position:relative;border-radius:8px;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt .jt-det {padding:9px 12px;gap:3px;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt .jt-email {font-size:13px;line-height:18px;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt .jt-sub {font-size:11px;line-height:15px;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt .jt-stat {width:76px;padding:6px;gap:4px;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt .jt-name-row {padding:2px 0 0 26px;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt .jt-name-input {font-size:12px;line-height:16px;height:28px;min-height:0;padding:4px 8px;margin:0;border-radius:5px;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt.is-nosoo .jt-email {color:var(--ink);}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt.is-nosoo .s-nosoo {width:auto;position:absolute;right:10px;top:10px;background:transparent;padding:0;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt.is-nosoo .s-nosoo .jt-dot {display:none;}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt.is-nosoo .s-nosoo .jt-word {font:400 10px/16px var(--body);letter-spacing:0;text-transform:none;color:var(--gray);}
+body[data-dashboard='v3'] #profiles-grid .profile-item.jt.is-nosoo:has(.s-nosoo) .jt-top {padding-right:76px;}
+
+body[data-dashboard='v3'] .sheet-hero-btn {
+  font-family:var(--body);font-size:13px;font-weight:600;line-height:20px;
+  letter-spacing:0;text-transform:none;min-height:36px;padding:7px 14px;
+  border:1px solid var(--hairline);border-radius:8px;background:var(--card-bg);color:var(--ink);
+  box-shadow:none;
+}
+body[data-dashboard='v3'] .sheet-hero-btn:hover {background:var(--card-bg-hover);border-color:var(--gray);}
+body[data-dashboard='v3'] .sheet-hero-btn:focus-visible {outline:2px solid var(--gold);outline-offset:2px;}
+
+/* Campaign account selection actions share the compact form-button style. */
+body[data-dashboard='v3'] #accounts-browser .bulk-pill {
+  font-family:var(--body);font-size:13px;font-weight:600;line-height:20px;
+  text-transform:none;letter-spacing:0;min-height:36px;padding:7px 14px;
+  border:1px solid var(--hairline);border-radius:8px;background:var(--card-bg);
+  color:var(--ink);box-shadow:none;cursor:pointer;
+}
+body[data-dashboard='v3'] #accounts-browser .bulk-pill:hover {background:var(--card-bg-hover);border-color:var(--gray);}
+body[data-dashboard='v3'] #accounts-browser .bulk-pill:focus-visible {outline:2px solid var(--gold);outline-offset:2px;}
+body[data-dashboard='v3'] #accounts-browser .browse-bulk-row {display:flex;flex-wrap:wrap;gap:10px;}
+body[data-dashboard='v3'] #account-paste-panel .bulk-pill {margin-top:10px;}
+
+body[data-dashboard='v3'] .primary-details-heading {grid-column:1/-1;font:600 13px var(--body);margin-bottom:4px;}
+body[data-dashboard='v3'] .primary-details-heading span {display:block;font-size:12px;font-weight:400;color:var(--gray);margin-top:5px;}
+body[data-dashboard='v3'] .primary-entry-actions {display:flex;flex-wrap:wrap;gap:10px;}
+body[data-dashboard='v3'] #primary-manual-notice:not([hidden]) {padding:10px 12px;border-left:3px solid var(--gold);background:var(--card-bg-hover);line-height:1.5;}

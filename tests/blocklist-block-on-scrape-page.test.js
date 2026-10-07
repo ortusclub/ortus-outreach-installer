@@ -24,19 +24,11 @@ test('the simplified scrape setup omits the blocklist editor', () => {
   assert.ok(!scrape.includes('id="sn-blocklist"'));
 });
 
-test('the campaign wizard keeps its box — this adds one, it does not move it', () => {
-  assert.ok(html.includes('id="wiz-bl-value"'));
-  assert.ok(html.includes('id="wiz-bl-add"'));
-  assert.ok(html.includes('id="wiz-bl-chips"'));
-});
-
-test('both copies are found by the SAME class, so they share one code path', () => {
-  const inputs = html.match(/class="wiz-bl-value"/g) || [];
-  const adds = html.match(/class="btn btn-secondary btn-sm wiz-bl-add"/g) || [];
-  const chips = html.match(/wiz-bl-chips/g) || [];
-  assert.equal(inputs.length, 1, 'each copy needs the shared input class');
-  assert.equal(adds.length, 1, 'each copy needs the shared button class');
-  assert.ok(chips.length >= 1, 'each copy needs a chips host');
+test('campaign setup omits the blocklist editor while standalone management remains', () => {
+  assert.ok(!html.includes('id="wiz-bl-value"'));
+  assert.ok(!html.includes('id="wiz-bl-add"'));
+  assert.ok(!html.includes('id="wiz-bl-chips"'));
+  assert.ok(html.includes('id="bl-value"'));
 });
 
 test('the renderer paints every copy, not just the first', () => {

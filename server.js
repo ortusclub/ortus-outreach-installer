@@ -105,7 +105,7 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig, getPrimaryPeople } from './src/cloud-launch-configs.js';
 import { fetchSoOData, fetchSoOStatusData } from './src/soo.js';
 import { fetchLvAccounts } from './src/mature-warm.js';
-import { buildWarmPool, shuffleWarmTargets, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, buildMatureTabRows, MATURE_TAB_HEADER, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
+import { buildWarmPool, shuffleWarmTargets, warmProfileIdentity, lvProfileIdentity, matureWarmSchedule, matureColdSchedule, buildMatureTabRows, MATURE_TAB_HEADER, WARM_POOL_ACCOUNT } from './public/js/mature-warm-pool.mjs';
 import { restoreMaturePlan, maturePlanErrors } from './public/js/mature-profile-plan.mjs';
 import { localDay, MATURE_DEFAULT_TIME_ZONE } from './public/js/mature-profile-board.mjs';
 import { matureCampaignName } from './public/js/mature-profile-identity.mjs';
@@ -4006,6 +4006,18 @@ async function matureWarmSources() {
   ]);
   return { profiles, sooAccounts: soo, lvAccounts: lv.accounts, lvError: lv.error || '' };
 }
+
+// Primary-person picker: identities only; selecting never launches a profile.
+app.get('/api/primary-person/accounts', async (_req, res) => {
+  try {
+    const sources = await matureWarmSources();
+    res.json({ accounts: sources.profiles.map(profile => {
+      const identity = warmProfileIdentity(profile, sources);
+      return { id: profile.id, label: profile.name || profile.email || profile.id,
+        name: identity?.name || '', linkedinUrl: identity?.linkedinUrl || '' };
+    }), warning: sources.lvError ? 'Linked Velocity details could not be loaded. You can still enter them manually.' : '' });
+  } catch (err) { res.status(503).json({ error: 'Could not load GoLogin accounts. Try again or enter the details manually.' }); }
+});
 
 app.get('/api/mature/cold-source', (_req, res) => {
   res.json({ url: String(process.env.MATURE_DEFAULT_COLD_SHEET_URL || '').trim() || DEFAULT_MATURE_COLD_SHEET_URL });

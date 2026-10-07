@@ -26,7 +26,7 @@ function actorLabel(primarySource, primaryName) {
 // flip STANDARD → CUSTOMIZED. Mirrors the HTML defaults.
 const STANDARD = {
   autoAcceptPrimary: true, autoAcceptAllPending: false, primarySource: '',
-  primaryCheckTiming: 'after_connections', checkCadenceMinutes: 60,
+  primaryCheckTiming: 'after_connections', checkCadenceMinutes: 360,
   autoChecksEnabled: true, followUpEnabled: true, followUpDelayMinutes: 10,
 };
 
@@ -107,7 +107,7 @@ export function buildManifestReadback(sIn = {}) {
   }
 
   const cloudNotice = (isCCIC && cloudLocalPrimary)
-    ? 'Choose a GoLogin profile for the primary before launching this cloud campaign.' : null;
+    ? 'Introductions can use the primary’s name and URL. Without their GoLogin profile, accept connections manually; automatic acceptance and follow-ups are unavailable.' : null;
 
   return { lines, state, cloudNotice };
 }

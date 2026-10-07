@@ -1079,32 +1079,6 @@
         <h2 data-edit="h2-campaign-name">Campaign Name</h2>
         <div class="campaign-name-row">
           <input type="text" id="campaign-name-input" placeholder="e.g. TAG_CITY_I" autocomplete="off" />
-          <!-- Presets — save the whole wizard config under a name / reload one.
-               Lives next to the campaign name per the approved duplicate+presets
-               sketch (duplicate-campaign-A.html); popover opens downward here. -->
-          <div class="preset-pill preset-pill--inline" id="preset-pill">
-            <button type="button" class="btn btn-xs preset-pill-btn" onclick="togglePresetPopover()" title="Save the current wizard config under a name so you can re-load it later (mode, accounts, sheet URL, templates, campaign limit per account).">
-              <span>Presets</span>
-              <span class="preset-pill-count" id="preset-pill-count">0</span>
-              <span class="preset-pill-caret">▾</span>
-            </button>
-            <div class="preset-popover" id="preset-popover" hidden>
-              <div class="preset-pop-label" id="preset-pop-pinned-label">Pinned</div>
-              <div class="preset-pop-item preset-pop-last" id="preset-pop-last" onclick="loadLastUsedPreset(); closePresetPopover()">
-                <span><span class="preset-pop-dot"></span>Last Used</span>
-                <span class="preset-pop-tag" id="preset-pop-last-tag">—</span>
-              </div>
-              <div class="preset-pop-divider"></div>
-              <div class="preset-pop-label">Saved</div>
-              <div id="preset-pop-list">
-                <div class="preset-pop-empty">No saved presets yet</div>
-              </div>
-              <div class="preset-pop-action" onclick="saveCurrentAsPreset(); closePresetPopover()">
-                <span>+ Save current as preset…</span>
-                <span class="preset-pop-caret">→</span>
-              </div>
-            </div>
-          </div>
         </div>
         <small id="campaign-identifier" class="campaign-identifier" hidden></small>
         <div id="campaign-name-warn" class="campaign-name-warn" style="display:none"></div>
@@ -1180,11 +1154,26 @@
 
           <!-- Connect + Introduce Back: primary person to introduce the lead to.
                Visible only when connect_and_introduce is selected. -->
-          <div class="sn-fallback-note ccic-primary-note" role="note" style="display:none">
-            <strong>Before you run a connection check: every sending account must be connected to the primary person.</strong>
-            Introductions back are sent during the check, not when the campaign starts. Before you start a check, make sure all the accounts in this campaign are 1st-degree connections of the primary person. If one is not, its introductions back will fail.
-          </div>
           <div id="primary-person-block" class="ov-idgrid" style="display:none;">
+            <!-- Shared selection state for campaign save/load and automated actions. -->
+            <div hidden>
+              <input type="radio" name="primary-source" value="gologin" checked>
+              <input type="hidden" id="primary-source-profile-id" value="">
+            </div>
+            <div class="primary-gologin-picker">
+              <div class="primary-gologin-heading">1. Choose the primary’s GoLogin profile</div>
+              <div class="primary-gologin-fields">
+                <p>Select their account first. We’ll fill in their name and LinkedIn URL and use this profile for their automated actions.</p>
+                <label for="primary-gologin-search">Search accounts</label>
+                <input id="primary-gologin-search" type="search" placeholder="Search by name or email…" oninput="filterPrimaryGoLoginAccounts()">
+                <select id="primary-gologin-options" size="5" aria-label="GoLogin accounts" onchange="pickPrimaryGoLoginAccount(this.value)"></select>
+                <p id="primary-gologin-status" role="status">Loading accounts…</p>
+                <div class="primary-entry-actions"><button type="button" onclick="loadPrimaryGoLoginAccounts(true)">Refresh accounts</button>
+                <button type="button" onclick="useManualPrimaryPerson()">Not in GoLogin? Enter manually</button></div>
+                <p id="primary-manual-notice" hidden>You can make introductions using their name and LinkedIn URL. Without a GoLogin profile, connections must be accepted manually; automatic acceptance and follow-ups from this person are unavailable.</p>
+              </div>
+            </div>
+            <div class="primary-details-heading">2. Review their details <span>You can edit these or fill in anything missing manually.</span></div>
             <div class="intro-config-field">
               <label for="primary-person-name" class="intro-config-label">Full name</label>
               <div class="pp-recall-wrap" style="position:relative">
@@ -1227,38 +1216,6 @@
             <!-- Customize drawer — holds the REAL controls, moved verbatim
                  (same ids/classes/handlers as before; only the parent changed). -->
             <div id="manifest-drawer" class="cust" hidden>
-              <!-- v2.94.x: the primary's ONE identity — used by both auto-accept and the follow-up -->
-              <div class="intro-config-field" id="primary-source-field">
-                <label class="intro-config-label">Logged in via</label>
-                <div class="aa-src-cards">
-                  <div class="aa-src-card">
-                    <label class="aa-src-head">
-                      <input type="radio" name="primary-source" value="gologin" checked
-                             onchange="togglePrimarySource(); savePrimaryPersonFields();">
-                      <span class="aa-src-title">A GoLogin profile</span>
-                    </label>
-                    <div class="aa-src-desc">The primary is one of your GoLogin profiles — pick which one.</div>
-                    <div id="primary-source-picker">
-                      <input type="text" id="primary-source-search" class="aa-acct-search"
-                             placeholder="Search by name or email…" oninput="filterPrimarySourcePicker()">
-                      <div class="aa-soo-toolbar">
-                        <button type="button" id="primary-source-soo-reload" class="aa-soo-reload" onclick="reloadPrimarySourceSoO()" title="Reload SoO" aria-label="Reload SoO">
-                          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <polyline points="23 4 23 10 17 10"></polyline>
-                            <polyline points="1 20 1 14 7 14"></polyline>
-                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                          </svg>
-                        </button>
-                        <span id="primary-source-soo-status" class="aa-soo-status"></span>
-                      </div>
-                      <div id="primary-source-grid" class="aa-acct-grid"></div>
-                    </div>
-                    <input type="hidden" id="primary-source-profile-id" value="">
-                  </div>
-                </div>
-                <div class="intro-config-hint">Used for <b>both</b> primary-side actions below. It must be logged into LinkedIn as the primary.</div>
-              </div>
-
               <!-- #7: Primary check timing — CC+IC only. -->
               <div class="intro-config-field" id="primary-timing-field">
                 <label for="primary-timing-select" class="intro-config-label">Primary check timing</label>
@@ -1306,10 +1263,10 @@
                   <div style="display:flex; align-items:center; gap:10px;">
                     <span class="intro-config-prefix">Every</span>
                     <select id="check-cadence-select" class="intro-config-select-wide" style="flex:1">
-                      <option value="60" selected>1 hour</option>
+                      <option value="60">1 hour</option>
                       <option value="120">2 hours</option>
                       <option value="240">4 hours</option>
-                      <option value="360">6 hours</option>
+                      <option value="360" selected>6 hours</option>
                       <option value="720">12 hours</option>
                     </select>
                   </div>
@@ -1621,8 +1578,8 @@
               <p class="sheet-tab-hint" id="sheet-tab-hint">Open the specific tab inside the sheet, then copy the URL from your browser address bar — it should include <code>#gid=…</code>.</p>
             </div>
             <div class="sheet-hero-actions">
-              <button class="btn btn-secondary sheet-hero-btn" onclick="previewSheet()">Preview Sheet</button>
-              <button class="btn btn-secondary sheet-hero-btn" onclick="openSheetInBrowser()">Open Sheet</button>
+              <button class="btn btn-secondary sheet-hero-btn" onclick="previewSheet()">Preview sheet</button>
+              <button class="btn btn-secondary sheet-hero-btn" onclick="openSheetInBrowser()">Open sheet ↗</button>
             </div>
           </div>
           <!-- v2.Task6: multi-tab lead-source picker -->
@@ -1638,18 +1595,7 @@
             </div>
           </div>
           <div id="sheet-preview" class="hidden sheet-hero-preview"></div>
-          <!-- v2.135: inline blocklist editor — enter blocklisted companies BEFORE
-               pressing Start. Same data as the #bl-scrim panel (GET/POST/DELETE
-               /api/blocklist); chips render via renderWizardBlocklist() in app.js. -->
-          <div class="wiz-blocklist" id="wiz-blocklist">
-            <div class="wiz-blocklist-label">Blocklist</div>
-            <div class="wiz-blocklist-chips wiz-bl-chips" id="wiz-bl-chips"></div>
-            <div class="wiz-blocklist-add">
-              <input type="text" class="wiz-bl-value" id="wiz-bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />
-              <button type="button" class="btn btn-secondary btn-sm wiz-bl-add" id="wiz-bl-add">Add</button>
-            </div>
-            <div class="wiz-blocklist-hint">Never contacted by any campaign. Scrapes also skip blocklisted companies, and people added by the <code>linkedin.com/in/ACw…</code> form of their URL. Email domains apply to campaigns only, since a scrape has no email address to match against.</div>
-          </div>
+
         </div>
 
         <!-- v2.58.x — IC sheet mapping (Variant C — progressive disclosure).
@@ -2523,7 +2469,7 @@
       <div class="acct-banner">
         <div class="acct-banner-l">
           <div class="acct-banner-h"><span class="ic">⏳</span> Credit passover</div>
-          <div class="acct-banner-sub">Accounts assigned to a person lock to them at the start of each cycle — they turn <b>blue</b> and only the assignee should use them. On <b>passover</b> day, any account not yet used frees up to <b>available</b> (green) for everyone. Weekly Connect (CC): locks <b>Monday</b>, frees on <b>Thursday</b>. Monthly (Open Profile · InMail · Sales Nav): locks the <b>1st</b>, frees on the <b>16th</b>.</div>
+          <div class="acct-banner-sub">Passover accounts become available at <b>midnight Philippine time</b>. Reserve them in the <b>SoO</b> — please reserve only <b>4 accounts at a time</b>.</div>
         </div>
         <div class="acct-banner-r">
           <div class="acct-cd">
@@ -3582,10 +3528,6 @@
                #btn-start and #btn-queue keep their IDs so existing
                button-mutex logic in app.js continues to enable/disable them
                based on campaign state. -->
-          <div class="sn-fallback-note ccic-primary-note" role="note" style="display:none">
-            <strong>Before you run a connection check: every sending account must be connected to the primary person.</strong>
-            Introductions back are sent during the check, not when the campaign starts. Before you start a check, make sure all the accounts in this campaign are 1st-degree connections of the primary person. If one is not, its introductions back will fail.
-          </div>
           <div class="launch-actions launch-actions--four" id="launch-actions">
             <button type="button" id="btn-start" class="btn btn-start" onclick="window.launchStartNow()">Start a campaign</button>
             <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
@@ -3725,7 +3667,7 @@
               <option value="60">1 hour</option>
               <option value="120">2 hours</option>
               <option value="240">4 hours</option>
-              <option value="360">6 hours</option>
+              <option value="360" selected>6 hours</option>
               <option value="720">12 hours</option>
             </select>
           </div>
