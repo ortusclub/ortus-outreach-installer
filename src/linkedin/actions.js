@@ -2855,6 +2855,27 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
       // returning each one's avatar token. We never auto-click the first of
       // several same-name rows — the caller disambiguates by photo. Mirrors the
       // pure pickRecipientByIdentity in match-primary.js (keep in sync).
+      // 2026-10-07: a recipient with LinkedIn presence switched on renders a
+      // "Status is online" / "Status is reachable" badge as the row's FIRST
+      // text, and on some rows that badge was the only text the matched
+      // element carried — so the primary (whose presence is on) was reported
+      // as "1 suggestion, none matched (saw: Status is online)" while sitting
+      // right there. Match against everything the row says about the person:
+      // its visible text plus every image alt / aria-label inside it (the
+      // photo's alt is the person's name), and name the row by its first line
+      // that is not the presence badge.
+      const isPresenceLine = (line) => /^status is\b/i.test((line || '').trim());
+      const rowTextOf = (el) => {
+        const own = el.innerText || '';
+        const extra = Array.from(el.querySelectorAll('img[alt], [aria-label]'))
+          .map(n => n.getAttribute('alt') || n.getAttribute('aria-label') || '')
+          .filter(Boolean).join('\n');
+        return extra ? `${own}\n${extra}` : own;
+      };
+      const displayNameOf = (text) => {
+        const lines = (text || '').split('\n').map(l => l.trim()).filter(Boolean);
+        return (lines.find(l => !isPresenceLine(l)) || lines[0] || '').replace(/^photo of\s+/i, '').slice(0, 120);
+      };
       const collectMatches = (cands) => {
         const nameHit = (text) => {
           const t = normalizeName(text);
@@ -2863,14 +2884,14 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
           return tokens.length > 0 && tokens.every(tok => words.some(w => w.startsWith(tok)));
         };
         const people = cands
-          .map((el, i) => ({ el, i, text: el.innerText || '' }))
+          .map((el, i) => ({ el, i, text: rowTextOf(el) }))
           .filter(p => !isGroupRow(p.text) && nameHit(p.text));
         const firstDeg = people.filter(p => isFirstDegree(p.text));
         const chosen = firstDeg.length > 0 ? firstDeg : people;
         return chosen.map(p => ({
           idx: p.i,
           token: avatarTokenOf(p.el),
-          name: (p.text || '').trim().split('\n')[0].slice(0, 120),
+          name: displayNameOf(p.text),
         }));
       };
       const decide = (matched) => {
@@ -2900,7 +2921,7 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
         }
         if (candidates.length > lastCandidateCount) {
           lastCandidateCount = candidates.length;
-          lastCandidatePreview = candidates.slice(0, 3).map(c => (c.innerText || '').trim().split('\n')[0]).join(' | ');
+          lastCandidatePreview = candidates.slice(0, 3).map(c => displayNameOf(rowTextOf(c))).join(' | ');
         }
         const matched = collectMatches(candidates);
         if (matched.length === 0) { stableMatchCount = -1; stableTicks = 0; continue; }
