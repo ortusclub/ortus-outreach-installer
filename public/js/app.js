@@ -2816,7 +2816,7 @@ function renderProfiles(profiles) {
       let _sub;
       if (_sooUnavailable) _sub = 'Could not check the SoO — status unknown and selection disabled.';
       else if (_sooPending) _sub = 'Checking the SoO now — selection stays disabled until confirmed.';
-      else if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
+      else if (_noSoo) _sub = '';
       else
       // v2.112.27: operator asked to drop "who uses who" from the picker for now —
       // show bare states (the who is still in classifyAccountState/the log if needed).
@@ -2844,7 +2844,7 @@ function renderProfiles(profiles) {
       const _statZone = `
       <div class="jt-stat s-${_statCls}">
         <span class="jt-dot"></span>
-        <span class="jt-word">${_word}</span>
+        <span class="jt-word">${_noSoo && _statCls === 'nosoo' ? 'Not in SoO' : _word}</span>
       </div>`;
       _classes = 'profile-item jt ' + _state.state
         + (_noSoo ? ' is-nosoo' : '')
@@ -7588,7 +7588,7 @@ async function startCampaign(opts = {}) {
     checkIntervalMinutes: (() => {
       if (!usesMonitoringCadence(mode)) return undefined;
       const v = parseInt(document.getElementById('check-cadence-select')?.value, 10);
-      return Number.isFinite(v) ? v : 60;
+      return Number.isFinite(v) ? v : 360;
     })(),
     // v2.112: operator can launch with the after-sending automatic checks OFF
     // (default on). Only meaningful for monitoring modes; gated like cadence so
@@ -16557,7 +16557,7 @@ function _ptmContextFromCockpit() {
     delayMin: 30,
     delayMax: 60,
     checkIntervalMinutes: (__cockpit && __cockpit.checkIntervalMinutes)
-      || (Number.isFinite(cadenceFromWizard) ? cadenceFromWizard : 60),
+      || (Number.isFinite(cadenceFromWizard) ? cadenceFromWizard : 360),
     primaryName: tpl.primaryName || document.getElementById('primary-person-name')?.value || '',
   };
 }
@@ -20120,7 +20120,7 @@ function collectCurrentConfig() {
     // v2.160.44: monitoring cadence / auto-checks / concurrency — applyPresetConfig
     // restores these from the top level, so capture them for a faithful round-trip
     // (previously dropped → Re-run/draft/save silently reset them to defaults).
-    checkIntervalMinutes: getN('check-cadence-select', 60),
+    checkIntervalMinutes: getN('check-cadence-select', 360),
     autoChecksEnabled: document.getElementById('auto-checks-toggle')?.checked !== false,
     concurrency: document.getElementById('concurrency-toggle')?.checked ? getN('concurrency-count', 2) : 1,
     templates: {
@@ -20339,7 +20339,7 @@ function applyPresetConfig(config) {
   // never wrote it back into the dropdown, so re-runs silently reset to the
   // HTML default (60 = 1 hour) regardless of what the original run used. Applies
   // to every monitoring mode (CC+IC + CC+DM).
-  setV('check-cadence-select', String(config.checkIntervalMinutes || 60));
+  setV('check-cadence-select', String(config.checkIntervalMinutes || 360));
 
   // v2.112: restore the automatic-checks toggle on Re-run (default on when absent).
   {
@@ -21488,7 +21488,7 @@ function renderManifest() {
     autoAcceptPrimary: !!document.getElementById('auto-accept-toggle')?.checked,
     autoAcceptAllPending: !!document.getElementById('auto-accept-all-toggle')?.checked,
     primaryCheckTiming: document.getElementById('primary-timing-select')?.value || 'immediately',
-    checkCadenceMinutes: Number(document.getElementById('check-cadence-select')?.value) || 60,
+    checkCadenceMinutes: Number(document.getElementById('check-cadence-select')?.value) || 360,
     autoChecksEnabled: document.getElementById('auto-checks-toggle')?.checked !== false,
     followUpEnabled: !!document.getElementById('follow-up-toggle')?.checked,
     followUpDelayMinutes: Number(document.getElementById('follow-up-delay')?.value) || 10,
@@ -21778,6 +21778,8 @@ function refreshAutoAcceptGate() {
   const toggle = document.getElementById('auto-accept-toggle');
   const gate = document.getElementById('auto-accept-gate');
   const hasUrl = /linkedin\.com\/in\//i.test(url);
+  const hasProfile = !!readPrimarySource();
+  const canAccept = hasUrl && hasProfile;
   if (toggle) {
     // Auto-accept is ON by default (operator, 2026-08-27) — without it every
     // CC+IC launch needs a manual accept before the intro can fire, which is
@@ -21788,11 +21790,21 @@ function refreshAutoAcceptGate() {
     // the wizard first renders. `data-wanted` carries the operator's intent
     // across that, seeded to 1 in the markup and rewritten only while the
     // control is actually usable.
-    if (hasUrl && !toggle.disabled) toggle.dataset.wanted = toggle.checked ? '1' : '0';
-    toggle.disabled = !hasUrl;
-    toggle.checked = hasUrl ? toggle.dataset.wanted !== '0' : false;
+    if (canAccept && !toggle.disabled) toggle.dataset.wanted = toggle.checked ? '1' : '0';
+    toggle.disabled = !canAccept;
+    toggle.checked = canAccept ? toggle.dataset.wanted !== '0' : false;
   }
-  if (gate) gate.style.display = hasUrl ? 'none' : '';
+  if (gate) {
+    gate.style.display = canAccept ? 'none' : '';
+    gate.textContent = !hasProfile ? 'Auto-accept needs the primary’s GoLogin profile. With manual details, connections must be accepted manually.' : 'Enter the primary’s LinkedIn URL to enable auto-accept.';
+  }
+  const manualNotice = document.getElementById('primary-manual-notice');
+  if (manualNotice) manualNotice.hidden = hasProfile;
+  const followUp = document.getElementById('follow-up-toggle');
+  if (followUp) {
+    followUp.disabled = !hasProfile;
+    if (!hasProfile) followUp.checked = false;
+  }
   // v2.107: the accept-all sub-toggle is only meaningful while auto-accept is on
   // (the sweep runs inside the pre-flight handshake, which requires auto-accept).
   // Disable + clear it whenever auto-accept is off, so it can't silently apply.
@@ -37118,4 +37130,82 @@ window.cancelMatureStart = async function(btn) {
     await _cloudMutationRequest('/api/mature/cancel-start?launchId=' + encodeURIComponent(btn.dataset.launchId), 'stop setup');
     showCampaignToast('Stopping setup after the current request finishes…', 6000);
   } catch (error) { btn.disabled = false; showCampaignToast('Could not stop setup: ' + error.message, 8000); }
+};
+
+
+// Choose the primary browser first, then review its editable identity fields.
+let primaryGoLoginAccounts = null;
+let primaryGoLoginLoading = false;
+window.loadPrimaryGoLoginAccounts = async function(force = false) {
+  if (primaryGoLoginLoading || (primaryGoLoginAccounts && !force)) return;
+  const status = document.getElementById('primary-gologin-status');
+  primaryGoLoginLoading = true;
+  status.textContent = 'Loading accounts…';
+  try {
+    const response = await fetch('/api/primary-person/accounts', {signal: AbortSignal.timeout(30000)});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not load accounts.');
+    primaryGoLoginAccounts = result.accounts || [];
+    window.filterPrimaryGoLoginAccounts();
+    status.textContent = result.warning || 'Choose an account to fill its known details, or enter the fields below manually.';
+  } catch (err) { status.textContent = 'Could not load accounts. Refresh to try again, or enter the details manually.'; }
+  finally { primaryGoLoginLoading = false; }
+};
+window.filterPrimaryGoLoginAccounts = function() {
+  const query = document.getElementById('primary-gologin-search').value.trim().toLowerCase();
+  const select = document.getElementById('primary-gologin-options');
+  const rows = (primaryGoLoginAccounts || []).filter(a => `${a.label} ${a.name}`.toLowerCase().includes(query));
+  select.replaceChildren();
+  for (const account of rows) {
+    const option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = account.label + (account.name && account.name !== account.label ? ` · ${account.name}` : '') + (!account.linkedinUrl ? ' · URL not available' : '');
+    select.append(option);
+  }
+  const current = document.getElementById('primary-source-profile-id')?.value;
+  select.value = rows.some(a => a.id === current) ? current : '';
+  if (!rows.length) { const option = document.createElement('option'); option.textContent = 'No matching accounts'; option.disabled = true; select.append(option); }
+};
+window.pickPrimaryGoLoginAccount = function(id) {
+  const account = (primaryGoLoginAccounts || []).find(a => a.id === id);
+  if (!account) return;
+  const source = document.querySelector('input[name="primary-source"][value="gologin"]');
+  if (source) source.checked = true;
+  const selected = document.getElementById('primary-source-profile-id');
+  if (selected) selected.value = account.id;
+  togglePrimarySource();
+  renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
+  refreshPrimarySourceLabels();
+  const name = document.getElementById('primary-person-name');
+  const url = document.getElementById('primary-person-url');
+  // Clear unavailable fields so switching accounts cannot leave someone else's identity.
+  name.value = account.name || '';
+  url.value = account.linkedinUrl || '';
+  url.dispatchEvent(new Event('input', {bubbles:true}));
+  primaryRecallClose();
+  savePrimaryPersonFields();
+  if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate();
+  const missing = [!account.name && 'name', !account.linkedinUrl && 'LinkedIn URL'].filter(Boolean);
+  document.getElementById('primary-gologin-status').textContent = missing.length
+    ? `Selected ${account.label}. Enter the ${missing.join(' and ')} manually; it is not available for this account.`
+    : `Filled details for ${account.label}. You can still edit them below.`;
+};
+
+// Load only when this campaign step is visible, without overwriting saved fields.
+const primaryPickerObserver = new IntersectionObserver(entries => {
+  if (entries.some(entry => entry.isIntersecting)) window.loadPrimaryGoLoginAccounts();
+});
+const primaryPickerElement = document.querySelector('.primary-gologin-picker');
+if (primaryPickerElement) primaryPickerObserver.observe(primaryPickerElement);
+
+window.useManualPrimaryPerson = function() {
+  const selected = document.getElementById('primary-source-profile-id');
+  if (selected) selected.value = '';
+  const options = document.getElementById('primary-gologin-options');
+  if (options) options.selectedIndex = -1;
+  renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
+  savePrimaryPersonFields();
+  toggleFollowUpFields();
+  document.getElementById('primary-gologin-status').textContent = 'Manual entry selected. Enter the primary’s name and LinkedIn URL below.';
+  document.getElementById('primary-person-name').focus();
 };

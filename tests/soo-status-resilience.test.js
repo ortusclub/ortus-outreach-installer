@@ -61,6 +61,6 @@ test('the picker distinguishes an outage from an account absent from SoO', () =>
   assert.match(app, /const _sooUnknown = !_soo/);
   assert.match(app, /_sooUnknown \|\| \(_showBreakdown/,
     'unknown SoO status must lock the account rather than merely changing its label');
-  assert.match(app, /else if \(_noSoo\) _sub = 'Not in the SoO/,
-    'NOT IN SoO remains reserved for a successful lookup with no matching row');
+  assert.match(app, /else if \(_noSoo\) _sub = ''/,
+    'missing SoO details use the subtle badge without an extra explanation');
 });

@@ -42,7 +42,5 @@ test('the client sanitises the list the same way it sanitises URNs', () => {
 test('no surface still promises that domains are excluded from scrapes', () => {
   assert.ok(!/excluded from scrapes/.test(html),
     'the old blanket claim must be gone from every hint');
-  // and the honest version names what actually happens
-  assert.match(html, /Scrapes also skip blocklisted companies/);
-  assert.match(html, /campaign-only, because a scrape has no email address/);
+  assert.ok(!html.includes('id="wiz-bl-value"'), 'campaign setup no longer shows the blocklist hint');
 });
