@@ -15314,6 +15314,25 @@ window.stopCloudCheckUI = stopCloudCheckUI;
 // profile can't open on this machine are skipped and reported, never fatal.
 // Afterwards, mirrors the sheet's statuses into the engine (fill-only) so the
 // VM's next sweep won't double-intro anyone this local check already handled.
+// When a sweep ran but NO account could open, "done — 0/4 checked, 4 skipped"
+// is the wrong headline (operator, 2026-10-07, with the Mac out of disk). Name
+// the cause instead. Every account carries its own error; one shared cause is
+// stated once, mixed causes list the first few.
+function _sweepBlockedMessage(perProfile) {
+  const per = Array.isArray(perProfile) ? perProfile : [];
+  if (!per.length) return '';
+  const failed = per.filter((p) => p && p.error);
+  if (failed.length !== per.length) return '';
+  const reasons = [...new Set(failed.map((p) => String(p.error).replace(/^Launch failed:\s*/i, '').trim()))];
+  const disk = reasons.find((r) => /disk space too low/i.test(r));
+  if (disk) {
+    const m = disk.match(/\(([^)]*)\)/);
+    return `⚠ Check could not run — this Mac is out of disk space${m ? ` (${m[1]})` : ''}. Free some space, then run it again.`;
+  }
+  const n = per.length;
+  return `⚠ Check could not run — none of the ${n} account${n === 1 ? '' : 's'} could open on this Mac: ${reasons.slice(0, 2).join(' · ')}`;
+}
+
 async function cloudCheckLocal(id, btn, scope) {
   if (!id) return;
   scope = scope === 'all' ? 'all' : 'campaign';
@@ -15414,11 +15433,17 @@ async function cloudCheckLocal(id, btn, scope) {
       const sj = await sr.json().catch(() => ({}));
       if (sr.ok && !sj.error) synced = sj.matched || 0;
     } catch { /* best-effort — the sheet already has the truth */ }
-    const bits = [`${okCount}/${per.length} account${per.length === 1 ? '' : 's'} checked`, `${matched} newly Connected`];
-    if (failed.length) bits.push(`${failed.length} couldn’t open on this machine (skipped)`);
-    if (synced) bits.push(`${synced} lead${synced === 1 ? '' : 's'} synced to the engine`);
-    showCampaignToast(`🖥 Local check done — ${bits.join(' · ')}.`, 12000);
-    _pushCloudEvent(id, `🖥 Local check done — ${bits.join(' · ')}`);
+    const blocked = _sweepBlockedMessage(per);
+    if (blocked) {
+      showCampaignToast(blocked, 15000);
+      _pushCloudEvent(id, blocked);
+    } else {
+      const bits = [`${okCount}/${per.length} account${per.length === 1 ? '' : 's'} checked`, `${matched} newly Connected`];
+      if (failed.length) bits.push(`${failed.length} couldn’t open on this machine (skipped)`);
+      if (synced) bits.push(`${synced} lead${synced === 1 ? '' : 's'} synced to the engine`);
+      showCampaignToast(`🖥 Local check done — ${bits.join(' · ')}.`, 12000);
+      _pushCloudEvent(id, `🖥 Local check done — ${bits.join(' · ')}`);
+    }
     if (typeof renderCloudCampaigns === 'function') renderCloudCampaigns();
     if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard();
   } catch (e) {
@@ -24087,7 +24112,8 @@ async function _runActiveBulkCheck(mode) {
     const d = await r.json().catch(() => ({}));
     if (d.ok) {
       const res = d.result || {};
-      if (typeof showCampaignToast === 'function') showCampaignToast(`Bulk check done — ${res.matched || 0} newly accepted${d.autoPaused ? '. Campaign resumed.' : ''}.`);
+      const blocked = _sweepBlockedMessage(d.perProfile);
+      if (typeof showCampaignToast === 'function') showCampaignToast(blocked || `Bulk check done — ${res.matched || 0} newly accepted${d.autoPaused ? '. Campaign resumed.' : ''}.`, blocked ? 15000 : undefined);
     } else if (typeof showCampaignToast === 'function') {
       showCampaignToast('Bulk check failed: ' + (d.error || 'unknown'));
     }
@@ -24346,8 +24372,9 @@ async function _runSoloCheckPast(idx, mode) {
     const d = await r.json();
     if (!r.ok || !d.ok) throw new Error(d.error || 'failed');
     const res = d.result || {};
+    const blocked = _sweepBlockedMessage(d.perProfile);
     if (typeof showCampaignToast === 'function') {
-      showCampaignToast(`Solo check done — ${res.matched || 0} Connected, ${res.stamped || 0} still pending across ${d.profilesSweep || 0} account(s).`, 7000);
+      showCampaignToast(blocked || `Solo check done — ${res.matched || 0} Connected, ${res.stamped || 0} still pending across ${d.profilesSweep || 0} account(s).`, blocked ? 15000 : 7000);
     }
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Solo check failed: ' + e.message, 7000);
