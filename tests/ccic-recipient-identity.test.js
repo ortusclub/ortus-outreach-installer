@@ -81,3 +81,17 @@ test('reference photo present but only one name match → still use it (no ambig
   assert.equal(r.index, 0);
   assert.equal(r.reason, 'single');
 });
+
+test('a shorter form of the first name on LinkedIn still matches ("Samuel Adcock" vs "Sam Adcock • 1st")', () => {
+  const r = pickRecipientByIdentity([c('Sam Adcock • 1st', true, 'TOKEN_SAM')], { name: 'Samuel Adcock' });
+  assert.equal(r.index, 0);
+  assert.equal(r.reason, 'single');
+});
+
+test('a different last name never matches, however close the first name', () => {
+  const r = pickRecipientByIdentity([c('Sam Adcocks-Smith • 1st', true, 'T'), c('Samuel Jones • 1st', true, 'U')], { name: 'Samuel Adcock' });
+  assert.equal(r.reason, 'single');
+  assert.equal(r.index, 0);
+  const none = pickRecipientByIdentity([c('Samuel Jones • 1st', true, 'U')], { name: 'Samuel Adcock' });
+  assert.equal(none.index, -1);
+});
