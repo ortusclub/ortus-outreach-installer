@@ -24027,6 +24027,19 @@ function openSoloCheckModal(idx) {            // Past-row "Run a solo check"
   _soloCheckHandler = (mode) => _runSoloCheckPast(idx, mode);
   _showSoloCheckModal();
 }
+// The cloud campaign the wizard is showing, however it was opened: bound for
+// viewing, carried on the live status, or loaded for edit. Null for a plain
+// draft that has never been dispatched.
+function _wizardCloudCampaignId() {
+  if (_viewingCloudId) return String(_viewingCloudId);
+  const st = window.__cloudActiveStatus;
+  if (st && st._cloud && st.id) return String(st.id);
+  const id = _editingCampaignId;
+  const item = id && (_boardItemsById.get(String(id)) || (typeof _snItemsById !== 'undefined' && _snItemsById.get(String(id))));
+  if (item && item.where === 'cloud') return String(id);
+  const opened = (typeof openedWizardCampaign === 'function') ? openedWizardCampaign() : null;
+  return opened && opened.where === 'cloud' ? String(opened.id) : null;
+}
 function openActiveBulkCheckModal() {          // active "Run check now"
   // VM/cloud campaign: the LOCAL sheet bulk-check (below) doesn't apply — the
   // campaign runs on the engine. Route this same button to the VM's acceptance
@@ -24038,16 +24051,7 @@ function openActiveBulkCheckModal() {          // active "Run check now"
   // the LOCAL sweep and asked scope only — no "where" question, and it ran
   // against this Mac's singleton instead of the campaign on screen (operator,
   // 2026-10-07). Resolve the campaign from the editor too.
-  const _editedCloud = (() => {
-    const id = _editingCampaignId;
-    const item = id && (_boardItemsById.get(String(id)) || (typeof _snItemsById !== 'undefined' && _snItemsById.get(String(id))));
-    if (item && item.where === 'cloud') return String(id);
-    const opened = (typeof openedWizardCampaign === 'function') ? openedWizardCampaign() : null;
-    return opened && opened.where === 'cloud' ? String(opened.id) : null;
-  })();
-  const _cloudId = _viewingCloudId
-    || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id)
-    || _editedCloud;
+  const _cloudId = _wizardCloudCampaignId();
   if (_cloudId) {
     // A cloud campaign's acceptance check runs on the VM (where the campaign
     // sends), via the engine's own check-now. Ask the same scope question as the
@@ -36379,7 +36383,25 @@ window.launchCheckNow = function() {
   const toast = (m) => { if (typeof showCampaignToast === 'function') showCampaignToast(m); };
   const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
   if (!sheetUrl) return toast('Paste the Google Sheet URL first.');
-  _soloCheckHandler = (scope) => _launchCheckRun(scope);
+  // Same two steps as the card's Run check now: which accounts, then where.
+  // The VM choice needs a campaign that exists on the engine; a never-
+  // dispatched draft can only check from this Mac, so that pill is greyed.
+  _soloCheckHandler = (scope) => {
+    const cloudId = _wizardCloudCampaignId();
+    const vmPill = document.querySelector('#check-where-modal .stop-choice-pill:not(.is-recommended)');
+    if (vmPill) {
+      vmPill.disabled = !cloudId;
+      vmPill.title = cloudId ? '' : 'This campaign has not run on the VM yet — check from this Mac.';
+    }
+    _checkWhereHandler = (where) => {
+      if (where === 'vm' && cloudId) {
+        cloudCheckNow(cloudId, document.getElementById('btn-launch-check') || undefined, scope === 'sheet' ? 'all' : 'campaign');
+        return;
+      }
+      _launchCheckRun(scope);
+    };
+    _showCheckWhereModal();
+  };
   _showSoloCheckModal();
 };
 
@@ -36434,7 +36456,9 @@ async function _launchCheckRun(scope) {
     if (r.status === 409) toast(d.error || 'A check is already running.');
     else if (d.ok) {
       const res = d.result || {};
-      toast(`Check done — ${res.matched || 0} newly accepted, ${res.introduced || 0} introduced.`);
+      const blocked = _sweepBlockedMessage(d.perProfile);
+      if (blocked) { if (typeof showCampaignToast === 'function') showCampaignToast(blocked, 15000); }
+      else toast(`Check done — ${res.matched || 0} newly accepted, ${res.introduced || 0} introduced.`);
     } else toast('Check failed: ' + (d.error || `HTTP ${r.status}`));
   } catch (e) {
     toast('Check failed: ' + e.message);
