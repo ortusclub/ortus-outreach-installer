@@ -10242,6 +10242,12 @@ function _wizardConfigFromCloudCampaign(cc) {
     profileIds: Array.isArray(cc.profile_ids) ? cc.profile_ids : (raw.profileIds || []),
     dailyLimit: (cc.daily_limit != null) ? cc.daily_limit : raw.dailyLimit,
     checkIntervalMinutes: cc.check_interval_minutes || raw.checkIntervalMinutes,
+    // Carry the run target so OPENing a VM campaign from the engine's copy
+    // restores "Cloud VM", not the default "This Machine". The engine tracks it
+    // as `runs_on` ('vm' | 'local'); the wizard reads `runTarget` ('cloud' |
+    // 'local'). Without this, a reopened done/other-operator cloud campaign came
+    // back as local — and a re-run from there would launch on the wrong side.
+    runTarget: raw.runTarget || (String(cc.runs_on || '').toLowerCase() === 'local' ? 'local' : 'cloud'),
   };
 }
 window._wizardConfigFromCloudCampaign = _wizardConfigFromCloudCampaign;
