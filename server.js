@@ -137,6 +137,7 @@ import { buildListRows, dispatchFromRows, resolveListSource } from './src/connec
 import { generateListRows } from './src/connections/fg-list-generate.js';
 import { pageById, FG_PAGE_LIST, FG_PAGES, sendersForPage } from './src/fg-pages.js';
 import * as magellan from './src/connections/magellan-run.js';
+import { magellanRoster } from './src/connections/magellan-roster.js';
 import { listCollected as magellanListCollected,
   migrateLegacyConnections as magellanMigrateLegacy } from './src/connections/magellan-pull.js';
 import { sheetUrl as magellanSheetUrl } from './src/connections/magellan-sheet.js';
@@ -3579,7 +3580,7 @@ app.post('/api/connections/sync', (_req, res) => {
 // messages, so it deliberately ignores credits, assignment and in-use state.
 
 app.get('/api/magellan/state', (_req, res) => {
-  res.json(magellan.getState());
+  res.json({ ...magellan.getState(), roster: magellanRoster.list() });
 });
 
 // The spreadsheet the central Apps Script is bound to — where Magellan's tabs
@@ -3820,6 +3821,7 @@ app.get('/api/magellan/accounts', async (req, res) => {
       });
     }
 
+    magellanRoster.seed(accounts);
     res.json({ accounts, canEditOptions: await magellanCanEditOptions({ maxAgeMs }) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3849,9 +3851,34 @@ app.post('/api/magellan/import-csv', express.text({ type: '*/*', limit: '60mb' }
   }
 });
 
+app.post('/api/magellan/roster', (req, res) => {
+  try { res.json({ roster: magellanRoster.add(req.body.accounts || []) }); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+});
+app.post('/api/magellan/roster/:id/:action', (req, res) => {
+  try {
+    const { id, action } = req.params;
+    const account = magellanRoster.list().find(a => a.profileId === id);
+    if (!account) return res.status(404).json({ error: 'Account is not in Operation Magellan' });
+    if (action === 'collect') {
+      if (id.startsWith('csv:')) return res.status(400).json({ error: 'CSV accounts do not have a browser to collect from' });
+      const result = magellan.collectNow(account);
+      if (!result.started) return res.status(409).json({ error: result.reason });
+      magellanRoster.action(id, 'resume');
+      return res.json(result);
+    }
+    const roster = magellanRoster.action(id, action);
+    if (action === 'pause' || action === 'delete') magellan.pauseAccount(id);
+    res.json({ roster });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 app.post('/api/magellan/collect', (req, res) => {
   try {
-    res.json(magellan.startCollect((req.body || {}).accounts || []));
+    const accounts = (req.body || {}).accounts || [];
+    const roster = magellanRoster.add(accounts);
+    const paused = new Set(roster.filter(a => a.paused).map(a => a.profileId));
+    res.json(magellan.startCollect(accounts.filter(a => !paused.has(a.profileId))));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3996,9 +4023,9 @@ app.get('/api/mature/warm-pool', async (req, res) => {
   try {
     const sources = await matureWarmSources();
     const exclude = String(req.query.exclude || '').split(',').filter(Boolean);
-    const { targets, total, missing, restricted } = buildWarmPool({ pool: String(req.query.pool || ''), excludeProfileIds: exclude, ...sources });
+    const { targets, total, missing, restricted, inactive } = buildWarmPool({ pool: String(req.query.pool || ''), excludeProfileIds: exclude, ...sources });
     const lvPool = WARM_POOL_ACCOUNT[req.query.pool] === 'linkedvelocity';
-    res.json({ ready: targets.length, total, missing, restricted, error: lvPool ? sources.lvError : '', warning: req.query.pool === 'all_available' && sources.lvError ? 'Linked Velocity identities could not be loaded; those accounts are not included yet.' : '' });
+    res.json({ ready: targets.length, total, missing, restricted, inactive, error: lvPool ? sources.lvError : '', warning: req.query.pool === 'all_available' && sources.lvError ? 'Linked Velocity identities could not be loaded; those accounts are not included yet.' : '' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -4170,7 +4197,7 @@ app.post('/api/mature/start', async (req, res) => {
       pool = buildWarmPool({ pool: plan.warmPool, excludeProfileIds: [profileId], ...sources });
       pool.targets = shuffleWarmTargets(pool.targets);
       step('Randomising the warm recipient order for this profile before assigning planned days…');
-      const skipped = [pool.missing ? `${pool.missing} with no known LinkedIn URL` : '', pool.restricted ? `${pool.restricted} restricted` : ''].filter(Boolean).join(', ');
+      const skipped = [pool.missing ? `${pool.missing} with no known LinkedIn URL` : '', pool.restricted ? `${pool.restricted} restricted` : '', pool.inactive ? `${pool.inactive} inactive or without confirmed Active status` : ''].filter(Boolean).join(', ');
       step(`Warm pool: ${pool.total} accounts in the ${plan.warmPool === 'all_available' ? 'all accessible workspaces' : WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity' ? 'Linked Velocity workspace' : 'Ortus workspace'} — ${pool.targets.length} can be invited${skipped ? ` (skipping ${skipped})` : ''}.`);
       step(`Warm plan by day: ${warmAmounts.slice(0, 16).join(', ')}${warmAmounts.length > 16 ? ', …' : ''}${warmAmounts.at(-1) > 0 ? ' — then that amount daily until the pool runs out' : ''}.`);
       if (!maturedAccount.name && !maturedAccount.profileUrl) step('⚠ No LinkedIn name or URL is set for this profile, so the receiving accounts cannot accept automatically.');

@@ -2153,3 +2153,119 @@ body[data-dashboard='v3'] .sn-scrape-vjcard [data-f="activeName"]{font-family:va
   font-size:13px;line-height:1;white-space:nowrap;border-radius:8px;
 }
 #salesnav-view #sn-setup #scrape-src-sheet {height:42px;box-sizing:border-box;margin:0;min-width:0;}
+
+/* Warm reach: compact form and readable hierarchy, scoped away from Magellan. */
+#connections-view #cx-warm-pane {max-width:1040px;}
+#cx-warm-pane .cx-lede {font-family:var(--body);font-size:13px;line-height:1.55;margin:8px 0 18px;max-width:840px;}
+#cx-warm-pane > .dashboard-section {padding:20px 0;margin:0;}
+#cx-warm-pane .conn-stats {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;padding:0;max-width:680px;border:1px solid var(--hairline);border-radius:10px;background:var(--card-bg);overflow:hidden;}
+#cx-warm-pane .conn-stat {padding:14px 18px;gap:6px;}
+#cx-warm-pane .conn-stat + .conn-stat {border-left:1px solid var(--hairline);}
+#cx-warm-pane .conn-stat-num {font-family:var(--body);font-size:25px;line-height:1.15;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;}
+#cx-warm-pane .conn-stat-lbl {font-family:var(--body);font-size:11px;letter-spacing:.02em;text-transform:none;}
+#cx-warm-pane .conn-cache {font-family:var(--body);font-size:12px;letter-spacing:0;margin-top:12px;}
+#cx-warm-pane .conn-actions {align-items:center;flex-wrap:wrap;gap:12px;margin-top:10px;}
+#cx-warm-pane .conn-actions .conn-cache {margin:0;}
+#cx-warm-pane .cx-h2 {font-family:var(--body);font-size:18px;font-weight:600;letter-spacing:0;text-transform:none;gap:10px;margin:0 0 18px;}
+#cx-warm-pane .cx-num {font-family:var(--body);width:24px;height:24px;font-size:12px;flex-shrink:0;}
+#cx-warm-pane .cx-stack {max-width:840px;gap:18px;}
+#cx-warm-pane .cx-lbl {margin-bottom:7px;}
+#cx-warm-pane .cx-lbl label {font-family:var(--body);font-size:12px;font-weight:600;text-transform:none;letter-spacing:0;margin:0;}
+#cx-warm-pane .cx-opt {font-weight:400;font-size:12px;}
+#cx-warm-pane .cx-box {min-height:40px;padding:5px 10px;border:1px solid var(--hairline);border-radius:8px;background:var(--card-bg);gap:6px;}
+#cx-warm-pane .cx-box:focus-within {border-color:var(--ink);box-shadow:0 0 0 2px var(--hairline-soft);}
+#cx-warm-pane input.cx-in {font-family:var(--body);font-size:13px;min-height:26px;padding:3px 0;margin:0;line-height:1.5;}
+#cx-warm-pane .cx-in::placeholder {font-size:13px;}
+#cx-warm-pane .cx-chip {font-family:var(--body);font-size:12px;letter-spacing:0;}
+#cx-warm-pane .cx-hint, #cx-warm-pane .cx-logic, #cx-warm-pane .cx-source {font-family:var(--body);font-size:12px;line-height:1.5;letter-spacing:0;}
+#cx-warm-pane .cx-find-row {gap:12px;margin-top:2px;}
+#cx-warm-pane .btn {font-family:var(--body);font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;line-height:1.3;min-height:38px;padding:9px 15px;border-radius:8px;}
+#cx-warm-pane #conn-search-btn {background:var(--ink);color:var(--card-bg);border:1px solid var(--ink);}
+#cx-warm-pane .btn:focus-visible {outline:2px solid #ffc267;outline-offset:3px;}
+#cx-warm-pane .cx-guide {font-family:var(--body);font-size:12px;gap:8px;margin-top:18px;}
+@media(max-width:540px){
+  #cx-warm-pane .conn-stat {padding:12px 10px;}
+  #cx-warm-pane .conn-stat-num {font-size:21px;}
+  #cx-warm-pane .conn-stat-lbl {font-size:10px;}
+}
+
+/* Connection DB navigation: separate compact buttons instead of a joined pill. */
+#connections-view > .route-seg {display:flex;flex-wrap:wrap;gap:12px;padding:0;border:0;border-radius:0;margin:12px 0 24px;background:transparent;}
+#connections-view > .route-seg .route-seg-btn {font-family:var(--body);font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;line-height:1.3;min-height:40px;padding:10px 18px;border:1px solid var(--hairline);border-radius:8px;background:var(--card-bg);color:var(--ink);}
+#connections-view > .route-seg .route-seg-btn.is-active {background:var(--ink);color:var(--card-bg);border-color:var(--ink);}
+#connections-view > .route-seg .route-seg-btn:focus-visible {outline:2px solid #ffc267;outline-offset:3px;}
+
+/* Magellan review: a quiet card with compact actions. */
+#cx-magellan-pane .mg-confirm {padding:18px 20px;margin-top:18px;border:1px solid var(--hairline);border-radius:10px;background:var(--card-bg);}
+#cx-magellan-pane .mg-confirm-t {font-family:var(--body);font-size:13px;line-height:1.55;max-width:760px;}
+#cx-magellan-pane .mg-confirm-t b {font-weight:600;}
+#cx-magellan-pane .mg-confirm-btns {gap:10px;margin-top:14px;align-items:center;}
+#cx-magellan-pane .mg-confirm-btns .btn {display:inline-flex;align-items:center;justify-content:center;font-family:var(--body);font-size:13px;font-weight:600;line-height:1.3;letter-spacing:0;text-transform:none;min-height:38px;padding:9px 15px;border-radius:8px;margin:0;}
+#cx-magellan-pane #mg-preview-btn {border:1px solid var(--ink);background:var(--ink);color:var(--card-bg);}
+#cx-magellan-pane #mg-preview-btn:hover:not(:disabled) {opacity:.85;}
+#cx-magellan-pane .mg-confirm-btns .btn:focus-visible {outline:2px solid #ffc267;outline-offset:3px;}
+#cx-magellan-pane .mg-confirm-btns .btn[hidden] {display:none;}
+
+#cx-magellan-pane .browse-bulk-row {display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+#cx-magellan-pane .browse-bulk-row .bulk-pill {display:inline-flex;align-items:center;justify-content:center;font-family:var(--body);font-size:13px;font-weight:600;line-height:1.3;letter-spacing:0;text-transform:none;min-height:36px;padding:8px 13px;margin:0;border:1px solid var(--hairline);border-radius:8px;background:var(--card-bg);color:var(--ink);}
+#cx-magellan-pane .browse-bulk-row .bulk-pill:hover {background:var(--hairline-soft);border-color:var(--gray);}
+#cx-magellan-pane .browse-bulk-row .bulk-pill:focus-visible {outline:2px solid #ffc267;outline-offset:3px;}
+
+/* Magellan has no active work until its state renderer sets is-live. */
+body[data-dashboard='v3'] #mg-card:not(.is-live) {--vj-tone:var(--gray);background:var(--card-bg);}
+body[data-dashboard='v3'] #mg-card:not(.is-live)::before,
+body[data-dashboard='v3'] #mg-card:not(.is-live) .vj-eyebrow .vj-tag .dot {background:var(--gray);animation:none;}
+
+/* Saved Magellan membership and per-account collection controls. */
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-toolbar {
+  display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px;
+}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-toolbar p {font-size:13px;color:var(--gray);margin:0;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster {border:1px solid var(--hairline);border-radius:12px;background:var(--card-bg);margin-bottom:24px;overflow:hidden;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-row {display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-row + .mg-roster-row {border-top:1px solid var(--hairline);}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-detail {display:grid;gap:5px;min-width:0;font-size:13px;overflow-wrap:anywhere;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-detail span {font-size:12px;color:var(--gray);}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-actions {display:flex;gap:8px;flex-shrink:0;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-actions button,
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-toolbar button {font-family:var(--body);font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;line-height:1.3;padding:9px 13px;min-height:36px;border:1px solid var(--hairline);border-radius:8px;background:var(--card-bg);color:var(--ink);cursor:pointer;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-actions button:disabled {opacity:.45;cursor:default;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-empty {padding:18px;margin:0;font-size:13px;color:var(--gray);}
+@media(max-width:700px) {
+  body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-row,
+  body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-toolbar {align-items:flex-start;flex-direction:column;}
+}
+
+/* Account selection is independent of SoO and HubSpot import readiness. */
+body[data-dashboard='v3'] #mg-grid .profile-item.jt {
+  grid-template-columns:minmax(0,1fr);
+  background:var(--card-bg);
+}
+body[data-dashboard='v3'] #mg-grid .profile-item.jt .jt-email {color:var(--ink);}
+
+body[data-dashboard='v3'] .mg-activity {border:1px solid var(--hairline);border-radius:12px;padding:18px;background:var(--card-bg);}
+body[data-dashboard='v3'] .mg-activity-head, body[data-dashboard='v3'] .mg-activity-footer {display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;}
+body[data-dashboard='v3'] .mg-activity-footer {justify-content:flex-start;margin-top:14px;padding-top:14px;border-top:1px solid var(--hairline);}
+body[data-dashboard='v3'] .mg-activity button {font:600 13px var(--body);letter-spacing:0;text-transform:none;border:1px solid var(--hairline);border-radius:8px;padding:8px 14px;background:var(--card-bg);color:var(--ink);cursor:pointer;}
+body[data-dashboard='v3'] #mg-log {display:block;margin-top:14px;background:#0d0d0d;color:#eee;min-height:120px;max-height:400px;overflow:auto;border-radius:8px;padding:14px;font-size:12px;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-detail {flex:1;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-detail strong::before {content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:#aaa;margin-right:10px;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-row.is-active .mg-roster-detail strong::before {background:#35b94a;}
+body[data-dashboard='v3'] #cx-magellan-pane .mg-roster-row.is-active .mg-roster-detail span {color:#238232;}
+body[data-dashboard='v3'] .mg-last-collected {display:grid;gap:5px;font-size:13px;min-width:140px;}
+body[data-dashboard='v3'] .mg-last-collected span:first-child {font-size:11px;color:var(--gray);}
+
+body[data-dashboard='v3'] .mg-activity-footer button {font-family:inherit;font-size:13px;font-weight:600;line-height:20px;padding:7px 12px;border-radius:8px;background:var(--paper);}
+body[data-dashboard='v3'] .mg-activity-footer button:hover {background:var(--card-bg);border-color:var(--gold);}
+
+/* Keep Magellan's account picker compact; the remaining accounts scroll. */
+body[data-dashboard='v3'] #mg-grid {
+  max-height:240px;
+  overflow-y:auto;
+  align-content:start;
+}
+
+body[data-dashboard='v3'] #mg-log .vj-log-line .what {color:#eee;}
+body[data-dashboard='v3'] #mg-log .vj-log-line .evt, body[data-dashboard='v3'] #mg-log .vj-log-empty {color:#aaa;}
+body[data-dashboard='v3'] #mg-log .vj-log-line.is-err .what {color:#ff8585;}
+body[data-dashboard='v3'] #mg-log .vj-log-line.is-warn .what {color:#ffd080;}

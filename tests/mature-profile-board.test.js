@@ -188,3 +188,40 @@ test('finished warm sends show acceptance next even while the browser-open flag 
   assert.doesNotMatch(maturingNextAction({...warm,matureKind:'cold'}), /accept/);
   assert.match(maturingNextAction({...warm,dailyWait:true,resumeAt:'2099-10-07T07:00:00Z'}), /next|Next/);
 });
+
+test('running campaigns still waiting for their first worker report the queue every 30 seconds', () => {
+  const t = Date.parse('2026-10-07T14:20:16Z');
+  const item = {name:'Amit',bucket:'running',engineStatus:'running',startedAt:t,log:[{t,line:'📦 Campaign received by the engine — waiting for a VM worker to pick it up…'}]};
+  const lines = maturingWaitLines([item],t+61000);
+  assert.match(lines.at(-1).text,/Still waiting for a worker/);
+  assert.equal(lines.at(-1).t,t+60000);
+});
+test('quiet running stages repeat the last real activity without inventing progress', () => {
+  const t = Date.parse('2026-10-07T14:22:00Z');
+  const item = {name:'Amit',bucket:'running',engineStatus:'running',log:[{t,line:'Checking login…'},{t:t-30000,line:'Opening browser'}]};
+  assert.equal(maturingWaitLines([item],t+29000).length,0);
+  const lines = maturingWaitLines([item],t+61000);
+  assert.equal(lines.length,1);
+  assert.match(lines[0].text,/Status check: engine reports running.*1m 00s ago: Checking login/);
+  for (const override of [{paused:true},{stopping:true},{needsReview:true},{dailyWait:true},{bucket:'done'}]) {
+    assert.equal(maturingWaitLines([{...item,...override}],t+61000).length,0);
+  }
+  assert.equal(maturingWaitLines([{...item,log:[{t:t+60000,line:'Sending invitation'}]}],t+61000).length,0);
+});
+
+test('future daily runs stay quiet, but active between-batch rests receive updates', () => {
+  const now = Date.parse('2026-10-07T14:00:00Z');
+  const base = {name:'Amit',bucket:'running',engineStatus:'running',log:[{t:now-60000,line:'Browser closed · rests ~3 min before its next turn'}]};
+  assert.match(maturingWaitLines([base],now)[0].text,/rests ~3 min/);
+  assert.deepEqual(maturingWaitLines([{...base,dailyWait:true,resumeAt:'2026-10-08T07:00:00Z'}],now),[]);
+  assert.deepEqual(maturingWaitLines([{...base,bucket:'queued',engineStatus:'scheduled',scheduledAt:'2026-10-08T07:00:00Z'}],now),[]);
+});
+
+test('completed daily target stays quiet during final cooldown even before engine status changes', () => {
+ const now=Date.parse('2026-10-07T14:48:00Z');
+ const item={name:'Amit',bucket:'running',engineStatus:'running',live:false,log:[{t:now-150000,line:'⏹ browser closed · 3 sent this turn (10/10 today) · rests ~3 min before its next turn'}]};
+ assert.deepEqual(maturingWaitLines([item],now),[]);
+ assert.match(maturingWaitLines([{...item,log:[{...item.log[0],line:'browser closed · 3 sent this turn (6/10 today) · rests ~3 min before its next turn'}]}],now)[0].text,/Status check/);
+ assert.match(maturingWaitLines([{...item,acceptPending:3,acceptDueAt:new Date(now-60000).toISOString()}],now).at(-1).text,/accept 3 connection requests/);
+ assert.deepEqual(maturingWaitLines([{...item,acceptPending:3,acceptDueAt:new Date(now+60000).toISOString()}],now),[]);
+});

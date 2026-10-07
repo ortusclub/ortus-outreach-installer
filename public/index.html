@@ -627,7 +627,7 @@
       <!-- Two halves of one pipeline: Magellan collects the networks, Warm
            Reach searches them. -->
       <div class="route-seg" role="tablist" aria-label="Find leads or collect connections">
-        <button type="button" class="route-seg-btn is-active" id="cx-tab-warm" onclick="setConnTab('warm')">Find warm leads</button>
+        <button type="button" class="route-seg-btn is-active" id="cx-tab-warm" onclick="setConnTab('warm')">Search Connections</button>
         <button type="button" class="route-seg-btn" id="cx-tab-magellan" onclick="setConnTab('magellan')">Operation Magellan</button>
       </div>
 
@@ -809,7 +809,7 @@
         </section>
 
         <section class="dashboard-section cx-section">
-          <h2 class="cx-h2"><span class="cx-num">1</span> Pick accounts</h2>
+          <h2 class="cx-h2"><span class="cx-num">1</span> Add accounts to Operation Magellan</h2>
           <div class="accounts-browser browse-card">
             <div class="browse-card-body">
               <div class="browse-toolbar">
@@ -863,7 +863,12 @@
         </section>
 
         <section class="dashboard-section cx-section">
-          <h2 class="cx-h2"><span class="cx-num">2</span> Collect</h2>
+          <h2 class="cx-h2"><span class="cx-num">2</span> Accounts in Operation Magellan</h2>
+          <div class="mg-roster-toolbar">
+            <p>Add accounts from the selection above, then manage collection for each account here.</p>
+            <button type="button" class="btn-pill" onclick="addMagellanAccounts(this)">Add selected accounts</button>
+          </div>
+          <div id="mg-roster" class="mg-roster" aria-live="polite"></div>
           <div class="mg-selbar">
             <span class="mg-selbar-n" id="mg-sel-count">0</span>
             <span class="mg-selbar-t" id="mg-sel-sub">accounts selected</span>
@@ -881,79 +886,9 @@
                Magellan: the stage block names the account and what it is doing
                right now, and failures explain themselves instead of dying in
                the console. -->
-          <section class="vj-card" id="mg-card">
-            <div class="vj-eyebrow">
-              <span class="vj-tag"><span class="dot"></span><span id="mg-eyebrow">Not running</span></span>
-              <span class="vj-when" id="mg-when"></span>
-            </div>
-            <h2 class="vj-name"><span id="mg-name">Operation Magellan</span></h2>
-
-            <div class="vj-stage" id="mg-stage" hidden aria-live="polite">
-              <div class="vj-stage-gly" id="mg-stage-gly"></div>
-              <div class="vj-stage-body">
-                <div class="vj-stage-verb" id="mg-stage-verb"></div>
-                <div class="vj-stage-name" id="mg-stage-name"></div>
-                <div class="vj-stage-sub" id="mg-stage-sub"></div>
-                <div class="vj-stage-fix" id="mg-stage-fix"></div>
-                <div class="vj-stage-beat">
-                  <span class="l"><span class="bd" id="mg-beat-dot"></span><span id="mg-beat-txt"></span></span>
-                  <span id="mg-beat-right"></span>
-                </div>
-              </div>
-            </div>
-
-            <div class="vj-hbar" role="progressbar" aria-label="Collection progress"><i id="mg-bar" style="width:0%"></i></div>
-
-            <div class="vj-hero">
-              <div class="vj-hero-row">
-                <div class="num"><span id="mg-pct">0</span><span class="sub">%</span></div>
-                <div class="vj-meta">
-                  <span><b id="mg-done">0</b> of <span id="mg-total">0</span> accounts</span>
-                  <span><b id="mg-people">0</b> <span id="mg-people-lbl">people so far</span></span>
-                </div>
-              </div>
-              <div class="vj-stats" aria-live="polite">
-                <span><b id="mg-matched">0</b> <span id="mg-matched-lbl">with a LinkedIn ID</span></span>
-                <span><b id="mg-failed">0</b> <span id="mg-failed-lbl">failed</span></span>
-                <span>· <b id="mg-phase-lbl">Idle</b></span>
-              </div>
-            </div>
-
-            <!-- Failures grouped by cause: 300 accounts failing for two reasons
-                 must read as two problems, not three hundred lines. -->
-            <!-- One pill per account, same row a campaign uses. Click one for
-                 its numbers, or for why it failed — raw error included. -->
-            <!-- What happened, once it has happened. The card used to keep its
-                 live counters after a run ended, so a finished Check read
-                 "92% · 0 people so far". Written by the run itself, so it
-                 cannot exist without the run having ended. -->
-            <div class="mg-outcome" id="mg-outcome" hidden></div>
-            <div class="vj-stage-accts" id="mg-accts" hidden></div>
-            <div id="mg-acct-detail" hidden></div>
-
-            <div class="vj-controls">
-              <button class="btn-pill" id="mg-collect-btn" onclick="startMagellanCollect()">Collect connections</button>
-              <button class="btn-pill" id="mg-stop-btn" onclick="stopMagellanCollect()" hidden>Stop</button>
-              <button class="btn-pill" id="mg-log-btn" onclick="toggleMagellanLog()">Show log</button>
-              <!-- Shown in place of Collect when the only selection is a CSV-imported
-                   account — it's already collected, so Collect would do nothing. -->
-              <span class="mg-csv-skip" id="mg-collect-csv-note" hidden>Imported from CSV — already collected. Go straight to <b>Check</b> ↓</span>
-            </div>
-
-            <!-- Live log, inside the card exactly like a running campaign's.
-                 One column, not two — Magellan has no bulk-check panel. -->
-            <div class="vj-details">
-              <div>
-                <div class="vj-log-head">
-                  <span class="vj-details-head">Live log</span>
-                  <span class="vj-log-acts">
-                    <button type="button" class="vj-log-act" onclick="copyMagellanLog(this)" title="Copy the full log to your clipboard">Copy all</button>
-                    <button type="button" class="vj-log-act" onclick="openMagellanSheet()" title="Open the sheet this run writes to">Open sheet</button>
-                  </span>
-                </div>
-                <div class="vj-log" id="mg-log"></div>
-              </div>
-            </div>
+          <section class="mg-activity" id="mg-card">
+            <div class="mg-activity-head"><span>Operation Magellan · Activity log</span><button type="button" onclick="copyMagellanLog(this)">Copy all</button></div>
+            <div class="vj-log" id="mg-log" role="log" aria-label="Operation Magellan activity"></div>
           </section>
           <div class="conn-error" id="mg-error" hidden></div>
         </section>
@@ -2142,7 +2077,7 @@
   .mature-row .mature-del svg{width:13px;height:13px;display:block;}
   .mature-row .dot{flex:none;align-self:center;}
   .mature-row-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .mature-row-next{display:block;margin-top:2px;font-weight:400;font-size:11px;color:var(--gray);overflow:hidden;text-overflow:ellipsis;}
+  .mature-row-next{display:block;margin-top:4px;font-weight:400;font-size:11px;line-height:1.5;color:var(--gray);white-space:normal;overflow-wrap:anywhere;}
   .mature-row-kind,.mature-row-state{flex:none;color:var(--gray);font-size:11px;letter-spacing:.08em;text-transform:uppercase;}
   .mature-row-detail{margin-left:auto;color:var(--gray);font-size:12px;text-align:right;white-space:nowrap;}
   .mature-row-detail b{color:var(--ink);font-weight:600;}

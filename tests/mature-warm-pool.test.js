@@ -4,12 +4,12 @@ import { buildWarmPool, lvProfileIdentity, matureWarmDailyAmount, matureWarmSche
 import { warmPreset } from '../public/js/mature-warm-ramp.mjs';
 
 const soo = [
-  { email: 'ana@ortus.solutions', 'Name as it appears on LinkedIn': 'Ana A', 'LinkedIn URL': 'https://www.linkedin.com/in/ana-a/' },
-  { email: 'ben@ortus.solutions', 'Name as it appears on LinkedIn': 'Ben B', 'LinkedIn URL': 'https://www.linkedin.com/in/ben-b/' },
+  { Status: 'Active', email: 'ana@ortus.solutions', 'Name as it appears on LinkedIn': 'Ana A', 'LinkedIn URL': 'https://www.linkedin.com/in/ana-a/' },
+  { Status: 'Active', email: 'ben@ortus.solutions', 'Name as it appears on LinkedIn': 'Ben B', 'LinkedIn URL': 'https://www.linkedin.com/in/ben-b/' },
 ];
 const lv = [
-  { gologinProfileId: 'lv1', loginEmail: '', name: 'Cy C', linkedinUrl: 'https://www.linkedin.com/in/cy-c', restricted: false },
-  { gologinProfileId: '', loginEmail: 'dee@klabber.co', name: 'Dee D', linkedinUrl: 'https://www.linkedin.com/in/dee-d', restricted: false },
+  { gologinProfileId: 'lv1', loginEmail: '', name: 'Cy C', linkedinUrl: 'https://www.linkedin.com/in/cy-c', status: 'active', restricted: false },
+  { gologinProfileId: '', loginEmail: 'dee@klabber.co', name: 'Dee D', linkedinUrl: 'https://www.linkedin.com/in/dee-d', status: 'active', restricted: false },
   { gologinProfileId: 'lv3', loginEmail: 'eve@klabber.co', name: 'Eve E', linkedinUrl: 'https://www.linkedin.com/in/eve-e', restricted: true },
 ];
 const profiles = [
@@ -123,4 +123,16 @@ test('each warm plan gets its own shuffled order, persisted before planned-day a
   assert.deepEqual(rows.map(r=>r[5]),[1,1,1,2,2,2,2,2,2,3,3,3]);
   assert.deepEqual(shuffleWarmTargets([]),[]);
   assert.deepEqual(shuffleWarmTargets(targets.slice(0,1)),targets.slice(0,1));
+});
+
+test('warm recipients require explicit Active status and restriction always wins', () => {
+ const statuses=['Active',' active ','Inactive','Identity Restricted','Unjust Identity Restricted','Hard Identity Restricted','Identity Restricted II','Inaccessible','Construction','Available','Rented',''];
+ const accounts=statuses.map((Status,i)=>({email:`a${i}@example.com`,Status,'LinkedIn URL':`https://linkedin.com/in/a${i}`}));
+ const profiles=accounts.map((a,i)=>({id:`p${i}`,name:a.email,account:'ortus'}));
+ const pool=buildWarmPool({pool:'ortus_owned',profiles,sooAccounts:accounts});
+ assert.deepEqual(pool.targets.map(x=>x.profileId),['p0','p1']);
+ assert.equal(pool.restricted,5);assert.equal(pool.inactive,5);
+ const lvProfiles=[{id:'a',account:'linkedvelocity'},{id:'b',account:'linkedvelocity'},{id:'c',account:'linkedvelocity'},{id:'d',account:'linkedvelocity'}];
+ const lvAccounts=[{gologinProfileId:'a',status:'active',restricted:false},{gologinProfileId:'b',restricted:false},{gologinProfileId:'c',active:true,restricted:true},{gologinProfileId:'d',status:'inactive',active:true}].map((r,i)=>({...r,linkedinUrl:`https://linkedin.com/in/lv${i}`}));
+ assert.deepEqual(buildWarmPool({pool:'linkedvelocity_owned',profiles:lvProfiles,lvAccounts}).targets.map(x=>x.profileId),['a']);
 });
