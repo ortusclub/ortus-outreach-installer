@@ -1379,7 +1379,7 @@ function buildCampaignConfig(body) {
     // #7: when the primary connect/check happens. 'immediately' (default) =
     // pre-loop handshake (today's behavior); 'after_connections' = after all
     // accounts finish sending connections. Any other value coerces to default.
-    primaryCheckTiming: primaryCheckTiming === 'after_connections' ? 'after_connections' : 'immediately',
+    primaryCheckTiming: ['after_connections', 'immediately', 'skip'].includes(primaryCheckTiming) ? primaryCheckTiming : 'skip',
     // Fix A Task 4: resolved tab GID (digits only). Empty string means unknown /
     // single-tab workbook; campaign.js will apply withGid when non-empty.
     sheetGid,
@@ -1551,7 +1551,11 @@ async function handleStartCloudOnce(req, res) {
     // Resolve the correct tab (mirrors runPreflightGate + campaign.js withGid).
     const cloudGid = body.sheetGid != null ? String(body.sheetGid).replace(/\D/g, '') : '';
     const cloudSheetUrl = withGid(sheetUrl, cloudGid);
-    const rows = await fetchSheet(cloudSheetUrl);
+    // Row numbers ride along: the engine hands each lead's `__sheetRow` back
+    // to the Apps Script on write-back, so a stamp lands on that row directly
+    // (URL-verified) instead of scanning the whole URL column every time.
+    const rowsWithNumbers = await fetchSheetWithRows(cloudSheetUrl);
+    const rows = rowsWithNumbers.map(({ rowNumber, row }) => ({ ...row, __sheetRow: rowNumber }));
 
     // Hard-exclude blocklisted + client-pre-flight-excluded URLs. Applies to
     // ALL modes now (operator decision 2026-07-10) — blocklistExcludedUrls is no
@@ -1699,6 +1703,17 @@ async function handleStartCloudOnce(req, res) {
     const config = {
       ...t,
       campaignId: body.campaignId,
+      // "Primary check timing" used to stop at this machine: the engine never
+      // received it, so a VM run checked the primary lazily however the wizard
+      // was set. The engine now honours 'immediately' at pickup (its
+      // campaign-primary-start step); 'after_connections' keeps the lazy path.
+      ...(mode === 'connect_and_introduce'
+        ? { primaryCheckTiming: ['after_connections', 'immediately', 'skip'].includes(body.primaryCheckTiming) ? body.primaryCheckTiming : 'skip',
+            skipIntroductions: body.skipIntroductions === true,
+            // The pre-dispatch handshake ran on this Mac; the engine's own
+            // start check stands down.
+            primaryCheckedOnMac: body.primaryCheckedOnMac === true }
+        : {}),
       message: t.message || t.followUp1 || '',            // message_only DM body
       followUpMessage: t.followUpMessage || t.followUp1 || '',
       senderFirstNames: body.senderFirstNames || t.senderFirstNames || {},
@@ -5896,6 +5911,19 @@ app.post('/api/monitoring/check-now', async (req, res) => {
         // A terminal schedule event is part of the sweep contract. Without it,
         // the final account line (often Identity Restricted) permanently owns
         // the banner even though the check has already ended.
+        // A manual sweep restarts the automatic countdown from its finish, so
+        // "next automatic sweep in 1h" under the button is true after you press
+        // it (operator, 2026-10-07). Mirrors the engine's nextMonitorDecision.
+        if (finished.state === 'monitoring' && finished.autoChecksEnabled !== false) {
+          const cadenceMin = Math.max(1, Number(finished.checkIntervalMinutes) || 60);
+          finished.nextCheckAt = new Date(Date.now() + cadenceMin * 60_000).toISOString();
+          import('./src/monitoring-persistence.js')
+            .then(({ writeMonitoringState }) => writeMonitoringState(finished))
+            .catch((e) => console.warn('[check-now] could not persist nextCheckAt:', e.message));
+          import('./src/campaign.js')
+            .then(({ schedulePreFireHeadsUp }) => { try { schedulePreFireHeadsUp(); } catch { /* */ } })
+            .catch(() => {});
+        }
         if (finished.state === 'monitoring' && finished.nextCheckAt) {
           finished.logs.push(`${stamp()} ${nextCheckLogLine(finished.nextCheckAt)}`);
         }

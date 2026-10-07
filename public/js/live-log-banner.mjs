@@ -252,6 +252,14 @@ function readablePresentation(line, phase = '', now = new Date()) {
     headline: 'Every available account has finished this check',
     detail: clean.replace(/^[\u2713\u2714]?\s*Check complete\s*[\u2014\u2013\u00b7-]?\s*/i, '').trim(), explanation: '',
   };
+  // The launch preflight line ("Checking your accounts, campaign settings and
+  // lead sheet…") is not an account sweep. The generic ^Checking rule below
+  // used to swallow it and the card announced "Checking recent connections"
+  // with the sentence fragment as the account name (operator, 2026-10-07).
+  if (/^Checking your accounts/i.test(clean)) return {
+    kind: 'preflight', eyebrow: 'Starting campaign', headline: 'Checking your setup',
+    detail: '', explanation: 'Reading your accounts, campaign settings and lead sheet before anything is sent.',
+  };
   if ((m = clean.match(/^Checking\s+(.+?)(?:\.{3}|\s*[·•]|$)/i))) return { kind: 'account-checking', account: m[1], eyebrow: 'Checking acceptances', headline: 'Checking recent connections', detail: m[1], explanation: 'The app is reading this account’s recent LinkedIn connections now.' };
   if (/identity restricted/i.test(clean)) {
     const who = clean.split(/\s+[—–]\s+/)[0];

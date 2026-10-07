@@ -8927,9 +8927,32 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 /* Detailed campaign status belongs exclusively to the opened campaign. */
 body:not(.route-wizard) #nav-status,
 body:not(.route-wizard) #active-card { display: none !important; }
-.template-preview-button, .prelaunch-button { border: 1px solid var(--ink); border-radius: 999px; padding: 10px 18px; background: var(--paper, #fff); color: var(--ink, #111); cursor: pointer; }
-.prelaunch-button--confirm { background: #111; color: #fff; }
-.template-preview-button { margin-bottom: 12px; }
+/* Scoped under .preview-modal__body so these beat the v3 dashboard's
+   `body[data-dashboard='v3'] button { color: inherit }` — that rule turned the
+   Launch button black-on-black (operator screenshot, 2026-10-07). */
+.preview-modal__body .prelaunch-button { border: 1.5px solid var(--ink); border-radius: 999px; padding: 10px 18px; background: transparent; color: var(--ink, #111); font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; cursor: pointer; }
+.preview-modal__body .prelaunch-button--confirm { background: var(--ink, #111); color: var(--bg, #fff); }
+.preview-modal__body .prelaunch-button--confirm:hover { opacity: .88; }
+/* Per-section preview: same outlined mono pill as the main Preview messages
+   CTA (.tpl-preview-btn), just one size smaller so it sits under a heading. */
+.template-preview-button {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-bottom: 12px; padding: 7px 14px;
+  background: transparent; color: var(--ink);
+  border: 1.5px solid var(--ink); border-radius: 9999px;
+  font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.14em;
+  text-transform: uppercase; font-weight: 700; cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.template-preview-button::before {
+  content: ''; width: 14px; height: 14px; flex: none;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/><circle cx='12' cy='12' r='3'/></svg>") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/><circle cx='12' cy='12' r='3'/></svg>") center / contain no-repeat;
+}
+.template-preview-button:hover { background: var(--ink); color: var(--bg, #fff); }
+.template-preview-button:disabled { opacity: .55; cursor: wait; }
+.campaign-warnings-inline[hidden] { display: none; }
 #preview-modal-body { color: var(--ink, #111); }
 
 .campaign-run-history { margin: -8px 0 24px; padding: 12px 20px; border: 1px solid var(--hairline); border-radius: 12px; }

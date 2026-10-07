@@ -20,9 +20,17 @@ export function needsHandshakeFromBody(body = {}) {
   const t = (body && body.templates) || {};
   // v1.7.49: "Connections only" never introduces, so no sender→primary handshake.
   if (body && body.skipIntroductions === true) return false;
+  // "Primary check timing: Skip" (the default since 2026-10-07) — no browser is
+  // opened just for the primary, on the Mac or the VM.
+  if (body && body.primaryCheckTiming === 'skip') return false;
+  // 'after_connections' has no cloud counterpart; the engine checks lazily.
+  if (body && body.primaryCheckTiming === 'after_connections') return false;
+  // 2026-10-07: a GoLogin primary runs here too. The handshake module already
+  // opens a GoLogin primary profile to accept; the VM-side attempt proved
+  // unreliable, so "Immediately (at start)" means on this Mac, before dispatch,
+  // whatever the primary logs in through.
   return body.mode === 'connect_and_introduce'
-    && t.autoAcceptPrimary === true
-    && (t.primarySource || 'local-browser') === 'local-browser';
+    && t.autoAcceptPrimary === true;
 }
 
 // UI mapping: one sender's handshake state → row presentation. Kept here so the

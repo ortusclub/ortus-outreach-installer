@@ -50,10 +50,14 @@ const SEND_SETTLE_MS = 20_000;
  * local-only and whose auto-accept is on — the exact case the engine can't handle.
  * (A GoLogin primary can accept itself on the VM; other modes have no primary.)
  */
-export function needsCloudHandshake({ mode, autoAcceptPrimary, primarySource } = {}) {
+export function needsCloudHandshake({ mode, autoAcceptPrimary, primarySource, primaryCheckTiming } = {}) {
+  // 2026-10-07: a GoLogin primary qualifies too (the run below launches it
+  // through launchProfile); only an explicit Skip / after-connections timing
+  // keeps the Mac out of it. `primarySource` stays in the signature for callers.
+  void primarySource;
+  if (primaryCheckTiming === 'skip' || primaryCheckTiming === 'after_connections') return false;
   return mode === 'connect_and_introduce'
-    && autoAcceptPrimary === true
-    && (primarySource || 'local-browser') === 'local-browser';
+    && autoAcceptPrimary === true;
 }
 
 // Real primitives, overridable in tests via opts.deps.

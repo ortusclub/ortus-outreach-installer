@@ -2145,7 +2145,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, stopBeforeWeeklyReset = false, stopBeforeMonthlyReset = false, skipIntroductions = false, excludedUrls = [] }) {
+export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'skip', pauseOnThrottle = true, stopBeforeWeeklyReset = false, stopBeforeMonthlyReset = false, skipIntroductions = false, excludedUrls = [] }) {
   assertGoLoginOnly({ profileIds, templates });
   const subjectError = messageSubjectError({ mode, templates, messageOpenProfiles });
   if (subjectError) throw new Error(subjectError);
@@ -2163,6 +2163,10 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   // all accounts finish sending connections — the pre-loop handshake and the
   // per-turn primary connect are skipped, and the same handshake runs post-loop.
   const _deferPrimary = primaryCheckTiming === 'after_connections';
+  // 'skip' (default since 2026-10-07): no dedicated primary step at all — not
+  // before the loop and not after it. The per-account intro gate still reads
+  // the degree when an introduction is about to go out.
+  const _skipPrimary = primaryCheckTiming === 'skip';
   campaign.primaryCheckTiming = primaryCheckTiming;
 
   // v2.58.x — IC-only options. Coerced to defaults outside introduce_back
@@ -3807,7 +3811,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         let { page } = session;
         campaign.currentProfile = pName;
 
-        if (!_deferPrimary) {
+        if (!_deferPrimary && !_skipPrimary) {
         // v2.78: CC+IC primary-connection gate. Verify this account is a
         // 1st-degree connection of the primary before its intros can fire.
         // First turn: read degree + (if not connected) send ONE connect request
@@ -5841,7 +5845,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       }
     }
 
-    if (!_deferPrimary) { try { await runPreflightHandshake(); } finally { campaign.phase = null; } }
+    if (!_deferPrimary && !_skipPrimary) { try { await runPreflightHandshake(); } finally { campaign.phase = null; } }
 
     const workerCount = Math.max(1, Number(concurrency) || 1);
     await Promise.all(
@@ -6921,6 +6925,9 @@ export function getCampaignStatus() {
     phase: campaign.phase || null,
     monitoringUntil: campaign.monitoringUntil || null,
     nextCheckAt: campaign.nextCheckAt || null,
+    // The card's Automatic sweeps switch reads this; it was only ever in
+    // /api/monitoring/state before.
+    autoChecksEnabled: campaign.autoChecksEnabled !== false,
     monitorCheckError: campaign.monitorCheckError || '',
     // v2.52.0: surface the operator-chosen cadence so the cockpit tips +
     // the dashboard Monitoring tab show the ACTUAL running value, not the
