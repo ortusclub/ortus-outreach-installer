@@ -60,7 +60,7 @@ import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
-import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus, searchKey, scrapeCampaignId } from '/js/scrape-board.mjs';
+import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus, searchKey, scrapeCampaignId, openedScrapeJobs } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
@@ -4814,9 +4814,21 @@ async function pollScrapeJobs() {
   // Without this the console reflects THIS SESSION's state, so a running scrape
   // you opened but didn't launch yourself wrongly reads as "NO SCRAPE RUNNING".
   const openedCid = _snOpenedScrape && _snOpenedScrape.cid;
-  if (openedCid && Array.isArray(_snLastCampaigns)) {
-    const oc = _snLastCampaigns.find((c) => c.id === openedCid);
-    if (oc && Array.isArray(oc.jobs)) { _renderScrapeConsole(_currentRunJobs(oc.jobs, _scrapeViewRunId), el); return; }
+  if (openedCid) {
+    // Prefer the board cache (refreshed every 2.5s).
+    const cached = openedScrapeJobs(_snLastCampaigns, openedCid);
+    if (cached) { _renderScrapeConsole(_currentRunJobs(cached, _scrapeViewRunId), el); return; }
+    // Cold cache — opened right after a refresh / before the first board poll:
+    // fetch THIS scrape's own record (it carries .jobs) instead of falling
+    // through to the unscoped /api/scrape/jobs below, which returns only this
+    // session's jobs and renders a running scrape you didn't launch here as
+    // blank/new (the "open shows the setup form, refresh a few times" bug).
+    try {
+      const r0 = await fetch(`/api/scrape/campaigns/${encodeURIComponent(openedCid)}`);
+      const d0 = await r0.json();
+      const scoped = d0 && d0.campaign && Array.isArray(d0.campaign.jobs) ? d0.campaign.jobs : null;
+      if (scoped) { _renderScrapeConsole(_currentRunJobs(scoped, _scrapeViewRunId), el); return; }
+    } catch (_) { /* fall through to the session jobs */ }
   }
   try {
     const r = await fetch('/api/scrape/jobs');
