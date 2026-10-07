@@ -125,7 +125,7 @@ test('each warm plan gets its own shuffled order, persisted before planned-day a
   assert.deepEqual(shuffleWarmTargets(targets.slice(0,1)),targets.slice(0,1));
 });
 
-test('warm recipients require explicit Active status and restriction always wins', () => {
+test('Ortus recipients require Active status; LV accepts its unrestricted flag and restriction always wins', () => {
  const statuses=['Active',' active ','Inactive','Identity Restricted','Unjust Identity Restricted','Hard Identity Restricted','Identity Restricted II','Inaccessible','Construction','Available','Rented',''];
  const accounts=statuses.map((Status,i)=>({email:`a${i}@example.com`,Status,'LinkedIn URL':`https://linkedin.com/in/a${i}`}));
  const profiles=accounts.map((a,i)=>({id:`p${i}`,name:a.email,account:'ortus'}));
@@ -134,5 +134,15 @@ test('warm recipients require explicit Active status and restriction always wins
  assert.equal(pool.restricted,5);assert.equal(pool.inactive,5);
  const lvProfiles=[{id:'a',account:'linkedvelocity'},{id:'b',account:'linkedvelocity'},{id:'c',account:'linkedvelocity'},{id:'d',account:'linkedvelocity'}];
  const lvAccounts=[{gologinProfileId:'a',status:'active',restricted:false},{gologinProfileId:'b',restricted:false},{gologinProfileId:'c',active:true,restricted:true},{gologinProfileId:'d',status:'inactive',active:true}].map((r,i)=>({...r,linkedinUrl:`https://linkedin.com/in/lv${i}`}));
- assert.deepEqual(buildWarmPool({pool:'linkedvelocity_owned',profiles:lvProfiles,lvAccounts}).targets.map(x=>x.profileId),['a']);
+ assert.deepEqual(buildWarmPool({pool:'linkedvelocity_owned',profiles:lvProfiles,lvAccounts}).targets.map(x=>x.profileId),['a','b']);
+});
+
+test('LV identity feed without status uses explicit restricted flag, while respecting explicit inactive status', () => {
+  const profiles = ['ok', 'restricted', 'unknown', 'inactive'].map(id => ({ id, account: 'linkedvelocity' }));
+  const lvAccounts = profiles.map(p => ({ gologinProfileId:p.id, linkedinUrl:`https://www.linkedin.com/in/${p.id}`, name:p.id,
+    ...(p.id === 'unknown' ? {} : {restricted:p.id === 'restricted'}), ...(p.id === 'inactive' ? {status:'inactive'} : {}) }));
+  const result = buildWarmPool({pool:'linkedvelocity_owned', profiles, lvAccounts});
+  assert.deepEqual(result.targets.map(a=>a.profileId), ['ok']);
+  assert.equal(result.restricted,1);
+  assert.equal(result.inactive,2);
 });

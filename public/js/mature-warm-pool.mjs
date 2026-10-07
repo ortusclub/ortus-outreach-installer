@@ -20,7 +20,13 @@ export function lvProfileIdentity(profile, lvAccounts) {
     if (rows.length === 1) row = rows[0];
   }
   if (!row) return null;
-  return { name: String(row.name || '').trim(), linkedinUrl: LINKEDIN_PROFILE.test(row.linkedinUrl || '') ? row.linkedinUrl : '', ...matureAccountEligibility(row), loginEmail: String(row.loginEmail || '').trim().toLowerCase() };
+  // LV's identity feed reports eligibility as restricted:true/false and does
+  // not supply an Active status. Respect explicit statuses when provided;
+  // otherwise only an explicit unrestricted flag qualifies this LV account.
+  const hasStatus = [row.Status, row.status, row.accountStatus].some(value => String(value ?? '').trim());
+  const eligibility = matureAccountEligibility(!hasStatus && row.active == null && row.restricted === false
+    ? { ...row, active: true } : row);
+  return { name: String(row.name || '').trim(), linkedinUrl: LINKEDIN_PROFILE.test(row.linkedinUrl || '') ? row.linkedinUrl : '', ...eligibility, loginEmail: String(row.loginEmail || '').trim().toLowerCase() };
 }
 
 // The SoO only lists Ortus accounts, so a Linked Velocity profile is looked up
