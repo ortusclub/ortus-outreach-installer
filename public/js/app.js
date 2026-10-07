@@ -15333,6 +15333,38 @@ function _sweepBlockedMessage(perProfile) {
   return `⚠ Check could not run — none of the ${n} account${n === 1 ? '' : 's'} could open on this Mac: ${reasons.slice(0, 2).join(' · ')}`;
 }
 
+// Mirror this Mac's sweep narration ("📡 [acct] Launching browser…",
+// "Sweeping recent connections…", "✓ … newly accepted", "🤝 Auto-introducing…")
+// into a cloud campaign's own log while a local check runs for it, with the
+// original timestamps. Lines already in the local log when the check starts
+// are not copied. Returns { stop } — stop() relays the closing lines.
+async function _startLocalSweepRelay(cloudId) {
+  if (!cloudId) return { stop: async () => {} };
+  const seen = new Set();
+  let seed = 0;
+  const pull = async () => {
+    try {
+      const st = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
+      for (const raw of (Array.isArray(st.logs) ? st.logs : [])) {
+        const line = String(raw || '');
+        if (seen.has(line)) continue;
+        seen.add(line);
+        if (seen.size <= seed) continue;
+        const m = line.match(/^\[([^\]]+)\]\s*(.*)$/);
+        const at = m ? Date.parse(m[1]) : NaN;
+        _pushCloudEvent(cloudId, m ? m[2] : line, Number.isFinite(at) ? at : undefined);
+      }
+    } catch (_) { /* best-effort narration */ }
+  };
+  try {
+    const st0 = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
+    for (const raw of (Array.isArray(st0.logs) ? st0.logs : [])) seen.add(String(raw || ''));
+    seed = seen.size;
+  } catch (_) { /* relay whatever appears */ }
+  const timer = setInterval(pull, 1500);
+  return { stop: async () => { clearInterval(timer); await pull(); } };
+}
+
 async function cloudCheckLocal(id, btn, scope) {
   if (!id) return;
   scope = scope === 'all' ? 'all' : 'campaign';
@@ -15352,28 +15384,7 @@ async function cloudCheckLocal(id, btn, scope) {
   // card never showed — the operator saw only "started" and "done" here
   // (2026-10-07). Relay every new local line into this campaign's log while
   // the sweep runs, so the results sit with the campaign they belong to.
-  const _seenLocal = new Set();
-  const _relayLocalLog = async () => {
-    try {
-      const st = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
-      for (const raw of (Array.isArray(st.logs) ? st.logs : [])) {
-        const line = String(raw || '');
-        if (_seenLocal.has(line)) continue;
-        _seenLocal.add(line);
-        if (_seenLocal.size <= _seedCount) continue; // lines that predate this check
-        const m = line.match(/^\[([^\]]+)\]\s*(.*)$/);
-        const at = m ? Date.parse(m[1]) : NaN;
-        _pushCloudEvent(id, m ? m[2] : line, Number.isFinite(at) ? at : undefined);
-      }
-    } catch (_) { /* best-effort narration */ }
-  };
-  let _seedCount = 0;
-  try {
-    const st0 = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
-    for (const raw of (Array.isArray(st0.logs) ? st0.logs : [])) _seenLocal.add(String(raw || ''));
-    _seedCount = _seenLocal.size;
-  } catch (_) { /* start relaying from whatever appears */ }
-  const _relayTimer = setInterval(_relayLocalLog, 1500);
+  const _relay = await _startLocalSweepRelay(id);
   try {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
     const camp = d && d.campaign;
@@ -15453,8 +15464,7 @@ async function cloudCheckLocal(id, btn, scope) {
     // "starting/checking" marker must not survive until its 90-second TTL.
     // Keeping it around made the hero disagree with the completed live log.
     if (_cloudCheckAsked.get(id) === askedAt) _cloudCheckAsked.delete(id);
-    clearInterval(_relayTimer);
-    await _relayLocalLog(); // the sweep's closing lines
+    await _relay.stop(); // the sweep's closing lines
     try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
     if (btn) btn.disabled = false;
   }
@@ -36448,6 +36458,10 @@ async function _launchCheckRun(scope) {
   __cockpit.monitoringCheckInProgress = true;
   try { syncLiveStatusVisibility(); } catch (_) { /* */ }
   startPolling();
+  // The campaign this wizard shows gets the sweep's lines too (opening each
+  // account, sweeping, acceptances found, introductions), not only this Mac's
+  // local log (operator, 2026-10-07).
+  const _relay = await _startLocalSweepRelay(_wizardCloudCampaignId());
   try {
     const r = await fetch('/api/bulk-check-now', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -36463,6 +36477,7 @@ async function _launchCheckRun(scope) {
   } catch (e) {
     toast('Check failed: ' + e.message);
   } finally {
+    try { await _relay.stop(); } catch (_) { /* */ }
     _launchCheckPending = false;
     // Fetch terminal lines even if the stopped campaign normally stops polling.
     await pollStatus();
