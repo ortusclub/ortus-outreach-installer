@@ -15328,6 +15328,33 @@ async function cloudCheckLocal(id, btn, scope) {
   _pushCloudEvent(id, scope === 'all'
     ? '🖥 Local check — every account in the Account Used column (on this machine)'
     : '🖥 Local check — this campaign’s accounts (on this machine)');
+  // The sweep narrates itself into THIS Mac's local campaign log ("📡 [acct]
+  // Launching browser…", "✓ … newly accepted"), which the cloud campaign's
+  // card never showed — the operator saw only "started" and "done" here
+  // (2026-10-07). Relay every new local line into this campaign's log while
+  // the sweep runs, so the results sit with the campaign they belong to.
+  const _seenLocal = new Set();
+  const _relayLocalLog = async () => {
+    try {
+      const st = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
+      for (const raw of (Array.isArray(st.logs) ? st.logs : [])) {
+        const line = String(raw || '');
+        if (_seenLocal.has(line)) continue;
+        _seenLocal.add(line);
+        if (_seenLocal.size <= _seedCount) continue; // lines that predate this check
+        const m = line.match(/^\[([^\]]+)\]\s*(.*)$/);
+        const at = m ? Date.parse(m[1]) : NaN;
+        _pushCloudEvent(id, m ? m[2] : line, Number.isFinite(at) ? at : undefined);
+      }
+    } catch (_) { /* best-effort narration */ }
+  };
+  let _seedCount = 0;
+  try {
+    const st0 = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
+    for (const raw of (Array.isArray(st0.logs) ? st0.logs : [])) _seenLocal.add(String(raw || ''));
+    _seedCount = _seenLocal.size;
+  } catch (_) { /* start relaying from whatever appears */ }
+  const _relayTimer = setInterval(_relayLocalLog, 1500);
   try {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
     const camp = d && d.campaign;
@@ -15401,6 +15428,8 @@ async function cloudCheckLocal(id, btn, scope) {
     // "starting/checking" marker must not survive until its 90-second TTL.
     // Keeping it around made the hero disagree with the completed live log.
     if (_cloudCheckAsked.get(id) === askedAt) _cloudCheckAsked.delete(id);
+    clearInterval(_relayTimer);
+    await _relayLocalLog(); // the sweep's closing lines
     try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
     if (btn) btn.disabled = false;
   }
