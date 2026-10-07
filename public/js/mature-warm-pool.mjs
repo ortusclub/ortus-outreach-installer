@@ -1,4 +1,4 @@
-import { matureProfileIdentity } from './mature-profile-identity.mjs';
+import { matureProfileIdentity, matureAccountEligibility } from './mature-profile-identity.mjs';
 import { warmDailyAmount } from './mature-warm-ramp.mjs';
 
 // A warm pool is a whole GoLogin workspace: the profile's `account` says which
@@ -20,7 +20,7 @@ export function lvProfileIdentity(profile, lvAccounts) {
     if (rows.length === 1) row = rows[0];
   }
   if (!row) return null;
-  return { name: String(row.name || '').trim(), linkedinUrl: LINKEDIN_PROFILE.test(row.linkedinUrl || '') ? row.linkedinUrl : '', restricted: !!row.restricted, loginEmail: String(row.loginEmail || '').trim().toLowerCase() };
+  return { name: String(row.name || '').trim(), linkedinUrl: LINKEDIN_PROFILE.test(row.linkedinUrl || '') ? row.linkedinUrl : '', ...matureAccountEligibility(row), loginEmail: String(row.loginEmail || '').trim().toLowerCase() };
 }
 
 // The SoO only lists Ortus accounts, so a Linked Velocity profile is looked up
@@ -35,21 +35,22 @@ export function warmProfileIdentity(profile, { sooAccounts = [], lvAccounts = []
 // a known LinkedIn URL cannot be invited, so it is counted and left out.
 export function buildWarmPool({ pool, profiles = [], sooAccounts = [], lvAccounts = [], excludeProfileIds = [] }) {
   const account = WARM_POOL_ACCOUNT[pool];
-  if (!account && pool !== 'all_available') return { targets: [], total: 0, missing: 0, restricted: 0 };
+  if (!account && pool !== 'all_available') return { targets: [], total: 0, missing: 0, restricted: 0, inactive: 0 };
   const exclude = new Set(excludeProfileIds);
   const members = profiles.filter(p => (pool === 'all_available' || p.account === account) && !exclude.has(p.id));
   const targets = [], seen = new Set();
-  let missing = 0, restricted = 0;
+  let missing = 0, restricted = 0, inactive = 0;
   for (const profile of members) {
     const identity = warmProfileIdentity(profile, { sooAccounts, lvAccounts });
+    if (identity?.restricted) { restricted++; continue; }
+    if (identity && !identity.active) { inactive++; continue; }
     if (!identity?.linkedinUrl) { missing++; continue; }
-    if (identity.restricted) { restricted++; continue; }
     const key = urlKey(identity.linkedinUrl);
     if (seen.has(key)) continue;
     seen.add(key);
     targets.push({ profileId: profile.id, profile: profile.name || profile.id, name: identity.name, linkedinUrl: identity.linkedinUrl });
   }
-  return { targets, total: members.length, missing, restricted };
+  return { targets, total: members.length, missing, restricted, inactive };
 }
 
 // Choose a fresh order for each profile's plan, without mutating the shared pool.

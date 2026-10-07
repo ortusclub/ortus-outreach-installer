@@ -81,6 +81,10 @@ export function maturingWorkerWait(it, now = Date.now()) {
   const kind = it.matureKind === 'cold' ? 'cold' : 'warm';
   if (accepts > 0 && acceptDue <= now) return { since: acceptDue, what: `accept ${accepts} connection request${accepts === 1 ? '' : 's'} in the receiving account${accepts === 1 ? '' : 's'}` };
   if (it.dailyWait && resumeDue <= now) return { since: resumeDue, what: `send today's ${kind} connections` };
+  const lastLog = (it.log || []).reduce((last, entry) => Number(entry.t) > Number(last?.t || 0) ? entry : last, null);
+  if (it.engineStatus === 'running' && /waiting for a VM worker to pick it up/i.test(lastLog?.line || '')) {
+    return { since: Number(lastLog.t), what: `start ${kind} connections` };
+  }
   if (it.bucket === 'queued') {
     const scheduled = Date.parse(it.scheduledAt || '');
     const since = Number.isFinite(scheduled) ? scheduled : Number(it.startedAt);
@@ -93,8 +97,23 @@ export function maturingWaitLines(items, now = Date.now(), maxLines = 12) {
   const lines = [];
   for (const it of items || []) {
     const wait = maturingWorkerWait(it, now);
-    if (!wait) continue;
     const tag = `${String(it.name || '').replace(/ · Cold$/, '')} · ${it.matureKind === 'cold' ? 'cold' : 'warm'}`;
+    if (!wait) {
+      // A successful status read is evidence of reachability, not of progress.
+      // Repeat the last actual engine activity without pretending it advanced.
+      if (it.paused || it.stopping || it.needsReview || it.dailyWait || it.bucket === 'done' || it.engineStatus !== 'running') continue;
+      // The engine may keep `running` during the final turn cooldown even
+      // after today's target is complete. No browser + completed daily batch
+      // is idle, not an active wait worth repeating. Due acceptance work is
+      // handled by maturingWorkerWait above and still reports its own wait.
+      if (!it.live && (it.batchDoneToday || maturingBatchDone(it.log))) continue;
+      const last = (it.log || []).reduce((latest, entry) => Number(entry.t) > Number(latest?.t || 0) ? entry : latest, null);
+      const since = Number(last?.t);
+      if (!(since > 0) || now - since < 30000) continue;
+      const elapsed = Math.floor((now - since) / 30000) * 30;
+      lines.push({ t: since + elapsed * 1000, text: `${tag} — ⏳ Status check: engine reports running. Last activity ${waitingDuration(elapsed)} ago: ${String(last.line || '').trim()}` });
+      continue;
+    }
     const ticks = Math.floor((now - wait.since) / 30000);
     lines.push({ t: wait.since, text: `${tag} — ⏳ Waiting for a worker to ${wait.what}. The scheduled time is the earliest start; actual start depends on worker availability.` });
     // Generate only the retained ticks, even after a long wait.
@@ -115,10 +134,10 @@ export function maturingWeeklyBlock(it, now = Date.now()) {
 // The one-word state a maturing campaign shows in the Profile Maturing list.
 // `tone` picks the dot colour: green only while it is actually connecting.
 export function maturingRowState(it) {
+  if (it.stopping && it.bucket !== 'done') return { label: 'Stopping…', tone: 'muted' };
   if (it.needsReview) return { label: 'Needs attention', tone: 'red' };
   if (maturingPreviewActivity(it) === 'Accepting') return { label: 'Active', tone: 'green' };
   if (it.bucket === 'done') return it.bad ? { label: 'Stopped', tone: 'muted' } : { label: 'Finished', tone: 'done' };
-  if (it.stopping) return { label: 'Stopping', tone: 'muted' };
   if (it.paused) return { label: 'Paused', tone: 'muted' };
   const weekly = maturingWeeklyBlock(it);
   if (weekly) return { label: weekly.reason === 'weekly_suspected' ? 'Possible weekly limit' : 'Weekly limit · paused', tone: 'amber' };
@@ -202,7 +221,7 @@ export function groupMaturingAccounts(items) {
   }
   return [...groups.values()].map(g => {
     // The account's state is its most "alive" campaign's state.
-    const order = ['Active', 'Needs attention', 'Weekly limit · paused', 'Possible weekly limit', 'Waiting for a worker', 'Waiting for acceptance', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
+    const order = ['Stopping…', 'Active', 'Needs attention', 'Weekly limit · paused', 'Possible weekly limit', 'Waiting for a worker', 'Waiting for acceptance', 'Starting', 'Awaiting its turn', 'Sleeping', 'Scheduled', 'Paused', 'Stopping', 'Stopped', 'Finished'];
     const states = [g.warm, g.cold].filter(Boolean).map(maturingRowState);
     states.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
     return { ...g, state: states[0] || { label: '', tone: 'muted' }, warmSent: g.warm ? (g.warm.sent || 0) : null, coldSent: g.cold ? (g.cold.sent || 0) : null };

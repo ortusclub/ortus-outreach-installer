@@ -64,7 +64,7 @@ import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, cam
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
-import { magellanPct, selectionSummary, mgNum, tileState } from '/js/magellan-view.mjs';
+import { magellanPct, selectionSummary, mgNum } from '/js/magellan-view.mjs';
 import { queueState, vmCapacityTile } from '/js/queue-state.mjs';
 import { latestBannerEvent, bannerEventPhase } from '/js/live-log-banner.mjs?v=3.1.48.95';
 import { isCampaignStatusSnapshot, nextCheckLabel, overlayCampaignStatus, selectCampaignStatusSnapshot } from '/js/campaign-status-contract.mjs?v=3.1.48.95';
@@ -8427,6 +8427,7 @@ window._resumingIds = _resumingIds;
 // terminal state is fetched. This prevents a stale board poll from repainting
 // it green or exposing another Stop button during the round-trip.
 const _stoppingCloudIds = new Set();
+const _maturingStopsAccepted = new Set();
 
 function _markCloudStopping(id, on) {
   const key = String(id || '');
@@ -8441,6 +8442,13 @@ function _markCloudStopping(id, on) {
       renderActiveCard(s);
     }
     for (const strip of document.querySelectorAll(`[data-cid="${CSS.escape(key)}"]`)) {
+      if (strip.classList.contains('mature-row') && on) {
+        strip.querySelector('.mature-row-state').textContent = 'Stopping…';
+        strip.querySelector('.mature-row-state').setAttribute('role', 'status');
+        strip.querySelectorAll('button').forEach(button => { button.disabled = true; });
+        const next = strip.querySelector('.mature-row-next');
+        if (next) next.textContent = 'Stop requested — waiting for confirmation';
+      }
       const card = strip.classList.contains('vj-card') ? strip : strip.querySelector('.vj-card');
       if (!card) continue;
       card.classList.toggle('is-stopping', !!on);
@@ -11665,19 +11673,23 @@ function renderUnifiedStrip(it) {
 // One understated line per matured account: a small dot, the account, its state
 // in a word, how many warm and cold connections it has attempted, Open, Delete.
 // A line for something that has not run: a saved plan or a draft.
+const _startingMaturePlans = new Set();
 function _maturingPlainRow({ name, state, open, del }) {
-  return `<div class="mature-row">`
-    + `<span class="dot q"></span>`
+  const starting = _startingMaturePlans.has(name);
+  if (starting) state = 'Starting…';
+  return `<div class="mature-row" data-plan-name="${escHtml(name || '')}">`
+    + `<span class="dot ${starting ? 'amber' : 'q'}"></span>`
     + `<span class="mature-row-name">${escHtml(name || '(unnamed)')}</span>`
-    + `<span class="mature-row-state">${escHtml(state)}</span>`
+    + `<span class="mature-row-state" role="status">${escHtml(state)}</span>`
     + `<span class="mature-row-detail"></span>`
-    + `<button type="button" class="mini solid" onclick="${open}">Open</button>`
-    + `<button type="button" class="mature-del" title="Delete" aria-label="Delete ${escHtml(name || '')}" onclick="${del}">${V3_SVG_TRASH}</button>`
+    + `<button type="button" class="mini solid" ${starting ? 'disabled' : ''} onclick="${open}">Open</button>`
+    + `<button type="button" class="mature-del" ${starting ? 'disabled' : ''} title="Delete" aria-label="Delete ${escHtml(name || '')}" onclick="${del}">${V3_SVG_TRASH}</button>`
     + `</div>`;
 }
 function maturingControlButtons(items) {
   const active = items.filter(it => it.bucket !== 'done' && it.bucket !== 'saved');
   if (!active.length) return '';
+  if (active.some(it => it.stopping || _stoppingCloudIds.has(String(it.id)))) return '<button type="button" class="mini" disabled>Stopping…</button>';
   const ids = active.map(it => it.id).join(',');
   const paused = active.every(it => it.paused);
   return `<button type="button" class="mini" onclick="controlMaturingPlan('${escHtml(ids)}','${paused ? 'resume' : 'pause'}',this)">${paused ? 'Resume' : 'Pause'}</button> `
@@ -11685,16 +11697,29 @@ function maturingControlButtons(items) {
 }
 window.controlMaturingPlan = async function(ids, action, btn) {
   if (action === 'stop' && !await appConfirm('Stop this profile’s warm and cold campaigns? Requests already sent stay sent.', { title: 'Stop maturing', okLabel: 'Stop plan' })) return;
+  const campaignIds = ids.split(',').filter(Boolean);
+  if (campaignIds.some(id => _stoppingCloudIds.has(id))) return;
   btn.disabled = true;
+  if (action === 'stop') {
+    campaignIds.forEach(id => _markCloudStopping(id, true));
+    btn.textContent = 'Stopping…';
+    renderCampaignsBoard();
+  }
   const failures = [];
-  for (const id of ids.split(',').filter(Boolean)) {
+  for (const id of campaignIds) {
     try {
       await _cloudMutationRequest(`/api/mature/control/${encodeURIComponent(id)}/${action}`, action);
+      if (action === 'stop') _maturingStopsAccepted.add(id);
+      _cloudDetailCache.delete(id);
       _pushCloudEvent(id, action === 'pause' ? 'Paused by operator' : action === 'resume' ? 'Resumed by operator' : 'Stopped by operator');
-    } catch (error) { failures.push(`${id}: ${error.message}`); }
+    } catch (error) {
+      if (action === 'stop') { _maturingStopsAccepted.delete(id); _markCloudStopping(id, false); }
+      failures.push(`${id}: ${error.message}`);
+    }
   }
   showCampaignToast(failures.length ? `Some campaigns could not ${action}: ${failures.join('; ')}`
-    : action === 'pause' ? 'Plan paused. Pauses expire after 48 hours; resume before then to continue.' : action === 'resume' ? 'Plan resumed; future stages keep their scheduled start.' : 'Plan stopped.', 8000);
+    : action === 'pause' ? 'Plan paused. Pauses expire after 48 hours; resume before then to continue.' : action === 'resume' ? 'Plan resumed; future stages keep their scheduled start.' : 'Stop requested — waiting for the dashboard to confirm.', 8000);
+  await _forceCloudItemsAfterAction();
   btn.disabled = false;
   renderCampaignsBoard();
 };
@@ -11709,7 +11734,7 @@ function _maturingListHtml(items) {
     const counts = [g.warmSent !== null ? `Warm <b>${g.warmSent}</b>` : '', g.coldSent !== null ? `Cold <b>${g.coldSent}</b>` : ''].filter(Boolean).join(' · ');
     return `<div class="mature-row" data-cid="${escHtml(main.id)}">`
       + `<span class="dot ${dot}"></span>`
-      + `<span class="mature-row-name">${escHtml(g.name)}${next ? `<small class="mature-row-next">${escHtml(next)}</small>` : ''}</span>`
+      + `<span class="mature-row-name">${escHtml(g.name)}${next ? `<small class="mature-row-next" title="${escHtml(next)}">${escHtml(next)}</small>` : ''}</span>`
       + `<span class="mature-row-state">${escHtml(g.state.label)}</span>`
       + `<span class="mature-row-detail">${counts}</span>`
       + maturingControlButtons(g.items)
@@ -11816,14 +11841,22 @@ async function refreshMaturingLog(items) {
   try {
     const campaigns = await _mapLimit(items, CLOUD_FANOUT_LIMIT, async (it) => {
       try {
-        const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(it.id)}`)).json();
-        return { name: it.name, kind: it.matureKind, log: Array.isArray(d && d.monitorLog) ? d.monitorLog : [] };
-      } catch { return { name: it.name, kind: it.matureKind, log: [] }; }
+        const response = await fetch(`/api/campaign/cloud/${encodeURIComponent(it.id)}`, { signal: AbortSignal.timeout(12000) });
+        const d = await response.json();
+        if (!response.ok || d.error || !d.campaign) throw new Error(d.error || 'Status unavailable');
+        const c = d.campaign, status = c.status;
+        return { ...it, name: it.name, kind: it.matureKind, engineStatus: status,
+          bucket: ['done', 'cancelled', 'error'].includes(status) ? 'done' : ['pending', 'queued', 'scheduled'].includes(status) ? 'queued' : 'running',
+          live: !!d.live, paused: status === 'paused', stopping: status === 'stopping' || status === 'pausing' || _stoppingCloudIds.has(String(it.id)),
+          needsReview: status === 'needs_review', dailyWait: status === 'waiting_daily_reset',
+          resumeAt: c.resumeTaskDueAt, acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt,
+          accountBlocks: c.matureAccountBlocks || [], log: Array.isArray(d.monitorLog) ? d.monitorLog : [] };
+      } catch { return null; }
     });
     syncMaturingLogScope();
     if (viewerScope !== _matureLogScope) return;
     // While a due action waits for a worker, say so (and keep saying so).
-    const lines = rememberMaturingLog([...mergeMaturingLogs(campaigns, 2000), ...maturingWaitLines(items)]);
+    const lines = rememberMaturingLog([...mergeMaturingLogs(campaigns.filter(Boolean), 2000), ...maturingWaitLines(campaigns.filter(Boolean))]);
     _maturingLogHtml = sharedMaturingLogHtml();
     _maturingLogAt = Date.now();
     const box = document.getElementById('maturing-all-log');
@@ -13152,6 +13185,11 @@ async function _renderCampaignsBoardInner() {
       _dupeSeen.set(k, (_dupeSeen.get(k) || 0) + 1);
     }
     for (const rawDetail of _cloudRaw) {
+      const rawId = String(rawDetail.campaign?.id || '');
+      if (_maturingStopsAccepted.has(rawId) && ['done', 'cancelled', 'error'].includes(rawDetail.campaign?.status)) {
+        _maturingStopsAccepted.delete(rawId);
+        _markCloudStopping(rawId, false);
+      }
       const stoppingNow = _stoppingCloudIds.has(String((rawDetail.campaign || {}).id || ''));
       const d = stoppingNow
         ? { ...rawDetail, live: false, liveProgress: null,
@@ -13520,9 +13558,11 @@ async function _renderCampaignsBoardInner() {
   // No "Delete all" on this rail: that button clears every draft on the board.
   // In the Profile Maturing tab a draft is one more quiet line, like the rest.
   const _matureDrafts = _draftRows.filter(_isMatureDraft);
+  const pendingMatureNames = [..._startingMaturePlans].filter(name => !_matureDrafts.some(d => d.name === name) && !items.some(it => it.name === name));
   const _matureDraftOpts = { draftsPlain: true, draftsCount: _matureDrafts.length,
     draftsHtml: _matureDrafts.map((d) => _maturingPlainRow({ name: d.name, state: 'Draft',
-      open: `editDraft('${escHtml(d.id)}')`, del: `deleteDraftStrip('${escHtml(d.id)}', this)` })).join('') };
+      open: `editDraft('${escHtml(d.id)}')`, del: `deleteDraftStrip('${escHtml(d.id)}', this)` })).join('')
+      + pendingMatureNames.map(name => _maturingPlainRow({ name, state: 'Starting…', open: '', del: '' })).join('') };
 
   // Scheduled runs (this Mac's node-cron schedules). Like drafts, they are not
   // board items, so they arrive pre-rendered; soonest first.
@@ -35052,45 +35092,18 @@ function renderMagellanAccounts() {
     const on = mgSelected.has(a.profileId);
     const item = document.createElement('label');
     item.className = 'profile-item jt ' + (a.collected ? 'is-done' : 'free') + (on ? ' selected' : '');
-    const when = a.collectedAt ? new Date(a.collectedAt).toLocaleDateString() : '';
-    // Whether we have collected it, and whether it can be imported at all, are
-    // two different questions. The tile used to answer only the first, so a
-    // green DONE could sit on an account HubSpot would refuse — two accounts
-    // were already in exactly that hole. tileState decides which one wins.
-    const st = tileState(a);
-    let sub = a.collected
-      ? `${mgNum(a.count || 0)} collected on ${when}. Tick to collect again.`
-      : 'Never collected.';
-    // The label on the GoLogin profile, when it isn't the address itself —
-    // that's how the operator recognises the account.
-    if (a.resolved && a.profile && a.profile !== a.account) sub = `${a.profile} · ${sub}`;
-    // No SoO address means nothing to write in HubSpot's Linkedin 1st
-    // Connections field, so say so here rather than at import time.
-    if (st.kind === 'nosoo') {
-      sub = a.ambiguous
-        ? `Two SoO accounts match this name — can't tell which. ${sub}`
-        : `No email found in the SoO for this profile — it can be collected, but not imported. ${sub}`;
-    } else if (st.kind === 'fixable') {
-      sub = `Not on the HubSpot "Linkedin 1st Connections" list yet — one click below fixes it. ${sub}`;
-    } else if (st.kind === 'unknown') {
-      sub = `HubSpot didn't answer in time, so we don't know if this one can be imported. ${sub}`;
-    }
-    // Blocked accounts stay tickable on purpose: collecting still writes the
-    // connections to the operator's Google Sheet tab, only the HubSpot import
-    // is held up. Amber warns, it does not wall.
-    item.className += (st.kind === 'nosoo' ? ' is-nosoo' : '')
-      + (st.kind === 'fixable' ? ' is-fixable' : '');
+    const when = a.collectedAt ? new Date(a.collectedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    let sub = when
+      ? `Last collected: ${when} · ${mgNum(a.count || 0)} connections`
+      : a.collected ? `${mgNum(a.count || 0)} connections · Collection date unavailable` : 'No collection recorded.';
+    if (a.profile && a.profile !== a.account) sub = `${a.profile} · ${sub}`;
     item.innerHTML = `
-      <div class="jt-stat ${st.band}">
-        <span class="jt-dot"></span>
-        <span class="jt-word ${a.collected ? 'w-done' : 'w-todo'}">${st.word}</span>
-      </div>
       <div class="jt-det">
         <div class="jt-top">
           <input type="checkbox" ${on ? 'checked' : ''} />
           <span class="jt-email">${escHtml(a.account)}</span>
         </div>
-        <div class="jt-sub">${sub}</div>
+        <div class="jt-sub">${escHtml(sub)}</div>
       </div>`;
     item.querySelector('input').addEventListener('change', (e) => {
       if (e.target.checked) mgSelected.add(a.profileId); else mgSelected.delete(a.profileId);
@@ -35304,7 +35317,10 @@ async function refreshMagellanState() {
     if (!res.ok) return;
     const s = await res.json();
     renderMagellanState(s);
-    if (s.running) mgSawRunning = true;
+    if (s.running) {
+      mgSawRunning = true;
+      if (!mgPoll) mgPoll = setInterval(refreshMagellanState, 2000);
+    }
     const settled = mgSawRunning || Date.now() - mgPollStarted > MG_POLL_GRACE_MS;
     if (!s.running && settled && mgPoll) {
       clearInterval(mgPoll);
@@ -35384,7 +35400,84 @@ function renderMagellanAccountDetail() {
     + `<div class="mg-det-raw">${escHtml(d.raw || a.error || '')}</div>`;
 }
 
+async function addMagellanAccounts(button) {
+  button.disabled = true;
+  showMagellanError('');
+  try {
+    const accounts = mgAccounts.filter(a => mgSelected.has(a.profileId));
+    if (!accounts.length) throw new Error('Select accounts above to add them to Operation Magellan.');
+    await mgFetch('/api/magellan/roster', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accounts }),
+    });
+    await refreshMagellanState();
+  } catch (err) { showMagellanError(err.message); }
+  finally { button.disabled = false; }
+}
+window.addMagellanAccounts = addMagellanAccounts;
+
+let mgRosterSignature = '';
+function renderMagellanRoster(s) {
+  const host = document.getElementById('mg-roster');
+  if (!host) return;
+  const queue = s.collectionQueue || [];
+  const rows = (s.roster || []).map(a => {
+    const pending = queue.find(q => q.profileId === a.profileId);
+    const result = [...(s.perAccount || [])].reverse().find(r => r.account === a.account);
+    const known = mgAccounts.find(r => r.profileId === a.profileId);
+    const active = Boolean(s.running && pending && s.account === a.account && s.step !== 'Waiting for a free browser slot');
+    const status = pending?.paused ? (active ? 'Pausing…' : 'Paused') : pending ? (active ? 'Collecting connections' : 'Queued')
+      : a.paused ? 'Paused' : 'Sleeping';
+    const lastCollected = result?.collectedAt || known?.collectedAt || null;
+    return { ...a, status, active: active && !pending?.paused, lastCollected, pending: Boolean(pending), csv: a.profileId.startsWith('csv:') };
+  });
+  const signature = JSON.stringify(rows);
+  if (signature === mgRosterSignature && host.childNodes.length) return;
+  mgRosterSignature = signature;
+  host.replaceChildren();
+  if (!rows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'mg-roster-empty';
+    empty.textContent = 'No accounts added yet. Select accounts above and click Add selected accounts.';
+    host.append(empty);
+  }
+  for (const account of rows) {
+    const row = document.createElement('div'); row.className = 'mg-roster-row' + (account.active ? ' is-active' : '');
+    const detail = document.createElement('div'); detail.className = 'mg-roster-detail';
+    const name = document.createElement('strong'); name.textContent = account.account;
+    const status = document.createElement('span'); status.textContent = account.status;
+    detail.append(name, status); row.append(detail);
+    const collected = document.createElement('div'); collected.className = 'mg-last-collected';
+    const label = document.createElement('span'); label.textContent = 'Last collected';
+    const date = document.createElement('span');
+    date.textContent = account.lastCollected ? new Date(account.lastCollected).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Never';
+    if (account.lastCollected) date.title = new Date(account.lastCollected).toLocaleString();
+    collected.append(label, date); row.append(collected);
+    const actions = document.createElement('div'); actions.className = 'mg-roster-actions';
+    for (const [action, label] of [[account.paused ? 'resume' : 'pause', account.paused ? 'Resume' : 'Pause'], ['collect', 'Collect now'], ['delete', 'Delete']]) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.textContent = label;
+      button.setAttribute('aria-label', `${label}: ${account.account}`);
+      button.disabled = action === 'collect' && (account.pending || account.csv);
+      if (action === 'delete') button.title = 'Remove from Operation Magellan. Collected data is kept.';
+      if (account.csv && action === 'collect') button.title = 'Imported from CSV — no browser account connected';
+      button.addEventListener('click', async () => {
+        for (const b of actions.children) b.disabled = true;
+        showMagellanError('');
+        try {
+          await mgFetch(`/api/magellan/roster/${encodeURIComponent(account.profileId)}/${action}`, { method: 'POST' });
+          if (action === 'delete') { mgSelected.delete(account.profileId); renderMagellanAccounts(); }
+          mgRosterSignature = '';
+          startMagellanPolling();
+        } catch (err) { showMagellanError(err.message); mgRosterSignature = ''; await refreshMagellanState(); }
+      });
+      actions.append(button);
+    }
+    row.append(actions); host.append(row);
+  }
+}
+
 function renderMagellanState(s) {
+  renderMagellanRoster(s);
   const el = (id) => document.getElementById(id);
   const set = (id, v) => { const e = el(id); if (e) e.textContent = v; };
 
@@ -35647,7 +35740,7 @@ function renderMagellanLog(lines) {
   const box = document.getElementById('mg-log');
   if (!box) return;
   if (!lines.length) {
-    box.innerHTML = '<div class="vj-log-empty">Waiting to start — events appear here, one account at a time.</div>';
+    box.innerHTML = '<div class="vj-log-empty">No activity yet. All Operation Magellan activity will appear here.</div>';
     return;
   }
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
@@ -36928,6 +37021,15 @@ window.startMaturePlan = async function(btn) {
   if (!name) { showCampaignToast('Choose the profile to mature first. The campaign is named after it.', 5000); return; }
   const maturePlan = readMaturePlan();
   if (!maturePlan) { showCampaignToast('The plan editor is not ready. Reopen Profile Maturing and try again.', 6000); return; }
+  if (_startingMaturePlans.has(name)) return;
+  _startingMaturePlans.add(name);
+  for (const row of document.querySelectorAll('.mature-row[data-plan-name]')) {
+    if (row.dataset.planName !== name) continue;
+    row.querySelector('.mature-row-state').textContent = 'Starting…';
+    row.querySelector('.dot').className = 'dot amber';
+    row.querySelectorAll('button').forEach(button => { button.disabled = true; });
+  }
+  renderCampaignsBoard();
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Starting…';
   // The same launch card every cloud campaign shows while it starts — it opens
@@ -37001,7 +37103,13 @@ window.startMaturePlan = async function(btn) {
     _renderMatureLaunchLog(name, steps, lostResponse ? 'Check dashboard' : 'Not started');
     showCampaignToast(message, 12000);
   }
-  finally { clearInterval(poll); cancel.hidden = true; btn.disabled = false; btn.textContent = label; }
+  finally {
+    clearInterval(poll); cancel.hidden = true;
+    await _forceCloudItemsAfterAction();
+    _startingMaturePlans.delete(name);
+    btn.disabled = false; btn.textContent = label;
+    renderCampaignsBoard();
+  }
 };
 
 window.cancelMatureStart = async function(btn) {

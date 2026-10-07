@@ -318,7 +318,7 @@ export function renderMaturePlan({onChange, accounts} = {}) {
       if (plan.warmPool !== pool || plan.targetProfileIds.join(',') !== exclude || !poolStatus.isConnected) return;
       if (!response.ok || data.error) { warmPoolState = { status: 'error' }; refreshRampChart(); poolStatus.textContent = data.error || 'Could not count this pool.'; return; }
       warmPoolState = { status: 'ready', ready: data.ready, warning: data.warning || '' }; refreshRampChart();
-      const left = [data.missing ? `${data.missing} have no known LinkedIn URL` : '', data.restricted ? `${data.restricted} are restricted` : ''].filter(Boolean).join(' and ');
+      const left = [data.missing ? `${data.missing} have no known LinkedIn URL` : '', data.restricted ? `${data.restricted} are restricted` : '', data.inactive ? `${data.inactive} are inactive or have no confirmed Active status` : ''].filter(Boolean).join(' and ');
       poolStatus.textContent = `${data.ready} of ${data.total} accounts in this pool can be invited${left ? ` · ${left} and will be skipped` : ''}.${data.warning ? ` ${data.warning}` : ''}`;
     } catch { if (poolStatus.isConnected && plan.warmPool === pool && plan.targetProfileIds.join(',') === exclude) { warmPoolState = { status: 'error' }; refreshRampChart(); poolStatus.textContent = 'Could not count this pool.'; } }
   }

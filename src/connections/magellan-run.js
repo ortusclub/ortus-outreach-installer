@@ -98,6 +98,27 @@ const DUP_SAMPLE_CAP = 25;
 // the one that hung. Nothing is lost — collectAccount writes its CSV only once
 // the walk completes.
 let _stopRequested = false;
+let _collectionQueue = [];
+const _pausedProfiles = new Set();
+
+export function pauseAccount(profileId) {
+  _pausedProfiles.add(profileId);
+  log(`◼ Account paused: ${profileId}. Other accounts will continue.`);
+}
+
+export function collectNow(account, deps = {}) {
+  if (_state.running && _state.phase !== 'collecting') return { started: false, reason: 'Wait for the current HubSpot operation to finish' };
+  if (_state.running && _stopRequested) return { started: false, reason: 'Collection is stopping. Try again once it has stopped.' };
+  if (_state.running) {
+    if (_collectionQueue.some(a => a.profileId === account.profileId)) return { started: false, reason: 'This account is already collecting or queued' };
+    _pausedProfiles.delete(account.profileId);
+    _collectionQueue.push(account);
+    _state.total += 1;
+    log(`◦ ${account.account}: queued for connection collection.`);
+    return { started: true, queued: true };
+  }
+  return startCollect([account], deps);
+}
 
 // How long a read may go without a single progress tick before it is treated as
 // dead. The beacon publishes every 1.5s through both halves of the walk, so this
@@ -108,7 +129,7 @@ let STALL_MS = 4 * 60 * 1000;
 /** Test seam. Four real minutes is not a unit test. */
 export function setStallMs(ms) { STALL_MS = ms; }
 
-export function getState() { return { ..._state }; }
+export function getState() { return { ..._state, collectionQueue: _collectionQueue.map(a => ({ ...a, paused: _pausedProfiles.has(a.profileId) })) }; }
 
 /** Stop the sweep, abandoning the account currently being read. */
 export function stopCollect() {
@@ -147,6 +168,7 @@ function sheetAfterRun(state, sheet, what) {
 
 export function getPlans() { return _plans; }
 export function reset() {
+  _collectionQueue = []; _pausedProfiles.clear();
   _state = idle(); _plans = null; _duplicates = null; _stopRequested = false;
   resetPlanVerdicts();   // stale verdicts must not survive into the next sweep
   // The contact links deliberately DO survive. A verdict describes one run; a
@@ -193,13 +215,21 @@ export function startCollect(accounts, deps = {}) {
   if (!list.length) return { started: false, reason: 'No accounts selected' };
 
   _stopRequested = false;
+  _pausedProfiles.clear();
+  _collectionQueue = [...list];
   resetPublished();   // a new sweep rewrites every account tab it touches
-  _state = { ...idle(), running: true, phase: 'collecting', total: list.length, startedAt: new Date().toISOString() };
+  _state = { ...idle(), log: _state.log, running: true, phase: 'collecting', total: list.length, startedAt: new Date().toISOString() };
 
   log(`▶ Collecting ${list.length} account${list.length === 1 ? '' : 's'}.`);
 
   (async () => {
-    for (const entry of list) {
+    while (_collectionQueue.length) {
+      const entry = _collectionQueue[0];
+      if (_pausedProfiles.has(entry.profileId)) {
+        _collectionQueue.shift();
+        _state.total -= 1;
+        continue;
+      }
       if (_stopRequested) {
         log(`◼ Stopped. ${_state.done} of ${list.length} accounts done; the rest were not started.`);
         break;
@@ -221,10 +251,12 @@ export function startCollect(accounts, deps = {}) {
         _state.step = 'Waiting for a free browser slot';
         await semaphore.acquire();
         try {
+          if (_stopRequested || _pausedProfiles.has(entry.profileId)) throw new Error('account-paused');
           _state.step = 'Opening the browser';
           log(`◦ ${entry.account}: opening the browser…${attempt > 1 ? ' (second try)' : ''}`);
           launched = await launchProfile(entry.profileId);
 
+          if (_stopRequested || _pausedProfiles.has(entry.profileId)) throw new Error('account-paused');
           phase = 'read';
           _state.step = 'Reading the connections list';
           log(`◦ ${entry.account}: signed in, reading the connections list…`);
@@ -251,6 +283,7 @@ export function startCollect(accounts, deps = {}) {
                 // Stop means stop. It used to mean "after this account", which
                 // is indistinguishable from "never" when this account is hung.
                 if (_stopRequested) return reject(new Error('stopped-by-operator'));
+                if (_pausedProfiles.has(entry.profileId)) return reject(new Error('account-paused'));
                 // The beacon ticks every 1.5s through both halves of the read,
                 // so four minutes of silence is a dead browser, not a slow one.
                 if (Date.now() - lastTick > STALL_MS) {
@@ -281,6 +314,11 @@ export function startCollect(accounts, deps = {}) {
           // One dead account must not end the sweep. Record WHY, in words the
           // operator can act on, not the raw stack.
           _state.current = null;
+          if (_pausedProfiles.has(entry.profileId)) {
+            log(`◼ ${entry.account}: collection paused; saved data kept.`);
+            done = true;
+            continue;
+          }
           const d = diagnose(err, { phase });
           if (d.retryable && attempt < 2 && !_stopRequested) {
             log(`⚠ ${entry.account}: ${d.what} — trying once more. [${d.raw}]`);
@@ -300,14 +338,17 @@ export function startCollect(accounts, deps = {}) {
           semaphore.release();
         }
       }
-      _state.done += 1;
+      _collectionQueue.shift();
+      if (_pausedProfiles.has(entry.profileId)) _state.total -= 1;
+      else _state.done += 1;
       _state.failures = summarise(_state.perAccount);
       toSheet();
     }
     const ok = _state.perAccount.filter((a) => !a.error);
     const people = ok.reduce((n, a) => n + (a.total || 0), 0);
-    log(`■ Finished. ${ok.length} of ${list.length} accounts, ${people} people`
-      + (ok.length < list.length ? `, ${list.length - ok.length} failed.` : '.'));
+    log(`■ Finished. ${ok.length} of ${_state.total} accounts, ${people} people`
+      + (_state.perAccount.some(a => a.error) ? `, ${_state.perAccount.filter(a => a.error).length} failed.` : '.'));
+    _collectionQueue = [];
     _state.phase = _stopRequested ? 'stopped' : 'done';
     _state.stopped = _stopRequested;
     _state.account = null;
@@ -322,6 +363,7 @@ export function startCollect(accounts, deps = {}) {
     // in flight, otherwise the tab freezes one account short of the truth.
     await toSheet(true);
   })().catch(async (err) => {
+    _collectionQueue = [];
     log(`✗ The collection stopped unexpectedly — ${err.message}`);
     _state.error = err.message;
     _state.phase = 'error';

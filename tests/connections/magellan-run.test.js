@@ -942,3 +942,48 @@ test('a read that stops reporting progress is abandoned, and the sweep goes on',
     setStallMs(4 * 60 * 1000);
   }
 });
+
+test('per-account pause skips a waiting profile while collect-now queues only the chosen profile', async () => {
+  const { pauseAccount, collectNow } = await import('../../src/connections/magellan-run.js');
+  reset();
+  let releaseSlot;
+  const gate = new Promise(r => { releaseSlot = r; });
+  const launched = [];
+  let first = true;
+  startCollect([{ profileId: 'p1', account: 'a@o.com' }, { profileId: 'p2', account: 'b@o.com' }], {
+    semaphore: { acquire: async () => { if (first) { first = false; await gate; } }, release() {} },
+    launchProfile: async id => { launched.push(id); return { page: {} }; },
+    closeProfile: async () => {}, collect: async () => ({ total: 5, withMemberId: 5, hidden: 0 }), sheet: noSheet,
+  });
+  pauseAccount('p1');
+  assert.equal(collectNow({ profileId: 'p3', account: 'c@o.com' }).queued, true);
+  assert.equal(collectNow({ profileId: 'p3', account: 'c@o.com' }).started, false);
+  releaseSlot();
+  await settle();
+  assert.deepEqual(launched, ['p2', 'p3']);
+  assert.equal(getState().done, 2);
+  assert.equal(getState().total, 2);
+  assert.deepEqual(getState().collectionQueue, []);
+});
+
+test('pausing an active account closes its browser and continues to the next account', async () => {
+  const { pauseAccount } = await import('../../src/connections/magellan-run.js');
+  reset();
+  const closed = [];
+  let reading;
+  const started = new Promise(r => { reading = r; });
+  startCollect([{ profileId: 'p1', account: 'a@o.com' }, { profileId: 'p2', account: 'b@o.com' }], {
+    semaphore: fakeSemaphore(), launchProfile: async id => ({ page: { id } }),
+    closeProfile: async id => { closed.push(id); },
+    collect: async page => {
+      if (page.id === 'p1') { reading(); return new Promise(() => {}); }
+      return { total: 5, withMemberId: 5, hidden: 0 };
+    }, sheet: noSheet,
+  });
+  await started;
+  pauseAccount('p1');
+  await new Promise(r => setTimeout(r, 1100));
+  assert.deepEqual(closed, ['p1', 'p2']);
+  assert.equal(getState().running, false);
+  assert.deepEqual(getState().perAccount.map(a => a.account), ['b@o.com']);
+});
