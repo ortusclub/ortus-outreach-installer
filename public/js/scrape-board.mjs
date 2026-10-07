@@ -287,3 +287,16 @@ export function openedScrapeJobs(campaigns, cid) {
   const c = campaigns.find((x) => x && x.id === cid);
   return (c && Array.isArray(c.jobs)) ? c.jobs : null;
 }
+
+// A search LinkedIn is likely throttling. The engine sets job.throttleSuspected
+// (Signal A: a real result pool but ~no leads collected; Signal B: far fewer
+// results than other accounts on the same search). Advisory only — the search
+// still finished "done"; the UI shows an amber "possibly throttled" line.
+export function isSearchThrottled(job) {
+  return !!(job && job.throttleSuspected);
+}
+export function scrapeThrottleReason(job) {
+  return (job && job.throttleReason)
+    ? String(job.throttleReason)
+    : 'this account may be throttled — rest it a few days, then re-run.';
+}

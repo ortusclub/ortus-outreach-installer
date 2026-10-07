@@ -60,7 +60,7 @@ import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
-import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus, searchKey, scrapeCampaignId, openedScrapeJobs } from '/js/scrape-board.mjs';
+import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail, campaignStatus, searchKey, scrapeCampaignId, openedScrapeJobs, isSearchThrottled, scrapeThrottleReason } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
 import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 import { primarySessionBadge } from '/js/primary-session-render.mjs';
@@ -638,7 +638,9 @@ function renderStrip(c) {
       ? `<div class="sn-joberr">${escHtml(j.error)}</div>`
       : (j.state === 'rerouted'
           ? `<div class="sn-jobmoved">Account had no Sales Nav seat / was logged out — this search was moved to a working account.</div>`
-          : '');
+          : (isSearchThrottled(j)
+              ? `<div class="sn-jobwarn">⚠ ${escHtml(scrapeThrottleReason(j))}</div>`
+              : ''));
     return `<div class="job"><div class="jcol"><div class="jt">${escHtml(label)}</div>${sub ? `<div class="js">${escHtml(sub)}</div>` : ''}${note}</div><div class="jstat">${st}</div></div>`;
   }).join('') || '<div class="sn-empty">No jobs.</div>';
   // One-line roll-up so the card answers "what happened" without expanding: how
@@ -4950,7 +4952,7 @@ function _renderScrapeConsole(jobs, el) {
           <span class="scrape-job-name">${escHtml(label)}${acctHtml}</span>
           <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(stateLabel)} · ${j.pages || 0}p · ${leadsHtml}</span>
           ${['error','cancelled'].includes(j.state) ? retryButton : ''}
-        </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
+        </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : (isSearchThrottled(j) ? `<div class="scrape-job-warn">⚠ ${escHtml(scrapeThrottleReason(j))}</div>` : '')}`;
     };
     // When a scrape was re-run, separate the runs with a header so "1st scrape" and
     // "2nd scrape" are clearly distinct instead of one lumped-together list. A
