@@ -4284,17 +4284,16 @@
   <div id="solo-check-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeSoloCheckModal()">
     <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="solo-check-title">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeSoloCheckModal()">&times;</button>
-      <div class="stop-choice-eyebrow">Run a solo check</div>
       <h3 id="solo-check-title" class="modal-title stop-choice-headline">Check which accounts?</h3>
-      <p class="stop-choice-sub">One connection check now — stamps newly Connected, and for Connect + Introduce fires the intro where Introduction Status is blank.</p>
+      <p class="stop-choice-sub">Step 1 of 2</p>
       <div class="stop-choice-row">
         <button type="button" class="stop-choice-pill is-monitor" onclick="runSoloCheck('campaign')">
-          <div class="stop-choice-pill-headline">This campaign's<br>accounts</div>
-          <div class="stop-choice-pill-sub">Checks only the accounts this campaign used.</div>
+          <div class="stop-choice-pill-headline">This campaign's accounts</div>
+          <div class="stop-choice-pill-sub">Only the accounts this campaign used.</div>
         </button>
         <button type="button" class="stop-choice-pill is-monitor" onclick="runSoloCheck('sheet')">
-          <div class="stop-choice-pill-headline">All senders<br>in this tab</div>
-          <div class="stop-choice-pill-sub">Checks every account in this tab's Sender column. Other tabs are never included.</div>
+          <div class="stop-choice-pill-headline">All senders in this tab</div>
+          <div class="stop-choice-pill-sub">Every account in the tab's Sender column.</div>
         </button>
       </div>
       <div class="stop-choice-cancel-row">
@@ -4311,17 +4310,16 @@
   <div id="check-where-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCheckWhereModal()">
     <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="check-where-title">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCheckWhereModal()">&times;</button>
-      <div class="stop-choice-eyebrow">Run the check</div>
-      <h3 id="check-where-title" class="modal-title stop-choice-headline">Where should this check run?</h3>
-      <p class="stop-choice-sub">Same check either way — detect accepted connections and send the intro where Introduction Status is blank.</p>
+      <h3 id="check-where-title" class="modal-title stop-choice-headline">Where should it run?</h3>
+      <p class="stop-choice-sub">Step 2 of 2</p>
       <div class="stop-choice-row">
-        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('vm')">
-          <div class="stop-choice-pill-headline">Cloud VMs</div>
-          <div class="stop-choice-pill-sub">The cloud machines run it — you can close the app.</div>
+        <button type="button" class="stop-choice-pill is-monitor is-recommended" onclick="runCheckWhere('local')">
+          <div class="stop-choice-pill-headline">This Mac <span class="stop-choice-pill-tag">Recommended</span></div>
+          <div class="stop-choice-pill-sub">Starts now, browsers open here. Keep the app open.</div>
         </button>
-        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('local')">
-          <div class="stop-choice-pill-headline">This machine</div>
-          <div class="stop-choice-pill-sub">Opens the GoLogin browsers here, like a local campaign's check. Keep the app open.</div>
+        <button type="button" class="stop-choice-pill is-monitor" onclick="runCheckWhere('vm')">
+          <div class="stop-choice-pill-headline">Cloud VM</div>
+          <div class="stop-choice-pill-sub">Runs on a worker, which may take a few minutes to wake.</div>
         </button>
       </div>
       <div class="stop-choice-cancel-row">

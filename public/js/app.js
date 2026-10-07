@@ -15413,13 +15413,18 @@ window.cloudCheckLocal = cloudCheckLocal;
 // 'all' scope (Account Used column) and 'campaign' to this campaign's accounts.
 function promptCloudCheckScope(id, btn) {
   if (!id) return;
-  // Scope only: this campaign's accounts, or every account in the sheet's
-  // Account Used column. WHERE it runs is no longer asked, it follows the
-  // campaign's own side. See _checkRunsLocally.
+  // Step 1: scope — this campaign's accounts, or every account in the sheet's
+  // Account Used column. Step 2: WHERE — this Mac (recommended: the browsers
+  // open in front of the operator, no worker wake-up) or the cloud VMs. The
+  // where question was dropped for a while in favour of following the
+  // campaign's own side; the operator asked for it back (2026-10-07).
   _soloCheckHandler = (mode) => {
     const scope = mode === 'sheet' ? 'all' : 'campaign';
-    if (_checkRunsLocally(id)) cloudCheckLocal(id, btn, scope);
-    else cloudCheckNow(id, btn, scope);
+    _checkWhereHandler = (where) => {
+      if (where === 'local') cloudCheckLocal(id, btn, scope);
+      else cloudCheckNow(id, btn, scope);
+    };
+    _showCheckWhereModal();
   };
   _showSoloCheckModal();
 }

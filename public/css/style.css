@@ -8953,6 +8953,17 @@ body:not(.route-wizard) #active-card { display: none !important; }
 .template-preview-button:hover { background: var(--ink); color: var(--bg, #fff); }
 .template-preview-button:disabled { opacity: .55; cursor: wait; }
 .campaign-warnings-inline[hidden] { display: none; }
+/* The two check-now steps (scope, then where): one short title, a step
+   counter, two rounded choices, a cancel link. Nothing else. */
+#solo-check-modal .stop-choice-card, #check-where-modal .stop-choice-card { padding: 28px 28px 22px; max-width: 560px; }
+#solo-check-modal .stop-choice-headline, #check-where-modal .stop-choice-headline { font-size: 1.5rem; margin: 0 0 4px; }
+#solo-check-modal .stop-choice-sub, #check-where-modal .stop-choice-sub { font-family: var(--mono); font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: var(--gray); margin: 0 0 16px; }
+#solo-check-modal .stop-choice-pill, #check-where-modal .stop-choice-pill { border-radius: 12px; padding: 14px 16px; }
+#solo-check-modal .stop-choice-pill-headline, #check-where-modal .stop-choice-pill-headline { font-family: var(--body); font-size: .95rem; font-weight: 650; letter-spacing: 0; margin-bottom: 4px; }
+#solo-check-modal .stop-choice-pill-sub, #check-where-modal .stop-choice-pill-sub { font-family: var(--body); font-size: .8rem; color: var(--gray); line-height: 1.4; }
+#solo-check-modal .stop-choice-cancel-row, #check-where-modal .stop-choice-cancel-row { margin-top: 12px; }
+.stop-choice-pill.is-recommended { border-color: var(--ink); border-width: 2px; }
+.stop-choice-pill-tag { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 9999px; background: var(--ink); color: var(--bg, #fff); font-family: var(--mono); font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; vertical-align: middle; }
 #preview-modal-body { color: var(--ink, #111); }
 
 .campaign-run-history { margin: -8px 0 24px; padding: 12px 20px; border: 1px solid var(--hairline); border-radius: 12px; }
