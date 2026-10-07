@@ -2877,11 +2877,17 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
         return (lines.find(l => !isPresenceLine(l)) || lines[0] || '').replace(/^photo of\s+/i, '').slice(0, 120);
       };
       const collectMatches = (cands) => {
+        // A word matches when either side is a prefix of the other (3+ chars):
+        // the sheet says "Samuel", LinkedIn says "Sam" (operator, 2026-10-07:
+        // "Samuel Adcock" vs the row "Sam Adcock • 1st", one candidate, no
+        // match). The last name still has to match, so this cannot pick a
+        // stranger; two same-name rows are still disambiguated by photo.
+        const wordHit = (w, tok) => w.startsWith(tok) || (w.length >= 3 && tok.startsWith(w));
         const nameHit = (text) => {
           const t = normalizeName(text);
           if (t === norm || t.startsWith(`${norm} `)) return true;
           const words = t.split(/\s+/);
-          return tokens.length > 0 && tokens.every(tok => words.some(w => w.startsWith(tok)));
+          return tokens.length > 0 && tokens.every(tok => words.some(w => wordHit(w, tok)));
         };
         const people = cands
           .map((el, i) => ({ el, i, text: rowTextOf(el) }))

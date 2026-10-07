@@ -15333,6 +15333,38 @@ function _sweepBlockedMessage(perProfile) {
   return `⚠ Check could not run — none of the ${n} account${n === 1 ? '' : 's'} could open on this Mac: ${reasons.slice(0, 2).join(' · ')}`;
 }
 
+// Mirror this Mac's sweep narration ("📡 [acct] Launching browser…",
+// "Sweeping recent connections…", "✓ … newly accepted", "🤝 Auto-introducing…")
+// into a cloud campaign's own log while a local check runs for it, with the
+// original timestamps. Lines already in the local log when the check starts
+// are not copied. Returns { stop } — stop() relays the closing lines.
+async function _startLocalSweepRelay(cloudId) {
+  if (!cloudId) return { stop: async () => {} };
+  const seen = new Set();
+  let seed = 0;
+  const pull = async () => {
+    try {
+      const st = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
+      for (const raw of (Array.isArray(st.logs) ? st.logs : [])) {
+        const line = String(raw || '');
+        if (seen.has(line)) continue;
+        seen.add(line);
+        if (seen.size <= seed) continue;
+        const m = line.match(/^\[([^\]]+)\]\s*(.*)$/);
+        const at = m ? Date.parse(m[1]) : NaN;
+        _pushCloudEvent(cloudId, m ? m[2] : line, Number.isFinite(at) ? at : undefined);
+      }
+    } catch (_) { /* best-effort narration */ }
+  };
+  try {
+    const st0 = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
+    for (const raw of (Array.isArray(st0.logs) ? st0.logs : [])) seen.add(String(raw || ''));
+    seed = seen.size;
+  } catch (_) { /* relay whatever appears */ }
+  const timer = setInterval(pull, 1500);
+  return { stop: async () => { clearInterval(timer); await pull(); } };
+}
+
 async function cloudCheckLocal(id, btn, scope) {
   if (!id) return;
   scope = scope === 'all' ? 'all' : 'campaign';
@@ -15352,28 +15384,7 @@ async function cloudCheckLocal(id, btn, scope) {
   // card never showed — the operator saw only "started" and "done" here
   // (2026-10-07). Relay every new local line into this campaign's log while
   // the sweep runs, so the results sit with the campaign they belong to.
-  const _seenLocal = new Set();
-  const _relayLocalLog = async () => {
-    try {
-      const st = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
-      for (const raw of (Array.isArray(st.logs) ? st.logs : [])) {
-        const line = String(raw || '');
-        if (_seenLocal.has(line)) continue;
-        _seenLocal.add(line);
-        if (_seenLocal.size <= _seedCount) continue; // lines that predate this check
-        const m = line.match(/^\[([^\]]+)\]\s*(.*)$/);
-        const at = m ? Date.parse(m[1]) : NaN;
-        _pushCloudEvent(id, m ? m[2] : line, Number.isFinite(at) ? at : undefined);
-      }
-    } catch (_) { /* best-effort narration */ }
-  };
-  let _seedCount = 0;
-  try {
-    const st0 = await (await fetch('/api/campaign/status', { cache: 'no-store' })).json();
-    for (const raw of (Array.isArray(st0.logs) ? st0.logs : [])) _seenLocal.add(String(raw || ''));
-    _seedCount = _seenLocal.size;
-  } catch (_) { /* start relaying from whatever appears */ }
-  const _relayTimer = setInterval(_relayLocalLog, 1500);
+  const _relay = await _startLocalSweepRelay(id);
   try {
     const d = await (await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}`)).json();
     const camp = d && d.campaign;
@@ -15453,8 +15464,7 @@ async function cloudCheckLocal(id, btn, scope) {
     // "starting/checking" marker must not survive until its 90-second TTL.
     // Keeping it around made the hero disagree with the completed live log.
     if (_cloudCheckAsked.get(id) === askedAt) _cloudCheckAsked.delete(id);
-    clearInterval(_relayTimer);
-    await _relayLocalLog(); // the sweep's closing lines
+    await _relay.stop(); // the sweep's closing lines
     try { if (typeof renderCampaignsBoard === 'function') renderCampaignsBoard(); } catch (_) { /* */ }
     if (btn) btn.disabled = false;
   }
@@ -24027,6 +24037,19 @@ function openSoloCheckModal(idx) {            // Past-row "Run a solo check"
   _soloCheckHandler = (mode) => _runSoloCheckPast(idx, mode);
   _showSoloCheckModal();
 }
+// The cloud campaign the wizard is showing, however it was opened: bound for
+// viewing, carried on the live status, or loaded for edit. Null for a plain
+// draft that has never been dispatched.
+function _wizardCloudCampaignId() {
+  if (_viewingCloudId) return String(_viewingCloudId);
+  const st = window.__cloudActiveStatus;
+  if (st && st._cloud && st.id) return String(st.id);
+  const id = _editingCampaignId;
+  const item = id && (_boardItemsById.get(String(id)) || (typeof _snItemsById !== 'undefined' && _snItemsById.get(String(id))));
+  if (item && item.where === 'cloud') return String(id);
+  const opened = (typeof openedWizardCampaign === 'function') ? openedWizardCampaign() : null;
+  return opened && opened.where === 'cloud' ? String(opened.id) : null;
+}
 function openActiveBulkCheckModal() {          // active "Run check now"
   // VM/cloud campaign: the LOCAL sheet bulk-check (below) doesn't apply — the
   // campaign runs on the engine. Route this same button to the VM's acceptance
@@ -24038,16 +24061,7 @@ function openActiveBulkCheckModal() {          // active "Run check now"
   // the LOCAL sweep and asked scope only — no "where" question, and it ran
   // against this Mac's singleton instead of the campaign on screen (operator,
   // 2026-10-07). Resolve the campaign from the editor too.
-  const _editedCloud = (() => {
-    const id = _editingCampaignId;
-    const item = id && (_boardItemsById.get(String(id)) || (typeof _snItemsById !== 'undefined' && _snItemsById.get(String(id))));
-    if (item && item.where === 'cloud') return String(id);
-    const opened = (typeof openedWizardCampaign === 'function') ? openedWizardCampaign() : null;
-    return opened && opened.where === 'cloud' ? String(opened.id) : null;
-  })();
-  const _cloudId = _viewingCloudId
-    || (window.__cloudActiveStatus && window.__cloudActiveStatus._cloud && window.__cloudActiveStatus.id)
-    || _editedCloud;
+  const _cloudId = _wizardCloudCampaignId();
   if (_cloudId) {
     // A cloud campaign's acceptance check runs on the VM (where the campaign
     // sends), via the engine's own check-now. Ask the same scope question as the
@@ -36379,7 +36393,25 @@ window.launchCheckNow = function() {
   const toast = (m) => { if (typeof showCampaignToast === 'function') showCampaignToast(m); };
   const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
   if (!sheetUrl) return toast('Paste the Google Sheet URL first.');
-  _soloCheckHandler = (scope) => _launchCheckRun(scope);
+  // Same two steps as the card's Run check now: which accounts, then where.
+  // The VM choice needs a campaign that exists on the engine; a never-
+  // dispatched draft can only check from this Mac, so that pill is greyed.
+  _soloCheckHandler = (scope) => {
+    const cloudId = _wizardCloudCampaignId();
+    const vmPill = document.querySelector('#check-where-modal .stop-choice-pill:not(.is-recommended)');
+    if (vmPill) {
+      vmPill.disabled = !cloudId;
+      vmPill.title = cloudId ? '' : 'This campaign has not run on the VM yet — check from this Mac.';
+    }
+    _checkWhereHandler = (where) => {
+      if (where === 'vm' && cloudId) {
+        cloudCheckNow(cloudId, document.getElementById('btn-launch-check') || undefined, scope === 'sheet' ? 'all' : 'campaign');
+        return;
+      }
+      _launchCheckRun(scope);
+    };
+    _showCheckWhereModal();
+  };
   _showSoloCheckModal();
 };
 
@@ -36426,6 +36458,10 @@ async function _launchCheckRun(scope) {
   __cockpit.monitoringCheckInProgress = true;
   try { syncLiveStatusVisibility(); } catch (_) { /* */ }
   startPolling();
+  // The campaign this wizard shows gets the sweep's lines too (opening each
+  // account, sweeping, acceptances found, introductions), not only this Mac's
+  // local log (operator, 2026-10-07).
+  const _relay = await _startLocalSweepRelay(_wizardCloudCampaignId());
   try {
     const r = await fetch('/api/bulk-check-now', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -36434,11 +36470,14 @@ async function _launchCheckRun(scope) {
     if (r.status === 409) toast(d.error || 'A check is already running.');
     else if (d.ok) {
       const res = d.result || {};
-      toast(`Check done — ${res.matched || 0} newly accepted, ${res.introduced || 0} introduced.`);
+      const blocked = _sweepBlockedMessage(d.perProfile);
+      if (blocked) { if (typeof showCampaignToast === 'function') showCampaignToast(blocked, 15000); }
+      else toast(`Check done — ${res.matched || 0} newly accepted, ${res.introduced || 0} introduced.`);
     } else toast('Check failed: ' + (d.error || `HTTP ${r.status}`));
   } catch (e) {
     toast('Check failed: ' + e.message);
   } finally {
+    try { await _relay.stop(); } catch (_) { /* */ }
     _launchCheckPending = false;
     // Fetch terminal lines even if the stopped campaign normally stops polling.
     await pollStatus();

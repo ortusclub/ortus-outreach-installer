@@ -8963,6 +8963,7 @@ body:not(.route-wizard) #active-card { display: none !important; }
 #solo-check-modal .stop-choice-pill-sub, #check-where-modal .stop-choice-pill-sub { font-family: var(--body); font-size: .8rem; color: var(--gray); line-height: 1.4; }
 #solo-check-modal .stop-choice-cancel-row, #check-where-modal .stop-choice-cancel-row { margin-top: 12px; }
 .stop-choice-pill.is-recommended { border-color: var(--ink); border-width: 2px; }
+.stop-choice-pill:disabled { opacity: .45; cursor: not-allowed; }
 .stop-choice-pill-tag { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 9999px; background: var(--ink); color: var(--bg, #fff); font-family: var(--mono); font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; vertical-align: middle; }
 #preview-modal-body { color: var(--ink, #111); }
 

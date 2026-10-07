@@ -104,11 +104,14 @@ export function pickRecipientByIdentity(candidates, { name, expectedAvatarToken 
   if (!norm) return { index: -1, reason: 'empty-name' };
   const tokens = norm.split(/\s+/).filter(Boolean);
 
+  // Either side may be the shorter form of a name ("Samuel" ↔ "Sam", 3+ chars)
+  // — mirrors the browser-side nameHit in actions.js (2026-10-07).
+  const wordHit = (w, tok) => w.startsWith(tok) || (w.length >= 3 && tok.startsWith(w));
   const nameMatches = (cand) => {
     const t = normalizeName(cand.text);
     if (t === norm || t.startsWith(`${norm} `)) return true;
     const words = t.split(/\s+/);
-    return tokens.length > 0 && tokens.every((tok) => words.some((w) => w.startsWith(tok)));
+    return tokens.length > 0 && tokens.every((tok) => words.some((w) => wordHit(w, tok)));
   };
 
   // Keep original indices; drop group-message rows (not real recipients).
