@@ -4204,7 +4204,7 @@ app.post('/api/mature/start', async (req, res) => {
       else step('Each receiving account accepts its request 15 minutes after the day\'s batch is sent.');
       if (!pool.targets.length) {
         return res.status(400).json({ error: sources.lvError && WARM_POOL_ACCOUNT[plan.warmPool] === 'linkedvelocity'
-          ? sources.lvError : 'No accounts in the warm pool have a known LinkedIn URL.' });
+          ? sources.lvError : `No eligible accounts in the warm pool (${pool.total} checked${skipped ? `; ${skipped}` : ''}).` });
       }
     }
 
