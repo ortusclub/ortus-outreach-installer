@@ -544,7 +544,9 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
     const raw = a.primaryState == null
       ? (a.primaryConnected === true ? 'connected' : a.primaryConnected === false ? 'pending' : '')
       : String(a.primaryState || '');
-    if (raw === 'connected') primary = 'connected';
+    // A proven link to the primary earns one quiet word; it used to be the
+    // only state with no pill at all (operator, 2026-10-07).
+    if (raw === 'connected') { primary = 'connected'; pills.push(['quiet', 'Connected to primary']); }
     else if (raw === 'pending') { primary = 'pending'; pills.push(['warn', 'Primary invite pending']); }
     else if (raw === 'not_connected') { primary = 'not_connected'; pills.push(['warn', 'Primary not connected']); }
     else if (raw) { primary = 'unverified'; pills.push(['warn', 'Primary unconfirmed']); }
