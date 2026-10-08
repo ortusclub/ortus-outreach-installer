@@ -35567,6 +35567,10 @@ async function refreshMagellanState() {
     if (!s.running && settled && mgPoll) {
       clearInterval(mgPoll);
       mgPoll = null;
+      // Run fully finished — take the sticky live status down; the hero/outcome
+      // and the per-account pills report the result from here.
+      const _mgStage = document.getElementById('mg-stage');
+      if (_mgStage) _mgStage.hidden = true;
       const btn = document.getElementById('mg-collect-btn');
       if (btn) btn.disabled = false;
       // An import started from this page has just finished. Its outcome comes
@@ -35867,7 +35871,11 @@ function renderMagellanState(s) {
   // Stage block — the account being worked on and what is happening to it.
   const stage = el('mg-stage');
   if (stage) {
-    stage.hidden = !s.running && !s.account;
+    // Sticky: show the live status the moment a run shows any activity and keep
+    // it up through chunk/phase transitions, updating the numbers in place. Only
+    // the poll-stop path (refreshMagellanState, when the run fully ends) takes it
+    // down — so a transient state gap never flickers it in and out.
+    if (s.running || s.account) stage.hidden = false;
     if (s.account) {
       set('mg-stage-verb', s.step || 'Working');
       set('mg-stage-name', s.account);

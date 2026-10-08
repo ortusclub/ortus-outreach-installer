@@ -763,6 +763,15 @@
            screens keep their spacing. */
         body[data-dashboard='v3'] #mg-card .vj-stage-accts { margin-top: 26px; margin-bottom: 4px; }
         body[data-dashboard='v3'] #mg-card #mg-acct-detail { margin-top: 14px; }
+        /* Live-status block above the Magellan log — so a long collect visibly
+           moves (account + in-account progress) instead of a still log. */
+        #mg-card .mg-stage[hidden] { display: none; }
+        #mg-card .mg-stage { margin-bottom: 14px; }
+        #mg-card .mg-stage .vj-stage-verb { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); }
+        #mg-card .mg-stage .vj-stage-name { font-size: 15px; font-weight: 600; margin-top: 2px; }
+        #mg-card .mg-stage .vj-stage-sub { font-size: 12px; color: var(--gray); margin-top: 3px; }
+        #mg-card .mg-beat { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--hairline, rgba(0,0,0,.08)); font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--gray); }
+        #mg-card .mg-beat-right { color: var(--gold, #d4a24a); white-space: nowrap; }
 
         /* The allowlist split. Quiet by default; the blocked names are the
            part worth reading, so only they carry weight. */
@@ -891,6 +900,26 @@
                right now, and failures explain themselves instead of dying in
                the console. -->
           <section class="mg-activity" id="mg-card">
+            <!-- Live status on top of the log — the account being worked on and
+                 what it's doing right now, with an in-account progress line so a
+                 big account (hundreds of pages) doesn't look hung. Populated by
+                 renderMagellanState (mg-stage*/mg-beat*); hidden when idle. -->
+            <div class="vj-stage mg-stage" id="mg-stage" aria-live="polite" hidden>
+              <div class="vj-stage-body">
+                <div class="vj-stage-summary">
+                  <div class="vj-stage-summary-main">
+                    <div class="vj-stage-verb" id="mg-stage-verb"></div>
+                    <div class="vj-stage-name" id="mg-stage-name"></div>
+                    <div class="vj-stage-sub" id="mg-stage-sub"></div>
+                    <div class="vj-stage-fix" id="mg-stage-fix"></div>
+                  </div>
+                </div>
+                <div class="mg-beat">
+                  <span class="mg-beat-txt" id="mg-beat-txt"></span>
+                  <span class="mg-beat-right" id="mg-beat-right"></span>
+                </div>
+              </div>
+            </div>
             <div class="mg-activity-head"><span>Operation Magellan · Activity log</span><button type="button" onclick="copyMagellanLog(this)">Copy all</button></div>
             <div class="vj-log" id="mg-log" role="log" aria-label="Operation Magellan activity"></div>
           </section>
@@ -1480,18 +1509,8 @@
                 </div>
               </div>
 
-              <!-- "Add a connection note" — connect modes only (toggled in onModeChange).
-                   Off by default: requests go out bare and the note field stays hidden. -->
-              <div class="throttle-row" id="add-note-row" style="display:none">
-                <label class="alpha-toggle" title="Show the connection note field and send a note with each request">
-                  <input type="checkbox" id="add-note-toggle" onchange="setAddNote(this.checked); wizardDirtyOnInput()" />
-                  <span class="alpha-toggle-track"></span>
-                </label>
-                <div class="tr-text">
-                  <div class="tr-label">Add a connection note</div>
-                  <div class="tr-help" id="add-note-help"></div>
-                </div>
-              </div>
+              <!-- "Add a connection note" toggle moved to Section 5 (Message Templates),
+                   right above the note field, so it's discoverable where it applies. -->
 
               <div class="throttle-row" id="message-inmail-row" style="display:none">
                 <label class="alpha-toggle" title="Send InMail when the lead is not an Open Profile member">
@@ -3167,6 +3186,20 @@
         <button class="btn btn-secondary" onclick="deleteSelectedTemplate()">Delete</button>
         <button id="btn-save-tpl" class="btn btn-secondary" onclick="saveExistingTemplate()" disabled title="Pick a template first to save changes">Save</button>
         <button class="btn btn-secondary btn-save-tpl" onclick="saveCurrentTemplate()">Create new</button>
+      </div>
+
+      <!-- "Add a connection note" toggle — connect modes only (shown/hidden by id
+           in onModeChange:3699). Lives here, right above the note field, so it's
+           found where it applies. Off by default: requests go out bare. -->
+      <div class="throttle-row" id="add-note-row" style="display:none">
+        <label class="alpha-toggle" title="Show the connection note field and send a note with each request">
+          <input type="checkbox" id="add-note-toggle" onchange="setAddNote(this.checked); wizardDirtyOnInput()" />
+          <span class="alpha-toggle-track"></span>
+        </label>
+        <div class="tr-text">
+          <div class="tr-label">Add a connection note</div>
+          <div class="tr-help" id="add-note-help"></div>
+        </div>
       </div>
 
     <!-- ── Connection Note (connect_only, connect_and_introduce) ── -->
