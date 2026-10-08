@@ -14597,6 +14597,7 @@ window.clearCloudEditMode = clearCloudEditMode;
 // section open (liveStatusForcedOpen) and expand it, so the opened campaign's log
 // is always visible at the bottom of the wizard, under section 6 (Launch).
 function _bindLiveStatusToCampaignCloud(id, seed = null) {
+  seed ||= _boardItemsById.get(id) || _snItemsById.get(id);
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound yet */ }
   _viewingCloudId = id;
   try { sessionStorage.setItem('ortus-opened-campaign', JSON.stringify({id,cloud:true})); } catch {}
@@ -14611,6 +14612,7 @@ function _bindLiveStatusToCampaignCloud(id, seed = null) {
     window.__cloudActiveStatus = seededStatus;
     try { renderActiveCard(seededStatus); } catch (_) { /* detail fetch replaces it */ }
   }
+  syncLiveStatusVisibility();
   Promise.resolve(_refreshCloudActiveStatus(id)).catch(() => {}).then(() => {
     setTimeout(() => {
       if (_viewingCloudId !== id) return; // superseded by another open
@@ -14638,6 +14640,8 @@ function _bindLiveStatusToCampaign(id, seed = null) {
   _viewingLocalCampaign = {
     id, name, campaignId: item?.campaignId || seed?.campaignId,
     status: { ...(snapshot || {}), _cloud: false, runsOn: 'local', queued: false,
+      logs: snapshot?.logs || [],
+      ...(Number.isInteger(item?.histIdx) ? { hasRun: true, historyLogState: 'loading' } : {}),
       name, campaignId: item?.campaignId || seed?.campaignId, id: sameLocal ? 'local-active' : id,
       running: !!snapshot?.running, state: snapshot?.state || (snapshot?.running ? null : 'done'),
       connectionUnknown: false },
@@ -14649,6 +14653,28 @@ function _bindLiveStatusToCampaign(id, seed = null) {
   startPolling();
   // Refresh only the Mac's status. Never send a native campaign ID to the cloud API.
   pollStatus();
+  if (Number.isInteger(item?.histIdx)) _loadOpenedCampaignHistory(_viewingLocalCampaign, item.histIdx);
+}
+
+// The singleton only retains the current run. Reopening an older campaign must
+// read its persisted, run-scoped log rather than wait for unrelated live polls.
+async function _loadOpenedCampaignHistory(selected, histIdx) {
+  const originalLogs = selected.status.logs;
+  try {
+    const response = await fetch(`/api/history/${histIdx}/log`);
+    const data = await response.json();
+    if (!response.ok || !Array.isArray(data.lines)) throw new Error(data.error || 'History unavailable');
+    if (_viewingLocalCampaign !== selected || location.hash !== '#/new') return;
+    // A live poll or a check started here after Open owns the newer log.
+    if (selected.status.logs !== originalLogs) return;
+    selected.status = { ...selected.status, logs: data.lines.length ? data.lines : (originalLogs || []),
+      hasRun: true, historyLogState: data.lines.length || originalLogs?.length ? 'loaded' : 'empty' };
+  } catch (_) {
+    if (_viewingLocalCampaign !== selected || location.hash !== '#/new' || selected.status.logs !== originalLogs) return;
+    selected.status = { ...selected.status, hasRun: true, historyLogState: 'error' };
+  }
+  renderActiveCard(selected.status);
+  syncLiveStatusVisibility();
 }
 
 function localCampaignViewStatus(incoming) {
@@ -18756,12 +18782,13 @@ function syncLiveStatusVisibility() {
   // form ("Open does nothing"). cloudView bypasses those draft suppressors; the
   // trailing clause still requires an actual reason to show (cloudView is one).
   let openedId = null; try { openedId = _openedCampaignId; } catch {}
+  const localView = !!(_viewingLocalCampaign && sameCampaign(_viewingLocalCampaign, { campaignId: openedId, name: draftName }));
   const selectedStatus = cloudView ? window.__cloudActiveStatus : (_viewingLocalCampaign?.status || __cockpit);
   const ownsStatus = cloudView || sameCampaign(selectedStatus, { campaignId: openedId, name: draftName });
   const hasActivity = !!(selectedStatus && (selectedStatus.running || selectedStatus.queued || selectedStatus.paused || selectedStatus.state === 'monitoring' || selectedStatus.hasRun || selectedStatus.endNotice || selectedStatus.hasLogs || selectedStatus.logs?.length));
   const launchingHere = !!(_launchConsoleState || cloudLaunchStatus());
   const show = !inFollowerGrowth && onNew && (launchingHere || ((checkHere || (ownsStatus && hasActivity))
-    && (cloudView || (!(editingDraft && _viewingLocalCampaign && !checkHere) && !unrelatedDraft))
+    && (cloudView || localView || (!(editingDraft && _viewingLocalCampaign && !checkHere) && !unrelatedDraft))
     && (liveStatusForcedOpen || checkHere || _viewingLocalCampaign || cloudView || ((running || monitoring) && !editingDraft) || finished)));
   sec.style.display = show ? '' : 'none';
   // A live ownership transition is operational status, not optional wizard
@@ -31832,7 +31859,7 @@ window.renderActiveCard = function(status) {
   // review what happened, instead of wiping straight to "No campaign running".
   // Detected by: not running, not monitoring, but logs exist from this session.
   const isFinished = !!(status && !status.running && !isMonitoring && !isInterrupted && !isLaunching && !isDailyWait && !isNeedsReview
-    && Array.isArray(status.logs) && status.logs.length > 0);
+    && ((Array.isArray(status.logs) && status.logs.length > 0) || status.historyLogState));
   // A connection check is running (from ⚡ Run check now) and no campaign is
   // sending. Started or not, scheduled or not — the check's log is shown here.
   const isChecking = !!(status && status.monitoringCheckInProgress && !status.running && !isMonitoring);
@@ -32061,6 +32088,12 @@ window.renderActiveCard = function(status) {
       logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
       const head = card.querySelector('.vj-log-head .vj-details-head');
       if (head) head.textContent = `Live log · ${lastN.length} events${isWaitingHere ? ' (waiting)' : ' (finished)'}`;
+      if (!lastN.length && status.historyLogState) {
+        const message = status.historyLogState === 'loading' ? 'Loading campaign history…'
+          : status.historyLogState === 'error' ? 'Could not load campaign history. Reopen the campaign to retry.'
+          : 'No saved log entries are available for this run.';
+        logEl.innerHTML = `<div class="vj-log-empty">${message}</div>`;
+      }
       const moreBtn = document.getElementById('wiz-log-more');
       if (moreBtn) moreBtn.hidden = true;
     }
