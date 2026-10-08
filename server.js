@@ -9,6 +9,8 @@ import { hasLocalBrowserSelection, GOLOGIN_REQUIRED } from './src/gologin-only.j
 import { cloudOptionError } from './public/js/cloud-option-compatibility.mjs';
 import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
 import { canViewCampaign, visibleCampaigns, canAccessSavedCampaign } from './src/campaign-visibility.js';
+import { readSavedCampaignHistory } from './src/saved-campaign-history.js';
+import { pushSavedGoLoginToken } from './src/gologin-cloud-push.js';
 import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById, getConfig as getSavedCampaign, detachCampaignIdentity } from './src/campaign-configs.js';
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
@@ -9235,6 +9237,13 @@ app.get('/api/campaign-configs/by-id/:campaignId', (req, res) => {
   res.json({ ok: true, ...entry });
 });
 
+app.get('/api/campaign-configs/by-id/:campaignId/history', async (req, res) => {
+  try {
+    const result = await readSavedCampaignHistory(getConfigById(req.params.campaignId), campaignViewer(req));
+    res.status(result.status).json(result);
+  } catch (_) { res.status(502).json({ error: 'Could not load campaign history.' }); }
+});
+
 app.get('/api/campaign-configs/:name', async (req, res) => {
   try {
     const { getConfig } = await import('./src/campaign-configs.js');
@@ -9358,40 +9367,13 @@ app.post('/api/credentials/check', async (req, res) => {
   res.json({ ok: checks.every(check => check.ok), checks });
 });
 
-// Push a GoLogin workspace token to the CURRENT engine (dev or prod, per the
-// engine toggle). Validated engine-side (works + right account + confirm-on-live).
-// Runs server-side so the token never round-trips through the browser.
-async function pushGologinTokenToEngine(workspace, token, confirmReplaceLive, operatorEmail) {
-  const eng = resolveEngine(); // { url, token, environment }
-  try {
-    const r = await fetch(`${eng.url}/api/gologin-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${eng.token}`, 'x-operator': operatorEmail || 'app' },
-      body: JSON.stringify({ workspace, token, confirmReplaceLive: !!confirmReplaceLive }),
-      signal: AbortSignal.timeout(12000),
-    });
-    const body = await r.json().catch(() => ({}));
-    return { environment: eng.environment, httpStatus: r.status, ...body };
-  } catch (e) {
-    const timeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
-    return { environment: eng.environment, ok: false, reason: timeout ? 'the engine did not respond' : `engine unreachable: ${e && e.message}` };
-  }
-}
-
-// Confirm-push an ALREADY-saved workspace token to the engine — used when the
-// initial auto-push returned needs_confirm (replacing a live token). Reads the
-// token from the local store so the browser never has to resend it.
+// Any signed-in operator can explicitly push their saved workspace token.
+// Engine-side validation and live-token replacement confirmation still apply.
 app.post('/api/gologin-token', async (req, res) => {
   try {
-    // Rotating the engine's shared token is admin-only (see /api/credentials).
-    if (!viewerIsAdmin(req)) return res.status(403).json({ ok: false, error: 'Only admins can update the GoLogin token on the engine.' });
     const { workspace, confirmReplaceLive = false } = req.body || {};
-    const { credentialFields } = await import('./src/gologin-credentials.js');
-    if (!credentialFields().some((f) => f.id === workspace)) return res.status(400).json({ ok: false, error: 'unknown workspace' });
-    const { tokenForAccount } = await import('./src/gologin-accounts.js');
-    const token = tokenForAccount(workspace);
-    if (!token) return res.status(400).json({ ok: false, error: 'no token saved for this workspace' });
-    res.json(await pushGologinTokenToEngine(workspace, token, !!confirmReplaceLive, viewerEmail(req)));
+    const result = await pushSavedGoLoginToken({ workspace, confirmReplaceLive, operatorEmail: req.user ? viewerEmail(req) : '' });
+    res.status(result.status).json(result.body);
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -9423,9 +9405,9 @@ app.post('/api/credentials', async (req, res) => {
     saveCredentials(input);
     clearProfileCache();
     // Saving a token is LOCAL only — it changes this operator's own roster and
-    // nothing else. Rotating the SHARED engine token is a separate, explicit,
-    // admin-only action (the "Push to engine" button → POST /api/gologin-token),
-    // so an admin can hold a local-only token without touching everyone's runs.
+    // nothing else. Rotating the SHARED engine token is a separate, explicit
+    // action (the "Push to engine" button → POST /api/gologin-token),
+    // so an operator can hold a local-only token without touching everyone's runs.
     res.json({ ok: true, credentials: credentialStatus(), changedAccounts: credentialFields().filter(f => input[f.env]).map(f => f.id) });
   } catch (err) {
     console.error('[credentials] save failed:', err);

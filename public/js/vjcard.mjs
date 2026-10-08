@@ -282,6 +282,7 @@ export function hasLocalCampaignRun(s = {}) {
 }
 
 export function vjCardControlsFor(status = {}) {
+  if (status.historyOnly) return { open: null, sheet: null, pause: null, stop: null, restart: null, copy: null, extra: [] };
   if (status.campaignId && !status._cloud) {
     const c = { open: null, sheet: { onclick: 'window.openVjCardSheet(this)' }, pause: null, stop: null, restart: null, copy: null, extra: [] };
     for (const spec of campaignActionSpecs(status)) {

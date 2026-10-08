@@ -107,7 +107,7 @@ test('each maturing account says what it does next and when', () => {
   // Right after the batch, the next thing is the receiving accounts accepting.
   assert.equal(maturingNextAction({ ...it, dailyWait: true, resumeAt: '2026-10-07T01:00:00.000Z', acceptPending: 3, acceptDueAt: '2026-10-05T19:40:00Z' }, opts),
     'Next: accept 3 connection requests in the receiving accounts · Earliest start Mon 5 Oct, 21:40 CEST');
-  for (const ended of [{ bucket: 'done' }, { paused: true }, { needsReview: true }, { stopping: true }]) assert.equal(maturingNextAction({ ...it, ...ended }, opts), '');
+  for (const ended of [{ bucket: 'done' }, { paused: true }, { stopping: true }]) assert.equal(maturingNextAction({ ...it, ...ended }, opts), '');
 });
 
 import { maturingWaitLines } from '../public/js/mature-profile-board.mjs';
@@ -224,4 +224,27 @@ test('completed daily target stays quiet during final cooldown even before engin
  assert.match(maturingWaitLines([{...item,log:[{...item.log[0],line:'browser closed · 3 sent this turn (6/10 today) · rests ~3 min before its next turn'}]}],now)[0].text,/Status check/);
  assert.match(maturingWaitLines([{...item,acceptPending:3,acceptDueAt:new Date(now-60000).toISOString()}],now).at(-1).text,/accept 3 connection requests/);
  assert.deepEqual(maturingWaitLines([{...item,acceptPending:3,acceptDueAt:new Date(now+60000).toISOString()}],now),[]);
+});
+
+test('a profile needing review explains GoLogin workspace access and what to do next', () => {
+  const it = { needsReview: true, attentionLog: [
+    { t: 20, line: 'PAUSED — profile made no progress in 3 attempts.' },
+    { t: 10, line: 'browser failed to open: You are not a member of the workspace that owns this profile' },
+  ] };
+  assert.match(maturingNextAction(it), /GoLogin workspace access denied/);
+  assert.match(maturingNextAction(it), /Connect the workspace that owns this profile/);
+});
+
+test('attention text follows the latest failure rather than an older workspace error', () => {
+  const it = { needsReview: true, attentionLog: [
+    { t: 10, line: 'You are not a member of the workspace that owns this profile' },
+    { t: 20, line: 'browser failed to open: service unavailable' },
+  ] };
+  assert.match(maturingNextAction(it), /browser could not open/);
+  assert.doesNotMatch(maturingNextAction(it), /workspace access denied/);
+});
+
+test('an unknown review reason is stated without inventing a login or access failure', () => {
+  assert.match(maturingNextAction({ needsReview: true }), /Open the log to check the reason/);
+  assert.doesNotMatch(maturingNextAction({ needsReview: true }), /workspace access denied/);
 });

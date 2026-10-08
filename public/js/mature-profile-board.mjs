@@ -150,6 +150,23 @@ export function maturingRowState(it) {
   return { label: 'Awaiting its turn', tone: 'amber' };
 }
 
+export function maturingAttentionReason(it) {
+  if (!it?.needsReview) return '';
+  const lines = (Array.isArray(it.attentionLog) ? it.attentionLog : [])
+    .slice().sort((a, b) => Number(b.t || 0) - Number(a.t || 0)).map(e => String(e.line || ''));
+  for (const line of lines) {
+    if (/not a member of the workspace that owns this profile/i.test(line)) {
+      return 'GoLogin workspace access denied. Connect the workspace that owns this profile, then continue the plan.';
+    }
+    if (/browser failed to open/i.test(line)) return 'The browser could not open. Open the log to check the error before continuing the plan.';
+    if (/logged out|login required|sign.?in required|checkpoint|captcha/i.test(line)) return 'LinkedIn needs a login or verification. Open the profile, complete it, then continue the plan.';
+  }
+  if (lines.some(line => /made no progress in (\d+) attempts/i.test(line))) {
+    return 'Stopped after repeated attempts without progress. Open the log to check the failed step before continuing the plan.';
+  }
+  return 'Automatic work stopped for review. Open the log to check the reason before continuing the plan.';
+}
+
 // Has today's batch been fully sent? Read from the engine's own log: its send
 // and turn lines end "n/m today". The newest such line decides.
 export function maturingBatchDone(log) {
@@ -166,7 +183,8 @@ export function maturingBatchDone(log) {
 // maturing worker being free. `viewerTimeZone` is for tests (default: this
 // computer's zone).
 export function maturingNextAction(it, { now = Date.now(), viewerTimeZone } = {}) {
-  if (!it || it.needsReview || it.stopping || it.paused) return '';
+  if (it?.needsReview) return maturingAttentionReason(it);
+  if (!it || it.stopping || it.paused) return '';
   if (maturingPreviewActivity(it, now) === 'Accepting') return `Now: accepting connection requests${it.liveProgress?.accountName ? ` on ${it.liveProgress.accountName}` : ''}`;
   if (it.bucket === 'done') return '';
   const what = `${it.matureKind === 'cold' ? 'cold' : 'warm'} connection`;

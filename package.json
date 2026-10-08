@@ -1,7 +1,7 @@
 {
   "name": "ortus-outreach",
   "productName": "The Ortus Outreach",
-  "version": "3.1.92",
+  "version": "3.1.93",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
   "main": "electron/main.js",
@@ -14,6 +14,7 @@
     "build:docs": "node docs/build.js",
     "electron:dev": "bash scripts/electron-dev-vm.sh",
     "electron:dev:production": "electron .",
+    "electron:dev:live": "electron scripts/electron-live-preview.cjs",
     "electron:dev:vm": "bash scripts/electron-dev-vm.sh",
     "dev:app": "ORTUS_DATA_DIR=\"$HOME/Library/Application Support/The Ortus Outreach/data\" electron .",
     "dev:app:mine": "SCRAPER_ENGINE_URL=http://localhost:3010 npm run dev:app",
