@@ -13358,6 +13358,7 @@ async function _renderCampaignsBoardInner() {
         resumeAt: c.resumeTaskDueAt || null,
         acceptPending: Number(c.matureAcceptPending) || 0, acceptDueAt: c.matureAcceptDueAt || null,
         accountBlocks: c.matureAccountBlocks || [],
+        attentionLog: Array.isArray(d.monitorLog) ? d.monitorLog : [],
         batchDoneToday: !!c.config?.matureWarm && maturingBatchDone(d.monitorLog),
         resumeReason: c.resumeTaskReason || null,
         stopping: c.status === 'stopping' || c.status === 'pausing',
@@ -14654,6 +14655,35 @@ function _bindLiveStatusToCampaign(id, seed = null) {
   // Refresh only the Mac's status. Never send a native campaign ID to the cloud API.
   pollStatus();
   if (Number.isInteger(item?.histIdx)) _loadOpenedCampaignHistory(_viewingLocalCampaign, item.histIdx);
+  else if (item?.bucket === 'saved' && item.campaignId) _loadSavedCloudHistory(_viewingLocalCampaign);
+}
+
+async function _loadSavedCloudHistory(selected) {
+  selected.status = { ...selected.status, historyLogState: 'loading', historyOnly: true, hasRun: true };
+  const originalLogs = selected.status.logs;
+  renderActiveCard(selected.status);
+  syncLiveStatusVisibility();
+  try {
+    const response = await fetch(`/api/campaign-configs/by-id/${encodeURIComponent(selected.campaignId)}/history`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'History unavailable');
+    if (_viewingLocalCampaign !== selected || location.hash !== '#/new') return;
+    if (selected.status.logs !== originalLogs) return;
+    if (!data.campaign) {
+      selected.status = { ...selected.status, historyLogState: null, hasRun: false };
+    } else {
+      const logs = _mergeCloudLog(_cloudLeadsToLog(data.leads, data.campaign.mode === 'follower_growth', data.campaign), data.monitorLog);
+      selected.status = { ...selected.status, state: 'done', hasRun: true, logs,
+        historyLogState: logs.length ? 'loaded' : 'empty', historyEnvironment: data.environment,
+        endReason: data.campaign.status === 'cancelled' ? 'stopped' : data.campaign.status,
+        totalTargets: data.leads.length, totalProcessed: data.leads.filter(l => l.status === 'sent').length };
+    }
+  } catch (_) {
+    if (_viewingLocalCampaign !== selected || location.hash !== '#/new' || selected.status.logs !== originalLogs) return;
+    selected.status = { ...selected.status, historyLogState: 'error' };
+  }
+  renderActiveCard(selected.status);
+  syncLiveStatusVisibility();
 }
 
 // The singleton only retains the current run. Reopening an older campaign must
@@ -14681,7 +14711,10 @@ function localCampaignViewStatus(incoming) {
   if (!_viewingLocalCampaign || location.hash !== '#/new') return incoming;
   const selected = _viewingLocalCampaign;
   if (!incoming?._cloud && sameCampaign(incoming, selected)) {
-    selected.status = { ...incoming, _cloud: false, runsOn: 'local', id: 'local-active' };
+    const retainedHistory = !incoming.running && !incoming.logs?.length && selected.status.historyLogState
+      ? { logs: selected.status.logs, historyLogState: selected.status.historyLogState,
+          historyOnly: selected.status.historyOnly, historyEnvironment: selected.status.historyEnvironment, hasRun: true } : {};
+    selected.status = { ...incoming, ...retainedHistory, _cloud: false, runsOn: 'local', id: 'local-active' };
   } else if (incoming && !incoming._cloud && !incoming.running
              && ((!incoming.name && !incoming.campaignId) || _checkLaunchedHere())
              && (incoming.monitoringCheckInProgress || (Array.isArray(incoming.logs) && incoming.logs.length))) {
@@ -31507,7 +31540,7 @@ function renderWhereControl(root, status) {
   if (!root) return;
   let slot = root.querySelector(':scope > .wh-host');
   let markup = '';
-  try { markup = whereBlockHtml(status); } catch (_) { markup = ''; }
+  try { markup = status?.historyOnly ? '' : whereBlockHtml(status); } catch (_) { markup = ''; }
   if (!markup) { if (slot) slot.remove(); return; }
   if (!slot) {
     slot = document.createElement('div');
@@ -32038,7 +32071,7 @@ window.renderActiveCard = function(status) {
     const terminal = terminalPresentation(status);
     card.classList.toggle('is-stopped', !isWaitingHere && !terminal.complete);
     v3SetText('activeName', _activeCardName(status));
-    v3SetText('activeEyebrow', isWaitingHere ? 'Waiting for this Mac' : terminal.label);
+    v3SetText('activeEyebrow', status.historyOnly ? 'Run history' : isWaitingHere ? 'Waiting for this Mac' : terminal.label);
     v3SetText('activePct', String(pct));
     v3SetText('activeSent', String(done));
     v3SetText('activeTotal', String(total));
@@ -32088,6 +32121,7 @@ window.renderActiveCard = function(status) {
       logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
       const head = card.querySelector('.vj-log-head .vj-details-head');
       if (head) head.textContent = `Live log · ${lastN.length} events${isWaitingHere ? ' (waiting)' : ' (finished)'}`;
+      if (head && status.historyOnly) head.textContent = `Run history${status.historyEnvironment ? ' · ' + status.historyEnvironment : ''} · ${lastN.length} events`;
       if (!lastN.length && status.historyLogState) {
         const message = status.historyLogState === 'loading' ? 'Loading campaign history…'
           : status.historyLogState === 'error' ? 'Could not load campaign history. Reopen the campaign to retry.'
@@ -36655,9 +36689,8 @@ async function renderCredentialsModal() {
     const removeBtn = c.set && !c.shared
       ? `<button type="button" class="cred-other-del cred-remove" title="Remove the saved ${escHtml(c.label)} token" onclick="removeCredToken('${escHtml(c.env)}', '${escHtml(c.label)}')">Remove</button>`
       : '';
-    // Rotating the SHARED engine token is admin-only and explicit — never a side
-    // effect of saving. Offer it only for a token that is actually saved.
-    const pushBtn = (_viewerIsAdmin && c.set && !c.shared)
+    // Every signed-in operator can explicitly push a saved workspace token.
+    const pushBtn = (c.set && !c.shared)
       ? `<button type="button" class="cred-other-del cred-push" title="Push the saved ${escHtml(c.label)} token to the current engine (shared by everyone's cloud runs)" onclick="pushCredToEngine('${escHtml(c.id)}', '${escHtml(c.label)}')">Push to engine</button>`
       : '';
     return `<div class="cred-row">
@@ -36724,9 +36757,9 @@ async function credentialRequest(path, body) {
     throw error;
   }
 }
-// Explicit, admin-only "Push to engine": rotates the SHARED engine token for the
+// Explicit "Push to engine": rotates the SHARED engine token for the
 // given workspace to whatever is saved locally. Deliberate action, never a side
-// effect of Save — an admin can hold a local-only token without touching runs.
+// effect of Save — an operator can hold a local-only token without touching runs.
 // The engine validates (live · right account · no-op · confirm-before-replacing
 // -a-live-token); a needs_confirm reply offers an explicit Replace button.
 async function pushCredToEngine(workspace, label, confirmReplaceLive = false) {
@@ -36770,7 +36803,7 @@ async function updateCredentials(body, savedMessage = 'Saved.') {
       save: async () => {
         const data = await credentialRequest('/api/credentials', body);
         if (!data.ok) throw new Error(data.error || 'The token was not saved.');
-        // Save is local only — pushing to the engine is a separate admin action.
+        // Save is local only — pushing to the engine is a separate explicit action.
         // Clear submitted secrets as soon as the server confirms storage.
         document.querySelectorAll('#cred-fields input[type="password"]').forEach(input => { input.value = ''; });
         try { await renderCredentialsModal(); } catch { /* verification below remains authoritative */ }

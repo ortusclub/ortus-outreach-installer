@@ -2038,7 +2038,7 @@
   .mature-workbook-password code{padding:4px 7px;border:1px solid var(--hairline,#ddd);border-radius:6px;background:var(--card-bg);color:var(--ink);font-size:12px;user-select:all}
   .mature-results-row{margin-top:18px;display:flex;justify-content:flex-end;}
   /* Profile Maturing: one quiet line per campaign under the shared log. */
-  .mature-row{display:flex;align-items:center;gap:14px;padding:10px 6px;border-top:1px solid var(--hairline,rgba(0,0,0,.08));font-size:13px;}
+  .mature-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 6px;border-top:1px solid var(--hairline,rgba(0,0,0,.08));font-size:13px;}
   /* Same pill as the strip footers' buttons (.sn-foot .mini), which is scoped there. */
   .mature-row .mini,.mature-results-row .mini{flex:none;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 14px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;line-height:1.2;}
   .mature-row .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
@@ -2047,7 +2047,7 @@
   .mature-row .mature-del:hover{border-color:var(--red);}
   .mature-row .mature-del svg{width:13px;height:13px;display:block;}
   .mature-row .dot{flex:none;align-self:center;}
-  .mature-row-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .mature-row-name{flex:1 1 220px;min-width:min(220px,100%);font-weight:600;white-space:normal;overflow-wrap:anywhere;}
   .mature-row-next{display:block;margin-top:4px;font-weight:400;font-size:11px;line-height:1.5;color:var(--gray);white-space:normal;overflow-wrap:anywhere;}
   .mature-row-kind,.mature-row-state{flex:none;color:var(--gray);font-size:11px;letter-spacing:.08em;text-transform:uppercase;}
   .mature-row-detail{margin-left:auto;color:var(--gray);font-size:12px;text-align:right;white-space:nowrap;}
