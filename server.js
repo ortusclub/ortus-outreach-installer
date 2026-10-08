@@ -333,9 +333,11 @@ function campaignViewer(req) { return { admin: viewerIsAdmin(req), email: viewer
 // Who may point the app at the DEV engine (Settings → Engine → Dev). Same
 // identity model as the admin gate — the per-machine operator email, because the
 // dashboard login is shared across installs. Env-overridable via ENGINE_DEV_EMAILS
-// (comma-separated); default is the engine owner.
+// (comma-separated); default is the engine owner. info@linkedvelocity.com is
+// Sam's Linked Velocity login (2026-10-08): maturing campaigns are company-
+// scoped, so he tests them from that identity against the dev engine.
 const ENGINE_DEV_EMAIL_SET = new Set(
-  String(process.env.ENGINE_DEV_EMAILS || 'stevenj@ortusclub.com,ortus@ortusclub.com,mickey@ortusclub.com,sam@ortusclub.com,ej@ortusclub.com')
+  String(process.env.ENGINE_DEV_EMAILS || 'stevenj@ortusclub.com,ortus@ortusclub.com,mickey@ortusclub.com,sam@ortusclub.com,ej@ortusclub.com,info@linkedvelocity.com')
     .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
 );
 function canSwitchEngineToDev(req) {
