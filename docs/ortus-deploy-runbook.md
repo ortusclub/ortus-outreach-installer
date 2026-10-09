@@ -114,7 +114,7 @@ export APPLE_TEAM_ID="…"                # developer.apple.com/account → Memb
 ```
 If the cert or these vars are **missing**, the build still succeeds but ships **unsigned, un-notarized** DMGs — macOS Gatekeeper then blocks them ("damaged / can't be checked"), and operators must right-click → **Open** on first launch. (As of v3.1.65/66 the published DMGs are unsigned; signing is a one-time setup with the org's Apple Developer account.)
 
-The config baked into the DMG is **`build/release.env`** (it overrides `server.js` defaults — e.g. `ADMIN_EMAILS`). GoLogin workspace tokens are **not** bundled — they're per-installation (stored in the operator's data dir), so they survive an app update.
+The config baked into the DMG is **`build/release.env`** (it overrides `server.js` defaults — e.g. `ADMIN_EMAILS`). GoLogin workspace tokens and HubSpot access tokens are **not** bundled — they're configured in Settings per installation (stored in the operator's data dir), so they survive an app update.
 
 ---
 
