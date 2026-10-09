@@ -1,3 +1,4 @@
+import { channelCards, showChannelCampaigns } from '/js/channel-campaigns.mjs';
 import { outreachBrand } from '/js/company-access.mjs';
 import { nextCronRun as _cronNextRun } from '/js/schedule-time.mjs';
 import { createAdminPanel } from '/js/admin-panel.mjs';
@@ -5942,7 +5943,7 @@ function renderModeSelector() {
         <ul class="mode-card-bullets">${bullets}</ul>
       </button>
     `;
-  }).join('');
+  }).join('') + (!_lockedCampaignType ? channelCards() : '');
 }
 
 async function setModeByIndex(i) {
@@ -22793,6 +22794,9 @@ function applyRoute() {
   try { if (!isWizard && _acctAdd) { _acctAdd = null; _acctAddTouched = false; _renderAcctAddBanner(); } } catch (_) { /* */ }
   const isConnections = hash.startsWith('#/connections');
   const isSalesNav = hash.startsWith('#/salesnav');
+  const isChannels = hash.startsWith('#/channels');
+  document.body.classList.toggle('route-channels', isChannels);
+  document.getElementById('dash-tab-channels')?.classList.toggle('is-active', isChannels);
   const isAdmin = hash.startsWith('#/admin');
   document.body.classList.toggle('route-admin', isAdmin);
   if (!isAdmin) adminPanel?.stop();
@@ -22804,14 +22808,21 @@ function applyRoute() {
   document.body.classList.toggle('route-connections', isConnections);
   document.body.classList.toggle('route-salesnav', isSalesNav);
   document.body.classList.toggle('route-replies', isReplies);
-  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings && !isAdmin);
-  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings && !isAdmin);
+  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings && !isAdmin && !isChannels);
+  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings && !isAdmin && !isChannels);
   // Highlight the Replies nav-item when its route is active.
   const _replBtn = document.getElementById('nav-replies-btn');
   if (_replBtn) _replBtn.classList.toggle('active', isReplies);
   // Leaving the board with the inline scrape setup open: move the relocated
   // wizard sections back so the campaign wizard is intact for other modes.
   if (!isSalesNav && _snSetupOpen && typeof closeScrapeSetup === 'function') closeScrapeSetup();
+  if (isChannels) {
+    stopDashboardPolling(); stopWizardPolling();
+    if (typeof stopConnectionsPolling === 'function') stopConnectionsPolling();
+    stopViewingCloudCampaign();
+    showChannelCampaigns(document.getElementById('channel-view'));
+    return;
+  }
   if (isAdmin) {
     stopDashboardPolling(); stopWizardPolling();
     if (typeof stopConnectionsPolling === 'function') stopConnectionsPolling();

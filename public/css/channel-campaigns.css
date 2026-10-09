@@ -1,0 +1,15 @@
+body.route-channels #channel-view { display:block; }
+body.route-channels .page-header, body.route-channels .sidebar-nav { display:none; }
+.channel-heading { display:flex;justify-content:space-between;gap:24px;align-items:center;margin:24px 0; }
+.channel-notice { padding:18px;border:1px solid var(--gray-light,#ddd);border-radius:12px;line-height:1.6;margin:20px 0; }
+.channel-editor { max-width:850px;display:grid;gap:22px; }
+.channel-editor label { display:grid;gap:8px;font-size:14px; }
+.channel-editor input,.channel-editor textarea { width:100%;padding:12px;border:1px solid #ccc;border-radius:10px;background:var(--white,#fff);color:var(--black,#222);font:inherit;box-sizing:border-box; }
+.channel-editor small,.channel-drafts small { display:block;color:#777;font-size:12px;line-height:1.7; }
+.channel-actions { display:flex;gap:12px;flex-wrap:wrap; }
+.channel-drafts article { display:flex;gap:20px;align-items:center;justify-content:space-between;padding:20px 0;border-bottom:1px solid #ddd; }
+.channel-drafts a { font-weight:600;color:inherit; }
+#channel-view h2 { margin-top:32px; }
+
+.channel-type-card .mode-card-badge { position:static;display:inline-block;margin-bottom:14px; }
+.channel-type-card { text-align:left; }

@@ -1,3 +1,5 @@
+import { installChannelCampaignRoutes } from './src/channel-campaigns.js';
+import { channelType } from './public/js/channel-types.mjs';
 import { applyHubSpotCredential, hubspotCredentialStatus, saveHubSpotCredential, requireHubSpotCredential } from './src/hubspot-credentials.js';
 import { emailCompany, outreachBrand, companyCampaigns, sameCompanyCampaign } from './public/js/company-access.mjs';
 import { scopeAdminSources, scopeBasicsSchedules } from './src/admin-company.js';
@@ -405,6 +407,12 @@ async function rejectIfForeignProfiles(req, res, profileIds, mode) {
 
   return false;
 }
+
+installChannelCampaignRoutes(app, req => ({ email: req.user || '', admin: viewerIsAdmin(req) }));
+app.post(['/api/campaign/start', '/api/campaign/start-cloud', '/api/campaign/queue-only', '/api/schedules'], (req, res, next) => {
+  if (channelType(req.body?.mode) || channelType(req.body?.config?.mode)) return res.status(409).json({ error: 'Calling and messaging providers are not connected. Save this campaign as a draft in Calls & messages.' });
+  next();
+});
 
 app.get('/api/me', (req, res) => {
   res.json({ email: req.user, operatorEmail: getOperatorEmail() || '', admin: viewerIsAdmin(req), company: emailCompany(req.user), brand: outreachBrand(req.user) });

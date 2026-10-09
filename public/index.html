@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/css/style.css?v=3.1.60.14-basics-preview" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14-basics-preview" />
   <link rel="stylesheet" href="/css/admin.css" />
+  <link rel="stylesheet" href="/css/channel-campaigns.css" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -38,6 +39,7 @@
           <button type="button" class="nav-item" id="dash-tab-maturing" onclick="goMaturing()">Profile Maturing</button>
           <button type="button" class="nav-item" id="dash-tab-salesnav" onclick="goSalesNav()">Sales Nav Scraper</button>
           <button type="button" class="nav-item" id="dash-tab-connections" onclick="goConnections()">Connection DB</button>
+          <button type="button" class="nav-item" id="dash-tab-channels" onclick="location.hash='#/channels'">Calls &amp; messages</button>
           <button type="button" class="nav-item" id="dash-tab-admin" hidden onclick="location.hash='#/admin'">Admin</button>
         </div>
     <section id="engine-version-banner" class="engine-version-banner is-loading" aria-live="polite">
@@ -66,6 +68,7 @@
     <!-- ── Main ── -->
     <main class="main">
     <div class="container">
+    <section id="channel-view" class="route-view" aria-label="Calling and messaging campaigns"></section>
     <section id="admin-view" class="route-view" aria-label="Admin campaign overview"></section>
     <div class="page-header">
       <div class="page-header-title">
