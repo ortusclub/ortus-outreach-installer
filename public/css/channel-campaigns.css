@@ -1,0 +1,29 @@
+body.route-channels #channel-view { display:block; }
+body.route-channels .page-header, body.route-channels .sidebar-nav { display:none; }
+.channel-heading { display:flex;justify-content:space-between;gap:24px;align-items:center;margin:24px 0; }
+.channel-notice { padding:18px;border:1px solid var(--gray-light,#ddd);border-radius:12px;line-height:1.6;margin:20px 0; }
+.channel-editor { max-width:850px;display:grid;gap:22px; }
+.channel-editor label { display:grid;gap:8px;font-size:14px; }
+.channel-editor input,.channel-editor textarea { width:100%;padding:12px;border:1px solid #ccc;border-radius:10px;background:var(--white,#fff);color:var(--black,#222);font:inherit;box-sizing:border-box; }
+.channel-editor small,.channel-drafts small { display:block;color:#777;font-size:12px;line-height:1.7; }
+.channel-actions { display:flex;gap:12px;flex-wrap:wrap; }
+.channel-drafts article { display:flex;gap:20px;align-items:center;justify-content:space-between;padding:20px 0;border-bottom:1px solid #ddd; }
+.channel-drafts a { font-weight:600;color:inherit; }
+#channel-view h2 { margin-top:32px; }
+
+.channel-type-card .mode-card-badge { position:static;align-self:flex-start;margin:0 0 16px;color:var(--ink);background:var(--gold-tint-bg);border-color:var(--gold); }
+.channel-type-card { text-align:left; }
+.channel-type-card .channel-unavailable { font-weight:600; }
+.channel-type-card .channel-unavailable::before { content:'!'; }
+
+.channel-editor fieldset { border:1px solid #ddd;border-radius:12px;padding:22px;display:grid;gap:16px;min-width:0; }
+.channel-editor legend { font-weight:600;padding:0 8px; }
+.caller-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px; }
+.channel-editor select { padding:12px;border:1px solid #ccc;border-radius:10px;max-width:100%;background:var(--white,#fff);color:var(--black,#222); }
+.caller-results { overflow-x:auto; }
+.caller-results table { border-collapse:collapse;width:100%;font-size:13px; }
+.caller-results td,.caller-results th { text-align:left;padding:12px;border-bottom:1px solid #ddd;vertical-align:top; }
+.caller-results pre { white-space:pre-wrap;max-height:240px;overflow:auto;max-width:450px; }
+.channel-editor .caller-checkbox { display:flex;align-items:center; }
+.channel-editor .caller-checkbox input { width:auto; }
+@media(max-width:750px){.caller-grid{grid-template-columns:1fr;}}

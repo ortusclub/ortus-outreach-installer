@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/css/style.css?v=3.1.60.14-basics-preview" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14-basics-preview" />
   <link rel="stylesheet" href="/css/admin.css" />
+  <link rel="stylesheet" href="/css/channel-campaigns.css" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -66,6 +67,7 @@
     <!-- ── Main ── -->
     <main class="main">
     <div class="container">
+    <section id="channel-view" class="route-view" aria-label="Calling and messaging campaigns"></section>
     <section id="admin-view" class="route-view" aria-label="Admin campaign overview"></section>
     <div class="page-header">
       <div class="page-header-title">
@@ -194,20 +196,12 @@
       </div>
 
         </section>
-        <section class="app-settings-card" id="hubspot-settings"><h2>HubSpot access</h2>
-          <p class="settings-description">Add your HubSpot private app access token to check and import Connection DB contacts. Saved only on this computer and shared by people using this app installation.</p>
-          <p id="hubspot-credential-status" role="status" aria-live="polite">Loading…</p>
-          <form onsubmit="event.preventDefault(); saveHubSpotSettings(false)">
-            <label for="hubspot-token">HubSpot private app access token</label>
-            <input id="hubspot-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste access token" style="width:100%;margin:10px 0">
-            <button class="btn" type="submit" id="hubspot-save">Save token</button>
-            <button class="btn btn-secondary" type="button" id="hubspot-remove" onclick="saveHubSpotSettings(true)">Remove token</button>
-          </form>
-        </section>
         <section class="app-settings-card"><h2>Accounts &amp; connections</h2>
           <p class="settings-description">Manage GoLogin access, choose your engine and check the identity used by this app.</p>
       <div class="sidebar-footer">
         <button type="button" class="operator-chip settings-chip" onclick="openCredentialsModal()"><span class="operator-chip-label">GoLogin access</span><strong id="settings-chip-state">GoLogin tokens</strong></button>
+        <button type="button" class="operator-chip settings-chip" onclick="openHubSpotSettings()"><span class="operator-chip-label">HubSpot access</span><strong>HubSpot token</strong></button>
+        <button type="button" class="operator-chip settings-chip" onclick="openCallerProviderSettings()"><span class="operator-chip-label">Vapi access</span><strong>Automated Caller key</strong></button>
         <button type="button" class="operator-chip engine-chip" id="engine-chip" onclick="openEngineModal()" title="Point this app's scrapes and campaigns at the production or a dev engine."><span class="operator-chip-label">Engine</span><strong id="engine-chip-state">—</strong></button>
         <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
              in the SoO 'CC User App' column; click to set/change. Highlighted
@@ -224,6 +218,7 @@
       </div>
           <dl class="settings-explanations">
             <dt>GoLogin tokens</dt><dd>Connect the GoLogin workspaces whose profiles you can access. Tokens are stored on this device.</dd>
+            <dt>HubSpot token</dt><dd>Connect HubSpot for Connection DB checks and imports. Saved on this computer.</dd>
             <dt>Engine</dt><dd>Production is the live team service. Development is the separate test environment. This choice controls where this app sends cloud work.</dd>
             <dt>Operating as</dt><dd>The operator email recorded when you reserve accounts or start campaigns. It can differ from the signed-in account below it.</dd>
             <dt>Signed-in account</dt><dd>Your app login. Sign out ends this app session; it does not stop campaigns already running in the cloud.</dd>
@@ -4705,6 +4700,34 @@
     </div>
   </div>
 </div>
+  <div id="caller-provider-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCallerProviderSettings()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="caller-provider-title" style="max-width:600px;text-align:left">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCallerProviderSettings()">&times;</button>
+      <h3 id="caller-provider-title">Vapi access</h3>
+      <p>Save your private Vapi API key to load assistants and caller numbers. Stored only on this computer, separately for each company.</p>
+      <form onsubmit="event.preventDefault();saveCallerProviderSettings()">
+        <label for="caller-vapi-token">Private Vapi API key</label>
+        <input id="caller-vapi-token" type="password" autocomplete="new-password" spellcheck="false" style="width:100%;margin:12px 0">
+        <button type="submit" class="btn">Save key</button><button type="button" class="btn btn-secondary" onclick="saveCallerProviderSettings(true)">Remove key</button>
+      </form><p id="caller-provider-status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+  <div id="hubspot-credentials-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeHubSpotSettings()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="hubspot-modal-title" style="max-width:600px">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeHubSpotSettings()">&times;</button>
+      <h3 id="hubspot-modal-title" class="modal-title">HubSpot access</h3>
+      <div id="hubspot-settings">
+          <p class="settings-description">Add your HubSpot private app access token to check and import Connection DB contacts. Saved only on this computer and shared by people using this app installation.</p>
+          <p id="hubspot-credential-status" role="status" aria-live="polite">Loading…</p>
+          <form onsubmit="event.preventDefault(); saveHubSpotSettings(false)">
+            <label for="hubspot-token">HubSpot private app access token</label>
+            <input id="hubspot-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste access token" style="width:100%;margin:10px 0">
+            <button class="btn" type="submit" id="hubspot-save">Save token</button>
+            <button class="btn btn-secondary" type="button" id="hubspot-remove" onclick="saveHubSpotSettings(true)">Remove token</button>
+          </form>
+      </div>
+    </div>
+  </div>
   <div id="credentials-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCredentialsModal()">
     <div class="modal-card cred-card" role="dialog" aria-modal="true" aria-labelledby="cred-title">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCredentialsModal()">&times;</button>
