@@ -1,7 +1,7 @@
 import { callerEditor, readCallerEditor, wireCallerEditor } from './caller-editor.mjs';
 import { CHANNEL_TYPES, channelType } from './channel-types.mjs';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export const channelCards = () => CHANNEL_TYPES.map(type => `<button type="button" class="mode-card channel-type-card" onclick="location.hash='#/outreach/${type.id}'"><span class="mode-card-badge">Draft setup</span><div class="mode-card-title">${type.name}</div><p>${type.description}</p></button>`).join('');
+export const channelCards = () => CHANNEL_TYPES.map(type => `<button type="button" class="mode-card channel-type-card" onclick="location.hash='#/outreach/${type.id}'"><div class="mode-card-title">${type.name}</div><span class="mode-card-badge">Under construction</span><ul class="mode-card-bullets"><li>${type.description}</li><li>Preview and save a draft setup</li><li class="channel-unavailable">Not ready to use — ${type.id === 'automated_dialer' ? 'calls' : 'messages'} cannot be sent</li></ul></button>`).join('');
 async function request(url, options) { const response=await fetch(url,options);const body=await response.json();if(!response.ok)throw new Error(body.error || 'Request failed.');return body; }
 let generation=0;
 export async function showChannelCampaigns(mount) {

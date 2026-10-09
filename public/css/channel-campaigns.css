@@ -11,8 +11,10 @@ body.route-channels .page-header, body.route-channels .sidebar-nav { display:non
 .channel-drafts a { font-weight:600;color:inherit; }
 #channel-view h2 { margin-top:32px; }
 
-.channel-type-card .mode-card-badge { position:static;display:inline-block;margin-bottom:14px; }
+.channel-type-card .mode-card-badge { position:static;align-self:flex-start;margin:0 0 16px;color:var(--ink);background:var(--gold-tint-bg);border-color:var(--gold); }
 .channel-type-card { text-align:left; }
+.channel-type-card .channel-unavailable { font-weight:600; }
+.channel-type-card .channel-unavailable::before { content:'!'; }
 
 .channel-editor fieldset { border:1px solid #ddd;border-radius:12px;padding:22px;display:grid;gap:16px;min-width:0; }
 .channel-editor legend { font-weight:600;padding:0 8px; }
