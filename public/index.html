@@ -201,6 +201,7 @@
       <div class="sidebar-footer">
         <button type="button" class="operator-chip settings-chip" onclick="openCredentialsModal()"><span class="operator-chip-label">GoLogin access</span><strong id="settings-chip-state">GoLogin tokens</strong></button>
         <button type="button" class="operator-chip settings-chip" onclick="openHubSpotSettings()"><span class="operator-chip-label">HubSpot access</span><strong>HubSpot token</strong></button>
+        <button type="button" class="operator-chip settings-chip" onclick="openCallerProviderSettings()"><span class="operator-chip-label">Vapi access</span><strong>Automated Caller key</strong></button>
         <button type="button" class="operator-chip engine-chip" id="engine-chip" onclick="openEngineModal()" title="Point this app's scrapes and campaigns at the production or a dev engine."><span class="operator-chip-label">Engine</span><strong id="engine-chip-state">—</strong></button>
         <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
              in the SoO 'CC User App' column; click to set/change. Highlighted
@@ -4699,6 +4700,18 @@
     </div>
   </div>
 </div>
+  <div id="caller-provider-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCallerProviderSettings()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="caller-provider-title" style="max-width:600px;text-align:left">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCallerProviderSettings()">&times;</button>
+      <h3 id="caller-provider-title">Vapi access</h3>
+      <p>Save your private Vapi API key to load assistants and caller numbers. Stored only on this computer, separately for each company.</p>
+      <form onsubmit="event.preventDefault();saveCallerProviderSettings()">
+        <label for="caller-vapi-token">Private Vapi API key</label>
+        <input id="caller-vapi-token" type="password" autocomplete="new-password" spellcheck="false" style="width:100%;margin:12px 0">
+        <button type="submit" class="btn">Save key</button><button type="button" class="btn btn-secondary" onclick="saveCallerProviderSettings(true)">Remove key</button>
+      </form><p id="caller-provider-status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
   <div id="hubspot-credentials-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeHubSpotSettings()">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="hubspot-modal-title" style="max-width:600px">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeHubSpotSettings()">&times;</button>

@@ -1,3 +1,4 @@
+import { normalizeCallerConfig } from '../public/js/caller-sheet-model.mjs';
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dataPath } from './paths.js';
@@ -23,7 +24,9 @@ export function saveChannelCampaign(input, viewer) {
   const records = read(); const current = input.id ? records.find(record => record.id === input.id) : null;
   if (input.id && (!current || !canAccess(current, viewer))) fail('Campaign not found.', 404);
   if (current && current.type !== input.type) fail('An existing campaign’s type cannot be changed.');
-  const record = { id: current?.id || randomUUID(), type: input.type, name, sender, recipients: [...new Set(recipients)].join('\n'), content: text('content', 20000), templateName: text('templateName', 200), language: text('language', 50), owner: current?.owner || viewer.email, status: 'draft', createdAt: current?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+  let caller;
+  if (input.type === 'automated_dialer') { try { caller = normalizeCallerConfig(input.caller || current?.caller || {}); } catch(error) { fail(error.message); } }
+  const record = { caller, id: current?.id || randomUUID(), type: input.type, name, sender, recipients: [...new Set(recipients)].join('\n'), content: text('content', 20000), templateName: text('templateName', 200), language: text('language', 50), owner: current?.owner || viewer.email, status: 'draft', createdAt: current?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
   write([...records.filter(item => item.id !== record.id), record]); return record;
 }
 export function deleteChannelCampaign(id, viewer) {

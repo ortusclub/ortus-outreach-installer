@@ -13,3 +13,15 @@ body.route-channels .page-header, body.route-channels .sidebar-nav { display:non
 
 .channel-type-card .mode-card-badge { position:static;display:inline-block;margin-bottom:14px; }
 .channel-type-card { text-align:left; }
+
+.channel-editor fieldset { border:1px solid #ddd;border-radius:12px;padding:22px;display:grid;gap:16px;min-width:0; }
+.channel-editor legend { font-weight:600;padding:0 8px; }
+.caller-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px; }
+.channel-editor select { padding:12px;border:1px solid #ccc;border-radius:10px;max-width:100%;background:var(--white,#fff);color:var(--black,#222); }
+.caller-results { overflow-x:auto; }
+.caller-results table { border-collapse:collapse;width:100%;font-size:13px; }
+.caller-results td,.caller-results th { text-align:left;padding:12px;border-bottom:1px solid #ddd;vertical-align:top; }
+.caller-results pre { white-space:pre-wrap;max-height:240px;overflow:auto;max-width:450px; }
+.channel-editor .caller-checkbox { display:flex;align-items:center; }
+.channel-editor .caller-checkbox input { width:auto; }
+@media(max-width:750px){.caller-grid{grid-template-columns:1fr;}}

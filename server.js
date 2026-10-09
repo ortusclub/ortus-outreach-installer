@@ -1,3 +1,5 @@
+import { installCallerProviderRoutes } from './src/caller-provider.js';
+import { installCallerSheetRoutes } from './src/caller-sheets.js';
 import { installChannelCampaignRoutes } from './src/channel-campaigns.js';
 import { channelType } from './public/js/channel-types.mjs';
 import { applyHubSpotCredential, hubspotCredentialStatus, saveHubSpotCredential, requireHubSpotCredential } from './src/hubspot-credentials.js';
@@ -408,6 +410,8 @@ async function rejectIfForeignProfiles(req, res, profileIds, mode) {
   return false;
 }
 
+installCallerSheetRoutes(app);
+installCallerProviderRoutes(app);
 installChannelCampaignRoutes(app, req => ({ email: req.user || '', admin: viewerIsAdmin(req) }));
 app.post(['/api/campaign/start', '/api/campaign/start-cloud', '/api/campaign/queue-only', '/api/schedules'], (req, res, next) => {
   if (channelType(req.body?.mode) || channelType(req.body?.config?.mode)) return res.status(409).json({ error: 'Calling and messaging providers are not connected. Save this campaign as a draft in Outreach campaigns.' });

@@ -1,3 +1,5 @@
+import { openCallerProviderSettings, closeCallerProviderSettings, saveCallerProviderSettings } from '/js/caller-provider-settings.mjs';
+Object.assign(window, { openCallerProviderSettings, closeCallerProviderSettings, saveCallerProviderSettings });
 import { channelCards, channelDraftStrip, showChannelCampaigns } from '/js/channel-campaigns.mjs';
 import { outreachBrand } from '/js/company-access.mjs';
 import { nextCronRun as _cronNextRun } from '/js/schedule-time.mjs';
