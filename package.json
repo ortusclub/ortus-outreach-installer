@@ -1,7 +1,7 @@
 {
   "name": "ortus-outreach",
   "productName": "The Ortus Outreach",
-  "version": "3.1.93",
+  "version": "3.1.94",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
   "main": "electron/main.js",
@@ -21,7 +21,8 @@
     "electron:build": "electron-builder",
     "electron:build:mac": "node scripts/detach-stale-dmgs.js && electron-builder --mac && node scripts/rename-dmgs.js && node scripts/notarize-dmgs.js",
     "electron:build:win": "electron-builder --win",
-    "release:mac": "npm run electron:build:mac && node scripts/release-mac.js"
+    "release:mac": "npm run electron:build:mac && node scripts/release-mac.js",
+    "electron:dev:editable": "electron scripts/electron-editable.cjs"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.21.0",

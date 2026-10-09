@@ -1,3 +1,10 @@
+import { emailCompany, outreachBrand, companyCampaigns, sameCompanyCampaign } from './public/js/company-access.mjs';
+import { scopeAdminSources, scopeBasicsSchedules } from './src/admin-company.js';
+import { readBasicsSchedules } from './src/basics-schedules.js';
+import { ADMIN_EMAILS } from './public/js/admin-policy.mjs';
+import { adminOnly } from './src/admin-access.js';
+import { buildAdminOverview } from './src/admin-campaigns.js';
+import { createConnectionHistory } from './src/connection-run-history.js';
 import { retrySearchPayload } from './public/js/scrape-retry.mjs';
 import { updateAppTarget } from './src/update-app-target.js';
 import { getCampaignDeletions, deleteCampaignFromBoard } from './src/campaign-board-deletions.js';
@@ -302,23 +309,18 @@ app.use(async (req, res, next) => {
 });
 
 // Who-am-I endpoint used by the dashboard to show the logged-in user
-// Admin list — ADMIN_EMAILS env (comma-separated), with antonio as the default
-// so an unset env still has one admin. Used by the client for the admin-vs-own
-// campaigns view + Conductor filter.
+// One policy shared with Sales Navigator. Deployments may explicitly override it.
 const ADMIN_EMAIL_SET = new Set(
-  String(process.env.ADMIN_EMAILS || 'antonio@ortusclub.com,antoniov@ortusclub.com,sam@ortusclub.com,stevenj@ortusclub.com,mickey@ortusclub.com,ej@ortusclub.com')
-    .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+  String(process.env.ADMIN_EMAILS ?? [...ADMIN_EMAILS].join(','))
+    .split(',').map(e => e.trim().toLowerCase()).filter(Boolean),
 );
 function isAdminEmail(email) {
   return ADMIN_EMAIL_SET.has(String(email || '').trim().toLowerCase());
 }
-// The admin decision MUST use the per-machine operator identity, not req.user:
-// every install logs in with the SAME shared dashboard credential, so req.user
-// can't tell operators apart. getOperatorEmail() is the authoritative "who's
-// actually here" (antonio@ / antoniov@ / …); fall back to the login only when
-// no operator email is set.
+// Admin privileges and company scope follow the authenticated login. The
+// machine operator may belong to a different company after switching accounts.
 function viewerIsAdmin(req) {
-  return isAdminEmail(viewerEmail(req));
+  return !!emailCompany(req?.user) && isAdminEmail(req?.user);
 }
 
 // Who is actually sitting at this install. Same precedence as viewerIsAdmin and
@@ -330,7 +332,7 @@ function viewerEmail(req) {
   return getOperatorEmail() || (req && req.user) || '';
 }
 
-function campaignViewer(req) { return { admin: viewerIsAdmin(req), email: viewerEmail(req), maturingEmail: req.user || '', operatorId: getOperatorId() }; }
+function campaignViewer(req) { return { admin: viewerIsAdmin(req), email: req.user || '', maturingEmail: req.user || '', operatorId: getOperatorId() }; }
 
 // Who may point the app at the DEV engine (Settings → Engine → Dev). Same
 // identity model as the admin gate — the per-machine operator email, because the
@@ -403,7 +405,7 @@ async function rejectIfForeignProfiles(req, res, profileIds, mode) {
 }
 
 app.get('/api/me', (req, res) => {
-  res.json({ email: req.user, operatorEmail: getOperatorEmail() || '', admin: viewerIsAdmin(req) });
+  res.json({ email: req.user, operatorEmail: getOperatorEmail() || '', admin: viewerIsAdmin(req), company: emailCompany(req.user), brand: outreachBrand(req.user) });
 });
 
 // The SPA entry document must NEVER be cached. index.html carries the
@@ -1494,7 +1496,7 @@ async function handleStartCloud(req, res) {
     const identity = ensureCampaignIdentity({ campaignId: req.body?.campaignId, name: req.body?.name, config: req.body });
     req.body = { ...req.body, ...identity };
     return await withCampaignLaunch(identity.campaignId, async () => {
-      const owner = getOperatorEmail() || req.user || '';
+      const owner = req.user || '';
       const list = await listCloudCampaigns(owner);
       if (list.error || !Array.isArray(list.campaigns)) return res.status(502).json({ error: 'Could not verify existing cloud runs. Retry once the engine is reachable.' });
       const active = await findActiveCampaign(list.campaigns, identity, owner, getCloudLaunchConfig);
@@ -1812,7 +1814,7 @@ async function handleStartCloudOnce(req, res) {
       // Idempotency: a duplicated POST (operator re-click, retry, second window)
       // with the same launchId collapses to ONE campaign engine-side.
       id: launchId || undefined,
-      mode, name: name || '', owner: config?.matureWarm ? (req.user || '') : (getOperatorEmail() || req.user || ''),
+      mode, name: name || '', owner: req.user || '',
       profileIds: accounts, leads, config,
       // sheet_url handed to the engine for WRITE-BACK must be the operator's
       // CHOSEN tab (cloudSheetUrl = withGid(sheetUrl, sheetGid)), NOT the raw
@@ -1907,7 +1909,7 @@ app.get('/api/campaign/cloud-list', async (req, res) => {
 app.get('/api/campaign/cloud-capacity', async (req, res) => {
   const r = await memoCloud('capacity', () => getCloudCapacity());
   if (r.error) return res.json({ queue: [], unavailable: true });
-  res.json({ ...r, queue: viewerIsAdmin(req) ? r.queue : visibleCampaigns(r.queue, campaignViewer(req)) });
+  res.json({ ...r, queue: visibleCampaigns(r.queue, campaignViewer(req)) });
 });
 
 // One browser request supplies the board's list, detail snapshots and global
@@ -1934,7 +1936,7 @@ app.get('/api/campaign/cloud-board-summary', async (req, res) => {
   await Promise.all(Array.from({ length: Math.min(6, campaigns.length) }, worker));
   const live = campaigns.some((c) => ['queued', 'running', 'stopping', 'monitoring', 'paused'].includes(c.status));
   const capacity = live ? await memoCloud('capacity', () => getCloudCapacity()) : { queue: [] };
-  const safeCapacity = capacity?.error ? { queue: [], unavailable: true } : { ...capacity, queue: viewerIsAdmin(req) ? capacity?.queue : (capacity?.queue || []).filter(q => campaigns.some(c => c.id === (q.campaignId || q.campaign_id || q.id))) };
+  const safeCapacity = capacity?.error ? { queue: [], unavailable: true } : { ...capacity, queue: (capacity?.queue || []).filter(q => campaigns.some(c => c.id === (q.campaignId || q.campaign_id || q.id))) };
   res.json({ campaigns, details, capacity: safeCapacity });
 });
 // Per-account block truth for the Waiting card and the Start prompt.
@@ -2334,6 +2336,50 @@ app.post('/api/campaign/cloud/:id/sync-sheet-status', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// Admin overview uses the shared engine plus retained records on this Mac.
+// No cached payload is returned until the requesting operator passes the gate.
+app.use('/api/admin', adminOnly(viewerIsAdmin));
+app.get('/api/admin/campaigns', async (req, res) => {
+  if (!viewerIsAdmin(req)) return res.status(403).json({ error: 'Admin only' });
+  const results = await Promise.allSettled([
+    memoCloud('list:', () => listCloudCampaigns()), getScrapeBoard(), listHistory(), getQueue(), loadSchedules(),
+  ]);
+  const warnings = [];
+  const read = (i, label, fallback) => {
+    const r = results[i];
+    if (r.status === 'rejected' || r.value?.error) { warnings.push(label + ' is unavailable. Counts are incomplete; refresh to retry.'); return fallback; }
+    return r.value;
+  };
+  const cloud = read(0, 'Cloud campaigns', { campaigns: [] });
+  const scrapes = read(1, 'Sales Navigator', { campaigns: [] });
+  if (scrapes.at && Date.now() - scrapes.at > 45000) warnings.push('Sales Navigator is showing an older snapshot while the engine reconnects.');
+  const basics = await readBasicsSchedules(cloud.campaigns || []);
+  const { knownCloudIds, ...basicsView } = scopeBasicsSchedules(basics, req.user);
+  if (cloud.error || results[0].status === 'rejected' || results[0].value?.error) basicsView.warnings.push('Cloud schedules are unavailable; showing saved local schedules only.');
+  const overview = buildAdminOverview(scopeAdminSources({ cloud: (cloud.campaigns || []).filter(c => !knownCloudIds.includes(c.id)), scrapes: scrapes.campaigns || [],
+    history: read(2, 'Local history', []), queue: read(3, 'Local queue', []),
+    local: campaign, connections: connectionRunHistory.list(), schedules: read(4, 'Outreach schedules', []) }, req.user));
+  res.set('Cache-Control', 'no-store').json({ ...overview, basics: basicsView, warnings, updatedAt: new Date().toISOString(),
+    scope: 'Your company’s cloud campaigns and Sales Navigator; outreach history and Connection DB runs retained on this Mac. Connection DB history starts with this update. Known Basics cloud campaigns are shown separately; other shared-engine campaigns may not identify their source app. Scheduled includes dated starts, repeating schedules and daily resumptions; it excludes undated queue entries.' });
+});
+app.get('/api/admin/scrapes/:id/runs/:runId', async (req, res) => {
+  if (!viewerIsAdmin(req)) return res.status(403).json({ error: 'Admin only' });
+  try {
+    const board = await getScrapeBoard();
+    const record = board.campaigns.find(c => c.id === req.params.id);
+    if (!sameCompanyCampaign(record, req.user) || !record?.jobs?.some(j => j.runId === req.params.runId)) return res.status(404).json({ error: 'Run not found' });
+    const result = await getScrapeRunLogs(req.params.runId);
+    if (result?.error) return res.status(502).json({ error: 'Could not load this run’s log.' });
+    res.json(result);
+  } catch (error) { res.status(502).json({ error: 'Could not load this run’s log.' }); }
+});
+app.get('/api/admin/connections/:id', (req, res) => {
+  if (!viewerIsAdmin(req)) return res.status(403).json({ error: 'Admin only' });
+  const run = connectionRunHistory.get(req.params.id);
+  if (!sameCompanyCampaign(run, req.user)) return res.status(404).json({ error: 'Run not found' });
+  res.json(run);
+});
+
 // ── Team status (feature ⑩ — ADMIN-ONLY) ─────────────────────────────────
 // Per-operator aggregate over the engine cloud list + this machine's local
 // campaign/queue. HARD-GATED: only viewers whose login email is in
@@ -2343,7 +2389,7 @@ let _teamStatusCache = { at: 0, payload: null };
 const TEAM_STATUS_CACHE_MS = 30 * 1000;
 app.get('/api/team-status', async (req, res) => {
   if (!viewerIsAdmin(req)) return res.status(403).json({ error: 'Admin only' });
-  if (_teamStatusCache.payload && Date.now() - _teamStatusCache.at < TEAM_STATUS_CACHE_MS) {
+  if (_teamStatusCache.company === emailCompany(req.user) && _teamStatusCache.payload && Date.now() - _teamStatusCache.at < TEAM_STATUS_CACHE_MS) {
     return res.json(_teamStatusCache.payload);
   }
   const entries = [];
@@ -2359,7 +2405,7 @@ app.get('/api/team-status', async (req, res) => {
     if (r && r.error) {
       cloudError = r.error;
     } else {
-      const cloudCamps = (r && r.campaigns) || [];
+      const cloudCamps = companyCampaigns(r?.campaigns, req.user);
       // Per-campaign detail only to read leadCounts.sent; capped so a long
       // engine history can't turn one poll into hundreds of round-trips.
       const details = await Promise.all(cloudCamps.slice(0, 60).map(async (c) => {
@@ -2416,7 +2462,7 @@ app.get('/api/team-status', async (req, res) => {
   // the currently-running one, which isn't written to history until it ends).
   let localTodaySent = 0;
   try {
-    for (const h of await listHistory({ includeArchived: true })) {
+    for (const h of companyCampaigns(await listHistory({ includeArchived: true }), req.user)) {
       const t = Date.parse(h.startedAt || h.date || '');
       if (Number.isFinite(t) && t >= _todayStart && t < _todayEnd) {
         localTodaySent += (h.successCount != null ? h.successCount : (h.totalProcessed || 0));
@@ -2459,11 +2505,11 @@ app.get('/api/team-status', async (req, res) => {
   }
   const payload = {
     ok: true,
-    rows: aggregateTeamStatus(entries),
+    rows: aggregateTeamStatus(companyCampaigns(entries, req.user)),
     cloudError,               // surfaced, not fatal — local rows still render
     generatedAt: Date.now(),
   };
-  _teamStatusCache = { at: Date.now(), payload };
+  _teamStatusCache = { at: Date.now(), payload, company: emailCompany(req.user) };
   res.json(payload);
 });
 
@@ -3597,6 +3643,33 @@ app.post('/api/connections/sync', (_req, res) => {
 // Collect the team's LinkedIn connections and push them into HubSpot. The
 // collect phase only reads a connections list — it sends no invites and no
 // messages, so it deliberately ignores credits, assignment and in-use state.
+
+const connectionRunHistory = createConnectionHistory();
+const connectionHistoryTimer = setInterval(() => {
+  try { connectionRunHistory.update(magellan.getState()); }
+  catch (error) { console.error('[admin] Connection DB history:', error.message); }
+}, 2000);
+connectionHistoryTimer.unref();
+// Observe successful explicit launches without changing their execution path.
+app.use('/api/magellan', (req, res, next) => {
+  const phases = { '/collect': 'Collect', '/preview': 'Check', '/import': 'Import', '/merge-duplicates': 'Merge duplicates' };
+  const phase = phases[req.path] || (/^\/roster\/[^/]+\/collect$/.test(req.path) ? 'Collect' : null);
+  if (req.method === 'POST' && phase) {
+    const before = magellan.getState();
+    try { connectionRunHistory.update(before); } catch (error) { console.error('[admin] Connection DB history:', error.message); }
+    const json = res.json.bind(res);
+    res.json = body => {
+      if (!before.running && res.statusCode < 400 && !body?.error && body?.started !== false) {
+        try {
+          connectionRunHistory.start(magellan.getState(), req.user || '', phase);
+          connectionRunHistory.update(magellan.getState());
+        } catch (error) { console.error('[admin] Could not record Connection DB run:', error.message); }
+      }
+      return json(body);
+    };
+  }
+  next();
+});
 
 app.get('/api/magellan/state', (_req, res) => {
   res.json({ ...magellan.getState(), roster: magellanRoster.list() });
@@ -6357,7 +6430,7 @@ app.post('/api/campaign/login-done', (_req, res) => {
 // admin set so a line reads the same way the board labels the actor.
 function scrapeActor(req) {
   const actor = getOperatorEmail() || (req && req.user) || 'unknown';
-  return { actor, admin: String(actor).toLowerCase() === 'antonio@ortusclub.com' };
+  return { actor, admin: isAdminEmail(actor) };
 }
 
 /** Best-effort audit line. A logging failure must never fail the operation. */
@@ -6441,7 +6514,7 @@ app.post('/api/scrape/retry/:jobId', async (req, res) => {
   try {
     const board = await refreshScrapeBoardOnce();
     const campaign = board.campaigns.find(c => c.jobs?.some(j => j.id === id));
-    if (!campaign || !(viewerIsAdmin(req) || campaign.mine)) return res.status(403).json({error:'Only the scrape owner or an administrator can retry this search.'});
+    if (!campaign || !(viewerIsAdmin(req) ? sameCompanyCampaign(campaign, req.user) : campaign.mine)) return res.status(403).json({error:'Only the scrape owner or an administrator can retry this search.'});
     const job = campaign.jobs.find(j => j.id === id);
     if (campaign.jobs.some(j => j.id !== id && j.runId === job.runId && j.searchUrl === job.searchUrl && j.tabName === job.tabName && Number(j.createdAt) > Number(job.createdAt))) {
       return res.status(409).json({error:'A newer attempt already exists. Open this campaign to follow it.'});
@@ -6605,10 +6678,19 @@ app.get('/api/scrape/campaigns', async (req, res) => {
     // Slimmed: the full board is 20.4MB and this is polled every 2.5s. The
     // strips need a label and a count, not 2,247 full Sales Nav search URLs.
     // /api/scrape/campaigns/:id below still serves the complete record.
-    res.json({ campaigns: slimBoard((board.campaigns || []).filter(c => viewerIsAdmin(req) || canViewCampaign(c, campaignViewer(req)) || (!c.owner && c.mine))), me: board.me, cachedAt: board.at });
+    res.json({ campaigns: slimBoard((board.campaigns || []).filter(c => canViewCampaign(c, campaignViewer(req)) || (!viewerIsAdmin(req) && !c.owner && c.mine))), me: board.me, cachedAt: board.at });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+app.use('/api/scrape/campaigns/:id', async (req, res, next) => {
+  if (!viewerIsAdmin(req)) return next();
+  try {
+    const record = (await getScrapeBoard()).campaigns.find(c => c.id === req.params.id);
+    if (!sameCompanyCampaign(record, req.user)) return res.status(404).json({ error: 'Campaign not found.' });
+    next();
+  } catch { res.status(502).json({ error: 'Could not verify campaign access.' }); }
 });
 
 // One scrape by board id. openScrapeSetupFor() and rerunScrape() used to pull
@@ -8928,6 +9010,15 @@ app.get('/api/history', async (req, res) => {
   } catch {
     res.json([]);
   }
+});
+
+app.use('/api/history/:idx', async (req, res, next) => {
+  if (!viewerIsAdmin(req) || !/^\d+$/.test(req.params.idx)) return next();
+  try {
+    const record = (await listHistory())[Number(req.params.idx)];
+    if (!sameCompanyCampaign(record, req.user)) return res.status(404).json({ error: 'Campaign not found.' });
+    next();
+  } catch { res.status(502).json({ error: 'Could not verify campaign access.' }); }
 });
 
 // v2.76: turn a Past campaign's background tracking (reply + accept checks)

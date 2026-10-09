@@ -1,10 +1,10 @@
 // Pure helpers for the Sales Nav board — no DOM, no fetch, fully unit-tested.
 // Client-side admin set — mirrors the server's ADMIN_EMAILS default. Keyed off
 // the per-machine operator email (snCurrentEmail), NOT the shared login.
-export const ADMIN_EMAILS = new Set(['antonio@ortusclub.com', 'antoniov@ortusclub.com', 'sam@ortusclub.com']);
-export const isAdminEmail = (e) => ADMIN_EMAILS.has(String(e || '').trim().toLowerCase());
-// Back-compat single value for any legacy importer.
-export const ADMIN_EMAIL = 'antonio@ortusclub.com';
+import { ADMIN_EMAILS, isAdminEmail } from './admin-policy.mjs';
+export { ADMIN_EMAILS, isAdminEmail };
+// Legacy export; authorization uses the full shared policy.
+export const ADMIN_EMAIL = 'sam@ortusclub.com';
 
 export function campaignStatus(jobs) {
   if (!jobs || !jobs.length) return 'idle';

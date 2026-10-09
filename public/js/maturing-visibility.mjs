@@ -5,7 +5,7 @@ export function isMaturingCampaign(record) {
 export function maturingCompany(email) {
   const value = String(email || '').trim().toLowerCase();
   const parts = value.split('@');
-  return parts.length === 2 && parts[0] && ['ortusclub.com', 'linkedvelocity.com'].includes(parts[1]) ? parts[1] : '';
+  return parts.length === 2 && parts[0] && ['ortusclub.com', 'linkedvelocity.com', 'apexstrategy.io'].includes(parts[1]) ? parts[1] : '';
 }
 export function canViewMaturingCampaign(record, email) {
   const owner = String(record?.owner || record?.ownerEmail || record?.owner_email || '').trim().toLowerCase();

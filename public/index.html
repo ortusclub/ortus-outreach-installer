@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css?v=3.1.60.14-basics-preview" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14-basics-preview" />
+  <link rel="stylesheet" href="/css/admin.css" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -37,6 +38,7 @@
           <button type="button" class="nav-item" id="dash-tab-maturing" onclick="goMaturing()">Profile Maturing</button>
           <button type="button" class="nav-item" id="dash-tab-salesnav" onclick="goSalesNav()">Sales Nav Scraper</button>
           <button type="button" class="nav-item" id="dash-tab-connections" onclick="goConnections()">Connection DB</button>
+          <button type="button" class="nav-item" id="dash-tab-admin" hidden onclick="location.hash='#/admin'">Admin</button>
         </div>
     <section id="engine-version-banner" class="engine-version-banner is-loading" aria-live="polite">
       <div class="engine-version-banner__flag">
@@ -64,6 +66,7 @@
     <!-- ── Main ── -->
     <main class="main">
     <div class="container">
+    <section id="admin-view" class="route-view" aria-label="Admin campaign overview"></section>
     <div class="page-header">
       <div class="page-header-title">
         <div class="greeting-wordmark" id="greeting-wordmark">Welcome</div>
