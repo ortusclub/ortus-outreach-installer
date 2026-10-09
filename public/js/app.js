@@ -22797,6 +22797,7 @@ function applyRoute() {
   document.body.classList.toggle('route-admin', isAdmin);
   if (!isAdmin) adminPanel?.stop();
   const isSettings = hash.startsWith('#/settings');
+  if (isSettings) loadHubSpotSettings();
   document.body.classList.toggle('route-app-settings', isSettings);
   document.getElementById('app-settings-nav')?.classList.toggle('active', isSettings);
   const isReplies = hash.startsWith('#/replies');
@@ -35240,6 +35241,14 @@ async function mgFetch(url, opts) {
   } catch {
     throw new Error(`The app returned something unreadable (${res.status}).`);
   }
+  if (json.code === 'HUBSPOT_CREDENTIAL_REQUIRED') {
+    location.hash = '#/settings';
+    setTimeout(() => {
+      document.getElementById('hubspot-settings')?.scrollIntoView({ block: 'center' });
+      document.getElementById('hubspot-token')?.focus();
+    }, 100);
+    alert(json.error);
+  }
   if (!res.ok || json.error) throw new Error(json.error || `Request failed (${res.status})`);
   return json;
 }
@@ -37558,3 +37567,33 @@ window.useManualPrimaryPerson = function() {
   document.getElementById('primary-gologin-status').textContent = 'Manual entry selected. Enter the primary’s name and LinkedIn URL below.';
   document.getElementById('primary-person-name').focus();
 };
+
+async function loadHubSpotSettings() {
+  const status = document.getElementById('hubspot-credential-status');
+  if (!status) return;
+  document.getElementById('hubspot-token').value = '';
+  try {
+    const response = await fetch('/api/hubspot-credential');
+    if (!response.ok) throw new Error('Could not load HubSpot credential status.');
+    const data = await response.json();
+    status.textContent = data.configured ? 'Token saved. Leave the field empty to keep it, or paste a replacement.' : 'No token saved. Add one here before checking or importing HubSpot contacts.';
+    document.getElementById('hubspot-remove').disabled = !data.configured;
+  } catch (error) { status.textContent = error.message; }
+}
+async function saveHubSpotSettings(remove) {
+  const field = document.getElementById('hubspot-token');
+  const status = document.getElementById('hubspot-credential-status');
+  if (!remove && !field.value.trim()) { status.textContent = 'Paste a HubSpot access token to save it.'; field.focus(); return; }
+  const buttons = ['hubspot-save', 'hubspot-remove'].map(id => document.getElementById(id));
+  buttons.forEach(button => button.disabled = true);
+  try {
+    const response = await fetch('/api/hubspot-credential', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: remove ? '' : field.value.trim() }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not save HubSpot token.');
+    field.value = '';
+    await loadHubSpotSettings();
+    status.textContent = remove ? 'HubSpot token removed.' : 'HubSpot token saved. You can return to Connection DB and run Check again before importing.';
+  } catch (error) { status.textContent = error.message; }
+  finally { document.getElementById('hubspot-save').disabled = false; document.getElementById('hubspot-remove').disabled = false; }
+}
+window.saveHubSpotSettings = saveHubSpotSettings;

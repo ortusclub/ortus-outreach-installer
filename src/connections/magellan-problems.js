@@ -60,7 +60,7 @@ const RULES = [
     what: 'HubSpot did not accept the key',
     why: () => 'The key in the app is wrong, expired, or was rotated.',
     fix: () => 'Get a fresh key from HubSpot → Settings → Integrations → Private Apps and put it in '
-      + 'the app\'s .env as HUBSPOT_TOKEN.',
+      + 'Settings → HubSpot access.',
   },
   {
     code: 'hubspot_down',

@@ -194,6 +194,16 @@
       </div>
 
         </section>
+        <section class="app-settings-card" id="hubspot-settings"><h2>HubSpot access</h2>
+          <p class="settings-description">Add your HubSpot private app access token to check and import Connection DB contacts. Saved only on this computer and shared by people using this app installation.</p>
+          <p id="hubspot-credential-status" role="status" aria-live="polite">Loading…</p>
+          <form onsubmit="event.preventDefault(); saveHubSpotSettings(false)">
+            <label for="hubspot-token">HubSpot private app access token</label>
+            <input id="hubspot-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste access token" style="width:100%;margin:10px 0">
+            <button class="btn" type="submit" id="hubspot-save">Save token</button>
+            <button class="btn btn-secondary" type="button" id="hubspot-remove" onclick="saveHubSpotSettings(true)">Remove token</button>
+          </form>
+        </section>
         <section class="app-settings-card"><h2>Accounts &amp; connections</h2>
           <p class="settings-description">Manage GoLogin access, choose your engine and check the identity used by this app.</p>
       <div class="sidebar-footer">

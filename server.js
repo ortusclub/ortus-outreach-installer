@@ -1,3 +1,4 @@
+import { applyHubSpotCredential, hubspotCredentialStatus, saveHubSpotCredential, requireHubSpotCredential } from './src/hubspot-credentials.js';
 import { emailCompany, outreachBrand, companyCampaigns, sameCompanyCampaign } from './public/js/company-access.mjs';
 import { scopeAdminSources, scopeBasicsSchedules } from './src/admin-company.js';
 import { readBasicsSchedules } from './src/basics-schedules.js';
@@ -26,6 +27,7 @@ import 'dotenv/config';
 import { selectMatureColdLeads, DEFAULT_MATURE_COLD_SHEET_URL } from './src/mature-cold-pool.js';
 import { applyCredentials } from './src/gologin-credentials.js';
 applyCredentials();
+applyHubSpotCredential();
 
 // Workspace credentials are optional at startup: Settings must remain reachable
 // to add a token, and another workspace can operate without an Ortus token.
@@ -3979,7 +3981,7 @@ app.post('/api/magellan/collect', (req, res) => {
 // Add operator addresses to HubSpot's linkedin_1st_connections option list.
 // Any operator may call this — the safety is in the writer (append-only merge,
 // guarded, then verified by reading the list back), not in who presses it.
-app.post('/api/magellan/hubspot-options/add', async (req, res) => {
+app.post('/api/magellan/hubspot-options/add', requireHubSpotCredential, async (req, res) => {
   try {
     const accounts = ((req.body || {}).accounts || []).filter(Boolean);
     if (!accounts.length) return res.status(400).json({ error: 'no accounts given' });
@@ -4006,7 +4008,7 @@ app.post('/api/magellan/stop', (_req, res) => {
   }
 });
 
-app.post('/api/magellan/preview', (req, res) => {
+app.post('/api/magellan/preview', requireHubSpotCredential, (req, res) => {
   // Start the Check and return immediately — the page polls /api/magellan/state
   // for the result (_state.preview). Awaiting buildPreview here is what made a
   // big account's Check run past the page's 30s fetch guard and print "The app
@@ -4020,7 +4022,7 @@ app.post('/api/magellan/preview', (req, res) => {
 
 // Merging cannot be undone in HubSpot, so it needs its own confirmation — the
 // import's does not carry over to it.
-app.post('/api/magellan/merge-duplicates', async (req, res) => {
+app.post('/api/magellan/merge-duplicates', requireHubSpotCredential, async (req, res) => {
   try {
     if (!(req.body || {}).confirm) {
       return res.status(400).json({ error: 'Merging must be confirmed' });
@@ -4032,7 +4034,7 @@ app.post('/api/magellan/merge-duplicates', async (req, res) => {
 });
 
 // The only path that writes to HubSpot, and only from an explicit click.
-app.post('/api/magellan/import', async (req, res) => {
+app.post('/api/magellan/import', requireHubSpotCredential, async (req, res) => {
   try {
     if (!(req.body || {}).confirm) {
       return res.status(400).json({ error: 'Import must be confirmed' });
@@ -9441,6 +9443,21 @@ app.post('/api/campaign-configs', async (req, res) => {
 // The app ships with no secrets. These two routes are the Settings stage: the
 // operator pastes the tokens they hold, and the workspaces those tokens unlock
 // become selectable. Nothing here ever echoes a token back.
+app.get('/api/hubspot-credential', (_req, res) => {
+  res.set('Cache-Control', 'no-store').json(hubspotCredentialStatus());
+});
+app.post('/api/hubspot-credential', (req, res) => {
+  if (magellan.getState().running) return res.status(409).json({ error: 'Wait for the current Connection DB operation to finish before changing the HubSpot credential.' });
+  try {
+    const status = saveHubSpotCredential(req.body?.token);
+    magellan.reset(); // A plan prepared with an old credential must not be reused.
+    _magellanHsOptions = { at: 0, set: null };
+    res.set('Cache-Control', 'no-store').json(status);
+  } catch {
+    res.status(400).json({ error: 'Could not save the HubSpot token. Enter a valid token and check that this computer’s app data folder is writable.' });
+  }
+});
+
 app.get('/api/credentials', async (_req, res) => {
   await ensureSharedGoLogin();
   try {
