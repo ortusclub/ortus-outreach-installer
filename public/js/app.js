@@ -1,4 +1,4 @@
-import { channelCards, showChannelCampaigns } from '/js/channel-campaigns.mjs';
+import { channelCards, channelDraftStrip, showChannelCampaigns } from '/js/channel-campaigns.mjs';
 import { outreachBrand } from '/js/company-access.mjs';
 import { nextCronRun as _cronNextRun } from '/js/schedule-time.mjs';
 import { createAdminPanel } from '/js/admin-panel.mjs';
@@ -13700,6 +13700,18 @@ async function _renderCampaignsBoardInner() {
     return html ? { draftsHtml: html, draftsCount: rows.length } : {};
   };
   const _draftOpts = _draftRail(_draftRows.filter((d) => !_isMatureDraft(d)));
+  try {
+    const response = await fetch('/api/channel-campaigns');
+    if (response.ok) {
+      const { campaigns = [] } = await response.json();
+      if (campaigns.length) {
+        _draftOpts.draftsHtml = (_draftOpts.draftsHtml || '') + campaigns.map(channelDraftStrip).join('');
+        _draftOpts.draftsCount = (_draftOpts.draftsCount || 0) + campaigns.length;
+        _draftOpts.draftsNoClear = true;
+      }
+    }
+  } catch { /* Keep the existing campaign board usable while drafts reconnect. */ }
+
   // No "Delete all" on this rail: that button clears every draft on the board.
   // In the Profile Maturing tab a draft is one more quiet line, like the rest.
   const _matureDrafts = _draftRows.filter(_isMatureDraft);
@@ -22784,6 +22796,7 @@ async function openAdminCampaign(c, run) {
 function applyRoute() {
   syncDashTabs();
   const hash = window.location.hash || '#/';
+  if (hash.startsWith('#/channels')) { location.hash = hash.split('/')[2] ? '#/outreach/' + hash.split('/')[2] : '#/new'; return; }
   const isWizard = hash.startsWith('#/new');
   if (!isWizard) { const section = document.getElementById('nav-status'); if (section) section.style.display = 'none'; }
   // Leaving the wizard abandons any cloud-edit session (unlock + banner reset)
@@ -22794,9 +22807,8 @@ function applyRoute() {
   try { if (!isWizard && _acctAdd) { _acctAdd = null; _acctAddTouched = false; _renderAcctAddBanner(); } } catch (_) { /* */ }
   const isConnections = hash.startsWith('#/connections');
   const isSalesNav = hash.startsWith('#/salesnav');
-  const isChannels = hash.startsWith('#/channels');
+  const isChannels = hash.startsWith('#/outreach/');
   document.body.classList.toggle('route-channels', isChannels);
-  document.getElementById('dash-tab-channels')?.classList.toggle('is-active', isChannels);
   const isAdmin = hash.startsWith('#/admin');
   document.body.classList.toggle('route-admin', isAdmin);
   if (!isAdmin) adminPanel?.stop();
@@ -22968,7 +22980,7 @@ function syncDashTabs() {
   const wizard = hash.startsWith('#/new');
   const maturing = document.getElementById('campaign-mode')?.value === 'mature_profile';
   for (const [id, active] of [
-    ['dash-tab-campaigns', (dashboard && _dashTab === 'campaigns') || (wizard && !maturing)],
+    ['dash-tab-campaigns', (dashboard && _dashTab === 'campaigns') || (wizard && !maturing) || hash.startsWith('#/outreach/')],
     ['dash-tab-maturing', (dashboard && _dashTab === 'maturing') || (wizard && maturing)],
     ['dash-tab-salesnav', hash.startsWith('#/salesnav')],
     ['dash-tab-connections', hash.startsWith('#/connections')],
@@ -35255,8 +35267,7 @@ async function mgFetch(url, opts) {
   if (json.code === 'HUBSPOT_CREDENTIAL_REQUIRED') {
     location.hash = '#/settings';
     setTimeout(() => {
-      document.getElementById('hubspot-settings')?.scrollIntoView({ block: 'center' });
-      document.getElementById('hubspot-token')?.focus();
+      openHubSpotSettings();
     }, 100);
     alert(json.error);
   }
@@ -37608,3 +37619,13 @@ async function saveHubSpotSettings(remove) {
   finally { document.getElementById('hubspot-save').disabled = false; document.getElementById('hubspot-remove').disabled = false; }
 }
 window.saveHubSpotSettings = saveHubSpotSettings;
+
+window.openHubSpotSettings = async function() {
+  document.getElementById('hubspot-credentials-modal').classList.remove('hidden');
+  await loadHubSpotSettings();
+  document.getElementById('hubspot-token').focus();
+};
+window.closeHubSpotSettings = function() {
+  document.getElementById('hubspot-token').value = '';
+  document.getElementById('hubspot-credentials-modal').classList.add('hidden');
+};

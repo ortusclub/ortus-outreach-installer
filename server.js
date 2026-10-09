@@ -410,7 +410,7 @@ async function rejectIfForeignProfiles(req, res, profileIds, mode) {
 
 installChannelCampaignRoutes(app, req => ({ email: req.user || '', admin: viewerIsAdmin(req) }));
 app.post(['/api/campaign/start', '/api/campaign/start-cloud', '/api/campaign/queue-only', '/api/schedules'], (req, res, next) => {
-  if (channelType(req.body?.mode) || channelType(req.body?.config?.mode)) return res.status(409).json({ error: 'Calling and messaging providers are not connected. Save this campaign as a draft in Calls & messages.' });
+  if (channelType(req.body?.mode) || channelType(req.body?.config?.mode)) return res.status(409).json({ error: 'Calling and messaging providers are not connected. Save this campaign as a draft in Outreach campaigns.' });
   next();
 });
 
