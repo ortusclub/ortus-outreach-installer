@@ -24,10 +24,8 @@ test('when it fires, a schedule runs that full launch under the same campaign id
 });
 
 test('the cron next-run helper handles one-off dates, weekly runs and rubbish', async () => {
-  const vm = await import('node:vm');
-  const src = app.slice(app.indexOf('function _cronNextRun('), app.indexOf('let _localSchedules = [];'));
-  const ctx = vm.createContext({});
-  vm.runInContext(src + '\nthis.next = _cronNextRun;', ctx);
+  const { nextCronRun } = await import('../public/js/schedule-time.mjs');
+  const ctx = { next: nextCronRun };
   const from = new Date(2026, 8, 21, 12, 0, 0);                    // Mon 21 Sept 2026, 12:00 local
   const at = (d) => [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()].join('-');
   assert.equal(at(ctx.next('0 13 14 10 *', from)), '2026-10-14-13-0');   // one-off date

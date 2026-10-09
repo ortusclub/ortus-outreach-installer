@@ -2285,6 +2285,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   // tab (campaign name + startedAt is the tab key, so resumes append
   // to the same tab).
   campaign.startedAt = new Date().toISOString();
+  campaign.owner = createdBy || getOperatorEmail() || '';
   campaign.profileNames = [];
   campaign.errors = [];
   // v2.112.26 (#3): a fresh launch must start with a clean live log. campaign.logs
@@ -5986,6 +5987,9 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         runId: campaign.executionId,
         executionId: campaign.executionId,
         date: new Date().toISOString(),
+        startedAt: campaign.startedAt,
+        finishedAt: new Date().toISOString(),
+        owner: campaign.owner || '',
         name: campaign.name || '',
         mode: campaign.mode,
         profiles: campaign.profileNames,

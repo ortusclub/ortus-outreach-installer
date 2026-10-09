@@ -8,12 +8,13 @@ test('ordinary operators see only their own campaigns, including after an identi
   assert.deepEqual(visibleCampaigns(rows,{email:'other@ortusclub.com'}).map(x=>x.id),['other']);
   assert.equal(canViewCampaign({owner:'other@ortusclub.com',operatorId:'device-1'},viewer),false);
   assert.equal(canViewCampaign({},{}),false);
-  assert.equal(visibleCampaigns(rows,{admin:true}).length,4);
+  assert.equal(visibleCampaigns(rows,{admin:true}).length,0);
+  assert.deepEqual(visibleCampaigns(rows,{admin:true,email:'sam@ortusclub.com'}).map(x=>x.id),['own','other']);
 });
-test('maturing is shared by creator company, including for admins', () => {
+test('non-admin maturing visibility remains company scoped', () => {
   const mature = owner => ({owner, name:'target@unrelated.example', config:{matureWarm:true}});
   const rows = [mature('sam@ortusclub.com'),mature('OTHER@ORTUSCLUB.COM'),mature('staff@linkedvelocity.com'),mature('outsider@example.com'),mature(''),mature('fake@ortusclub.com.evil')];
-  for (const admin of [false,true]) {
+  for (const admin of [false]) {
     assert.deepEqual(visibleCampaigns(rows,{email:'sam@ortusclub.com',admin}), rows.slice(0,2));
     assert.deepEqual(visibleCampaigns(rows,{email:'person@linkedvelocity.com',admin}), [rows[2]]);
     assert.deepEqual(visibleCampaigns(rows,{email:'',admin}), []);
@@ -30,7 +31,7 @@ test('saved maturing plans and board rows follow the same company rule', () => {
 
 test('saved config and draft modes use actual login even if the device operator differs', () => {
   const record = {config:{mode:'mature_profile'},owner:'info@linkedvelocity.com'};
-  assert.equal(canViewCampaign(record,{admin:true,email:'info@linkedvelocity.com',maturingEmail:'sam@ortusclub.com'}),false);
+  assert.equal(canViewCampaign(record,{admin:true,email:'info@linkedvelocity.com',maturingEmail:'sam@ortusclub.com'}),true);
   assert.equal(canViewCampaign(record,{email:'sam@ortusclub.com',maturingEmail:'staff@linkedvelocity.com'}),true);
   assert.equal(canViewCampaign({...record,owner:''},{admin:true,email:'sam@ortusclub.com'}),false);
 });

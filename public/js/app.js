@@ -1,3 +1,6 @@
+import { outreachBrand } from '/js/company-access.mjs';
+import { nextCronRun as _cronNextRun } from '/js/schedule-time.mjs';
+import { createAdminPanel } from '/js/admin-panel.mjs';
 import { retrySearchPayload, findSearchRetry } from '/js/scrape-retry.mjs';
 import { createScrapeWaitLog } from '/js/scrape-wait-log.mjs';
 const scrapeWaitLog = createScrapeWaitLog();
@@ -83,8 +86,17 @@ async function loadOperatorEmail() {
 let _viewerEmail = '';
 let _viewerIsAdmin = false;
 async function loadViewerIdentity() {
+  const previousEmail = _viewerEmail;
   try { const d = await (await fetch('/api/me')).json(); _viewerEmail = (d && d.email) || ''; _viewerIsAdmin = !!(d && d.admin); }
   catch { _viewerEmail = ''; _viewerIsAdmin = false; }
+  if (previousEmail !== _viewerEmail) {
+    adminPanel?.stop(); adminPanel = null;
+    document.getElementById('admin-view')?.replaceChildren();
+  }
+  const wordmark = document.querySelector('.sidebar-wordmark');
+  if (wordmark) wordmark.textContent = outreachBrand(_viewerEmail);
+  const adminNav = document.getElementById('dash-tab-admin');
+  if (adminNav) adminNav.hidden = !_viewerIsAdmin;
 }
 
 let _snPollTimer = null;
@@ -927,7 +939,7 @@ function _snFillStripCard(root, c) {
 }
 
 function _snIsAdmin() {
-  return _isAdminEmail(snCurrentEmail);
+  return _viewerIsAdmin;
 }
 // Can the viewer control this strip WITHOUT the "not yours" confirm? True when
 // it's their own scrape (server-computed `mine`) or they're the admin.
@@ -13332,7 +13344,7 @@ async function _renderCampaignsBoardInner() {
       if (c.sheet_url) _cloudSheetUrls.set(c.id, c.sheet_url);
       const mine = !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase());
       // Maturing is shared within the creator's company; other campaign rules stay the same.
-      if (isMaturingCampaign(c) ? !canViewMaturingCampaign(c, _viewerEmail) : (!_viewerIsAdmin && !mine)) continue;
+      if (!_viewerIsAdmin && (isMaturingCampaign(c) ? !canViewMaturingCampaign(c, _viewerEmail) : !mine)) continue;
       // 'monitoring' (post-send acceptance-watch — exactly like a local CC+IC /
       // CC+DM run) is an ACTIVE state: keep it in NOW RUNNING, not DONE. Task 3.
       // 'paused' is a still-ACTIVE state (sending held, resumable) — keep it in
@@ -13638,7 +13650,7 @@ async function _renderCampaignsBoardInner() {
     const response=await fetch('/api/campaign-board/deletions');
     if(response.ok) _campaignDeletions=(await response.json()).deletions || [];
   } catch (_) { /* retain last confirmed deletions during a connection interruption */ }
-  const visibleItems = groupCampaignRuns(items.filter((x) => (isMaturingCampaign(x) ? canViewMaturingCampaign(x, _viewerEmail) : (x.mine || (_viewerIsAdmin && x.isFG))) && !isDeletedCampaign(x,_campaignDeletions)));
+  const visibleItems = groupCampaignRuns(items.filter((x) => (_viewerIsAdmin || (isMaturingCampaign(x) ? canViewMaturingCampaign(x, _viewerEmail) : x.mine)) && !isDeletedCampaign(x,_campaignDeletions)));
   // Show every permitted campaign; there are no dashboard type/owner filters.
   const shown = visibleItems;
 
@@ -22742,6 +22754,32 @@ function applyViewingActiveLock() {
 }
 window.applyViewingActiveLock = applyViewingActiveLock;
 
+let adminPanel = null;
+async function openAdminCampaign(c, run) {
+  // Seed the same item lookup the established editor uses; a direct Admin
+  // entry must work before the ordinary campaign board has finished loading.
+  const item = { id: run.id, name: c.name, owner: run.owner, mode: run.mode,
+    campaignId: run.campaignId, where: run.source === 'cloud' ? 'cloud' : 'local',
+    maturing: c.category === 'maturing', bucket: run.source === 'schedule' ? 'saved' : run.running || run.waiting ? 'running' : 'done',
+    histIdx: run.historyIndex };
+  _boardItemsById.set(run.id, item);
+  if (run.source === 'connections') { goConnections(); return; }
+  if (run.source === 'scrape') {
+    goSalesNav();
+    // Let the hash router mount the Sales Nav view before its editor moves DOM.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return openScrapeSetupFor(run.campaignId);
+  }
+  if (run.source === 'queue') { goDashboard(); return; }
+  if (run.source === 'local') return viewRunningCampaign();
+  if (run.source === 'cloud') {
+    if (c.category === 'maturing') return openMaturePlan(run.id);
+    if (run.running || run.waiting) return openRunningCampaignEditor(run.id);
+    return openCampaignForEditCloud(run.id);
+  }
+  return openCampaignForEdit(run.id);
+}
+
 function applyRoute() {
   syncDashTabs();
   const hash = window.location.hash || '#/';
@@ -22755,6 +22793,9 @@ function applyRoute() {
   try { if (!isWizard && _acctAdd) { _acctAdd = null; _acctAddTouched = false; _renderAcctAddBanner(); } } catch (_) { /* */ }
   const isConnections = hash.startsWith('#/connections');
   const isSalesNav = hash.startsWith('#/salesnav');
+  const isAdmin = hash.startsWith('#/admin');
+  document.body.classList.toggle('route-admin', isAdmin);
+  if (!isAdmin) adminPanel?.stop();
   const isSettings = hash.startsWith('#/settings');
   document.body.classList.toggle('route-app-settings', isSettings);
   document.getElementById('app-settings-nav')?.classList.toggle('active', isSettings);
@@ -22762,14 +22803,27 @@ function applyRoute() {
   document.body.classList.toggle('route-connections', isConnections);
   document.body.classList.toggle('route-salesnav', isSalesNav);
   document.body.classList.toggle('route-replies', isReplies);
-  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings);
-  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings);
+  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings && !isAdmin);
+  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav && !isReplies && !isSettings && !isAdmin);
   // Highlight the Replies nav-item when its route is active.
   const _replBtn = document.getElementById('nav-replies-btn');
   if (_replBtn) _replBtn.classList.toggle('active', isReplies);
   // Leaving the board with the inline scrape setup open: move the relocated
   // wizard sections back so the campaign wizard is intact for other modes.
   if (!isSalesNav && _snSetupOpen && typeof closeScrapeSetup === 'function') closeScrapeSetup();
+  if (isAdmin) {
+    stopDashboardPolling(); stopWizardPolling();
+    if (typeof stopConnectionsPolling === 'function') stopConnectionsPolling();
+    stopViewingCloudCampaign();
+    loadViewerIdentity().then(() => {
+      if (!location.hash.startsWith('#/admin')) return;
+      const mount = document.getElementById('admin-view');
+      if (!_viewerIsAdmin) { mount.textContent = 'This section is available to administrators only.'; return; }
+      if (!adminPanel) adminPanel = createAdminPanel({ mount, openCampaign: openAdminCampaign });
+      adminPanel.start();
+    });
+    return;
+  }
   if (isSettings) {
     stopDashboardPolling();
     stopWizardPolling();
@@ -22906,6 +22960,7 @@ function syncDashTabs() {
     ['dash-tab-maturing', (dashboard && _dashTab === 'maturing') || (wizard && maturing)],
     ['dash-tab-salesnav', hash.startsWith('#/salesnav')],
     ['dash-tab-connections', hash.startsWith('#/connections')],
+    ['dash-tab-admin', hash.startsWith('#/admin')],
   ]) {
     const button = document.getElementById(id);
     button?.classList.toggle('is-active', active);
@@ -29703,41 +29758,6 @@ function v3ModeBadge(mode) {
 
 // ── Local schedules, for the Live Status card ────────────────────────────────
 // Next time a 5-field cron expression fires (local time, like node-cron), or null.
-function _cronNextRun(expr, from = new Date()) {
-  const f = String(expr || '').trim().split(/\s+/);
-  if (f.length !== 5) return null;
-  const parse = (field, lo, hi) => {
-    const out = new Set();
-    for (const part of field.split(',')) {
-      const [range, stepRaw] = part.split('/');
-      const step = Math.max(1, parseInt(stepRaw, 10) || 1);
-      let a = lo, b = hi;
-      if (range !== '*') { const [x, y] = range.split('-'); a = parseInt(x, 10); b = y === undefined ? a : parseInt(y, 10); }
-      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-      for (let v = a; v <= b; v += step) out.add(v);
-    }
-    return out;
-  };
-  const mins = parse(f[0], 0, 59), hrs = parse(f[1], 0, 23), dom = parse(f[2], 1, 31), mon = parse(f[3], 1, 12), dowRaw = parse(f[4], 0, 7);
-  if (!mins || !hrs || !dom || !mon || !dowRaw) return null;
-  const dow = new Set([...dowRaw].map((d) => d % 7));
-  const domAny = f[2] === '*', dowAny = f[4] === '*';
-  const d = new Date(from.getTime()); d.setSeconds(0, 0); d.setMinutes(d.getMinutes() + 1);
-  for (let day = 0; day < 370; day++) {
-    const dayOk = mon.has(d.getMonth() + 1) && (domAny && dowAny ? true
-      : domAny ? dow.has(d.getDay()) : dowAny ? dom.has(d.getDate()) : (dom.has(d.getDate()) || dow.has(d.getDay())));
-    if (dayOk) {
-      for (let h = d.getHours(); h < 24; h++) {
-        if (!hrs.has(h)) continue;
-        for (let m = (h === d.getHours() ? d.getMinutes() : 0); m < 60; m++) {
-          if (mins.has(m)) { const r = new Date(d.getTime()); r.setHours(h, m, 0, 0); return r; }
-        }
-      }
-    }
-    d.setDate(d.getDate() + 1); d.setHours(0, 0, 0, 0);
-  }
-  return null;
-}
 let _localSchedules = [];
 async function refreshLocalSchedules() {
   try { const r = await fetch('/api/schedules'); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) _localSchedules = j; } } catch (_) { /* keep the last list */ }
